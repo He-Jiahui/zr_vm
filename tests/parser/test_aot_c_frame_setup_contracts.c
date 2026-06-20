@@ -138,7 +138,7 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "zr_aot_frame_byte_size = (TZrSize)%u;",
             "(zr_aot_frame_byte_size + sizeof(SZrTypeValue) - 1u) / sizeof(SZrTypeValue)",
             "if (zr_aot_frame_slot_count < zr_aot_frame_byte_slot_count)",
-            "ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(zr_aot_slot_base + zr_aot_slot));",
+            "ZrCore_Value_ResetAsNull(&zr_aot_slot_base[zr_aot_slot].value);",
             "zr_aot_call_info->functionTop.valuePointer = zr_aot_frame_top;",
             "state->stackTop.valuePointer = zr_aot_frame_top;",
             "ZrCore_Debug_RunError(state,",

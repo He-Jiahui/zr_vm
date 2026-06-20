@@ -3802,6 +3802,7 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
                                               SZrLspSignatureHelp **result) {
     SZrSemanticAnalyzer *analyzer;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrFilePosition filePosition;
     SZrFileRange fileRange;
     SZrLspCallContext callContext;
@@ -3818,12 +3819,14 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
     }
 
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
-    if (fileVersion->content != ZR_NULL &&
-        !ZrLanguageServer_Lsp_IsCursorOffsetInCodeSpan(fileVersion->content,
-                                                       fileVersion->contentLength,
+    if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot) &&
+        !ZrLanguageServer_Lsp_IsCursorOffsetInCodeSpan(snapshot.content,
+                                                       snapshot.contentLength,
                                                        filePosition.offset)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_TRUE;
     }
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
 
     fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
     memset(&callContext, 0, sizeof(callContext));

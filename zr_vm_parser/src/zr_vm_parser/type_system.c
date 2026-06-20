@@ -113,6 +113,122 @@ TZrBool ZrParser_AstType_TryUnwrapOwnershipGeneric(const SZrType *type,
     return ZR_TRUE;
 }
 
+TZrBool ZrParser_OwnershipMemberNameToBuiltinKind(SZrString *name,
+                                                  EZrOwnershipBuiltinKind *builtinKind) {
+    if (builtinKind != ZR_NULL) {
+        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+    }
+    if (name == ZR_NULL || builtinKind == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (zr_parser_string_equals_cstr(name, "share")) {
+        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_SHARED;
+        return ZR_TRUE;
+    }
+    if (zr_parser_string_equals_cstr(name, "weak")) {
+        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
+        return ZR_TRUE;
+    }
+    if (zr_parser_string_equals_cstr(name, "borrow")) {
+        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_BORROW;
+        return ZR_TRUE;
+    }
+    if (zr_parser_string_equals_cstr(name, "loan")) {
+        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_LOAN;
+        return ZR_TRUE;
+    }
+    if (zr_parser_string_equals_cstr(name, "upgrade")) {
+        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE;
+        return ZR_TRUE;
+    }
+    if (zr_parser_string_equals_cstr(name, "release")) {
+        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_RELEASE;
+        return ZR_TRUE;
+    }
+    if (zr_parser_string_equals_cstr(name, "detach")) {
+        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_DETACH;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+TZrBool ZrParser_OwnershipBuiltinCanApplyToQualifier(EZrOwnershipBuiltinKind builtinKind,
+                                                     EZrOwnershipQualifier qualifier) {
+    switch (builtinKind) {
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+        case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
+            return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+            return qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
+        case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
+            return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+                   qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+                   qualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
+                   qualifier == ZR_OWNERSHIP_QUALIFIER_LOANED;
+        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+            return qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
+        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
+            return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+                   qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
+        case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN:
+        default:
+            return ZR_FALSE;
+    }
+}
+
+EZrOwnershipQualifier ZrParser_OwnershipBuiltinResultQualifier(EZrOwnershipBuiltinKind builtinKind,
+                                                               EZrOwnershipQualifier sourceQualifier) {
+    switch (builtinKind) {
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+            return ZR_OWNERSHIP_QUALIFIER_SHARED;
+        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+            return ZR_OWNERSHIP_QUALIFIER_WEAK;
+        case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
+            return ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
+            return ZR_OWNERSHIP_QUALIFIER_LOANED;
+        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+            return ZR_OWNERSHIP_QUALIFIER_SHARED;
+        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
+            return ZR_OWNERSHIP_QUALIFIER_NONE;
+        case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN:
+        default:
+            return sourceQualifier;
+    }
+}
+
+const TZrChar *ZrParser_OwnershipMemberCallErrorMessage(EZrOwnershipBuiltinKind builtinKind) {
+    switch (builtinKind) {
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+            return "share() requires a Unique<T> owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+            return "weak() requires a Shared<T> owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
+            return "borrow() requires a live owned or borrowed value; upgrade Weak<T> first";
+        case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
+            return "loan() requires a Unique<T> owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+            return "upgrade() requires a Weak<T> owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+            return "release() requires a Unique<T> or Shared<T> owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
+            return "detach() requires a Unique<T> or Shared<T> owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN:
+        default:
+            return "Ownership member call is not valid for this receiver";
+    }
+}
+
 static TZrBool inferred_type_is_reference_like(EZrValueType baseType) {
     return baseType == ZR_VALUE_TYPE_OBJECT ||
            baseType == ZR_VALUE_TYPE_STRING ||
@@ -586,6 +702,7 @@ static TZrBool copy_generic_parameter_info_array(SZrState *state,
         copiedInfo.requiresStruct = sourceInfo->requiresStruct;
         copiedInfo.requiresNew = sourceInfo->requiresNew;
         copiedInfo.requiresOwner = sourceInfo->requiresOwner;
+        copiedInfo.requiredOwnershipQualifier = sourceInfo->requiredOwnershipQualifier;
         ZrCore_Array_Construct(&copiedInfo.constraintTypeNames);
 
         if (sourceInfo->constraintTypeNames.isValid && sourceInfo->constraintTypeNames.length > 0) {

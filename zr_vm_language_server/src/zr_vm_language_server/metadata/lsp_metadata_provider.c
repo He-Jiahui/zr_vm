@@ -153,12 +153,15 @@ static TZrBool metadata_provider_try_member_name_range(SZrLspMetadataProvider *p
                                                        SZrString *memberName,
                                                        SZrFileRange *outRange) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     const TZrChar *content;
     TZrSize contentLength;
     const TZrChar *memberText;
     TZrSize memberLength;
     TZrSize searchStart;
     TZrSize searchEnd;
+    TZrBool hasSnapshot = ZR_FALSE;
+    TZrBool found = ZR_FALSE;
 
     if (provider == ZR_NULL || provider->context == ZR_NULL || uri == ZR_NULL || declarationNode == ZR_NULL ||
         memberName == ZR_NULL || outRange == ZR_NULL) {
@@ -166,15 +169,16 @@ static TZrBool metadata_provider_try_member_name_range(SZrLspMetadataProvider *p
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(provider->context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(provider->state, fileVersion, &snapshot)) {
         return ZR_FALSE;
     }
+    hasSnapshot = ZR_TRUE;
 
-    content = fileVersion->content;
-    contentLength = fileVersion->contentLength;
+    content = snapshot.content;
+    contentLength = snapshot.contentLength;
     memberText = metadata_provider_string_text(memberName);
     if (memberText == ZR_NULL || memberText[0] == '\0') {
-        return ZR_FALSE;
+        goto cleanup;
     }
 
     memberLength = strlen(memberText);
@@ -207,10 +211,15 @@ static TZrBool metadata_provider_try_member_name_range(SZrLspMetadataProvider *p
                                                                                          contentLength,
                                                                                          index + memberLength),
                                               uri);
-        return ZR_TRUE;
+        found = ZR_TRUE;
+        break;
     }
 
-    return ZR_FALSE;
+cleanup:
+    if (hasSnapshot) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(provider->state, &snapshot);
+    }
+    return found;
 }
 
 static SZrFileRange metadata_provider_type_member_declaration_range(SZrLspMetadataProvider *provider,
@@ -460,24 +469,24 @@ static SZrString *metadata_provider_append_markdown_section(SZrState *state, SZr
     return ZrCore_String_Create(state, buffer, used);
 }
 
-static TZrBool metadata_provider_create_hover(SZrState *state,
+static TZrBool metadata_provider_create_hover(SZrLspMetadataProvider *provider,
                                               SZrString *content,
                                               SZrFileRange range,
                                               SZrLspHover **result) {
     SZrLspHover *hover;
 
-    if (state == ZR_NULL || content == ZR_NULL || result == ZR_NULL) {
+    if (provider == ZR_NULL || provider->state == ZR_NULL || content == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    hover = (SZrLspHover *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspHover));
+    hover = (SZrLspHover *)ZrCore_Memory_RawMalloc(provider->state->global, sizeof(SZrLspHover));
     if (hover == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    ZrCore_Array_Init(state, &hover->contents, sizeof(SZrString *), 1);
-    ZrCore_Array_Push(state, &hover->contents, &content);
-    hover->range = ZrLanguageServer_LspRange_FromFileRange(range);
+    ZrCore_Array_Init(provider->state, &hover->contents, sizeof(SZrString *), 1);
+    ZrCore_Array_Push(provider->state, &hover->contents, &content);
+    hover->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(provider->context, range.source, range);
     *result = hover;
     return ZR_TRUE;
 }
@@ -584,9 +593,12 @@ static TZrBool metadata_provider_try_get_analyzer_for_uri(SZrState *state,
                                                           SZrSemanticAnalyzer **outAnalyzer) {
     SZrSemanticAnalyzer *analyzer;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     TZrNativeString sourceBuffer = ZR_NULL;
     TZrSize sourceLength = 0;
+    TZrSize sourceVersion = 0;
     TZrBool loadedFromDisk = ZR_FALSE;
+    TZrBool hasSnapshot = ZR_FALSE;
     TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
 
     if (outAnalyzer != ZR_NULL) {
@@ -603,12 +615,15 @@ static TZrBool metadata_provider_try_get_analyzer_for_uri(SZrState *state,
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
-        sourceBuffer = fileVersion->content;
-        sourceLength = fileVersion->contentLength;
+    if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        sourceBuffer = snapshot.content;
+        sourceLength = snapshot.contentLength;
+        sourceVersion = snapshot.version;
+        hasSnapshot = ZR_TRUE;
     } else if (state->global != ZR_NULL && metadata_provider_uri_to_native_path(uri, nativePath, sizeof(nativePath))) {
         sourceBuffer = ZrLibrary_File_ReadAll(state->global, nativePath);
         sourceLength = sourceBuffer != ZR_NULL ? strlen(sourceBuffer) : 0;
+        sourceVersion = fileVersion != ZR_NULL ? fileVersion->version : 0;
         loadedFromDisk = sourceBuffer != ZR_NULL;
     }
 
@@ -621,8 +636,11 @@ static TZrBool metadata_provider_try_get_analyzer_for_uri(SZrState *state,
                                                  uri,
                                                  sourceBuffer,
                                                  sourceLength,
-                                                 fileVersion != ZR_NULL ? fileVersion->version : 0,
+                                                 sourceVersion,
                                                  ZR_FALSE)) {
+        if (hasSnapshot) {
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        }
         if (loadedFromDisk) {
             ZrCore_Memory_RawFreeWithType(state->global,
                                           sourceBuffer,
@@ -632,6 +650,9 @@ static TZrBool metadata_provider_try_get_analyzer_for_uri(SZrState *state,
         return ZR_FALSE;
     }
 
+    if (hasSnapshot) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+    }
     if (loadedFromDisk) {
         ZrCore_Memory_RawFreeWithType(state->global,
                                       sourceBuffer,
@@ -1761,7 +1782,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedModuleHover(SZrLspMet
              "module <%s>\n\nSource: %s",
              moduleText != ZR_NULL ? moduleText : "",
              sourceKind != ZR_NULL ? sourceKind : "unresolved");
-    return metadata_provider_create_hover(provider->state,
+    return metadata_provider_create_hover(provider,
                                           metadata_provider_create_markdown_text(provider->state, buffer),
                                           range,
                                           result);
@@ -1780,9 +1801,11 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
     SZrString *sourceSection;
     SZrString *hoverUri = ZR_NULL;
     SZrFileVersion *fileVersion = ZR_NULL;
+    SZrFileVersionContentSnapshot snapshot = {0};
     TZrChar sourceBuffer[ZR_LSP_TEXT_BUFFER_LENGTH];
     SZrHoverInfo *hoverInfo = ZR_NULL;
     TZrBool contentHasSource = ZR_FALSE;
+    TZrBool hasSnapshot = ZR_FALSE;
     SZrSemanticAnalyzer *targetAnalyzer = analyzer;
 
     if (provider == ZR_NULL || resolvedMember == ZR_NULL || result == ZR_NULL) {
@@ -1807,12 +1830,16 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
         hoverUri != ZR_NULL &&
         provider->context != ZR_NULL) {
         fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(provider->context, hoverUri);
-        if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+        if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(provider->state, fileVersion, &snapshot)) {
             metadata_provider_try_get_analyzer_for_uri(provider->state, provider->context, hoverUri, &targetAnalyzer);
             fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(provider->context, hoverUri);
+            hasSnapshot =
+                ZrLanguageServer_FileVersionContentSnapshot_Acquire(provider->state, fileVersion, &snapshot);
+        } else {
+            hasSnapshot = ZR_TRUE;
         }
 
-        if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
+        if (hasSnapshot) {
             if (targetAnalyzer != ZR_NULL &&
                 ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(
                     provider->state,
@@ -1828,8 +1855,8 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
             if (content == ZR_NULL) {
                 content = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(provider->state,
                                                                                 resolvedMember->declarationSymbol,
-                                                                                fileVersion->content,
-                                                                                fileVersion->contentLength);
+                                                                                snapshot.content,
+                                                                                snapshot.contentLength);
             }
 
             content = ZrLanguageServer_Lsp_AppendSymbolFfiMetadataMarkdown(provider->state,
@@ -1849,12 +1876,15 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                                                                 ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(
                                                                     provider->state,
                                                                     resolvedMember->declarationSymbol,
-                                                                    fileVersion->content,
-                                                                    fileVersion->contentLength));
+                                                                    snapshot.content,
+                                                                    snapshot.contentLength));
         }
     }
     if (hoverInfo != ZR_NULL) {
         ZrLanguageServer_HoverInfo_Free(provider->state, hoverInfo);
+    }
+    if (hasSnapshot) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(provider->state, &snapshot);
     }
 
     if (content == ZR_NULL) {
@@ -2016,7 +2046,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
         content = metadata_provider_create_markdown_text(provider->state, buffer);
     }
 
-    return metadata_provider_create_hover(provider->state,
+    return metadata_provider_create_hover(provider,
                                           content,
                                           resolvedMember->hasDeclaration ? resolvedMember->declarationRange : range,
                                           result);

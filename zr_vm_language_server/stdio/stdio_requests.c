@@ -42,6 +42,7 @@ void handle_request_message(SZrStdioServer *server,
         snprintf(message, sizeof(message), "Invalid params for %s", method);
         send_error_response(id, ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, message);
     } else {
+        apply_position_encoding_to_response(server, method, params, result);
         send_result_response(id, result);
     }
 }

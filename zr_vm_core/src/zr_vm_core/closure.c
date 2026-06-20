@@ -228,6 +228,32 @@ SZrClosureValue *ZrCore_Closure_FindOrCreateValue(struct SZrState *state, TZrSta
     return closure_value_new(state, stackPointer, closureValues);
 }
 
+TZrBool ZrCore_Closure_HasOpenStackValueInRange(const struct SZrState *state,
+                                                TZrStackValuePointer stackStart,
+                                                TZrStackValuePointer stackEnd) {
+    SZrClosureValue *closureValue;
+
+    if (state == ZR_NULL || stackStart == ZR_NULL || stackEnd == ZR_NULL || stackStart >= stackEnd) {
+        return ZR_FALSE;
+    }
+
+    closureValue = state->stackClosureValueList;
+    while (closureValue != ZR_NULL) {
+        TZrStackValuePointer valuePointer = closureValue->value.valuePointer;
+
+        ZR_ASSERT(!ZrCore_ClosureValue_IsClosed(closureValue));
+        if (valuePointer < stackStart) {
+            break;
+        }
+        if (valuePointer < stackEnd) {
+            return ZR_TRUE;
+        }
+        closureValue = closureValue->link.next;
+    }
+
+    return ZR_FALSE;
+}
+
 void ZrCore_ClosureValue_SetCaptureMetadata(SZrClosureValue *closureValue,
                                             TZrUInt32 scopeDepth,
                                             TZrUInt32 escapeFlags) {
@@ -405,22 +431,26 @@ void ZrCore_Closure_UnlinkValue(SZrClosureValue *closureValue) {
 }
 
 void ZrCore_Closure_CloseStackValue(struct SZrState *state, TZrStackValuePointer stackPointer) {
-    SZrClosureValue *closureValue = ZR_NULL;
-    while (ZR_TRUE) {
-        closureValue = state->stackClosureValueList;
-        if (closureValue == ZR_NULL) {
-            break;
-        }
+    SZrClosureValue **cursor = &state->stackClosureValueList;
+
+    while (*cursor != ZR_NULL) {
+        SZrClosureValue *closureValue = *cursor;
+        TZrStackValuePointer valuePointer = closureValue->value.valuePointer;
+
         ZR_ASSERT(!ZrCore_ClosureValue_IsClosed(closureValue));
         // Open upvalues are kept in descending stack-slot order. Once we move
         // below the closing threshold, the remaining entries belong to older frames.
-        if (closureValue->value.valuePointer < stackPointer) {
+        if (valuePointer < stackPointer) {
             break;
         }
+        if (valuePointer >= state->stackTop.valuePointer) {
+            cursor = &closureValue->link.next;
+            continue;
+        }
         SZrTypeValue *slot = &closureValue->link.closedValue;
-        TZrStackValuePointer sourcePointer = closureValue->value.valuePointer;
+        TZrStackValuePointer sourcePointer = valuePointer;
         SZrTypeValue *sourceValue = ZR_CAST_FROM_STACK_VALUE(sourcePointer);
-        ZR_ASSERT(closureValue->value.valuePointer < state->stackTop.valuePointer);
+        ZR_ASSERT(valuePointer < state->stackTop.valuePointer);
         ZrCore_Closure_UnlinkValue(closureValue);
         ZrCore_Value_ResetAsNull(slot);
         ZrCore_Value_Copy(state, slot, sourceValue);
@@ -429,7 +459,9 @@ void ZrCore_Closure_CloseStackValue(struct SZrState *state, TZrStackValuePointer
         SZrRawObject *rawObject = ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue);
         if (ZrCore_RawObject_IsWaitToScan(rawObject) || ZrCore_RawObject_IsReferenced(rawObject)) {
             ZrCore_RawObject_MarkAsReferenced(rawObject);
-            ZrCore_RawObject_Barrier(state, rawObject, slot->value.object);
+            if (slot->isGarbageCollectable && !ZR_VALUE_IS_TYPE_NULL(slot->type) && slot->value.object != ZR_NULL) {
+                ZrCore_RawObject_Barrier(state, rawObject, slot->value.object);
+            }
         }
     }
 }

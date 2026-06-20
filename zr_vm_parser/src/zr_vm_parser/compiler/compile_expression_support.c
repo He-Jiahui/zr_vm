@@ -478,14 +478,7 @@ TZrBool construct_expression_is_ownership_builtin(const SZrConstructExpression *
            resolve_construct_expression_builtin_kind(constructExpr) != ZR_OWNERSHIP_BUILTIN_KIND_NONE;
 }
 
-static EZrInstructionCode resolve_ownership_builtin_opcode(const SZrConstructExpression *constructExpr) {
-    EZrOwnershipBuiltinKind builtinKind;
-
-    if (constructExpr == ZR_NULL) {
-        return ZR_INSTRUCTION_ENUM(ENUM_MAX);
-    }
-
-    builtinKind = resolve_construct_expression_builtin_kind(constructExpr);
+EZrInstructionCode compiler_ownership_builtin_opcode_from_kind(EZrOwnershipBuiltinKind builtinKind) {
     switch (builtinKind) {
         case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
             return ZR_INSTRUCTION_ENUM(OWN_UNIQUE);
@@ -507,6 +500,14 @@ static EZrInstructionCode resolve_ownership_builtin_opcode(const SZrConstructExp
         default:
             return ZR_INSTRUCTION_ENUM(ENUM_MAX);
     }
+}
+
+static EZrInstructionCode resolve_ownership_builtin_opcode(const SZrConstructExpression *constructExpr) {
+    if (constructExpr == ZR_NULL) {
+        return ZR_INSTRUCTION_ENUM(ENUM_MAX);
+    }
+
+    return compiler_ownership_builtin_opcode_from_kind(resolve_construct_expression_builtin_kind(constructExpr));
 }
 
 static const TZrChar *compile_ownership_builtin_operand_error_message(EZrOwnershipBuiltinKind builtinKind) {
@@ -1621,6 +1622,34 @@ static TZrBool compile_expression_type_has_inline_union_layout(SZrCompilerState 
     }
 
     prototypeInfo = find_compiler_type_prototype(cs, type->typeName);
+    if (prototypeInfo == ZR_NULL) {
+        const TZrChar *typeText = ZrCore_String_GetNativeString(type->typeName);
+        const TZrChar *genericStart = typeText != ZR_NULL ? strchr(typeText, '<') : ZR_NULL;
+        TZrSize baseLength = genericStart != ZR_NULL ? (TZrSize)(genericStart - typeText) : 0u;
+
+        while (baseLength > 0u &&
+               (typeText[baseLength - 1u] == ' ' ||
+                typeText[baseLength - 1u] == '\t' ||
+                typeText[baseLength - 1u] == '\r' ||
+                typeText[baseLength - 1u] == '\n')) {
+            baseLength--;
+        }
+
+        for (TZrSize index = 0; index < cs->typePrototypes.length && baseLength > 0u; index++) {
+            SZrTypePrototypeInfo *candidate =
+                    (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, index);
+            const TZrChar *candidateText = candidate != ZR_NULL && candidate->name != ZR_NULL
+                                                   ? ZrCore_String_GetNativeString(candidate->name)
+                                                   : ZR_NULL;
+
+            if (candidateText != ZR_NULL &&
+                strlen(candidateText) == baseLength &&
+                strncmp(candidateText, typeText, baseLength) == 0) {
+                prototypeInfo = candidate;
+                break;
+            }
+        }
+    }
     return (TZrBool)(prototypeInfo != ZR_NULL &&
                      prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION &&
                      prototypeInfo->layoutByteSize > 0u &&
@@ -1738,13 +1767,7 @@ TZrBool emit_property_getter_call(SZrCompilerState *cs, TZrUInt32 currentSlot, S
         return ZR_FALSE;
     }
 
-    SZrString *accessorName = create_hidden_property_accessor_name(cs, propertyName, ZR_FALSE);
-    if (accessorName == ZR_NULL) {
-        ZrParser_Compiler_Error(cs, "Failed to create property getter accessor name", location);
-        return ZR_FALSE;
-    }
-
-    memberId = compiler_get_or_add_member_entry_with_flags(cs, accessorName, memberFlags);
+    memberId = compiler_get_or_add_member_entry_with_flags(cs, propertyName, memberFlags);
     if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
         ZrParser_Compiler_Error(cs, "Failed to register property getter member symbol", location);
         return ZR_FALSE;
@@ -1768,13 +1791,7 @@ TZrUInt32 emit_property_setter_call(SZrCompilerState *cs, TZrUInt32 objectSlot, 
         return ZR_PARSER_SLOT_NONE;
     }
 
-    SZrString *accessorName = create_hidden_property_accessor_name(cs, propertyName, ZR_TRUE);
-    if (accessorName == ZR_NULL) {
-        ZrParser_Compiler_Error(cs, "Failed to create property setter accessor name", location);
-        return ZR_PARSER_SLOT_NONE;
-    }
-
-    memberId = compiler_get_or_add_member_entry_with_flags(cs, accessorName, memberFlags);
+    memberId = compiler_get_or_add_member_entry_with_flags(cs, propertyName, memberFlags);
     if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
         ZrParser_Compiler_Error(cs, "Failed to register property setter member symbol", location);
         return ZR_PARSER_SLOT_NONE;

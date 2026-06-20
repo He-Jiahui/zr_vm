@@ -992,6 +992,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_GetDependencyImportVersionRange(
         const SZrLibrary_Project *project,
         const TZrChar *currentModuleKey,
         const TZrChar *resolvedModuleKey,
+        SZrString **outAssemblyName,
         SZrString **outRequestedVersion,
         SZrString **outMinVersionInclusive,
         SZrString **outMaxVersionExclusive) {
@@ -1002,6 +1003,9 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_GetDependencyImportVersionRange(
     const SZrLibrary_ProjectDependencyReference *dependencyRef;
     TZrSize targetPackageIndex = 0;
 
+    if (outAssemblyName != ZR_NULL) {
+        *outAssemblyName = ZR_NULL;
+    }
     if (outRequestedVersion != ZR_NULL) {
         *outRequestedVersion = ZR_NULL;
     }
@@ -1012,7 +1016,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_GetDependencyImportVersionRange(
         *outMaxVersionExclusive = ZR_NULL;
     }
     if (project == ZR_NULL || resolvedModuleKey == ZR_NULL ||
-        outRequestedVersion == ZR_NULL || outMinVersionInclusive == ZR_NULL ||
+        outAssemblyName == ZR_NULL || outRequestedVersion == ZR_NULL || outMinVersionInclusive == ZR_NULL ||
         outMaxVersionExclusive == ZR_NULL ||
         !project_resolver_parse_dependency_module_key(resolvedModuleKey,
                                                       targetName,
@@ -1039,6 +1043,9 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_GetDependencyImportVersionRange(
         return ZR_FALSE;
     }
 
+    if (dependencyRef->useAliasForModuleKey && targetPackage->assemblyName != ZR_NULL) {
+        *outAssemblyName = targetPackage->assemblyName;
+    }
     *outRequestedVersion = targetPackage->version;
     *outMinVersionInclusive = dependencyRef->minVersionInclusive;
     *outMaxVersionExclusive = dependencyRef->maxVersionExclusive;
@@ -1123,6 +1130,31 @@ static TZrBool project_resolver_build_package_root_path(const SZrLibrary_Project
     return ZrLibrary_File_NormalizePath(joinedPath, buffer, bufferSize);
 }
 
+static TZrBool project_resolver_resolve_project_relative_path(const SZrLibrary_Project *project,
+                                                              const TZrChar *relativePath,
+                                                              TZrChar *buffer,
+                                                              TZrSize bufferSize) {
+    TZrChar joinedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *projectDirectory;
+
+    if (project == ZR_NULL || relativePath == ZR_NULL || relativePath[0] == '\0' ||
+        buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    if (ZrLibrary_File_IsAbsolutePath((TZrNativeString)relativePath)) {
+        return ZrLibrary_File_NormalizePath((TZrNativeString)relativePath, buffer, bufferSize);
+    }
+
+    projectDirectory = project_resolver_string_text(project->directory);
+    if (projectDirectory == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrLibrary_File_PathJoin(projectDirectory, relativePath, joinedPath);
+    return joinedPath[0] != '\0' && ZrLibrary_File_NormalizePath(joinedPath, buffer, bufferSize);
+}
+
 static TZrBool project_resolver_resolve_module_path(const SZrLibrary_Project *project,
                                                     const TZrChar *moduleName,
                                                     const TZrChar *extension,
@@ -1150,7 +1182,8 @@ static TZrBool project_resolver_resolve_module_path(const SZrLibrary_Project *pr
             return ZR_FALSE;
         }
         package = project_resolver_find_dependency_package(project, dependencyName, dependencyVersion, ZR_NULL);
-        if (package == ZR_NULL || dependencyModulePath == ZR_NULL || dependencyModulePath[0] == '\0' ||
+        if (package == ZR_NULL || package->artifactKind == ZR_LIBRARY_PROJECT_DEPENDENCY_PACKAGE_ZRM ||
+            dependencyModulePath == ZR_NULL || dependencyModulePath[0] == '\0' ||
             !project_resolver_build_package_root_path(package,
                                                       useBinaryRoot ? package->binary : package->source,
                                                       rootPath,
@@ -1213,4 +1246,87 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveIntermediatePath(const SZrLibrar
                                                 ZR_TRUE,
                                                 buffer,
                                                 bufferSize);
+}
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveAssemblyOutputPath(const SZrLibrary_Project *project,
+                                                                   TZrChar *buffer,
+                                                                   TZrSize bufferSize) {
+    TZrChar binaryRoot[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar fileName[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar outputPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *assemblyOutput;
+    const TZrChar *assemblyName;
+    int written;
+
+    if (project == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+    buffer[0] = '\0';
+
+    assemblyOutput = project_resolver_string_text(project->assemblyOutput);
+    if (assemblyOutput != ZR_NULL && assemblyOutput[0] != '\0') {
+        return project_resolver_resolve_project_relative_path(project, assemblyOutput, buffer, bufferSize);
+    }
+
+    assemblyName = project_resolver_string_text(project->assemblyName);
+    if (assemblyName == ZR_NULL || assemblyName[0] == '\0') {
+        assemblyName = project_resolver_string_text(project->name);
+    }
+    if (assemblyName == ZR_NULL || assemblyName[0] == '\0' ||
+        !project_resolver_build_project_root_path(project, project->binary, binaryRoot, sizeof(binaryRoot))) {
+        return ZR_FALSE;
+    }
+
+    written = snprintf(fileName, sizeof(fileName), "%s%s", assemblyName, ZR_LIBRARY_ZRM_FILE_EXTENSION);
+    if (written < 0 || (TZrSize)written + 1 > sizeof(fileName)) {
+        return ZR_FALSE;
+    }
+    ZrLibrary_File_PathJoin(binaryRoot, fileName, outputPath);
+    return outputPath[0] != '\0' && ZrLibrary_File_NormalizePath(outputPath, buffer, bufferSize);
+}
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveZrmModuleEntry(
+        const SZrLibrary_Project *project,
+        const TZrChar *moduleName,
+        const SZrLibrary_ZrmArchive **outArchive,
+        const SZrLibrary_ZrmEntryInfo **outEntry) {
+    TZrChar dependencyName[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar dependencyVersion[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *dependencyModulePath;
+    const SZrLibrary_ProjectDependencyPackage *package;
+    const SZrLibrary_ZrmEntryInfo *entry;
+
+    if (outArchive != ZR_NULL) {
+        *outArchive = ZR_NULL;
+    }
+    if (outEntry != ZR_NULL) {
+        *outEntry = ZR_NULL;
+    }
+    if (project == ZR_NULL || moduleName == ZR_NULL || outArchive == ZR_NULL || outEntry == ZR_NULL ||
+        !project_resolver_parse_dependency_module_key(moduleName,
+                                                      dependencyName,
+                                                      sizeof(dependencyName),
+                                                      dependencyVersion,
+                                                      sizeof(dependencyVersion),
+                                                      &dependencyModulePath)) {
+        return ZR_FALSE;
+    }
+
+    package = project_resolver_find_dependency_package(project, dependencyName, dependencyVersion, ZR_NULL);
+    if (package == ZR_NULL ||
+        package->artifactKind != ZR_LIBRARY_PROJECT_DEPENDENCY_PACKAGE_ZRM ||
+        !package->zrmArchiveOpen ||
+        dependencyModulePath == ZR_NULL ||
+        dependencyModulePath[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    entry = ZrLibrary_Zrm_FindModule(&package->zrmArchive, dependencyModulePath);
+    if (entry == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outArchive = &package->zrmArchive;
+    *outEntry = entry;
+    return ZR_TRUE;
 }

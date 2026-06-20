@@ -18,6 +18,7 @@
 #include "zr_vm_parser/writer.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_library/file.h"
+#include "zr_vm_library/native_registry.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
@@ -115,6 +116,11 @@ static TZrBool lsp_find_position_for_substring(const TZrChar *content,
                                                TZrSize occurrence,
                                                TZrInt32 extraCharacterOffset,
                                                SZrLspPosition *outPosition);
+static TZrBool lsp_find_utf16_position_for_substring(const TZrChar *content,
+                                                     const TZrChar *needle,
+                                                     TZrSize occurrence,
+                                                     TZrSize extraByteOffset,
+                                                     SZrLspPosition *outPosition);
 static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle);
 static const TZrChar *hover_first_text(SZrLspHover *hover);
 static TZrBool rich_hover_section_contains_text(SZrLspRichHover *hover,
@@ -1058,6 +1064,46 @@ static TZrBool lsp_find_position_for_substring(const TZrChar *content,
 
     outPosition->line = line;
     outPosition->character = character + extraCharacterOffset;
+    return ZR_TRUE;
+}
+
+static TZrBool lsp_find_utf16_position_for_substring(const TZrChar *content,
+                                                     const TZrChar *needle,
+                                                     TZrSize occurrence,
+                                                     TZrSize extraByteOffset,
+                                                     SZrLspPosition *outPosition) {
+    const TZrChar *match;
+    TZrSize currentOccurrence = 0;
+    TZrSize contentLength;
+    TZrSize offset;
+    SZrFilePosition filePosition;
+
+    if (content == ZR_NULL || needle == ZR_NULL || outPosition == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    match = strstr(content, needle);
+    while (match != ZR_NULL && currentOccurrence < occurrence) {
+        match = strstr(match + 1, needle);
+        currentOccurrence++;
+    }
+
+    if (match == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    contentLength = strlen(content);
+    offset = (TZrSize)(match - content) + extraByteOffset;
+    if (offset > contentLength) {
+        return ZR_FALSE;
+    }
+
+    filePosition.offset = offset;
+    filePosition.line = 1;
+    filePosition.column = 1;
+    *outPosition = ZrLanguageServer_LspPosition_FromFilePositionWithContent(filePosition,
+                                                                            content,
+                                                                            contentLength);
     return ZR_TRUE;
 }
 
@@ -5435,8 +5481,8 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
     const TZrChar *content =
         "var system = %import(\"zr.system\");\n"
         "run() {\n"
-        "    system.console.printLine(\"one\");\n"
-        "    return system.console.printLine(\"two\");\n"
+        "    /* \xCE\xBB */ system.console.printLine(\"one\");\n"
+        "    return /* \xCE\xBB */ system.console.printLine(\"two\");\n"
         "}\n";
     SZrLspPosition firstPrintLinePosition;
     SZrLspPosition secondPrintLinePosition;
@@ -5460,8 +5506,8 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
     uri = ZrCore_String_Create(state, "file:///semantic_query_module_link_chain.zr", 43);
     if (uri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
-        !lsp_find_position_for_substring(content, "console.printLine", 0, 8, &firstPrintLinePosition) ||
-        !lsp_find_position_for_substring(content, "console.printLine", 1, 8, &secondPrintLinePosition)) {
+        !lsp_find_utf16_position_for_substring(content, "console.printLine", 0, 8, &firstPrintLinePosition) ||
+        !lsp_find_utf16_position_for_substring(content, "console.printLine", 1, 8, &secondPrintLinePosition)) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Query Resolves Module-Link Chain Member Navigation",
@@ -5555,7 +5601,7 @@ static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *s
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "var system = %import(\"zr.system\");\n"
+        "/* \xCE\xBB */ var system = %import(\"zr.system\");\n"
         "run() {\n"
         "    return system.clockTicks();\n"
         "}\n";
@@ -5583,9 +5629,9 @@ static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *s
     uri = ZrCore_String_Create(state, "file:///semantic_query_import_target.zr", 39);
     if (uri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
-        !lsp_find_position_for_substring(content, "\"zr.system\"", 0, 1, &importLiteralPosition) ||
-        !lsp_find_position_for_substring(content, "var system = ", 0, 4, &importBindingPosition) ||
-        !lsp_find_position_for_substring(content, "system.clockTicks", 0, 0, &importUsePosition)) {
+        !lsp_find_utf16_position_for_substring(content, "\"zr.system\"", 0, 1, &importLiteralPosition) ||
+        !lsp_find_utf16_position_for_substring(content, "var system = ", 0, 4, &importBindingPosition) ||
+        !lsp_find_utf16_position_for_substring(content, "system.clockTicks", 0, 0, &importUsePosition)) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Query Unifies Import Target Navigation",
@@ -5612,11 +5658,12 @@ static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *s
     if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, importLiteralPosition, &hover) ||
         hover == ZR_NULL ||
         !hover_contains_text(hover, "module <zr.system>") ||
-        !hover_contains_text(hover, "Source: native builtin")) {
+        !hover_contains_text(hover, "Source: native builtin") ||
+        !lsp_range_equals(hover->range, 0, 29, 0, 40)) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Query Unifies Import Target Navigation",
-                  "Hover on an import literal should be produced through the shared imported-module metadata path");
+                  "Hover on an import literal should be produced through the shared imported-module metadata path with a UTF-16 range");
         return;
     }
 
@@ -5761,6 +5808,86 @@ static void test_lsp_native_console_virtual_document_prefers_descriptor_signatur
 
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Native Console Virtual Document Prefers Descriptor Signatures");
+}
+
+static void test_lsp_virtual_declaration_position_uses_utf16_columns(SZrState *state) {
+    static const ZrLibModuleLinkDescriptor links[] = {
+            {"\xCE\xBBlink", "zr.system", "UTF-8-prefixed link"}
+    };
+    static const ZrLibModuleDescriptor descriptor = {
+            ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
+            "zr.test.virtual",
+            ZR_NULL,
+            0,
+            ZR_NULL,
+            0,
+            ZR_NULL,
+            0,
+            ZR_NULL,
+            0,
+            ZR_NULL,
+            "test descriptor",
+            links,
+            1,
+            ZR_NULL,
+            0,
+            0,
+            ZR_NULL
+    };
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition insideName;
+    SZrLspPosition afterName;
+    SZrArray definitions;
+
+    TEST_START("LSP Virtual Declaration Position Uses UTF-16 Columns");
+    TEST_INFO("Virtual declaration UTF-16 lookup",
+              "Declaration lookup inside zr-decompiled virtual text should compare UTF-16 client columns against byte-column record ranges without extending matches past BMP UTF-8 names.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, "zr-decompiled:/zr.test.virtual.zr", strlen("zr-decompiled:/zr.test.virtual.zr"));
+    insideName.line = 1;
+    insideName.character = 16;
+    afterName.line = 1;
+    afterName.character = 21;
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLibrary_NativeRegistry_RegisterModule(state->global, &descriptor)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer,
+                  "LSP Virtual Declaration Position Uses UTF-16 Columns",
+                  "Failed to prepare virtual declaration descriptor fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, insideName, &definitions) ||
+        !location_array_contains_uri_text(&definitions, "zr-decompiled:/zr.system.zr")) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Virtual Declaration Position Uses UTF-16 Columns",
+                  "Expected lookup inside the UTF-8-prefixed virtual module-link name to find the declaration");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (ZrLanguageServer_Lsp_GetDefinition(state, context, uri, afterName, &definitions) &&
+        definitions.length > 0) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Virtual Declaration Position Uses UTF-16 Columns",
+                  "Position after the UTF-8-prefixed virtual module-link name should not still match the declaration");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Virtual Declaration Position Uses UTF-16 Columns");
 }
 
 static void test_lsp_native_import_definition_uses_virtual_declaration_uri(SZrState *state) {
@@ -7311,6 +7438,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_native_console_virtual_document_prefers_descriptor_signatures(state);
+    TEST_DIVIDER();
+
+    test_lsp_virtual_declaration_position_uses_utf16_columns(state);
     TEST_DIVIDER();
 
     test_lsp_native_import_definition_uses_virtual_declaration_uri(state);

@@ -1081,6 +1081,9 @@ map<TIn, TOut>(source: Array<TIn>, f: %func(TIn)->TOut): Array<TOut> {
 - `struct`
 - `new()`
 - `owner`
+- `unique`
+- `shared`
+- `weak`
 
 ```zr
 class Base<T> {
@@ -1097,9 +1100,15 @@ where T: owner
 {
     return 1;
 }
+
+func requireShared<T>(): int
+where T: shared
+{
+    return 1;
+}
 ```
 
-继承与实现列表中的泛型实参同样支持转发、固定和 const 表达式，闭型实例化时会进行替换与约束校验。`owner` 约束要求实参是所有权世界类型，例如 `Unique<T>` / `Shared<T>` / `Weak<T>` / `Borrow<T>` / `Loan<T>`；plain `T` 不满足该约束。
+继承与实现列表中的泛型实参同样支持转发、固定和 const 表达式，闭型实例化时会进行替换与约束校验。`owner` 约束要求实参是所有权世界类型，例如 `Unique<T>` / `Shared<T>` / `Weak<T>` / `Borrow<T>` / `Loan<T>`；plain `T` 不满足该约束。`unique` / `shared` / `weak` 是精确所有权约束，分别要求实参为 `Unique<T>` / `Shared<T>` / `Weak<T>`。
 
 #### 所有权泛型与 using 作用域
 

@@ -1,5 +1,25 @@
 #include "debug_internal.h"
 
+static const SZrTypeValue *zr_debug_child_object_get_field(SZrState *state,
+                                                           SZrObject *object,
+                                                           const TZrChar *fieldName) {
+    SZrTypeValue key;
+    SZrString *fieldString;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    fieldString = ZrCore_String_CreateFromNative(state, (TZrNativeString)fieldName);
+    if (fieldString == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    return ZrCore_Object_GetValue(state, object, &key);
+}
+
 TZrSize zr_debug_count_visible_object_entries(const SZrHashSet *set) {
     TZrSize bucketIndex;
     TZrSize count = 0;
@@ -51,6 +71,17 @@ void zr_debug_value_child_shape(SZrState *state,
 
     object = ZR_CAST_OBJECT(state, value->value.object);
     if (object == ZR_NULL) {
+        return;
+    }
+
+    if (zr_debug_value_is_union_carrier(state, value)) {
+        namedVariables = 1u + zr_debug_count_union_carrier_payload_fields(state, value);
+        if (outNamedVariables != ZR_NULL) {
+            *outNamedVariables = namedVariables;
+        }
+        if (outIndexedVariables != ZR_NULL) {
+            *outIndexedVariables = 0;
+        }
         return;
     }
 
@@ -189,6 +220,36 @@ void zr_debug_value_semantic_summary(SZrState *state,
             break;
         case ZR_VALUE_TYPE_OBJECT:
         case ZR_VALUE_TYPE_ARRAY:
+            if (zr_debug_value_is_union_carrier(state, value)) {
+                SZrObject *unionObject = ZR_CAST_OBJECT(state, value->value.object);
+                SZrString *typeName = ZR_NULL;
+                SZrString *variantName = ZR_NULL;
+                const SZrTypeValue *typeValue;
+                const SZrTypeValue *variantValue;
+
+                typeValue = unionObject != ZR_NULL
+                                    ? zr_debug_child_object_get_field(state, unionObject, "__zr_unionType")
+                                    : ZR_NULL;
+                variantValue = unionObject != ZR_NULL
+                                       ? zr_debug_child_object_get_field(state, unionObject, "__zr_unionVariant")
+                                       : ZR_NULL;
+                typeName = typeValue != ZR_NULL && typeValue->type == ZR_VALUE_TYPE_STRING &&
+                                   typeValue->value.object != ZR_NULL
+                           ? ZR_CAST_STRING(state, typeValue->value.object)
+                           : ZR_NULL;
+                variantName = variantValue != ZR_NULL && variantValue->type == ZR_VALUE_TYPE_STRING &&
+                                      variantValue->value.object != ZR_NULL
+                              ? ZR_CAST_STRING(state, variantValue->value.object)
+                              : ZR_NULL;
+                snprintf(buffer,
+                         bufferSize,
+                         "union %s.%s, named %llu",
+                         typeName != ZR_NULL ? zr_debug_string_native(typeName) : "value",
+                         variantName != ZR_NULL ? zr_debug_string_native(variantName) : "variant",
+                         (unsigned long long)namedVariables);
+                buffer[bufferSize - 1u] = '\0';
+                break;
+            }
             typeName = zr_debug_semantic_type_name(state, value);
             if (namedVariables > 0 || indexedVariables > 0) {
                 snprintf(buffer,

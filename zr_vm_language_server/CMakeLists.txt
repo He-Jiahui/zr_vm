@@ -67,6 +67,7 @@ if(BUILD_LANGUAGE_SERVER_STDIO)
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_json.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_lsp_memory.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_lsp_parse.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_position_encoding.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_document_file.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_document_content.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_documents.c
@@ -291,6 +292,7 @@ if(BUILD_WASM)
         # 注意：由于依赖库尚未编译为 WASM，暂时只链接 cJSON
         # TODO: 需要确保 zr_vm_parser 和 zr_vm_core 也编译为 WASM 版本
         zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_c_json")
+        zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_miniz")
         zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_xx_hash")
         zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_utf8proc")
         zr_link_third_party_for_target(${zr_curr_module_name}_wasm "zr_tiny_dir")

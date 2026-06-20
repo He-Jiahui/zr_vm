@@ -133,6 +133,97 @@ static EZrOwnershipQualifier compiler_union_payload_ownership_qualifier(SZrType 
     return typeInfo->ownershipQualifier;
 }
 
+static TZrBool compiler_union_generic_parameter_name_matches(SZrGenericDeclaration *generic,
+                                                             SZrString *typeName) {
+    if (generic == ZR_NULL || generic->params == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < generic->params->count; index++) {
+        SZrAstNode *paramNode = generic->params->nodes[index];
+        if (paramNode != ZR_NULL &&
+            paramNode->type == ZR_AST_PARAMETER &&
+            paramNode->data.parameter.name != ZR_NULL &&
+            paramNode->data.parameter.name->name != ZR_NULL &&
+            ZrCore_String_Equal(paramNode->data.parameter.name->name, typeName)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool compiler_union_type_references_generic_parameter(SZrGenericDeclaration *generic,
+                                                                const SZrType *typeInfo) {
+    EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    const SZrType *ownershipInnerType = ZR_NULL;
+
+    if (generic == ZR_NULL || generic->params == ZR_NULL || typeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrParser_AstType_TryUnwrapOwnershipGeneric(typeInfo, &ownershipQualifier, &ownershipInnerType)) {
+        ZR_UNUSED_PARAMETER(ownershipQualifier);
+        return compiler_union_type_references_generic_parameter(generic, ownershipInnerType);
+    }
+
+    if (typeInfo->subType != ZR_NULL &&
+        compiler_union_type_references_generic_parameter(generic, typeInfo->subType)) {
+        return ZR_TRUE;
+    }
+
+    if (typeInfo->name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeInfo->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return compiler_union_generic_parameter_name_matches(generic,
+                                                            typeInfo->name->data.identifier.name);
+    }
+
+    if (typeInfo->name->type == ZR_AST_GENERIC_TYPE) {
+        SZrGenericType *genericType = &typeInfo->name->data.genericType;
+        if (genericType->name != ZR_NULL &&
+            compiler_union_generic_parameter_name_matches(generic, genericType->name->name)) {
+            return ZR_TRUE;
+        }
+        if (genericType->params != ZR_NULL) {
+            for (TZrSize index = 0; index < genericType->params->count; index++) {
+                SZrAstNode *argumentNode = genericType->params->nodes[index];
+                if (argumentNode != ZR_NULL &&
+                    argumentNode->type == ZR_AST_TYPE &&
+                    compiler_union_type_references_generic_parameter(generic, &argumentNode->data.type)) {
+                    return ZR_TRUE;
+                }
+            }
+        }
+    }
+
+    if (typeInfo->name->type == ZR_AST_TUPLE_TYPE &&
+        typeInfo->name->data.tupleType.elements != ZR_NULL) {
+        SZrAstNodeArray *elements = typeInfo->name->data.tupleType.elements;
+        for (TZrSize index = 0; index < elements->count; index++) {
+            SZrAstNode *elementNode = elements->nodes[index];
+            if (elementNode != ZR_NULL &&
+                elementNode->type == ZR_AST_TYPE &&
+                compiler_union_type_references_generic_parameter(generic, &elementNode->data.type)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool compiler_union_payload_uses_value_slot(SZrUnionDeclaration *unionDecl,
+                                                      SZrType *typeInfo,
+                                                      TZrUInt32 ownershipQualifier) {
+    return (TZrBool)(ownershipQualifier != (TZrUInt32)ZR_OWNERSHIP_QUALIFIER_NONE ||
+                     compiler_union_type_references_generic_parameter(
+                             unionDecl != ZR_NULL ? unionDecl->generic : ZR_NULL,
+                             typeInfo));
+}
+
 static void compiler_union_layout_info_init(SZrCompilerState *cs,
                                             SZrUnionDeclaration *unionDecl,
                                             SZrUnionLayoutInfo *layoutInfo) {
@@ -185,7 +276,9 @@ static void compiler_union_layout_info_init(SZrCompilerState *cs,
                         if (field->typeInfo != ZR_NULL) {
                             fieldLayout.ownershipQualifier =
                                     (TZrUInt32)compiler_union_payload_ownership_qualifier(field->typeInfo);
-                            if (fieldLayout.ownershipQualifier != (TZrUInt32)ZR_OWNERSHIP_QUALIFIER_NONE) {
+                            if (compiler_union_payload_uses_value_slot(unionDecl,
+                                                                       field->typeInfo,
+                                                                       fieldLayout.ownershipQualifier)) {
                                 fieldSize = (TZrUInt32)sizeof(SZrTypeValue);
                                 fieldAlign = (TZrUInt32)ZR_ALIGN_SIZE;
                             } else {

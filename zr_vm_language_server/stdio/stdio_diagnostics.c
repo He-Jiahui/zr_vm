@@ -27,6 +27,7 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     params = cJSON_CreateObject();
     uriText = zr_string_to_c_string(uri);
     diagnosticsJson = serialize_diagnostics_array_for_uri(&diagnostics, uriText);
+    apply_position_encoding_to_json_for_uri(server, uriText, diagnosticsJson);
     fileVersion = get_file_version_for_uri(server, uri);
 
     if (params != NULL) {
@@ -74,6 +75,7 @@ static void build_diagnostic_result_id(SZrStdioServer *server,
                                        char *buffer,
                                        size_t bufferSize) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     const TZrChar *content;
     unsigned long long hash = 1469598103934665603ULL;
     TZrSize version = 0;
@@ -85,16 +87,17 @@ static void build_diagnostic_result_id(SZrStdioServer *server,
 
     buffer[0] = '\0';
     fileVersion = get_file_version_for_uri(server, uri);
-    if (fileVersion != ZR_NULL) {
-        content = fileVersion->content;
-        version = fileVersion->version;
-        length = fileVersion->contentLength;
+    if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
+        content = snapshot.content;
+        version = snapshot.version;
+        length = snapshot.contentLength;
         if (content != ZR_NULL) {
             for (TZrSize index = 0; index < length; index++) {
                 hash ^= (unsigned char)content[index];
                 hash *= 1099511628211ULL;
             }
         }
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
     }
 
     snprintf(buffer,

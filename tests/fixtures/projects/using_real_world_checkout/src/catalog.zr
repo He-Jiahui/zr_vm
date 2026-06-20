@@ -1,0 +1,15 @@
+pub func discountAmount(): int {
+    return 15;
+}
+
+pub func loyaltyCode(): int {
+    return 7;
+}
+
+pub func baseSubtotal(): int {
+    return 120;
+}
+
+pub func taxAmount(): int {
+    return 20;
+}

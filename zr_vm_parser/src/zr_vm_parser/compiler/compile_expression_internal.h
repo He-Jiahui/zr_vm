@@ -46,6 +46,7 @@ void compile_if_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_switch_expression(SZrCompilerState *cs, SZrAstNode *node);
 
 TZrBool construct_expression_is_ownership_builtin(const SZrConstructExpression *constructExpr);
+EZrInstructionCode compiler_ownership_builtin_opcode_from_kind(EZrOwnershipBuiltinKind builtinKind);
 TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
                                              SZrConstructExpression *constructExpr,
                                              SZrFileRange location);
@@ -184,24 +185,24 @@ TZrBool try_compile_union_variant_constructor_expression(SZrCompilerState *cs,
 TZrBool try_resolve_union_variant_reference_expression(SZrCompilerState *cs,
                                                        SZrAstNode *node,
                                                        SZrString **outVariantName);
-TZrBool try_resolve_union_variant_pattern_expression(SZrCompilerState *cs,
-                                                     SZrAstNode *node,
-                                                     SZrString **outVariantName,
-                                                     SZrAstNodeArray **outBindings,
-                                                     SZrAstNode **outVariant);
-TZrBool try_resolve_union_variant_pattern_for_type(SZrCompilerState *cs,
-                                                   SZrAstNode *node,
-                                                   SZrString *typeName,
-                                                   SZrString **outVariantName,
-                                                   SZrAstNodeArray **outBindings,
-                                                   SZrAstNode **outVariant);
-TZrBool try_resolve_union_variant_pattern_with_type_annotation(SZrCompilerState *cs,
-                                                               SZrAstNode *pattern,
-                                                               SZrType *variantTypeInfo,
-                                                               SZrString *resourceTypeName,
-                                                               SZrString **outVariantName,
-                                                               SZrAstNodeArray **outBindings,
-                                                               SZrAstNode **outVariant);
+ZR_PARSER_API TZrBool try_resolve_union_variant_pattern_expression(SZrCompilerState *cs,
+                                                                   SZrAstNode *node,
+                                                                   SZrString **outVariantName,
+                                                                   SZrAstNodeArray **outBindings,
+                                                                   SZrAstNode **outVariant);
+ZR_PARSER_API TZrBool try_resolve_union_variant_pattern_for_type(SZrCompilerState *cs,
+                                                                 SZrAstNode *node,
+                                                                 SZrString *typeName,
+                                                                 SZrString **outVariantName,
+                                                                 SZrAstNodeArray **outBindings,
+                                                                 SZrAstNode **outVariant);
+ZR_PARSER_API TZrBool try_resolve_union_variant_pattern_with_type_annotation(SZrCompilerState *cs,
+                                                                             SZrAstNode *pattern,
+                                                                             SZrType *variantTypeInfo,
+                                                                             SZrString *resourceTypeName,
+                                                                             SZrString **outVariantName,
+                                                                             SZrAstNodeArray **outBindings,
+                                                                             SZrAstNode **outVariant);
 TZrBool try_resolve_union_variant_pattern_annotation(SZrCompilerState *cs,
                                                      SZrAstNode *pattern,
                                                      SZrType *variantTypeInfo,
@@ -211,6 +212,7 @@ TZrBool try_resolve_union_variant_pattern_annotation(SZrCompilerState *cs,
                                                      SZrAstNode **outVariant);
 void register_union_variant_payload_binding_type(SZrCompilerState *cs,
                                                  SZrAstNode *variant,
+                                                 SZrString *resourceTypeName,
                                                  TZrSize payloadIndex,
                                                  SZrString *bindingName,
                                                  TZrBool moveBinding);

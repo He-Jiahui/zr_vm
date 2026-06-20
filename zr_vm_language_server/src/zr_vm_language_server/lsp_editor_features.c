@@ -18,6 +18,20 @@ SZrFileVersion *lsp_editor_get_file_version(SZrLspContext *context, SZrString *u
     return ZrLanguageServer_IncrementalParser_GetFileVersion(context->parser, uri);
 }
 
+static TZrBool lsp_editor_acquire_content_snapshot(SZrState *state,
+                                                   SZrLspContext *context,
+                                                   SZrString *uri,
+                                                   SZrFileVersionContentSnapshot *outSnapshot) {
+    SZrFileVersion *fileVersion;
+
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || outSnapshot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fileVersion = lsp_editor_get_file_version(context, uri);
+    return ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, outSnapshot);
+}
+
 SZrLspPosition lsp_editor_position_from_offset(const TZrChar *content,
                                                TZrSize contentLength,
                                                TZrSize offset) {
@@ -136,10 +150,12 @@ static TZrBool lsp_code_lens_should_count_symbol(SZrSymbol *symbol, SZrString *u
            symbol->type == ZR_SYMBOL_INTERFACE;
 }
 
-static SZrLspPosition lsp_code_lens_symbol_position(SZrSymbol *symbol) {
-    SZrLspRange range = ZrLanguageServer_LspRange_FromFileRange(
+static SZrLspRange lsp_code_lens_symbol_range(SZrLspContext *context, SZrString *uri, SZrSymbol *symbol) {
+    SZrLspRange range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
+        context,
+        uri,
         ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol));
-    return range.start;
+    return range;
 }
 
 static TZrBool lsp_code_lens_append_reference_counts(SZrState *state,
@@ -167,15 +183,16 @@ static TZrBool lsp_code_lens_append_reference_counts(SZrState *state,
         for (TZrSize symbolIndex = 0; symbolIndex < (*scopePtr)->symbols.length; symbolIndex++) {
             SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&(*scopePtr)->symbols, symbolIndex);
             SZrArray references = {0};
-            SZrLspPosition position;
             SZrLspRange range;
+            SZrLspPosition position;
             TZrChar title[ZR_LSP_SHORT_TEXT_BUFFER_LENGTH];
 
             if (symbolPtr == ZR_NULL || !lsp_code_lens_should_count_symbol(*symbolPtr, uri)) {
                 continue;
             }
 
-            position = lsp_code_lens_symbol_position(*symbolPtr);
+            range = lsp_code_lens_symbol_range(context, uri, *symbolPtr);
+            position = range.start;
             ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
             if (!ZrLanguageServer_Lsp_FindReferences(state, context, uri, position, ZR_FALSE, &references) ||
                 references.length == 0) {
@@ -188,7 +205,6 @@ static TZrBool lsp_code_lens_append_reference_counts(SZrState *state,
                      "%zu reference%s",
                      (size_t)references.length,
                      references.length == 1 ? "" : "s");
-            range = ZrLanguageServer_LspRange_FromFileRange(ZrLanguageServer_Lsp_GetSymbolLookupRange(*symbolPtr));
             if (!lsp_code_lens_append(state, result, range, title, "zr.showReferences", uri, &position)) {
                 lsp_code_lens_free_locations(state, &references);
                 return ZR_FALSE;
@@ -574,7 +590,7 @@ TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
                                            SZrLspContext *context,
                                            SZrString *uri,
                                            SZrArray *result) {
-    SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot;
     TZrChar *formatted;
     TZrSize formattedLength;
     SZrLspRange range;
@@ -587,33 +603,36 @@ TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
         ZrCore_Array_Init(state, result, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     }
 
-    fileVersion = lsp_editor_get_file_version(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!lsp_editor_acquire_content_snapshot(state, context, uri, &snapshot)) {
         return ZR_FALSE;
     }
 
-    formatted = lsp_editor_format_segment(fileVersion->content,
-                                          fileVersion->contentLength,
+    formatted = lsp_editor_format_segment(snapshot.content,
+                                          snapshot.contentLength,
                                           0,
-                                          fileVersion->contentLength,
+                                          snapshot.contentLength,
                                           &formattedLength);
     if (formatted == ZR_NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
-    if (formattedLength == fileVersion->contentLength &&
-        memcmp(formatted, fileVersion->content, formattedLength) == 0) {
+    if (formattedLength == snapshot.contentLength &&
+        memcmp(formatted, snapshot.content, formattedLength) == 0) {
         free(formatted);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_TRUE;
     }
 
-    range = lsp_editor_full_document_range(fileVersion->content, fileVersion->contentLength);
+    range = lsp_editor_full_document_range(snapshot.content, snapshot.contentLength);
     if (!lsp_editor_append_text_edit(state, result, range, formatted, formattedLength)) {
         free(formatted);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
     free(formatted);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_TRUE;
 }
 
@@ -622,7 +641,7 @@ TZrBool ZrLanguageServer_Lsp_GetRangeFormatting(SZrState *state,
                                                 SZrString *uri,
                                                 SZrLspRange range,
                                                 SZrArray *result) {
-    SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot;
     TZrSize startOffset;
     TZrSize endOffset;
     TZrChar *formatted;
@@ -637,42 +656,45 @@ TZrBool ZrLanguageServer_Lsp_GetRangeFormatting(SZrState *state,
         ZrCore_Array_Init(state, result, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     }
 
-    fileVersion = lsp_editor_get_file_version(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!lsp_editor_acquire_content_snapshot(state, context, uri, &snapshot)) {
         return ZR_FALSE;
     }
 
-    startOffset = lsp_editor_line_start_offset(fileVersion->content, fileVersion->contentLength, range.start.line);
-    endOffset = lsp_editor_line_end_offset(fileVersion->content, fileVersion->contentLength, range.end.line);
-    if (endOffset < fileVersion->contentLength && fileVersion->content[endOffset] == '\n') {
+    startOffset = lsp_editor_line_start_offset(snapshot.content, snapshot.contentLength, range.start.line);
+    endOffset = lsp_editor_line_end_offset(snapshot.content, snapshot.contentLength, range.end.line);
+    if (endOffset < snapshot.contentLength && snapshot.content[endOffset] == '\n') {
         endOffset++;
     }
 
-    formatted = lsp_editor_format_segment(fileVersion->content,
-                                          fileVersion->contentLength,
+    formatted = lsp_editor_format_segment(snapshot.content,
+                                          snapshot.contentLength,
                                           startOffset,
                                           endOffset,
                                           &formattedLength);
     if (formatted == ZR_NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
     if (formattedLength == endOffset - startOffset &&
-        memcmp(formatted, fileVersion->content + startOffset, formattedLength) == 0) {
+        memcmp(formatted, snapshot.content + startOffset, formattedLength) == 0) {
         free(formatted);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_TRUE;
     }
 
-    editRange = lsp_editor_range_from_offsets(fileVersion->content,
-                                              fileVersion->contentLength,
+    editRange = lsp_editor_range_from_offsets(snapshot.content,
+                                              snapshot.contentLength,
                                               startOffset,
                                               endOffset);
     if (!lsp_editor_append_text_edit(state, result, editRange, formatted, formattedLength)) {
         free(formatted);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
     free(formatted);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_TRUE;
 }
 
@@ -739,7 +761,7 @@ TZrBool ZrLanguageServer_Lsp_GetSelectionRanges(SZrState *state,
                                                 const SZrLspPosition *positions,
                                                 TZrSize positionCount,
                                                 SZrArray *result) {
-    SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL ||
         positions == ZR_NULL || result == ZR_NULL) {
@@ -749,34 +771,33 @@ TZrBool ZrLanguageServer_Lsp_GetSelectionRanges(SZrState *state,
         ZrCore_Array_Init(state, result, sizeof(SZrLspSelectionRange *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
 
-    fileVersion = lsp_editor_get_file_version(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!lsp_editor_acquire_content_snapshot(state, context, uri, &snapshot)) {
         return ZR_FALSE;
     }
 
     for (TZrSize index = 0; index < positionCount; index++) {
         SZrLspSelectionRange *selection;
-        TZrSize offset = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(fileVersion->content,
-                                                                            fileVersion->contentLength,
+        TZrSize offset = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(snapshot.content,
+                                                                            snapshot.contentLength,
                                                                             positions[index].line,
                                                                             positions[index].character);
         TZrSize wordStart = offset;
         TZrSize wordEnd = offset;
-        TZrSize lineStart = lsp_editor_line_start_offset(fileVersion->content,
-                                                         fileVersion->contentLength,
+        TZrSize lineStart = lsp_editor_line_start_offset(snapshot.content,
+                                                         snapshot.contentLength,
                                                          positions[index].line);
-        TZrSize lineEnd = lsp_editor_line_end_offset(fileVersion->content,
-                                                     fileVersion->contentLength,
+        TZrSize lineEnd = lsp_editor_line_end_offset(snapshot.content,
+                                                     snapshot.contentLength,
                                                      positions[index].line);
         TZrSize blockSearchLineStart = lineStart;
         TZrSize blockSearchLineEnd = lineEnd;
         SZrLspRange blockRange;
         TZrBool hasBlockRange;
 
-        while (wordStart > lineStart && lsp_editor_is_word_char(fileVersion->content[wordStart - 1])) {
+        while (wordStart > lineStart && lsp_editor_is_word_char(snapshot.content[wordStart - 1])) {
             wordStart--;
         }
-        while (wordEnd < lineEnd && lsp_editor_is_word_char(fileVersion->content[wordEnd])) {
+        while (wordEnd < lineEnd && lsp_editor_is_word_char(snapshot.content[wordEnd])) {
             wordEnd++;
         }
         if (wordEnd == wordStart && wordEnd < lineEnd) {
@@ -784,28 +805,29 @@ TZrBool ZrLanguageServer_Lsp_GetSelectionRanges(SZrState *state,
         }
 
         while (lineStart < lineEnd &&
-               (fileVersion->content[lineStart] == ' ' || fileVersion->content[lineStart] == '\t')) {
+               (snapshot.content[lineStart] == ' ' || snapshot.content[lineStart] == '\t')) {
             lineStart++;
         }
 
         selection = (SZrLspSelectionRange *)ZrCore_Memory_RawMalloc(state->global,
                                                                     sizeof(SZrLspSelectionRange));
         if (selection == ZR_NULL) {
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
             return ZR_FALSE;
         }
-        selection->range = lsp_editor_range_from_offsets(fileVersion->content,
-                                                         fileVersion->contentLength,
+        selection->range = lsp_editor_range_from_offsets(snapshot.content,
+                                                         snapshot.contentLength,
                                                          wordStart,
                                                          wordEnd);
-        selection->parentRange = lsp_editor_range_from_offsets(fileVersion->content,
-                                                               fileVersion->contentLength,
+        selection->parentRange = lsp_editor_range_from_offsets(snapshot.content,
+                                                               snapshot.contentLength,
                                                                lineStart,
                                                                lineEnd);
         selection->hasParent = selection->parentRange.start.line != selection->range.start.line ||
                                selection->parentRange.start.character < selection->range.start.character ||
                                selection->parentRange.end.character > selection->range.end.character;
-        hasBlockRange = lsp_editor_find_selection_block_range(fileVersion->content,
-                                                              fileVersion->contentLength,
+        hasBlockRange = lsp_editor_find_selection_block_range(snapshot.content,
+                                                              snapshot.contentLength,
                                                               offset,
                                                               blockSearchLineStart,
                                                               blockSearchLineEnd,
@@ -817,6 +839,7 @@ TZrBool ZrLanguageServer_Lsp_GetSelectionRanges(SZrState *state,
         ZrCore_Array_Push(state, result, &selection);
     }
 
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_TRUE;
 }
 
@@ -824,8 +847,9 @@ TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
                                          SZrLspContext *context,
                                          SZrString *uri,
                                          SZrArray *result) {
-    SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot;
     const TZrChar *content;
+    TZrSize contentLength;
     TZrSize cursor = 0;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
@@ -835,17 +859,18 @@ TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
         ZrCore_Array_Init(state, result, sizeof(SZrLspCodeLens *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     }
 
-    fileVersion = lsp_editor_get_file_version(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!lsp_editor_acquire_content_snapshot(state, context, uri, &snapshot)) {
         return ZR_FALSE;
     }
 
     if (!lsp_code_lens_append_reference_counts(state, context, uri, result)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
-    content = fileVersion->content;
-    while (cursor < fileVersion->contentLength) {
+    content = snapshot.content;
+    contentLength = snapshot.contentLength;
+    while (cursor < contentLength) {
         const TZrChar *match = strstr(content + cursor, "%test(");
         TZrSize matchOffset;
         TZrSize lineEnd;
@@ -854,27 +879,29 @@ TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
             break;
         }
         matchOffset = (TZrSize)(match - content);
-        if (!lsp_editor_offset_is_code(content, fileVersion->contentLength, matchOffset)) {
+        if (!lsp_editor_offset_is_code(content, contentLength, matchOffset)) {
             cursor = matchOffset + 6;
             continue;
         }
         lineEnd = matchOffset;
-        while (lineEnd < fileVersion->contentLength && content[lineEnd] != '\n') {
+        while (lineEnd < contentLength && content[lineEnd] != '\n') {
             lineEnd++;
         }
 
         if (!lsp_code_lens_append(state,
                                   result,
-                                  lsp_editor_range_from_offsets(content, fileVersion->contentLength, matchOffset, lineEnd),
+                                  lsp_editor_range_from_offsets(content, contentLength, matchOffset, lineEnd),
                                   "Run Zr test",
                                   "zr.runCurrentProject",
                                   uri,
                                   ZR_NULL)) {
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
             return ZR_FALSE;
         }
         cursor = lineEnd;
     }
 
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_TRUE;
 }
 

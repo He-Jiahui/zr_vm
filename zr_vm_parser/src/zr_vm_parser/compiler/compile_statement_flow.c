@@ -629,6 +629,7 @@ static void compile_switch_union_variant_payload_bindings(SZrCompilerState *cs,
                                                           TZrUInt32 exprSlot,
                                                           SZrAstNodeArray *bindings,
                                                           SZrAstNode *variant,
+                                                          SZrString *resourceTypeName,
                                                           SZrFileRange location) {
     if (cs == ZR_NULL || bindings == ZR_NULL || cs->hasError) {
         return;
@@ -708,6 +709,7 @@ static void compile_switch_union_variant_payload_bindings(SZrCompilerState *cs,
                                               (TZrInt32)bindingValueSlot));
         register_union_variant_payload_binding_type(cs,
                                                     variant,
+                                                    resourceTypeName,
                                                     index,
                                                     bindingNode->data.identifier.name,
                                                     moveBinding);
@@ -1058,6 +1060,7 @@ void compile_switch_statement(SZrCompilerState *cs, SZrAstNode *node) {
                                                               exprSlot,
                                                               unionPatternBindings,
                                                               unionPatternVariant,
+                                                              switchUnionTypeName,
                                                               switchCase->value->location);
                 if (cs->hasError) {
                     ZrParser_InferredType_Free(cs->state, &switchInferredType);

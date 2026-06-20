@@ -1,0 +1,59 @@
+union Edge {
+    Empty;
+    Point(value: int);
+    @Bounds { low: int; high: int; span: int; }
+}
+
+union Option<T> {
+    None;
+    @Some(value: T);
+}
+
+union Many {
+    @Payload(a0: int, a1: int, a2: int, a3: int, a4: int, a5: int, a6: int, a7: int);
+}
+
+var score = 0;
+
+var empty: Edge = Edge.Empty;
+switch (empty) {
+    (Empty) {
+        score = score + 1;
+    }
+    (Point(pointValue)) {
+        score = score + pointValue + 1000;
+    }
+    (Bounds { low: switchLow, high: switchHigh, span: switchSpan }) {
+        score = score + switchLow + switchHigh + switchSpan + 1000;
+    }
+}
+
+using (var []: Edge.Empty = empty) {
+    score = score + 10;
+} else {
+    score = score - 100;
+}
+
+var point: Edge = Edge.Point(0);
+using (var []: Edge.Empty = point) {
+    score = score - 1000;
+} else {
+    score = score + 20;
+}
+
+var bounds: Edge = Edge.Bounds { low: -5, high: 5, span: 10 };
+using {lower: low, high, span} = bounds;
+score = score + lower + high + span;
+
+using [zero] = Option<int>.Some(0);
+score = score + zero;
+
+var many: Many = Many.Payload(1, 2, 3, 4, 5, 6, 7, 8);
+using [a0, a1, a2, a3, a4, a5, a6, a7] = many;
+score = score + a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7;
+
+if (score == 77) {
+    return "USING_UNION_EDGE_PASS 77";
+}
+
+return "USING_UNION_EDGE_FAIL";

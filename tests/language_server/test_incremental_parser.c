@@ -225,6 +225,148 @@ static void test_incremental_parser_remove_file(SZrState *state) {
     TEST_PASS(timer, "Incremental Parser Remove File");
 }
 
+static void test_file_version_content_snapshot_survives_update(SZrState *state) {
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot;
+    SZrFileVersionContentSnapshot updatedSnapshot;
+    const TZrChar *firstContent = "var before = 1;";
+    const TZrChar *secondContent = "var after = 2;";
+
+    TEST_START("File Version Content Snapshot Survives Update");
+    TEST_INFO("Snapshot Content", "Snapshot should retain its versioned content block after file content changes");
+
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    if (parser == ZR_NULL) {
+        TEST_FAIL(timer, "File Version Content Snapshot Survives Update", "Failed to create incremental parser");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///snapshot.zr", 19);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(state,
+                                                       parser,
+                                                       uri,
+                                                       firstContent,
+                                                       strlen(firstContent),
+                                                       1)) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, "File Version Content Snapshot Survives Update", "Failed to create initial file");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, "File Version Content Snapshot Survives Update", "Failed to acquire content snapshot");
+        return;
+    }
+
+    if (!ZrLanguageServer_IncrementalParser_UpdateFile(state,
+                                                       parser,
+                                                       uri,
+                                                       secondContent,
+                                                       strlen(secondContent),
+                                                       2)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, "File Version Content Snapshot Survives Update", "Failed to update file");
+        return;
+    }
+
+    memset(&updatedSnapshot, 0, sizeof(updatedSnapshot));
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &updatedSnapshot)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, "File Version Content Snapshot Survives Update", "Failed to acquire updated content snapshot");
+        return;
+    }
+
+    if (snapshot.content == ZR_NULL ||
+        snapshot.contentLength != strlen(firstContent) ||
+        memcmp(snapshot.content, firstContent, snapshot.contentLength) != 0 ||
+        snapshot.version != 1 ||
+        snapshot.contentGeneration != 1) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &updatedSnapshot);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, "File Version Content Snapshot Survives Update", "Snapshot did not preserve original content");
+        return;
+    }
+
+    if (updatedSnapshot.content == ZR_NULL ||
+        updatedSnapshot.contentLength != strlen(secondContent) ||
+        memcmp(updatedSnapshot.content, secondContent, updatedSnapshot.contentLength) != 0 ||
+        updatedSnapshot.version != 2 ||
+        updatedSnapshot.contentGeneration != 2) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &updatedSnapshot);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, "File Version Content Snapshot Survives Update", "Updated snapshot did not advance content generation");
+        return;
+    }
+
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &updatedSnapshot);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, "File Version Content Snapshot Survives Update");
+}
+
+static void test_file_version_content_snapshot_survives_parser_free(SZrState *state) {
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot;
+    const TZrChar *content = "var retained = 3;";
+
+    TEST_START("File Version Content Snapshot Survives Parser Free");
+    TEST_INFO("Snapshot Lifetime", "Snapshot should keep its content block after the owning parser is freed");
+
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    if (parser == ZR_NULL) {
+        TEST_FAIL(timer, "File Version Content Snapshot Survives Parser Free", "Failed to create incremental parser");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///retained-snapshot.zr", 27);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(state,
+                                                       parser,
+                                                       uri,
+                                                       content,
+                                                       strlen(content),
+                                                       1)) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, "File Version Content Snapshot Survives Parser Free", "Failed to create initial file");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, "File Version Content Snapshot Survives Parser Free", "Failed to acquire content snapshot");
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+
+    if (snapshot.content == ZR_NULL ||
+        snapshot.contentLength != strlen(content) ||
+        memcmp(snapshot.content, content, snapshot.contentLength) != 0 ||
+        snapshot.version != 1 ||
+        snapshot.contentGeneration != 1) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        TEST_FAIL(timer, "File Version Content Snapshot Survives Parser Free", "Snapshot content was released with parser");
+        return;
+    }
+
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+    TEST_PASS(timer, "File Version Content Snapshot Survives Parser Free");
+}
+
 // 主测试函数
 int main(void) {
     printf("==========\n");
@@ -261,6 +403,12 @@ int main(void) {
     TEST_DIVIDER();
     
     test_incremental_parser_remove_file(state);
+    TEST_DIVIDER();
+
+    test_file_version_content_snapshot_survives_update(state);
+    TEST_DIVIDER();
+
+    test_file_version_content_snapshot_survives_parser_free(state);
     TEST_DIVIDER();
     
     // 清理

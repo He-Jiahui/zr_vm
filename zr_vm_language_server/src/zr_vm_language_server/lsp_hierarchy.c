@@ -242,7 +242,8 @@ static TZrBool lsp_hierarchy_symbol_name_matches(const SZrLspSymbolInformation *
 }
 
 static TZrBool lsp_hierarchy_scan_symbol_for_named_calls(SZrState *state,
-                                                         SZrFileVersion *fileVersion,
+                                                         const TZrChar *content,
+                                                         TZrSize contentLength,
                                                          const SZrLspSymbolInformation *callerSymbol,
                                                          const TZrChar *targetName,
                                                          TZrSize targetNameLength,
@@ -252,8 +253,7 @@ static TZrBool lsp_hierarchy_scan_symbol_for_named_calls(SZrState *state,
     TZrSize cursor;
 
     if (state == ZR_NULL ||
-        fileVersion == ZR_NULL ||
-        fileVersion->content == ZR_NULL ||
+        content == ZR_NULL ||
         callerSymbol == ZR_NULL ||
         targetName == ZR_NULL ||
         targetNameLength == 0 ||
@@ -261,39 +261,39 @@ static TZrBool lsp_hierarchy_scan_symbol_for_named_calls(SZrState *state,
         return ZR_FALSE;
     }
 
-    startOffset = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(fileVersion->content,
-                                                                     fileVersion->contentLength,
+    startOffset = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(content,
+                                                                     contentLength,
                                                                      callerSymbol->location.range.start.line,
                                                                      callerSymbol->location.range.start.character);
-    endOffset = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(fileVersion->content,
-                                                                   fileVersion->contentLength,
+    endOffset = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(content,
+                                                                   contentLength,
                                                                    callerSymbol->location.range.end.line,
                                                                    callerSymbol->location.range.end.character);
     cursor = startOffset;
-    while (cursor + targetNameLength < endOffset && cursor + targetNameLength < fileVersion->contentLength) {
+    while (cursor + targetNameLength < endOffset && cursor + targetNameLength < contentLength) {
         TZrSize callCursor;
 
-        if (!lsp_editor_offset_is_code(fileVersion->content, fileVersion->contentLength, cursor) ||
-            (cursor > startOffset && lsp_hierarchy_identifier_part(fileVersion->content[cursor - 1])) ||
-            memcmp(fileVersion->content + cursor, targetName, targetNameLength) != 0 ||
-            (cursor + targetNameLength < fileVersion->contentLength &&
-             lsp_hierarchy_identifier_part(fileVersion->content[cursor + targetNameLength]))) {
+        if (!lsp_editor_offset_is_code(content, contentLength, cursor) ||
+            (cursor > startOffset && lsp_hierarchy_identifier_part(content[cursor - 1])) ||
+            memcmp(content + cursor, targetName, targetNameLength) != 0 ||
+            (cursor + targetNameLength < contentLength &&
+             lsp_hierarchy_identifier_part(content[cursor + targetNameLength]))) {
             cursor++;
             continue;
         }
 
         callCursor = cursor + targetNameLength;
         while (callCursor < endOffset &&
-               callCursor < fileVersion->contentLength &&
-               (fileVersion->content[callCursor] == ' ' || fileVersion->content[callCursor] == '\t')) {
+               callCursor < contentLength &&
+               (content[callCursor] == ' ' || content[callCursor] == '\t')) {
             callCursor++;
         }
         if (callCursor < endOffset &&
-            callCursor < fileVersion->contentLength &&
-            fileVersion->content[callCursor] == '(') {
+            callCursor < contentLength &&
+            content[callCursor] == '(') {
             SZrLspRange fromRange =
-                    lsp_editor_range_from_offsets(fileVersion->content,
-                                                  fileVersion->contentLength,
+                    lsp_editor_range_from_offsets(content,
+                                                  contentLength,
                                                   cursor,
                                                   cursor + targetNameLength);
             if (!lsp_hierarchy_append_outgoing_call(state, result, callerSymbol, fromRange)) {
@@ -307,41 +307,44 @@ static TZrBool lsp_hierarchy_scan_symbol_for_named_calls(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrSize lsp_hierarchy_symbol_start_offset(SZrFileVersion *fileVersion,
+static TZrSize lsp_hierarchy_symbol_start_offset(const TZrChar *content,
+                                                 TZrSize contentLength,
                                                  const SZrLspSymbolInformation *symbol) {
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL || symbol == ZR_NULL) {
+    if (content == ZR_NULL || symbol == ZR_NULL) {
         return 0;
     }
-    return ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(fileVersion->content,
-                                                              fileVersion->contentLength,
+    return ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(content,
+                                                              contentLength,
                                                               symbol->location.range.start.line,
                                                               symbol->location.range.start.character);
 }
 
-static TZrSize lsp_hierarchy_symbol_end_offset(SZrFileVersion *fileVersion,
+static TZrSize lsp_hierarchy_symbol_end_offset(const TZrChar *content,
+                                               TZrSize contentLength,
                                                const SZrLspSymbolInformation *symbol) {
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL || symbol == ZR_NULL) {
+    if (content == ZR_NULL || symbol == ZR_NULL) {
         return 0;
     }
-    return ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(fileVersion->content,
-                                                              fileVersion->contentLength,
+    return ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(content,
+                                                              contentLength,
                                                               symbol->location.range.end.line,
                                                               symbol->location.range.end.character);
 }
 
-static TZrSize lsp_hierarchy_type_header_end(SZrFileVersion *fileVersion,
+static TZrSize lsp_hierarchy_type_header_end(const TZrChar *content,
+                                             TZrSize contentLength,
                                              const SZrLspSymbolInformation *symbol) {
     TZrSize cursor;
     TZrSize endOffset;
 
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL || symbol == ZR_NULL) {
+    if (content == ZR_NULL || symbol == ZR_NULL) {
         return 0;
     }
 
-    cursor = lsp_hierarchy_symbol_start_offset(fileVersion, symbol);
-    endOffset = lsp_hierarchy_symbol_end_offset(fileVersion, symbol);
-    while (cursor < endOffset && cursor < fileVersion->contentLength) {
-        if (fileVersion->content[cursor] == '{' || fileVersion->content[cursor] == '\n') {
+    cursor = lsp_hierarchy_symbol_start_offset(content, contentLength, symbol);
+    endOffset = lsp_hierarchy_symbol_end_offset(content, contentLength, symbol);
+    while (cursor < endOffset && cursor < contentLength) {
+        if (content[cursor] == '{' || content[cursor] == '\n') {
             return cursor;
         }
         cursor++;
@@ -370,36 +373,37 @@ static const SZrLspSymbolInformation *lsp_hierarchy_find_type_symbol(SZrArray *s
     return ZR_NULL;
 }
 
-static TZrSize lsp_hierarchy_find_inheritance_colon(SZrFileVersion *fileVersion,
+static TZrSize lsp_hierarchy_find_inheritance_colon(const TZrChar *content,
+                                                    TZrSize contentLength,
                                                     const SZrLspSymbolInformation *symbol,
                                                     TZrSize headerEnd) {
     TZrSize cursor;
     TZrSize angleDepth = 0;
 
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL || symbol == ZR_NULL) {
+    if (content == ZR_NULL || symbol == ZR_NULL) {
         return headerEnd;
     }
 
-    cursor = lsp_hierarchy_symbol_start_offset(fileVersion, symbol);
-    while (cursor < headerEnd && cursor < fileVersion->contentLength) {
-        if (fileVersion->content[cursor] == '<') {
+    cursor = lsp_hierarchy_symbol_start_offset(content, contentLength, symbol);
+    while (cursor < headerEnd && cursor < contentLength) {
+        if (content[cursor] == '<') {
             angleDepth++;
             cursor++;
             continue;
         }
-        if (fileVersion->content[cursor] == '>' && angleDepth > 0) {
+        if (content[cursor] == '>' && angleDepth > 0) {
             angleDepth--;
             cursor++;
             continue;
         }
         if (angleDepth == 0 &&
             cursor + 5 <= headerEnd &&
-            memcmp(fileVersion->content + cursor, "where", 5) == 0 &&
-            (cursor == 0 || !lsp_hierarchy_identifier_part(fileVersion->content[cursor - 1])) &&
-            (cursor + 5 == headerEnd || !lsp_hierarchy_identifier_part(fileVersion->content[cursor + 5]))) {
+            memcmp(content + cursor, "where", 5) == 0 &&
+            (cursor == 0 || !lsp_hierarchy_identifier_part(content[cursor - 1])) &&
+            (cursor + 5 == headerEnd || !lsp_hierarchy_identifier_part(content[cursor + 5]))) {
             return headerEnd;
         }
-        if (angleDepth == 0 && fileVersion->content[cursor] == ':') {
+        if (angleDepth == 0 && content[cursor] == ':') {
             return cursor;
         }
         cursor++;
@@ -408,32 +412,32 @@ static TZrSize lsp_hierarchy_find_inheritance_colon(SZrFileVersion *fileVersion,
     return headerEnd;
 }
 
-static TZrBool lsp_hierarchy_type_header_contains_base(SZrFileVersion *fileVersion,
+static TZrBool lsp_hierarchy_type_header_contains_base(const TZrChar *content,
+                                                       TZrSize contentLength,
                                                        const SZrLspSymbolInformation *symbol,
                                                        const TZrChar *baseName,
                                                        TZrSize baseNameLength) {
     TZrSize cursor;
     TZrSize headerEnd;
 
-    if (fileVersion == ZR_NULL ||
-        fileVersion->content == ZR_NULL ||
+    if (content == ZR_NULL ||
         symbol == ZR_NULL ||
         baseName == ZR_NULL ||
         baseNameLength == 0) {
         return ZR_FALSE;
     }
 
-    headerEnd = lsp_hierarchy_type_header_end(fileVersion, symbol);
-    cursor = lsp_hierarchy_find_inheritance_colon(fileVersion, symbol, headerEnd);
+    headerEnd = lsp_hierarchy_type_header_end(content, contentLength, symbol);
+    cursor = lsp_hierarchy_find_inheritance_colon(content, contentLength, symbol, headerEnd);
     if (cursor >= headerEnd) {
         return ZR_FALSE;
     }
     cursor++;
-    while (cursor < headerEnd && cursor < fileVersion->contentLength) {
+    while (cursor < headerEnd && cursor < contentLength) {
         TZrSize nameStart;
         TZrSize nameEnd;
 
-        if (!lsp_hierarchy_identifier_start(fileVersion->content[cursor])) {
+        if (!lsp_hierarchy_identifier_start(content[cursor])) {
             cursor++;
             continue;
         }
@@ -441,13 +445,13 @@ static TZrBool lsp_hierarchy_type_header_contains_base(SZrFileVersion *fileVersi
         nameStart = cursor;
         nameEnd = cursor + 1;
         while (nameEnd < headerEnd &&
-               nameEnd < fileVersion->contentLength &&
-               lsp_hierarchy_identifier_part(fileVersion->content[nameEnd])) {
+               nameEnd < contentLength &&
+               lsp_hierarchy_identifier_part(content[nameEnd])) {
             nameEnd++;
         }
 
         if (nameEnd - nameStart == baseNameLength &&
-            memcmp(fileVersion->content + nameStart, baseName, baseNameLength) == 0) {
+            memcmp(content + nameStart, baseName, baseNameLength) == 0) {
             return ZR_TRUE;
         }
         cursor = nameEnd;
@@ -457,7 +461,8 @@ static TZrBool lsp_hierarchy_type_header_contains_base(SZrFileVersion *fileVersi
 }
 
 static TZrBool lsp_hierarchy_append_direct_supertypes(SZrState *state,
-                                                      SZrFileVersion *fileVersion,
+                                                      const TZrChar *content,
+                                                      TZrSize contentLength,
                                                       SZrArray *symbols,
                                                       const SZrLspHierarchyItem *item,
                                                       SZrArray *result) {
@@ -466,7 +471,7 @@ static TZrBool lsp_hierarchy_append_direct_supertypes(SZrState *state,
     TZrSize cursor;
     TZrSize headerEnd;
 
-    if (state == ZR_NULL || fileVersion == ZR_NULL || symbols == ZR_NULL || item == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || content == ZR_NULL || symbols == ZR_NULL || item == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -475,18 +480,18 @@ static TZrBool lsp_hierarchy_append_direct_supertypes(SZrState *state,
         return ZR_TRUE;
     }
 
-    headerEnd = lsp_hierarchy_type_header_end(fileVersion, itemSymbol);
-    cursor = lsp_hierarchy_find_inheritance_colon(fileVersion, itemSymbol, headerEnd);
+    headerEnd = lsp_hierarchy_type_header_end(content, contentLength, itemSymbol);
+    cursor = lsp_hierarchy_find_inheritance_colon(content, contentLength, itemSymbol, headerEnd);
     if (cursor >= headerEnd) {
         return ZR_TRUE;
     }
     cursor++;
-    while (cursor < headerEnd && cursor < fileVersion->contentLength) {
+    while (cursor < headerEnd && cursor < contentLength) {
         TZrSize nameStart;
         TZrSize nameEnd;
         const SZrLspSymbolInformation *baseSymbol;
 
-        if (!lsp_hierarchy_identifier_start(fileVersion->content[cursor])) {
+        if (!lsp_hierarchy_identifier_start(content[cursor])) {
             cursor++;
             continue;
         }
@@ -494,13 +499,13 @@ static TZrBool lsp_hierarchy_append_direct_supertypes(SZrState *state,
         nameStart = cursor;
         nameEnd = cursor + 1;
         while (nameEnd < headerEnd &&
-               nameEnd < fileVersion->contentLength &&
-               lsp_hierarchy_identifier_part(fileVersion->content[nameEnd])) {
+               nameEnd < contentLength &&
+               lsp_hierarchy_identifier_part(content[nameEnd])) {
             nameEnd++;
         }
 
         baseSymbol = lsp_hierarchy_find_type_symbol(symbols,
-                                                    fileVersion->content + nameStart,
+                                                    content + nameStart,
                                                     nameEnd - nameStart);
         if (baseSymbol != ZR_NULL && !lsp_hierarchy_append_item_from_symbol(state, result, baseSymbol)) {
             return ZR_FALSE;
@@ -512,14 +517,15 @@ static TZrBool lsp_hierarchy_append_direct_supertypes(SZrState *state,
 }
 
 static TZrBool lsp_hierarchy_append_direct_subtypes(SZrState *state,
-                                                    SZrFileVersion *fileVersion,
+                                                    const TZrChar *content,
+                                                    TZrSize contentLength,
                                                     SZrArray *symbols,
                                                     const SZrLspHierarchyItem *item,
                                                     SZrArray *result) {
     const TZrChar *itemName;
     TZrSize itemNameLength;
 
-    if (state == ZR_NULL || fileVersion == ZR_NULL || symbols == ZR_NULL || item == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || content == ZR_NULL || symbols == ZR_NULL || item == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -539,7 +545,7 @@ static TZrBool lsp_hierarchy_append_direct_subtypes(SZrState *state,
             continue;
         }
 
-        if (lsp_hierarchy_type_header_contains_base(fileVersion, *symbolPtr, itemName, itemNameLength) &&
+        if (lsp_hierarchy_type_header_contains_base(content, contentLength, *symbolPtr, itemName, itemNameLength) &&
             !lsp_hierarchy_append_item_from_symbol(state, result, *symbolPtr)) {
             return ZR_FALSE;
         }
@@ -561,6 +567,7 @@ TZrBool ZrLanguageServer_Lsp_GetCallHierarchyIncomingCalls(SZrState *state,
                                                            const SZrLspHierarchyItem *item,
                                                            SZrArray *result) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrArray symbols = {0};
     const TZrChar *targetName;
     TZrSize targetNameLength;
@@ -574,7 +581,10 @@ TZrBool ZrLanguageServer_Lsp_GetCallHierarchyIncomingCalls(SZrState *state,
 
     fileVersion = lsp_editor_get_file_version(context, item->uri);
     targetName = lsp_hierarchy_string_text(item->name);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL || targetName == ZR_NULL) {
+    if (targetName == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         return ZR_TRUE;
     }
 
@@ -582,6 +592,7 @@ TZrBool ZrLanguageServer_Lsp_GetCallHierarchyIncomingCalls(SZrState *state,
     ZrCore_Array_Init(state, &symbols, sizeof(SZrLspSymbolInformation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetDocumentSymbols(state, context, item->uri, &symbols)) {
         lsp_hierarchy_free_symbols(state, &symbols);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
@@ -596,17 +607,20 @@ TZrBool ZrLanguageServer_Lsp_GetCallHierarchyIncomingCalls(SZrState *state,
         }
 
         if (!lsp_hierarchy_scan_symbol_for_named_calls(state,
-                                                       fileVersion,
+                                                       snapshot.content,
+                                                       snapshot.contentLength,
                                                        *symbolPtr,
                                                        targetName,
                                                        targetNameLength,
                                                        result)) {
             lsp_hierarchy_free_symbols(state, &symbols);
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
             return ZR_FALSE;
         }
     }
 
     lsp_hierarchy_free_symbols(state, &symbols);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_TRUE;
 }
 
@@ -615,6 +629,9 @@ TZrBool ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(SZrState *state,
                                                            const SZrLspHierarchyItem *item,
                                                            SZrArray *result) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
+    const TZrChar *content;
+    TZrSize contentLength;
     SZrArray symbols = {0};
     TZrSize startOffset;
     TZrSize endOffset;
@@ -628,33 +645,36 @@ TZrBool ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(SZrState *state,
     }
 
     fileVersion = lsp_editor_get_file_version(context, item->uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         return ZR_TRUE;
     }
+    content = snapshot.content;
+    contentLength = snapshot.contentLength;
 
     ZrCore_Array_Init(state, &symbols, sizeof(SZrLspSymbolInformation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetDocumentSymbols(state, context, item->uri, &symbols)) {
         lsp_hierarchy_free_symbols(state, &symbols);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
-    startOffset = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(fileVersion->content,
-                                                                     fileVersion->contentLength,
+    startOffset = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(content,
+                                                                     contentLength,
                                                                      item->range.start.line,
                                                                      item->range.start.character);
-    endOffset = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(fileVersion->content,
-                                                                   fileVersion->contentLength,
+    endOffset = ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(content,
+                                                                   contentLength,
                                                                    item->range.end.line,
                                                                    item->range.end.character);
     cursor = startOffset;
-    while (cursor < endOffset && cursor < fileVersion->contentLength) {
+    while (cursor < endOffset && cursor < contentLength) {
         TZrSize nameStart;
         TZrSize nameEnd;
         TZrSize callCursor;
         const SZrLspSymbolInformation *targetSymbol;
 
-        if (!lsp_editor_offset_is_code(fileVersion->content, fileVersion->contentLength, cursor) ||
-            !lsp_hierarchy_identifier_start(fileVersion->content[cursor])) {
+        if (!lsp_editor_offset_is_code(content, contentLength, cursor) ||
+            !lsp_hierarchy_identifier_start(content[cursor])) {
             cursor++;
             continue;
         }
@@ -662,33 +682,34 @@ TZrBool ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(SZrState *state,
         nameStart = cursor;
         nameEnd = cursor + 1;
         while (nameEnd < endOffset &&
-               nameEnd < fileVersion->contentLength &&
-               lsp_hierarchy_identifier_part(fileVersion->content[nameEnd])) {
+               nameEnd < contentLength &&
+               lsp_hierarchy_identifier_part(content[nameEnd])) {
             nameEnd++;
         }
 
         callCursor = nameEnd;
         while (callCursor < endOffset &&
-               callCursor < fileVersion->contentLength &&
-               (fileVersion->content[callCursor] == ' ' || fileVersion->content[callCursor] == '\t')) {
+               callCursor < contentLength &&
+               (content[callCursor] == ' ' || content[callCursor] == '\t')) {
             callCursor++;
         }
         if (callCursor >= endOffset ||
-            callCursor >= fileVersion->contentLength ||
-            fileVersion->content[callCursor] != '(') {
+            callCursor >= contentLength ||
+            content[callCursor] != '(') {
             cursor = nameEnd;
             continue;
         }
 
         targetSymbol = lsp_hierarchy_find_callable_symbol(&symbols,
-                                                          fileVersion->content + nameStart,
+                                                          content + nameStart,
                                                           nameEnd - nameStart,
                                                           item);
         if (targetSymbol != ZR_NULL) {
             SZrLspRange fromRange =
-                    lsp_editor_range_from_offsets(fileVersion->content, fileVersion->contentLength, nameStart, nameEnd);
+                    lsp_editor_range_from_offsets(content, contentLength, nameStart, nameEnd);
             if (!lsp_hierarchy_append_outgoing_call(state, result, targetSymbol, fromRange)) {
                 lsp_hierarchy_free_symbols(state, &symbols);
+                ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
                 return ZR_FALSE;
             }
         }
@@ -697,6 +718,7 @@ TZrBool ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(SZrState *state,
     }
 
     lsp_hierarchy_free_symbols(state, &symbols);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_TRUE;
 }
 
@@ -713,6 +735,7 @@ TZrBool ZrLanguageServer_Lsp_GetTypeHierarchySupertypes(SZrState *state,
                                                         const SZrLspHierarchyItem *item,
                                                         SZrArray *result) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrArray symbols = {0};
     TZrBool ok;
 
@@ -724,18 +747,25 @@ TZrBool ZrLanguageServer_Lsp_GetTypeHierarchySupertypes(SZrState *state,
     }
 
     fileVersion = lsp_editor_get_file_version(context, item->uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         return ZR_TRUE;
     }
 
     ZrCore_Array_Init(state, &symbols, sizeof(SZrLspSymbolInformation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetDocumentSymbols(state, context, item->uri, &symbols)) {
         lsp_hierarchy_free_symbols(state, &symbols);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
-    ok = lsp_hierarchy_append_direct_supertypes(state, fileVersion, &symbols, item, result);
+    ok = lsp_hierarchy_append_direct_supertypes(state,
+                                               snapshot.content,
+                                               snapshot.contentLength,
+                                               &symbols,
+                                               item,
+                                               result);
     lsp_hierarchy_free_symbols(state, &symbols);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ok;
 }
 
@@ -744,6 +774,7 @@ TZrBool ZrLanguageServer_Lsp_GetTypeHierarchySubtypes(SZrState *state,
                                                       const SZrLspHierarchyItem *item,
                                                       SZrArray *result) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrArray symbols = {0};
     TZrBool ok;
 
@@ -755,17 +786,24 @@ TZrBool ZrLanguageServer_Lsp_GetTypeHierarchySubtypes(SZrState *state,
     }
 
     fileVersion = lsp_editor_get_file_version(context, item->uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         return ZR_TRUE;
     }
 
     ZrCore_Array_Init(state, &symbols, sizeof(SZrLspSymbolInformation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetDocumentSymbols(state, context, item->uri, &symbols)) {
         lsp_hierarchy_free_symbols(state, &symbols);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
-    ok = lsp_hierarchy_append_direct_subtypes(state, fileVersion, &symbols, item, result);
+    ok = lsp_hierarchy_append_direct_subtypes(state,
+                                             snapshot.content,
+                                             snapshot.contentLength,
+                                             &symbols,
+                                             item,
+                                             result);
     lsp_hierarchy_free_symbols(state, &symbols);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ok;
 }

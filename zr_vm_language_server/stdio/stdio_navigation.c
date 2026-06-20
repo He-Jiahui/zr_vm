@@ -75,7 +75,7 @@ cJSON *handle_inlay_hint_request(SZrStdioServer *server, const cJSON *params) {
     }
 
     rangeJson = get_object_item(params, ZR_LSP_FIELD_RANGE);
-    if (!parse_range(rangeJson, &range)) {
+    if (!parse_range_for_uri(server, uri, rangeJson, &range)) {
         return NULL;
     }
 

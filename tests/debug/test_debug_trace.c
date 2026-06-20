@@ -58,7 +58,8 @@ static void debug_trace_capture(struct SZrState *state, SZrDebugInfo *debugInfo)
     if (!ZrCore_DebugInfo_Get(state,
                               (EZrDebugInfoType)(ZR_DEBUG_INFO_FUNCTION_NAME |
                                                  ZR_DEBUG_INFO_SOURCE_FILE |
-                                                 ZR_DEBUG_INFO_LINE_NUMBER),
+                                                 ZR_DEBUG_INFO_LINE_NUMBER |
+                                                 ZR_DEBUG_INFO_CLOSURE),
                               &resolvedInfo)) {
         return;
     }

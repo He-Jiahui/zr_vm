@@ -1,0 +1,46 @@
+union Option<T> {
+    None;
+    @Some(value: T);
+}
+
+union Result<T, E> {
+    @Ok(value: T);
+    Err(error: E);
+}
+
+union Shape {
+    Empty;
+    Circle(radius: int);
+    @Rect { width: int; height: int; }
+}
+
+union Choice {
+    Empty;
+    Num(value: int);
+}
+
+using [optionAmount] = Option<int>.Some(40);
+using [resultAmount] = Result<int, string>.Ok(80);
+
+var shape: Shape = Shape.Rect { width: 9, height: 12 };
+using {w: width, height} = shape;
+var shapeTotal = w * height;
+
+var choice: Choice = Choice.Num(16);
+var choiceTotal = 0;
+switch (choice) {
+    (Empty) {
+        choiceTotal = -1000;
+    }
+    (Num(value)) {
+        choiceTotal = value + 7;
+    }
+}
+
+var total = optionAmount + 5 + resultAmount + 20 + shapeTotal + choiceTotal;
+
+if (total == 276) {
+    return "USING_FEATURE_MATRIX_PASS 276";
+}
+
+return "USING_FEATURE_MATRIX_FAIL";

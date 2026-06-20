@@ -60,7 +60,7 @@ void backend_aot_write_c_frame_setup(FILE *file,
             "    zr_aot_frame_top = zr_aot_slot_base + zr_aot_frame_slot_count;\n"
             "    if (ZrCore_CallInfo_IsNative(zr_aot_call_info)) {\n"
             "        for (TZrSize zr_aot_slot = zr_aot_argument_count; zr_aot_slot < zr_aot_frame_slot_count; zr_aot_slot++) {\n"
-            "            ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(zr_aot_slot_base + zr_aot_slot));\n"
+            "            ZrCore_Value_ResetAsNull(&zr_aot_slot_base[zr_aot_slot].value);\n"
             "        }\n"
             "    }\n"
             "    if (zr_aot_call_info->functionTop.valuePointer < zr_aot_frame_top) {\n"

@@ -85,6 +85,17 @@ static TZrBool function_type_layout_function_has_prototype_blob(const SZrFunctio
                      function->prototypeCount > 0u);
 }
 
+static const SZrFunction *function_type_layout_valid_prototype_context(const SZrFunction *function) {
+    if (function_type_layout_function_has_prototype_blob(function)) {
+        return function;
+    }
+    if (function != ZR_NULL &&
+        function_type_layout_function_has_prototype_blob(function->prototypeContextFunction)) {
+        return function->prototypeContextFunction;
+    }
+    return ZR_NULL;
+}
+
 static const SZrFunction *function_type_layout_entry_function_from_call_stack(SZrState *state) {
     SZrCallInfo *callInfo;
 
@@ -102,7 +113,8 @@ static const SZrFunction *function_type_layout_entry_function_from_call_stack(SZ
         }
 
         candidateFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
-        if (function_type_layout_function_has_prototype_blob(candidateFunction)) {
+        candidateFunction = (SZrFunction *)function_type_layout_valid_prototype_context(candidateFunction);
+        if (candidateFunction != ZR_NULL) {
             return candidateFunction;
         }
     }

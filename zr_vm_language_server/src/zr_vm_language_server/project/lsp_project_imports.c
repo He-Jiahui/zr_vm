@@ -1421,10 +1421,15 @@ TZrBool ZrLanguageServer_LspProject_FindImportBindingHit(SZrAstNode *node,
     return find_import_binding_hit_recursive(node, bindings, position, outBinding, outLocation);
 }
 
-static TZrBool append_lsp_location(SZrState *state, SZrArray *result, SZrString *uri, SZrFileRange range) {
+static TZrBool append_lsp_location(SZrState *state,
+                                   SZrLspContext *context,
+                                   SZrArray *result,
+                                   SZrString *uri,
+                                   SZrFileRange range) {
     SZrLspLocation *location;
+    SZrString *locationUri;
 
-    if (state == ZR_NULL || result == ZR_NULL || uri == ZR_NULL) {
+    if (state == ZR_NULL || result == ZR_NULL || (uri == ZR_NULL && range.source == ZR_NULL)) {
         return ZR_FALSE;
     }
 
@@ -1437,13 +1442,16 @@ static TZrBool append_lsp_location(SZrState *state, SZrArray *result, SZrString 
         return ZR_FALSE;
     }
 
-    location->uri = uri;
-    location->range = ZrLanguageServer_LspRange_FromFileRange(range);
+    locationUri = range.source != ZR_NULL ? range.source : uri;
+    location->uri = locationUri;
+    location->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, locationUri, range);
     ZrCore_Array_Push(state, result, &location);
     return ZR_TRUE;
 }
 
 static TZrBool append_matching_imported_member_locations_recursive(SZrState *state,
+                                                                   SZrLspContext *context,
+                                                                   SZrString *uri,
                                                                    SZrAstNode *node,
                                                                    SZrArray *bindings,
                                                                    SZrString *moduleName,
@@ -1451,6 +1459,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
                                                                    SZrArray *result);
 
 static TZrBool append_matching_imported_member_locations_in_node_array(SZrState *state,
+                                                                       SZrLspContext *context,
+                                                                       SZrString *uri,
                                                                        SZrAstNodeArray *nodes,
                                                                        SZrArray *bindings,
                                                                        SZrString *moduleName,
@@ -1462,6 +1472,8 @@ static TZrBool append_matching_imported_member_locations_in_node_array(SZrState 
 
     for (TZrSize index = 0; index < nodes->count; index++) {
         if (!append_matching_imported_member_locations_recursive(state,
+                                                                 context,
+                                                                 uri,
                                                                  nodes->nodes[index],
                                                                  bindings,
                                                                  moduleName,
@@ -1475,6 +1487,8 @@ static TZrBool append_matching_imported_member_locations_in_node_array(SZrState 
 }
 
 static TZrBool append_matching_imported_member_locations_recursive(SZrState *state,
+                                                                   SZrLspContext *context,
+                                                                   SZrString *uri,
                                                                    SZrAstNode *node,
                                                                    SZrArray *bindings,
                                                                    SZrString *moduleName,
@@ -1490,11 +1504,19 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
         ZrLanguageServer_Lsp_StringsEqual(hit.moduleName, moduleName) &&
         (memberName == ZR_NULL || ZrLanguageServer_Lsp_StringsEqual(hit.memberName, memberName))) {
         if (memberName == ZR_NULL) {
-            if (!append_lsp_location(state, result, hit.receiverLocation.source, hit.receiverLocation) ||
-                !append_lsp_location(state, result, hit.location.source, hit.location)) {
+            if (!append_lsp_location(state, context, result, hit.receiverLocation.source != ZR_NULL
+                                                                      ? hit.receiverLocation.source
+                                                                      : uri, hit.receiverLocation) ||
+                !append_lsp_location(state, context, result, hit.location.source != ZR_NULL
+                                                                      ? hit.location.source
+                                                                      : uri, hit.location)) {
                 return ZR_FALSE;
             }
-        } else if (!append_lsp_location(state, result, hit.location.source, hit.location)) {
+        } else if (!append_lsp_location(state,
+                                        context,
+                                        result,
+                                        hit.location.source != ZR_NULL ? hit.location.source : uri,
+                                        hit.location)) {
             return ZR_FALSE;
         }
     }
@@ -1502,6 +1524,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
     switch (node->type) {
         case ZR_AST_SCRIPT:
             return append_matching_imported_member_locations_in_node_array(state,
+                                                                           context,
+                                                                           uri,
                                                                            node->data.script.statements,
                                                                            bindings,
                                                                            moduleName,
@@ -1510,6 +1534,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_BLOCK:
             return append_matching_imported_member_locations_in_node_array(state,
+                                                                           context,
+                                                                           uri,
                                                                            node->data.block.body,
                                                                            bindings,
                                                                            moduleName,
@@ -1518,6 +1544,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_FUNCTION_DECLARATION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.functionDeclaration.body,
                                                                       bindings,
                                                                       moduleName,
@@ -1526,6 +1554,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_TEST_DECLARATION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.testDeclaration.body,
                                                                       bindings,
                                                                       moduleName,
@@ -1534,6 +1564,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_STRUCT_METHOD:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.structMethod.body,
                                                                       bindings,
                                                                       moduleName,
@@ -1542,6 +1574,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_STRUCT_META_FUNCTION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.structMetaFunction.body,
                                                                       bindings,
                                                                       moduleName,
@@ -1550,6 +1584,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_CLASS_METHOD:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.classMethod.body,
                                                                       bindings,
                                                                       moduleName,
@@ -1558,6 +1594,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_CLASS_META_FUNCTION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.classMetaFunction.body,
                                                                       bindings,
                                                                       moduleName,
@@ -1566,6 +1604,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_PROPERTY_GET:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.propertyGet.body,
                                                                       bindings,
                                                                       moduleName,
@@ -1574,6 +1614,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_PROPERTY_SET:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.propertySet.body,
                                                                       bindings,
                                                                       moduleName,
@@ -1582,6 +1624,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_CLASS_PROPERTY:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.classProperty.modifier,
                                                                       bindings,
                                                                       moduleName,
@@ -1590,6 +1634,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_VARIABLE_DECLARATION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.variableDeclaration.value,
                                                                       bindings,
                                                                       moduleName,
@@ -1598,6 +1644,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_STRUCT_FIELD:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.structField.init,
                                                                       bindings,
                                                                       moduleName,
@@ -1606,6 +1654,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_CLASS_FIELD:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.classField.init,
                                                                       bindings,
                                                                       moduleName,
@@ -1614,6 +1664,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_ENUM_MEMBER:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.enumMember.value,
                                                                       bindings,
                                                                       moduleName,
@@ -1622,6 +1674,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_RETURN_STATEMENT:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.returnStatement.expr,
                                                                       bindings,
                                                                       moduleName,
@@ -1630,6 +1684,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_EXPRESSION_STATEMENT:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.expressionStatement.expr,
                                                                       bindings,
                                                                       moduleName,
@@ -1638,12 +1694,16 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_USING_STATEMENT:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.usingStatement.resource,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.usingStatement.body,
                                                                       bindings,
                                                                       moduleName,
@@ -1652,6 +1712,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_BREAK_CONTINUE_STATEMENT:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.breakContinueStatement.expr,
                                                                       bindings,
                                                                       moduleName,
@@ -1660,6 +1722,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_THROW_STATEMENT:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.throwStatement.expr,
                                                                       bindings,
                                                                       moduleName,
@@ -1668,6 +1732,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_OUT_STATEMENT:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.outStatement.expr,
                                                                       bindings,
                                                                       moduleName,
@@ -1676,18 +1742,24 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.tryCatchFinallyStatement.block,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_in_node_array(state,
+                                                                           context,
+                                                                           uri,
                                                                            node->data.tryCatchFinallyStatement.catchClauses,
                                                                            bindings,
                                                                            moduleName,
                                                                            memberName,
                                                                            result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.tryCatchFinallyStatement.finallyBlock,
                                                                       bindings,
                                                                       moduleName,
@@ -1696,6 +1768,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_CATCH_CLAUSE:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.catchClause.block,
                                                                       bindings,
                                                                       moduleName,
@@ -1704,12 +1778,16 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_ASSIGNMENT_EXPRESSION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.assignmentExpression.left,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.assignmentExpression.right,
                                                                       bindings,
                                                                       moduleName,
@@ -1718,12 +1796,16 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_BINARY_EXPRESSION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.binaryExpression.left,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.binaryExpression.right,
                                                                       bindings,
                                                                       moduleName,
@@ -1732,12 +1814,16 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_LOGICAL_EXPRESSION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.logicalExpression.left,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.logicalExpression.right,
                                                                       bindings,
                                                                       moduleName,
@@ -1746,18 +1832,24 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_CONDITIONAL_EXPRESSION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.conditionalExpression.test,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.conditionalExpression.consequent,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.conditionalExpression.alternate,
                                                                       bindings,
                                                                       moduleName,
@@ -1766,6 +1858,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_UNARY_EXPRESSION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.unaryExpression.argument,
                                                                       bindings,
                                                                       moduleName,
@@ -1774,6 +1868,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_TYPE_CAST_EXPRESSION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.typeCastExpression.expression,
                                                                       bindings,
                                                                       moduleName,
@@ -1782,6 +1878,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_LAMBDA_EXPRESSION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.lambdaExpression.block,
                                                                       bindings,
                                                                       moduleName,
@@ -1790,18 +1888,24 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_IF_EXPRESSION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.ifExpression.condition,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.ifExpression.thenExpr,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.ifExpression.elseExpr,
                                                                       bindings,
                                                                       moduleName,
@@ -1810,18 +1914,24 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_SWITCH_EXPRESSION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.switchExpression.expr,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_in_node_array(state,
+                                                                           context,
+                                                                           uri,
                                                                            node->data.switchExpression.cases,
                                                                            bindings,
                                                                            moduleName,
                                                                            memberName,
                                                                            result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.switchExpression.defaultCase,
                                                                       bindings,
                                                                       moduleName,
@@ -1830,12 +1940,16 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_SWITCH_CASE:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.switchCase.value,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.switchCase.block,
                                                                       bindings,
                                                                       moduleName,
@@ -1844,6 +1958,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_SWITCH_DEFAULT:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.switchDefault.block,
                                                                       bindings,
                                                                       moduleName,
@@ -1852,6 +1968,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_FUNCTION_CALL:
             return append_matching_imported_member_locations_in_node_array(state,
+                                                                           context,
+                                                                           uri,
                                                                            node->data.functionCall.args,
                                                                            bindings,
                                                                            moduleName,
@@ -1860,12 +1978,16 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_PRIMARY_EXPRESSION:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.primaryExpression.property,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_in_node_array(state,
+                                                                           context,
+                                                                           uri,
                                                                            node->data.primaryExpression.members,
                                                                            bindings,
                                                                            moduleName,
@@ -1875,6 +1997,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
         case ZR_AST_MEMBER_EXPRESSION:
             return !node->data.memberExpression.computed ||
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.memberExpression.property,
                                                                       bindings,
                                                                       moduleName,
@@ -1883,6 +2007,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_ARRAY_LITERAL:
             return append_matching_imported_member_locations_in_node_array(state,
+                                                                           context,
+                                                                           uri,
                                                                            node->data.arrayLiteral.elements,
                                                                            bindings,
                                                                            moduleName,
@@ -1891,6 +2017,8 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_OBJECT_LITERAL:
             return append_matching_imported_member_locations_in_node_array(state,
+                                                                           context,
+                                                                           uri,
                                                                            node->data.objectLiteral.properties,
                                                                            bindings,
                                                                            moduleName,
@@ -1899,12 +2027,16 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_KEY_VALUE_PAIR:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.keyValuePair.key,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.keyValuePair.value,
                                                                       bindings,
                                                                       moduleName,
@@ -1913,12 +2045,16 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_WHILE_LOOP:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.whileLoop.cond,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.whileLoop.block,
                                                                       bindings,
                                                                       moduleName,
@@ -1927,24 +2063,32 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_FOR_LOOP:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.forLoop.init,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.forLoop.cond,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.forLoop.step,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.forLoop.block,
                                                                       bindings,
                                                                       moduleName,
@@ -1953,12 +2097,16 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 
         case ZR_AST_FOREACH_LOOP:
             return append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.foreachLoop.expr,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,
                                                                       result) &&
                    append_matching_imported_member_locations_recursive(state,
+                                                                      context,
+                                                                      uri,
                                                                       node->data.foreachLoop.block,
                                                                       bindings,
                                                                       moduleName,
@@ -1973,12 +2121,16 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
 }
 
 TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedMemberLocations(SZrState *state,
+                                                                          SZrLspContext *context,
+                                                                          SZrString *uri,
                                                                           SZrAstNode *node,
                                                                           SZrArray *bindings,
                                                                           SZrString *moduleName,
                                                                           SZrString *memberName,
                                                                           SZrArray *result) {
     return append_matching_imported_member_locations_recursive(state,
+                                                               context,
+                                                               uri,
                                                                node,
                                                                bindings,
                                                                moduleName,
@@ -1987,11 +2139,15 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedMemberLocations(SZrSta
 }
 
 TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedModuleLocations(SZrState *state,
+                                                                          SZrLspContext *context,
+                                                                          SZrString *uri,
                                                                           SZrAstNode *node,
                                                                           SZrArray *bindings,
                                                                           SZrString *moduleName,
                                                                           SZrArray *result) {
     return append_matching_imported_member_locations_recursive(state,
+                                                               context,
+                                                               uri,
                                                                node,
                                                                bindings,
                                                                moduleName,
@@ -2000,6 +2156,8 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportedModuleLocations(SZrSta
 }
 
 TZrBool ZrLanguageServer_LspProject_AppendMatchingImportBindingLocations(SZrState *state,
+                                                                         SZrLspContext *context,
+                                                                         SZrString *uri,
                                                                          SZrArray *bindings,
                                                                          SZrString *moduleName,
                                                                          SZrArray *result) {
@@ -2017,7 +2175,13 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportBindingLocations(SZrStat
             continue;
         }
 
-        if (!append_lsp_location(state, result, (*bindingPtr)->aliasLocation.source, (*bindingPtr)->aliasLocation)) {
+        if (!append_lsp_location(state,
+                                 context,
+                                 result,
+                                 (*bindingPtr)->aliasLocation.source != ZR_NULL
+                                     ? (*bindingPtr)->aliasLocation.source
+                                     : uri,
+                                 (*bindingPtr)->aliasLocation)) {
             return ZR_FALSE;
         }
     }
@@ -2026,6 +2190,8 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportBindingLocations(SZrStat
 }
 
 TZrBool ZrLanguageServer_LspProject_AppendMatchingImportTargetLocations(SZrState *state,
+                                                                        SZrLspContext *context,
+                                                                        SZrString *uri,
                                                                         SZrArray *bindings,
                                                                         SZrString *moduleName,
                                                                         SZrArray *result) {
@@ -2043,8 +2209,11 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportTargetLocations(SZrState
         }
 
         if (!append_lsp_location(state,
+                                 context,
                                  result,
-                                 (*bindingPtr)->modulePathLocation.source,
+                                 (*bindingPtr)->modulePathLocation.source != ZR_NULL
+                                     ? (*bindingPtr)->modulePathLocation.source
+                                     : uri,
                                  (*bindingPtr)->modulePathLocation)) {
             return ZR_FALSE;
         }

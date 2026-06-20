@@ -79,11 +79,21 @@ static void semantic_token_add(SZrState *state,
                                TZrUInt32 character,
                                TZrUInt32 length,
                                TZrUInt32 typeIndex);
+static TZrBool semantic_token_add_utf16_span(SZrState *state,
+                                             SZrArray *entries,
+                                             const TZrChar *content,
+                                             TZrSize contentLength,
+                                             TZrSize startOffset,
+                                             TZrSize endOffset,
+                                             TZrUInt32 typeIndex);
 static void semantic_token_add_file_range(SZrState *state,
+                                          SZrLspContext *context,
                                           SZrArray *entries,
+                                          SZrString *uri,
                                           SZrFileRange range,
                                           TZrUInt32 typeIndex);
 static void semantic_token_add_symbol_tokens(SZrState *state,
+                                             SZrLspContext *context,
                                              SZrSemanticAnalyzer *analyzer,
                                              SZrString *uri,
                                              SZrArray *entries);
@@ -382,8 +392,50 @@ static void semantic_token_add(SZrState *state,
     ZrCore_Array_Push(state, entries, &entry);
 }
 
+static TZrBool semantic_token_add_utf16_span(SZrState *state,
+                                             SZrArray *entries,
+                                             const TZrChar *content,
+                                             TZrSize contentLength,
+                                             TZrSize startOffset,
+                                             TZrSize endOffset,
+                                             TZrUInt32 typeIndex) {
+    SZrLspPosition startPosition;
+    SZrLspPosition endPosition;
+    TZrInt32 tokenLength;
+
+    if (state == ZR_NULL || entries == ZR_NULL || content == ZR_NULL ||
+        startOffset >= endOffset || endOffset > contentLength) {
+        return ZR_FALSE;
+    }
+
+    startPosition = ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(content,
+                                                                                contentLength,
+                                                                                startOffset);
+    endPosition = ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(content,
+                                                                              contentLength,
+                                                                              endOffset);
+    if (startPosition.line != endPosition.line) {
+        return ZR_FALSE;
+    }
+
+    tokenLength = endPosition.character - startPosition.character;
+    if (tokenLength <= 0) {
+        return ZR_FALSE;
+    }
+
+    semantic_token_add(state,
+                       entries,
+                       (TZrUInt32)startPosition.line,
+                       (TZrUInt32)startPosition.character,
+                       (TZrUInt32)tokenLength,
+                       typeIndex);
+    return ZR_TRUE;
+}
+
 static void semantic_token_add_file_range(SZrState *state,
+                                          SZrLspContext *context,
                                           SZrArray *entries,
+                                          SZrString *uri,
                                           SZrFileRange range,
                                           TZrUInt32 typeIndex) {
     SZrLspRange lspRange;
@@ -393,7 +445,7 @@ static void semantic_token_add_file_range(SZrState *state,
         return;
     }
 
-    lspRange = ZrLanguageServer_LspRange_FromFileRange(range);
+    lspRange = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
     if (lspRange.start.line != lspRange.end.line) {
         return;
     }
@@ -564,6 +616,7 @@ static void semantic_token_append_import_alias_binding(SZrState *state,
 }
 
 static void semantic_token_add_scope_symbols(SZrState *state,
+                                             SZrLspContext *context,
                                              SZrArray *entries,
                                              SZrString *uri,
                                              SZrSymbolScope *scope) {
@@ -583,7 +636,9 @@ static void semantic_token_add_scope_symbols(SZrState *state,
         typeIndex = semantic_token_type_from_symbol((*symbolPtr)->type);
         if (typeIndex != ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN) {
             semantic_token_add_file_range(state,
+                                          context,
                                           entries,
+                                          uri,
                                           (*symbolPtr)->selectionRange,
                                           (TZrUInt32)typeIndex);
         }
@@ -591,6 +646,7 @@ static void semantic_token_add_scope_symbols(SZrState *state,
 }
 
 static void semantic_token_add_symbol_tokens(SZrState *state,
+                                             SZrLspContext *context,
                                              SZrSemanticAnalyzer *analyzer,
                                              SZrString *uri,
                                              SZrArray *entries) {
@@ -599,12 +655,12 @@ static void semantic_token_add_symbol_tokens(SZrState *state,
         return;
     }
 
-    semantic_token_add_scope_symbols(state, entries, uri, analyzer->symbolTable->globalScope);
+    semantic_token_add_scope_symbols(state, context, entries, uri, analyzer->symbolTable->globalScope);
     for (TZrSize index = 0; index < analyzer->symbolTable->allScopes.length; index++) {
         SZrSymbolScope **scopePtr =
             (SZrSymbolScope **)ZrCore_Array_Get(&analyzer->symbolTable->allScopes, index);
         if (scopePtr != ZR_NULL && *scopePtr != ZR_NULL && *scopePtr != analyzer->symbolTable->globalScope) {
-            semantic_token_add_scope_symbols(state, entries, uri, *scopePtr);
+            semantic_token_add_scope_symbols(state, context, entries, uri, *scopePtr);
         }
     }
 }
@@ -727,7 +783,6 @@ static void semantic_token_scan_source(SZrState *state,
         }
         if (current == '%') {
             TZrSize start = offset;
-            TZrUInt32 startCharacter = character;
 
             offset++;
             character++;
@@ -736,18 +791,18 @@ static void semantic_token_scan_source(SZrState *state,
                 character++;
             }
             if (semantic_token_is_keyword_directive(content + start, offset - start)) {
-                semantic_token_add(state,
-                                   entries,
-                                   line,
-                                   startCharacter,
-                                   (TZrUInt32)(offset - start),
-                                   ZR_LSP_SEMANTIC_TOKEN_KEYWORD);
+                semantic_token_add_utf16_span(state,
+                                              entries,
+                                              content,
+                                              contentLength,
+                                              start,
+                                              offset,
+                                              ZR_LSP_SEMANTIC_TOKEN_KEYWORD);
             }
             continue;
         }
         if (current == '#') {
             TZrSize start = offset;
-            TZrUInt32 startCharacter = character;
 
             offset++;
             character++;
@@ -761,18 +816,18 @@ static void semantic_token_scan_source(SZrState *state,
             if (offset < contentLength && content[offset] == '#') {
                 offset++;
                 character++;
-                semantic_token_add(state,
-                                   entries,
-                                   line,
-                                   startCharacter,
-                                   (TZrUInt32)(offset - start),
-                                   ZR_LSP_SEMANTIC_TOKEN_DECORATOR);
+                semantic_token_add_utf16_span(state,
+                                              entries,
+                                              content,
+                                              contentLength,
+                                              start,
+                                              offset,
+                                              ZR_LSP_SEMANTIC_TOKEN_DECORATOR);
             }
             continue;
         }
         if (current == '@') {
             TZrSize start = offset;
-            TZrUInt32 startCharacter = character;
 
             offset++;
             character++;
@@ -781,12 +836,13 @@ static void semantic_token_scan_source(SZrState *state,
                 character++;
             }
             if (semantic_token_is_meta_method(content + start, offset - start)) {
-                semantic_token_add(state,
-                                   entries,
-                                   line,
-                                   startCharacter,
-                                   (TZrUInt32)(offset - start),
-                                   ZR_LSP_SEMANTIC_TOKEN_META_METHOD);
+                semantic_token_add_utf16_span(state,
+                                              entries,
+                                              content,
+                                              contentLength,
+                                              start,
+                                              offset,
+                                              ZR_LSP_SEMANTIC_TOKEN_META_METHOD);
             }
             continue;
         }
@@ -800,6 +856,7 @@ static void semantic_token_scan_source(SZrState *state,
             TZrSize start = offset;
             TZrUInt32 startLine = line;
             TZrUInt32 startCharacter = character;
+            SZrLspPosition startPosition;
             TZrSize length;
             TZrSize previous = start;
             SZrLspImportBinding *binding;
@@ -809,14 +866,20 @@ static void semantic_token_scan_source(SZrState *state,
                 character++;
             }
             length = offset - start;
+            startPosition = ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(content,
+                                                                                        contentLength,
+                                                                                        start);
+            startLine = (TZrUInt32)startPosition.line;
+            startCharacter = (TZrUInt32)startPosition.character;
 
             if (semantic_token_is_keyword_word(content + start, length)) {
-                semantic_token_add(state,
-                                   entries,
-                                   startLine,
-                                   startCharacter,
-                                   (TZrUInt32)length,
-                                   ZR_LSP_SEMANTIC_TOKEN_KEYWORD);
+                semantic_token_add_utf16_span(state,
+                                              entries,
+                                              content,
+                                              contentLength,
+                                              start,
+                                              offset,
+                                              ZR_LSP_SEMANTIC_TOKEN_KEYWORD);
             }
             semantic_token_append_import_alias_binding(state,
                                                        bindings,
@@ -841,12 +904,13 @@ static void semantic_token_scan_source(SZrState *state,
                                                                  ZR_FALSE);
                 }
                 if (tokenType >= 0) {
-                    semantic_token_add(state,
-                                       entries,
-                                       startLine,
-                                       startCharacter,
-                                       (TZrUInt32)length,
-                                       (TZrUInt32)tokenType);
+                    semantic_token_add_utf16_span(state,
+                                                  entries,
+                                                  content,
+                                                  contentLength,
+                                                  start,
+                                                  offset,
+                                                  (TZrUInt32)tokenType);
                 }
                 continue;
             }
@@ -856,12 +920,13 @@ static void semantic_token_scan_source(SZrState *state,
                 continue;
             }
 
-            semantic_token_add(state,
-                               entries,
-                               startLine,
-                               startCharacter,
-                               (TZrUInt32)length,
-                               ZR_LSP_SEMANTIC_TOKEN_NAMESPACE);
+            semantic_token_add_utf16_span(state,
+                                          entries,
+                                          content,
+                                          contentLength,
+                                          start,
+                                          offset,
+                                          ZR_LSP_SEMANTIC_TOKEN_NAMESPACE);
 
             {
                 SZrString *currentModuleName = binding->moduleName;
@@ -909,6 +974,13 @@ static void semantic_token_scan_source(SZrState *state,
                         chainCharacter++;
                     }
                     segmentLength = chainOffset - segmentStart;
+                    {
+                        SZrLspPosition segmentPosition =
+                            ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(content,
+                                                                                        contentLength,
+                                                                                        segmentStart);
+                        segmentCharacter = (TZrUInt32)segmentPosition.character;
+                    }
 
                     lookahead = chainOffset;
                     while (lookahead < contentLength &&
@@ -945,12 +1017,13 @@ static void semantic_token_scan_source(SZrState *state,
                                                                      hasFollowingDot);
                     }
 
-                    semantic_token_add(state,
-                                       entries,
-                                       startLine,
-                                       segmentCharacter,
-                                       (TZrUInt32)segmentLength,
-                                       (TZrUInt32)tokenType);
+                    semantic_token_add_utf16_span(state,
+                                                  entries,
+                                                  content,
+                                                  contentLength,
+                                                  segmentStart,
+                                                  segmentStart + segmentLength,
+                                                  (TZrUInt32)tokenType);
                 }
 
                 offset = chainOffset;
@@ -965,6 +1038,7 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
                                                SZrString *uri,
                                                SZrArray *result) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrSemanticAnalyzer *analyzer;
     SZrLspProjectIndex *projectIndex;
     SZrArray entries;
@@ -976,7 +1050,7 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
 
     projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         return ZR_FALSE;
     }
 
@@ -999,14 +1073,14 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
 
     if (analyzer != ZR_NULL && analyzer->ast != ZR_NULL) {
         ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
-        semantic_token_add_symbol_tokens(state, analyzer, uri, &entries);
+        semantic_token_add_symbol_tokens(state, context, analyzer, uri, &entries);
     }
 
     semantic_token_scan_source(state,
                                context,
                                uri,
-                               fileVersion->content,
-                               fileVersion->contentLength,
+                               snapshot.content,
+                               snapshot.contentLength,
                                analyzer,
                                &bindings,
                                projectIndex,
@@ -1015,6 +1089,7 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
 
     ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
     ZrCore_Array_Free(state, &entries);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_TRUE;
 }
 

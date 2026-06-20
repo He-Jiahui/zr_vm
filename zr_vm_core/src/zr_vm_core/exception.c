@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/debug.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/log.h"
@@ -45,6 +46,7 @@
 
 /* Stack traces expose 0 as "no mapped source line" instead of the debug-hook-only 0xFFFFFFFF sentinel. */
 #define ZR_EXCEPTION_SOURCE_LINE_NONE ((TZrUInt32)0u)
+#define ZR_EXCEPTION_TRACEBACK_BUFFER_SIZE 4096u
 
 static const TZrChar kZrExceptionDefaultRuntimeStatusFaultMessage[] = "Runtime status fault";
 
@@ -349,6 +351,8 @@ static TZrBool exception_apply_error_fields(SZrState *state,
                                             const SZrTypeValue *messageSource,
                                             const SZrTypeValue *exceptionValue,
                                             SZrCallInfo *throwCallInfo) {
+    TZrChar tracebackBuffer[ZR_EXCEPTION_TRACEBACK_BUFFER_SIZE];
+    TZrSize tracebackLength = 0u;
     SZrObject *frames;
     SZrTypeValue value;
     SZrTypeValue stableMessageSource;
@@ -369,6 +373,12 @@ static TZrBool exception_apply_error_fields(SZrState *state,
         exceptionValueStablePtr = &stableExceptionValue;
     }
 
+    tracebackLength = ZrCore_Debug_Traceback(state,
+                                             ZR_NULL,
+                                             0u,
+                                             0u,
+                                             tracebackBuffer,
+                                             sizeof(tracebackBuffer));
     frames = exception_capture_stack_frames(state, throwCallInfo);
     if (frames == ZR_NULL) {
         return ZR_FALSE;
@@ -377,6 +387,14 @@ static TZrBool exception_apply_error_fields(SZrState *state,
     ZrCore_Value_InitAsRawObject(state, &value, ZR_CAST_RAW_OBJECT_AS_SUPER(frames));
     value.type = ZR_VALUE_TYPE_ARRAY;
     exception_set_object_field_cstring(state, errorObject, "stacks", &value);
+    if (tracebackLength > 0u) {
+        SZrString *tracebackString = ZrCore_String_Create(state, tracebackBuffer, tracebackLength);
+        if (tracebackString != ZR_NULL) {
+            ZrCore_Value_InitAsRawObject(state, &value, ZR_CAST_RAW_OBJECT_AS_SUPER(tracebackString));
+            value.type = ZR_VALUE_TYPE_STRING;
+            exception_set_object_field_cstring(state, errorObject, "stack", &value);
+        }
+    }
     exception_set_message_field_from_value(state, errorObject, messageSourceStablePtr);
 
     if (exceptionValueStablePtr != ZR_NULL) {
@@ -454,7 +472,7 @@ static TZrBool exception_create_status_error(SZrState *state,
     }
     if (messageSource == ZR_NULL) {
         defaultStatusMessageString =
-                ZrCore_String_CreateFromNative(state, kZrExceptionDefaultRuntimeStatusFaultMessage);
+                ZrCore_String_CreateFromNative(state, (TZrNativeString)kZrExceptionDefaultRuntimeStatusFaultMessage);
         if (defaultStatusMessageString == ZR_NULL) {
             return ZR_FALSE;
         }
@@ -764,6 +782,7 @@ static TZrChar *exception_format_unhandled_text(struct SZrState *state, const SZ
     SZrObject *errorObject;
     const SZrTypeValue *messageValue;
     const SZrTypeValue *payloadValue;
+    const SZrTypeValue *stackValue;
     const SZrTypeValue *stacksValue;
     const TZrChar *typeName = "Error";
     SZrString *payloadSummary = ZR_NULL;
@@ -792,6 +811,7 @@ static TZrChar *exception_format_unhandled_text(struct SZrState *state, const SZ
 
     messageValue = exception_get_object_field_cstring(state, errorObject, "message");
     payloadValue = exception_get_object_field_cstring(state, errorObject, "exception");
+    stackValue = exception_get_object_field_cstring(state, errorObject, "stack");
     stacksValue = exception_get_object_field_cstring(state, errorObject, "stacks");
     if (payloadValue != ZR_NULL) {
         payloadSummary = ZrCore_Value_ConvertToString(state, (SZrTypeValue *)payloadValue);
@@ -819,6 +839,22 @@ static TZrChar *exception_format_unhandled_text(struct SZrState *state, const SZ
                                             ZrCore_String_GetNativeString(payloadSummary))) {
             free(builder.buffer);
             return ZR_NULL;
+        }
+    }
+
+    if (stackValue != ZR_NULL && stackValue->type == ZR_VALUE_TYPE_STRING && stackValue->value.object != ZR_NULL) {
+        const TZrChar *stackText = ZrCore_String_GetNativeString(ZR_CAST_STRING(state, stackValue->value.object));
+        TZrSize stackLength = stackText != ZR_NULL ? strlen(stackText) : 0u;
+        if (stackLength > 0u) {
+            if (!exception_text_builder_append(&builder, stackText)) {
+                free(builder.buffer);
+                return ZR_NULL;
+            }
+            if (stackText[stackLength - 1u] != '\n' && !exception_text_builder_append(&builder, "\n")) {
+                free(builder.buffer);
+                return ZR_NULL;
+            }
+            return builder.buffer;
         }
     }
 

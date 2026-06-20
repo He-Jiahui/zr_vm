@@ -891,8 +891,7 @@ static ZR_FORCE_INLINE TZrBool execution_callinfo_has_pending_close_work(const S
     }
 
     frameBase = callInfo->functionBase.valuePointer + 1;
-    if (state->stackClosureValueList != ZR_NULL &&
-        state->stackClosureValueList->value.valuePointer >= frameBase) {
+    if (ZrCore_Closure_HasOpenStackValueInRange(state, frameBase, callInfo->functionTop.valuePointer)) {
         return ZR_TRUE;
     }
 
@@ -1019,6 +1018,13 @@ TZrBool execution_inline_frame_try_set_member_by_name(SZrState *state,
                                                       TZrUInt32 receiverSlot,
                                                       SZrString *memberName,
                                                       const SZrTypeValue *assignedValue);
+TZrBool execution_inline_frame_try_set_member_by_name_from_slot(SZrState *state,
+                                                                const SZrFunction *function,
+                                                                TZrStackValuePointer frameBase,
+                                                                TZrUInt32 receiverSlot,
+                                                                SZrString *memberName,
+                                                                TZrUInt32 sourceSlot,
+                                                                const SZrTypeValue *assignedValue);
 TZrBool execution_inline_frame_try_get_member(SZrState *state,
                                               const SZrFunction *function,
                                               TZrStackValuePointer frameBase,
@@ -1112,6 +1118,17 @@ TZrBool execution_invoke_meta_call(SZrState *state,
                                    TZrSize argumentCount,
                                    TZrStackValuePointer *outMetaBase,
                                    TZrStackValuePointer *outSavedStackTop);
+TZrBool execution_invoke_meta_call_to_destination(SZrState *state,
+                                                  SZrCallInfo *savedCallInfo,
+                                                  TZrStackValuePointer savedStackTop,
+                                                  TZrStackValuePointer requestedScratchBase,
+                                                  SZrMeta *meta,
+                                                  const SZrTypeValue *arg0,
+                                                  const SZrTypeValue *arg1,
+                                                  TZrSize argumentCount,
+                                                  TZrStackValuePointer returnDestination,
+                                                  TZrStackValuePointer *outMetaBase,
+                                                  TZrStackValuePointer *outSavedStackTop);
 
 static ZR_FORCE_INLINE void execution_discard_exception_handlers_for_callinfo_fast(
         SZrState *state,

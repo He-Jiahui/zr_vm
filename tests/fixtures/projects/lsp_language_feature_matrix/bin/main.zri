@@ -19,10 +19,10 @@ CONSTANTS (8):
   [7] function
 
 LOCAL_VARIABLES (4):
-  [0] runMatrix: offset_activate=0, offset_dead=18
-  [1] core: offset_activate=5, offset_dead=18
-  [2] meta: offset_activate=9, offset_dead=18
-  [3] native: offset_activate=13, offset_dead=18
+  [0] runMatrix: offset_activate=0, offset_dead=21
+  [1] core: offset_activate=7, offset_dead=21
+  [2] meta: offset_activate=12, offset_dead=21
+  [3] native: offset_activate=16, offset_dead=21
 
 CLOSURE_VARIABLES (0):
 
@@ -43,7 +43,7 @@ TYPE_METADATA:
     IMPORT_CALL async_native.nativeScore [kind=function readiness=declaration]
     IMPORT_CALL oop_meta.combineVectors [kind=function readiness=declaration]
   EXPORTED_CALLABLE_SUMMARIES (1):
-    fn runMatrix [child=4294967295 effects=3]
+    fn runMatrix [child=0 effects=3]
       IMPORT_CALL core_semantics.lambdaScore [kind=function readiness=declaration]
       IMPORT_CALL async_native.nativeScore [kind=function readiness=declaration]
       IMPORT_CALL oop_meta.combineVectors [kind=function readiness=declaration]
@@ -69,24 +69,28 @@ CALLSITE_CACHE_TABLE (0):
 
 EH_TABLE (0):
 
-INSTRUCTIONS (17):
-  [0] GET_CONSTANT (extra=0, operand=0)
-  [1] GET_CONSTANT (extra=1, operand=1)
-  [2] GET_CONSTANT (extra=2, operand=2)
-  [3] FUNCTION_CALL (extra=1, operand1=1, operand2=1)
-  [4] GET_CONSTANT (extra=2, operand=0)
-  [5] GET_CONSTANT (extra=2, operand=3)
-  [6] GET_CONSTANT (extra=3, operand=4)
-  [7] FUNCTION_CALL (extra=2, operand1=2, operand2=1)
-  [8] GET_CONSTANT (extra=3, operand=0)
-  [9] GET_CONSTANT (extra=3, operand=5)
-  [10] GET_CONSTANT (extra=4, operand=6)
-  [11] FUNCTION_CALL (extra=3, operand1=3, operand2=1)
-  [12] CREATE_CLOSURE (extra=4)
-  [13] SET_STACK (extra=0, operand=4)
-  [14] GET_STACK (extra=5, operand=0)
-  [15] SUPER_FUNCTION_TAIL_CALL_NO_ARGS (extra=5, operand1=5, operand2=0)
-  [16] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
+INSTRUCTIONS (21):
+  [0] RESET_STACK_NULL (extra=0)
+  [1] GET_CONSTANT (extra=2, operand=1)
+  [2] GET_CONSTANT (extra=3, operand=2)
+  [3] KNOWN_NATIVE_CALL (extra=2, operand1=2, operand2=1)
+  [4] RESET_STACK_NULL (extra=3)
+  [5] SET_STACK (extra=1, operand=2)
+  [6] RESET_STACK_NULL (extra=2)
+  [7] GET_CONSTANT (extra=3, operand=3)
+  [8] GET_CONSTANT (extra=4, operand=4)
+  [9] KNOWN_NATIVE_CALL (extra=3, operand1=3, operand2=1)
+  [10] SET_STACK (extra=2, operand=3)
+  [11] RESET_STACK_NULL (extra=3)
+  [12] GET_CONSTANT (extra=4, operand=5)
+  [13] GET_CONSTANT (extra=5, operand=6)
+  [14] KNOWN_NATIVE_CALL (extra=4, operand1=4, operand2=1)
+  [15] SET_STACK (extra=3, operand=4)
+  [16] CREATE_CLOSURE (extra=4)
+  [17] SET_STACK (extra=0, operand=4)
+  [18] GET_STACK (extra=5, operand=0)
+  [19] SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS (extra=5, operand1=5, operand2=0)
+  [20] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
 
 CHILD_FUNCTIONS (1):
   [0] FUNCTION:
@@ -106,13 +110,13 @@ CHILD_FUNCTIONS (1):
       [5] int: 2
 
     LOCAL_VARIABLES (7):
-      [0] meter: offset_activate=9, offset_dead=52
-      [1] getterValue: offset_activate=11, offset_dead=52
-      [2] bumped: offset_activate=27, offset_dead=52
-      [3] callable: offset_activate=31, offset_dead=52
-      [4] lambdaScore: offset_activate=34, offset_dead=52
-      [5] builtinScore: offset_activate=37, offset_dead=52
-      [6] vectorScore: offset_activate=40, offset_dead=52
+      [0] meter: offset_activate=11, offset_dead=49
+      [1] getterValue: offset_activate=14, offset_dead=49
+      [2] bumped: offset_activate=26, offset_dead=49
+      [3] callable: offset_activate=32, offset_dead=49
+      [4] lambdaScore: offset_activate=36, offset_dead=49
+      [5] builtinScore: offset_activate=40, offset_dead=49
+      [6] vectorScore: offset_activate=43, offset_dead=49
 
     CLOSURE_VARIABLES (3):
       [0] meta: in_stack=true, index=2, type=NULL
@@ -130,7 +134,10 @@ CHILD_FUNCTIONS (1):
         [6] vectorScore: int
       EXPORTED_SYMBOLS (0):
       STATIC_IMPORTS (0):
-      MODULE_ENTRY_EFFECTS (0):
+      MODULE_ENTRY_EFFECTS (3):
+        IMPORT_CALL core_semantics.lambdaScore [kind=function readiness=declaration]
+        IMPORT_CALL async_native.nativeScore [kind=function readiness=declaration]
+        IMPORT_CALL oop_meta.combineVectors [kind=function readiness=declaration]
       EXPORTED_CALLABLE_SUMMARIES (0):
       TOP_LEVEL_CALLABLE_BINDINGS (0):
       COMPILE_TIME_VARIABLES (0):
@@ -144,83 +151,100 @@ CHILD_FUNCTIONS (1):
 
     OWNERSHIP_TABLE (0):
 
-    EFFECT_TABLE (3):
+    EFFECT_TABLE (11):
       [0] DYNAMIC_RUNTIME inst=0 from=0 to=0
-      [1] DYNAMIC_RUNTIME inst=1 from=0 to=0
+      [1] NONE inst=1 from=0 to=0
       [2] DYNAMIC_RUNTIME inst=2 from=0 to=0
+      [3] DYNAMIC_RUNTIME inst=3 from=0 to=0
+      [4] DYNAMIC_RUNTIME inst=4 from=0 to=0
+      [5] DYNAMIC_RUNTIME inst=5 from=0 to=0
+      [6] NONE inst=6 from=0 to=0
+      [7] NONE inst=7 from=0 to=0
+      [8] NONE inst=8 from=0 to=0
+      [9] NONE inst=9 from=0 to=0
+      [10] NONE inst=10 from=0 to=0
 
     BLOCK_GRAPH (1):
-      [0] block=0 first=0 count=3
+      [0] block=0 first=0 count=11
 
-    SEMIR (3):
-      [0] META_GET exec=10 type=2 effect=0 dst=1 op0=1 op1=1 deopt=1
-      [1] META_SET exec=15 type=2 effect=1 dst=5 op0=5 op1=2 deopt=2
-      [2] META_CALL exec=29 type=2 effect=2 dst=3 op0=3 op1=1 deopt=3
+    SEMIR (11):
+      [0] DYN_CALL exec=5 type=2 effect=0 dst=2 op0=2 op1=2 deopt=1
+      [1] ADD exec=14 type=2 effect=1 dst=4 op0=1 op1=3 deopt=0
+      [2] DYN_CALL exec=22 type=2 effect=2 dst=3 op0=3 op1=2 deopt=2
+      [3] META_GET exec=33 type=2 effect=3 dst=5 op0=5 op1=3 deopt=3
+      [4] META_GET exec=37 type=2 effect=4 dst=6 op0=6 op1=4 deopt=4
+      [5] META_GET exec=41 type=0 effect=5 dst=7 op0=7 op1=5 deopt=5
+      [6] ADD exec=43 type=2 effect=6 dst=9 op0=1 op1=2 deopt=0
+      [7] ADD exec=44 type=2 effect=7 dst=11 op0=9 op1=3 deopt=0
+      [8] ADD exec=45 type=2 effect=8 dst=13 op0=11 op1=4 deopt=0
+      [9] ADD exec=46 type=2 effect=9 dst=15 op0=13 op1=5 deopt=0
+      [10] ADD exec=47 type=2 effect=10 dst=17 op0=15 op1=6 deopt=0
 
-    DEOPT_MAP (3):
-      [0] deopt=1 exec=10
-      [1] deopt=2 exec=15
-      [2] deopt=3 exec=29
+    DEOPT_MAP (5):
+      [0] deopt=1 exec=5
+      [1] deopt=2 exec=22
+      [2] deopt=3 exec=33
+      [3] deopt=4 exec=37
+      [4] deopt=5 exec=41
 
-    CALLSITE_CACHE_TABLE (3):
-      [0] kind=META_GET inst=10 member=1 deopt=1 args=0 hits=0 misses=0
-      [1] kind=META_SET inst=15 member=2 deopt=2 args=0 hits=0 misses=0
-      [2] kind=META_CALL inst=29 member=4294967295 deopt=3 args=1 hits=0 misses=0
+    CALLSITE_CACHE_TABLE (5):
+      [0] kind=META_GET inst=11 member=1 deopt=3 args=0 hits=0 misses=0
+      [1] kind=META_SET inst=16 member=1 deopt=4 args=0 hits=0 misses=0
+      [2] kind=META_CALL inst=28 member=4294967295 deopt=7 args=1 hits=0 misses=0
+      [3] kind=MEMBER_GET inst=2 member=0 deopt=1 args=0 hits=0 misses=0
+      [4] kind=MEMBER_GET inst=20 member=2 deopt=5 args=0 hits=0 misses=0
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (52):
-      [0] CREATE_OBJECT (extra=0)
-      [1] OPCODE_23 (extra=0)
-      [2] OPCODE_8 (extra=1, operand1=0, operand2=0)
-      [3] SET_STACK (extra=2, operand=0)
-      [4] GET_CONSTANT (extra=3, operand=1)
-      [5] OPCODE_75 (extra=1, operand1=1, operand2=2)
-      [6] GET_CONSTANT (extra=1, operand=2)
-      [7] GET_CONSTANT (extra=2, operand=2)
-      [8] GET_CONSTANT (extra=3, operand=2)
-      [9] GET_STACK (extra=1, operand=0)
-      [10] SUPER_META_GET_CACHED (extra=1, operand1=1, operand2=0)
-      [11] GET_STACK (extra=2, operand=1)
-      [12] GET_CONSTANT (extra=3, operand=3)
-      [13] ADD_INT (extra=4, operand1=2, operand2=3)
-      [14] GET_STACK (extra=5, operand=0)
-      [15] SUPER_META_SET_CACHED (extra=5, operand1=4, operand2=1)
-      [16] GET_CONSTANT (extra=2, operand=2)
-      [17] GET_CONSTANT (extra=3, operand=2)
-      [18] GET_CONSTANT (extra=4, operand=2)
-      [19] GET_CONSTANT (extra=5, operand=2)
-      [20] GET_STACK (extra=2, operand=0)
-      [21] SET_STACK (extra=3, operand=2)
-      [22] OPCODE_8 (extra=2, operand1=2, operand2=3)
-      [23] GET_CONSTANT (extra=4, operand=4)
-      [24] OPCODE_75 (extra=2, operand1=2, operand2=2)
-      [25] GET_CONSTANT (extra=3, operand=2)
-      [26] GET_CONSTANT (extra=4, operand=2)
-      [27] GET_STACK (extra=3, operand=0)
-      [28] GET_CONSTANT (extra=4, operand=5)
-      [29] SUPER_META_CALL_CACHED (extra=3, operand1=3, operand2=2)
-      [30] GET_CONSTANT (extra=4, operand=2)
-      [31] OPCODE_6 (extra=4, operand2=1, operand1=1, operand1_1=0)
-      [32] OPCODE_8 (extra=4, operand1=4, operand2=4)
-      [33] SUPER_FUNCTION_CALL_NO_ARGS (extra=4, operand1=4, operand2=0)
-      [34] OPCODE_6 (extra=5, operand2=2, operand1=2, operand1_1=0)
-      [35] OPCODE_8 (extra=5, operand1=5, operand2=5)
-      [36] SUPER_FUNCTION_CALL_NO_ARGS (extra=5, operand1=5, operand2=0)
-      [37] OPCODE_6 (extra=6)
-      [38] OPCODE_8 (extra=6, operand1=6, operand2=6)
-      [39] SUPER_FUNCTION_CALL_NO_ARGS (extra=6, operand1=6, operand2=0)
-      [40] GET_STACK (extra=7, operand=1)
-      [41] GET_STACK (extra=8, operand=2)
-      [42] ADD_INT (extra=9, operand1=7, operand2=8)
-      [43] GET_STACK (extra=10, operand=3)
-      [44] ADD_INT (extra=11, operand1=9, operand2=10)
-      [45] GET_STACK (extra=12, operand=4)
-      [46] ADD_INT (extra=13, operand1=11, operand2=12)
-      [47] GET_STACK (extra=14, operand=5)
-      [48] ADD_INT (extra=15, operand1=13, operand2=14)
-      [49] GET_STACK (extra=16, operand=6)
-      [50] ADD_INT (extra=17, operand1=15, operand2=16)
-      [51] FUNCTION_RETURN (extra=1, operand1=17, operand2=0)
+    INSTRUCTIONS (49):
+      [0] CREATE_OBJECT (extra=1)
+      [1] OPCODE_38 (extra=1, operand2=1, operand1=1, operand1_1=0)
+      [2] GET_MEMBER_SLOT (extra=2, operand1=1, operand2=3)
+      [3] SET_STACK (extra=3, operand=1)
+      [4] GET_CONSTANT (extra=4, operand=1)
+      [5] OPCODE_109 (extra=2, operand1=2, operand2=2)
+      [6] SET_STACK (extra=1, operand=3)
+      [7] RESET_STACK_NULL2 (extra=2, first_slot=2, second_slot=3)
+      [8] RESET_STACK_NULL (extra=4)
+      [9] SET_STACK (extra=0, operand=1)
+      [10] RESET_STACK_NULL (extra=1)
+      [11] SUPER_META_GET_CACHED (extra=2, operand1=0, operand2=0)
+      [12] SET_STACK (extra=1, operand=2)
+      [13] RESET_STACK_NULL (extra=2)
+      [14] ADD_SIGNED_CONST (extra=4, left_slot=1, constant_index=3)
+      [15] GET_STACK (extra=5, operand=0)
+      [16] SUPER_META_SET_CACHED (extra=5, operand1=4, operand2=1)
+      [17] RESET_STACK_NULL2 (extra=4, first_slot=4, second_slot=5)
+      [18] GET_STACK (extra=3, operand=0)
+      [19] SET_STACK (extra=4, operand=3)
+      [20] GET_MEMBER_SLOT (extra=3, operand1=3, operand2=4)
+      [21] GET_CONSTANT (extra=5, operand=4)
+      [22] OPCODE_109 (extra=3, operand1=3, operand2=2)
+      [23] RESET_STACK_NULL2 (extra=4, first_slot=4, second_slot=5)
+      [24] SET_STACK (extra=2, operand=3)
+      [25] RESET_STACK_NULL (extra=3)
+      [26] GET_STACK (extra=4, operand=0)
+      [27] GET_CONSTANT (extra=5, operand=5)
+      [28] SUPER_META_CALL_CACHED (extra=4, operand1=4, operand2=2)
+      [29] RESET_STACK_NULL (extra=5)
+      [30] SET_STACK (extra=3, operand=4)
+      [31] RESET_STACK_NULL (extra=4)
+      [32] OPCODE_6 (extra=5, operand2=1, operand1=1, operand1_1=0)
+      [33] OPCODE_8 (extra=5, operand1=5, operand2=3)
+      [34] SUPER_FUNCTION_CALL_NO_ARGS (extra=4, operand1=5, operand2=0)
+      [35] RESET_STACK_NULL (extra=5)
+      [36] OPCODE_6 (extra=6, operand2=2, operand1=2, operand1_1=0)
+      [37] OPCODE_8 (extra=6, operand1=6, operand2=4)
+      [38] SUPER_FUNCTION_CALL_NO_ARGS (extra=5, operand1=6, operand2=0)
+      [39] RESET_STACK_NULL (extra=6)
+      [40] OPCODE_6 (extra=7)
+      [41] OPCODE_8 (extra=7, operand1=7, operand2=5)
+      [42] SUPER_FUNCTION_CALL_NO_ARGS (extra=6, operand1=7, operand2=0)
+      [43] ADD_SIGNED (extra=9, operand1=1, operand2=2)
+      [44] ADD_SIGNED (extra=11, operand1=9, operand2=3)
+      [45] ADD_SIGNED (extra=13, operand1=11, operand2=4)
+      [46] ADD_SIGNED (extra=15, operand1=13, operand2=5)
+      [47] ADD_SIGNED (extra=17, operand1=15, operand2=6)
+      [48] FUNCTION_RETURN (extra=1, operand1=17, operand2=0)
 
 

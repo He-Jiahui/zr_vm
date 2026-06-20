@@ -283,6 +283,8 @@ TZrBool ZrLanguageServer_Lsp_GetFoldingRanges(SZrState *state,
                                               SZrString *uri,
                                               SZrArray *result) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
+    TZrBool success;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -292,37 +294,42 @@ TZrBool ZrLanguageServer_Lsp_GetFoldingRanges(SZrState *state,
     }
 
     fileVersion = lsp_editor_get_file_version(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         return ZR_FALSE;
     }
 
     if (!lsp_editor_append_line_run_folding_ranges(state,
                                                    result,
-                                                   fileVersion->content,
-                                                   fileVersion->contentLength,
+                                                   snapshot.content,
+                                                   snapshot.contentLength,
                                                    "%import",
                                                    7,
                                                    ZR_LSP_FOLDING_RANGE_KIND_IMPORTS)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
     if (!lsp_editor_append_line_run_folding_ranges(state,
                                                    result,
-                                                   fileVersion->content,
-                                                   fileVersion->contentLength,
+                                                   snapshot.content,
+                                                   snapshot.contentLength,
                                                    "//",
                                                    2,
                                                    ZR_LSP_FOLDING_RANGE_KIND_COMMENT)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
     if (!lsp_editor_append_marker_folding_ranges(state,
                                                  result,
-                                                 fileVersion->content,
-                                                 fileVersion->contentLength)) {
+                                                 snapshot.content,
+                                                 snapshot.contentLength)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
-    return lsp_editor_append_structural_folding_ranges(state,
-                                                       result,
-                                                       fileVersion->content,
-                                                       fileVersion->contentLength);
+    success = lsp_editor_append_structural_folding_ranges(state,
+                                                          result,
+                                                          snapshot.content,
+                                                          snapshot.contentLength);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+    return success;
 }

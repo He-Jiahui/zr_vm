@@ -688,6 +688,28 @@ TZrBool plugin_guard_expression_contains_container_escape(SZrPluginGuardEscapeSc
     }
 }
 
+static TZrBool plugin_guard_assignment_target_is_member_storage(SZrAstNode *target) {
+    if (target == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (target->type == ZR_AST_MEMBER_EXPRESSION) {
+        return ZR_TRUE;
+    }
+
+    if (target->type == ZR_AST_PRIMARY_EXPRESSION && target->data.primaryExpression.members != ZR_NULL) {
+        SZrAstNodeArray *members = target->data.primaryExpression.members;
+        for (TZrSize index = 0; index < members->count; index++) {
+            SZrAstNode *member = members->nodes[index];
+            if (member != ZR_NULL && member->type == ZR_AST_MEMBER_EXPRESSION) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool plugin_guard_scan_assignment(SZrPluginGuardEscapeScan *scan, SZrAstNode *node) {
     SZrString *targetName;
 
@@ -717,6 +739,10 @@ static TZrBool plugin_guard_scan_assignment(SZrPluginGuardEscapeScan *scan, SZrA
 
     if (!plugin_guard_expression_contains_scoped_value(scan, node->data.assignmentExpression.right)) {
         return ZR_TRUE;
+    }
+
+    if (plugin_guard_assignment_target_is_member_storage(node->data.assignmentExpression.left)) {
+        return plugin_guard_report_escape(scan, node->location, "field/container");
     }
 
     targetName = plugin_guard_bare_identifier_name(node->data.assignmentExpression.left);

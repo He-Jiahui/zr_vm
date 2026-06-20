@@ -1,0 +1,168 @@
+# Semantic Stage 1 CFG Reachability
+
+## Scope
+- Start Stage 1 from `docs/plans/lsp/01-semantic-inference-core.md` with the smallest CFG-backed semantic fact slice.
+- Affected layers: parser CFG scaffold, semantic reachability fact emission, parser test target registration, and semantic documentation.
+
+## Baseline
+- `SZrSemanticReachabilityFact` already had statement-level causes such as `AFTER_RETURN`, but there was no parser CFG producer.
+- The first Stage 1 slice was intentionally narrow: straight-line statement lists plus terminator statements.
+- The next Stage 1 CFG slices add `if` statement branch graph support for boolean literal and folded unary/logical boolean conditions, short-circuit decisive operands, integer literal comparisons, first switch case body graph support, boolean/integer/string/char/float switch case/default pruning, folded boolean selector/case matching for switch, constant-matched switch no-default fallthrough pruning, `while(false)` and folded-false loop-body pruning, first traditional `for(false)` body pruning, first `foreach` body graph support, first try/catch/finally body graph support, basic `break`/`continue` target edges for supported while/for/foreach loops, and `return`/`throw`/`break`/`continue` abrupt paths from try/catch into finally. Broader expression folding, precise catch matching, break/continue-after-finally target rewriting, full switch/union exhaustiveness, and concrete dataflow analyses remain pending. Switch-local break was audited and is not a current CFG target because the compiler only resolves break/continue through loop labels.
+
+## Test Inventory
+- `tests/parser/test_cfg_reachability.c`
+  - `return; <statement>;` builds a CFG where the second statement is unreachable.
+  - The emitted reachability fact keeps cause `ZR_SEMANTIC_REACHABILITY_AFTER_RETURN` and points `causeNode` at the return statement.
+  - A `return` terminator block connects to exit while the following statement remains entry-unreachable.
+  - Two expression statements in sequence produce no unreachable fact.
+  - `if (true) { A } else { B }` marks the else statement unreachable with `ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH` and points `causeNode` at the boolean condition.
+  - `while (false) { A }` marks the body statement unreachable with `ZR_SEMANTIC_REACHABILITY_CONDITION_FALSE` and points `causeNode` at the boolean condition.
+  - `for (; false; step) { A }` marks the body statement unreachable with `ZR_SEMANTIC_REACHABILITY_CONDITION_FALSE` and points `causeNode` at the boolean condition.
+  - `foreach (...) { break; A }` marks the body statement after `break` unreachable with `ZR_SEMANTIC_REACHABILITY_AFTER_BREAK` and points `causeNode` at the break statement.
+  - `while (true) { break; }` connects the `break` block to the while join block.
+  - `while (true) { continue; }` connects the `continue` block to the while condition block.
+  - `for (; true; step) { break; }` connects the `break` block to the for join block.
+  - `for (; true; step) { continue; }` connects the `continue` block to the for step-entry join, and the step block reconnects to the for condition block.
+  - `foreach (...) { break; }` connects the `break` block to the foreach join block.
+  - `foreach (...) { continue; }` connects the `continue` block back to the foreach iteration block.
+  - `try { return; A }` marks the try-body statement after `return` unreachable with `ZR_SEMANTIC_REACHABILITY_AFTER_RETURN` and points `causeNode` at the return statement.
+  - `try { A } catch { return; B }` marks the catch-body statement after `return` unreachable with `ZR_SEMANTIC_REACHABILITY_AFTER_RETURN` and points `causeNode` at the return statement.
+  - `try { A } finally { return; B }` marks the finally-body statement after `return` unreachable with `ZR_SEMANTIC_REACHABILITY_AFTER_RETURN` and points `causeNode` at the return statement.
+  - `switch (x) { case y { return; A } }` marks the case-body statement after `return` unreachable with `ZR_SEMANTIC_REACHABILITY_AFTER_RETURN` and points `causeNode` at the return statement.
+  - `switch (true) { case false { A } }` marks the non-matching boolean case unreachable with `ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH` and points `causeNode` at the switch selector.
+  - `switch (true) { case true { A } case false { B } default { C } }` marks the default branch unreachable with `ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH` and points `causeNode` at the switch selector.
+  - `switch (1) { case 2 { A } }` marks the non-matching integer case unreachable with `ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH` and points `causeNode` at the switch selector.
+  - `switch (1) { case 1 { A } default { B } }` marks the default branch unreachable after the constant selector is consumed by the matching integer case.
+  - `switch (1) { case 1 { return; } } A` marks the statement after switch unreachable because the known matching case terminates and there is no default/no-match path.
+  - `switch ("red") { case "blue" { A } }` marks the non-matching string case unreachable with `ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH` and points `causeNode` at the switch selector.
+  - `switch ("red") { case "red" { A } default { B } }` marks the default branch unreachable after the constant selector is consumed by the matching string case.
+  - `switch ('a') { case 'b' { A } }` marks the non-matching char case unreachable with `ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH` and points `causeNode` at the switch selector.
+  - `switch ('a') { case 'a' { A } default { B } }` marks the default branch unreachable after the constant selector is consumed by the matching char case.
+  - `switch (1.5) { case 2.5 { A } }` marks the non-matching float case unreachable with `ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH` and points `causeNode` at the switch selector.
+  - `switch (1.5) { case 1.5 { A } default { B } }` marks the default branch unreachable after the constant selector is consumed by the matching float case.
+- `tests/parser/test_cfg_finally_abrupt.c`
+  - `try { return; } finally { A }` keeps the finally-body statement reachable and emits no reachability fact for `A`.
+  - `try { return; } finally { A } B` keeps `B` unreachable when the only path into finally comes from abrupt return completion.
+  - `while (true) { try { break; } finally { A } }` keeps the finally-body statement reachable from loop-control abrupt completion.
+  - `while (true) { try { continue; } finally { A } }` keeps the finally-body statement reachable from loop-control abrupt completion.
+- `tests/parser/test_cfg_constant_conditions.c`
+  - `if (!false) { A } else { B }` keeps the then branch reachable and marks the else branch unreachable with `ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH`.
+  - `while (!true) { A }` marks the body unreachable with `ZR_SEMANTIC_REACHABILITY_CONDITION_FALSE`.
+  - `if (true && false) { A } else { B }` marks the then branch unreachable with `ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH`.
+  - `while (false || false) { A }` marks the body unreachable with `ZR_SEMANTIC_REACHABILITY_CONDITION_FALSE`.
+  - `if (false && flag) { A } else { B }` marks the then branch unreachable without folding the unknown right operand.
+  - `if (true || flag) { A } else { B }` marks the else branch unreachable without folding the unknown right operand.
+  - `if (1 == 2) { A } else { B }` marks the then branch unreachable with `ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH`.
+  - `while (1 < 0) { A }` marks the body unreachable with `ZR_SEMANTIC_REACHABILITY_CONDITION_FALSE`.
+- `tests/parser/test_cfg_switch_constants.c`
+  - `switch(!false) { case true { A } default { B } }` marks default unreachable after the folded selector matches the case.
+  - `switch(true) { case !false { A } default { B } }` marks default unreachable after the folded case value matches the selector.
+  - `switch(false && flag) { case true { A } default { B } }` marks the non-matching case unreachable while keeping default reachable.
+
+## Tooling Evidence
+- Windows MSVC focused build was used because the current WSL checkout still has unrelated stuck work.
+- RED 1: Windows MSVC focused target failed to compile because `SZrParserCfg` and CFG APIs were missing.
+- GREEN 1: after adding `zr_vm_parser/include/zr_vm_parser/cfg.h` and `zr_vm_parser/src/zr_vm_parser/type_inference/cfg.c`, `zr_vm_cfg_reachability_test` built and passed 2 tests.
+- RED 2: after adding the constant-true `if` branch case, `zr_vm_cfg_reachability_test` failed with `Expected Non-NULL` for the else branch reachability fact.
+- GREEN 2: after adding `ZR_AST_IF_EXPRESSION` branch graph support and bool-literal branch pruning, `zr_vm_cfg_reachability_test` built and passed 3 tests.
+- RED 3: after adding the constant-false `while` case, `zr_vm_cfg_reachability_test` failed with `Expected Non-NULL` for the loop body reachability fact.
+- GREEN 3: after adding `ZR_AST_WHILE_LOOP` condition/body/back-edge/join support and false-condition body pruning, `zr_vm_cfg_reachability_test` built and passed 4 tests.
+- RED 4: after adding the `return -> exit` invariant, `zr_vm_cfg_reachability_test` failed because the return block had zero successors.
+- GREEN 4: after connecting function-exiting terminators to exit, `zr_vm_cfg_reachability_test` built and passed 5 tests.
+- RED 5: after adding `for(false)` body pruning coverage, the focused CFG test failed with `Expected Non-NULL` because `ZR_AST_FOR_LOOP` bodies were still treated as opaque statements.
+- GREEN 5: after adding traditional `for` CFG construction, the manual focused MSVC harness passed 6 CFG tests. The normal MSVC CMake target could not be used for this slice because an unrelated dirty-tree change in `compiler_quickening.c` currently blocks `zr_vm_parser_shared` compilation with `compiler_quickening_opcode_is_false_branch` redefinition.
+- RED 6: after adding foreach body coverage, the focused CFG test failed with `Expected Non-NULL` because `ZR_AST_FOREACH_LOOP` bodies were still treated as opaque statements.
+- GREEN 6: after adding foreach CFG construction, the manual focused MSVC harness passed 7 CFG tests. Manual focused dataflow regression still passed 2 tests.
+- RED 7: after adding try-body coverage, the focused CFG test failed with `Expected Non-NULL` because `ZR_AST_TRY_CATCH_FINALLY_STATEMENT` bodies were still treated as opaque statements.
+- GREEN 7: after adding first try CFG construction, the manual focused MSVC harness passed 8 CFG tests. Manual focused dataflow regression still passed 2 tests.
+- RED 8: after adding catch-body coverage, the focused CFG test failed with `Expected Non-NULL` because catch clauses were not built into the try CFG subgraph.
+- GREEN 8: after adding first catch-body CFG construction, the manual focused MSVC harness passed 9 CFG tests. Manual focused dataflow regression still passed 2 tests.
+- RED 9: after adding finally-body coverage, the focused CFG test failed with `Expected Non-NULL` because the finally block was not built into the try CFG subgraph.
+- GREEN 9: after adding first finally-body CFG construction, the manual focused MSVC harness passed 10 CFG tests. Manual focused dataflow regression still passed 2 tests.
+- RED 10: after adding switch-case body coverage, the focused CFG test failed with `Expected Non-NULL` because `ZR_AST_SWITCH_EXPRESSION` cases were still treated as opaque statements.
+- GREEN 10: after adding first switch-case CFG construction, the manual focused MSVC harness passed 11 CFG tests. Manual focused dataflow regression still passed 2 tests.
+- REFACTOR 1: after switch support pushed `cfg.c` to 936 lines, switch and try/catch/finally graph builders were split into `cfg_control_flow.c` behind private `cfg_internal.h`.
+- GREEN 11: after the split, the manual focused MSVC harness still passed 11 CFG tests and manual focused dataflow regression still passed 2 tests. Line counts are `cfg.c` 726 lines and `cfg_control_flow.c` 211 lines.
+- RED 11: after adding boolean switch default coverage, the focused CFG test failed with `Expected Non-NULL` because the default branch still had an entry edge.
+- GREEN 12: after pruning default for boolean selectors whose cases cover both `true` and `false`, the manual focused MSVC harness passed 12 CFG tests. Manual focused dataflow regression still passed 2 tests.
+- RED 12: after adding `while(true) { break; }` target coverage, the focused CFG test failed with `Expected 1 Was 0` because `break` terminators had no successor edge.
+- GREEN 13: after threading loop target context through CFG statement-body construction and setting while `break` to join, the manual focused MSVC harness passed 13 CFG tests.
+- RED 13: after adding `while(true) { continue; }` target coverage, the focused CFG test failed with `Expected 1 Was 0` because `continue` terminators had no successor edge.
+- GREEN 14: after connecting `continue` to the active continue target and setting while `continue` to the condition block, the manual focused MSVC harness passed 14 CFG tests.
+- RED 14: after adding `for` loop-control coverage, the focused CFG test failed the new `break` and `continue` cases with `Expected 1 Was 0`.
+- GREEN 15: after creating a `for` step-entry join and assigning `break` to the for join plus `continue` to step-entry or condition, the manual focused MSVC harness passed 16 CFG tests.
+- RED 15: after adding `foreach` loop-control coverage, the focused CFG test failed the new `break` and `continue` cases with `Expected 1 Was 0`.
+- GREEN 16: after assigning foreach `break` to the loop join and `continue` back to the foreach iteration block, the manual focused MSVC harness passed 18 CFG tests.
+- REFACTOR 2: after loop-control support pushed `cfg.c` back above 900 lines, while/for/foreach builders were split into `cfg_loops.c` behind `cfg_internal.h`.
+- GREEN 17: after the loop split, the manual focused MSVC CFG harness still passed 18 tests.
+- RED 16: after adding non-matching boolean switch case coverage, the focused CFG test failed with `Expected Non-NULL` because a `case false` under `switch(true)` still had a reachable edge.
+- GREEN 18: after pruning non-matching boolean literal cases and emitting `CONSTANT_BRANCH` facts with the selector as `causeNode`, the manual focused MSVC harness passed 19 CFG tests. Manual focused dataflow regression still passed 2 tests.
+- RED 17: after adding non-matching integer switch case and matching-integer default coverage, the focused CFG test failed both new cases with `Expected Non-NULL` because only boolean literals were compared.
+- GREEN 19: after generalizing comparable switch constants to boolean and integer literals, pruning non-matching integer cases, and pruning default after a matching integer case consumed the selector, the manual focused MSVC harness passed 21 CFG tests.
+- RED 18: after adding `switch(1)` with a matching `return` case and no default, the focused CFG test failed with `Expected Non-NULL` for the statement after the switch because the CFG still preserved a no-match fallthrough edge.
+- GREEN 20: after omitting the no-default fallthrough once a constant selector is consumed by a matching case, the manual focused MSVC harness passed 22 CFG tests. Manual focused dataflow regression still passed 2 tests.
+- RED 19: after adding non-matching string switch case and matching-string default coverage, the focused CFG test failed both new cases with `Expected Non-NULL` because strings were not part of the comparable constant helper.
+- GREEN 21: after adding string constants with `ZrCore_String_Equal`, the manual focused MSVC harness passed 24 CFG tests.
+- RED 20: after adding non-matching char switch case and matching-char default coverage, the focused CFG test failed both new cases with `Expected Non-NULL` because chars were not part of the comparable constant helper.
+- GREEN 22: after adding char constants, the manual focused MSVC harness passed 26 CFG tests. Manual focused dataflow regression still passed 2 tests.
+- RED 21: after adding non-matching float switch case and matching-float default coverage, the focused CFG test failed both new cases with `Expected Non-NULL` because floats were not part of the comparable constant helper.
+- GREEN 23: after adding float constants, the manual focused MSVC harness passed 28 CFG tests. Manual focused dataflow regression still passed 2 tests.
+- AUDIT 1: switch-local `break` was checked against the current AST and compiler. `SZrBreakContinueStatement` carries only `isBreak` and optional `expr`; `compile_break_continue_statement` rejects break/continue when `loopLabelStack` is empty and chooses targets from the active loop label; switch compilation has no switch break label. No CFG switch-local break edge was added in this slice.
+- RED 22: after adding finally-abrupt coverage, the new focused finally test failed with `Expected NULL` because `try { return; } finally { A }` still emitted a reachability fact for the finally-body statement.
+- GREEN 24: after connecting try/catch `return`/`throw` terminator blocks to the finally entry join and preserving no-normal-completion fallthrough rules, the manual focused Windows MSVC finally-abrupt harness passed 2 tests. Existing manual focused CFG reachability and dataflow harnesses still passed 28 and 2 tests.
+- GREEN 25: the CMake-registered Windows MSVC target `zr_vm_cfg_finally_abrupt_test` built in `build\agent-msvc-tests` Debug and the produced binary passed 2 tests.
+- RED 23: after adding `try { break; } finally { A }` inside a loop, the CMake-registered focused finally test failed with `Expected NULL` because the finally body was still unreachable from `break`.
+- GREEN 26: after including `break` in the abrupt-completion-to-finally scan, `zr_vm_cfg_finally_abrupt_test` passed 3 tests.
+- RED 24: after adding `try { continue; } finally { A }` inside a loop, the CMake-registered focused finally test failed with `Expected NULL` because the finally body was still unreachable from `continue`.
+- GREEN 27: after including both loop-control terminators in the abrupt-completion-to-finally scan, Windows MSVC CMake targets passed in `build\agent-msvc-tests` Debug: finally-abrupt 4 tests, CFG reachability 28 tests, and dataflow 2 tests.
+- RED 25: after adding the focused constant-condition target, `zr_vm_cfg_constant_conditions_test` built but failed both unary cases with `Expected Non-NULL` because `!false` and `!true` were not folded by the CFG condition helper.
+- GREEN 28: after sharing `cfg_node_bool_constant` between `cfg.c` and `cfg_loops.c` and teaching it unary `!`, Windows MSVC CMake targets passed in `build\agent-msvc-tests` Debug: constant-conditions 2 tests, CFG reachability 28 tests, finally-abrupt 4 tests, and dataflow 2 tests.
+- RED 26: after adding logical `&&` and `||` focused cases, `zr_vm_cfg_constant_conditions_test` failed those two tests with `Expected Non-NULL` because logical expressions still stayed unknown.
+- GREEN 29: after teaching `cfg_node_bool_constant` folded `&&` and `||` with boolean operands, Windows MSVC CMake targets passed in `build\agent-msvc-tests` Debug: constant-conditions 4 tests, CFG reachability 28 tests, finally-abrupt 4 tests, and dataflow 2 tests.
+- RED 27: after adding short-circuit decisive-operand cases with an unknown identifier right operand, `zr_vm_cfg_constant_conditions_test` failed both tests with `Expected Non-NULL` because logical folding still required both operands to fold.
+- GREEN 30: after allowing `false && unknown` and `true || unknown` to fold from the decisive operand, Windows MSVC CMake targets passed in `build\agent-msvc-tests` Debug: constant-conditions 6 tests, CFG reachability 28 tests, finally-abrupt 4 tests, and dataflow 2 tests.
+- RED 28: after adding folded boolean switch selector/case coverage, `zr_vm_cfg_switch_constants_test` failed all three tests with `Expected Non-NULL` because switch constant extraction still recognized only boolean literals, not folded boolean expressions.
+- GREEN 31: after making `cfg_control_flow.c` reuse the shared boolean folder before literal-specific constant extraction, Windows MSVC CMake targets passed in `build\agent-msvc-tests` Debug: switch-constants 3 tests, constant-conditions 6 tests, CFG reachability 28 tests, finally-abrupt 4 tests, and dataflow 2 tests.
+- RED 29: after adding integer literal comparison condition coverage, `zr_vm_cfg_constant_conditions_test` failed both new tests with `Expected Non-NULL` because `cfg_node_bool_constant` did not fold binary comparisons.
+- GREEN 32: after adding integer literal comparison folding for `==`, `!=`, `<`, `>`, `<=`, and `>=`, Windows MSVC CMake targets passed in `build\agent-msvc-tests` Debug: constant-conditions 8 tests, switch-constants 3 tests, CFG reachability 28 tests, finally-abrupt 4 tests, and dataflow 2 tests.
+- RED 30: after adding string/char/float literal comparison condition coverage, `zr_vm_cfg_constant_conditions_test` failed all three new tests with `Expected Non-NULL` because `cfg_node_bool_constant` still only folded integer binary comparisons.
+- GREEN 33: after adding string `==`/`!=`, char `==`/`!=`/`<`/`>`/`<=`/`>=`, and float `==`/`!=`/`<`/`>`/`<=`/`>=` literal comparison folding, Windows MSVC CMake targets passed in `build\agent-msvc-tests` Debug: constant-conditions 11 tests, switch-constants 3 tests, CFG reachability 28 tests, finally-abrupt 4 tests, and dataflow 2 tests.
+
+## Results
+- Windows MSVC `zr_vm_cfg_reachability_test`: 2 PASS.
+- Windows MSVC `zr_vm_cfg_reachability_test`: 3 PASS after the if-branch slice.
+- Windows MSVC `zr_vm_cfg_reachability_test`: 4 PASS after the while(false) slice.
+- Windows MSVC `zr_vm_cfg_reachability_test`: 5 PASS after the return-exit invariant.
+- Manual focused Windows MSVC CFG harness: 6 PASS after the `for(false)` slice.
+- Manual focused Windows MSVC CFG harness: 7 PASS after the `foreach` body slice.
+- Manual focused Windows MSVC CFG harness: 8 PASS after the `try` body slice.
+- Manual focused Windows MSVC CFG harness: 9 PASS after the `catch` body slice.
+- Manual focused Windows MSVC CFG harness: 10 PASS after the `finally` body slice.
+- Manual focused Windows MSVC CFG harness: 11 PASS after the `switch` case body slice.
+- Manual focused Windows MSVC CFG harness: 11 PASS after splitting switch and try/catch/finally builders into `cfg_control_flow.c`.
+- Manual focused Windows MSVC CFG harness: 12 PASS after boolean switch default pruning.
+- Manual focused Windows MSVC CFG harness: 13 PASS after while `break` target edges.
+- Manual focused Windows MSVC CFG harness: 14 PASS after while `continue` target edges.
+- Manual focused Windows MSVC CFG harness: 16 PASS after traditional `for` `break`/`continue` target edges.
+- Manual focused Windows MSVC CFG harness: 18 PASS after `foreach` `break`/`continue` target edges.
+- Manual focused Windows MSVC CFG harness: 18 PASS after splitting loop builders into `cfg_loops.c`.
+- Manual focused Windows MSVC CFG harness: 19 PASS after non-matching boolean switch case pruning.
+- Manual focused Windows MSVC CFG harness: 21 PASS after integer switch case/default pruning.
+- Manual focused Windows MSVC CFG harness: 22 PASS after removing the no-default fallthrough for a known matching terminating case.
+- Manual focused Windows MSVC CFG harness: 24 PASS after string switch case/default pruning.
+- Manual focused Windows MSVC CFG harness: 26 PASS after char switch case/default pruning.
+- Manual focused Windows MSVC CFG harness: 28 PASS after float switch case/default pruning.
+- Windows MSVC CMake target `zr_vm_cfg_finally_abrupt_test`: build succeeded and binary reported 4 PASS after return/throw/break/continue-to-finally reachability edges.
+- Windows MSVC CMake target `zr_vm_cfg_constant_conditions_test`: build succeeded and binary reported 11 PASS after unary/logical/short-circuit boolean condition folding and integer/string/char/float literal comparison folding.
+- Windows MSVC CMake target `zr_vm_cfg_switch_constants_test`: build succeeded and binary reported 3 PASS after folded boolean switch selector/case matching.
+- Windows MSVC CMake target `zr_vm_cfg_reachability_test`: 28 PASS after rebuilding against the updated CFG implementation.
+- Windows MSVC CMake target `zr_vm_dataflow_engine_test`: 2 PASS after rebuilding against the updated CFG implementation.
+- Manual focused Windows MSVC dataflow harness: 2 PASS after rebuilding against the updated CFG implementation.
+- Windows MSVC `zr_vm_semantic_facts_test`: 4 PASS.
+- Windows MSVC `zr_vm_expression_fact_emission_test`: 28 PASS.
+- The full Windows MSVC `language_pipeline` is not claimed GREEN in this record; only the focused finally-abrupt CMake target and manual focused parser CFG/dataflow harnesses are claimed.
+- WSL was not claimed GREEN: the existing WSL gcc build directory did not know the new `zr_vm_cfg_reachability_test` target, and a dedicated focused WSL configure/build/test attempt timed out after 300 seconds while unrelated AOT temporary tasks were active.
+
+## Acceptance Decision
+- Accepted for Stage 1 CFG straight-line, bool-literal and unary/logical/short-circuit folded boolean `if`/loop conditions, integer/string/char/float literal comparison conditions, first switch-case body graph, boolean/integer/string/char/float switch case/default pruning, folded boolean switch selector/case matching, known matching switch no-default fallthrough pruning, `while(false)`, first traditional `for(false)` body-pruning, first `foreach` body graph, first try/catch/finally body graph, try/catch `return`/`throw`/`break`/`continue` paths into finally, and basic while/for/foreach `break`/`continue` target-edge slices.
+- Stage 1 remains open for precise break/continue target rewriting after finally, precise catch exception matching/filtering, union switch/default matching, broader constant-condition folding beyond literal/unary/logical short-circuit/comparison expressions, concrete dataflow analyses, semantic-query local re-analysis, and compiler/LSP diagnostic integration. Switch-local break requires a prior language/compiler decision because current compiler semantics only support loop-local break targets.

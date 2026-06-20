@@ -20,6 +20,8 @@ typedef struct SZrSemIrMappedInstruction {
     TZrUInt32 ownershipOutput;
     TZrBool needsDeopt;
     TZrBool hasExplicitOperands;
+    TZrBool hasExplicitStaticCType;
+    EZrStaticCType staticCType;
     TZrUInt32 destinationSlot;
     TZrUInt32 operand0;
     TZrUInt32 operand1;
@@ -119,6 +121,379 @@ static void semir_mapped_instruction_set_operands(SZrSemIrMappedInstruction *map
     mapped->destinationSlot = destinationSlot;
     mapped->operand0 = operand0;
     mapped->operand1 = operand1;
+}
+
+static TZrBool semir_instruction_has_type_conflict(const SZrFunction *function, const TZrInstruction *instruction);
+
+static EZrStaticCType semir_static_c_type_from_integral_type_ref(const SZrFunctionTypedTypeRef *typeRef) {
+    if (typeRef == ZR_NULL) {
+        return ZR_STATIC_C_TYPE_DYNAMIC;
+    }
+
+    switch (typeRef->staticCType) {
+        case ZR_STATIC_C_TYPE_I8:
+        case ZR_STATIC_C_TYPE_I16:
+        case ZR_STATIC_C_TYPE_I32:
+        case ZR_STATIC_C_TYPE_I64:
+            return ZR_STATIC_C_TYPE_I64;
+        case ZR_STATIC_C_TYPE_U8:
+        case ZR_STATIC_C_TYPE_U16:
+        case ZR_STATIC_C_TYPE_U32:
+        case ZR_STATIC_C_TYPE_U64:
+            return ZR_STATIC_C_TYPE_U64;
+        default:
+            break;
+    }
+
+    switch (typeRef->baseType) {
+        case ZR_VALUE_TYPE_INT8:
+        case ZR_VALUE_TYPE_INT16:
+        case ZR_VALUE_TYPE_INT32:
+        case ZR_VALUE_TYPE_INT64:
+            return ZR_STATIC_C_TYPE_I64;
+        case ZR_VALUE_TYPE_UINT8:
+        case ZR_VALUE_TYPE_UINT16:
+        case ZR_VALUE_TYPE_UINT32:
+        case ZR_VALUE_TYPE_UINT64:
+            return ZR_STATIC_C_TYPE_U64;
+        default:
+            return ZR_STATIC_C_TYPE_DYNAMIC;
+    }
+}
+
+static EZrStaticCType semir_static_c_type_for_slot_integral_hint(const SZrFunction *function, TZrUInt32 slot) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || function->typedLocalBindings == ZR_NULL) {
+        return ZR_STATIC_C_TYPE_DYNAMIC;
+    }
+
+    for (index = 0u; index < function->typedLocalBindingLength; index++) {
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+        EZrStaticCType staticCType;
+
+        if (binding->stackSlot != slot) {
+            continue;
+        }
+
+        staticCType = semir_static_c_type_from_integral_type_ref(&binding->type);
+        if (staticCType != ZR_STATIC_C_TYPE_DYNAMIC) {
+            return staticCType;
+        }
+    }
+
+    return ZR_STATIC_C_TYPE_DYNAMIC;
+}
+
+static EZrStaticCType semir_static_c_type_for_typed_bitwise_instruction(const SZrFunction *function,
+                                                                        const TZrInstruction *instruction,
+                                                                        EZrInstructionCode opcode) {
+    EZrStaticCType leftType;
+    EZrStaticCType rightType;
+
+    if (instruction == ZR_NULL) {
+        return ZR_STATIC_C_TYPE_DYNAMIC;
+    }
+
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
+            leftType = semir_static_c_type_for_slot_integral_hint(
+                    function,
+                    instruction->instruction.operand.operand1[0]);
+            return leftType != ZR_STATIC_C_TYPE_DYNAMIC ? leftType : ZR_STATIC_C_TYPE_I64;
+
+        case ZR_INSTRUCTION_ENUM(BITWISE_AND):
+        case ZR_INSTRUCTION_ENUM(BITWISE_OR):
+        case ZR_INSTRUCTION_ENUM(BITWISE_XOR):
+        case ZR_INSTRUCTION_ENUM(SHIFT_LEFT):
+        case ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT):
+        case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT):
+        case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT):
+        case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT):
+        case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT):
+            leftType = semir_static_c_type_for_slot_integral_hint(
+                    function,
+                    instruction->instruction.operand.operand1[0]);
+            rightType = semir_static_c_type_for_slot_integral_hint(
+                    function,
+                    instruction->instruction.operand.operand1[1]);
+            if (leftType == ZR_STATIC_C_TYPE_U64 || rightType == ZR_STATIC_C_TYPE_U64) {
+                return ZR_STATIC_C_TYPE_U64;
+            }
+            if (leftType == ZR_STATIC_C_TYPE_I64 || rightType == ZR_STATIC_C_TYPE_I64) {
+                return ZR_STATIC_C_TYPE_I64;
+            }
+            return ZR_STATIC_C_TYPE_I64;
+
+        default:
+            return ZR_STATIC_C_TYPE_DYNAMIC;
+    }
+}
+
+static EZrStaticCType semir_static_c_type_for_typed_scalar_instruction(EZrInstructionCode opcode) {
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
+            return ZR_STATIC_C_TYPE_I64;
+
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
+            return ZR_STATIC_C_TYPE_U64;
+
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
+        case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(DIV_FLOAT):
+        case ZR_INSTRUCTION_ENUM(MOD_FLOAT):
+            return ZR_STATIC_C_TYPE_F64;
+
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_BOOL):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_STRING):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_BOOL):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_STRING):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT):
+            return ZR_STATIC_C_TYPE_BOOL;
+
+        default:
+            return ZR_STATIC_C_TYPE_DYNAMIC;
+    }
+}
+
+static TZrBool semir_map_typed_scalar_instruction(const SZrFunction *function,
+                                                  const TZrInstruction *instruction,
+                                                  SZrSemIrMappedInstruction *outMapped) {
+    EZrInstructionCode opcode;
+    EZrStaticCType staticCType;
+
+    if (instruction == ZR_NULL || outMapped == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+    staticCType = semir_static_c_type_for_typed_scalar_instruction(opcode);
+    if (staticCType == ZR_STATIC_C_TYPE_DYNAMIC) {
+        staticCType = semir_static_c_type_for_typed_bitwise_instruction(function, instruction, opcode);
+    }
+
+    ZrCore_Memory_RawSet(outMapped, 0, sizeof(*outMapped));
+    if (semir_instruction_has_type_conflict(function, instruction)) {
+        outMapped->opcode = ZR_SEMIR_OPCODE_DYN_ARITHMETIC;
+        outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+        outMapped->needsDeopt = ZR_TRUE;
+        semir_mapped_instruction_set_operands(outMapped,
+                                              instruction->instruction.operandExtra,
+                                              instruction->instruction.operand.operand1[0],
+                                              instruction->instruction.operand.operand1[1]);
+        return ZR_TRUE;
+    }
+
+    outMapped->hasExplicitStaticCType = (TZrBool)(staticCType != ZR_STATIC_C_TYPE_DYNAMIC);
+    outMapped->staticCType = staticCType;
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_ADD;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_SUB;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_MUL;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(DIV_FLOAT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_DIV;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MOD_FLOAT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_MOD;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_BOOL):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_STRING):
+            outMapped->opcode = ZR_SEMIR_OPCODE_EQ;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_BOOL):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_STRING):
+            outMapped->opcode = ZR_SEMIR_OPCODE_NE;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_LT;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_LE;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_GT;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_GE;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_BIT_NOT;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(BITWISE_AND):
+            outMapped->opcode = ZR_SEMIR_OPCODE_BIT_AND;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(BITWISE_OR):
+            outMapped->opcode = ZR_SEMIR_OPCODE_BIT_OR;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(BITWISE_XOR):
+            outMapped->opcode = ZR_SEMIR_OPCODE_BIT_XOR;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(SHIFT_LEFT):
+        case ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT):
+        case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_SHL;
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT):
+        case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT):
+        case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_SHR;
+            return ZR_TRUE;
+
+        default:
+            return ZR_FALSE;
+    }
 }
 
 static TZrBool semir_callsite_cache_kind_matches(const SZrFunctionCallSiteCacheEntry *cacheEntry,
@@ -266,6 +641,8 @@ static void semir_init_default_type_ref(SZrFunctionTypedTypeRef *typeRef) {
     ZrCore_Memory_RawSet(typeRef, 0, sizeof(*typeRef));
     typeRef->baseType = ZR_VALUE_TYPE_OBJECT;
     typeRef->elementBaseType = ZR_VALUE_TYPE_OBJECT;
+    typeRef->staticCType = ZR_STATIC_C_TYPE_DYNAMIC;
+    typeRef->staticCTypeId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
 }
 
 static TZrBool semir_type_ref_equals(const SZrFunctionTypedTypeRef *lhs, const SZrFunctionTypedTypeRef *rhs) {
@@ -283,6 +660,149 @@ static TZrBool semir_type_ref_equals(const SZrFunctionTypedTypeRef *lhs, const S
            lhs->typeName == rhs->typeName &&
            lhs->elementBaseType == rhs->elementBaseType &&
            lhs->elementTypeName == rhs->elementTypeName;
+}
+
+static TZrUInt32 semir_find_inline_struct_type_layout_id_for_type_ref(const SZrFunction *function,
+                                                                      const SZrFunctionTypedTypeRef *typeRef) {
+    if (function == ZR_NULL || typeRef == ZR_NULL || function->typedLocalBindings == ZR_NULL) {
+        return ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    }
+
+    for (TZrUInt32 index = 0u; index < function->typedLocalBindingLength; index++) {
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+        const SZrFunctionFrameSlotLayout *slotLayout;
+
+        if (!semir_type_ref_equals(&binding->type, typeRef)) {
+            continue;
+        }
+
+        slotLayout = semir_find_frame_slot_layout(function, binding->stackSlot);
+        if (slotLayout != ZR_NULL &&
+            slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
+            slotLayout->typeLayoutId != ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+            return slotLayout->typeLayoutId;
+        }
+    }
+
+    return ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+}
+
+static void semir_apply_static_c_type_annotation(const SZrFunction *function, SZrFunctionTypedTypeRef *typeRef) {
+    TZrUInt32 typeLayoutId;
+
+    if (typeRef == ZR_NULL) {
+        return;
+    }
+
+    typeRef->staticCType = ZR_STATIC_C_TYPE_DYNAMIC;
+    typeRef->staticCTypeId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+
+    typeLayoutId = semir_find_inline_struct_type_layout_id_for_type_ref(function, typeRef);
+    if (typeLayoutId != ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+        typeRef->staticCType = ZR_STATIC_C_TYPE_STRUCT;
+        typeRef->staticCTypeId = typeLayoutId;
+        return;
+    }
+
+    switch (typeRef->baseType) {
+        case ZR_VALUE_TYPE_BOOL:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_BOOL;
+            return;
+        case ZR_VALUE_TYPE_INT8:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_I8;
+            return;
+        case ZR_VALUE_TYPE_INT16:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_I16;
+            return;
+        case ZR_VALUE_TYPE_INT32:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_I32;
+            return;
+        case ZR_VALUE_TYPE_INT64:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_I64;
+            return;
+        case ZR_VALUE_TYPE_UINT8:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_U8;
+            return;
+        case ZR_VALUE_TYPE_UINT16:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_U16;
+            return;
+        case ZR_VALUE_TYPE_UINT32:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_U32;
+            return;
+        case ZR_VALUE_TYPE_UINT64:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_U64;
+            return;
+        case ZR_VALUE_TYPE_FLOAT:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_F32;
+            return;
+        case ZR_VALUE_TYPE_DOUBLE:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_F64;
+            return;
+        case ZR_VALUE_TYPE_STRING:
+        case ZR_VALUE_TYPE_BUFFER:
+        case ZR_VALUE_TYPE_ARRAY:
+        case ZR_VALUE_TYPE_FUNCTION:
+        case ZR_VALUE_TYPE_CLOSURE_VALUE:
+        case ZR_VALUE_TYPE_CLOSURE:
+        case ZR_VALUE_TYPE_OBJECT:
+        case ZR_VALUE_TYPE_THREAD:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_GC_REF;
+            return;
+        case ZR_VALUE_TYPE_NATIVE_POINTER:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_NATIVE_POINTER;
+            return;
+        case ZR_VALUE_TYPE_NATIVE_DATA:
+            typeRef->staticCType = ZR_STATIC_C_TYPE_NATIVE_DATA;
+            return;
+        default:
+            return;
+    }
+}
+
+static TZrBool semir_slot_has_type_conflict(const SZrFunction *function, TZrUInt32 slot) {
+    SZrFunctionTypedTypeRef firstType;
+    TZrBool hasFirstType = ZR_FALSE;
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || function->typedLocalBindings == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(&firstType, 0, sizeof(firstType));
+    for (index = 0u; index < function->typedLocalBindingLength; index++) {
+        SZrFunctionTypedTypeRef annotatedType;
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+
+        if (binding->stackSlot != slot) {
+            continue;
+        }
+
+        annotatedType = binding->type;
+        semir_apply_static_c_type_annotation(function, &annotatedType);
+        if (!hasFirstType) {
+            firstType = annotatedType;
+            hasFirstType = ZR_TRUE;
+            continue;
+        }
+
+        if (!semir_type_ref_equals(&firstType, &annotatedType) ||
+            firstType.staticCType != annotatedType.staticCType ||
+            firstType.staticCTypeId != annotatedType.staticCTypeId) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool semir_instruction_has_type_conflict(const SZrFunction *function, const TZrInstruction *instruction) {
+    if (function == ZR_NULL || instruction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(semir_slot_has_type_conflict(function, instruction->instruction.operandExtra) ||
+                     semir_slot_has_type_conflict(function, instruction->instruction.operand.operand1[0]) ||
+                     semir_slot_has_type_conflict(function, instruction->instruction.operand.operand1[1]));
 }
 
 static void semir_release_existing_metadata(SZrState *state, SZrFunction *function) {
@@ -344,22 +864,27 @@ static void semir_release_existing_metadata(SZrState *state, SZrFunction *functi
     function->semIrDeoptTableLength = 0;
 }
 
-static TZrUInt32 semir_ensure_type_entry(SZrFunctionTypedTypeRef *typeTable,
+static TZrUInt32 semir_ensure_type_entry(const SZrFunction *function,
+                                         SZrFunctionTypedTypeRef *typeTable,
                                          TZrUInt32 *ioCount,
                                          const SZrFunctionTypedTypeRef *typeRef) {
     TZrUInt32 index;
+    SZrFunctionTypedTypeRef annotatedType;
 
     if (typeTable == ZR_NULL || ioCount == ZR_NULL || typeRef == ZR_NULL) {
         return ZR_SEMIR_TYPE_TABLE_DEFAULT_INDEX;
     }
 
+    annotatedType = *typeRef;
+    semir_apply_static_c_type_annotation(function, &annotatedType);
+
     for (index = 0; index < *ioCount; index++) {
-        if (semir_type_ref_equals(&typeTable[index], typeRef)) {
+        if (semir_type_ref_equals(&typeTable[index], &annotatedType)) {
             return index;
         }
     }
 
-    typeTable[*ioCount] = *typeRef;
+    typeTable[*ioCount] = annotatedType;
     (*ioCount)++;
     return (*ioCount) - 1;
 }
@@ -415,6 +940,24 @@ static TZrUInt32 semir_find_type_index_for_slot(const SZrFunction *function,
     return ZR_SEMIR_TYPE_TABLE_DEFAULT_INDEX;
 }
 
+static TZrUInt32 semir_find_type_index_for_static_c_type(const SZrFunctionTypedTypeRef *typeTable,
+                                                         TZrUInt32 typeCount,
+                                                         EZrStaticCType staticCType) {
+    TZrUInt32 index;
+
+    if (typeTable == ZR_NULL || staticCType == ZR_STATIC_C_TYPE_DYNAMIC) {
+        return ZR_SEMIR_TYPE_TABLE_DEFAULT_INDEX;
+    }
+
+    for (index = 0; index < typeCount; index++) {
+        if (typeTable[index].staticCType == staticCType) {
+            return index;
+        }
+    }
+
+    return ZR_SEMIR_TYPE_TABLE_DEFAULT_INDEX;
+}
+
 static TZrUInt32 semir_ensure_ownership_state(TZrUInt32 *stateTable,
                                               TZrUInt32 *ioCount,
                                               TZrUInt32 stateValue) {
@@ -442,6 +985,57 @@ static TZrBool semir_map_exec_instruction(const TZrInstruction *instruction, SZr
 
     ZrCore_Memory_RawSet(outMapped, 0, sizeof(*outMapped));
     switch ((EZrInstructionCode)instruction->instruction.operationCode) {
+        case ZR_INSTRUCTION_ENUM(ADD):
+        case ZR_INSTRUCTION_ENUM(SUB):
+        case ZR_INSTRUCTION_ENUM(MUL):
+        case ZR_INSTRUCTION_ENUM(DIV):
+        case ZR_INSTRUCTION_ENUM(MOD):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
+            outMapped->opcode = ZR_SEMIR_OPCODE_DYN_ARITHMETIC;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+            outMapped->needsDeopt = ZR_TRUE;
+            semir_mapped_instruction_set_operands(outMapped,
+                                                  instruction->instruction.operandExtra,
+                                                  instruction->instruction.operand.operand1[0],
+                                                  instruction->instruction.operand.operand1[1]);
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(GET_MEMBER):
+            outMapped->opcode = ZR_SEMIR_OPCODE_META_GET;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+            outMapped->needsDeopt = ZR_TRUE;
+            semir_mapped_instruction_set_operands(outMapped,
+                                                  instruction->instruction.operandExtra,
+                                                  instruction->instruction.operand.operand1[0],
+                                                  instruction->instruction.operand.operand1[1]);
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(SET_MEMBER):
+            outMapped->opcode = ZR_SEMIR_OPCODE_META_SET;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+            outMapped->needsDeopt = ZR_TRUE;
+            semir_mapped_instruction_set_operands(outMapped,
+                                                  instruction->instruction.operandExtra,
+                                                  instruction->instruction.operand.operand1[0],
+                                                  instruction->instruction.operand.operand1[1]);
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
+            outMapped->opcode = ZR_SEMIR_OPCODE_DYN_INDEX_GET;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+            outMapped->needsDeopt = ZR_TRUE;
+            semir_mapped_instruction_set_operands(outMapped,
+                                                  instruction->instruction.operandExtra,
+                                                  instruction->instruction.operand.operand1[0],
+                                                  instruction->instruction.operand.operand1[1]);
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
+            outMapped->opcode = ZR_SEMIR_OPCODE_DYN_INDEX_SET;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+            outMapped->needsDeopt = ZR_TRUE;
+            semir_mapped_instruction_set_operands(outMapped,
+                                                  instruction->instruction.operandExtra,
+                                                  instruction->instruction.operand.operand1[0],
+                                                  instruction->instruction.operand.operand1[1]);
+            return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(OWN_UNIQUE):
             outMapped->opcode = ZR_SEMIR_OPCODE_OWN_UNIQUE;
             outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
@@ -501,6 +1095,24 @@ static TZrBool semir_map_exec_instruction(const TZrInstruction *instruction, SZr
             outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
             outMapped->needsDeopt = ZR_TRUE;
             return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+            outMapped->opcode = ZR_SEMIR_OPCODE_DYN_CALL;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+            outMapped->needsDeopt = ZR_TRUE;
+            semir_mapped_instruction_set_operands(outMapped,
+                                                  instruction->instruction.operandExtra,
+                                                  instruction->instruction.operand.operand1[0],
+                                                  instruction->instruction.operand.operand1[1]);
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
+            outMapped->opcode = ZR_SEMIR_OPCODE_DYN_TAIL_CALL;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+            outMapped->needsDeopt = ZR_TRUE;
+            semir_mapped_instruction_set_operands(outMapped,
+                                                  instruction->instruction.operandExtra,
+                                                  instruction->instruction.operand.operand1[0],
+                                                  instruction->instruction.operand.operand1[1]);
+            return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(DYN_CALL):
             outMapped->opcode = ZR_SEMIR_OPCODE_DYN_CALL;
             outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
@@ -538,6 +1150,24 @@ static TZrBool semir_map_exec_instruction(const TZrInstruction *instruction, SZr
             outMapped->destinationSlot = instruction->instruction.operandExtra;
             outMapped->operand0 = instruction->instruction.operandExtra;
             outMapped->operand1 = instruction->instruction.operand.operand1[1];
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(ITER_INIT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_DYN_ITER_INIT;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+            outMapped->needsDeopt = ZR_TRUE;
+            semir_mapped_instruction_set_operands(outMapped,
+                                                  instruction->instruction.operandExtra,
+                                                  instruction->instruction.operand.operand1[0],
+                                                  instruction->instruction.operand.operand1[1]);
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_DYN_ITER_MOVE_NEXT;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+            outMapped->needsDeopt = ZR_TRUE;
+            semir_mapped_instruction_set_operands(outMapped,
+                                                  instruction->instruction.operandExtra,
+                                                  instruction->instruction.operand.operand1[0],
+                                                  instruction->instruction.operand.operand1[1]);
             return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(DYN_ITER_INIT):
             outMapped->opcode = ZR_SEMIR_OPCODE_DYN_ITER_INIT;
@@ -725,7 +1355,7 @@ static TZrBool semir_allocate_type_table(SZrState *state,
         if (function->typedLocalBindings == ZR_NULL) {
             break;
         }
-        semir_ensure_type_entry(typeTable, &typeCount, &function->typedLocalBindings[index].type);
+        semir_ensure_type_entry(function, typeTable, &typeCount, &function->typedLocalBindings[index].type);
     }
 
     finalTypeTable = (SZrFunctionTypedTypeRef *)ZrCore_Memory_RawMallocWithType(
@@ -773,6 +1403,15 @@ static TZrBool semir_map_instruction_list(const SZrFunction *function,
     }
 
     if (semir_map_value_type_instruction(function, instructionIndex, outList)) {
+        return ZR_TRUE;
+    }
+
+    if (semir_map_typed_scalar_instruction(function, &function->instructionsList[instructionIndex], &mapped)) {
+        entry = semir_mapped_instruction_list_append(outList);
+        if (entry == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        *entry = mapped;
         return ZR_TRUE;
     }
 
@@ -923,14 +1562,21 @@ static TZrBool semir_build_for_single_function(SZrState *state, SZrFunction *fun
 
             function->semIrInstructions[semirIndex].opcode = mapped->opcode;
             function->semIrInstructions[semirIndex].execInstructionIndex = index;
-            function->semIrInstructions[semirIndex].typeTableIndex =
-                    semir_find_type_index_for_slot(function,
-                                                   mapped->hasExplicitOperands
-                                                           ? mapped->destinationSlot
-                                                           : function->instructionsList[index].instruction
-                                                                     .operandExtra,
-                                                   function->semIrTypeTable,
-                                                   function->semIrTypeTableLength);
+            if (mapped->hasExplicitStaticCType) {
+                function->semIrInstructions[semirIndex].typeTableIndex =
+                        semir_find_type_index_for_static_c_type(function->semIrTypeTable,
+                                                                function->semIrTypeTableLength,
+                                                                mapped->staticCType);
+            } else {
+                function->semIrInstructions[semirIndex].typeTableIndex =
+                        semir_find_type_index_for_slot(function,
+                                                       mapped->hasExplicitOperands
+                                                               ? mapped->destinationSlot
+                                                               : function->instructionsList[index].instruction
+                                                                         .operandExtra,
+                                                       function->semIrTypeTable,
+                                                       function->semIrTypeTableLength);
+            }
             function->semIrInstructions[semirIndex].effectTableIndex = semirIndex;
             function->semIrInstructions[semirIndex].destinationSlot =
                     mapped->hasExplicitOperands ? mapped->destinationSlot

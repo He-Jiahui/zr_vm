@@ -343,15 +343,16 @@ static int test_eval_rejects_compile_debug_and_module_options(void) {
 }
 
 static int test_compile_flag_combinations_parse(void) {
-    char *argv[] = {"zr_vm_cli", "--compile", "demo.zrp", "--intermediate", "--incremental", "--run"};
+    char *argv[] = {"zr_vm_cli", "--compile", "demo.zrp", "--intermediate", "--incremental", "--emit-zrm", "--run"};
     char error[256];
     SZrCliCommand command;
 
-    CLI_ASSERT_TRUE(ZrCli_Command_Parse(6, argv, &command, error, sizeof(error)), "parse compile flags");
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(7, argv, &command, error, sizeof(error)), "parse compile flags");
     CLI_ASSERT_INT_EQ(ZR_CLI_MODE_COMPILE_PROJECT, command.mode, "mode should be compile project");
     CLI_ASSERT_TRUE(strcmp(command.projectPath, "demo.zrp") == 0, "compile path should match");
     CLI_ASSERT_TRUE(command.emitIntermediate, "intermediate flag should be set");
     CLI_ASSERT_TRUE(command.incremental, "incremental flag should be set");
+    CLI_ASSERT_TRUE(command.emitZrm, "emit-zrm flag should be set");
     CLI_ASSERT_TRUE(command.runAfterCompile, "run flag should be set");
     CLI_ASSERT_INT_EQ(ZR_CLI_EXECUTION_MODE_BINARY, command.executionMode, "compile run should default to binary");
     CLI_ASSERT_TRUE(!command.interactiveAfterRun, "interactive tail should stay disabled by default");
@@ -376,6 +377,7 @@ static int test_compile_only_modifiers_require_compile(void) {
     char *argv1[] = {"zr_vm_cli", "--run"};
     char *argv2[] = {"zr_vm_cli", "--intermediate"};
     char *argv3[] = {"zr_vm_cli", "--incremental"};
+    char *argv4[] = {"zr_vm_cli", "--emit-zrm"};
     char error[256];
     SZrCliCommand command;
 
@@ -389,6 +391,10 @@ static int test_compile_only_modifiers_require_compile(void) {
     CLI_ASSERT_TRUE(!ZrCli_Command_Parse(2, argv3, &command, error, sizeof(error)),
                     "--incremental without compile should fail");
     CLI_ASSERT_TRUE(strstr(error, "--compile") != ZR_NULL, "incremental error should mention compile");
+
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(2, argv4, &command, error, sizeof(error)),
+                    "--emit-zrm without compile should fail");
+    CLI_ASSERT_TRUE(strstr(error, "--compile") != ZR_NULL, "emit-zrm error should mention compile");
     return 0;
 }
 

@@ -83,6 +83,10 @@ ZR_CORE_API void ZrCore_Closure_InitValue(struct SZrState *state, SZrClosure *cl
 
 ZR_CORE_API SZrClosureValue *ZrCore_Closure_FindOrCreateValue(struct SZrState *state, TZrStackValuePointer stackPointer);
 
+ZR_CORE_API TZrBool ZrCore_Closure_HasOpenStackValueInRange(const struct SZrState *state,
+                                                            TZrStackValuePointer stackStart,
+                                                            TZrStackValuePointer stackEnd);
+
 ZR_CORE_API void ZrCore_Closure_ToBeClosedValueClosureNew(struct SZrState *state, TZrStackValuePointer stackPointer);
 
 ZR_CORE_API void ZrCore_Closure_UnlinkValue(SZrClosureValue *closureValue);
@@ -129,7 +133,7 @@ static ZR_FORCE_INLINE SZrTypeValue *ZrCore_ClosureValue_GetValue(SZrClosureValu
     if (ZrCore_ClosureValue_IsClosed(closureValue)) {
         return &closureValue->link.closedValue;
     }
-    return ZrCore_Stack_GetValue(closureValue->value.valuePointer);
+    return ZR_CAST_FROM_STACK_VALUE(closureValue->value.valuePointer);
 }
 
 static ZR_FORCE_INLINE SZrRawObject **ZrCore_ClosureNative_GetCaptureOwners(SZrClosureNative *closure) {

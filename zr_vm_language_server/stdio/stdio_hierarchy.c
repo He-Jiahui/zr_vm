@@ -22,8 +22,15 @@ static int parse_hierarchy_item(SZrStdioServer *server, const cJSON *params, SZr
 
     if (!cJSON_IsString(nameJson) ||
         !cJSON_IsString(uriJson) ||
-        !cJSON_IsNumber(kindJson) ||
-        !parse_range(get_object_item(itemJson, ZR_LSP_FIELD_RANGE), &outItem->range)) {
+        !cJSON_IsNumber(kindJson)) {
+        return 0;
+    }
+
+    outItem->uri = server_get_cached_uri(server, uriJson->valuestring);
+    if (!parse_range_for_uri(server,
+                             outItem->uri,
+                             get_object_item(itemJson, ZR_LSP_FIELD_RANGE),
+                             &outItem->range)) {
         return 0;
     }
 
@@ -36,8 +43,8 @@ static int parse_hierarchy_item(SZrStdioServer *server, const cJSON *params, SZr
                                                  strlen(detailJson->valuestring))
                           : ZR_NULL;
     outItem->kind = (TZrInt32)kindJson->valuedouble;
-    outItem->uri = server_get_cached_uri(server, uriJson->valuestring);
-    if (selectionRangeJson != NULL && parse_range(selectionRangeJson, &outItem->selectionRange)) {
+    if (selectionRangeJson != NULL &&
+        parse_range_for_uri(server, outItem->uri, selectionRangeJson, &outItem->selectionRange)) {
         return outItem->name != ZR_NULL && outItem->uri != ZR_NULL;
     }
     outItem->selectionRange = outItem->range;

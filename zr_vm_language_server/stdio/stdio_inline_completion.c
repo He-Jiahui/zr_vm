@@ -166,6 +166,7 @@ cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *par
     const char *uriText;
     SZrString *uri;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     const char *content;
     size_t contentLength;
     size_t offset;
@@ -179,13 +180,14 @@ cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *par
     ZR_UNUSED_PARAMETER(uriText);
 
     fileVersion = get_file_version_for_uri(server, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
         return cJSON_CreateArray();
     }
 
-    content = fileVersion->content;
-    contentLength = (size_t)fileVersion->contentLength;
+    content = snapshot.content;
+    contentLength = snapshot.contentLength;
     if (!inline_completion_offset_from_position(content, contentLength, position, &offset)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return cJSON_CreateArray();
     }
 
@@ -195,14 +197,17 @@ cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *par
     }
     prefixLength = offset - prefixStart;
     if (prefixLength == 0 || prefixLength > 16) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return cJSON_CreateArray();
     }
     if (!inline_completion_offset_is_in_code(content, contentLength, offset - 1)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return cJSON_CreateArray();
     }
 
     result = cJSON_CreateArray();
     if (result == NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return NULL;
     }
 
@@ -225,5 +230,6 @@ cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *par
         }
     }
 
+    ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
     return result;
 }

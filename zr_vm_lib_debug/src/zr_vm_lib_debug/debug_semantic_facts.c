@@ -595,6 +595,7 @@ static void zr_debug_semantic_walk_node_at_depth(SZrAstNode *node,
                                                  ZrDebugSemanticFactWalk *walk,
                                                  TZrUInt32 depth) {
     TZrBool suppressLiteralFacts;
+    const SZrSemanticReferenceFact *directReadFact;
 
     if (node == ZR_NULL || walk == ZR_NULL || walk->context == ZR_NULL) {
         return;
@@ -605,10 +606,24 @@ static void zr_debug_semantic_walk_node_at_depth(SZrAstNode *node,
     zr_debug_semantic_append_reference_fact(
             ZrParser_SemanticFacts_FindReferenceByNodeAndKind(walk->context,
                                                               node,
-                                                              ZR_SEMANTIC_REFERENCE_READ),
+                                                              ZR_SEMANTIC_REFERENCE_MEMBER_WRITE),
             &walk->lastReferenceFact,
             walk->buffer,
             walk->bufferSize);
+    zr_debug_semantic_append_reference_fact(
+            ZrParser_SemanticFacts_FindReferenceByNodeAndKind(walk->context,
+                                                              node,
+                                                              ZR_SEMANTIC_REFERENCE_WRITE),
+            &walk->lastReferenceFact,
+            walk->buffer,
+            walk->bufferSize);
+    directReadFact = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(walk->context,
+                                                                       node,
+                                                                       ZR_SEMANTIC_REFERENCE_READ);
+    zr_debug_semantic_append_reference_fact(directReadFact,
+                                            &walk->lastReferenceFact,
+                                            walk->buffer,
+                                            walk->bufferSize);
 
     if (!suppressLiteralFacts) {
         {
@@ -634,6 +649,15 @@ static void zr_debug_semantic_walk_node_at_depth(SZrAstNode *node,
             &walk->lastReferenceFact,
             walk->buffer,
             walk->bufferSize);
+    if (node->type == ZR_AST_IDENTIFIER_LITERAL && directReadFact == ZR_NULL) {
+        zr_debug_semantic_append_reference_fact(
+                ZrParser_SemanticFacts_FindReferenceAtPositionByKind(walk->context,
+                                                                     node->location,
+                                                                     ZR_SEMANTIC_REFERENCE_READ),
+                &walk->lastReferenceFact,
+                walk->buffer,
+                walk->bufferSize);
+    }
     zr_debug_semantic_append_logical_fact(
             ZrParser_SemanticFacts_FindLogicalByNode(walk->context, node),
             &walk->lastLogicalFact,

@@ -514,6 +514,7 @@ static void native_module_info_init_prototype(SZrState *state,
     info->type = type;
     info->accessModifier = ZR_ACCESS_PUBLIC;
     info->isImportedNative = ZR_TRUE;
+    info->isNativeRuntime = ZR_TRUE;
     info->protocolMask = 0;
     info->layoutByteSize = 0;
     info->layoutByteAlign = 0;
@@ -2831,7 +2832,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     continue;
                 }
 
-                if (memberExpr->property == ZR_NULL || currentType.typeName == ZR_NULL ||
+                if (memberExpr->property == ZR_NULL ||
                     !type_inference_resolve_member_segment_names(cs,
                                                                  memberExpr->property,
                                                                  &memberLookupName,
@@ -2855,6 +2856,53 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
 
                 if (nextIsFunctionCall &&
                     !currentIsPrototypeReference &&
+                    currentType.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE &&
+                    memberLookupName != ZR_NULL) {
+                    EZrOwnershipBuiltinKind ownershipMemberKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+
+                    if (ZrParser_OwnershipMemberNameToBuiltinKind(memberLookupName, &ownershipMemberKind)) {
+                        if (!type_inference_function_call_has_no_arguments(members->nodes[i + 1])) {
+                            ZrParser_Compiler_Error(cs,
+                                                    "Ownership member calls do not take arguments",
+                                                    members->nodes[i + 1]->location);
+                            ZrParser_InferredType_Free(cs->state, &currentType);
+                            return ZR_FALSE;
+                        }
+                        if (!ZrParser_OwnershipBuiltinCanApplyToQualifier(ownershipMemberKind,
+                                                                          currentType.ownershipQualifier)) {
+                            ZrParser_Compiler_Error(cs,
+                                                    ZrParser_OwnershipMemberCallErrorMessage(ownershipMemberKind),
+                                                    memberNode->location);
+                            ZrParser_InferredType_Free(cs->state, &currentType);
+                            return ZR_FALSE;
+                        }
+
+                        ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_OBJECT);
+                        ZrParser_InferredType_Copy(cs->state, &nextType, &currentType);
+                        if (ownershipMemberKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE) {
+                            ZrParser_InferredType_Free(cs->state, &nextType);
+                            ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_NULL);
+                        } else if (ownershipMemberKind == ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE) {
+                            nextType.isNullable = ZR_TRUE;
+                        } else {
+                            nextType.isNullable = currentType.isNullable;
+                        }
+                        nextType.ownershipQualifier =
+                                ZrParser_OwnershipBuiltinResultQualifier(ownershipMemberKind,
+                                                                         currentType.ownershipQualifier);
+
+                        ZrParser_InferredType_Free(cs->state, &currentType);
+                        ZrParser_InferredType_Init(cs->state, &currentType, ZR_VALUE_TYPE_OBJECT);
+                        ZrParser_InferredType_Copy(cs->state, &currentType, &nextType);
+                        ZrParser_InferredType_Free(cs->state, &nextType);
+                        currentIsPrototypeReference = ZR_FALSE;
+                        i++;
+                        continue;
+                    }
+                }
+
+                if (nextIsFunctionCall &&
+                    !currentIsPrototypeReference &&
                     currentType.typeName != ZR_NULL &&
                     type_inference_member_name_is_plain_share(memberLookupName) &&
                     type_inference_function_call_has_no_arguments(members->nodes[i + 1])) {
@@ -2874,6 +2922,12 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     currentIsPrototypeReference = ZR_FALSE;
                     i++;
                     continue;
+                }
+
+                if (currentType.typeName == ZR_NULL) {
+                    ZrParser_InferredType_Free(cs->state, &currentType);
+                    ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
+                    return ZR_TRUE;
                 }
 
 infer_regular_member_access:

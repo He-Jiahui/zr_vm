@@ -51,6 +51,8 @@ static SZrAstNode *parse_union_field(SZrParserState *ps) {
     node->data.parameter.genericRequiresClass = ZR_FALSE;
     node->data.parameter.genericRequiresStruct = ZR_FALSE;
     node->data.parameter.genericRequiresNew = ZR_FALSE;
+    node->data.parameter.genericRequiresOwner = ZR_FALSE;
+    node->data.parameter.genericRequiredOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     return node;
 }
 

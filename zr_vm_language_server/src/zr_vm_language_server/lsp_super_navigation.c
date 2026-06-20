@@ -736,12 +736,13 @@ static void super_navigation_collect_reference_ranges_recursive(SZrState *state,
 }
 
 static TZrBool super_navigation_append_location(SZrState *state,
+                                                SZrLspContext *context,
                                                 SZrArray *result,
                                                 SZrString *uri,
                                                 SZrFileRange range) {
     SZrLspLocation *location;
 
-    if (state == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || context == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -751,18 +752,20 @@ static TZrBool super_navigation_append_location(SZrState *state,
     }
 
     location->uri = range.source != ZR_NULL ? range.source : uri;
-    location->range = ZrLanguageServer_LspRange_FromFileRange(range);
+    location->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
     ZrCore_Array_Push(state, result, &location);
     return ZR_TRUE;
 }
 
 static TZrBool super_navigation_append_highlight(SZrState *state,
+                                                 SZrLspContext *context,
                                                  SZrArray *result,
+                                                 SZrString *uri,
                                                  SZrFileRange range,
                                                  TZrInt32 kind) {
     SZrLspDocumentHighlight *highlight;
 
-    if (state == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || context == ZR_NULL || result == ZR_NULL || uri == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -771,7 +774,7 @@ static TZrBool super_navigation_append_highlight(SZrState *state,
         return ZR_FALSE;
     }
 
-    highlight->range = ZrLanguageServer_LspRange_FromFileRange(range);
+    highlight->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
     highlight->kind = kind;
     ZrCore_Array_Push(state, result, &highlight);
     return ZR_TRUE;
@@ -784,6 +787,7 @@ TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDefinition(SZrState *state,
                                                               SZrArray *result) {
     SZrSemanticAnalyzer *analyzer;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrFilePosition filePos;
     SZrFileRange fileRange;
     SZrString *baseTypeName = ZR_NULL;
@@ -800,15 +804,19 @@ TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDefinition(SZrState *state,
     }
 
     filePos = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        return ZR_FALSE;
+    }
     fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
     if (!super_navigation_resolve_target(analyzer,
                                          fileRange,
-                                         fileVersion->content,
-                                         fileVersion->contentLength,
+                                         snapshot.content,
+                                         snapshot.contentLength,
                                          uri,
                                          &baseTypeName,
                                          &baseConstructorDeclaration) ||
         baseTypeName == ZR_NULL || baseConstructorDeclaration == ZR_NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
@@ -816,7 +824,12 @@ TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDefinition(SZrState *state,
         ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), 1);
     }
 
-    return super_navigation_append_location(state, result, uri, baseConstructorDeclaration->location);
+    if (!super_navigation_append_location(state, context, result, uri, baseConstructorDeclaration->location)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        return ZR_FALSE;
+    }
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+    return ZR_TRUE;
 }
 
 TZrBool ZrLanguageServer_Lsp_TryFindSuperConstructorReferences(SZrState *state,
@@ -827,6 +840,7 @@ TZrBool ZrLanguageServer_Lsp_TryFindSuperConstructorReferences(SZrState *state,
                                                                SZrArray *result) {
     SZrSemanticAnalyzer *analyzer;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrFilePosition filePos;
     SZrFileRange fileRange;
     SZrString *baseTypeName = ZR_NULL;
@@ -844,15 +858,19 @@ TZrBool ZrLanguageServer_Lsp_TryFindSuperConstructorReferences(SZrState *state,
     }
 
     filePos = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        return ZR_FALSE;
+    }
     fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
     if (!super_navigation_resolve_target(analyzer,
                                          fileRange,
-                                         fileVersion->content,
-                                         fileVersion->contentLength,
+                                         snapshot.content,
+                                         snapshot.contentLength,
                                          uri,
                                          &baseTypeName,
                                          &baseConstructorDeclaration) ||
         baseTypeName == ZR_NULL || baseConstructorDeclaration == ZR_NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
@@ -861,24 +879,25 @@ TZrBool ZrLanguageServer_Lsp_TryFindSuperConstructorReferences(SZrState *state,
     }
 
     if (includeDeclaration) {
-        super_navigation_append_location(state, result, uri, baseConstructorDeclaration->location);
+        super_navigation_append_location(state, context, result, uri, baseConstructorDeclaration->location);
     }
 
     ZrCore_Array_Init(state, &ranges, sizeof(SZrFileRange), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     super_navigation_collect_reference_ranges_recursive(state,
                                                        analyzer->ast,
                                                        baseTypeName,
-                                                       fileVersion->content,
-                                                       fileVersion->contentLength,
+                                                       snapshot.content,
+                                                       snapshot.contentLength,
                                                        uri,
                                                        &ranges);
     for (TZrSize index = 0; index < ranges.length; index++) {
         SZrFileRange *range = (SZrFileRange *)ZrCore_Array_Get(&ranges, index);
         if (range != ZR_NULL) {
-            super_navigation_append_location(state, result, uri, *range);
+            super_navigation_append_location(state, context, result, uri, *range);
         }
     }
     ZrCore_Array_Free(state, &ranges);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_TRUE;
 }
 
@@ -889,6 +908,7 @@ TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDocumentHighlights(SZrState *
                                                                       SZrArray *result) {
     SZrSemanticAnalyzer *analyzer;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrFilePosition filePos;
     SZrFileRange fileRange;
     SZrString *baseTypeName = ZR_NULL;
@@ -906,15 +926,19 @@ TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDocumentHighlights(SZrState *
     }
 
     filePos = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        return ZR_FALSE;
+    }
     fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
     if (!super_navigation_resolve_target(analyzer,
                                          fileRange,
-                                         fileVersion->content,
-                                         fileVersion->contentLength,
+                                         snapshot.content,
+                                         snapshot.contentLength,
                                          uri,
                                          &baseTypeName,
                                          &baseConstructorDeclaration) ||
         baseTypeName == ZR_NULL || baseConstructorDeclaration == ZR_NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
@@ -924,24 +948,25 @@ TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDocumentHighlights(SZrState *
 
     if (baseConstructorDeclaration->location.source == ZR_NULL ||
         ZrLanguageServer_Lsp_StringsEqual(baseConstructorDeclaration->location.source, uri)) {
-        super_navigation_append_highlight(state, result, baseConstructorDeclaration->location, 3);
+        super_navigation_append_highlight(state, context, result, uri, baseConstructorDeclaration->location, 3);
     }
 
     ZrCore_Array_Init(state, &ranges, sizeof(SZrFileRange), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     super_navigation_collect_reference_ranges_recursive(state,
                                                        analyzer->ast,
                                                        baseTypeName,
-                                                       fileVersion->content,
-                                                       fileVersion->contentLength,
+                                                       snapshot.content,
+                                                       snapshot.contentLength,
                                                        uri,
                                                        &ranges);
     for (TZrSize index = 0; index < ranges.length; index++) {
         SZrFileRange *range = (SZrFileRange *)ZrCore_Array_Get(&ranges, index);
         if (range != ZR_NULL &&
             (range->source == ZR_NULL || ZrLanguageServer_Lsp_StringsEqual(range->source, uri))) {
-            super_navigation_append_highlight(state, result, *range, 2);
+            super_navigation_append_highlight(state, context, result, uri, *range, 2);
         }
     }
     ZrCore_Array_Free(state, &ranges);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_TRUE;
 }

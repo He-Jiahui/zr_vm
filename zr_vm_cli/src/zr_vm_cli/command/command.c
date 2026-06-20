@@ -48,6 +48,7 @@ static void zr_cli_command_init(SZrCliCommand *command) {
     command->runAfterCompile = ZR_FALSE;
     command->interactiveAfterRun = ZR_FALSE;
     command->emitIntermediate = ZR_FALSE;
+    command->emitZrm = ZR_FALSE;
     command->incremental = ZR_FALSE;
     command->emitExecutedVia = ZR_FALSE;
     command->debugEnabled = ZR_FALSE;
@@ -140,6 +141,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  --debug-wait                     Wait for the debugger client before running user code.\n"
             "  --debug-print-endpoint           Print the resolved debugger endpoint after startup.\n"
             "  --intermediate                   Also emit .zri files next to .zro outputs.\n"
+            "  --emit-zrm                       Pack reachable .zro outputs and resources into a .zrm assembly.\n"
             "  --incremental                    Use manifest-based incremental compilation.\n"
             "  --run                            Run the compiled project after a successful compile.\n"
             "\n"
@@ -203,6 +205,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  --debug-wait                     Wait for the debugger client before running user code.\n"
              "  --debug-print-endpoint           Print the resolved debugger endpoint after startup.\n"
              "  --intermediate                   Also emit .zri files next to .zro outputs.\n"
+             "  --emit-zrm                       Pack reachable .zro outputs and resources into a .zrm assembly.\n"
              "  --incremental                    Use manifest-based incremental compilation.\n"
              "  --run                            Run the compiled project after a successful compile.\n"
              "\n"
@@ -390,6 +393,11 @@ TZrBool ZrCli_Command_Parse(int argc,
             continue;
         }
 
+        if (strcmp(argument, "--emit-zrm") == 0) {
+            outCommand->emitZrm = ZR_TRUE;
+            continue;
+        }
+
         if (strcmp(argument, "--incremental") == 0) {
             outCommand->incremental = ZR_TRUE;
             continue;
@@ -473,15 +481,18 @@ TZrBool ZrCli_Command_Parse(int argc,
         return ZR_FALSE;
     }
 
-    if (!compileSeen && (outCommand->emitIntermediate || outCommand->incremental || outCommand->runAfterCompile)) {
+    if (!compileSeen &&
+        (outCommand->emitIntermediate || outCommand->emitZrm ||
+         outCommand->incremental || outCommand->runAfterCompile)) {
         zr_cli_write_error(errorBuffer,
                            errorBufferSize,
-                           "--run, --intermediate, and --incremental require --compile <project.zrp>");
+                           "--run, --intermediate, --emit-zrm, and --incremental require --compile <project.zrp>");
         return ZR_FALSE;
     }
 
     if (primaryMode == ZR_CLI_PRIMARY_MODE_HELP) {
-        if (interactiveRequested || outCommand->emitIntermediate || outCommand->incremental || outCommand->runAfterCompile ||
+        if (interactiveRequested || outCommand->emitIntermediate || outCommand->emitZrm ||
+            outCommand->incremental || outCommand->runAfterCompile ||
             outCommand->emitExecutedVia ||
             outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
             outCommand->debugAddress != ZR_NULL || outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP ||
@@ -495,7 +506,8 @@ TZrBool ZrCli_Command_Parse(int argc,
     }
 
     if (primaryMode == ZR_CLI_PRIMARY_MODE_VERSION) {
-        if (interactiveRequested || outCommand->emitIntermediate || outCommand->incremental || outCommand->runAfterCompile ||
+        if (interactiveRequested || outCommand->emitIntermediate || outCommand->emitZrm ||
+            outCommand->incremental || outCommand->runAfterCompile ||
             outCommand->emitExecutedVia ||
             outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
             outCommand->debugAddress != ZR_NULL || outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP ||
@@ -524,7 +536,8 @@ TZrBool ZrCli_Command_Parse(int argc,
     }
 
     if (primaryMode == ZR_CLI_PRIMARY_MODE_INLINE &&
-        (outCommand->emitIntermediate || outCommand->incremental || outCommand->runAfterCompile ||
+        (outCommand->emitIntermediate || outCommand->emitZrm ||
+         outCommand->incremental || outCommand->runAfterCompile ||
          outCommand->emitExecutedVia ||
          outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
          outCommand->debugAddress != ZR_NULL || outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP ||

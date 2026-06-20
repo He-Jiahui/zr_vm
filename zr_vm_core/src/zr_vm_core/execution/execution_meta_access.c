@@ -5,6 +5,7 @@
 #include "execution/execution_internal.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 static TZrBool execution_meta_trace_pic_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
@@ -603,6 +604,36 @@ static void execution_meta_validate_cache_static_mode(SZrFunction *function,
     }
 }
 
+static TZrBool execution_meta_try_invoke_member_accessor(SZrState *state,
+                                                         SZrTypeValue *receiver,
+                                                         SZrString *memberName,
+                                                         const SZrTypeValue *arguments,
+                                                         TZrSize argumentCount,
+                                                         SZrTypeValue *result) {
+    SZrObjectPrototype *ownerPrototype;
+    SZrFunction *function;
+    TZrBool isStatic;
+    SZrTypeValue stableReceiver;
+
+    if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrCore_Object_ResolveMemberCallable(state, receiver, memberName, &ownerPrototype, &function, &isStatic)) {
+        return ZR_FALSE;
+    }
+
+    stableReceiver = *receiver;
+    ZR_UNUSED_PARAMETER(ownerPrototype);
+    return ZrCore_Object_InvokeResolvedFunction(state,
+                                                function,
+                                                isStatic,
+                                                &stableReceiver,
+                                                arguments,
+                                                argumentCount,
+                                                result);
+}
+
 static TZrBool execution_meta_prepare_cached_call_target_internal(SZrState *state,
                                                                   SZrFunction *function,
                                                                   TZrUInt16 cacheIndex,
@@ -716,13 +747,19 @@ TZrBool execution_meta_get_member(SZrState *state,
                                   SZrString *memberName,
                                   SZrTypeValue *result) {
     SZrTypeValue stableReceiver;
+    TZrBool ok;
 
     if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
     stableReceiver = *receiver;
-    return ZrCore_Object_InvokeMember(state, &stableReceiver, memberName, ZR_NULL, 0, result);
+    if (execution_meta_try_invoke_member_accessor(state, &stableReceiver, memberName, ZR_NULL, 0, result)) {
+        return ZR_TRUE;
+    }
+
+    ok = ZrCore_Object_GetMember(state, &stableReceiver, memberName, result);
+    return ok;
 }
 
 static TZrBool execution_meta_get_cached_member_internal(SZrState *state,
@@ -808,7 +845,6 @@ TZrBool execution_meta_set_member(SZrState *state,
                                   const SZrTypeValue *assignedValue) {
     SZrTypeValue stableReceiver;
     SZrTypeValue stableAssignedValue;
-    SZrTypeValue setterResult;
     SZrFunctionStackAnchor receiverAnchor;
     TZrBool hasReceiverAnchor;
 
@@ -819,20 +855,27 @@ TZrBool execution_meta_set_member(SZrState *state,
     stableReceiver = *receiverAndResult;
     stableAssignedValue = *assignedValue;
     hasReceiverAnchor = execution_meta_try_anchor_stack_value(state, receiverAndResult, &receiverAnchor);
-    ZrCore_Value_ResetAsNull(&setterResult);
-    if (!ZrCore_Object_InvokeMember(state,
-                                    &stableReceiver,
-                                    memberName,
-                                    &stableAssignedValue,
-                                    1,
-                                    &setterResult)) {
+    {
+        SZrTypeValue ignoredResult;
+        ZrCore_Value_ResetAsNull(&ignoredResult);
+        if (execution_meta_try_invoke_member_accessor(
+                    state, &stableReceiver, memberName, &stableAssignedValue, 1, &ignoredResult)) {
+            if (hasReceiverAnchor) {
+                receiverAndResult = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
+            }
+            ZrCore_Value_Copy(state, receiverAndResult, &stableAssignedValue);
+            return ZR_TRUE;
+        }
+    }
+
+    if (!ZrCore_Object_SetMember(state, &stableReceiver, memberName, &stableAssignedValue)) {
         return ZR_FALSE;
     }
 
     if (hasReceiverAnchor) {
         receiverAndResult = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
     }
-    ZrCore_Value_Copy(state, receiverAndResult, &setterResult);
+    ZrCore_Value_Copy(state, receiverAndResult, &stableAssignedValue);
     return ZR_TRUE;
 }
 
@@ -847,7 +890,7 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
     SZrString *memberName;
     SZrTypeValue stableReceiver;
     SZrTypeValue stableAssignedValue;
-    SZrTypeValue setterResult;
+    SZrTypeValue ignoredResult;
     SZrFunctionStackAnchor receiverAnchor;
     TZrBool hasReceiverAnchor;
 
@@ -863,7 +906,7 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
     stableReceiver = *receiverAndResult;
     stableAssignedValue = *assignedValue;
     hasReceiverAnchor = execution_meta_try_anchor_stack_value(state, receiverAndResult, &receiverAnchor);
-    ZrCore_Value_ResetAsNull(&setterResult);
+    ZrCore_Value_ResetAsNull(&ignoredResult);
     if (execution_meta_try_cached_call(state,
                                        function,
                                        cacheIndex,
@@ -871,13 +914,13 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
                                        &stableReceiver,
                                        &stableAssignedValue,
                                        1,
-                                       &setterResult,
+                                       &ignoredResult,
                                        ZR_TRUE,
                                        expectedStatic)) {
         if (hasReceiverAnchor) {
             receiverAndResult = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
         }
-        ZrCore_Value_Copy(state, receiverAndResult, &setterResult);
+        ZrCore_Value_Copy(state, receiverAndResult, &stableAssignedValue);
         return ZR_TRUE;
     }
 

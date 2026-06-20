@@ -8,10 +8,11 @@
 #include "object/object_super_array_internal.h"
 
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/profile.h"
 
 #include <stdarg.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static ZR_FORCE_INLINE SZrRawObject *execution_refresh_forwarded_raw_object(SZrRawObject *rawObject);
 static ZR_FORCE_INLINE SZrFunction *execution_refresh_forwarded_function(SZrFunction *function);
@@ -53,6 +54,8 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_prepared_resolved_vm_with
         TZrStackValuePointer returnDestination,
         TZrStackValuePointer argumentSourceFrameBase,
         TZrUInt32 argumentSourceStartSlot);
+static ZR_FORCE_INLINE void execution_prepare_frame_staging_destination_no_profile(SZrState *state,
+                                                                                   SZrTypeValue *destination);
 
 static ZR_FORCE_INLINE TZrBool execution_can_copy_stack_value_by_bits(const SZrTypeValue *destination,
                                                                       const SZrTypeValue *source) {
@@ -98,6 +101,75 @@ static ZR_FORCE_INLINE void execution_copy_stack_value_to_stack_fast_no_profile(
     }
 
     ZrCore_Value_CopySlow(state, destination, source);
+}
+
+static ZR_FORCE_INLINE void execution_sanitize_non_owning_value_no_profile(SZrTypeValue *value) {
+    if (value != ZR_NULL && value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE) {
+        value->ownershipControl = ZR_NULL;
+        value->ownershipWeakRef = ZR_NULL;
+    }
+}
+
+static ZR_FORCE_INLINE void execution_copy_frame_staging_value_no_profile(SZrState *state,
+                                                                          SZrTypeValue *destination,
+                                                                          const SZrTypeValue *source) {
+    SZrTypeValue sanitizedSource;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(destination != ZR_NULL);
+    ZR_ASSERT(source != ZR_NULL);
+
+    sanitizedSource = *source;
+    execution_sanitize_non_owning_value_no_profile(&sanitizedSource);
+    execution_prepare_frame_staging_destination_no_profile(state, destination);
+    if (ZrCore_Value_TryCopyFastNoProfile(state, destination, &sanitizedSource)) {
+        return;
+    }
+
+    ZrCore_Value_CopySlow(state, destination, &sanitizedSource);
+}
+
+static ZR_FORCE_INLINE void execution_copy_frame_staging_value_to_fresh_slot_no_profile(
+        SZrState *state,
+        SZrTypeValue *destination,
+        const SZrTypeValue *source) {
+    SZrTypeValue sanitizedSource;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(destination != ZR_NULL);
+    ZR_ASSERT(source != ZR_NULL);
+
+    sanitizedSource = *source;
+    execution_sanitize_non_owning_value_no_profile(&sanitizedSource);
+    ZrCore_Value_ResetAsNullNoProfile(destination);
+    if (ZrCore_Value_TryCopyFastNoProfile(state, destination, &sanitizedSource)) {
+        return;
+    }
+
+    ZrCore_Value_CopySlow(state, destination, &sanitizedSource);
+}
+
+static ZR_FORCE_INLINE void execution_copy_stack_value_allowing_overlap_no_profile(SZrState *state,
+                                                                                   SZrTypeValue *destination,
+                                                                                   const SZrTypeValue *source) {
+    SZrTypeValue snapshot;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(destination != ZR_NULL);
+    ZR_ASSERT(source != ZR_NULL);
+
+    if (destination == source) {
+        return;
+    }
+
+    if (!ZrCore_Value_SlotsOverlapNoProfile(destination, source)) {
+        execution_copy_stack_value_to_stack_fast_no_profile(state, destination, source);
+        return;
+    }
+
+    snapshot = *source;
+    execution_prepare_stack_destination_for_overwrite_no_profile(state, destination);
+    *destination = snapshot;
 }
 
 static ZR_FORCE_INLINE void execution_reset_stack_value_to_null_fast_no_profile(SZrState *state,
@@ -152,6 +224,54 @@ static ZR_FORCE_INLINE void execution_assign_stack_value_to_stack_fast_no_profil
     ZrCore_Value_AssignMaterializedStackValueNoProfile(state, destination, source);
 }
 
+static ZR_FORCE_INLINE SZrTypeValue *execution_get_call_return_destination_value_slot(
+        SZrState *state,
+        SZrCallInfo *callInfo,
+        TZrStackValuePointer destination) {
+    SZrCallInfo *callerCallInfo;
+    SZrFunction *callerFunction;
+    TZrStackValuePointer callerFrameBase;
+    TZrMemoryOffset destinationStackSlot;
+    const SZrFunctionFrameSlotLayout *slotLayout;
+    SZrStackFramePlace place;
+
+    if (state == ZR_NULL || callInfo == ZR_NULL || destination == ZR_NULL ||
+        callInfo->previous == ZR_NULL) {
+        return destination != ZR_NULL ? ZrCore_Stack_GetValueNoProfile(destination) : ZR_NULL;
+    }
+
+    callerCallInfo = callInfo->previous;
+    callerFrameBase = callerCallInfo->functionBase.valuePointer != ZR_NULL
+                              ? callerCallInfo->functionBase.valuePointer + 1
+                              : ZR_NULL;
+    callerFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callerCallInfo);
+    if (callerFrameBase == ZR_NULL || callerFunction == ZR_NULL ||
+        callerFunction->frameSlotLayouts == ZR_NULL ||
+        callerFunction->frameSlotLayoutLength == 0u ||
+        destination < callerFrameBase) {
+        return ZrCore_Stack_GetValueNoProfile(destination);
+    }
+
+    destinationStackSlot = destination - callerFrameBase;
+    if (destinationStackSlot < 0 || destinationStackSlot > UINT32_MAX) {
+        return ZrCore_Stack_GetValueNoProfile(destination);
+    }
+
+    slotLayout = ZrCore_Function_FindFrameSlotLayout(callerFunction, (TZrUInt32)destinationStackSlot);
+    if (slotLayout == ZR_NULL ||
+        slotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE ||
+        slotLayout->byteSize < (TZrUInt32)sizeof(SZrTypeValue) ||
+        !ZrCore_Function_MakeFrameSlotPlace(state,
+                                            callerFunction,
+                                            callerFrameBase,
+                                            (TZrUInt32)destinationStackSlot,
+                                            &place)) {
+        return ZrCore_Stack_GetValueNoProfile(destination);
+    }
+
+    return (SZrTypeValue *)place.address;
+}
+
 static ZR_FORCE_INLINE void execution_post_call_single_result_resolved_source_fast(
         SZrState *state,
         SZrCallInfo *callInfo,
@@ -160,7 +280,9 @@ static ZR_FORCE_INLINE void execution_post_call_single_result_resolved_source_fa
     TZrStackValuePointer destination;
     TZrStackValuePointer previousFrameStorageTop;
     SZrTypeValue *destinationValue;
+    SZrTypeValue *destinationFrameValue;
     TZrBool copiedInlineReturn = ZR_FALSE;
+    TZrBool frameOverlapsStack = ZR_FALSE;
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(callInfo != ZR_NULL);
@@ -173,6 +295,10 @@ static ZR_FORCE_INLINE void execution_post_call_single_result_resolved_source_fa
     previousFrameStorageTop = ZrCore_Function_GetCallInfoFrameStorageTop(state, callInfo->previous);
 
     destinationValue = ZrCore_Stack_GetValueNoProfile(destination);
+    destinationFrameValue = execution_get_call_return_destination_value_slot(state, callInfo, destination);
+    frameOverlapsStack = (TZrBool)(destinationFrameValue != ZR_NULL &&
+                                   destinationFrameValue != destinationValue &&
+                                   ZrCore_Value_SlotsOverlapNoProfile(destinationFrameValue, destinationValue));
     if (returnSource != ZR_NULL) {
         copiedInlineReturn = ZrCore_Function_TryCopyInlineFrameReturnValue(
                 state,
@@ -185,13 +311,34 @@ static ZR_FORCE_INLINE void execution_post_call_single_result_resolved_source_fa
     if (returnSource == ZR_NULL || returnSourceValue == ZR_NULL) {
         ZrCore_Value_ResetAsNullNoProfile(destinationValue);
     } else if (!copiedInlineReturn && returnSource != destination) {
-        execution_copy_stack_value_to_stack_fast_no_profile(
-                state,
-                destinationValue,
-                returnSourceValue);
+        (void)ZrCore_Function_TryCopyObjectReturnValueToInlineDestination(
+                state, callInfo, destination, returnSourceValue);
+        if (frameOverlapsStack && destinationFrameValue != ZR_NULL) {
+            execution_copy_stack_value_allowing_overlap_no_profile(
+                    state,
+                    destinationFrameValue,
+                    returnSourceValue);
+        } else {
+            execution_copy_stack_value_to_stack_fast_no_profile(
+                    state,
+                    destinationValue,
+                    returnSourceValue);
+        }
     }
     ZrCore_Function_TryCopyInlineConstructorReceiverBack(state, callInfo);
     execution_drop_call_info_inline_frame_values_if_available(state, callInfo);
+    if (returnSource == ZR_NULL || returnSourceValue == ZR_NULL) {
+        if (destinationFrameValue != ZR_NULL && destinationFrameValue != destinationValue) {
+            ZrCore_Value_ResetAsNullNoProfile(destinationFrameValue);
+        }
+    } else if (!copiedInlineReturn) {
+        if (destinationFrameValue != ZR_NULL && destinationFrameValue != destinationValue && !frameOverlapsStack) {
+            execution_copy_stack_value_allowing_overlap_no_profile(
+                    state,
+                    destinationFrameValue,
+                    destinationValue);
+        }
+    }
 
     state->stackTop.valuePointer = previousFrameStorageTop != ZR_NULL &&
                                     previousFrameStorageTop > destination + 1
@@ -250,8 +397,13 @@ static ZR_FORCE_INLINE void execution_push_closure_to_effective_destination_no_p
     physicalValue->isNative = ZR_FALSE;
 
     if (destination != physicalValue) {
-        execution_copy_stack_value_to_stack_fast_no_profile(state, destination, physicalValue);
-        execution_reset_stack_value_to_null_fast_no_profile(state, physicalValue);
+        if (ZrCore_Value_SlotsOverlapNoProfile(destination, physicalValue)) {
+            SZrTypeValue snapshot = *physicalValue;
+            *destination = snapshot;
+        } else {
+            execution_copy_stack_value_to_stack_fast_no_profile(state, destination, physicalValue);
+            execution_reset_stack_value_to_null_fast_no_profile(state, physicalValue);
+        }
     }
 }
 
@@ -372,6 +524,13 @@ static ZR_FORCE_INLINE void execution_store_resolved_vm_function_value_fast(SZrS
     execution_store_vm_function_value_no_profile(destination, function);
 }
 
+static ZR_FORCE_INLINE TZrBool execution_call_window_value_is_callable(const SZrTypeValue *value) {
+    return (TZrBool)(value != ZR_NULL &&
+                     (value->type == ZR_VALUE_TYPE_FUNCTION ||
+                      value->type == ZR_VALUE_TYPE_CLOSURE ||
+                      value->type == ZR_VALUE_TYPE_NATIVE_POINTER));
+}
+
 static ZR_FORCE_INLINE void execution_stage_frame_layout_call_values(SZrState *state,
                                                                      SZrFunction *function,
                                                                      TZrStackValuePointer frameBase,
@@ -396,16 +555,30 @@ static ZR_FORCE_INLINE void execution_stage_frame_layout_call_values(SZrState *s
 
     for (TZrSize offset = 0u; offset < valueCount; offset++) {
         TZrUInt32 logicalSlot = functionSlot + (TZrUInt32)offset;
-        SZrTypeValue *source = execution_inline_frame_get_value_slot(state, function, frameBase, logicalSlot);
+        SZrTypeValue *physicalSource = ZrCore_Stack_GetValueNoProfile(frameBase + logicalSlot);
+        SZrTypeValue *layoutSource = execution_inline_frame_get_value_slot(state, function, frameBase, logicalSlot);
 
         ZrCore_Value_ResetAsNullNoProfile(&snapshot[offset]);
-        if (!execution_inline_frame_try_materialize_stack_slot_value(state,
-                                                                     function,
-                                                                     frameBase,
-                                                                     logicalSlot,
-                                                                     &snapshot[offset])) {
-            snapshot[offset] = *source;
+        if (offset == 0u && execution_call_window_value_is_callable(layoutSource)) {
+            snapshot[offset] = *layoutSource;
+        } else if (offset == 0u && execution_call_window_value_is_callable(physicalSource)) {
+            snapshot[offset] = *physicalSource;
+        } else if (layoutSource != ZR_NULL && !ZR_VALUE_IS_TYPE_NULL(layoutSource->type)) {
+            snapshot[offset] = *layoutSource;
+        } else if (physicalSource != ZR_NULL && !ZR_VALUE_IS_TYPE_NULL(physicalSource->type)) {
+            snapshot[offset] = *physicalSource;
+        } else if (!execution_inline_frame_try_materialize_stack_slot_value(state,
+                                                                            function,
+                                                                            frameBase,
+                                                                            logicalSlot,
+                                                                            &snapshot[offset])) {
+            if (layoutSource != ZR_NULL) {
+                snapshot[offset] = *layoutSource;
+            } else if (physicalSource != ZR_NULL) {
+                snapshot[offset] = *physicalSource;
+            }
         }
+        execution_sanitize_non_owning_value_no_profile(&snapshot[offset]);
     }
 
     for (TZrSize offset = 0u; offset < valueCount; offset++) {
@@ -418,8 +591,7 @@ static ZR_FORCE_INLINE void execution_stage_frame_layout_call_values(SZrState *s
             continue;
         }
 
-        execution_prepare_frame_staging_destination_no_profile(state, destination);
-        ZrCore_Value_Copy(state, destination, &snapshot[offset]);
+        execution_copy_frame_staging_value_no_profile(state, destination, &snapshot[offset]);
     }
 
     if (snapshot != stackSnapshot) {
@@ -464,16 +636,30 @@ static ZR_FORCE_INLINE TZrStackValuePointer execution_prepare_frame_layout_call_
 
     for (TZrSize offset = 0u; offset < valueCount; offset++) {
         TZrUInt32 logicalSlot = functionSlot + (TZrUInt32)offset;
-        SZrTypeValue *source = execution_inline_frame_get_value_slot(state, function, frameBase, logicalSlot);
+        SZrTypeValue *physicalSource = ZrCore_Stack_GetValueNoProfile(frameBase + logicalSlot);
+        SZrTypeValue *layoutSource = execution_inline_frame_get_value_slot(state, function, frameBase, logicalSlot);
 
         ZrCore_Value_ResetAsNullNoProfile(&snapshot[offset]);
-        if (!execution_inline_frame_try_materialize_stack_slot_value(state,
-                                                                     function,
-                                                                     frameBase,
-                                                                     logicalSlot,
-                                                                     &snapshot[offset])) {
-            snapshot[offset] = *source;
+        if (offset == 0u && execution_call_window_value_is_callable(layoutSource)) {
+            snapshot[offset] = *layoutSource;
+        } else if (offset == 0u && execution_call_window_value_is_callable(physicalSource)) {
+            snapshot[offset] = *physicalSource;
+        } else if (layoutSource != ZR_NULL && !ZR_VALUE_IS_TYPE_NULL(layoutSource->type)) {
+            snapshot[offset] = *layoutSource;
+        } else if (physicalSource != ZR_NULL && !ZR_VALUE_IS_TYPE_NULL(physicalSource->type)) {
+            snapshot[offset] = *physicalSource;
+        } else if (!execution_inline_frame_try_materialize_stack_slot_value(state,
+                                                                            function,
+                                                                            frameBase,
+                                                                            logicalSlot,
+                                                                            &snapshot[offset])) {
+            if (layoutSource != ZR_NULL) {
+                snapshot[offset] = *layoutSource;
+            } else if (physicalSource != ZR_NULL) {
+                snapshot[offset] = *physicalSource;
+            }
         }
+        execution_sanitize_non_owning_value_no_profile(&snapshot[offset]);
     }
 
     ZrCore_Function_StackAnchorInit(state, frameBase, &frameBaseAnchor);
@@ -495,11 +681,9 @@ static ZR_FORCE_INLINE TZrStackValuePointer execution_prepare_frame_layout_call_
     }
 
     for (TZrSize offset = 0u; offset < valueCount; offset++) {
-        execution_prepare_frame_staging_destination_no_profile(state, &callWindow[offset].value);
-        ZrCore_Value_Copy(state, &callWindow[offset].value, &snapshot[offset]);
+        execution_copy_frame_staging_value_to_fresh_slot_no_profile(state, &callWindow[offset].value, &snapshot[offset]);
     }
     for (TZrSize offset = valueCount; offset < allocationCount; offset++) {
-        execution_prepare_frame_staging_destination_no_profile(state, &callWindow[offset].value);
         ZrCore_Value_ResetAsNullNoProfile(&callWindow[offset].value);
     }
 
@@ -524,6 +708,47 @@ static ZR_FORCE_INLINE TZrStackValuePointer execution_prepare_frame_layout_call_
             functionSlot,
             parametersCount,
             0u);
+}
+
+static ZR_FORCE_INLINE TZrStackValuePointer execution_prepare_tail_call_fallback_window(
+        SZrState *state,
+        SZrCallInfo *callInfo,
+        TZrStackValuePointer *ioFrameBase,
+        TZrStackValuePointer sourceWindow,
+        TZrSize valueCount) {
+    SZrFunctionStackAnchor frameBaseAnchor;
+    SZrFunctionStackAnchor sourceWindowAnchor;
+    TZrStackValuePointer callWindowBase;
+    TZrStackValuePointer callWindow;
+
+    if (state == ZR_NULL || callInfo == ZR_NULL || ioFrameBase == ZR_NULL ||
+        *ioFrameBase == ZR_NULL || sourceWindow == ZR_NULL || valueCount == 0u) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Function_StackAnchorInit(state, *ioFrameBase, &frameBaseAnchor);
+    ZrCore_Function_StackAnchorInit(state, sourceWindow, &sourceWindowAnchor);
+    callWindowBase = ZrCore_Function_GetCallInfoFrameStorageTop(state, callInfo);
+    if (callWindowBase == ZR_NULL || callWindowBase < state->stackTop.valuePointer) {
+        callWindowBase = state->stackTop.valuePointer;
+    }
+
+    callWindow = ZrCore_Function_CheckStackAndGc(state, valueCount, callWindowBase);
+    *ioFrameBase = ZrCore_Function_StackAnchorRestore(state, &frameBaseAnchor);
+    sourceWindow = ZrCore_Function_StackAnchorRestore(state, &sourceWindowAnchor);
+    if (callWindow == ZR_NULL || sourceWindow == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize offset = 0u; offset < valueCount; offset++) {
+        execution_copy_frame_staging_value_to_fresh_slot_no_profile(
+                state,
+                &callWindow[offset].value,
+                ZrCore_Stack_GetValueNoProfile(sourceWindow + offset));
+    }
+
+    state->stackTop.valuePointer = callWindow + valueCount;
+    return callWindow;
 }
 
 static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_generic_single_result(
@@ -1997,6 +2222,33 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     EXECUTION_STORE_PLAIN_DIRECT(REGION, (opA->value.nativeObject.REGION) OP(RIGHT), TYPE);
 #define ALGORITHM_FUNC_2_DIRECT(REGION, OP_FUNC, TYPE)                                                                 \
     EXECUTION_STORE_PLAIN_DIRECT(REGION, OP_FUNC(opA->value.nativeObject.REGION, opB->value.nativeObject.REGION), TYPE);
+#define EXECUTION_INTEGRAL_VALUE_AS_U64(VALUE)                                                                         \
+    (ZR_VALUE_IS_TYPE_UNSIGNED_INT((VALUE)->type) ? (VALUE)->value.nativeObject.nativeUInt64                          \
+                                                  : (TZrUInt64)(VALUE)->value.nativeObject.nativeInt64)
+#define EXECUTE_BITWISE_NOT_BODY()                                                                                     \
+    do {                                                                                                               \
+        opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
+        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type));                                                                    \
+        if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)) {                                                                \
+            ALGORITHM_1(nativeUInt64, ~, ZR_VALUE_TYPE_UINT64);                                                        \
+        } else {                                                                                                       \
+            ALGORITHM_1(nativeInt64, ~, ZR_VALUE_TYPE_INT64);                                                          \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_BITWISE_BINARY_BODY(OP)                                                                                \
+    do {                                                                                                               \
+        opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
+        opB = FRAME_VALUE_SLOT(B1(instruction));                                                                       \
+        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));                                \
+        if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type)) {                  \
+            EXECUTION_STORE_PLAIN_REUSE(                                                                               \
+                    nativeUInt64,                                                                                      \
+                    EXECUTION_INTEGRAL_VALUE_AS_U64(opA) OP EXECUTION_INTEGRAL_VALUE_AS_U64(opB),                    \
+                    ZR_VALUE_TYPE_UINT64);                                                                             \
+        } else {                                                                                                       \
+            ALGORITHM_2(nativeInt64, OP, ZR_VALUE_TYPE_INT64);                                                         \
+        }                                                                                                              \
+    } while (0)
 #define EXECUTE_GET_STACK_BODY()                                                                                       \
     do {                                                                                                               \
         TZrUInt16 destinationOffset__ = E(instruction);                                                                \
@@ -2009,6 +2261,22 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         } else {                                                                                                       \
             ZrCore_Value_Copy(state, destination, source);                                                             \
         }                                                                                                              \
+        if (getenv("ZR_VM_TRACE_TYPEOF") != ZR_NULL) {                                                                \
+            SZrTypeValue *physicalSource__ = ZrCore_Stack_GetValueNoProfile(BASE(A2(instruction)));                   \
+            SZrTypeValue *physicalDestination__ = destinationOffset__ != ZR_INSTRUCTION_USE_RET_FLAG                   \
+                    ? ZrCore_Stack_GetValueNoProfile(BASE(destinationOffset__))                                        \
+                    : ZR_NULL;                                                                                         \
+            fprintf(stderr,                                                                                            \
+                    "[getstack] dst=%u src=%u dstType=%d dstObj=%p srcType=%d srcObj=%p physDstType=%d physSrcType=%d\n", \
+                    (unsigned)destinationOffset__,                                                                     \
+                    (unsigned)A2(instruction),                                                                         \
+                    destination != ZR_NULL ? (int)destination->type : -1,                                              \
+                    destination != ZR_NULL ? (void *)destination->value.object : ZR_NULL,                              \
+                    source != ZR_NULL ? (int)source->type : -1,                                                        \
+                    source != ZR_NULL ? (void *)source->value.object : ZR_NULL,                                        \
+                    physicalDestination__ != ZR_NULL ? (int)physicalDestination__->type : -1,                          \
+                    physicalSource__ != ZR_NULL ? (int)physicalSource__->type : -1);                                   \
+        }                                                                                                              \
     } while (0)
 #define EXECUTE_SET_STACK_BODY()                                                                                       \
     do {                                                                                                               \
@@ -2016,6 +2284,32 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         if (!execution_inline_frame_try_copy_stack_slot(state, currentFunction, base, E(instruction), A2(instruction))) { \
             execution_assign_stack_value_to_stack_fast_no_profile(                                                     \
                     state, FRAME_VALUE_SLOT(E(instruction)), srcValue);                                                \
+        }                                                                                                              \
+        if (getenv("ZR_VM_TRACE_TYPEOF") != ZR_NULL) {                                                                \
+            SZrTypeValue *logicalDestination__ = FRAME_VALUE_SLOT(E(instruction));                                     \
+            SZrRawObject *rawObject__ = srcValue != ZR_NULL ? srcValue->value.object : ZR_NULL;                       \
+            SZrFunction *function__ = (rawObject__ != ZR_NULL && rawObject__->type == ZR_RAW_OBJECT_TYPE_CLOSURE)      \
+                    ? ZR_CAST_VM_CLOSURE(state, rawObject__)->function                                                  \
+                    : ZR_NULL;                                                                                         \
+            SZrTypeValue *physicalSource__ = ZrCore_Stack_GetValueNoProfile(BASE(A2(instruction)));                   \
+            SZrTypeValue *physicalDestination__ = ZrCore_Stack_GetValueNoProfile(BASE(E(instruction)));               \
+            fprintf(stderr,                                                                                            \
+                    "[setstack] dst=%u src=%u dstPtr=%p srcPtr=%p base=%p fnCur=%p dstType=%d dstObj=%p srcType=%d srcObj=%p fn=%p ret=%d hasRet=%d physDstType=%d physSrcType=%d\n", \
+                    (unsigned)E(instruction),                                                                          \
+                    (unsigned)A2(instruction),                                                                         \
+                    (void *)logicalDestination__,                                                                       \
+                    (void *)srcValue,                                                                                   \
+                    (void *)base,                                                                                       \
+                    (void *)currentFunction,                                                                            \
+                    logicalDestination__ != ZR_NULL ? (int)logicalDestination__->type : -1,                            \
+                    logicalDestination__ != ZR_NULL ? (void *)logicalDestination__->value.object : ZR_NULL,            \
+                    srcValue != ZR_NULL ? (int)srcValue->type : -1,                                                    \
+                    srcValue != ZR_NULL ? (void *)srcValue->value.object : ZR_NULL,                                    \
+                    (void *)function__,                                                                                 \
+                    function__ != ZR_NULL ? (int)function__->callableReturnType.baseType : -1,                         \
+                    function__ != ZR_NULL ? (int)function__->hasCallableReturnType : -1,                               \
+                    physicalDestination__ != ZR_NULL ? (int)physicalDestination__->type : -1,                          \
+                    physicalSource__ != ZR_NULL ? (int)physicalSource__->type : -1);                                   \
         }                                                                                                              \
     } while (0)
 #define EXECUTE_GET_CONSTANT_BODY()                                                                                    \
@@ -2025,21 +2319,29 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         } else {                                                                                                       \
             ZrCore_Value_Copy(state, destination, CONST(A2(instruction)));                                             \
         }                                                                                                              \
+        if (getenv("ZR_VM_TRACE_TYPEOF") != ZR_NULL) {                                                                \
+            fprintf(stderr,                                                                                            \
+                    "[constant] dst=%u srcConst=%u dstType=%d constType=%d\n",                                        \
+                    (unsigned)E(instruction),                                                                          \
+                    (unsigned)A2(instruction),                                                                         \
+                    destination != ZR_NULL ? (int)destination->type : -1,                                              \
+                    CONST(A2(instruction)) != ZR_NULL ? (int)CONST(A2(instruction))->type : -1);                      \
+        }                                                                                                              \
     } while (0)
 #define EXECUTE_RESET_STACK_NULL_BODY()                                                                                \
     do {                                                                                                               \
         if (ZR_UNLIKELY(recordHelpers)) {                                                                              \
             profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_RESET_NULL]++;                                        \
         }                                                                                                              \
-        execution_reset_stack_value_to_null_fast_no_profile(state, &BASE(E(instruction))->value);                     \
+        execution_reset_stack_value_to_null_fast_no_profile(state, FRAME_VALUE_SLOT(E(instruction)));                 \
     } while (0)
 #define EXECUTE_RESET_STACK_NULL2_BODY()                                                                               \
     do {                                                                                                               \
         if (ZR_UNLIKELY(recordHelpers)) {                                                                              \
             profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_RESET_NULL] += 2u;                                   \
         }                                                                                                              \
-        execution_reset_stack_value_to_null_fast_no_profile(state, &BASE(E(instruction))->value);                     \
-        execution_reset_stack_value_to_null_fast_no_profile(state, &BASE(A1(instruction))->value);                    \
+        execution_reset_stack_value_to_null_fast_no_profile(state, FRAME_VALUE_SLOT(E(instruction)));                 \
+        execution_reset_stack_value_to_null_fast_no_profile(state, FRAME_VALUE_SLOT(A1(instruction)));                \
     } while (0)
 #define EXECUTE_GET_MEMBER_SLOT_BODY()                                                                                 \
     do {                                                                                                               \
@@ -2206,7 +2508,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                     currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET)     \
                           : ZR_NULL;                                                                                  \
         if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {                                  \
-            ZrCore_Debug_RunError(state, "SET_MEMBER: receiver must be a writable object member");                   \
+            ZrCore_Debug_RunError(state, "SET_MEMBER_SLOT_NULL_A: receiver must be a writable object member");       \
         } else if (!(execution_member_try_dispatch_exact_receiver_pair_set_hot_fast_checked_object_profiled(          \
                              state,                                                                                   \
                              currentFunction,                                                                         \
@@ -2232,7 +2534,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                         currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET) == ZR_NULL) {   \
                 ZrCore_Debug_RunError(state, "SET_MEMBER_SLOT_NULL: cached member store failed");                    \
             } else {                                                                                                   \
-                ZrCore_Debug_RunError(state, "SET_MEMBER: receiver must be a writable object member");               \
+                ZrCore_Debug_RunError(state, "SET_MEMBER_SLOT_NULL_B: receiver must be a writable object member");   \
             }                                                                                                          \
         }                                                                                                              \
     } while (0)
@@ -2271,7 +2573,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {                                  \
             ZrCore_Debug_RunError(state, "GET_BY_INDEX: receiver must be an object or array");                       \
         } else {                                                                                                       \
-            destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : &BASE(E(instruction))->value;        \
+            destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));    \
             if (E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG && destination != opA && destination != opB) {          \
                 readonlyFastTried__ = ZR_TRUE;                                                                        \
                 execution_prepare_destination_for_direct_store_no_profile(state, destination);                         \
@@ -2284,7 +2586,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                     }                                                                                                  \
                     directResultStored__ = ZR_TRUE;                                                                    \
                     UPDATE_BASE(callInfo);                                                                             \
-                    destination = &BASE(E(instruction))->value;                                                        \
+                    destination = FRAME_VALUE_SLOT(E(instruction));                                                    \
                 } else if (state->threadStatus != ZR_THREAD_STATUS_FINE) {                                            \
                     SAVE_PC(state, callInfo);                                                                          \
                     goto LZrReturning;                                                                                 \
@@ -2302,7 +2604,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                     profileRuntime->helperCounts[ZR_PROFILE_HELPER_GET_BY_INDEX]++;                                   \
                 }                                                                                                      \
                 UPDATE_BASE(callInfo);                                                                                 \
-                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : &BASE(E(instruction))->value;   \
+                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction)); \
             } else if (!directResultStored__ && state->threadStatus != ZR_THREAD_STATUS_FINE) {                       \
                 SAVE_PC(state, callInfo);                                                                              \
                 goto LZrReturning;                                                                                     \
@@ -2420,19 +2722,25 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrFunctionCallSiteCacheEntry *cacheEntry__;                                                                   \
         TZrSize parametersCount__ = 0u;                                                                                \
         TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer callWindow__;                                                                             \
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         cacheEntry__ = execution_member_get_cache_entry_dispatch_fast(                                                 \
                 currentFunction, cacheIndex__, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);                           \
         parametersCount__ = cacheEntry__ != ZR_NULL ? cacheEntry__->argumentCount : 0u;                               \
-        state->stackTop.valuePointer = BASE(resultSlot__) + parametersCount__ + 1;                                    \
+        callWindow__ = execution_prepare_frame_layout_call_window(                                                     \
+                state, callInfo, currentFunction, &base, (TZrUInt32)resultSlot__, parametersCount__);                 \
+        if (callWindow__ == ZR_NULL) {                                                                                 \
+            ZrCore_Debug_RunError(state, "KNOWN_VM_MEMBER_CALL: failed to prepare call frame");                      \
+        }                                                                                                              \
+        state->stackTop.valuePointer = callWindow__ + parametersCount__ + 1;                                          \
         nextCallInfo__ = execution_pre_call_known_vm_member_fast(state,                                                \
                                                                  programCounter,                                      \
                                                                  currentFunction,                                     \
                                                                  cacheIndex__,                                        \
                                                                  cacheEntry__,                                        \
-                                                                 BASE(resultSlot__),                                  \
+                                                                 callWindow__,                                        \
                                                                  expectedReturnCount__,                               \
                                                                  BASE(resultSlot__),                                  \
                                                                  profileRuntime,                                      \
@@ -2452,12 +2760,13 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrUInt16 argumentSourceSlot__ = (TZrUInt16)instruction.instruction.operand.operand0[2];                      \
         SZrFunctionCallSiteCacheEntry *cacheEntry__;                                                                   \
         TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer callWindow__;                                                                             \
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         execution_copy_stack_value_to_stack_fast_no_profile(                                                           \
-                state, &BASE(resultSlot__ + 1u)->value, &BASE(receiverSourceSlot__)->value);                          \
+                state, FRAME_VALUE_SLOT(resultSlot__ + 1u), FRAME_VALUE_SLOT(receiverSourceSlot__));                  \
         execution_copy_stack_value_to_stack_fast_no_profile(                                                           \
-                state, &BASE(resultSlot__ + 2u)->value, &BASE(argumentSourceSlot__)->value);                          \
+                state, FRAME_VALUE_SLOT(resultSlot__ + 2u), FRAME_VALUE_SLOT(argumentSourceSlot__));                  \
         if (ZR_UNLIKELY(recordHelpers)) {                                                                              \
             profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY] += 2u;                                         \
         }                                                                                                              \
@@ -2465,13 +2774,18 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         cacheEntry__ = execution_member_get_cache_entry_dispatch_fast(                                                 \
                 currentFunction, cacheIndex__, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);                           \
-        state->stackTop.valuePointer = BASE(resultSlot__) + 3u;                                                       \
+        callWindow__ = execution_prepare_frame_layout_call_window(                                                     \
+                state, callInfo, currentFunction, &base, (TZrUInt32)resultSlot__, 2u);                                \
+        if (callWindow__ == ZR_NULL) {                                                                                 \
+            ZrCore_Debug_RunError(state, "KNOWN_VM_MEMBER_CALL_LOAD1_U8: failed to prepare call frame");             \
+        }                                                                                                              \
+        state->stackTop.valuePointer = callWindow__ + 3u;                                                             \
         nextCallInfo__ = execution_pre_call_known_vm_member_fast(state,                                                \
                                                                  programCounter,                                      \
                                                                  currentFunction,                                     \
                                                                  cacheIndex__,                                        \
                                                                  cacheEntry__,                                        \
-                                                                 BASE(resultSlot__),                                  \
+                                                                 callWindow__,                                        \
                                                                  expectedReturnCount__,                               \
                                                                  BASE(resultSlot__),                                  \
                                                                  profileRuntime,                                      \
@@ -2494,7 +2808,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_VM_CALL");                   \
-                                                                                                                       \
+                                                                                                                        \
         resolvedFunction__ = execution_try_resolve_stateless_vm_function_value_fast(state, opA);                       \
         if (resolvedFunction__ == ZR_NULL) {                                                                           \
             resolvedFunction__ = execution_try_resolve_vm_metadata_function_fast(state, opA, ZR_NULL);                 \
@@ -2519,7 +2833,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                 resolvedFunction__,                                                                                   \
                 parametersCount__,                                                                                    \
                 expectedReturnCount__,                                                                                \
-                FRAME_VALUE_SLOT(E(instruction)),                                                                     \
+                BASE(E(instruction)),                                                                                 \
                 base,                                                                                                 \
                 (TZrUInt32)(functionSlot__ + 1u));                                                                    \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
@@ -2668,7 +2982,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                 &base,                                                                                                 \
                 (TZrUInt32)functionSlot__,                                                                             \
                 0u,                                                                                                    \
-                FRAME_VALUE_SLOT(E(instruction)),                                                                      \
+                BASE(E(instruction)),                                                                                  \
                 &callWindow__);                                                                                        \
         if (callWindow__ == ZR_NULL) {                                                                                 \
             ZrCore_Debug_RunError(state, "SUPER_FUNCTION_CALL_NO_ARGS: failed to prepare call frame");               \
@@ -2729,7 +3043,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZrCore_Function_StackAnchorInit(state, callWindow__, &callWindowAnchor__);                                    \
         execution_pre_call_known_native_fast(state,                                                                    \
                                              callWindow__,                                                             \
-                                             opA,                                                                      \
+                                             ZrCore_Stack_GetValueNoProfile(callWindow__),                            \
                                              expectedReturnCount__,                                                    \
                                              callWindow__,                                                             \
                                              profileRuntime,                                                           \
@@ -2760,7 +3074,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                 &base,                                                                                                 \
                 (TZrUInt32)functionSlot__,                                                                             \
                 parametersCount__,                                                                                     \
-                FRAME_VALUE_SLOT(E(instruction)),                                                                      \
+                BASE(E(instruction)),                                                                                  \
                 &callWindow__);                                                                                        \
         if (callWindow__ == ZR_NULL) {                                                                                 \
             ZrCore_Debug_RunError(state, "FUNCTION_CALL: failed to prepare call frame");                             \
@@ -2785,7 +3099,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, BASE(functionSlot__), expectedReturnCount__, FRAME_VALUE_SLOT(E(instruction)));                \
+                state, BASE(functionSlot__), expectedReturnCount__, BASE(E(instruction)));                            \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
         } else {                                                                                                       \
@@ -2799,24 +3113,58 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         const SZrFunctionCallSiteCacheEntry *cacheEntry__ = execution_get_callsite_cache_entry(                       \
                 currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL);                          \
         TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer callWindow__;                                                                             \
+        SZrFunctionStackAnchor callWindowAnchor__;                                                                     \
+        TZrStackValuePointer functionPointer__;                                                                        \
+        TZrUInt32 argumentSourceStartSlot__;                                                                           \
+        SZrTypeValue *callableValue__;                                                                                 \
+        TZrBool preparedDynCallTarget__;                                                                               \
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         if (cacheEntry__ == ZR_NULL) {                                                                                 \
             ZrCore_Debug_RunError(state, "SUPER_DYN_CALL_CACHED: invalid callsite cache");                           \
         }                                                                                                              \
                                                                                                                        \
-        execution_stage_frame_layout_call_values(                                                                      \
-                state, currentFunction, base, (TZrUInt32)functionSlot__, cacheEntry__->argumentCount);                 \
-        state->stackTop.valuePointer = BASE(functionSlot__) + cacheEntry__->argumentCount + 1;                        \
-        execution_try_prepare_dyn_call_target_cached(state,                                                            \
-                                                     currentFunction,                                                  \
-                                                     B1(instruction),                                                  \
-                                                     BASE(functionSlot__),                                             \
-                                                     ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL);                       \
-                                                                                                                       \
+        callWindow__ = execution_prepare_frame_layout_call_window_with_extra(                                          \
+                state,                                                                                                 \
+                callInfo,                                                                                              \
+                currentFunction,                                                                                       \
+                &base,                                                                                                 \
+                (TZrUInt32)functionSlot__,                                                                             \
+                cacheEntry__->argumentCount,                                                                           \
+                1u);                                                                                                   \
+        if (callWindow__ == ZR_NULL) {                                                                                 \
+            ZrCore_Debug_RunError(state, "SUPER_DYN_CALL_CACHED: failed to prepare call frame");                      \
+        }                                                                                                              \
+        state->stackTop.valuePointer = callWindow__ + cacheEntry__->argumentCount + 1;                                \
+        preparedDynCallTarget__ = execution_try_prepare_dyn_call_target_cached(                                        \
+                state,                                                                                                \
+                currentFunction,                                                                                      \
+                B1(instruction),                                                                                      \
+                callWindow__,                                                                                         \
+                ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL);                                                            \
+        functionPointer__ = callWindow__;                                                                              \
+        argumentSourceStartSlot__ =                                                                                   \
+                (TZrUInt32)(functionSlot__ + (preparedDynCallTarget__ ? 0u : 1u));                                     \
+        callableValue__ = ZrCore_Stack_GetValueNoProfile(functionPointer__);                                          \
+                                                                                                                        \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
-        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, BASE(functionSlot__), expectedReturnCount__, FRAME_VALUE_SLOT(E(instruction)));                \
+        ZrCore_Function_StackAnchorInit(state, callWindow__, &callWindowAnchor__);                                    \
+        nextCallInfo__ = callableValue__ != ZR_NULL &&                                                                 \
+                                  !callableValue__->isNative &&                                                        \
+                                  (callableValue__->type == ZR_VALUE_TYPE_FUNCTION ||                                  \
+                                   callableValue__->type == ZR_VALUE_TYPE_CLOSURE)                                     \
+                                 ? ZrCore_Function_PreCallKnownVmValueWithArgumentSource(                              \
+                                           state,                                                                      \
+                                           functionPointer__,                                                          \
+                                           callableValue__,                                                            \
+                                           expectedReturnCount__,                                                      \
+                                           BASE(E(instruction)),                                                       \
+                                           base,                                                                       \
+                                           argumentSourceStartSlot__)                                                  \
+                                 : ZrCore_Function_PreCall(                                                           \
+                                           state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));     \
+        callWindow__ = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor__);                                \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
         } else {                                                                                                       \
@@ -2834,7 +3182,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in DYN_CALL");                       \
-                                                                                                                       \
+                                                                                                                        \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         nextCallInfo__ = execution_pre_call_frame_layout_generic_single_result(                                        \
                 state,                                                                                                 \
@@ -2843,7 +3191,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                 &base,                                                                                                 \
                 (TZrUInt32)functionSlot__,                                                                             \
                 parametersCount__,                                                                                     \
-                FRAME_VALUE_SLOT(E(instruction)),                                                                      \
+                BASE(E(instruction)),                                                                                  \
                 &callWindow__);                                                                                        \
         if (callWindow__ == ZR_NULL) {                                                                                 \
             ZrCore_Debug_RunError(state, "DYN_CALL: failed to prepare call frame");                                  \
@@ -2876,7 +3224,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         ZrCore_Function_StackAnchorInit(state, callWindow__, &callWindowAnchor__);                                    \
         nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, callWindow__, expectedReturnCount__, FRAME_VALUE_SLOT(E(instruction)));                        \
+                state, callWindow__, expectedReturnCount__, BASE(E(instruction)));                                    \
         callWindow__ = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor__);                                \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
@@ -2922,7 +3270,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         ZrCore_Function_StackAnchorInit(state, callWindow__, &callWindowAnchor__);                                    \
         nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, callWindow__, expectedReturnCount__, FRAME_VALUE_SLOT(E(instruction)));                        \
+                state, callWindow__, expectedReturnCount__, BASE(E(instruction)));                                    \
         callWindow__ = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor__);                                \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
@@ -2954,7 +3302,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         ZrCore_Function_StackAnchorInit(state, callWindow__, &callWindowAnchor__);                                    \
         nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, callWindow__, expectedReturnCount__, FRAME_VALUE_SLOT(E(instruction)));                        \
+                state, callWindow__, expectedReturnCount__, BASE(E(instruction)));                                    \
         callWindow__ = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor__);                                \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
@@ -2969,6 +3317,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrSize parametersCount__ = B1(instruction);                                                                   \
         TZrSize expectedReturnCount__ = 1;                                                                             \
         TZrStackValuePointer functionPointer__;                                                                        \
+        TZrStackValuePointer callWindow__;                                                                             \
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
@@ -2984,8 +3333,15 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             goto LZrStart;                                                                                             \
         }                                                                                                              \
+        callWindow__ = execution_prepare_tail_call_fallback_window(                                                    \
+                state, callInfo, &base, functionPointer__, parametersCount__ + 1u);                                   \
+        if (callWindow__ == ZR_NULL) {                                                                                 \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            ZrCore_Debug_RunError(state, "FUNCTION_TAIL_CALL: failed to prepare fallback call frame");               \
+        }                                                                                                              \
+        functionPointer__ = callWindow__;                                                                              \
         nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, functionPointer__, expectedReturnCount__, FRAME_VALUE_SLOT(E(instruction)));                   \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
@@ -3001,21 +3357,25 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrSize parametersCount__ = B1(instruction);                                                                   \
         TZrSize expectedReturnCount__ = 1;                                                                             \
         TZrStackValuePointer functionPointer__;                                                                        \
+        TZrStackValuePointer callWindow__;                                                                             \
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
-        opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_VM_TAIL_CALL");             \
-                                                                                                                       \
-        execution_stage_frame_layout_call_values(                                                                      \
-                state, currentFunction, base, (TZrUInt32)functionSlot__, parametersCount__);                          \
-        state->stackTop.valuePointer = BASE(functionSlot__) + parametersCount__ + 1;                                  \
+        callWindow__ = execution_prepare_frame_layout_call_window(                                                     \
+                state, callInfo, currentFunction, &base, (TZrUInt32)functionSlot__, parametersCount__);               \
+        if (callWindow__ == ZR_NULL) {                                                                                 \
+            ZrCore_Debug_RunError(state, "KNOWN_VM_TAIL_CALL: failed to prepare call frame");                       \
+        }                                                                                                              \
+        state->stackTop.valuePointer = callWindow__ + parametersCount__ + 1;                                          \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
-        functionPointer__ = BASE(functionSlot__);                                                                      \
-        if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
+        functionPointer__ = callWindow__;                                                                              \
+        if ((currentFunction == ZR_NULL || currentFunction->frameSlotLayouts == ZR_NULL ||                            \
+             currentFunction->frameSlotLayoutLength == 0u) &&                                                          \
+            execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             goto LZrStart;                                                                                             \
         }                                                                                                              \
+        opA = ZrCore_Stack_GetValueNoProfile(functionPointer__);                                                       \
         nextCallInfo__ = execution_pre_call_known_vm_fast(state,                                                       \
                                                           functionPointer__,                                           \
                                                           opA,                                                         \
@@ -3039,6 +3399,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrSize parametersCount__ = B1(instruction);                                                                   \
         TZrSize expectedReturnCount__ = 1;                                                                             \
         TZrStackValuePointer functionPointer__;                                                                        \
+        TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_NATIVE_TAIL_CALL");         \
@@ -3053,6 +3414,14 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             goto LZrStart;                                                                                             \
         }                                                                                                              \
+        callWindow__ = execution_prepare_tail_call_fallback_window(                                                    \
+                state, callInfo, &base, functionPointer__, parametersCount__ + 1u);                                   \
+        if (callWindow__ == ZR_NULL) {                                                                                 \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            ZrCore_Debug_RunError(state, "KNOWN_NATIVE_TAIL_CALL: failed to prepare fallback call frame");           \
+        }                                                                                                              \
+        functionPointer__ = callWindow__;                                                                              \
+        opA = ZrCore_Stack_GetValueNoProfile(functionPointer__);                                                       \
         execution_pre_call_known_native_fast(state,                                                                    \
                                              functionPointer__,                                                        \
                                              opA,                                                                      \
@@ -3068,6 +3437,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrSize functionSlot__ = A1(instruction);                                                                      \
         TZrSize expectedReturnCount__ = 1;                                                                             \
         TZrStackValuePointer functionPointer__;                                                                        \
+        TZrStackValuePointer callWindow__;                                                                             \
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
@@ -3083,8 +3453,14 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             goto LZrStart;                                                                                             \
         }                                                                                                              \
+        callWindow__ = execution_prepare_tail_call_fallback_window(state, callInfo, &base, functionPointer__, 1u);     \
+        if (callWindow__ == ZR_NULL) {                                                                                 \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            ZrCore_Debug_RunError(state, "SUPER_FUNCTION_TAIL_CALL_NO_ARGS: failed to prepare fallback call frame"); \
+        }                                                                                                              \
+        functionPointer__ = callWindow__;                                                                              \
         nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, functionPointer__, expectedReturnCount__, FRAME_VALUE_SLOT(E(instruction)));                   \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
@@ -3099,6 +3475,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrSize functionSlot__ = A1(instruction);                                                                      \
         TZrSize expectedReturnCount__ = 1;                                                                             \
         TZrStackValuePointer functionPointer__;                                                                        \
+        TZrStackValuePointer callWindow__;                                                                             \
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
@@ -3114,6 +3491,13 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             goto LZrStart;                                                                                             \
         }                                                                                                              \
+        callWindow__ = execution_prepare_tail_call_fallback_window(state, callInfo, &base, functionPointer__, 1u);     \
+        if (callWindow__ == ZR_NULL) {                                                                                 \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            ZrCore_Debug_RunError(state, "SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS: failed to prepare fallback call frame"); \
+        }                                                                                                              \
+        functionPointer__ = callWindow__;                                                                              \
+        opA = ZrCore_Stack_GetValueNoProfile(functionPointer__);                                                       \
         nextCallInfo__ = execution_pre_call_known_vm_fast(state,                                                       \
                                                           functionPointer__,                                           \
                                                           opA,                                                         \
@@ -3136,6 +3520,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrSize functionSlot__ = A1(instruction);                                                                      \
         TZrSize expectedReturnCount__ = 1;                                                                             \
         TZrStackValuePointer functionPointer__;                                                                        \
+        TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
@@ -3150,6 +3535,13 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             goto LZrStart;                                                                                             \
         }                                                                                                              \
+        callWindow__ = execution_prepare_tail_call_fallback_window(state, callInfo, &base, functionPointer__, 1u);     \
+        if (callWindow__ == ZR_NULL) {                                                                                 \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            ZrCore_Debug_RunError(state, "SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS: failed to prepare fallback call frame"); \
+        }                                                                                                              \
+        functionPointer__ = callWindow__;                                                                              \
+        opA = ZrCore_Stack_GetValueNoProfile(functionPointer__);                                                       \
         execution_pre_call_known_native_fast(state,                                                                    \
                                              functionPointer__,                                                        \
                                              opA,                                                                      \
@@ -3188,7 +3580,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         }                                                                                                              \
         ZrCore_Function_StackAnchorInit(state, callWindow__, &callWindowAnchor__);                                    \
         nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, functionPointer__, expectedReturnCount__, FRAME_VALUE_SLOT(E(instruction)));                   \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
         callWindow__ = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor__);                                \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
@@ -3206,6 +3598,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                 currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL);                     \
         TZrSize expectedReturnCount__ = 1;                                                                             \
         TZrStackValuePointer functionPointer__;                                                                        \
+        TZrStackValuePointer callWindow__;                                                                             \
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         if (cacheEntry__ == ZR_NULL) {                                                                                 \
@@ -3228,8 +3621,15 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             goto LZrStart;                                                                                             \
         }                                                                                                              \
+        callWindow__ = execution_prepare_tail_call_fallback_window(                                                    \
+                state, callInfo, &base, functionPointer__, cacheEntry__->argumentCount + 1u);                         \
+        if (callWindow__ == ZR_NULL) {                                                                                 \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            ZrCore_Debug_RunError(state, "SUPER_DYN_TAIL_CALL_CACHED: failed to prepare fallback call frame");       \
+        }                                                                                                              \
+        functionPointer__ = callWindow__;                                                                              \
         nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, functionPointer__, expectedReturnCount__, FRAME_VALUE_SLOT(E(instruction)));                   \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
@@ -3245,6 +3645,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrSize parametersCount__ = B1(instruction);                                                                   \
         TZrSize expectedReturnCount__ = 1;                                                                             \
         TZrStackValuePointer functionPointer__;                                                                        \
+        TZrStackValuePointer callWindow__;                                                                             \
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
@@ -3260,8 +3661,15 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             goto LZrStart;                                                                                             \
         }                                                                                                              \
+        callWindow__ = execution_prepare_tail_call_fallback_window(                                                    \
+                state, callInfo, &base, functionPointer__, parametersCount__ + 1u);                                   \
+        if (callWindow__ == ZR_NULL) {                                                                                 \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            ZrCore_Debug_RunError(state, "DYN_TAIL_CALL: failed to prepare fallback call frame");                    \
+        }                                                                                                              \
+        functionPointer__ = callWindow__;                                                                              \
         nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, functionPointer__, expectedReturnCount__, FRAME_VALUE_SLOT(E(instruction)));                   \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
@@ -3299,7 +3707,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         }                                                                                                              \
         ZrCore_Function_StackAnchorInit(state, callWindow__, &callWindowAnchor__);                                    \
         nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, functionPointer__, expectedReturnCount__, FRAME_VALUE_SLOT(E(instruction)));                   \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
         callWindow__ = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor__);                                \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
@@ -3354,7 +3762,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         }                                                                                                              \
         ZrCore_Function_StackAnchorInit(state, callWindow__, &callWindowAnchor__);                                    \
         nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, functionPointer__, expectedReturnCount__, FRAME_VALUE_SLOT(E(instruction)));                   \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
         callWindow__ = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor__);                                \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
@@ -3395,7 +3803,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         }                                                                                                              \
         ZrCore_Function_StackAnchorInit(state, callWindow__, &callWindowAnchor__);                                    \
         nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, functionPointer__, expectedReturnCount__, FRAME_VALUE_SLOT(E(instruction)));                   \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
         callWindow__ = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor__);                                \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
@@ -3411,7 +3819,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrSize returnCount__ = E(instruction);                                                                        \
         TZrSize resultSlot__ = A1(instruction);                                                                        \
         TZrSize variableArguments__ = B1(instruction);                                                                 \
-                                                                                                                       \
+                                                                                                                        \
         callInfo->context.context.programCounter = programCounter;                                                     \
         if (ZR_LIKELY(returnCount__ == 1u && variableArguments__ == 0u &&                                             \
                       state->exceptionHandlerStackLength == 0u &&                                                      \
@@ -3441,10 +3849,14 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         }                                                                                                              \
         if (currentFunction != ZR_NULL && currentFunction->returnEscapeSlotCount > 0u) {                              \
             for (TZrSize returnIndex__ = 0; returnIndex__ < returnCount__; returnIndex__++) {                         \
-                ZrCore_Function_ApplyReturnEscape(state,                                                              \
-                                                  currentFunction,                                                     \
-                                                  (TZrUInt32)(resultSlot__ + returnIndex__),                          \
-                                                  &BASE(resultSlot__ + returnIndex__)->value);                        \
+                const SZrTypeValue *returnEscapeValue__ =                                                             \
+                        FRAME_VALUE_SLOT(resultSlot__ + returnIndex__);                                                \
+                if (returnEscapeValue__ != ZR_NULL) {                                                                  \
+                    ZrCore_Function_ApplyReturnEscape(state,                                                          \
+                                                      currentFunction,                                                 \
+                                                      (TZrUInt32)(resultSlot__ + returnIndex__),                      \
+                                                      returnEscapeValue__);                                            \
+                }                                                                                                      \
             }                                                                                                          \
         }                                                                                                              \
         if (execution_callinfo_has_pending_close_work(state, callInfo)) {                                              \
@@ -3454,7 +3866,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                         ZR_FALSE);                                                                     \
         }                                                                                                              \
         UPDATE_BASE(callInfo);                                                                                         \
-                                                                                                                       \
+                                                                                                                        \
         if (variableArguments__ > 0) {                                                                                 \
             callInfo->functionBase.valuePointer -=                                                                     \
                     callInfo->context.context.variableArgumentCount + variableArguments__;                            \
@@ -3643,7 +4055,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_SUB_INT_BODY()                                                                                         \
     do {                                                                                                               \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
-        opB = &BASE(B1(instruction))->value;                                                                           \
+        opB = FRAME_VALUE_SLOT(B1(instruction));                                                                           \
         if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {                                     \
             ALGORITHM_2(nativeInt64, -, opA->type);                                                                    \
         } else {                                                                                                       \
@@ -3653,9 +4065,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SUB_INT_BODY_PLAIN_DEST()                                                                              \
     do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = &BASE(E(instruction))->value;                                               \
-        const SZrTypeValue *leftValue__ = &BASE(A1(instruction))->value;                                               \
-        const SZrTypeValue *rightValue__ = &BASE(B1(instruction))->value;                                              \
+        SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
+        const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
+        const SZrTypeValue *rightValue__ = FRAME_VALUE_SLOT(B1(instruction));                                              \
         if (ZR_VALUE_IS_TYPE_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_INT(rightValue__->type)) {                    \
             EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                        \
                                             nativeInt64,                                                               \
@@ -3682,9 +4094,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SUB_INT_CONST_BODY_PLAIN_DEST()                                                                        \
     do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = &BASE(E(instruction))->value;                                               \
+        SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        const SZrTypeValue *leftValue__ = &BASE(A1(instruction))->value;                                               \
+        const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(leftValue__->type)) {                                                                 \
             EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                        \
@@ -3899,9 +4311,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_TYPED_UNSIGNED_BINARY_BODY_PLAIN_DEST(OP)                                                              \
     do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = &BASE(E(instruction))->value;                                               \
-        const SZrTypeValue *leftValue__ = &BASE(A1(instruction))->value;                                               \
-        const SZrTypeValue *rightValue__ = &BASE(B1(instruction))->value;                                              \
+        SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
+        const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
+        const SZrTypeValue *rightValue__ = FRAME_VALUE_SLOT(B1(instruction));                                              \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                                  \
                   ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightValue__->type));                                                   \
         EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                            \
@@ -3919,9 +4331,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_TYPED_UNSIGNED_CONST_BINARY_BODY_PLAIN_DEST(OP)                                                        \
     do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = &BASE(E(instruction))->value;                                               \
+        SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        const SZrTypeValue *leftValue__ = &BASE(A1(instruction))->value;                                               \
+        const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                                  \
                   ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));                                                       \
         EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                            \
@@ -4034,9 +4446,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_MUL_SIGNED_BODY_PLAIN_DEST()                                                                           \
     do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = &BASE(E(instruction))->value;                                               \
-        const SZrTypeValue *leftValue__ = &BASE(A1(instruction))->value;                                               \
-        const SZrTypeValue *rightValue__ = &BASE(B1(instruction))->value;                                              \
+        SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
+        const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
+        const SZrTypeValue *rightValue__ = FRAME_VALUE_SLOT(B1(instruction));                                              \
         if (ZR_VALUE_IS_TYPE_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_INT(rightValue__->type)) {                    \
             EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                        \
                                             nativeInt64,                                                               \
@@ -4147,7 +4559,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_DIV_SIGNED_CONST_BODY()                                                                                \
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        opA = &BASE(A1(instruction))->value;                                                                           \
+        opA = FRAME_VALUE_SLOT(A1(instruction));                                                                           \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
@@ -4168,9 +4580,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_DIV_SIGNED_CONST_BODY_PLAIN_DEST()                                                                     \
     do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = &BASE(E(instruction))->value;                                               \
+        SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        const SZrTypeValue *leftValue__ = &BASE(A1(instruction))->value;                                               \
+        const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(leftValue__->type)) {                                                                 \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
@@ -4245,7 +4657,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_MOD_SIGNED_CONST_BODY()                                                                                \
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        opA = &BASE(A1(instruction))->value;                                                                           \
+        opA = FRAME_VALUE_SLOT(A1(instruction));                                                                           \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
@@ -4269,9 +4681,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_MOD_SIGNED_CONST_BODY_PLAIN_DEST()                                                                     \
     do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = &BASE(E(instruction))->value;                                               \
+        SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        const SZrTypeValue *leftValue__ = &BASE(A1(instruction))->value;                                               \
+        const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(leftValue__->type)) {                                                                 \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
@@ -4355,15 +4767,15 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_MUL_UNSIGNED_CONST_BODY()                                                                              \
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        opA = &BASE(A1(instruction))->value;                                                                           \
+        opA = FRAME_VALUE_SLOT(A1(instruction));                                                                           \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));         \
         ALGORITHM_CONST_2(nativeUInt64, *, opA->type, constOpB->value.nativeObject.nativeUInt64);                     \
     } while (0)
 #define EXECUTE_MUL_UNSIGNED_CONST_BODY_PLAIN_DEST()                                                                   \
     do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = &BASE(E(instruction))->value;                                               \
+        SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        const SZrTypeValue *leftValue__ = &BASE(A1(instruction))->value;                                               \
+        const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                                  \
                   ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));                                                       \
         EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                            \
@@ -4375,7 +4787,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_DIV_UNSIGNED_CONST_BODY()                                                                              \
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        opA = &BASE(A1(instruction))->value;                                                                           \
+        opA = FRAME_VALUE_SLOT(A1(instruction));                                                                           \
         TZrUInt64 divisor;                                                                                             \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));         \
         divisor = constOpB->value.nativeObject.nativeUInt64;                                                           \
@@ -4387,9 +4799,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_DIV_UNSIGNED_CONST_BODY_PLAIN_DEST()                                                                   \
     do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = &BASE(E(instruction))->value;                                               \
+        SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        const SZrTypeValue *leftValue__ = &BASE(A1(instruction))->value;                                               \
+        const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
         TZrUInt64 divisor;                                                                                             \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                                  \
                   ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));                                                       \
@@ -4406,7 +4818,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_MOD_UNSIGNED_CONST_BODY()                                                                              \
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        opA = &BASE(A1(instruction))->value;                                                                           \
+        opA = FRAME_VALUE_SLOT(A1(instruction));                                                                           \
         TZrUInt64 divisor;                                                                                             \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));         \
         divisor = constOpB->value.nativeObject.nativeUInt64;                                                           \
@@ -4418,9 +4830,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_MOD_UNSIGNED_CONST_BODY_PLAIN_DEST()                                                                   \
     do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = &BASE(E(instruction))->value;                                               \
+        SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        const SZrTypeValue *leftValue__ = &BASE(A1(instruction))->value;                                               \
+        const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
         TZrUInt64 divisor;                                                                                             \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                                  \
                   ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));                                                       \
@@ -4481,7 +4893,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_JUMP_IF_NULL_BODY(JUMP_IMPL, CALL_INFO)                                                               \
     do {                                                                                                               \
-        const SZrTypeValue *value__ = &BASE(E(instruction))->value;                                                    \
+        const SZrTypeValue *value__ = FRAME_VALUE_SLOT(E(instruction));                                                \
         if (ZR_VALUE_IS_TYPE_NULL(value__->type)) {                                                                    \
             JUMP_IMPL(CALL_INFO, instruction, 0);                                                                      \
         }                                                                                                              \
@@ -4496,8 +4908,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SUPER_ARRAY_BIND_ITEMS_BODY()                                                                          \
     do {                                                                                                               \
-        SZrTypeValue *itemsDestination__ = &BASE(E(instruction))->value;                                                \
-        SZrTypeValue *receiverValue__ = &BASE(A2(instruction))->value;                                                  \
+        SZrTypeValue *itemsDestination__ = FRAME_VALUE_SLOT(E(instruction));                                            \
+        SZrTypeValue *receiverValue__ = FRAME_VALUE_SLOT(A2(instruction));                                                  \
         SZrObject *itemsObject__ = ZR_NULL;                                                                             \
         ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                       \
         if (ZR_UNLIKELY(!zr_super_array_try_resolve_items_cached_only_assume_fast(                                      \
@@ -4512,9 +4924,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SUPER_ARRAY_GET_INT_BODY()                                                                             \
     do {                                                                                                               \
-        SZrTypeValue *resultValue = &BASE(E(instruction))->value;                                                      \
-        SZrTypeValue *receiverValue = &BASE(A1(instruction))->value;                                                   \
-        const SZrTypeValue *indexValue = &BASE(B1(instruction))->value;                                                \
+        SZrTypeValue *resultValue = FRAME_VALUE_SLOT(E(instruction));                                                  \
+        SZrTypeValue *receiverValue = FRAME_VALUE_SLOT(A1(instruction));                                                   \
+        const SZrTypeValue *indexValue = FRAME_VALUE_SLOT(B1(instruction));                                                \
         ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                      \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue->type));                                                      \
         if (ZR_UNLIKELY(!ZrCore_Object_SuperArrayGetIntByValueInlineAssumeFast(                                        \
@@ -4528,9 +4940,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SUPER_ARRAY_GET_INT_ITEMS_BODY()                                                                       \
     do {                                                                                                               \
-        SZrTypeValue *resultValue__ = &BASE(E(instruction))->value;                                                    \
-        const SZrTypeValue *itemsValue__ = &BASE(A1(instruction))->value;                                               \
-        const SZrTypeValue *indexValue__ = &BASE(B1(instruction))->value;                                              \
+        SZrTypeValue *resultValue__ = FRAME_VALUE_SLOT(E(instruction));                                                \
+        const SZrTypeValue *itemsValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
+        const SZrTypeValue *indexValue__ = FRAME_VALUE_SLOT(B1(instruction));                                              \
         SZrObject *itemsObject__;                                                                                       \
         ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                       \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue__->type));                                                     \
@@ -4541,8 +4953,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_SUPER_ARRAY_GET_INT_PLAIN_DEST_BODY_TO(RESULT_VALUE)                                                   \
     do {                                                                                                               \
         SZrTypeValue *plainDestination__ = (RESULT_VALUE);                                                             \
-        SZrTypeValue *receiverValue__ = &BASE(A1(instruction))->value;                                                 \
-        const SZrTypeValue *indexValue__ = &BASE(B1(instruction))->value;                                              \
+        SZrTypeValue *receiverValue__ = FRAME_VALUE_SLOT(A1(instruction));                                                 \
+        const SZrTypeValue *indexValue__ = FRAME_VALUE_SLOT(B1(instruction));                                              \
         SZrObject *itemsObject__ = ZR_NULL;                                                                            \
         TZrInt64 indexInt__ = indexValue__->value.nativeObject.nativeInt64;                                            \
         ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                      \
@@ -4560,12 +4972,12 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         }                                                                                                              \
     } while (0)
 #define EXECUTE_SUPER_ARRAY_GET_INT_PLAIN_DEST_BODY()                                                                  \
-    EXECUTE_SUPER_ARRAY_GET_INT_PLAIN_DEST_BODY_TO(&BASE(E(instruction))->value)
+    EXECUTE_SUPER_ARRAY_GET_INT_PLAIN_DEST_BODY_TO(FRAME_VALUE_SLOT(E(instruction)))
 #define EXECUTE_SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST_BODY()                                                            \
     do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = &BASE(E(instruction))->value;                                                \
-        const SZrTypeValue *itemsValue__ = &BASE(A1(instruction))->value;                                               \
-        const SZrTypeValue *indexValue__ = &BASE(B1(instruction))->value;                                              \
+        SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                            \
+        const SZrTypeValue *itemsValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
+        const SZrTypeValue *indexValue__ = FRAME_VALUE_SLOT(B1(instruction));                                              \
         SZrObject *itemsObject__;                                                                                       \
         TZrInt64 indexInt__ = indexValue__->value.nativeObject.nativeInt64;                                             \
         ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                       \
@@ -4578,9 +4990,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SUPER_ARRAY_SET_INT_BODY()                                                                             \
     do {                                                                                                               \
-        SZrTypeValue *receiverValue = &BASE(A1(instruction))->value;                                                   \
-        const SZrTypeValue *indexValue = &BASE(B1(instruction))->value;                                                \
-        const SZrTypeValue *storedValue = &BASE(E(instruction))->value;                                                \
+        SZrTypeValue *receiverValue = FRAME_VALUE_SLOT(A1(instruction));                                                   \
+        const SZrTypeValue *indexValue = FRAME_VALUE_SLOT(B1(instruction));                                                \
+        const SZrTypeValue *storedValue = FRAME_VALUE_SLOT(E(instruction));                                            \
         ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                      \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue->type));                                                      \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(storedValue->type));                                                     \
@@ -4595,9 +5007,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SUPER_ARRAY_SET_INT_ITEMS_BODY()                                                                       \
     do {                                                                                                               \
-        const SZrTypeValue *itemsValue__ = &BASE(A1(instruction))->value;                                               \
-        const SZrTypeValue *indexValue__ = &BASE(B1(instruction))->value;                                              \
-        const SZrTypeValue *storedValue__ = &BASE(E(instruction))->value;                                               \
+        const SZrTypeValue *itemsValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
+        const SZrTypeValue *indexValue__ = FRAME_VALUE_SLOT(B1(instruction));                                              \
+        const SZrTypeValue *storedValue__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         SZrObject *itemsObject__;                                                                                       \
         ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                       \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue__->type));                                                     \
@@ -4611,8 +5023,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SUPER_ARRAY_ADD_INT_BODY()                                                                             \
     do {                                                                                                               \
-        opA = &BASE(A1(instruction))->value;                                                                           \
-        opB = &BASE(B1(instruction))->value;                                                                           \
+        opA = FRAME_VALUE_SLOT(A1(instruction));                                                                           \
+        opB = FRAME_VALUE_SLOT(B1(instruction));                                                                           \
         if (ZR_UNLIKELY(!(E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG                                               \
                                   ? ZrCore_Object_SuperArrayAddIntDiscardResultAssumeFast(state, opA, opB)            \
                                   : ZrCore_Object_SuperArrayAddIntAssumeFast(state, opA, opB, destination)))) {       \
@@ -4622,7 +5034,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SUPER_ARRAY_ADD_INT4_BODY()                                                                            \
     do {                                                                                                               \
-        opB = &BASE(B1(instruction))->value;                                                                           \
+        opB = FRAME_VALUE_SLOT(B1(instruction));                                                                           \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));                                                             \
         if (ZR_UNLIKELY(!ZrCore_Object_SuperArrayAddInt4ConstAssumeFast(                                               \
                     state, BASE(A1(instruction)), opB->value.nativeObject.nativeInt64))) {                            \
@@ -4643,7 +5055,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SUPER_ARRAY_FILL_INT4_CONST_BODY()                                                                     \
     do {                                                                                                               \
-        const SZrTypeValue *countValue = &BASE(B1(instruction))->value;                                                \
+        const SZrTypeValue *countValue = FRAME_VALUE_SLOT(B1(instruction));                                                \
         const SZrTypeValue *constantValue = CONST(E(instruction));                                                     \
         ZR_ASSERT(countValue != ZR_NULL);                                                                              \
         ZR_ASSERT(constantValue != ZR_NULL);                                                                           \
@@ -5350,7 +5762,7 @@ LZrFastInstruction_ADD: {
                 TZrBool builtinNeedsTemporaryResult;
 
                 opA = FRAME_VALUE_SLOT(A1(instruction));
-                opB = &BASE(B1(instruction))->value;
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 if (execution_try_builtin_add_exact_numeric_fast(destination, opA, opB)) {
                     // 精确数值对直接命中内联 fast path。
                 } else {
@@ -5359,7 +5771,24 @@ LZrFastInstruction_ADD: {
                         if (try_builtin_add(state, destination, opA, opB)) {
                             // 基础数值和字符串拼接直接在运行时处理。
                         } else {
-                            SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_ADD);
+                            SZrTypeValue metaArg0Value;
+                            SZrTypeValue metaArg1Value;
+                            SZrTypeValue *metaReceiver = opA;
+                            const SZrTypeValue *metaArg0 = opA;
+                            const SZrTypeValue *metaArg1 = opB;
+                            SZrMeta *meta;
+                            ZrCore_Value_ResetAsNull(&metaArg0Value);
+                            ZrCore_Value_ResetAsNull(&metaArg1Value);
+                            if (ZrCore_Function_CopyFrameSlotInlineToObjectValue(
+                                        state, currentFunction, base, A1(instruction), &metaArg0Value)) {
+                                metaReceiver = &metaArg0Value;
+                                metaArg0 = &metaArg0Value;
+                            }
+                            if (ZrCore_Function_CopyFrameSlotInlineToObjectValue(
+                                        state, currentFunction, base, B1(instruction), &metaArg1Value)) {
+                                metaArg1 = &metaArg1Value;
+                            }
+                            meta = ZrCore_Value_GetMeta(state, metaReceiver, ZR_META_ADD);
                             if (meta != ZR_NULL && meta->function != ZR_NULL) {
                             // 调用元方法
                                 TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
@@ -5367,20 +5796,26 @@ LZrFastInstruction_ADD: {
                                 PROTECT_E(state, callInfo, {
                                     TZrStackValuePointer metaBase = ZR_NULL;
                                     TZrStackValuePointer restoredStackTop = savedStackTop;
-                                    TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
-                                                                                          savedCallInfo,
-                                                                                          savedStackTop,
-                                                                                          savedStackTop,
-                                                                                          meta,
-                                                                                          opA,
-                                                                                          opB,
-                                                                                          ZR_META_CALL_MAX_ARGUMENTS,
-                                                                                          &metaBase,
-                                                                                          &restoredStackTop);
+                                    TZrStackValuePointer metaReturnDestination =
+                                            E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
+                                    TZrBool metaCallSucceeded = execution_invoke_meta_call_to_destination(
+                                            state,
+                                            savedCallInfo,
+                                            savedStackTop,
+                                            savedStackTop,
+                                            meta,
+                                            metaArg0,
+                                            metaArg1,
+                                            ZR_META_CALL_MAX_ARGUMENTS,
+                                            metaReturnDestination,
+                                            &metaBase,
+                                            &restoredStackTop);
                                     RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
                                     if (metaCallSucceeded) {
                                         SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
-                                        ZrCore_Value_Copy(state, destination, returnValue);
+                                        if (metaReturnDestination == ZR_NULL && returnValue != ZR_NULL) {
+                                            ZrCore_Value_Copy(state, destination, returnValue);
+                                        }
                                     } else {
                                         ZrCore_Value_ResetAsNull(destination);
                                     }
@@ -5391,16 +5826,35 @@ LZrFastInstruction_ADD: {
                                 // 无元方法，返回 null
                                 ZrCore_Value_ResetAsNull(destination);
                             }
+                            ZrCore_Value_ResetAsNull(&metaArg0Value);
+                            ZrCore_Value_ResetAsNull(&metaArg1Value);
                         }
                     } else {
                         ZrCore_Value_ResetAsNull(&builtinResult);
                         if (try_builtin_add(state, &builtinResult, opA, opB)) {
                             UPDATE_BASE(callInfo);
-                            destination = &BASE(E(instruction))->value;
+                            destination = FRAME_VALUE_SLOT(E(instruction));
                             ZrCore_Value_Copy(state, destination, &builtinResult);
                             // 基础数值和字符串拼接直接在运行时处理。
                         } else {
-                            SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_ADD);
+                            SZrTypeValue metaArg0Value;
+                            SZrTypeValue metaArg1Value;
+                            SZrTypeValue *metaReceiver = opA;
+                            const SZrTypeValue *metaArg0 = opA;
+                            const SZrTypeValue *metaArg1 = opB;
+                            SZrMeta *meta;
+                            ZrCore_Value_ResetAsNull(&metaArg0Value);
+                            ZrCore_Value_ResetAsNull(&metaArg1Value);
+                            if (ZrCore_Function_CopyFrameSlotInlineToObjectValue(
+                                        state, currentFunction, base, A1(instruction), &metaArg0Value)) {
+                                metaReceiver = &metaArg0Value;
+                                metaArg0 = &metaArg0Value;
+                            }
+                            if (ZrCore_Function_CopyFrameSlotInlineToObjectValue(
+                                        state, currentFunction, base, B1(instruction), &metaArg1Value)) {
+                                metaArg1 = &metaArg1Value;
+                            }
+                            meta = ZrCore_Value_GetMeta(state, metaReceiver, ZR_META_ADD);
                             if (meta != ZR_NULL && meta->function != ZR_NULL) {
                             // 调用元方法
                                 TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
@@ -5408,21 +5862,25 @@ LZrFastInstruction_ADD: {
                                 PROTECT_E(state, callInfo, {
                                     TZrStackValuePointer metaBase = ZR_NULL;
                                     TZrStackValuePointer restoredStackTop = savedStackTop;
-                                    TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
-                                                                                          savedCallInfo,
-                                                                                          savedStackTop,
-                                                                                          savedStackTop,
-                                                                                          meta,
-                                                                                          opA,
-                                                                                          opB,
-                                                                                          ZR_META_CALL_MAX_ARGUMENTS,
-                                                                                          &metaBase,
-                                                                                          &restoredStackTop);
+                                    TZrStackValuePointer metaReturnDestination = BASE(E(instruction));
+                                    TZrBool metaCallSucceeded = execution_invoke_meta_call_to_destination(
+                                            state,
+                                            savedCallInfo,
+                                            savedStackTop,
+                                            savedStackTop,
+                                            meta,
+                                            metaArg0,
+                                            metaArg1,
+                                            ZR_META_CALL_MAX_ARGUMENTS,
+                                            metaReturnDestination,
+                                            &metaBase,
+                                            &restoredStackTop);
                                     UPDATE_BASE(callInfo);
-                                    destination = &BASE(E(instruction))->value;
+                                    destination = FRAME_VALUE_SLOT(E(instruction));
                                     if (metaCallSucceeded) {
-                                        SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
-                                        ZrCore_Value_Copy(state, destination, returnValue);
+                                        /* Return-destination calls copy object and inline frame results during call
+                                           post-processing. Re-copying from the physical slot here can overwrite a
+                                           freshly copied inline struct when the callee returned from inline storage. */
                                     } else {
                                         ZrCore_Value_ResetAsNull(destination);
                                     }
@@ -5432,9 +5890,11 @@ LZrFastInstruction_ADD: {
                             } else {
                                 // 无元方法，返回 null
                                 UPDATE_BASE(callInfo);
-                                destination = &BASE(E(instruction))->value;
+                                destination = FRAME_VALUE_SLOT(E(instruction));
                                 ZrCore_Value_ResetAsNull(destination);
                             }
+                            ZrCore_Value_ResetAsNull(&metaArg0Value);
+                            ZrCore_Value_ResetAsNull(&metaArg1Value);
                         }
                     }
                 }
@@ -5623,7 +6083,7 @@ LZrFastInstruction_ADD_UNSIGNED_CONST_PLAIN_DEST: {
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD_FLOAT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
-                opB = &BASE(B1(instruction))->value;
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 execution_apply_binary_numeric_float_or_raise(
                         state, ZR_EXEC_NUMERIC_FALLBACK_ADD, destination, opA, opB, "ADD_FLOAT");
             }
@@ -5641,7 +6101,7 @@ LZrFastInstruction_ADD_UNSIGNED_CONST_PLAIN_DEST: {
             DONE(1);
             ZR_INSTRUCTION_LABEL(SUB) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
-                opB = &BASE(B1(instruction))->value;
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 if (!execution_try_builtin_sub(state, destination, opA, opB)) {
                     SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_SUB);
                     if (meta != ZR_NULL && meta->function != ZR_NULL) {
@@ -5828,7 +6288,7 @@ LZrFastInstruction_SUB_UNSIGNED_CONST_PLAIN_DEST: {
             DONE(1);
             ZR_INSTRUCTION_LABEL(SUB_FLOAT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
-                opB = &BASE(B1(instruction))->value;
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 execution_apply_binary_numeric_float_or_raise(
                         state, ZR_EXEC_NUMERIC_FALLBACK_SUB, destination, opA, opB, "SUB_FLOAT");
             }
@@ -5840,8 +6300,8 @@ LZrFastInstruction_MUL: {
             }
 #endif
             ZR_INSTRUCTION_LABEL(MUL) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 if (execution_try_builtin_mul_exact_numeric_fast(destination, opA, opB)) {
                     // Exact numeric pairs stay on the inline steady-state path.
                 } else if (execution_try_builtin_mul_mixed_numeric_fast(destination, opA, opB)) {
@@ -5958,8 +6418,8 @@ LZrFastInstruction_MUL_SIGNED_LOAD_STACK: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MUL_UNSIGNED) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
                     ALGORITHM_2(nativeUInt64, *, ZR_VALUE_TYPE_UINT64);
                 } else {
@@ -5970,9 +6430,9 @@ LZrFastInstruction_MUL_SIGNED_LOAD_STACK: {
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_MUL_UNSIGNED_PLAIN_DEST: {
-                const SZrTypeValue *leftValue__ = &BASE(A1(instruction))->value;
-                const SZrTypeValue *rightValue__ = &BASE(B1(instruction))->value;
-                SZrTypeValue *plainDestination__ = &BASE(E(instruction))->value;
+                const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));
+                const SZrTypeValue *rightValue__ = FRAME_VALUE_SLOT(B1(instruction));
+                SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&
                           ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightValue__->type));
                 EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,
@@ -5984,9 +6444,9 @@ LZrFastInstruction_MUL_UNSIGNED_PLAIN_DEST: {
             DONE_FAST(1);
 #endif
             ZR_INSTRUCTION_LABEL(MUL_UNSIGNED_PLAIN_DEST) {
-                const SZrTypeValue *leftValue__ = &BASE(A1(instruction))->value;
-                const SZrTypeValue *rightValue__ = &BASE(B1(instruction))->value;
-                SZrTypeValue *plainDestination__ = &BASE(E(instruction))->value;
+                const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));
+                const SZrTypeValue *rightValue__ = FRAME_VALUE_SLOT(B1(instruction));
+                SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&
                           ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightValue__->type));
                 EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,
@@ -6018,8 +6478,8 @@ LZrFastInstruction_MUL_UNSIGNED_CONST_PLAIN_DEST: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MUL_FLOAT) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 execution_apply_binary_numeric_float_or_raise(
                         state, ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB, "MUL_FLOAT");
             }
@@ -6047,7 +6507,7 @@ LZrFastInstruction_NEG_FLOAT: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(NEG) {
-                opA = &BASE(A1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
                 if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)) {
                     ZR_VALUE_FAST_SET(destination,
                                       nativeInt64,
@@ -6095,8 +6555,8 @@ LZrFastInstruction_NEG_FLOAT: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(DIV) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 if (!execution_try_builtin_div(state, destination, opA, opB)) {
                     SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_DIV);
                     if (meta != ZR_NULL && meta->function != ZR_NULL) {
@@ -6134,8 +6594,8 @@ LZrFastInstruction_NEG_FLOAT: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(DIV_SIGNED) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
                     SAVE_STATE(state, callInfo); // error: divide by zero
                     if (ZR_UNLIKELY(opB->value.nativeObject.nativeInt64 == 0)) {
@@ -6193,8 +6653,8 @@ LZrFastInstruction_DIV_SIGNED_LOAD_STACK_CONST: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(DIV_UNSIGNED) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
                     SAVE_STATE(state, callInfo); // error: divide by zero
                     if (ZR_UNLIKELY(opB->value.nativeObject.nativeUInt64 == 0)) {
@@ -6230,8 +6690,8 @@ LZrFastInstruction_DIV_UNSIGNED_CONST_PLAIN_DEST: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(DIV_FLOAT) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 execution_apply_binary_numeric_float_or_raise(
                         state, ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB, "DIV_FLOAT");
             }
@@ -6243,8 +6703,8 @@ LZrFastInstruction_MOD: {
             }
 #endif
             ZR_INSTRUCTION_LABEL(MOD) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 if ((ZR_VALUE_IS_TYPE_NUMBER(opA->type) || ZR_VALUE_IS_TYPE_BOOL(opA->type)) &&
                     (ZR_VALUE_IS_TYPE_NUMBER(opB->type) || ZR_VALUE_IS_TYPE_BOOL(opB->type))) {
                     TZrBool divisorWasZero = ZR_FALSE;
@@ -6313,8 +6773,8 @@ LZrFastInstruction_MOD: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MOD_SIGNED) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
                     SAVE_STATE(state, callInfo); // error: modulo by zero
                     if (ZR_UNLIKELY(opB->value.nativeObject.nativeInt64 == 0)) {
@@ -6375,8 +6835,8 @@ LZrFastInstruction_MOD_SIGNED_LOAD_STACK_CONST: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MOD_UNSIGNED) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
                     SAVE_STATE(state, callInfo); // error: modulo by zero
                     if (opB->value.nativeObject.nativeUInt64 == 0) {
@@ -6411,15 +6871,15 @@ LZrFastInstruction_MOD_UNSIGNED_CONST_PLAIN_DEST: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MOD_FLOAT) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 execution_apply_binary_numeric_float_or_raise(
                         state, ZR_EXEC_NUMERIC_FALLBACK_MOD, destination, opA, opB, "MOD_FLOAT");
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(POW) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_POW);
                 if (meta != ZR_NULL && meta->function != ZR_NULL) {
                     // 调用元方法
@@ -6455,8 +6915,8 @@ LZrFastInstruction_MOD_UNSIGNED_CONST_PLAIN_DEST: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(POW_SIGNED) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
                     SAVE_STATE(state, callInfo); // error: power domain error
                     TZrInt64 valueA = opA->value.nativeObject.nativeInt64;
@@ -6475,8 +6935,8 @@ LZrFastInstruction_MOD_UNSIGNED_CONST_PLAIN_DEST: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(POW_UNSIGNED) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
                     SAVE_STATE(state, callInfo); // error: power domain error
                     TZrUInt64 valueA = opA->value.nativeObject.nativeUInt64;
@@ -6492,15 +6952,15 @@ LZrFastInstruction_MOD_UNSIGNED_CONST_PLAIN_DEST: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(POW_FLOAT) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 execution_apply_binary_numeric_float_or_raise(
                         state, ZR_EXEC_NUMERIC_FALLBACK_POW, destination, opA, opB, "POW_FLOAT");
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SHIFT_LEFT) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_SHIFT_LEFT);
                 if (meta != ZR_NULL && meta->function != ZR_NULL) {
                     // 调用元方法
@@ -6536,15 +6996,15 @@ LZrFastInstruction_MOD_UNSIGNED_CONST_PLAIN_DEST: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SHIFT_LEFT_INT) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_2(nativeInt64, <<, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SHIFT_RIGHT) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_SHIFT_RIGHT);
                 if (meta != ZR_NULL && meta->function != ZR_NULL) {
                     // 调用元方法
@@ -6580,14 +7040,14 @@ LZrFastInstruction_MOD_UNSIGNED_CONST_PLAIN_DEST: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SHIFT_RIGHT_INT) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_2(nativeInt64, >>, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_NOT) {
-                opA = &BASE(A1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
                 if (ZR_VALUE_IS_TYPE_NULL(opA->type)) {
                     ZR_VALUE_FAST_SET(destination, nativeBool, ZR_TRUE, ZR_VALUE_TYPE_BOOL);
                 } else if (ZR_VALUE_IS_TYPE_BOOL(opA->type)) {
@@ -6619,15 +7079,15 @@ LZrFastInstruction_LOGICAL_NOT_BOOL: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_AND) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_BOOL(opA->type) && ZR_VALUE_IS_TYPE_BOOL(opB->type));
                 ALGORITHM_2(nativeBool, &&, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_OR) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_BOOL(opA->type) && ZR_VALUE_IS_TYPE_BOOL(opB->type));
                 ALGORITHM_2(nativeBool, ||, ZR_VALUE_TYPE_BOOL);
             }
@@ -6866,23 +7326,15 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_NOT) {
-                opA = &BASE(A1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type));
-                ALGORITHM_1(nativeInt64, ~, ZR_VALUE_TYPE_INT64);
+                EXECUTE_BITWISE_NOT_BODY();
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_AND) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                ALGORITHM_2(nativeInt64, &, ZR_VALUE_TYPE_INT64);
+                EXECUTE_BITWISE_BINARY_BODY(&);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_OR) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                ALGORITHM_2(nativeInt64, |, ZR_VALUE_TYPE_INT64);
+                EXECUTE_BITWISE_BINARY_BODY(|);
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -6892,24 +7344,15 @@ LZrFastInstruction_BITWISE_XOR: {
             }
 #endif
             ZR_INSTRUCTION_LABEL(BITWISE_XOR) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                ALGORITHM_2(nativeInt64, ^, ZR_VALUE_TYPE_INT64);
+                EXECUTE_BITWISE_BINARY_BODY(^);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_LEFT) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                ALGORITHM_2(nativeInt64, <<, ZR_VALUE_TYPE_INT64);
+                EXECUTE_BITWISE_BINARY_BODY(<<);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_RIGHT) {
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                ALGORITHM_2(nativeUInt64, >>, ZR_VALUE_TYPE_INT64);
+                EXECUTE_BITWISE_BINARY_BODY(>>);
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -7218,6 +7661,7 @@ LZrFastInstruction_FUNCTION_RETURN: {
                 // operand1[0] (A1) = upvalue index
                 // operand1[1] (B1) = 未使用
                 TZrSize upvalueIndex = A1(instruction);
+                SZrTypeValue *upvalueDestination = FRAME_VALUE_SLOT(E(instruction));
                 SZrClosure *currentClosure = execution_get_current_vm_closure_no_profile(state, base);
                 if (ZR_UNLIKELY(upvalueIndex >= currentClosure->closureValueCount)) {
                     ZrCore_Debug_RunError(state, "upvalue index out of range");
@@ -7228,7 +7672,7 @@ LZrFastInstruction_FUNCTION_RETURN: {
                     // 注意：这不应该发生在正常执行中，但为了测试的兼容性，我们允许这种情况
                     ZrCore_Debug_RunError(state, "upvalue is null - closure values may not be initialized");
                 }
-                ZrCore_Value_Copy(state, destination, execution_get_closure_value_no_profile(closureValue));
+                ZrCore_Value_Copy(state, upvalueDestination, execution_get_closure_value_no_profile(closureValue));
             }
             DONE(1);
 
@@ -7247,9 +7691,10 @@ LZrFastInstruction_FUNCTION_RETURN: {
                     ZrCore_Debug_RunError(state, "upvalue is null");
                 }
                 SZrTypeValue *target = execution_get_closure_value_no_profile(closureValue);
-                ZrCore_Value_Copy(state, target, destination);
+                SZrTypeValue *source = FRAME_VALUE_SLOT(E(instruction));
+                ZrCore_Value_Copy(state, target, source);
                 ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(currentClosure->closureValuesExtend[upvalueIndex]),
-                               destination);
+                               source);
             }
             DONE(1);
 
@@ -7310,6 +7755,17 @@ LZrFastInstruction_FUNCTION_RETURN: {
                                                                                        base,
                                                                                        BASE(E(instruction)),
                                                                                        destination);
+                            if (getenv("ZR_VM_TRACE_TYPEOF") != ZR_NULL) {
+                                SZrTypeValue *physicalValue = ZrCore_Stack_GetValueNoProfile(BASE(E(instruction)));
+                                fprintf(stderr,
+                                        "[subfn] slot=%u dest=%p phys=%p destType=%d physType=%d child=%p\n",
+                                        (unsigned)E(instruction),
+                                        (void *)destination,
+                                        (void *)BASE(E(instruction)),
+                                        destination != ZR_NULL ? (int)destination->type : -1,
+                                        physicalValue != ZR_NULL ? (int)physicalValue->type : -1,
+                                        (void *)childFunction);
+                            }
                             found = ZR_TRUE;
                         }
                     }
@@ -7344,6 +7800,18 @@ LZrFastInstruction_FUNCTION_RETURN: {
                 SZrTypeValue reflectedTypeValue;
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 stableTargetValue = *opA;
+                if (getenv("ZR_VM_TRACE_TYPEOF") != ZR_NULL) {
+                    fprintf(stderr,
+                            "[typeof] dst=%u slot=%u op=%p phys=%p base=%p fnCur=%p type=%d object=%p\n",
+                            (unsigned)E(instruction),
+                            (unsigned)A1(instruction),
+                            (void *)opA,
+                            (void *)BASE(A1(instruction)),
+                            (void *)base,
+                            (void *)currentFunction,
+                            (int)stableTargetValue.type,
+                            (void *)stableTargetValue.value.object);
+                }
                 ZrCore_Value_ResetAsNull(&reflectedTypeValue);
                 SAVE_PC(state, callInfo);
                 state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
@@ -7449,7 +7917,7 @@ LZrFastInstruction_SET_MEMBER_SLOT_NULL: {
 
             ZR_INSTRUCTION_LABEL(META_GET) {
                 SZrString *memberName = execution_resolve_function_member_symbol(currentFunction, B1(instruction));
-                opA = &BASE(A1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
                 if (memberName == ZR_NULL) {
                     ZrCore_Debug_RunError(state, "META_GET: invalid member id");
                 } else if (!execution_meta_get_member(state, opA, memberName, destination)) {
@@ -7459,7 +7927,7 @@ LZrFastInstruction_SET_MEMBER_SLOT_NULL: {
             DONE(1);
 
             ZR_INSTRUCTION_LABEL(SUPER_META_GET_CACHED) {
-                opA = &BASE(A1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
                 if (!execution_meta_get_cached_member(state, currentFunction, B1(instruction), opA, destination)) {
                     ZrCore_Debug_RunError(state, "SUPER_META_GET_CACHED: receiver must define property getter");
                 }
@@ -7468,8 +7936,8 @@ LZrFastInstruction_SET_MEMBER_SLOT_NULL: {
 
             ZR_INSTRUCTION_LABEL(META_SET) {
                 SZrString *memberName = execution_resolve_function_member_symbol(currentFunction, B1(instruction));
-                opA = destination;
-                opB = &BASE(A1(instruction))->value;
+                opA = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                opB = FRAME_VALUE_SLOT(A1(instruction));
                 if (memberName == ZR_NULL) {
                     ZrCore_Debug_RunError(state, "META_SET: invalid member id");
                 } else if (!execution_meta_set_member(state, opA, memberName, opB)) {
@@ -7479,8 +7947,8 @@ LZrFastInstruction_SET_MEMBER_SLOT_NULL: {
             DONE(1);
 
             ZR_INSTRUCTION_LABEL(SUPER_META_SET_CACHED) {
-                opA = destination;
-                opB = &BASE(A1(instruction))->value;
+                opA = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                opB = FRAME_VALUE_SLOT(A1(instruction));
                 if (!execution_meta_set_cached_member(state, currentFunction, B1(instruction), opA, opB)) {
                     ZrCore_Debug_RunError(state, "SUPER_META_SET_CACHED: receiver must define property setter");
                 }
@@ -7488,7 +7956,7 @@ LZrFastInstruction_SET_MEMBER_SLOT_NULL: {
             DONE(1);
 
             ZR_INSTRUCTION_LABEL(SUPER_META_GET_STATIC_CACHED) {
-                opA = &BASE(A1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
                 if (!execution_meta_get_cached_static_member(state, currentFunction, B1(instruction), opA, destination)) {
                     ZrCore_Debug_RunError(state, "SUPER_META_GET_STATIC_CACHED: receiver must define static property getter");
                 }
@@ -7496,8 +7964,8 @@ LZrFastInstruction_SET_MEMBER_SLOT_NULL: {
             DONE(1);
 
             ZR_INSTRUCTION_LABEL(SUPER_META_SET_STATIC_CACHED) {
-                opA = destination;
-                opB = &BASE(A1(instruction))->value;
+                opA = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                opB = FRAME_VALUE_SLOT(A1(instruction));
                 if (!execution_meta_set_cached_static_member(state, currentFunction, B1(instruction), opA, opB)) {
                     ZrCore_Debug_RunError(state, "SUPER_META_SET_STATIC_CACHED: receiver must define static property setter");
                 }
@@ -7694,7 +8162,7 @@ LZrFastInstruction_SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE: {
                 SZrTypeValue stableResult;
                 TZrBool resolved = ZR_FALSE;
 
-                opA = &BASE(A1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
                 if (ZrCore_Object_TryIterMoveNextCachedArrayFast(state, opA, destination)) {
                     if (!execution_is_truthy(state, destination)) {
                         programCounter += jumpOffset;
@@ -7729,7 +8197,7 @@ LZrFastInstruction_SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE: {
                 SZrTypeValue stableResult;
                 TZrBool resolved = ZR_FALSE;
 
-                opA = &BASE(A1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
                 if (ZrCore_Object_TryIterMoveNextCachedArrayFast(state, opA, destination)) {
                     if (!execution_is_truthy(state, destination)) {
                         programCounter += jumpOffset;
@@ -7765,7 +8233,7 @@ LZrFastInstruction_SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE: {
                 SZrTypeValue stableResult;
                 TZrBool resolved = ZR_FALSE;
 
-                opA = &BASE(A1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
                 if (ZrCore_Object_TryIterMoveNextCachedArrayFast(state, opA, destination)) {
                     if (!execution_is_truthy(state, destination)) {
                         programCounter += jumpOffset;
@@ -7800,7 +8268,7 @@ LZrFastInstruction_SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE: {
                 SZrTypeValue stableResult;
                 TZrBool resolved = ZR_FALSE;
 
-                opA = &BASE(A1(instruction))->value;
+                opA = FRAME_VALUE_SLOT(A1(instruction));
                 if (ZrCore_Object_TryIterMoveNextCachedArrayFast(state, opA, destination)) {
                     if (!execution_is_truthy(state, destination)) {
                         programCounter += jumpOffset;
@@ -8086,6 +8554,10 @@ LZrFastInstruction_JUMP_IF_NULL: {
             ZR_INSTRUCTION_LABEL(MARK_TO_BE_CLOSED) {
                 TZrSize closeSlot = E(instruction);
                 TZrStackValuePointer closePointer = BASE(closeSlot);
+                SZrTypeValue *closeValue = FRAME_VALUE_SLOT(closeSlot);
+                if (closeValue != ZR_NULL && closeValue != &closePointer->value) {
+                    execution_copy_stack_value_allowing_overlap_no_profile(state, &closePointer->value, closeValue);
+                }
                 ZrCore_Closure_ToBeClosedValueClosureNew(state, closePointer);
             }
             DONE(1);
@@ -8122,7 +8594,7 @@ LZrFastInstruction_JUMP_IF_NULL: {
 
                 SAVE_PC(state, callInfo);
                 execution_clear_pending_control(state);
-                payload = BASE(E(instruction))->value;
+                payload = *FRAME_VALUE_SLOT(E(instruction));
                 if (!ZrCore_Exception_NormalizeThrownValue(state,
                                                           &payload,
                                                           callInfo,
@@ -8217,7 +8689,7 @@ LZrFastInstruction_JUMP_IF_NULL: {
                                               callInfo,
                                               (TZrMemoryOffset)A2(instruction),
                                               E(instruction),
-                                              &BASE(E(instruction))->value);
+                                              FRAME_VALUE_SLOT(E(instruction)));
                 if (execution_resume_pending_via_outer_finally(state, &callInfo)) {
                     goto LZrReturning;
                 }

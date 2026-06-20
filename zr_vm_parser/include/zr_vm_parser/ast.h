@@ -312,6 +312,7 @@ typedef struct SZrParameter {
     TZrBool genericRequiresStruct;
     TZrBool genericRequiresNew;
     TZrBool genericRequiresOwner;
+    EZrOwnershipQualifier genericRequiredOwnershipQualifier;
 } SZrParameter;
 
 // 字面量节点结构

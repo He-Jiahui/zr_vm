@@ -1,0 +1,6 @@
+{
+  "name": "using_feature_matrix",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

@@ -1188,7 +1188,7 @@ void test_reference_expressions_fixture_matrix(void) {
         const char* expectedMessageFragment;
     } kFailFixtures[] = {
         {"core_semantics/expressions_precedence_chains/missing_conditional_branch_fail.zr",
-         "Expected primary expression"},
+         "Missing expression after ':' in conditional expression"},
     };
     SZrTestTimer timer;
     const char* testSummary = "Reference Expressions Fixture Matrix";

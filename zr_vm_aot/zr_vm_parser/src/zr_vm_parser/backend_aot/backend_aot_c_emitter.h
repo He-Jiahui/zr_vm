@@ -6,6 +6,7 @@
 #include "zr_vm_parser/writer.h"
 
 typedef struct SZrAotExecIrFrameLayout SZrAotExecIrFrameLayout;
+typedef struct SZrAotExecIrFunction SZrAotExecIrFunction;
 
 const SZrTypeValue *backend_aot_c_get_constant_value(const SZrFunction *function, TZrInt32 constantIndex);
 TZrBool backend_aot_c_constant_requires_materialization(SZrState *state,
@@ -13,6 +14,7 @@ TZrBool backend_aot_c_constant_requires_materialization(SZrState *state,
                                                         TZrInt32 constantIndex);
 TZrBool backend_aot_c_constant_can_emit_immediate(const SZrFunction *function, TZrInt32 constantIndex);
 void backend_aot_write_c_direct_primitive_constant(FILE *file,
+                                                   const SZrAotExecIrFunction *functionIr,
                                                    TZrUInt32 destinationSlot,
                                                    const SZrTypeValue *constantValue);
 void backend_aot_write_c_direct_set_constant(FILE *file, TZrUInt32 sourceSlot, TZrUInt32 constantIndex);
@@ -195,29 +197,38 @@ void backend_aot_write_c_direct_jump_if(FILE *file,
                                         TZrUInt32 conditionSlot,
                                         TZrUInt32 targetInstructionIndex);
 void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
+                                                   const SZrAotExecIrFunction *functionIr,
                                                    TZrUInt32 functionIndex,
                                                    TZrUInt32 conditionSlot,
                                                    TZrUInt32 targetInstructionIndex);
 void backend_aot_write_c_direct_jump_if_greater_signed(FILE *file,
+                                                       const SZrAotExecIrFunction *functionIr,
                                                        TZrUInt32 functionIndex,
                                                        TZrUInt32 leftSlot,
                                                        TZrUInt32 rightSlot,
+                                                       TZrUInt32 execInstructionIndex,
                                                        TZrUInt32 targetInstructionIndex);
 void backend_aot_write_c_direct_jump_if_less_equal_signed(FILE *file,
+                                                          const SZrAotExecIrFunction *functionIr,
                                                           TZrUInt32 functionIndex,
                                                           TZrUInt32 leftSlot,
                                                           TZrUInt32 rightSlot,
+                                                          TZrUInt32 execInstructionIndex,
                                                           TZrUInt32 targetInstructionIndex);
 void backend_aot_write_c_direct_jump_if_not_equal_signed(FILE *file,
+                                                         const SZrAotExecIrFunction *functionIr,
                                                          TZrUInt32 functionIndex,
                                                          TZrUInt32 leftSlot,
                                                          TZrUInt32 rightSlot,
+                                                         TZrUInt32 execInstructionIndex,
                                                          TZrUInt32 targetInstructionIndex);
 void backend_aot_write_c_direct_jump_if_not_equal_signed_const(FILE *file,
+                                                               const SZrAotExecIrFunction *functionIr,
                                                                const SZrFunction *function,
                                                                TZrUInt32 functionIndex,
                                                                TZrUInt32 leftSlot,
                                                                TZrUInt32 constantIndex,
+                                                               TZrUInt32 execInstructionIndex,
                                                                TZrUInt32 targetInstructionIndex);
 void backend_aot_write_c_direct_to_bool(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_to_int(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);

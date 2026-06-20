@@ -6,10 +6,16 @@
       "include": "#comments"
     },
     {
+      "include": "#union-declarations"
+    },
+    {
       "include": "#keywords"
     },
     {
       "include": "#literals"
+    },
+    {
+      "include": "#union-variants"
     },
     {
       "include": "#operators"
@@ -50,7 +56,7 @@
         },
         {
           "name": "keyword.other.zr",
-          "match": "\\b(using|module|struct|class|interface|enum|intermediate|var|const|static|pub|pri|pro|new|super|in|out|get|set|test|func)\\b"
+          "match": "\\b(using|union|module|struct|class|interface|enum|intermediate|var|const|static|pub|pri|pro|new|super|in|out|get|set|test|func)\\b"
         },
         {
           "name": "constant.language.zr",
@@ -100,6 +106,63 @@
         }
       ]
     },
+    "union-declarations": {
+      "patterns": [
+        {
+          "name": "meta.declaration.union.zr",
+          "match": "\\b(union)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.union.zr"
+            },
+            "2": {
+              "name": "entity.name.type.union.zr"
+            }
+          }
+        }
+      ]
+    },
+    "union-variants": {
+      "patterns": [
+        {
+          "name": "meta.union.variant.default.zr",
+          "match": "(@)\\s*([A-Z][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.default-variant.zr"
+            },
+            "2": {
+              "name": "entity.name.type.variant.zr"
+            }
+          }
+        },
+        {
+          "name": "meta.union.variant.declaration.zr",
+          "match": "^\\s*(@)?\\s*([A-Z][a-zA-Z0-9_]*)\\b(?=\\s*(?:[({;]))",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.default-variant.zr"
+            },
+            "2": {
+              "name": "entity.name.type.variant.zr"
+            }
+          }
+        },
+        {
+          "name": "variable.parameter.union.payload.zr",
+          "match": "\\b([a-z_][a-zA-Z0-9_]*)\\b(?=\\s*:)",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.union.payload.zr"
+            }
+          }
+        },
+        {
+          "name": "variable.other.member.variant.zr",
+          "match": "(?<=\\.)\\b[A-Z][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
     "operators": {
       "patterns": [
         {
@@ -136,7 +199,7 @@
       "patterns": [
         {
           "name": "storage.type.primitive.zr",
-          "match": "\\b(Int|Float|Double|Bool|Char|String|Void|Any|Object)\\b"
+          "match": "\\b(int|int32|int64|float|double|bool|char|string|void|any|object|Int|Float|Double|Bool|Char|String|Void|Any|Object)\\b"
         },
         {
           "name": "entity.name.type.zr",

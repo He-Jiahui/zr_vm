@@ -45,6 +45,9 @@ static void typed_type_ref_from_inferred(SZrFunctionTypedTypeRef *dest, const SZ
     }
 }
 
+static const SZrCompilerStackSlotTypeHint *find_stack_slot_type_hint_for_slot(const SZrCompilerState *cs,
+                                                                              TZrUInt32 stackSlot);
+
 static TZrBool typed_type_ref_from_ast_type(SZrCompilerState *cs,
                                             SZrType *typeNode,
                                             SZrFunctionTypedTypeRef *outType) {
@@ -1207,6 +1210,15 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
             continue;
         }
 
+        {
+            const SZrCompilerStackSlotTypeHint *slotHint =
+                    find_stack_slot_type_hint_for_slot(cs, localVar->stackSlot);
+            if (slotHint != ZR_NULL) {
+                typed_type_ref_from_inferred(&bindings[index].type, &slotHint->type);
+                continue;
+            }
+        }
+
         functionDeclNode = find_script_function_declaration_by_name(cs, localVar->name);
         if (functionDeclNode != ZR_NULL) {
             typed_type_ref_init_unknown(&bindings[index].type);
@@ -1403,6 +1415,50 @@ static TZrUInt32 compiler_serialized_type_prototype_count(SZrCompilerState *cs) 
     return serializedCount;
 }
 
+static TZrBool compiler_type_name_matches_generic_instance_base(SZrString *prototypeName,
+                                                                SZrString *typeName) {
+    const TZrChar *prototypeText;
+    const TZrChar *typeText;
+    const TZrChar *genericStart;
+    TZrSize baseLength;
+
+    if (prototypeName == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    prototypeText = ZrCore_String_GetNativeString(prototypeName);
+    typeText = ZrCore_String_GetNativeString(typeName);
+    if (prototypeText == ZR_NULL || typeText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    genericStart = strchr(typeText, '<');
+    if (genericStart == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    baseLength = (TZrSize)(genericStart - typeText);
+    while (baseLength > 0u &&
+           (typeText[baseLength - 1u] == ' ' ||
+            typeText[baseLength - 1u] == '\t' ||
+            typeText[baseLength - 1u] == '\r' ||
+            typeText[baseLength - 1u] == '\n')) {
+        baseLength--;
+    }
+
+    return (TZrBool)(baseLength > 0u &&
+                     strlen(prototypeText) == baseLength &&
+                     strncmp(prototypeText, typeText, baseLength) == 0);
+}
+
+static TZrBool compiler_type_name_matches_prototype_name(SZrString *prototypeName,
+                                                         SZrString *typeName) {
+    return (TZrBool)(prototypeName != ZR_NULL &&
+                     typeName != ZR_NULL &&
+                     (ZrCore_String_Equal(prototypeName, typeName) ||
+                      compiler_type_name_matches_generic_instance_base(prototypeName, typeName)));
+}
+
 static TZrBool compiler_find_inline_type_layout(SZrCompilerState *cs,
                                                 const SZrFunctionTypedTypeRef *typeRef,
                                                 TZrUInt32 *outLayoutId,
@@ -1418,7 +1474,7 @@ static TZrBool compiler_find_inline_type_layout(SZrCompilerState *cs,
     currentPrototypeInfo = cs->currentTypePrototypeInfo;
     if (currentPrototypeInfo != ZR_NULL &&
         currentPrototypeInfo->name != ZR_NULL &&
-        ZrCore_String_Equal(currentPrototypeInfo->name, typeRef->typeName)) {
+        compiler_type_name_matches_prototype_name(currentPrototypeInfo->name, typeRef->typeName)) {
         if (currentPrototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
             compiler_finalize_current_struct_inline_layout(cs, currentPrototypeInfo);
         }
@@ -1448,7 +1504,7 @@ static TZrBool compiler_find_inline_type_layout(SZrCompilerState *cs,
         }
         if (prototypeInfo == ZR_NULL ||
             prototypeInfo->name == ZR_NULL ||
-            !ZrCore_String_Equal(prototypeInfo->name, typeRef->typeName)) {
+            !compiler_type_name_matches_prototype_name(prototypeInfo->name, typeRef->typeName)) {
             serializedIndex++;
             continue;
         }

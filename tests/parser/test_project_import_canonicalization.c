@@ -1,6 +1,7 @@
 #include "unity.h"
 
 #include "harness/path_support.h"
+#include "harness/module_fixture_support.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
@@ -16,6 +17,7 @@
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_lib_math/module.h"
+#include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser/compiler.h"
 
 #include <stdio.h>
@@ -42,6 +44,7 @@ typedef struct SZrProjectDependencyImportFixture {
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
     TZrChar rootMainPath[ZR_TESTS_PATH_MAX];
     TZrChar mathMainPath[ZR_TESTS_PATH_MAX];
+    TZrChar mathBinaryPath[ZR_TESTS_PATH_MAX];
 } SZrProjectDependencyImportFixture;
 
 void setUp(void) {}
@@ -98,6 +101,63 @@ static TZrBool write_text_file(const TZrChar *path, const TZrChar *content) {
     written = fwrite(content, 1, contentLength, file);
     fclose(file);
     return written == contentLength;
+}
+
+static TZrBool compile_project_source_to_zro(const TZrChar *projectPath,
+                                             const TZrChar *sourcePath,
+                                             const TZrChar *binaryPath,
+                                             const TZrChar *moduleName) {
+    SZrGlobalState *global = ZR_NULL;
+    SZrState *state = ZR_NULL;
+    SZrString *sourceName = ZR_NULL;
+    SZrFunction *function = ZR_NULL;
+    SZrBinaryWriterOptions options;
+    TZrSize sourceLength = 0;
+    TZrChar *sourceContent = ZR_NULL;
+    TZrBool success = ZR_FALSE;
+
+    if (projectPath == ZR_NULL || sourcePath == ZR_NULL || binaryPath == ZR_NULL ||
+        moduleName == ZR_NULL || !ZrTests_Path_EnsureParentDirectory(binaryPath)) {
+        return ZR_FALSE;
+    }
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(projectPath);
+    if (global == ZR_NULL || global->mainThreadState == ZR_NULL) {
+        goto cleanup;
+    }
+    state = global->mainThreadState;
+    ZrParser_ToGlobalState_Register(state);
+
+    sourceContent = ZrTests_ReadTextFile(sourcePath, &sourceLength);
+    if (sourceContent == ZR_NULL) {
+        goto cleanup;
+    }
+
+    sourceName = ZrCore_String_CreateFromNative(state, (TZrNativeString)sourcePath);
+    if (sourceName == ZR_NULL) {
+        goto cleanup;
+    }
+
+    function = ZrParser_Source_Compile(state, sourceContent, sourceLength, sourceName);
+    if (function == ZR_NULL) {
+        goto cleanup;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = moduleName;
+    success = ZrParser_Writer_WriteBinaryFileWithOptions(state, function, binaryPath, &options);
+
+cleanup:
+    if (sourceContent != ZR_NULL) {
+        free(sourceContent);
+    }
+    if (function != ZR_NULL && state != ZR_NULL) {
+        ZrCore_Function_Free(state, function);
+    }
+    if (global != ZR_NULL) {
+        ZrLibrary_CommonState_CommonGlobalState_Free(global);
+    }
+    return success;
 }
 
 static const SZrTypeValue *get_object_field_value(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
@@ -503,6 +563,79 @@ static TZrBool prepare_project_dependency_import_version_range_fixture(SZrProjec
            write_text_file(mathOpsPath, "pub var value = 42;\n");
 }
 
+static TZrBool prepare_project_assembly_reference_import_fixture(SZrProjectDependencyImportFixture *fixture) {
+    static const TZrChar *projectContent =
+            "{\n"
+            "  \"manifestVersion\": 1,\n"
+            "  \"assembly\": { \"name\": \"app.render\", \"version\": \"3.4.5\" },\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\",\n"
+            "  \"references\": {\n"
+            "    \"mathLocal\": {\n"
+            "      \"assembly\": \"zr.math\",\n"
+            "      \"version\": \"2.1.0\",\n"
+            "      \"path\": \"deps/math/math.zrp\",\n"
+            "      \"minVersionInclusive\": \"2.0.0\",\n"
+            "      \"maxVersionExclusive\": \"3.0.0\"\n"
+            "    }\n"
+            "  }\n"
+            "}\n";
+    static const TZrChar *mathProjectContent =
+            "{\n"
+            "  \"manifestVersion\": 1,\n"
+            "  \"assembly\": { \"name\": \"zr.math\", \"version\": \"2.1.0\" },\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"ops/sum\"\n"
+            "}\n";
+    static const TZrChar *rootMainContent =
+            "var math = %import(\"&mathLocal.ops.sum\");\n"
+            "return math.value;\n";
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mathProjectPath[ZR_TESTS_PATH_MAX];
+    TZrChar mathSourceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mathBinaryRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mathOpsPath[ZR_TESTS_PATH_MAX];
+    TZrChar *lastSeparator;
+
+    if (fixture == ZR_NULL ||
+        !ZrTests_Path_GetGeneratedArtifact("parser",
+                                           "project_import_canonicalization",
+                                           "assembly_references",
+                                           ".zrp",
+                                           fixture->projectPath,
+                                           sizeof(fixture->projectPath))) {
+        return ZR_FALSE;
+    }
+
+    memset(fixture->rootMainPath, 0, sizeof(fixture->rootMainPath));
+    memset(fixture->mathMainPath, 0, sizeof(fixture->mathMainPath));
+    memset(fixture->mathBinaryPath, 0, sizeof(fixture->mathBinaryPath));
+
+    snprintf(rootPath, sizeof(rootPath), "%s", fixture->projectPath);
+    lastSeparator = find_last_path_separator(rootPath);
+    if (lastSeparator == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *lastSeparator = '\0';
+
+    ZrLibrary_File_PathJoin(rootPath, "src", sourceRoot);
+    ZrLibrary_File_PathJoin(sourceRoot, "main.zr", fixture->rootMainPath);
+    ZrLibrary_File_PathJoin(rootPath, "deps/math/math.zrp", mathProjectPath);
+    ZrLibrary_File_PathJoin(rootPath, "deps/math/src", mathSourceRoot);
+    ZrLibrary_File_PathJoin(rootPath, "deps/math/bin", mathBinaryRoot);
+    ZrLibrary_File_PathJoin(mathSourceRoot, "ops/sum.zr", mathOpsPath);
+    snprintf(fixture->mathMainPath, sizeof(fixture->mathMainPath), "%s", mathOpsPath);
+    ZrLibrary_File_PathJoin(mathBinaryRoot, "ops/sum.zro", fixture->mathBinaryPath);
+
+    return write_text_file(fixture->projectPath, projectContent) &&
+           write_text_file(fixture->rootMainPath, rootMainContent) &&
+           write_text_file(mathProjectPath, mathProjectContent) &&
+           write_text_file(mathOpsPath, "pub var value = 42;\n");
+}
+
 static TZrSize count_static_imports_named(const SZrFunction *function, const TZrChar *moduleName) {
     TZrSize count = 0;
 
@@ -528,6 +661,52 @@ static TZrBool function_contains_module_effect_named(const SZrFunction *function
     for (TZrUInt32 index = 0; index < function->moduleEntryEffectLength; index++) {
         const TZrChar *text = test_string_text(function->moduleEntryEffects[index].moduleName);
         if (text != ZR_NULL && strcmp(text, moduleName) == 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool function_contains_module_effect_with_assembly(const SZrFunction *function,
+                                                             const TZrChar *moduleName,
+                                                             const TZrChar *assemblyName) {
+    if (function == ZR_NULL || moduleName == ZR_NULL || assemblyName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0; index < function->moduleEntryEffectLength; index++) {
+        const SZrFunctionModuleEffect *effect = &function->moduleEntryEffects[index];
+        const TZrChar *effectModuleName = test_string_text(effect->moduleName);
+        const TZrChar *effectAssemblyName = test_string_text(effect->assemblyName);
+
+        if (effectModuleName != ZR_NULL &&
+            effectAssemblyName != ZR_NULL &&
+            strcmp(effectModuleName, moduleName) == 0 &&
+            strcmp(effectAssemblyName, assemblyName) == 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool io_function_contains_module_effect_with_assembly(const SZrIoFunction *function,
+                                                                const TZrChar *moduleName,
+                                                                const TZrChar *assemblyName) {
+    if (function == ZR_NULL || moduleName == ZR_NULL || assemblyName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < function->moduleEntryEffectsLength; index++) {
+        const SZrIoFunctionModuleEffect *effect = &function->moduleEntryEffects[index];
+        const TZrChar *effectModuleName = test_string_text(effect->moduleName);
+        const TZrChar *effectAssemblyName = test_string_text(effect->assemblyName);
+
+        if (effectModuleName != ZR_NULL &&
+            effectAssemblyName != ZR_NULL &&
+            strcmp(effectModuleName, moduleName) == 0 &&
+            strcmp(effectAssemblyName, assemblyName) == 0) {
             return ZR_TRUE;
         }
     }
@@ -2728,6 +2907,40 @@ static void test_using_import_guard_runtime_rejects_native_target_signature_hash
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+static void test_required_import_runtime_accepts_native_module_link_signature(void) {
+    SZrProjectImportFixture fixture;
+    SZrGlobalState *global;
+    SZrState *state;
+    SZrFunction *function;
+    SZrString *sourceName;
+    TZrInt64 result = 0;
+    static const TZrChar *source =
+            "var system = %import(\"zr.system\");\n"
+            "var console = system.console;\n"
+            "return 1;\n";
+
+    TEST_ASSERT_TRUE(prepare_project_import_fixture(&fixture));
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(fixture.projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(global));
+    ZrParser_ToGlobalState_Register(state);
+
+    sourceName = ZrCore_String_CreateFromNative(state, fixture.mainPath);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(function_has_module_effect_target_signature_hash(function, "zr.system", "console"));
+
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(state, function);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+}
+
 static void test_required_import_runtime_reports_native_provider_unavailable(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2936,6 +3149,181 @@ static void test_project_compile_applies_dependency_import_version_range_to_asse
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+static void test_project_compile_emits_assembly_ref_identity_from_zrp_references(void) {
+    SZrProjectDependencyImportFixture fixture;
+    SZrGlobalState *global;
+    SZrState *state;
+    SZrFunction *function;
+    SZrString *sourceName;
+    const SZrMetadataTokenRecord *assemblyRef;
+    TZrSize sourceLength = 0;
+    TZrChar *sourceContent;
+
+    TEST_ASSERT_TRUE(prepare_project_assembly_reference_import_fixture(&fixture));
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(fixture.projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+
+    sourceContent = ZrTests_ReadTextFile(fixture.rootMainPath, &sourceLength);
+    TEST_ASSERT_NOT_NULL(sourceContent);
+    sourceName = ZrCore_String_CreateFromNative(state, fixture.rootMainPath);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, sourceContent, sourceLength, sourceName);
+    free(sourceContent);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_EQUAL_UINT32(1u, function->staticImportLength);
+    TEST_ASSERT_EQUAL_UINT32(1u,
+                             (TZrUInt32)count_static_imports_named(function, "$mathLocal@2.1.0/ops/sum"));
+    TEST_ASSERT_NULL(find_assembly_ref_record_named(function, "$mathLocal@2.1.0/ops/sum"));
+    assemblyRef = find_assembly_ref_record_named(function, "zr.math");
+    TEST_ASSERT_NOT_NULL(assemblyRef);
+    TEST_ASSERT_TRUE(metadata_token_record_module_versions_match(assemblyRef,
+                                                                 "2.1.0",
+                                                                 "2.0.0",
+                                                                 "3.0.0"));
+
+    ZrCore_Function_Free(state, function);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+}
+
+static void test_project_compile_reads_referenced_assembly_from_zro_without_source(void) {
+    SZrProjectDependencyImportFixture fixture;
+    SZrGlobalState *global;
+    SZrState *state;
+    SZrFunction *function;
+    SZrString *sourceName;
+    const SZrMetadataTokenRecord *assemblyRef;
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar mathProjectPath[ZR_TESTS_PATH_MAX];
+    TZrChar *lastSeparator;
+    TZrSize sourceLength = 0;
+    TZrChar *sourceContent;
+
+    TEST_ASSERT_TRUE(prepare_project_assembly_reference_import_fixture(&fixture));
+
+    snprintf(rootPath, sizeof(rootPath), "%s", fixture.projectPath);
+    lastSeparator = find_last_path_separator(rootPath);
+    TEST_ASSERT_NOT_NULL(lastSeparator);
+    *lastSeparator = '\0';
+    ZrLibrary_File_PathJoin(rootPath, "deps/math/math.zrp", mathProjectPath);
+
+    TEST_ASSERT_TRUE(compile_project_source_to_zro(mathProjectPath,
+                                                   fixture.mathMainPath,
+                                                   fixture.mathBinaryPath,
+                                                   "$mathLocal@2.1.0/ops/sum"));
+    TEST_ASSERT_EQUAL_INT(0, remove(fixture.mathMainPath));
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(fixture.projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+
+    sourceContent = ZrTests_ReadTextFile(fixture.rootMainPath, &sourceLength);
+    TEST_ASSERT_NOT_NULL(sourceContent);
+    sourceName = ZrCore_String_CreateFromNative(state, fixture.rootMainPath);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, sourceContent, sourceLength, sourceName);
+    free(sourceContent);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_EQUAL_UINT32(1u,
+                             (TZrUInt32)count_static_imports_named(function, "$mathLocal@2.1.0/ops/sum"));
+    TEST_ASSERT_TRUE(function_has_module_effect_target_signature_hash(function,
+                                                                      "$mathLocal@2.1.0/ops/sum",
+                                                                      "value"));
+    assemblyRef = find_assembly_ref_record_named(function, "zr.math");
+    TEST_ASSERT_NOT_NULL(assemblyRef);
+    TEST_ASSERT_TRUE(metadata_token_record_module_versions_match(assemblyRef,
+                                                                 "2.1.0",
+                                                                 "2.0.0",
+                                                                 "3.0.0"));
+
+    ZrCore_Function_Free(state, function);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+}
+
+static void test_project_assembly_ref_identity_roundtrips_through_zro_module_effects(void) {
+    SZrProjectDependencyImportFixture fixture;
+    SZrGlobalState *global;
+    SZrState *state;
+    SZrFunction *function;
+    SZrFunction *runtimeFunction = ZR_NULL;
+    SZrString *sourceName;
+    ZrTestsFixtureReader reader;
+    SZrIo io;
+    SZrIoSource *sourceObject;
+    const SZrIoFunction *binaryEntry;
+    TZrChar binaryPath[ZR_TESTS_PATH_MAX];
+    TZrByte *binaryBytes = ZR_NULL;
+    TZrSize binaryLength = 0;
+    TZrSize sourceLength = 0;
+    TZrChar *sourceContent;
+
+    TEST_ASSERT_TRUE(prepare_project_assembly_reference_import_fixture(&fixture));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("parser",
+                                                       "project_import_canonicalization",
+                                                       "assembly_reference_effect_roundtrip",
+                                                       ".zro",
+                                                       binaryPath,
+                                                       sizeof(binaryPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_EnsureParentDirectory(binaryPath));
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(fixture.projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+
+    sourceContent = ZrTests_ReadTextFile(fixture.rootMainPath, &sourceLength);
+    TEST_ASSERT_NOT_NULL(sourceContent);
+    sourceName = ZrCore_String_CreateFromNative(state, fixture.rootMainPath);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, sourceContent, sourceLength, sourceName);
+    free(sourceContent);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(function_contains_module_effect_with_assembly(function,
+                                                                   "$mathLocal@2.1.0/ops/sum",
+                                                                   "zr.math"));
+
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+    binaryBytes = ZrTests_Fixture_ReadFileBytes(binaryPath, &binaryLength);
+    TEST_ASSERT_NOT_NULL(binaryBytes);
+    TEST_ASSERT_TRUE(binaryLength > 0);
+
+    memset(&reader, 0, sizeof(reader));
+    reader.bytes = binaryBytes;
+    reader.length = binaryLength;
+    memset(&io, 0, sizeof(io));
+    ZrCore_Io_Init(state, &io, ZrTests_Fixture_ReaderRead, ZR_NULL, &reader);
+    io.isBinary = ZR_TRUE;
+
+    sourceObject = ZrCore_Io_ReadSourceNew(&io);
+    TEST_ASSERT_NOT_NULL(sourceObject);
+    TEST_ASSERT_EQUAL_UINT32(1u, sourceObject->modulesLength);
+    binaryEntry = sourceObject->modules[0].entryFunction;
+    TEST_ASSERT_NOT_NULL(binaryEntry);
+    TEST_ASSERT_TRUE(io_function_contains_module_effect_with_assembly(binaryEntry,
+                                                                       "$mathLocal@2.1.0/ops/sum",
+                                                                       "zr.math"));
+
+    runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+    TEST_ASSERT_NOT_NULL(runtimeFunction);
+    TEST_ASSERT_TRUE(function_contains_module_effect_with_assembly(runtimeFunction,
+                                                                   "$mathLocal@2.1.0/ops/sum",
+                                                                   "zr.math"));
+
+    remove(binaryPath);
+    free(binaryBytes);
+    ZrCore_Function_Free(state, runtimeFunction);
+    ZrCore_Function_Free(state, function);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+}
+
 static void test_project_compile_canonicalizes_dependency_imports(void) {
     SZrProjectDependencyImportFixture fixture;
     SZrGlobalState *global;
@@ -3077,11 +3465,15 @@ int main(void) {
     RUN_TEST(test_using_import_guard_runtime_checks_nested_caller_signature_hash);
     RUN_TEST(test_using_import_guard_records_native_target_signature_hash);
     RUN_TEST(test_using_import_guard_runtime_rejects_native_target_signature_hash_mismatch);
+    RUN_TEST(test_required_import_runtime_accepts_native_module_link_signature);
     RUN_TEST(test_required_import_runtime_reports_native_provider_unavailable);
     RUN_TEST(test_required_import_runtime_reports_source_loader_attempts);
     RUN_TEST(test_required_import_runtime_reports_descriptor_plugin_load_error);
     RUN_TEST(test_project_import_reports_aot_descriptor_load_error);
     RUN_TEST(test_project_compile_applies_dependency_import_version_range_to_assembly_ref);
+    RUN_TEST(test_project_compile_emits_assembly_ref_identity_from_zrp_references);
+    RUN_TEST(test_project_compile_reads_referenced_assembly_from_zro_without_source);
+    RUN_TEST(test_project_assembly_ref_identity_roundtrips_through_zro_module_effects);
     RUN_TEST(test_project_compile_canonicalizes_dependency_imports);
     RUN_TEST(test_project_derive_current_module_key_accepts_mixed_windows_separators);
     RUN_TEST(test_project_compile_rejects_explicit_module_key_path_mismatch);

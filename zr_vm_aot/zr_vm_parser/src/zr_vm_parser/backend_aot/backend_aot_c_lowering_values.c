@@ -1,5 +1,7 @@
 #include "backend_aot_c_emitter.h"
 
+#include "backend_aot_c_scalar_locals.h"
+
 #include "zr_vm_core/closure.h"
 
 static void backend_aot_write_c_direct_ownership_core_call(FILE *file,
@@ -316,9 +318,58 @@ static void backend_aot_c_write_direct_null_value(FILE *file) {
     fprintf(file, "        ZrCore_Value_ResetAsNull(zr_aot_destination);\n");
 }
 
+static void backend_aot_c_write_direct_plain_value_scalar_assign(FILE *file,
+                                                                 const char *region,
+                                                                 const char *dataExpression,
+                                                                 const char *typeLiteral) {
+    if (file == ZR_NULL || region == ZR_NULL || dataExpression == ZR_NULL || typeLiteral == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "        zr_aot_destination->type = %s;\n"
+            "        zr_aot_destination->value.nativeObject.%s = %s;\n"
+            "        zr_aot_destination->isGarbageCollectable = ZR_FALSE;\n"
+            "        zr_aot_destination->isNative = ZR_TRUE;\n"
+            "        zr_aot_destination->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;\n"
+            "        zr_aot_destination->ownershipControl = ZR_NULL;\n"
+            "        zr_aot_destination->ownershipWeakRef = ZR_NULL;\n",
+            typeLiteral,
+            region,
+            dataExpression);
+}
+
+static void backend_aot_c_write_direct_primitive_constant_local_mirror(
+        FILE *file,
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 destinationSlot,
+        const SZrTypeValue *constantValue,
+        const char *dataExpression) {
+    if (file == ZR_NULL || constantValue == ZR_NULL || dataExpression == ZR_NULL) {
+        return;
+    }
+
+    if (ZR_VALUE_IS_TYPE_BOOL(constantValue->type) &&
+        backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot)) {
+        fprintf(file, "        zr_aot_b%u = %s;\n", (unsigned)destinationSlot, dataExpression);
+    } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type) &&
+               backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot)) {
+        fprintf(file, "        zr_aot_s%u = %s;\n", (unsigned)destinationSlot, dataExpression);
+    } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(constantValue->type) &&
+               backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot)) {
+        fprintf(file, "        zr_aot_u%u = %s;\n", (unsigned)destinationSlot, dataExpression);
+    } else if (ZR_VALUE_IS_TYPE_FLOAT(constantValue->type) &&
+               backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot)) {
+        fprintf(file, "        zr_aot_f%u = %s;\n", (unsigned)destinationSlot, dataExpression);
+    }
+}
+
 void backend_aot_write_c_direct_primitive_constant(FILE *file,
+                                                   const SZrAotExecIrFunction *functionIr,
                                                    TZrUInt32 destinationSlot,
                                                    const SZrTypeValue *constantValue) {
+    char dataExpression[128];
+
     if (file == ZR_NULL || constantValue == ZR_NULL) {
         return;
     }
@@ -326,38 +377,61 @@ void backend_aot_write_c_direct_primitive_constant(FILE *file,
     fprintf(file,
             "    {\n"
             "        /* zr_aot_value_exec_primitive_constant */\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n",
-            (unsigned)destinationSlot);
-    fprintf(file,
-            "        if (zr_aot_destination == ZR_NULL) {\n"
+            "        SZrTypeValue *zr_aot_destination = ZR_NULL;\n"
+            "        if (frame.slotBase == ZR_NULL || %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
-            "        }\n");
+            "        }\n"
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
+            (unsigned)destinationSlot,
+            (unsigned)destinationSlot);
 
     if (ZR_VALUE_IS_TYPE_NULL(constantValue->type)) {
         backend_aot_c_write_direct_null_value(file);
     } else if (ZR_VALUE_IS_TYPE_BOOL(constantValue->type)) {
+        const char *boolExpression = constantValue->value.nativeObject.nativeBool ? "ZR_TRUE" : "ZR_FALSE";
         backend_aot_c_write_direct_plain_value_replace_guard(file);
-        fprintf(file,
-                "        ZR_VALUE_FAST_SET(zr_aot_destination, nativeBool, %s, ZR_VALUE_TYPE_BOOL);\n",
-                constantValue->value.nativeObject.nativeBool ? "ZR_TRUE" : "ZR_FALSE");
+        backend_aot_c_write_direct_plain_value_scalar_assign(file,
+                                                             "nativeBool",
+                                                             boolExpression,
+                                                             "ZR_VALUE_TYPE_BOOL");
+        backend_aot_c_write_direct_primitive_constant_local_mirror(
+                file, functionIr, destinationSlot, constantValue, boolExpression);
     } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type)) {
         backend_aot_c_write_direct_plain_value_replace_guard(file);
-        fprintf(file,
-                "        ZR_VALUE_FAST_SET(zr_aot_destination, nativeInt64, (TZrInt64)%lld, %s);\n",
-                (long long)constantValue->value.nativeObject.nativeInt64,
-                backend_aot_c_value_type_literal(constantValue->type));
+        snprintf(dataExpression,
+                 sizeof(dataExpression),
+                 "(TZrInt64)%lld",
+                 (long long)constantValue->value.nativeObject.nativeInt64);
+        backend_aot_c_write_direct_plain_value_scalar_assign(file,
+                                                             "nativeInt64",
+                                                             dataExpression,
+                                                             backend_aot_c_value_type_literal(constantValue->type));
+        backend_aot_c_write_direct_primitive_constant_local_mirror(
+                file, functionIr, destinationSlot, constantValue, dataExpression);
     } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(constantValue->type)) {
         backend_aot_c_write_direct_plain_value_replace_guard(file);
-        fprintf(file,
-                "        ZR_VALUE_FAST_SET(zr_aot_destination, nativeUInt64, (TZrUInt64)%llu, %s);\n",
-                (unsigned long long)constantValue->value.nativeObject.nativeUInt64,
-                backend_aot_c_value_type_literal(constantValue->type));
+        snprintf(dataExpression,
+                 sizeof(dataExpression),
+                 "(TZrUInt64)%llu",
+                 (unsigned long long)constantValue->value.nativeObject.nativeUInt64);
+        backend_aot_c_write_direct_plain_value_scalar_assign(file,
+                                                             "nativeUInt64",
+                                                             dataExpression,
+                                                             backend_aot_c_value_type_literal(constantValue->type));
+        backend_aot_c_write_direct_primitive_constant_local_mirror(
+                file, functionIr, destinationSlot, constantValue, dataExpression);
     } else if (ZR_VALUE_IS_TYPE_FLOAT(constantValue->type)) {
         backend_aot_c_write_direct_plain_value_replace_guard(file);
-        fprintf(file,
-                "        ZR_VALUE_FAST_SET(zr_aot_destination, nativeDouble, (TZrFloat64)%.17g, %s);\n",
-                constantValue->value.nativeObject.nativeDouble,
-                backend_aot_c_value_type_literal(constantValue->type));
+        snprintf(dataExpression,
+                 sizeof(dataExpression),
+                 "(TZrFloat64)%.17g",
+                 constantValue->value.nativeObject.nativeDouble);
+        backend_aot_c_write_direct_plain_value_scalar_assign(file,
+                                                             "nativeDouble",
+                                                             dataExpression,
+                                                             backend_aot_c_value_type_literal(constantValue->type));
+        backend_aot_c_write_direct_primitive_constant_local_mirror(
+                file, functionIr, destinationSlot, constantValue, dataExpression);
     } else {
         fprintf(file,
                 "        ZrCore_Debug_RunError(state, \"unsupported primitive AOT constant\");\n"
@@ -778,10 +852,7 @@ void backend_aot_write_c_direct_reset_stack_null(FILE *file, TZrUInt32 destinati
             "        if (frame.slotBase == ZR_NULL || %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_destination == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
             "        ZrCore_Value_ResetAsNull(zr_aot_destination);\n"
             "    } while (0);\n",
             (unsigned)destinationSlot,
@@ -802,11 +873,8 @@ void backend_aot_write_c_direct_reset_stack_null2(FILE *file, TZrUInt32 firstSlo
             "            %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_first = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        zr_aot_second = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_first == ZR_NULL || zr_aot_second == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
+            "        zr_aot_first = &frame.slotBase[%u].value;\n"
+            "        zr_aot_second = &frame.slotBase[%u].value;\n"
             "        ZrCore_Value_ResetAsNull(zr_aot_first);\n"
             "        ZrCore_Value_ResetAsNull(zr_aot_second);\n"
             "    } while (0);\n",

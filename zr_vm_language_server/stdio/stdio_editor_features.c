@@ -82,7 +82,10 @@ cJSON *handle_selection_range_request(SZrStdioServer *server, const cJSON *param
         return cJSON_CreateArray();
     }
     for (int index = 0; index < positionCount; index++) {
-        if (!parse_position(cJSON_GetArrayItem((cJSON *)positionsJson, index), &positions[index])) {
+        if (!parse_position_for_uri(server,
+                                    uri,
+                                    cJSON_GetArrayItem((cJSON *)positionsJson, index),
+                                    &positions[index])) {
             free(positions);
             return cJSON_CreateArray();
         }

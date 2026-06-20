@@ -2602,6 +2602,7 @@ static void test_debug_agent_reports_uncaught_exception_from_runtime_without_cli
     cJSON *params;
     cJSON *frames;
     cJSON *topFrame;
+    const char *exceptionStack;
 
     TEST_ASSERT_NOT_NULL(state);
     function = compile_debug_agent_source(state, sourcePath, source);
@@ -2660,6 +2661,8 @@ static void test_debug_agent_reports_uncaught_exception_from_runtime_without_cli
     TEST_ASSERT_EQUAL_STRING("explode", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"));
     TEST_ASSERT_EQUAL_INT(2, debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"));
     TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "instructionIndex") >= 0);
+    exceptionStack = debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "exceptionStack");
+    TEST_ASSERT_NOT_NULL(strstr(exceptionStack, "  at explode (debug_agent_uncaught_exception_fixture.zr:2)"));
     cJSON_Delete(message);
 
     debug_client_send_request(&client, 3, "stackTrace", ZR_NULL);

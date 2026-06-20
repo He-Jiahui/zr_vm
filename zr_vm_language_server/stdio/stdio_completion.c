@@ -45,6 +45,7 @@ static SZrLspRange completion_prefix_range(SZrStdioServer *server,
                                            SZrLspPosition position) {
     SZrLspRange range;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     const char *content;
     size_t contentLength;
     size_t offset;
@@ -55,13 +56,14 @@ static SZrLspRange completion_prefix_range(SZrStdioServer *server,
     range.end = position;
 
     fileVersion = get_file_version_for_uri(server, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
         return range;
     }
 
-    content = fileVersion->content;
-    contentLength = (size_t)fileVersion->contentLength;
+    content = snapshot.content;
+    contentLength = snapshot.contentLength;
     if (!completion_offset_from_position(content, contentLength, position, &offset)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return range;
     }
 
@@ -74,6 +76,7 @@ static SZrLspRange completion_prefix_range(SZrStdioServer *server,
     if (prefixLength > 0 && range.start.character >= prefixLength) {
         range.start.character -= prefixLength;
     }
+    ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
     return range;
 }
 

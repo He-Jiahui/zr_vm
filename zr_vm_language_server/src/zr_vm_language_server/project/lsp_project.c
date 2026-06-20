@@ -1769,6 +1769,10 @@ static TZrBool project_register_loaded_document(SZrState *state,
     SZrSemanticAnalyzer *analyzer;
     TZrChar pathBuffer[ZR_LIBRARY_MAX_PATH_LENGTH];
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
+    const TZrChar *content = ZR_NULL;
+    TZrBool hasSnapshot = ZR_FALSE;
+    TZrBool registered;
 
     if (state == ZR_NULL || context == ZR_NULL || projectIndex == ZR_NULL || uri == ZR_NULL ||
         !lsp_uri_to_native_path(uri, pathBuffer, sizeof(pathBuffer))) {
@@ -1781,12 +1785,16 @@ static TZrBool project_register_loaded_document(SZrState *state,
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    return project_register_source_record(state,
-                                          projectIndex,
-                                          uri,
-                                          pathBuffer,
-                                          analyzer->ast,
-                                          fileVersion != ZR_NULL ? fileVersion->content : ZR_NULL);
+    if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        content = snapshot.content;
+        hasSnapshot = ZR_TRUE;
+    }
+
+    registered = project_register_source_record(state, projectIndex, uri, pathBuffer, analyzer->ast, content);
+    if (hasSnapshot) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+    }
+    return registered;
 }
 
 static TZrBool project_load_imports_from_uri(SZrState *state,
@@ -1877,11 +1885,13 @@ static TZrBool project_scan_source_module_graph(SZrState *state,
     TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
     SZrString *moduleUri;
     SZrFileVersion *fileVersion = ZR_NULL;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrAstNode *ast = ZR_NULL;
     TZrNativeString diskSource = ZR_NULL;
     const TZrChar *content = ZR_NULL;
     SZrArray importModuleNames;
     TZrBool success = ZR_FALSE;
+    TZrBool hasSnapshot = ZR_FALSE;
     SZrFileRange importErrorLocation;
 
     if (state == ZR_NULL || context == ZR_NULL || projectIndex == ZR_NULL || moduleName == ZR_NULL) {
@@ -1938,7 +1948,12 @@ static TZrBool project_scan_source_module_graph(SZrState *state,
         goto cleanup;
     }
 
-    content = fileVersion != ZR_NULL ? fileVersion->content : diskSource;
+    if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        content = snapshot.content;
+        hasSnapshot = ZR_TRUE;
+    } else {
+        content = diskSource;
+    }
     if (content == ZR_NULL ||
         !project_register_source_record(state, projectIndex, moduleUri, resolvedPath, ast, content)) {
         goto cleanup;
@@ -1974,6 +1989,9 @@ static TZrBool project_scan_source_module_graph(SZrState *state,
     success = ZR_TRUE;
 
 cleanup:
+    if (hasSnapshot) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+    }
     if (diskSource != ZR_NULL) {
         ZrCore_Memory_RawFreeWithType(state->global,
                                       diskSource,
@@ -2206,12 +2224,14 @@ TZrBool ZrLanguageServer_LspProject_CollectImportModuleNamesForUri(SZrState *sta
                                                                    SZrString *uri,
                                                                    SZrArray *moduleNames) {
     SZrFileVersion *fileVersion = ZR_NULL;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrAstNode *ast = ZR_NULL;
     TZrChar pathBuffer[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
     TZrNativeString diskSource = ZR_NULL;
     const TZrChar *content = ZR_NULL;
     TZrBool success = ZR_FALSE;
+    TZrBool hasSnapshot = ZR_FALSE;
     SZrLspProjectIndex *projectIndex = ZR_NULL;
     SZrFileRange importErrorLocation;
 
@@ -2260,12 +2280,20 @@ TZrBool ZrLanguageServer_LspProject_CollectImportModuleNamesForUri(SZrState *sta
         goto cleanup;
     }
 
-    content = fileVersion != ZR_NULL ? fileVersion->content : diskSource;
+    if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        content = snapshot.content;
+        hasSnapshot = ZR_TRUE;
+    } else {
+        content = diskSource;
+    }
     if (content != ZR_NULL) {
         success = project_collect_import_module_names(state, ast, content, moduleNames);
     }
 
 cleanup:
+    if (hasSnapshot) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+    }
     if (diskSource != ZR_NULL) {
         ZrCore_Memory_RawFreeWithType(state->global,
                                       diskSource,

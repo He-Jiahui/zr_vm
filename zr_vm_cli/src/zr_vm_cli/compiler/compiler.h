@@ -8,6 +8,8 @@ typedef struct SZrCliCompileSummary {
     TZrSize compiledCount;
     TZrSize skippedCount;
     TZrSize removedCount;
+    TZrBool packedAssembly;
+    TZrChar zrmPath[ZR_LIBRARY_MAX_PATH_LENGTH];
 } SZrCliCompileSummary;
 
 TZrBool ZrCli_Compiler_CompileProjectWithSummary(const SZrCliCommand *command, SZrCliCompileSummary *summary);

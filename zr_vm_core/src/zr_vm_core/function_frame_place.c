@@ -30,7 +30,7 @@ TZrSize ZrCore_Function_GetFrameStorageSlotCount(const SZrFunction *function) {
         return 0u;
     }
 
-    storageSlotCount = function->stackSize;
+    storageSlotCount = ZrCore_Function_GetGeneratedFrameSlotCount(function);
     byteStorageSlotCount = function_frame_byte_storage_slot_count(function->frameByteSize);
     return byteStorageSlotCount > storageSlotCount ? byteStorageSlotCount : storageSlotCount;
 }
@@ -61,6 +61,43 @@ TZrBool ZrCore_Function_FrameStackSlotIntersectsInlineStruct(const SZrFunction *
         inlineStart = (const TZrByte *)frameBase + slotLayout->byteOffset;
         inlineEnd = inlineStart + slotLayout->byteSize;
         if (slotStart < inlineEnd && inlineStart < slotEnd) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+TZrBool ZrCore_Function_FrameStackSlotIntersectsFrameGcValue(const SZrFunction *function,
+                                                             TZrStackValuePointer frameBase,
+                                                             TZrStackValuePointer stackSlot) {
+    const TZrByte *slotStart;
+    const TZrByte *slotEnd;
+
+    if (function == ZR_NULL || frameBase == ZR_NULL || stackSlot == ZR_NULL ||
+        function->frameSlotLayouts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    slotStart = (const TZrByte *)stackSlot;
+    slotEnd = slotStart + sizeof(SZrTypeValueOnStack);
+    for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *slotLayout = &function->frameSlotLayouts[index];
+        const TZrByte *layoutStart;
+        const TZrByte *layoutEnd;
+
+        if (slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE) {
+            if (slotLayout->byteSize < (TZrUInt32)sizeof(SZrTypeValue)) {
+                continue;
+            }
+        } else if (slotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+                   slotLayout->byteSize == 0u) {
+            continue;
+        }
+
+        layoutStart = (const TZrByte *)frameBase + slotLayout->byteOffset;
+        layoutEnd = layoutStart + slotLayout->byteSize;
+        if (slotStart < layoutEnd && layoutStart < slotEnd) {
             return ZR_TRUE;
         }
     }
@@ -115,7 +152,7 @@ static void function_frame_reset_value_parameter_destination(struct SZrState *st
      * so release any staged owner before normalizing both byte-frame and dense
      * mirrors for the copied parameter.
      */
-    if (value->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE) {
+    if (ZrCore_Value_HasReleasableOwnershipNoProfile(value)) {
         ZrCore_Ownership_ReleaseValue(state, value);
         return;
     }
@@ -123,7 +160,7 @@ static void function_frame_reset_value_parameter_destination(struct SZrState *st
 }
 
 static void function_frame_drop_value_slot_if_owner(struct SZrState *state, SZrTypeValue *value) {
-    if (value == ZR_NULL || value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE) {
+    if (!ZrCore_Value_HasReleasableOwnershipNoProfile(value)) {
         return;
     }
 
@@ -1040,7 +1077,8 @@ TZrBool ZrCore_Function_CopyValueFrameParameters(struct SZrState *state,
 
             function_frame_reset_value_parameter_destination(state, byteDestination);
             ZrCore_Value_Copy(state, byteDestination, sourceValue);
-            if (denseDestination != byteDestination) {
+            if (denseDestination != byteDestination &&
+                !ZrCore_Value_SlotsOverlapNoProfile(byteDestination, denseDestination)) {
                 function_frame_reset_value_parameter_destination(state, denseDestination);
                 ZrCore_Value_Copy(state, denseDestination, byteDestination);
             }
@@ -1126,7 +1164,8 @@ TZrBool ZrCore_Function_CopyValueFrameParametersFromFrame(struct SZrState *state
 
             function_frame_reset_value_parameter_destination(state, byteDestination);
             ZrCore_Value_Copy(state, byteDestination, sourceValue);
-            if (denseDestination != byteDestination) {
+            if (denseDestination != byteDestination &&
+                !ZrCore_Value_SlotsOverlapNoProfile(byteDestination, denseDestination)) {
                 function_frame_reset_value_parameter_destination(state, denseDestination);
                 ZrCore_Value_Copy(state, denseDestination, byteDestination);
             }
@@ -1136,13 +1175,14 @@ TZrBool ZrCore_Function_CopyValueFrameParametersFromFrame(struct SZrState *state
     return ZR_TRUE;
 }
 
-TZrBool ZrCore_Function_VisitInlineFrameGcValues(struct SZrState *state,
-                                                 const SZrFunction *function,
-                                                 TZrStackValuePointer frameBase,
-                                                 FZrFunctionFrameTypeLayoutResolver resolver,
-                                                 TZrPtr resolverUserData,
-                                                 FZrFunctionFrameGcValueVisitor visitor,
-                                                 TZrPtr visitorUserData) {
+static TZrBool function_visit_frame_gc_values(struct SZrState *state,
+                                              const SZrFunction *function,
+                                              TZrStackValuePointer frameBase,
+                                              FZrFunctionFrameTypeLayoutResolver resolver,
+                                              TZrPtr resolverUserData,
+                                              FZrFunctionFrameGcValueVisitor visitor,
+                                              TZrPtr visitorUserData,
+                                              TZrBool includeValueSlots) {
     if (function == ZR_NULL || frameBase == ZR_NULL || visitor == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1151,6 +1191,18 @@ TZrBool ZrCore_Function_VisitInlineFrameGcValues(struct SZrState *state,
         const SZrFunctionFrameSlotLayout *slotLayout = &function->frameSlotLayouts[index];
         const SZrTypeLayout *typeLayout;
         SZrStackFramePlace place;
+
+        if (includeValueSlots &&
+            slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE) {
+            if (slotLayout->byteSize < (TZrUInt32)sizeof(SZrTypeValue)) {
+                continue;
+            }
+            if (!ZrCore_Function_MakeFrameSlotPlace(state, function, frameBase, slotLayout->stackSlot, &place)) {
+                return ZR_FALSE;
+            }
+            visitor(state, (SZrTypeValue *)place.address, visitorUserData);
+            continue;
+        }
 
         if (slotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
             continue;
@@ -1170,6 +1222,40 @@ TZrBool ZrCore_Function_VisitInlineFrameGcValues(struct SZrState *state,
     }
 
     return ZR_TRUE;
+}
+
+TZrBool ZrCore_Function_VisitInlineFrameGcValues(struct SZrState *state,
+                                                 const SZrFunction *function,
+                                                 TZrStackValuePointer frameBase,
+                                                 FZrFunctionFrameTypeLayoutResolver resolver,
+                                                 TZrPtr resolverUserData,
+                                                 FZrFunctionFrameGcValueVisitor visitor,
+                                                 TZrPtr visitorUserData) {
+    return function_visit_frame_gc_values(state,
+                                          function,
+                                          frameBase,
+                                          resolver,
+                                          resolverUserData,
+                                          visitor,
+                                          visitorUserData,
+                                          ZR_FALSE);
+}
+
+TZrBool ZrCore_Function_VisitFrameGcValues(struct SZrState *state,
+                                           const SZrFunction *function,
+                                           TZrStackValuePointer frameBase,
+                                           FZrFunctionFrameTypeLayoutResolver resolver,
+                                           TZrPtr resolverUserData,
+                                           FZrFunctionFrameGcValueVisitor visitor,
+                                           TZrPtr visitorUserData) {
+    return function_visit_frame_gc_values(state,
+                                          function,
+                                          frameBase,
+                                          resolver,
+                                          resolverUserData,
+                                          visitor,
+                                          visitorUserData,
+                                          ZR_TRUE);
 }
 
 TZrBool ZrCore_Function_DropInlineFrameValues(struct SZrState *state,
@@ -1236,7 +1322,8 @@ TZrBool ZrCore_Function_DropInlineFrameValues(struct SZrState *state,
         byteValue = (SZrTypeValue *)place.address;
         denseValue = ZrCore_Stack_GetValue(frameBase + slotLayout->stackSlot);
         function_frame_drop_value_slot_if_owner(state, byteValue);
-        if (denseValue != byteValue) {
+        if (denseValue != byteValue &&
+            !ZrCore_Value_SlotsOverlapNoProfile(byteValue, denseValue)) {
             function_frame_drop_value_slot_if_owner(state, denseValue);
         }
     }

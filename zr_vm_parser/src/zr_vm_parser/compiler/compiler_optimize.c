@@ -230,6 +230,9 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             }
             optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            if (opcode == ZR_INSTRUCTION_ENUM(TYPEOF)) {
+                info->allowSlotReuse = ZR_FALSE;
+            }
             return;
         case ZR_INSTRUCTION_ENUM(ITER_INIT):
         case ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT):
@@ -1815,7 +1818,7 @@ static void optimizer_build_block_intervals(const SZrFunction *function,
         for (activeIndex = 0; activeIndex < slot; activeIndex++) {
             if (intervals[activeIndex].valid &&
                 intervals[activeIndex].start <= intervals[slot].start &&
-                intervals[activeIndex].end > intervals[slot].start &&
+                intervals[activeIndex].end >= intervals[slot].start &&
                 intervals[activeIndex].assignedSlot < slotCount) {
                 physicalInUse[intervals[activeIndex].assignedSlot] = 1;
             }

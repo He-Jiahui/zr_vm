@@ -468,12 +468,13 @@ static TZrBool decorator_navigation_find_hit(SZrSemanticAnalyzer *analyzer,
 }
 
 static TZrBool decorator_navigation_append_definition(SZrState *state,
+                                                      SZrLspContext *context,
                                                       SZrArray *result,
                                                       SZrString *uri,
                                                       SZrFileRange range) {
     SZrLspLocation *location;
 
-    if (state == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || context == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -483,12 +484,14 @@ static TZrBool decorator_navigation_append_definition(SZrState *state,
     }
 
     location->uri = range.source != ZR_NULL ? range.source : uri;
-    location->range = ZrLanguageServer_LspRange_FromFileRange(range);
+    location->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
     ZrCore_Array_Push(state, result, &location);
     return ZR_TRUE;
 }
 
 static TZrBool decorator_navigation_create_hover(SZrState *state,
+                                                 SZrLspContext *context,
+                                                 SZrString *uri,
                                                  SZrAstNode *decoratorNode,
                                                  const TZrChar *decoratorText,
                                                  const TZrChar *category,
@@ -499,8 +502,8 @@ static TZrBool decorator_navigation_create_hover(SZrState *state,
     TZrChar buffer[ZR_LSP_MARKDOWN_BUFFER_SIZE];
     TZrSize used = 0;
 
-    if (state == ZR_NULL || decoratorNode == ZR_NULL || decoratorText == ZR_NULL || category == ZR_NULL ||
-        result == ZR_NULL) {
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || decoratorNode == ZR_NULL ||
+        decoratorText == ZR_NULL || category == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -528,7 +531,7 @@ static TZrBool decorator_navigation_create_hover(SZrState *state,
 
     ZrCore_Array_Init(state, &hover->contents, sizeof(SZrString *), 1);
     ZrCore_Array_Push(state, &hover->contents, &content);
-    hover->range = ZrLanguageServer_LspRange_FromFileRange(decoratorNode->location);
+    hover->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, decoratorNode->location);
     *result = hover;
     return ZR_TRUE;
 }
@@ -564,7 +567,7 @@ TZrBool ZrLanguageServer_Lsp_TryGetDecoratorDefinition(SZrState *state,
         ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), 1);
     }
 
-    return decorator_navigation_append_definition(state, result, uri, target.range);
+    return decorator_navigation_append_definition(state, context, result, uri, target.range);
 }
 
 TZrBool ZrLanguageServer_Lsp_TryGetDecoratorHover(SZrState *state,
@@ -609,5 +612,5 @@ TZrBool ZrLanguageServer_Lsp_TryGetDecoratorHover(SZrState *state,
     }
 
     category = strncmp(decoratorBuffer, "zr.ffi.", strlen("zr.ffi.")) == 0 ? "ffi decorator" : "decorator";
-    return decorator_navigation_create_hover(state, hit.decoratorNode, decoratorBuffer, category, target, result);
+    return decorator_navigation_create_hover(state, context, uri, hit.decoratorNode, decoratorBuffer, category, target, result);
 }

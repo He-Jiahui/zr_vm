@@ -15,12 +15,18 @@
 
 typedef struct SZrDiagnostic SZrDiagnostic;
 
+typedef struct SZrFileVersionContentBlock {
+    TZrChar *content;
+    TZrSize contentLength;
+    TZrSize contentGeneration;
+    TZrSize refCount;
+} SZrFileVersionContentBlock;
+
 // 文件版本
 typedef struct SZrFileVersion {
     SZrString *uri;                   // 文件 URI
     TZrSize version;                  // 版本号
-    TZrChar *content;                    // 文件内容
-    TZrSize contentLength;            // 内容长度
+    SZrFileVersionContentBlock *textBlock; // 当前内容块
     SZrAstNode *ast;                  // 解析后的 AST
     TZrBool usesFallbackAst;            // 当前 AST 是否是旧版本保留下来的 last-good 快照
     TZrBool isDirty;                    // 是否需要重新解析
@@ -30,6 +36,16 @@ typedef struct SZrFileVersion {
     TZrBool hasIncrementalInfo;         // 是否有增量信息
     SZrArray parserDiagnostics;      // 语法诊断信息（SZrDiagnostic*）
 } SZrFileVersion;
+
+typedef struct SZrFileVersionContentSnapshot {
+    SZrString *uri;
+    TZrSize version;
+    TZrChar *content;
+    TZrSize contentLength;
+    TZrSize contentGeneration;
+    TZrBool usesFallbackAst;
+    SZrFileVersionContentBlock *contentBlock;
+} SZrFileVersionContentSnapshot;
 
 // 增量解析器
 typedef struct SZrIncrementalParser {
@@ -94,5 +110,13 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrSta
                                                          TZrSize contentLength,
                                                          TZrSize version,
                                                          SZrFileRange changeRange);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_FileVersionContentSnapshot_Acquire(
+    SZrState *state,
+    SZrFileVersion *fileVersion,
+    SZrFileVersionContentSnapshot *outSnapshot);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_FileVersionContentSnapshot_Free(
+    SZrState *state,
+    SZrFileVersionContentSnapshot *snapshot);
 
 #endif //ZR_VM_LANGUAGE_SERVER_INCREMENTAL_PARSER_H

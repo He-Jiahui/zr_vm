@@ -1,0 +1,6 @@
+{
+  "name": "using_union_normal",
+  "source": "src",
+  "binary": "bin",
+  "entry": "normal"
+}

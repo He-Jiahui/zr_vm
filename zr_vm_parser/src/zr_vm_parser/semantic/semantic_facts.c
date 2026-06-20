@@ -330,6 +330,34 @@ const SZrSemanticReferenceFact *ZrParser_SemanticFacts_FindReferenceAtPosition(
     return best;
 }
 
+const SZrSemanticReferenceFact *ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
+        const SZrSemanticContext *context,
+        SZrFileRange position,
+        EZrSemanticReferenceKind kind) {
+    TZrSize i;
+    const SZrSemanticReferenceFact *best = ZR_NULL;
+    TZrSize bestWidth = 0;
+
+    if (context == ZR_NULL || !context->referenceFacts.isValid) {
+        return ZR_NULL;
+    }
+
+    for (i = 0; i < context->referenceFacts.length; i++) {
+        const SZrSemanticReferenceFact *fact =
+            (const SZrSemanticReferenceFact *)ZrCore_Array_Get((SZrArray *)&context->referenceFacts, i);
+        if (fact != ZR_NULL &&
+            fact->kind == kind &&
+            semantic_facts_range_contains_position(&fact->range, &position)) {
+            TZrSize width = semantic_facts_range_width(&fact->range);
+            if (best == ZR_NULL || width < bestWidth) {
+                best = fact;
+                bestWidth = width;
+            }
+        }
+    }
+    return best;
+}
+
 const SZrSemanticReferenceFact *ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
         const SZrSemanticContext *context,
         const SZrAstNode *node,

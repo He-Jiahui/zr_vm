@@ -170,6 +170,7 @@ static void import_type_prototype_init(SZrState *state,
     info->type = type;
     info->accessModifier = ZR_ACCESS_PUBLIC;
     info->isImportedNative = ZR_TRUE;
+    info->isNativeRuntime = ZR_FALSE;
     info->protocolMask = 0;
     info->layoutByteSize = 0;
     info->layoutByteAlign = 0;

@@ -1,4 +1,5 @@
 #include "compile_expression_internal.h"
+#include "type_inference_internal.h"
 
 static SZrString *union_constructor_lookup_name(SZrCompilerState *cs, SZrString *typeName) {
     const TZrChar *typeText;
@@ -798,11 +799,11 @@ TZrBool try_resolve_union_variant_reference_expression(SZrCompilerState *cs,
     return try_resolve_union_variant_pattern_expression(cs, node, outVariantName, &bindings, ZR_NULL);
 }
 
-TZrBool try_resolve_union_variant_pattern_expression(SZrCompilerState *cs,
-                                                     SZrAstNode *node,
-                                                     SZrString **outVariantName,
-                                                     SZrAstNodeArray **outBindings,
-                                                     SZrAstNode **outVariant) {
+ZR_PARSER_API TZrBool try_resolve_union_variant_pattern_expression(SZrCompilerState *cs,
+                                                                   SZrAstNode *node,
+                                                                   SZrString **outVariantName,
+                                                                   SZrAstNodeArray **outBindings,
+                                                                   SZrAstNode **outVariant) {
     SZrPrimaryExpression *primary;
     SZrString *typeName = ZR_NULL;
     SZrAstNode *unionDeclaration;
@@ -928,12 +929,12 @@ TZrBool try_resolve_union_variant_pattern_expression(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-TZrBool try_resolve_union_variant_pattern_for_type(SZrCompilerState *cs,
-                                                   SZrAstNode *node,
-                                                   SZrString *typeName,
-                                                   SZrString **outVariantName,
-                                                   SZrAstNodeArray **outBindings,
-                                                   SZrAstNode **outVariant) {
+ZR_PARSER_API TZrBool try_resolve_union_variant_pattern_for_type(SZrCompilerState *cs,
+                                                                 SZrAstNode *node,
+                                                                 SZrString *typeName,
+                                                                 SZrString **outVariantName,
+                                                                 SZrAstNodeArray **outBindings,
+                                                                 SZrAstNode **outVariant) {
     SZrAstNode *unionDeclaration;
     SZrString *variantName = ZR_NULL;
     SZrAstNode *variant;
@@ -1251,13 +1252,13 @@ TZrBool try_resolve_union_variant_pattern_annotation(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-TZrBool try_resolve_union_variant_pattern_with_type_annotation(SZrCompilerState *cs,
-                                                               SZrAstNode *pattern,
-                                                               SZrType *variantTypeInfo,
-                                                               SZrString *resourceTypeName,
-                                                               SZrString **outVariantName,
-                                                               SZrAstNodeArray **outBindings,
-                                                               SZrAstNode **outVariant) {
+ZR_PARSER_API TZrBool try_resolve_union_variant_pattern_with_type_annotation(SZrCompilerState *cs,
+                                                                             SZrAstNode *pattern,
+                                                                             SZrType *variantTypeInfo,
+                                                                             SZrString *resourceTypeName,
+                                                                             SZrString **outVariantName,
+                                                                             SZrAstNodeArray **outBindings,
+                                                                             SZrAstNode **outVariant) {
     SZrString *annotationUnionTypeName = ZR_NULL;
     SZrString *variantName = ZR_NULL;
     SZrAstNode *resourceUnion;
@@ -1308,11 +1309,13 @@ TZrBool try_resolve_union_variant_pattern_with_type_annotation(SZrCompilerState 
 
 void register_union_variant_payload_binding_type(SZrCompilerState *cs,
                                                  SZrAstNode *variant,
+                                                 SZrString *resourceTypeName,
                                                  TZrSize payloadIndex,
                                                  SZrString *bindingName,
                                                  TZrBool moveBinding) {
     SZrParameter *field;
     SZrInferredType bindingType;
+    TZrBool bindingTypeInitialized = ZR_FALSE;
 
     if (cs == ZR_NULL ||
         cs->typeEnv == ZR_NULL ||
@@ -1327,13 +1330,66 @@ void register_union_variant_payload_binding_type(SZrCompilerState *cs,
         return;
     }
 
-    ZrParser_InferredType_Init(cs->state, &bindingType, ZR_VALUE_TYPE_OBJECT);
-    if (ZrParser_AstTypeToInferredType_Convert(cs, field->typeInfo, &bindingType)) {
+    if (resourceTypeName != ZR_NULL) {
+        SZrAstNode *unionDeclaration = find_union_declaration_for_constructor_type(cs, resourceTypeName);
+        SZrString *resourceBaseName = ZR_NULL;
+        SZrArray argumentTypeNames;
+        SZrString *fieldTypeName = ZR_NULL;
+        SZrString *resolvedFieldTypeName = ZR_NULL;
+
+        ZrCore_Array_Construct(&argumentTypeNames);
+        if (unionDeclaration != ZR_NULL &&
+            unionDeclaration->type == ZR_AST_UNION_DECLARATION &&
+            unionDeclaration->data.unionDeclaration.generic != ZR_NULL &&
+            unionDeclaration->data.unionDeclaration.generic->params != ZR_NULL &&
+            try_parse_generic_instance_type_name(cs->state, resourceTypeName, &resourceBaseName, &argumentTypeNames)) {
+            fieldTypeName = extract_type_name_string(cs, field->typeInfo);
+            if (fieldTypeName != ZR_NULL) {
+                SZrAstNodeArray *params = unionDeclaration->data.unionDeclaration.generic->params;
+
+                for (TZrSize index = 0; index < params->count && index < argumentTypeNames.length; index++) {
+                    SZrAstNode *paramNode = params->nodes[index];
+                    SZrString **argumentTypeNamePtr =
+                            (SZrString **)ZrCore_Array_Get(&argumentTypeNames, index);
+                    if (paramNode != ZR_NULL &&
+                        paramNode->type == ZR_AST_PARAMETER &&
+                        paramNode->data.parameter.name != ZR_NULL &&
+                        paramNode->data.parameter.name->name != ZR_NULL &&
+                        argumentTypeNamePtr != ZR_NULL &&
+                        *argumentTypeNamePtr != ZR_NULL &&
+                        ZrCore_String_Equal(paramNode->data.parameter.name->name, fieldTypeName)) {
+                        resolvedFieldTypeName = *argumentTypeNamePtr;
+                        break;
+                    }
+                }
+            }
+            if (resolvedFieldTypeName != ZR_NULL &&
+                inferred_type_from_type_name(cs, resolvedFieldTypeName, &bindingType)) {
+                bindingTypeInitialized = ZR_TRUE;
+            }
+        }
+        if (argumentTypeNames.isValid && argumentTypeNames.head != ZR_NULL) {
+            ZrCore_Array_Free(cs->state, &argumentTypeNames);
+        }
+    }
+
+    if (!bindingTypeInitialized) {
+        ZrParser_InferredType_Init(cs->state, &bindingType, ZR_VALUE_TYPE_OBJECT);
+        bindingTypeInitialized = ZR_TRUE;
+        if (!ZrParser_AstTypeToInferredType_Convert(cs, field->typeInfo, &bindingType)) {
+            ZrParser_InferredType_Free(cs->state, &bindingType);
+            return;
+        }
+    }
+
+    if (bindingTypeInitialized) {
         bindingType.ownershipQualifier =
                 union_variant_payload_default_binding_qualifier(variant, payloadIndex, moveBinding);
         ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, bindingName, &bindingType);
     }
-    ZrParser_InferredType_Free(cs->state, &bindingType);
+    if (bindingTypeInitialized) {
+        ZrParser_InferredType_Free(cs->state, &bindingType);
+    }
 }
 
 TZrBool try_compile_union_variant_constructor_expression(SZrCompilerState *cs,

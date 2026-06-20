@@ -895,8 +895,10 @@ TZrBool ZrLanguageServer_LspLocalSemanticQuery_ReferenceAt(
     return ZR_TRUE;
 }
 
-TZrBool ZrLanguageServer_LspLocalSemanticQuery_BuildHover(
+static TZrBool local_query_build_hover_with_document(
     SZrState *state,
+    SZrLspContext *context,
+    SZrString *uri,
     const SZrLspLocalSemanticQueryResult *query,
     SZrLspHover **result) {
     TZrChar markdown[ZR_LSP_MARKDOWN_BUFFER_SIZE];
@@ -967,9 +969,28 @@ TZrBool ZrLanguageServer_LspLocalSemanticQuery_BuildHover(
 
     ZrCore_Array_Init(state, &hover->contents, sizeof(SZrString *), 1);
     ZrCore_Array_Push(state, &hover->contents, &content);
-    hover->range = ZrLanguageServer_LspRange_FromFileRange(local_query_hover_range(query));
+    hover->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
+        context,
+        uri,
+        local_query_hover_range(query));
     *result = hover;
     return ZR_TRUE;
+}
+
+TZrBool ZrLanguageServer_LspLocalSemanticQuery_BuildHover(
+    SZrState *state,
+    const SZrLspLocalSemanticQueryResult *query,
+    SZrLspHover **result) {
+    return local_query_build_hover_with_document(state, ZR_NULL, ZR_NULL, query, result);
+}
+
+TZrBool ZrLanguageServer_LspLocalSemanticQuery_BuildHoverForDocument(
+    SZrState *state,
+    SZrLspContext *context,
+    SZrString *uri,
+    const SZrLspLocalSemanticQueryResult *query,
+    SZrLspHover **result) {
+    return local_query_build_hover_with_document(state, context, uri, query, result);
 }
 
 void ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(

@@ -184,10 +184,15 @@ static SZrString *project_navigation_native_path_to_file_uri(SZrState *state, co
     return ZrCore_String_Create(state, buffer, writeIndex);
 }
 
-static TZrBool append_lsp_location(SZrState *state, SZrArray *result, SZrString *uri, SZrFileRange range) {
+static TZrBool append_lsp_location(SZrState *state,
+                                   SZrLspContext *context,
+                                   SZrArray *result,
+                                   SZrString *uri,
+                                   SZrFileRange range) {
     SZrLspLocation *location;
+    SZrString *locationUri;
 
-    if (state == ZR_NULL || result == ZR_NULL || uri == ZR_NULL) {
+    if (state == ZR_NULL || result == ZR_NULL || (uri == ZR_NULL && range.source == ZR_NULL)) {
         return ZR_FALSE;
     }
 
@@ -200,8 +205,9 @@ static TZrBool append_lsp_location(SZrState *state, SZrArray *result, SZrString 
         return ZR_FALSE;
     }
 
-    location->uri = uri;
-    location->range = ZrLanguageServer_LspRange_FromFileRange(range);
+    locationUri = range.source != ZR_NULL ? range.source : uri;
+    location->uri = locationUri;
+    location->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, locationUri, range);
     ZrCore_Array_Push(state, result, &location);
     return ZR_TRUE;
 }
@@ -307,6 +313,7 @@ typedef struct SZrLspProjectResolvedExternalImportedMember {
 typedef SZrLspExternalMetadataDeclaration SZrLspProjectResolvedExternalMetadataDeclaration;
 
 static TZrBool append_symbol_references_from_tracker(SZrState *state,
+                                                     SZrLspContext *context,
                                                      SZrSemanticAnalyzer *analyzer,
                                                      SZrSymbol *symbol,
                                                      TZrBool includeDeclaration,
@@ -331,7 +338,11 @@ static TZrBool append_symbol_references_from_tracker(SZrState *state,
             continue;
         }
 
-        if (!append_lsp_location(state, result, (*referencePtr)->location.source, (*referencePtr)->location)) {
+        if (!append_lsp_location(state,
+                                 context,
+                                 result,
+                                 (*referencePtr)->location.source,
+                                 (*referencePtr)->location)) {
             ZrCore_Array_Free(state, &references);
             return ZR_FALSE;
         }
@@ -342,6 +353,8 @@ static TZrBool append_symbol_references_from_tracker(SZrState *state,
 }
 
 static TZrBool append_imported_member_locations_from_analyzer(SZrState *state,
+                                                              SZrLspContext *context,
+                                                              SZrString *uri,
                                                               SZrSemanticAnalyzer *analyzer,
                                                               SZrString *moduleName,
                                                               SZrString *memberName,
@@ -357,6 +370,8 @@ static TZrBool append_imported_member_locations_from_analyzer(SZrState *state,
     ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
     appended = ZrLanguageServer_LspProject_AppendMatchingImportedMemberLocations(state,
+                                                                                 context,
+                                                                                 uri,
                                                                                  analyzer->ast,
                                                                                  &bindings,
                                                                                  moduleName,
@@ -367,10 +382,14 @@ static TZrBool append_imported_member_locations_from_analyzer(SZrState *state,
 }
 
 static TZrBool append_imported_module_locations_from_analyzer(SZrState *state,
+                                                              SZrLspContext *context,
+                                                              SZrString *uri,
                                                               SZrSemanticAnalyzer *analyzer,
                                                               SZrString *moduleName,
                                                               SZrArray *result);
 static TZrBool append_import_binding_locations_from_analyzer(SZrState *state,
+                                                             SZrLspContext *context,
+                                                             SZrString *uri,
                                                              SZrSemanticAnalyzer *analyzer,
                                                              SZrString *moduleName,
                                                              SZrArray *result);
@@ -502,9 +521,12 @@ static TZrBool project_navigation_try_get_analyzer_for_uri(SZrState *state,
                                                            SZrSemanticAnalyzer **outAnalyzer) {
     SZrSemanticAnalyzer *analyzer;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     TZrNativeString sourceBuffer = ZR_NULL;
     TZrSize sourceLength = 0;
+    TZrSize sourceVersion = 0;
     TZrBool loadedFromDisk = ZR_FALSE;
+    TZrBool hasSnapshot = ZR_FALSE;
     TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
 
     if (outAnalyzer != ZR_NULL) {
@@ -521,9 +543,12 @@ static TZrBool project_navigation_try_get_analyzer_for_uri(SZrState *state,
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
-        sourceBuffer = fileVersion->content;
-        sourceLength = fileVersion->contentLength;
+    sourceVersion = fileVersion != ZR_NULL ? fileVersion->version : 0;
+    if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        sourceBuffer = snapshot.content;
+        sourceLength = snapshot.contentLength;
+        sourceVersion = snapshot.version;
+        hasSnapshot = ZR_TRUE;
     } else if (state->global != ZR_NULL && project_navigation_uri_to_native_path(uri, nativePath, sizeof(nativePath))) {
         sourceBuffer = ZrLibrary_File_ReadAll(state->global, nativePath);
         sourceLength = sourceBuffer != ZR_NULL ? strlen(sourceBuffer) : 0;
@@ -539,8 +564,11 @@ static TZrBool project_navigation_try_get_analyzer_for_uri(SZrState *state,
                                                  uri,
                                                  sourceBuffer,
                                                  sourceLength,
-                                                 fileVersion != ZR_NULL ? fileVersion->version : 0,
+                                                 sourceVersion,
                                                  ZR_FALSE)) {
+        if (hasSnapshot) {
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        }
         if (loadedFromDisk) {
             ZrCore_Memory_RawFreeWithType(state->global,
                                           sourceBuffer,
@@ -555,6 +583,9 @@ static TZrBool project_navigation_try_get_analyzer_for_uri(SZrState *state,
                                       sourceBuffer,
                                       sourceLength + 1,
                                       ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    }
+    if (hasSnapshot) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     }
 
     analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
@@ -572,11 +603,14 @@ static TZrBool project_navigation_append_imported_member_for_uri(SZrState *state
                                                                  SZrString *moduleName,
                                                                  SZrString *memberName,
                                                                  SZrArray *result) {
-    ZR_UNUSED_PARAMETER(context);
-    ZR_UNUSED_PARAMETER(uri);
-
     return analyzer != ZR_NULL
-               ? append_imported_member_locations_from_analyzer(state, analyzer, moduleName, memberName, result)
+               ? append_imported_member_locations_from_analyzer(state,
+                                                                context,
+                                                                uri,
+                                                                analyzer,
+                                                                moduleName,
+                                                                memberName,
+                                                                result)
                : ZR_TRUE;
 }
 
@@ -605,12 +639,10 @@ static TZrBool project_navigation_append_imported_module_for_uri(SZrState *state
                                                                  SZrString *moduleName,
                                                                  SZrString *memberName,
                                                                  SZrArray *result) {
-    ZR_UNUSED_PARAMETER(context);
-    ZR_UNUSED_PARAMETER(uri);
     ZR_UNUSED_PARAMETER(memberName);
 
     return analyzer != ZR_NULL
-               ? append_imported_module_locations_from_analyzer(state, analyzer, moduleName, result)
+               ? append_imported_module_locations_from_analyzer(state, context, uri, analyzer, moduleName, result)
                : ZR_TRUE;
 }
 
@@ -621,12 +653,10 @@ static TZrBool project_navigation_append_import_binding_for_uri(SZrState *state,
                                                                 SZrString *moduleName,
                                                                 SZrString *memberName,
                                                                 SZrArray *result) {
-    ZR_UNUSED_PARAMETER(context);
-    ZR_UNUSED_PARAMETER(uri);
     ZR_UNUSED_PARAMETER(memberName);
 
     return analyzer != ZR_NULL
-               ? append_import_binding_locations_from_analyzer(state, analyzer, moduleName, result)
+               ? append_import_binding_locations_from_analyzer(state, context, uri, analyzer, moduleName, result)
                : ZR_TRUE;
 }
 
@@ -872,6 +902,8 @@ static TZrBool append_project_imported_references(SZrState *state,
 }
 
 static TZrBool append_imported_module_locations_from_analyzer(SZrState *state,
+                                                              SZrLspContext *context,
+                                                              SZrString *uri,
                                                               SZrSemanticAnalyzer *analyzer,
                                                               SZrString *moduleName,
                                                               SZrArray *result) {
@@ -886,6 +918,8 @@ static TZrBool append_imported_module_locations_from_analyzer(SZrState *state,
     ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
     appended = ZrLanguageServer_LspProject_AppendMatchingImportedModuleLocations(state,
+                                                                                 context,
+                                                                                 uri,
                                                                                  analyzer->ast,
                                                                                  &bindings,
                                                                                  moduleName,
@@ -895,6 +929,8 @@ static TZrBool append_imported_module_locations_from_analyzer(SZrState *state,
 }
 
 static TZrBool append_import_binding_locations_from_analyzer(SZrState *state,
+                                                             SZrLspContext *context,
+                                                             SZrString *uri,
                                                              SZrSemanticAnalyzer *analyzer,
                                                              SZrString *moduleName,
                                                              SZrArray *result) {
@@ -909,6 +945,8 @@ static TZrBool append_import_binding_locations_from_analyzer(SZrState *state,
     ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
     appended = ZrLanguageServer_LspProject_AppendMatchingImportBindingLocations(state,
+                                                                                context,
+                                                                                uri,
                                                                                 &bindings,
                                                                                 moduleName,
                                                                                 result);
@@ -923,6 +961,7 @@ static TZrBool append_import_target_locations_from_analyzer(SZrState *state,
                                                             SZrArray *result) {
     SZrSemanticAnalyzer *analyzer;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrArray bindings;
     TZrBool appended;
     TZrBool hasMatchingImport = ZR_FALSE;
@@ -942,10 +981,11 @@ static TZrBool append_import_target_locations_from_analyzer(SZrState *state,
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
-    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
-        project_navigation_refine_import_binding_target_locations(fileVersion->content,
-                                                                  fileVersion->contentLength,
+    if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        project_navigation_refine_import_binding_target_locations(snapshot.content,
+                                                                  snapshot.contentLength,
                                                                   &bindings);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     }
     for (TZrSize index = 0; index < bindings.length; index++) {
         SZrLspImportBinding **bindingPtr =
@@ -963,6 +1003,8 @@ static TZrBool append_import_target_locations_from_analyzer(SZrState *state,
     }
 
     appended = ZrLanguageServer_LspProject_AppendMatchingImportTargetLocations(state,
+                                                                               context,
+                                                                               uri,
                                                                                &bindings,
                                                                                moduleName,
                                                                                result);
@@ -1140,6 +1182,8 @@ static TZrBool append_locations_as_document_highlights(SZrState *state,
 }
 
 static TZrBool append_document_highlight(SZrState *state,
+                                         SZrLspContext *context,
+                                         SZrString *uri,
                                          SZrArray *result,
                                          SZrFileRange range,
                                          TZrInt32 kind) {
@@ -1158,7 +1202,7 @@ static TZrBool append_document_highlight(SZrState *state,
         return ZR_FALSE;
     }
 
-    highlight->range = ZrLanguageServer_LspRange_FromFileRange(range);
+    highlight->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
     highlight->kind = kind;
     ZrCore_Array_Push(state, result, &highlight);
     return ZR_TRUE;
@@ -1234,6 +1278,7 @@ static TZrBool project_try_find_imported_member_resolution(SZrState *state,
 
 static TZrBool project_navigation_try_find_binary_export_declaration_at(
     SZrState *state,
+    SZrLspContext *context,
     SZrLspProjectIndex *projectIndex,
     SZrString *moduleName,
     SZrString *uri,
@@ -1262,7 +1307,7 @@ static TZrBool project_navigation_try_find_binary_export_declaration_at(
         return ZR_FALSE;
     }
 
-    filePosition = ZrLanguageServer_LspPosition_ToFilePosition(position);
+    filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     positionRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
     for (TZrSize index = 0; index < binarySource->modules[0].entryFunction->typedExportedSymbolsLength; index++) {
         const SZrIoFunctionTypedExportSymbol *symbol =
@@ -1594,6 +1639,7 @@ TZrBool ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(
         outResolved->declarationRange = project_navigation_metadata_file_entry_range(outResolved->declarationUri);
         if (!project_navigation_position_is_module_entry(position)) {
             if (!project_navigation_try_find_binary_export_declaration_at(state,
+                                                                          context,
                                                                           projectIndex,
                                                                           outResolved->moduleName,
                                                                           outResolved->declarationUri,
@@ -1684,7 +1730,7 @@ TZrBool ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationReferences(
     if (includeDeclaration &&
         resolved->hasDeclaration &&
         resolved->declarationUri != ZR_NULL &&
-        !append_lsp_location(state, result, resolved->declarationUri, resolved->declarationRange)) {
+        !append_lsp_location(state, context, result, resolved->declarationUri, resolved->declarationRange)) {
         return ZR_FALSE;
     }
 
@@ -1743,7 +1789,7 @@ TZrBool ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationHighlights(
     if (resolved->hasDeclaration &&
         resolved->declarationUri != ZR_NULL &&
         ZrLanguageServer_Lsp_UrisResolveToSameNativePath(resolved->declarationUri, queryUri)) {
-        appended = append_document_highlight(state, result, resolved->declarationRange, 3);
+        appended = append_document_highlight(state, context, queryUri, result, resolved->declarationRange, 3);
     }
 
     ZrCore_Array_Init(state, &locations, sizeof(SZrLspLocation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
@@ -1885,6 +1931,7 @@ static TZrBool project_try_append_external_imported_member_definition(SZrState *
     }
 
     return append_lsp_location(state,
+                               context,
                                result,
                                resolved.declarationUri,
                                resolved.declarationRange);
@@ -1913,6 +1960,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryGetDefinition(SZrState *state,
                                                                        &externalDeclaration) &&
         externalDeclaration.hasDeclaration && externalDeclaration.declarationUri != ZR_NULL) {
         return append_lsp_location(state,
+                                   context,
                                    result,
                                    externalDeclaration.declarationUri,
                                    externalDeclaration.declarationRange);
@@ -1923,6 +1971,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryGetDefinition(SZrState *state,
     }
 
     return append_lsp_location(state,
+                               context,
                                result,
                                resolved.record->uri,
                                ZrLanguageServer_Lsp_GetSymbolLookupRange(resolved.symbol));
@@ -1947,6 +1996,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryFindReferences(SZrState *state,
         if (project_try_resolve_external_imported_member(state, context, uri, position, &externalResolved)) {
             if (includeDeclaration && externalResolved.hasDeclaration &&
                 !append_lsp_location(state,
+                                     context,
                                      result,
                                      externalResolved.declarationUri,
                                      externalResolved.declarationRange)) {
@@ -1970,6 +2020,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryFindReferences(SZrState *state,
                                                                        &externalDeclaration)) {
         if (includeDeclaration && externalDeclaration.hasDeclaration &&
             !append_lsp_location(state,
+                                 context,
                                  result,
                                  externalDeclaration.declarationUri,
                                  externalDeclaration.declarationRange)) {
@@ -2009,6 +2060,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryFindReferences(SZrState *state,
     }
 
     if (!append_symbol_references_from_tracker(state,
+                                               context,
                                                resolved.analyzer,
                                                resolved.symbol,
                                                includeDeclaration,
@@ -2048,7 +2100,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryGetDocumentHighlights(SZrState *state,
         externalDeclaration.hasDeclaration &&
         externalDeclaration.declarationUri != ZR_NULL &&
         ZrLanguageServer_Lsp_UrisResolveToSameNativePath(externalDeclaration.declarationUri, uri)) {
-        return append_document_highlight(state, result, externalDeclaration.declarationRange, 3);
+        return append_document_highlight(state, context, uri, result, externalDeclaration.declarationRange, 3);
     }
 
     if (!project_try_find_imported_member_resolution(state,
@@ -2064,6 +2116,8 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryGetDocumentHighlights(SZrState *state,
 
     ZrCore_Array_Init(state, &locations, sizeof(SZrLspLocation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     appended = append_imported_member_locations_from_analyzer(state,
+                                                              context,
+                                                              uri,
                                                               analyzer,
                                                               hit.moduleName,
                                                               hit.memberName,

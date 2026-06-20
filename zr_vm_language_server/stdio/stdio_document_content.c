@@ -7,7 +7,8 @@ SZrFileVersion *get_file_version_for_uri(SZrStdioServer *server, SZrString *uri)
     return ZrLanguageServer_IncrementalParser_GetFileVersion(server->context->parser, uri);
 }
 
-static char *apply_single_change(SZrString *uri,
+static char *apply_single_change(SZrStdioServer *server,
+                                 SZrString *uri,
                                  const char *original,
                                  size_t originalLength,
                                  const cJSON *change,
@@ -38,7 +39,7 @@ static char *apply_single_change(SZrString *uri,
     if (rangeJson != NULL && !cJSON_IsNull(rangeJson)) {
         SZrLspRange lspRange;
         SZrFileRange fileRange;
-        if (!parse_range(rangeJson, &lspRange)) {
+        if (!parse_range_for_content(server, original, originalLength, rangeJson, &lspRange)) {
             return NULL;
         }
 
@@ -83,7 +84,8 @@ static char *apply_single_change(SZrString *uri,
     return updated;
 }
 
-char *apply_content_changes(SZrString *uri,
+char *apply_content_changes(SZrStdioServer *server,
+                            SZrString *uri,
                             const char *original,
                             size_t originalLength,
                             const cJSON *changes,
@@ -107,7 +109,7 @@ char *apply_content_changes(SZrString *uri,
         char *updated;
         size_t updatedLength;
 
-        updated = apply_single_change(uri, current, currentLength, change, &updatedLength);
+        updated = apply_single_change(server, uri, current, currentLength, change, &updatedLength);
         if (updated == NULL) {
             free(current);
             return NULL;

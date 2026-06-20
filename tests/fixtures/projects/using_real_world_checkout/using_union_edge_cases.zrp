@@ -1,0 +1,6 @@
+{
+  "name": "using_union_edge_cases",
+  "source": "src",
+  "binary": "bin",
+  "entry": "edge_cases"
+}

@@ -871,6 +871,12 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
 
     pathHash = ZrCore_Module_CalculatePathHash(state, moduleName);
     ZrCore_Module_SetInfo(state, module, moduleName, pathHash, moduleName);
+    if (!native_runtime_metadata_attach_module(state, module, descriptor)) {
+        native_binding_trace_import(state,
+                                    "[zr_native_import] materialize failed module=%s reason=attach_runtime_metadata\n",
+                                    descriptor->moduleName);
+        return ZR_NULL;
+    }
 
     for (index = 0; index < descriptor->typeCount; index++) {
         if (!native_registry_add_type(state, registry, module, descriptor, &descriptor->types[index])) {

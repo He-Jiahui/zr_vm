@@ -582,6 +582,134 @@ static void test_resolved_vm_precall_reserves_byte_frame_storage_beyond_logical_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_resolved_vm_precall_reserves_generated_temp_slots_beyond_declared_stack_size(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    TZrInstruction instructions[4] = {0};
+    TZrStackValuePointer callBase;
+    TZrSize expectedStorageSlots;
+    SZrCallInfo *callInfo;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->stackSize = 2;
+    function->parameterCount = 0;
+    function->instructionsList = instructions;
+    function->instructionsLength = ZR_ARRAY_COUNT(instructions);
+    function->localVariableList = ZR_NULL;
+    function->localVariableLength = 0;
+    function->vmEntryClearStackSizePlusOne = 1u;
+
+    instructions[0].instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(GET_GLOBAL);
+    instructions[0].instruction.operandExtra = 32u;
+    instructions[1].instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(SET_MEMBER);
+    instructions[1].instruction.operandExtra = 3u;
+    instructions[1].instruction.operand.operand1[0] = 32u;
+    instructions[2].instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(RESET_STACK_NULL);
+    instructions[2].instruction.operandExtra = 31u;
+    instructions[3].instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(FUNCTION_RETURN);
+    instructions[3].instruction.operandExtra = 1u;
+    instructions[3].instruction.operand.operand1[0] = 31u;
+
+    expectedStorageSlots = 33u;
+    TEST_ASSERT_EQUAL_UINT32(expectedStorageSlots, ZrCore_Function_GetGeneratedFrameSlotCount(function));
+    TEST_ASSERT_EQUAL_UINT32(expectedStorageSlots, ZrCore_Function_GetFrameStorageSlotCount(function));
+
+    callBase = state->stackTop.valuePointer;
+    callBase = ZrCore_Function_CheckStackAndGc(state, 1 + expectedStorageSlots, callBase);
+    init_function_callable_value(state, callBase, function);
+    for (TZrSize index = function->stackSize; index < expectedStorageSlots; index++) {
+        ZrCore_Value_InitAsInt(state, &callBase[1 + index].value, (TZrInt64)(700 + index));
+        callBase[1 + index].toBeClosedValueOffset = (TZrUInt32)(90u + index);
+    }
+
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = callBase + 1;
+    callInfo = ZrCore_Function_PreCallResolvedVmFunction(state, callBase, function, 0, 1, ZR_NULL);
+
+    TEST_ASSERT_NOT_NULL(callInfo);
+    TEST_ASSERT_EQUAL_PTR(callBase + 1 + expectedStorageSlots, callInfo->functionTop.valuePointer);
+    TEST_ASSERT_EQUAL_PTR(callBase + 1, state->stackTop.valuePointer);
+    for (TZrSize index = function->stackSize; index < expectedStorageSlots; index++) {
+        TEST_ASSERT_EQUAL_UINT32(0u, callBase[1 + index].toBeClosedValueOffset);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(callBase[1 + index].value.type));
+    }
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+typedef struct TestFrameGcVisitContext {
+    TZrSize count;
+    SZrTypeValue *lastValue;
+} TestFrameGcVisitContext;
+
+static void test_frame_gc_visit_value_slot(SZrState *state, SZrTypeValue *value, TZrPtr userData) {
+    TestFrameGcVisitContext *context = (TestFrameGcVisitContext *)userData;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(value);
+    TEST_ASSERT_NOT_NULL(context);
+
+    context->count++;
+    context->lastValue = value;
+}
+
+static void test_frame_gc_visitor_includes_value_layout_slots(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrFunctionFrameSlotLayout *layout;
+    TZrStackValuePointer callBase;
+    TZrStackValuePointer frameBase;
+    SZrStackFramePlace place;
+    TestFrameGcVisitContext context = {0u, ZR_NULL};
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->stackSize = 2;
+    function->parameterCount = 0;
+    function->frameByteSize = (TZrUInt32)(sizeof(SZrTypeValueOnStack) * 4u);
+    function->frameByteAlign = ZR_ALIGN_SIZE;
+    function->frameSlotLayoutLength = 1u;
+    layout = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(*layout),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(layout);
+    memset(layout, 0, sizeof(*layout));
+    layout->stackSlot = 1u;
+    layout->byteOffset = (TZrUInt32)(sizeof(SZrTypeValueOnStack) * 3u);
+    layout->byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    layout->byteAlign = ZR_ALIGN_SIZE;
+    layout->slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    function->frameSlotLayouts = layout;
+
+    callBase = state->stackTop.valuePointer;
+    callBase = ZrCore_Function_CheckStackAndGc(state, 1u + ZrCore_Function_GetFrameStorageSlotCount(function), callBase);
+    TEST_ASSERT_NOT_NULL(callBase);
+    frameBase = callBase + 1;
+    TEST_ASSERT_TRUE(ZrCore_Function_MakeFrameSlotPlace(state, function, frameBase, layout->stackSlot, &place));
+
+    ZrCore_Value_InitAsInt(state, (SZrTypeValue *)place.address, 4242);
+    ZrCore_Value_InitAsInt(state, &frameBase[layout->stackSlot].value, 7);
+
+    TEST_ASSERT_TRUE(ZrCore_Function_VisitFrameGcValues(state,
+                                                        function,
+                                                        frameBase,
+                                                        ZR_NULL,
+                                                        ZR_NULL,
+                                                        test_frame_gc_visit_value_slot,
+                                                        &context));
+    TEST_ASSERT_EQUAL_UINT64(1u, context.count);
+    TEST_ASSERT_EQUAL_PTR(place.address, context.lastValue);
+    TEST_ASSERT_EQUAL_INT64(4242, context.lastValue->value.nativeObject.nativeInt64);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_prepared_resolved_vm_precall_reserves_byte_frame_storage_after_fast_probe_fallback(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -893,6 +1021,8 @@ int main(void) {
     RUN_TEST(test_prepared_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info);
     RUN_TEST(test_prepared_resolved_vm_precall_try_exact_args_steady_state_hits_on_cached_path);
     RUN_TEST(test_resolved_vm_precall_reserves_byte_frame_storage_beyond_logical_slots);
+    RUN_TEST(test_resolved_vm_precall_reserves_generated_temp_slots_beyond_declared_stack_size);
+    RUN_TEST(test_frame_gc_visitor_includes_value_layout_slots);
     RUN_TEST(test_prepared_resolved_vm_precall_reserves_byte_frame_storage_after_fast_probe_fallback);
     RUN_TEST(test_precall_growth_clears_newly_exposed_entry_local_slots_with_dirty_allocator);
     RUN_TEST(test_precall_growth_reuses_cached_zero_capture_closure_across_repeated_growths_with_dirty_allocator);

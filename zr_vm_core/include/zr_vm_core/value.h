@@ -97,13 +97,65 @@ static ZR_FORCE_INLINE void ZrCore_Value_ResetAsNullNoProfile(SZrTypeValue *valu
     value->ownershipWeakRef = ZR_NULL;
 }
 
+static ZR_FORCE_INLINE TZrBool ZrCore_Value_SlotsOverlapNoProfile(const SZrTypeValue *left,
+                                                                  const SZrTypeValue *right) {
+    const TZrByte *leftStart;
+    const TZrByte *leftEnd;
+    const TZrByte *rightStart;
+    const TZrByte *rightEnd;
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    leftStart = (const TZrByte *)left;
+    leftEnd = leftStart + sizeof(SZrTypeValue);
+    rightStart = (const TZrByte *)right;
+    rightEnd = rightStart + sizeof(SZrTypeValue);
+    return (TZrBool)(leftStart < rightEnd && rightStart < leftEnd);
+}
+
+static ZR_FORCE_INLINE TZrBool ZrCore_Value_HasOwnershipHeapObjectNoProfile(const SZrTypeValue *value) {
+    return (TZrBool)(value != ZR_NULL &&
+                     value->isGarbageCollectable &&
+                     !ZR_VALUE_IS_TYPE_NULL(value->type) &&
+                     value->value.object != ZR_NULL);
+}
+
+static ZR_FORCE_INLINE TZrBool ZrCore_Value_HasReleasableOwnershipNoProfile(const SZrTypeValue *value) {
+    if (value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (value->ownershipKind) {
+        case ZR_OWNERSHIP_VALUE_KIND_UNIQUE:
+        case ZR_OWNERSHIP_VALUE_KIND_SHARED:
+        case ZR_OWNERSHIP_VALUE_KIND_LOANED:
+            return (TZrBool)(ZrCore_Value_HasOwnershipHeapObjectNoProfile(value) &&
+                             value->ownershipControl != ZR_NULL);
+        case ZR_OWNERSHIP_VALUE_KIND_WEAK:
+            return (TZrBool)(ZrCore_Value_HasOwnershipHeapObjectNoProfile(value) &&
+                             value->ownershipControl != ZR_NULL &&
+                             value->ownershipWeakRef != ZR_NULL);
+        case ZR_OWNERSHIP_VALUE_KIND_BORROWED:
+            return ZrCore_Value_HasOwnershipHeapObjectNoProfile(value);
+        case ZR_OWNERSHIP_VALUE_KIND_NONE:
+        default:
+            return ZR_FALSE;
+    }
+}
+
 static ZR_FORCE_INLINE void ZrCore_Value_PrepareDestinationForOverwriteNoProfile(struct SZrState *state,
                                                                                   SZrTypeValue *destination) {
     ZR_ASSERT(destination != ZR_NULL);
 
     if (ZR_UNLIKELY(destination->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE)) {
-        ZR_ASSERT(state != ZR_NULL);
-        ZrCore_Ownership_ReleaseValue(state, destination);
+        if (ZR_LIKELY(state != ZR_NULL &&
+                      ZrCore_Value_HasReleasableOwnershipNoProfile(destination))) {
+            ZrCore_Ownership_ReleaseValue(state, destination);
+        } else {
+            ZrCore_Value_ResetAsNullNoProfile(destination);
+        }
         return;
     }
 

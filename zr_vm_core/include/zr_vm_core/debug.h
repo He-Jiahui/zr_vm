@@ -12,6 +12,7 @@ struct SZrTypeValue;
 struct SZrObjectPrototype;
 struct SZrObject;
 struct SZrFunction;
+struct SZrClosure;
 enum EZrDebugHookEvent {
     ZR_DEBUG_HOOK_EVENT_CALL,
     ZR_DEBUG_HOOK_EVENT_RETURN,
@@ -56,12 +57,28 @@ enum EZrDebugScope {
 
 typedef enum EZrDebugScope EZrDebugScope;
 
+enum EZrDebugNameWhat {
+    ZR_DEBUG_NAMEWHAT_UNKNOWN = 0,
+    ZR_DEBUG_NAMEWHAT_GLOBAL,
+    ZR_DEBUG_NAMEWHAT_LOCAL,
+    ZR_DEBUG_NAMEWHAT_FIELD,
+    ZR_DEBUG_NAMEWHAT_METHOD,
+    ZR_DEBUG_NAMEWHAT_UPVALUE
+};
+
+typedef enum EZrDebugNameWhat EZrDebugNameWhat;
+
+struct ZR_STRUCT_ALIGN SZrDebugActivation {
+    struct SZrCallInfo *callInfo;
+    struct SZrFunction *function;
+};
+
+typedef struct SZrDebugActivation SZrDebugActivation;
 
 struct ZR_STRUCT_ALIGN SZrDebugInfo {
     EZrDebugHookEvent event;
 
     TZrNativeString name;
-    // todo
     EZrDebugScope scope;
 
     TZrBool isNative;
@@ -82,6 +99,7 @@ struct ZR_STRUCT_ALIGN SZrDebugInfo {
     TZrUInt32 transferStart;
     TZrUInt32 transferCount;
     struct SZrCallInfo *callInfo;
+    EZrDebugNameWhat nameWhat;
 };
 
 typedef struct SZrDebugInfo SZrDebugInfo;
@@ -98,9 +116,60 @@ typedef TZrDebugSignal (*FZrDebugTraceObserver)(struct SZrState *state,
 
 ZR_CORE_API TZrBool ZrCore_DebugInfo_Get(struct SZrState *state, EZrDebugInfoType type, SZrDebugInfo *debugInfo);
 
+ZR_CORE_API TZrBool ZrCore_Debug_GetStack(struct SZrState *state,
+                                          TZrUInt32 level,
+                                          SZrDebugActivation *outActivation);
+
+ZR_CORE_API TZrBool ZrCore_Debug_GetInfo(struct SZrState *state,
+                                         const SZrDebugActivation *activation,
+                                         EZrDebugInfoType type,
+                                         SZrDebugInfo *outInfo);
+
+ZR_CORE_API void ZrCore_Debug_SetHook(struct SZrState *state,
+                                      FZrDebugHook hook,
+                                      TZrUInt32 mask,
+                                      TZrUInt32 count);
+
+ZR_CORE_API FZrDebugHook ZrCore_Debug_GetHook(struct SZrState *state);
+
+ZR_CORE_API TZrUInt32 ZrCore_Debug_GetHookMask(struct SZrState *state);
+
+ZR_CORE_API TZrUInt32 ZrCore_Debug_GetHookCount(struct SZrState *state);
+
+ZR_CORE_API TZrNativeString ZrCore_Debug_GetLocal(struct SZrState *state,
+                                                  const SZrDebugActivation *activation,
+                                                  TZrInt32 localIndex,
+                                                  struct SZrTypeValue *outValue);
+
+ZR_CORE_API TZrNativeString ZrCore_Debug_SetLocal(struct SZrState *state,
+                                                  const SZrDebugActivation *activation,
+                                                  TZrInt32 localIndex,
+                                                  const struct SZrTypeValue *value);
+
+ZR_CORE_API TZrNativeString ZrCore_Debug_GetUpvalue(struct SZrState *state,
+                                                    struct SZrClosure *closure,
+                                                    TZrInt32 upvalueIndex,
+                                                    struct SZrTypeValue *outValue);
+
+ZR_CORE_API TZrNativeString ZrCore_Debug_SetUpvalue(struct SZrState *state,
+                                                    struct SZrClosure *closure,
+                                                    TZrInt32 upvalueIndex,
+                                                    const struct SZrTypeValue *value);
+
+ZR_CORE_API TZrPtr ZrCore_Debug_GetUpvalueId(struct SZrState *state,
+                                             struct SZrClosure *closure,
+                                             TZrInt32 upvalueIndex);
+
 ZR_CORE_API void ZrCore_Debug_SetTraceObserver(struct SZrState *state,
                                                FZrDebugTraceObserver observer,
                                                TZrPtr userData);
+
+ZR_CORE_API TZrSize ZrCore_Debug_Traceback(struct SZrState *state,
+                                           TZrNativeString prefixMessage,
+                                           TZrUInt32 level,
+                                           TZrUInt32 maxFrames,
+                                           TZrChar *buffer,
+                                           TZrSize bufferSize);
 
 ZR_CORE_API ZR_NO_RETURN void ZrCore_Debug_CallError(struct SZrState *state, struct SZrTypeValue *value);
 

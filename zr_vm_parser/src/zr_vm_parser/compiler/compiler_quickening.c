@@ -60,6 +60,35 @@ static void compiler_quickening_trace_pass(const TZrChar *phase,
             function != ZR_NULL ? (int)function->childFunctionGraphIsBorrowed : 0);
 }
 
+static void compiler_quickening_trace_typeof_slots(const TZrChar *phase,
+                                                   const TZrChar *passName,
+                                                   const SZrFunction *function) {
+    const TZrChar *flag = getenv("ZR_VM_TRACE_TYPEOF");
+
+    if (flag == ZR_NULL || flag[0] == '\0' || strcmp(flag, "0") == 0 ||
+        phase == ZR_NULL || passName == ZR_NULL || function == ZR_NULL ||
+        function->instructionsList == ZR_NULL) {
+        return;
+    }
+
+    for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
+        const TZrInstruction *instruction = &function->instructionsList[index];
+        if ((EZrInstructionCode)instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(TYPEOF)) {
+            fprintf(stderr,
+                    "[quickening-typeof] %s %s func=%p name=%s i=%u e=%u a1=%u b1=%u stack=%u\n",
+                    phase,
+                    passName,
+                    (const void *)function,
+                    function->functionName != ZR_NULL ? ZrCore_String_GetNativeString(function->functionName) : "<entry>",
+                    index,
+                    instruction->instruction.operandExtra,
+                    instruction->instruction.operand.operand1[0],
+                    instruction->instruction.operand.operand1[1],
+                    function->stackSize);
+        }
+    }
+}
+
 static TZrBool compiler_quickening_callsite_alias_trace_enabled(void) {
     const TZrChar *flag = getenv("ZR_VM_TRACE_CALLSITE_CACHE_ALIAS");
     return flag != ZR_NULL && flag[0] != '\0' && strcmp(flag, "0") != 0;
@@ -153,11 +182,14 @@ static void compiler_quickening_trace_callsite_aliases(SZrState *state,
 #define ZR_QUICKENING_RUN_PASS(label, expr) \
     do { \
         compiler_quickening_trace_pass("begin", label, function); \
+        compiler_quickening_trace_typeof_slots("begin", label, function); \
         if (!(expr)) { \
             compiler_quickening_trace_pass("fail", label, function); \
+            compiler_quickening_trace_typeof_slots("fail", label, function); \
             return ZR_FALSE; \
         } \
         compiler_quickening_trace_pass("done", label, function); \
+        compiler_quickening_trace_typeof_slots("done", label, function); \
     } while (0)
 
 static TZrBool compiler_quickening_resolve_index_access_int_constant(const SZrFunction *function,
@@ -221,6 +253,7 @@ static TZrBool compiler_quickening_slot_requires_materialized_stack_store(const 
 static TZrBool compiler_quickening_is_control_only_opcode(EZrInstructionCode opcode);
 static TZrBool compiler_quickening_block_ends_without_fallthrough(const TZrInstruction *instruction);
 static TZrBool compiler_quickening_fold_direct_result_stores(SZrFunction *function);
+static TZrBool compiler_quickening_opcode_is_false_branch(EZrInstructionCode opcode);
 static TZrBool compiler_quickening_fuse_set_member_slot_null_pairs(SZrFunction *function);
 static TZrBool compiler_quickening_fuse_reset_null_not_equal_jump_pairs(SZrFunction *function);
 static EZrInstructionCode compiler_quickening_plain_dest_const_opcode_to_reuse_opcode(EZrInstructionCode opcode);
@@ -3974,7 +4007,8 @@ static TZrBool compiler_quickening_fuse_reset_null_not_equal_jump_pairs(SZrFunct
                     ZR_INSTRUCTION_ENUM(RESET_STACK_NULL) ||
             (EZrInstructionCode)compareInstruction->instruction.operationCode !=
                     ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL) ||
-            (EZrInstructionCode)jumpInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF)) {
+            !compiler_quickening_opcode_is_false_branch(
+                    (EZrInstructionCode)jumpInstruction->instruction.operationCode)) {
             continue;
         }
 
@@ -6837,6 +6871,10 @@ static TZrBool compiler_quickening_direct_result_store_preserves_producer_reads(
     }
 
     opcode = (EZrInstructionCode)producerInstruction->instruction.operationCode;
+    if (compiler_quickening_instruction_may_read_slot(producerInstruction, destinationSlot)) {
+        return ZR_FALSE;
+    }
+
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
             return (TZrUInt32)producerInstruction->instruction.operand.operand1[0] != destinationSlot;
@@ -7547,7 +7585,8 @@ static TZrBool compiler_quickening_try_fold_right_converted_uint_const_arithmeti
     constantInstruction = &function->instructionsList[instructionIndex - 2];
     opcode = (EZrInstructionCode)instruction->instruction.operationCode;
     constOpcode = compiler_quickening_specialized_arithmetic_const_opcode(opcode);
-    if ((EZrInstructionCode)conversionInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(TO_UINT) ||
+    if (((EZrInstructionCode)conversionInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(TO_UINT) &&
+         (EZrInstructionCode)conversionInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED)) ||
         (EZrInstructionCode)constantInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
         constOpcode == ZR_INSTRUCTION_ENUM(ENUM_MAX) ||
         (opcode != ZR_INSTRUCTION_ENUM(ADD_UNSIGNED) &&
@@ -8390,6 +8429,13 @@ static ZR_FORCE_INLINE TZrBool compiler_quickening_opcode_is_sub_int_family(EZrI
            opcode == ZR_INSTRUCTION_ENUM(SUB_SIGNED) || opcode == ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST);
 }
 
+static ZR_FORCE_INLINE TZrBool compiler_quickening_opcode_is_sub_int_const_family(EZrInstructionCode opcode) {
+    return opcode == ZR_INSTRUCTION_ENUM(SUB_INT_CONST) ||
+           opcode == ZR_INSTRUCTION_ENUM(SUB_INT_CONST_PLAIN_DEST) ||
+           opcode == ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST) ||
+           opcode == ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST);
+}
+
 static ZR_FORCE_INLINE TZrBool compiler_quickening_opcode_is_add_int_family(EZrInstructionCode opcode) {
     return opcode == ZR_INSTRUCTION_ENUM(ADD_INT) || opcode == ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST) ||
            opcode == ZR_INSTRUCTION_ENUM(ADD_SIGNED) || opcode == ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST);
@@ -8400,6 +8446,101 @@ static ZR_FORCE_INLINE TZrBool compiler_quickening_opcode_is_add_int_const_famil
            opcode == ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST) ||
            opcode == ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST) ||
            opcode == ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST);
+}
+
+static TZrBool compiler_quickening_try_fold_super_array_fill_int4_const_loop_compact_fused_self_update(
+        SZrFunction *function,
+        const TZrBool *blockStarts,
+        TZrUInt32 instructionIndex) {
+    TZrInstruction *initConstantInstruction;
+    TZrInstruction *subtractInstruction;
+    TZrInstruction *jumpIfGreaterInstruction;
+    TZrInstruction *fillInstruction;
+    TZrInstruction *incrementInstruction;
+    TZrInstruction *jumpBackInstruction;
+    TZrUInt32 indexSlot;
+    TZrUInt32 countSlot;
+    TZrUInt32 receiverBaseSlot;
+    TZrUInt32 fillConstantIndex;
+    TZrUInt32 minusOneConstantIndex;
+    TZrUInt32 incrementOneConstantIndex;
+    TZrInt64 constantValue;
+    TZrUInt32 scan;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL || blockStarts == ZR_NULL ||
+        instructionIndex < 1 || instructionIndex + 4 >= function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    initConstantInstruction = &function->instructionsList[instructionIndex - 1];
+    subtractInstruction = &function->instructionsList[instructionIndex];
+    jumpIfGreaterInstruction = &function->instructionsList[instructionIndex + 1];
+    fillInstruction = &function->instructionsList[instructionIndex + 2];
+    incrementInstruction = &function->instructionsList[instructionIndex + 3];
+    jumpBackInstruction = &function->instructionsList[instructionIndex + 4];
+
+    for (scan = instructionIndex + 1; scan <= instructionIndex + 4; scan++) {
+        if (blockStarts[scan] && scan != instructionIndex + 2) {
+            return ZR_FALSE;
+        }
+    }
+
+    if ((EZrInstructionCode)initConstantInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
+        !compiler_quickening_opcode_is_sub_int_const_family(
+                (EZrInstructionCode)subtractInstruction->instruction.operationCode) ||
+        (EZrInstructionCode)jumpIfGreaterInstruction->instruction.operationCode !=
+                ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
+        (EZrInstructionCode)fillInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4_CONST) ||
+        !compiler_quickening_opcode_is_add_int_const_family(
+                (EZrInstructionCode)incrementInstruction->instruction.operationCode) ||
+        (EZrInstructionCode)jumpBackInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP)) {
+        return ZR_FALSE;
+    }
+
+    if (!compiler_quickening_function_constant_read_int64(function,
+                                                          (TZrUInt32)initConstantInstruction->instruction.operand.operand2[0],
+                                                          &constantValue) ||
+        constantValue != 0) {
+        return ZR_FALSE;
+    }
+
+    indexSlot = initConstantInstruction->instruction.operandExtra;
+    countSlot = subtractInstruction->instruction.operand.operand1[0];
+    receiverBaseSlot = fillInstruction->instruction.operand.operand1[0];
+    fillConstantIndex = fillInstruction->instruction.operand.operand1[1];
+    minusOneConstantIndex = subtractInstruction->instruction.operand.operand1[1];
+    incrementOneConstantIndex = incrementInstruction->instruction.operand.operand1[1];
+    if (!compiler_quickening_function_constant_read_int64(function, minusOneConstantIndex, &constantValue) ||
+        constantValue != 1 ||
+        !compiler_quickening_function_constant_read_int64(function, incrementOneConstantIndex, &constantValue) ||
+        constantValue != 1) {
+        return ZR_FALSE;
+    }
+
+    if (jumpIfGreaterInstruction->instruction.operandExtra != indexSlot ||
+        jumpIfGreaterInstruction->instruction.operand.operand1[0] != subtractInstruction->instruction.operandExtra ||
+        jumpIfGreaterInstruction->instruction.operand.operand1[1] != 3 ||
+        incrementInstruction->instruction.operandExtra != indexSlot ||
+        incrementInstruction->instruction.operand.operand1[0] != indexSlot ||
+        jumpBackInstruction->instruction.operand.operand2[0] != -5) {
+        return ZR_FALSE;
+    }
+
+    if (!compiler_quickening_slot_is_overwritten_before_any_read_linear(function, instructionIndex + 5, indexSlot)) {
+        return ZR_FALSE;
+    }
+
+    subtractInstruction->instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(SUPER_ARRAY_FILL_INT4_CONST);
+    subtractInstruction->instruction.operandExtra = (TZrUInt16)fillConstantIndex;
+    subtractInstruction->instruction.operand.operand1[0] = (TZrUInt16)receiverBaseSlot;
+    subtractInstruction->instruction.operand.operand1[1] = (TZrUInt16)countSlot;
+
+    compiler_quickening_write_nop(initConstantInstruction);
+    compiler_quickening_write_nop(jumpIfGreaterInstruction);
+    compiler_quickening_write_nop(fillInstruction);
+    compiler_quickening_write_nop(incrementInstruction);
+    compiler_quickening_write_nop(jumpBackInstruction);
+    return ZR_TRUE;
 }
 
 static TZrBool compiler_quickening_try_fold_super_array_fill_int4_const_loop_compact_self_update(
@@ -8424,6 +8565,12 @@ static TZrBool compiler_quickening_try_fold_super_array_fill_int4_const_loop_com
     TZrUInt32 incrementOneConstantIndex;
     TZrInt64 constantValue;
     TZrUInt32 scan;
+
+    if (compiler_quickening_try_fold_super_array_fill_int4_const_loop_compact_fused_self_update(function,
+                                                                                                 blockStarts,
+                                                                                                 instructionIndex)) {
+        return ZR_TRUE;
+    }
 
     if (function == ZR_NULL || function->instructionsList == ZR_NULL || blockStarts == ZR_NULL ||
         instructionIndex < 3 || instructionIndex + 6 >= function->instructionsLength) {
@@ -9325,7 +9472,7 @@ static TZrBool compiler_quickening_fold_super_array_fill_int4_const_loops(SZrFun
     TZrUInt32 index;
     TZrBool success = ZR_FALSE;
 
-    if (function == ZR_NULL || function->instructionsList == ZR_NULL || function->instructionsLength < 12) {
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL || function->instructionsLength < 6) {
         return ZR_TRUE;
     }
 
@@ -10280,6 +10427,9 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
     ZR_QUICKENING_RUN_PASS("fuse_jump_if_not_equal_signed_const_late",
                            compiler_quickening_fuse_jump_if_not_equal_signed_const(function));
     ZR_QUICKENING_RUN_PASS("compact_nops_10b", compiler_quickening_compact_nops(state, function));
+    ZR_QUICKENING_RUN_PASS("fold_super_array_fill_int4_const_loops_late",
+                           compiler_quickening_fold_super_array_fill_int4_const_loops(function));
+    ZR_QUICKENING_RUN_PASS("compact_nops_10c", compiler_quickening_compact_nops(state, function));
 
     /*
      * Later peephole passes plus NOP compaction can expose fresh producer ->

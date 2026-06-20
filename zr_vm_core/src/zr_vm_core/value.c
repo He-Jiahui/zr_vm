@@ -21,8 +21,19 @@
 #include "zr_vm_common/zr_runtime_limits_conf.h"
 #include "execution/execution_internal.h"
 
+static TZrBool value_has_barrier_object(const SZrTypeValue *value) {
+    if (value == ZR_NULL ||
+        !value->isGarbageCollectable ||
+        value->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(ZR_VALUE_IS_TYPE_STRING(value->type) ||
+                     ZR_VALUE_IS_TYPE_ZR_ITEM(value->type));
+}
+
 void ZrCore_Value_Barrier(struct SZrState *state, SZrRawObject *object, SZrTypeValue *value) {
-    if (!value->isGarbageCollectable) {
+    if (!value_has_barrier_object(value)) {
         return;
     }
     ZrCore_RawObject_Barrier(state, object, value->value.object);

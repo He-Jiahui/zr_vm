@@ -19,10 +19,15 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/ownership.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+
+#define ZR_DEBUG_INFO_ALL_BITS                                                                                         \
+    (ZR_DEBUG_INFO_SOURCE_FILE | ZR_DEBUG_INFO_LINE_NUMBER | ZR_DEBUG_INFO_CLOSURE | ZR_DEBUG_INFO_TAIL_CALL |         \
+     ZR_DEBUG_INFO_FUNCTION_NAME | ZR_DEBUG_INFO_RETURN_VALUE | ZR_DEBUG_INFO_LINE_TABLE | ZR_DEBUG_INFO_PUSH_FUNCTION)
 
 static TZrNativeString debug_get_string_native(SZrString *stringValue, TZrSize *outLength) {
     TZrNativeString nativeString;
@@ -54,48 +59,447 @@ static TZrUInt32 debug_get_current_instruction_offset(SZrCallInfo *callInfo, SZr
     return (TZrUInt32)(callInfo->context.context.programCounter - function->instructionsList);
 }
 
-TZrBool ZrCore_DebugInfo_Get(struct SZrState *state, EZrDebugInfoType type, SZrDebugInfo *debugInfo) {
-    SZrCallInfo *callInfo;
-    SZrFunction *function;
+static const SZrFunctionLocalVariable *debug_find_active_local(const SZrFunction *function,
+                                                               TZrUInt32 programCounter,
+                                                               TZrInt32 localIndex) {
+    TZrInt32 activeIndex = 0;
+    TZrUInt32 index;
 
-    ZR_UNUSED_PARAMETER(type);
-
-    if (state == ZR_NULL || debugInfo == ZR_NULL) {
-        return ZR_FALSE;
+    if (function == ZR_NULL || function->localVariableList == ZR_NULL || localIndex <= 0) {
+        return ZR_NULL;
     }
 
-    memset(debugInfo, 0, sizeof(*debugInfo));
-    callInfo = state->callInfoList;
-    if (callInfo == ZR_NULL) {
-        return ZR_FALSE;
+    for (index = 0;
+         index < function->localVariableLength && function->localVariableList[index].offsetActivate <= programCounter;
+         index++) {
+        const SZrFunctionLocalVariable *local = &function->localVariableList[index];
+        if (local->name == ZR_NULL || programCounter >= local->offsetDead) {
+            continue;
+        }
+        activeIndex++;
+        if (activeIndex == localIndex) {
+            return local;
+        }
     }
 
-    function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+    return ZR_NULL;
+}
+
+static TZrStackValuePointer debug_get_frame_base(SZrCallInfo *callInfo) {
+    if (callInfo == ZR_NULL || !ZR_CALL_INFO_IS_VM(callInfo) || callInfo->functionBase.valuePointer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return callInfo->functionBase.valuePointer + 1;
+}
+
+static TZrBool debug_frame_slot_is_inline_struct(const SZrFunction *function, TZrUInt32 stackSlot) {
+    const SZrFunctionFrameSlotLayout *slotLayout;
+
     if (function == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    debugInfo->callInfo = callInfo;
-    debugInfo->scope = ZR_DEBUG_SCOPE_FUNCTION;
-    debugInfo->isNative = ZrCore_CallInfo_IsNative(callInfo);
-    debugInfo->name = debug_get_string_native(function->functionName, ZR_NULL);
-    debugInfo->source = debug_get_string_native(function->sourceCodeList, &debugInfo->sourceLength);
-    debugInfo->definedLineStart = function->lineInSourceStart;
-    debugInfo->definedLineEnd = function->lineInSourceEnd;
-    debugInfo->closureValuesCount = function->closureValueLength;
-    debugInfo->parametersCount = function->parameterCount;
-    debugInfo->hasVariableParameters = function->hasVariableArguments;
-    debugInfo->isTailCall = (TZrBool)((callInfo->callStatus & ZR_CALL_STATUS_TAIL_CALL) != 0);
-    debugInfo->transferStart = callInfo->yieldContext.transferStart;
-    debugInfo->transferCount = callInfo->yieldContext.transferCount;
-    debugInfo->currentLine = ZrCore_Exception_FindSourceLine(function,
-                                                             debug_get_current_instruction_offset(callInfo, function));
-    if (debugInfo->currentLine == 0 && state->debugLastFunction == function &&
-        state->debugLastLine != ZR_RUNTIME_DEBUG_HOOK_LINE_NONE) {
-        debugInfo->currentLine = state->debugLastLine;
+    slotLayout = ZrCore_Function_FindFrameSlotLayout(function, stackSlot);
+    return (TZrBool)(slotLayout != ZR_NULL &&
+                     slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT);
+}
+
+static SZrTypeValue *debug_get_frame_value_slot(SZrState *state,
+                                                const SZrFunction *function,
+                                                SZrCallInfo *callInfo,
+                                                TZrUInt32 stackSlot) {
+    TZrStackValuePointer frameBase;
+    const SZrFunctionFrameSlotLayout *slotLayout;
+    SZrStackFramePlace place;
+
+    frameBase = debug_get_frame_base(callInfo);
+    if (frameBase == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (function != ZR_NULL && function->frameSlotLayouts != ZR_NULL && function->frameSlotLayoutLength > 0u) {
+        slotLayout = ZrCore_Function_FindFrameSlotLayout(function, stackSlot);
+        if (slotLayout != ZR_NULL &&
+            slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
+            slotLayout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue) &&
+            ZrCore_Function_MakeFrameSlotPlace(state, function, frameBase, stackSlot, &place)) {
+            return (SZrTypeValue *)place.address;
+        }
+        if (slotLayout != ZR_NULL &&
+            slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            return ZR_NULL;
+        }
+    }
+
+    return ZrCore_Stack_GetValue(frameBase + stackSlot);
+}
+
+static void debug_snapshot_value(SZrState *state, SZrTypeValue *destination, SZrTypeValue *source) {
+    ZR_UNUSED_PARAMETER(state);
+
+    if (destination == ZR_NULL || source == ZR_NULL) {
+        return;
+    }
+
+    *destination = *source;
+    if (!destination->isGarbageCollectable ||
+        ZR_VALUE_IS_TYPE_NULL(destination->type) ||
+        destination->value.object == ZR_NULL) {
+        destination->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+        destination->ownershipControl = ZR_NULL;
+        destination->ownershipWeakRef = ZR_NULL;
+    } else if (destination->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE) {
+        destination->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_BORROWED;
+        destination->ownershipWeakRef = ZR_NULL;
+    }
+}
+
+static TZrDebugSignal debug_instruction_trap_from_hook_signal(TZrUInt32 hookSignal) {
+    return (TZrDebugSignal)(((hookSignal & (ZR_DEBUG_HOOK_MASK_LINE | ZR_DEBUG_HOOK_MASK_COUNT)) != 0u)
+                                    ? hookSignal
+                                    : ZR_DEBUG_SIGNAL_NONE);
+}
+
+static void debug_reset_hook_count(SZrState *state) {
+    if (state != ZR_NULL) {
+        state->debugHookCount = state->baseDebugHookCount;
+    }
+}
+
+static void debug_settraps(SZrCallInfo *callInfo, TZrDebugSignal signal) {
+    for (; callInfo != ZR_NULL; callInfo = callInfo->previous) {
+        if (ZR_CALL_INFO_IS_VM(callInfo)) {
+            callInfo->context.context.trap = signal;
+        }
+    }
+}
+
+TZrBool ZrCore_Debug_GetStack(struct SZrState *state, TZrUInt32 level, SZrDebugActivation *outActivation) {
+    SZrCallInfo *callInfo;
+
+    if (state == ZR_NULL || outActivation == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(outActivation, 0, sizeof(*outActivation));
+    callInfo = state->callInfoList;
+
+    for (; callInfo != ZR_NULL; callInfo = callInfo->previous) {
+        SZrFunction *function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+        if (function == ZR_NULL) {
+            continue;
+        }
+        if (level == 0u) {
+            outActivation->callInfo = callInfo;
+            outActivation->function = function;
+            return ZR_TRUE;
+        }
+        level--;
+    }
+
+    return ZR_FALSE;
+}
+
+TZrBool ZrCore_Debug_GetInfo(struct SZrState *state,
+                             const SZrDebugActivation *activation,
+                             EZrDebugInfoType type,
+                             SZrDebugInfo *outInfo) {
+    SZrCallInfo *callInfo;
+    SZrFunction *function;
+
+    if (state == ZR_NULL || activation == ZR_NULL || outInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(outInfo, 0, sizeof(*outInfo));
+    callInfo = activation->callInfo;
+    function = activation->function;
+    if (callInfo == ZR_NULL || function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    outInfo->callInfo = callInfo;
+
+    if ((type & ZR_DEBUG_INFO_FUNCTION_NAME) != 0) {
+        outInfo->name = debug_get_string_native(function->functionName, ZR_NULL);
+        outInfo->nameWhat = ZR_DEBUG_NAMEWHAT_UNKNOWN;
+        outInfo->scope = ZR_DEBUG_SCOPE_FUNCTION;
+    }
+
+    if ((type & ZR_DEBUG_INFO_SOURCE_FILE) != 0) {
+        outInfo->isNative = ZrCore_CallInfo_IsNative(callInfo);
+        outInfo->source = debug_get_string_native(function->sourceCodeList, &outInfo->sourceLength);
+        outInfo->definedLineStart = function->lineInSourceStart;
+        outInfo->definedLineEnd = function->lineInSourceEnd;
+    }
+
+    if ((type & ZR_DEBUG_INFO_CLOSURE) != 0) {
+        outInfo->closureValuesCount = function->closureValueLength;
+        outInfo->parametersCount = function->parameterCount;
+        outInfo->hasVariableParameters = function->hasVariableArguments;
+    }
+
+    if ((type & ZR_DEBUG_INFO_TAIL_CALL) != 0) {
+        outInfo->isTailCall = (TZrBool)((callInfo->callStatus & ZR_CALL_STATUS_TAIL_CALL) != 0);
+    }
+
+    if ((type & ZR_DEBUG_INFO_RETURN_VALUE) != 0) {
+        outInfo->transferStart = callInfo->yieldContext.transferStart;
+        outInfo->transferCount = callInfo->yieldContext.transferCount;
+    }
+
+    if ((type & ZR_DEBUG_INFO_LINE_NUMBER) != 0) {
+        outInfo->currentLine = ZrCore_Exception_FindSourceLine(function,
+                                                               debug_get_current_instruction_offset(callInfo, function));
+        if (outInfo->currentLine == 0 && state->debugLastFunction == function &&
+            state->debugLastLine != ZR_RUNTIME_DEBUG_HOOK_LINE_NONE) {
+            outInfo->currentLine = state->debugLastLine;
+        }
+    }
+
+    if ((type & ZR_DEBUG_INFO_PUSH_FUNCTION) != 0) {
+        SZrTypeValue *callableValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
+        SZrTypeValue *stackValue;
+
+        if (callableValue == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        ZrCore_Function_CheckStackAndGc(state, 1, state->stackTop.valuePointer);
+        stackValue = ZrCore_Stack_GetValue(state->stackTop.valuePointer);
+        if (stackValue == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        ZrCore_Value_Copy(state, stackValue, callableValue);
+        state->stackTop.valuePointer++;
     }
 
     return ZR_TRUE;
+}
+
+TZrBool ZrCore_DebugInfo_Get(struct SZrState *state, EZrDebugInfoType type, SZrDebugInfo *debugInfo) {
+    SZrDebugActivation activation;
+    EZrDebugInfoType effectiveType = type != 0 ? type : (EZrDebugInfoType)ZR_DEBUG_INFO_ALL_BITS;
+
+    if (!ZrCore_Debug_GetStack(state, 0, &activation)) {
+        if (debugInfo != ZR_NULL) {
+            memset(debugInfo, 0, sizeof(*debugInfo));
+        }
+        return ZR_FALSE;
+    }
+
+    return ZrCore_Debug_GetInfo(state, &activation, effectiveType, debugInfo);
+}
+
+void ZrCore_Debug_SetHook(struct SZrState *state, FZrDebugHook hook, TZrUInt32 mask, TZrUInt32 count) {
+    TZrUInt32 effectiveMask = mask;
+    TZrDebugSignal trapSignal;
+
+    if (state == ZR_NULL) {
+        return;
+    }
+
+    if (count == 0u) {
+        effectiveMask &= ~ZR_DEBUG_HOOK_MASK_COUNT;
+    }
+    if (hook == ZR_NULL || effectiveMask == 0u) {
+        hook = ZR_NULL;
+        effectiveMask = 0u;
+        count = 0u;
+    }
+
+    state->debugHook = hook;
+    state->baseDebugHookCount = count;
+    debug_reset_hook_count(state);
+    state->debugHookSignal = (TZrDebugSignal)effectiveMask;
+    state->allowDebugHook = ZR_TRUE;
+    state->debugLastFunction = ZR_NULL;
+    state->debugLastLine = ZR_RUNTIME_DEBUG_HOOK_LINE_NONE;
+
+    trapSignal = debug_instruction_trap_from_hook_signal(effectiveMask);
+    debug_settraps(state->callInfoList, trapSignal);
+}
+
+FZrDebugHook ZrCore_Debug_GetHook(struct SZrState *state) {
+    return state != ZR_NULL ? state->debugHook : ZR_NULL;
+}
+
+TZrUInt32 ZrCore_Debug_GetHookMask(struct SZrState *state) {
+    return state != ZR_NULL ? state->debugHookSignal : 0u;
+}
+
+TZrUInt32 ZrCore_Debug_GetHookCount(struct SZrState *state) {
+    return state != ZR_NULL ? state->baseDebugHookCount : 0u;
+}
+
+TZrNativeString ZrCore_Debug_GetLocal(struct SZrState *state,
+                                      const SZrDebugActivation *activation,
+                                      TZrInt32 localIndex,
+                                      struct SZrTypeValue *outValue) {
+    SZrCallInfo *callInfo;
+    SZrFunction *function;
+    const SZrFunctionLocalVariable *local;
+    TZrStackValuePointer frameBase;
+    TZrUInt32 programCounter;
+    TZrNativeString name;
+
+    if (outValue != ZR_NULL) {
+        ZrCore_Value_ResetAsNull(outValue);
+    }
+    if (state == ZR_NULL || activation == ZR_NULL || localIndex <= 0) {
+        return ZR_NULL;
+    }
+
+    callInfo = activation->callInfo;
+    function = activation->function;
+    if (callInfo == ZR_NULL || function == ZR_NULL || !ZR_CALL_INFO_IS_VM(callInfo)) {
+        return ZR_NULL;
+    }
+
+    programCounter = debug_get_current_instruction_offset(callInfo, function);
+    local = debug_find_active_local(function, programCounter, localIndex);
+    if (local == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    name = debug_get_string_native(local->name, ZR_NULL);
+    if (outValue == ZR_NULL) {
+        return name;
+    }
+
+    frameBase = debug_get_frame_base(callInfo);
+    if (frameBase == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (debug_frame_slot_is_inline_struct(function, local->stackSlot)) {
+        (void)ZrCore_Function_CopyFrameSlotInlineToObjectValue(state, function, frameBase, local->stackSlot, outValue);
+        return name;
+    }
+
+    {
+        SZrTypeValue *slot = debug_get_frame_value_slot(state, function, callInfo, local->stackSlot);
+        if (slot == ZR_NULL) {
+            return ZR_NULL;
+        }
+        debug_snapshot_value(state, outValue, slot);
+    }
+
+    return name;
+}
+
+TZrNativeString ZrCore_Debug_SetLocal(struct SZrState *state,
+                                      const SZrDebugActivation *activation,
+                                      TZrInt32 localIndex,
+                                      const struct SZrTypeValue *value) {
+    SZrCallInfo *callInfo;
+    SZrFunction *function;
+    const SZrFunctionLocalVariable *local;
+    TZrUInt32 programCounter;
+    SZrTypeValue *slot;
+
+    if (state == ZR_NULL || activation == ZR_NULL || value == ZR_NULL || localIndex <= 0) {
+        return ZR_NULL;
+    }
+
+    callInfo = activation->callInfo;
+    function = activation->function;
+    if (callInfo == ZR_NULL || function == ZR_NULL || !ZR_CALL_INFO_IS_VM(callInfo)) {
+        return ZR_NULL;
+    }
+
+    programCounter = debug_get_current_instruction_offset(callInfo, function);
+    local = debug_find_active_local(function, programCounter, localIndex);
+    if (local == ZR_NULL || debug_frame_slot_is_inline_struct(function, local->stackSlot)) {
+        return ZR_NULL;
+    }
+
+    slot = debug_get_frame_value_slot(state, function, callInfo, local->stackSlot);
+    if (slot == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_Copy(state, slot, value);
+    return debug_get_string_native(local->name, ZR_NULL);
+}
+
+TZrNativeString ZrCore_Debug_GetUpvalue(struct SZrState *state,
+                                        struct SZrClosure *closure,
+                                        TZrInt32 upvalueIndex,
+                                        struct SZrTypeValue *outValue) {
+    TZrUInt32 index;
+    SZrClosureValue *closureValue;
+    SZrTypeValue *value;
+
+    if (outValue != ZR_NULL) {
+        ZrCore_Value_ResetAsNull(outValue);
+    }
+    if (state == ZR_NULL || closure == ZR_NULL || closure->function == ZR_NULL || upvalueIndex <= 0) {
+        return ZR_NULL;
+    }
+
+    index = (TZrUInt32)(upvalueIndex - 1);
+    if (index >= closure->closureValueCount || index >= closure->function->closureValueLength ||
+        closure->closureValuesExtend[index] == ZR_NULL || closure->function->closureValueList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    closureValue = closure->closureValuesExtend[index];
+    value = ZrCore_ClosureValue_GetValue(closureValue);
+    if (value == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (outValue != ZR_NULL) {
+        debug_snapshot_value(state, outValue, value);
+    }
+    return debug_get_string_native(closure->function->closureValueList[index].name, ZR_NULL);
+}
+
+TZrNativeString ZrCore_Debug_SetUpvalue(struct SZrState *state,
+                                        struct SZrClosure *closure,
+                                        TZrInt32 upvalueIndex,
+                                        const struct SZrTypeValue *value) {
+    TZrUInt32 index;
+    SZrClosureValue *closureValue;
+    SZrTypeValue *targetValue;
+
+    if (state == ZR_NULL || closure == ZR_NULL || closure->function == ZR_NULL || value == ZR_NULL ||
+        upvalueIndex <= 0) {
+        return ZR_NULL;
+    }
+
+    index = (TZrUInt32)(upvalueIndex - 1);
+    if (index >= closure->closureValueCount || index >= closure->function->closureValueLength ||
+        closure->closureValuesExtend[index] == ZR_NULL || closure->function->closureValueList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    closureValue = closure->closureValuesExtend[index];
+    targetValue = ZrCore_ClosureValue_GetValue(closureValue);
+    if (targetValue == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_Copy(state, targetValue, value);
+    return debug_get_string_native(closure->function->closureValueList[index].name, ZR_NULL);
+}
+
+TZrPtr ZrCore_Debug_GetUpvalueId(struct SZrState *state, struct SZrClosure *closure, TZrInt32 upvalueIndex) {
+    TZrUInt32 index;
+
+    ZR_UNUSED_PARAMETER(state);
+
+    if (closure == ZR_NULL || closure->function == ZR_NULL || upvalueIndex <= 0) {
+        return ZR_NULL;
+    }
+
+    index = (TZrUInt32)(upvalueIndex - 1);
+    if (index >= closure->closureValueCount || index >= closure->function->closureValueLength ||
+        closure->closureValuesExtend[index] == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return closure->closureValuesExtend[index];
 }
 
 void ZrCore_Debug_SetTraceObserver(struct SZrState *state,
@@ -165,6 +569,21 @@ TZrDebugSignal ZrCore_Debug_TraceExecution(struct SZrState *state, const TZrInst
         } else {
             state->debugLastFunction = function;
             state->debugLastLine = ZR_RUNTIME_DEBUG_HOOK_LINE_NONE;
+        }
+        trap = state->debugHookSignal;
+    }
+
+    if ((state->debugHookSignal & ZR_DEBUG_HOOK_MASK_COUNT) != 0 && state->baseDebugHookCount > 0u) {
+        if (state->debugHookCount > 0u) {
+            state->debugHookCount--;
+        }
+        if (state->debugHookCount == 0u) {
+            debug_reset_hook_count(state);
+            ZrCore_Debug_Hook(state,
+                              ZR_DEBUG_HOOK_EVENT_COUNT,
+                              ZR_RUNTIME_DEBUG_HOOK_LINE_NONE,
+                              0,
+                              0);
         }
         trap = state->debugHookSignal;
     }
@@ -255,6 +674,7 @@ void ZrCore_Debug_Hook(struct SZrState *state, EZrDebugHookEvent event, TZrUInt3
         TZrMemoryOffset top = ZrCore_Stack_SavePointerAsOffset(state, state->stackTop.valuePointer);
         TZrMemoryOffset callInfoTop = ZrCore_Stack_SavePointerAsOffset(state, callInfo->functionTop.valuePointer);
         SZrDebugInfo debugInfo;
+        memset(&debugInfo, 0, sizeof(debugInfo));
         debugInfo.event = event;
         debugInfo.currentLine = line;
         debugInfo.callInfo = callInfo;

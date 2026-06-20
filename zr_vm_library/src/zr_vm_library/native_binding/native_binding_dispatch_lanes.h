@@ -475,7 +475,7 @@ ZR_LIBRARY_API TZrBool native_binding_dispatch_stack_root_callback_lane(
         ZrLibCallContext *context,
         const SZrFunctionStackAnchor *functionBaseAnchor,
         SZrTypeValue *result);
-TZrBool native_binding_dispatch_fast_lane(SZrState *state,
+ZR_LIBRARY_API TZrBool native_binding_dispatch_fast_lane(SZrState *state,
                                           const ZrLibBindingEntry *entry,
                                           ZrLibCallContext *context,
                                           const SZrFunctionStackAnchor *functionBaseAnchor,

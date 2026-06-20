@@ -1,0 +1,50 @@
+class Session {}
+
+runSessionLifecycle(): int {
+    var sessionSeed = Unique<Session>(new Session());
+    var sharedSession = sessionSeed.share();
+    var watcher = sharedSession.weak();
+    var mask = 0;
+
+    using (sharedSession.borrow()) {
+        if (sharedSession != null) {
+            mask = mask + 1;
+        }
+    }
+
+    var cacheSeed = Unique<string>("session-cache");
+    using (cacheSeed.loan()) {
+        if (cacheSeed == null) {
+            mask = mask + 2;
+        }
+    }
+    if (cacheSeed != null) {
+        mask = mask + 4;
+    }
+
+    var detachedSeed = Unique<Session>(new Session());
+    var rawSession = detachedSeed.detach();
+    if (detachedSeed == null && rawSession != null) {
+        mask = mask + 8;
+    }
+
+    var upgradedSession = watcher.upgrade();
+    if (upgradedSession != null) {
+        mask = mask + 16;
+    }
+
+    var releasedShared = sharedSession.release();
+    var releasedUpgrade = upgradedSession.release();
+    var expiredSession = watcher.upgrade();
+    if (releasedShared == null &&
+        releasedUpgrade == null &&
+        sharedSession == null &&
+        upgradedSession == null &&
+        expiredSession == null) {
+        mask = mask + 32;
+    }
+
+    return mask;
+}
+
+return runSessionLifecycle();

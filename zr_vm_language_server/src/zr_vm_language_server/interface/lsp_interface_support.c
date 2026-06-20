@@ -222,27 +222,11 @@ static EZrLspImportedModuleSourceKind receiver_project_member_source_kind(
 static SZrFilePosition lsp_interface_support_file_position_from_offset(const TZrChar *content,
                                                                        TZrSize contentLength,
                                                                        TZrSize offset) {
-    TZrInt32 line = 1;
-    TZrInt32 column = 1;
-
     if (content == ZR_NULL) {
-        return ZrParser_FilePosition_Create(offset, line, column);
+        return ZrParser_FilePosition_Create(offset, 1, 1);
     }
 
-    if (offset > contentLength) {
-        offset = contentLength;
-    }
-
-    for (TZrSize index = 0; index < offset; index++) {
-        if (content[index] == '\n') {
-            line++;
-            column = 1;
-        } else if (content[index] != '\r') {
-            column++;
-        }
-    }
-
-    return ZrParser_FilePosition_Create(offset, line, column);
+    return ZrLanguageServer_LspPositionCodec_ByteOffsetToFilePosition(content, contentLength, offset);
 }
 
 TZrBool ZrLanguageServer_Lsp_StringsEqual(SZrString *left, SZrString *right) {
@@ -1030,7 +1014,62 @@ static SZrString *lsp_diagnostic_message_with_context(SZrState *state, SZrDiagno
     return result != ZR_NULL ? result : diag->message;
 }
 
-void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZrDiagnostic *diag) {
+SZrLspRange ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(SZrLspContext *context,
+                                                               SZrString *uri,
+                                                               SZrFileRange range) {
+    SZrString *rangeUri;
+    SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot;
+    SZrLspRange lspRange;
+    SZrLspPosition emptyPosition;
+
+    rangeUri = range.source != ZR_NULL ? range.source : uri;
+    if (context != ZR_NULL && rangeUri != ZR_NULL) {
+        fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, rangeUri);
+        if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(context->state, fileVersion, &snapshot)) {
+            lspRange = ZrLanguageServer_LspRange_FromFileRangeWithContent(range,
+                                                                          snapshot.content,
+                                                                          snapshot.contentLength);
+            ZrLanguageServer_FileVersionContentSnapshot_Free(context->state, &snapshot);
+            return lspRange;
+        }
+    }
+
+    emptyPosition.line = 0;
+    emptyPosition.character = 0;
+    lspRange.start = emptyPosition;
+    lspRange.end = emptyPosition;
+    return lspRange;
+}
+
+SZrLspPosition ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(SZrLspContext *context,
+                                                                        SZrString *uri,
+                                                                        SZrFilePosition position) {
+    SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot;
+    SZrLspPosition lspPosition;
+
+    if (context != ZR_NULL && uri != ZR_NULL) {
+        fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+        if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(context->state, fileVersion, &snapshot)) {
+            lspPosition = ZrLanguageServer_LspPosition_FromFilePositionWithContent(position,
+                                                                                   snapshot.content,
+                                                                                   snapshot.contentLength);
+            ZrLanguageServer_FileVersionContentSnapshot_Free(context->state, &snapshot);
+            return lspPosition;
+        }
+    }
+
+    lspPosition.line = 0;
+    lspPosition.character = 0;
+    return lspPosition;
+}
+
+static void lsp_append_diagnostic_internal(SZrState *state,
+                                           SZrLspContext *context,
+                                           SZrString *uri,
+                                           SZrArray *result,
+                                           SZrDiagnostic *diag) {
     SZrLspDiagnostic *lspDiag;
 
     if (state == ZR_NULL || result == ZR_NULL || diag == ZR_NULL || should_suppress_parser_diagnostic(diag)) {
@@ -1042,7 +1081,7 @@ void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZ
         return;
     }
 
-    lspDiag->range = ZrLanguageServer_LspRange_FromFileRange(diag->location);
+    lspDiag->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, diag->location);
     lspDiag->severity = (TZrInt32)diag->severity + 1;
     lspDiag->code = diag->code;
     lspDiag->message = lsp_diagnostic_message_with_context(state, diag);
@@ -1060,12 +1099,26 @@ void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZ
         }
 
         memset(&lspRelated, 0, sizeof(lspRelated));
-        lspRelated.location.uri = related->location.source;
-        lspRelated.location.range = ZrLanguageServer_LspRange_FromFileRange(related->location);
+        lspRelated.location.uri = related->location.source != ZR_NULL ? related->location.source : uri;
+        lspRelated.location.range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context,
+                                                                                       uri,
+                                                                                       related->location);
         lspRelated.message = related->message;
         ZrCore_Array_Push(state, &lspDiag->relatedInformation, &lspRelated);
     }
     ZrCore_Array_Push(state, result, &lspDiag);
+}
+
+void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZrDiagnostic *diag) {
+    lsp_append_diagnostic_internal(state, ZR_NULL, ZR_NULL, result, diag);
+}
+
+void ZrLanguageServer_Lsp_AppendDiagnosticForDocument(SZrState *state,
+                                                      SZrLspContext *context,
+                                                      SZrString *uri,
+                                                      SZrArray *result,
+                                                      SZrDiagnostic *diag) {
+    lsp_append_diagnostic_internal(state, context, uri, result, diag);
 }
 
 static TZrInt32 symbol_type_to_lsp_kind(EZrSymbolType type) {
@@ -1086,7 +1139,10 @@ static TZrInt32 symbol_type_to_lsp_kind(EZrSymbolType type) {
     }
 }
 
-SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformation(SZrState *state, SZrSymbol *symbol) {
+static SZrLspSymbolInformation *lsp_create_symbol_information_internal(SZrState *state,
+                                                                       SZrLspContext *context,
+                                                                       SZrString *uri,
+                                                                       SZrSymbol *symbol) {
     SZrLspSymbolInformation *info;
     if (state == ZR_NULL || symbol == ZR_NULL) {
         return ZR_NULL;
@@ -1101,8 +1157,22 @@ SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformation(SZrState *
     info->kind = symbol_type_to_lsp_kind(symbol->type);
     info->containerName = ZR_NULL;
     info->location.uri = symbol->location.source;
-    info->location.range = ZrLanguageServer_LspRange_FromFileRange(symbol->location);
+    info->location.range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context,
+                                                                              uri,
+                                                                              symbol->location);
     return info;
+}
+
+SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformation(SZrState *state, SZrSymbol *symbol) {
+    return lsp_create_symbol_information_internal(state, ZR_NULL, ZR_NULL, symbol);
+}
+
+SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformationForDocument(
+    SZrState *state,
+    SZrLspContext *context,
+    SZrString *uri,
+    SZrSymbol *symbol) {
+    return lsp_create_symbol_information_internal(state, context, uri, symbol);
 }
 
 static SZrString *extract_identifier_name_from_node(SZrAstNode *node) {

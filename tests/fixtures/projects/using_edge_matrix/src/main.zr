@@ -1,0 +1,33 @@
+union Option<T> {
+    None;
+    @Some(value: T);
+}
+
+union Packet {
+    Empty;
+    @Data { first: int; second: int; third: int; }
+}
+
+union Choice {
+    Empty;
+    @Num(value: int);
+}
+
+using [choiceValue] = Choice.Num(64);
+
+var first = 1000;
+var second = 2000;
+var third = 3000;
+var packet: Packet = Packet.Data { first: 6, second: 7, third: 8 };
+using {a: first, second, c: third} = packet;
+
+using [directGeneric] = Option<int>.Some(76);
+using var [directGenericVar] = Option<int>.Some(76);
+
+var total = choiceValue + (a * second + c) + directGeneric + directGenericVar;
+
+if (total == 266) {
+    return "USING_EDGE_MATRIX_PASS 266";
+}
+
+return "USING_EDGE_MATRIX_FAIL";

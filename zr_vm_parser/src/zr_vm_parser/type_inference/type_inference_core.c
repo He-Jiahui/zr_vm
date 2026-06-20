@@ -961,6 +961,10 @@ static TZrBool current_generic_context_contains_type_name_inference(SZrCompilerS
                 generic = cs->currentTypeNode->data.interfaceDeclaration.generic;
                 break;
 
+            case ZR_AST_UNION_DECLARATION:
+                generic = cs->currentTypeNode->data.unionDeclaration.generic;
+                break;
+
             default:
                 break;
         }
@@ -1873,6 +1877,33 @@ static TZrBool inferred_type_satisfies_owner_constraint(const SZrInferredType *a
            actualType->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE;
 }
 
+static const TZrChar *ownership_constraint_qualifier_name(EZrOwnershipQualifier qualifier) {
+    switch (qualifier) {
+        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
+            return "unique";
+        case ZR_OWNERSHIP_QUALIFIER_SHARED:
+            return "shared";
+        case ZR_OWNERSHIP_QUALIFIER_WEAK:
+            return "weak";
+        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
+            return "borrow";
+        case ZR_OWNERSHIP_QUALIFIER_LOANED:
+            return "loan";
+        case ZR_OWNERSHIP_QUALIFIER_NONE:
+        default:
+            return "owner";
+    }
+}
+
+static TZrBool inferred_type_satisfies_specific_owner_constraint(const SZrInferredType *actualType,
+                                                                 EZrOwnershipQualifier requiredQualifier) {
+    if (requiredQualifier == ZR_OWNERSHIP_QUALIFIER_NONE) {
+        return inferred_type_satisfies_owner_constraint(actualType);
+    }
+
+    return actualType != ZR_NULL && actualType->ownershipQualifier == requiredQualifier;
+}
+
 static TZrBool inferred_type_satisfies_constraint(SZrCompilerState *cs,
                                                   const SZrInferredType *actualType,
                                                   SZrString *constraintTypeName) {
@@ -2302,6 +2333,25 @@ static void format_generic_call_constraint_failure(TZrChar *diagnosticBuffer,
     snprintf(diagnosticBuffer, diagnosticBufferSize, detailFormat, argumentTypeText);
 }
 
+static void format_generic_call_ownership_constraint_failure(TZrChar *diagnosticBuffer,
+                                                             TZrSize diagnosticBufferSize,
+                                                             SZrString *argumentTypeName,
+                                                             EZrOwnershipQualifier requiredQualifier) {
+    const TZrChar *argumentTypeText = argumentTypeName != ZR_NULL
+                                              ? ZrCore_String_GetNativeString(argumentTypeName)
+                                              : "<unknown>";
+
+    if (diagnosticBuffer == ZR_NULL || diagnosticBufferSize == 0) {
+        return;
+    }
+
+    snprintf(diagnosticBuffer,
+             diagnosticBufferSize,
+             "generic argument '%s' does not satisfy %s ownership constraint",
+             argumentTypeText,
+             ownership_constraint_qualifier_name(requiredQualifier));
+}
+
 ZR_PARSER_API EZrGenericCallResolveStatus validate_generic_call_bindings_constraints(
         SZrCompilerState *cs,
         const SZrArray *bindings,
@@ -2383,6 +2433,18 @@ ZR_PARSER_API EZrGenericCallResolveStatus validate_generic_call_bindings_constra
                                                    "generic argument '%s' does not satisfy new() constraint",
                                                    argumentTypeName,
                                                    ZR_NULL);
+            ZrCore_Array_Free(cs->state, &genericParametersSnapshot);
+            ZrCore_Array_Free(cs->state, &argumentTypeNames);
+            return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+        }
+
+        if (parameterInfo->requiredOwnershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE &&
+            !inferred_type_satisfies_specific_owner_constraint(&binding->inferredType,
+                                                               parameterInfo->requiredOwnershipQualifier)) {
+            format_generic_call_ownership_constraint_failure(diagnosticBuffer,
+                                                             diagnosticBufferSize,
+                                                             argumentTypeName,
+                                                             parameterInfo->requiredOwnershipQualifier);
             ZrCore_Array_Free(cs->state, &genericParametersSnapshot);
             ZrCore_Array_Free(cs->state, &argumentTypeNames);
             return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
@@ -2539,6 +2601,22 @@ TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *
             ZrCore_Array_Free(cs->state, &argumentTypeNames);
             return ZR_FALSE;
         }
+        if (parameterInfo->requiredOwnershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE &&
+            !inferred_type_satisfies_specific_owner_constraint(argumentType,
+                                                               parameterInfo->requiredOwnershipQualifier)) {
+            static TZrChar errorMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
+            SZrFileRange errorLocation;
+            snprintf(errorMessage,
+                     sizeof(errorMessage),
+                     "Generic argument '%s' does not satisfy %s ownership constraint",
+                     ZrCore_String_GetNativeString(argumentType->typeName != ZR_NULL ? argumentType->typeName : baseName),
+                     ownership_constraint_qualifier_name(parameterInfo->requiredOwnershipQualifier));
+            memset(&errorLocation, 0, sizeof(errorLocation));
+            ZrParser_Compiler_Error(cs, errorMessage, errorLocation);
+            free_inferred_type_array(cs->state, &argumentTypes);
+            ZrCore_Array_Free(cs->state, &argumentTypeNames);
+            return ZR_FALSE;
+        }
         if (parameterInfo->requiresOwner && !inferred_type_satisfies_owner_constraint(argumentType)) {
             static TZrChar errorMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
             SZrFileRange errorLocation;
@@ -2614,6 +2692,7 @@ TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *
         closedPrototype.accessModifier = openPrototypeSnapshot.accessModifier;
         closedPrototype.modifierFlags = openPrototypeSnapshot.modifierFlags;
         closedPrototype.isImportedNative = openPrototypeSnapshot.isImportedNative;
+        closedPrototype.isNativeRuntime = openPrototypeSnapshot.isNativeRuntime;
         closedPrototype.protocolMask = openPrototypeSnapshot.protocolMask;
         closedPrototype.extendsTypeName = substitute_generic_type_name(cs->state,
                                                                        openPrototypeSnapshot.extendsTypeName,

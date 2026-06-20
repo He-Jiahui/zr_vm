@@ -6062,6 +6062,102 @@ static void test_type_inference_source_owner_constraint_is_enforced(void) {
     TEST_DIVIDER();
 }
 
+static void test_type_inference_source_specific_owner_constraints_are_enforced(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Specific Owner Constraints Are Enforced";
+
+    typedef struct SZrSpecificOwnerConstraintCase {
+        const char *sourceName;
+        const char *source;
+        const char *diagnosticNeedle;
+    } SZrSpecificOwnerConstraintCase;
+
+    const SZrSpecificOwnerConstraintCase cases[] = {
+        {
+                "source_unique_constraint_test.zr",
+                "class Resource { }\n"
+                "func requireUnique<T>(): int where T: unique { return 1; }\n"
+                "requireUnique<Unique<Resource>>();\n"
+                "requireUnique<Shared<Resource>>();",
+                "unique ownership constraint",
+        },
+        {
+                "source_shared_constraint_test.zr",
+                "class Resource { }\n"
+                "func requireShared<T>(): int where T: shared { return 1; }\n"
+                "requireShared<Shared<Resource>>();\n"
+                "requireShared<Unique<Resource>>();",
+                "shared ownership constraint",
+        },
+        {
+                "source_weak_constraint_test.zr",
+                "class Resource { }\n"
+                "func requireWeak<T>(): int where T: weak { return 1; }\n"
+                "requireWeak<Weak<Resource>>();\n"
+                "requireWeak<Shared<Resource>>();",
+                "weak ownership constraint",
+        },
+    };
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    for (TZrSize caseIndex = 0; caseIndex < sizeof(cases) / sizeof(cases[0]); caseIndex++) {
+        const SZrSpecificOwnerConstraintCase *testCase = &cases[caseIndex];
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     (TZrNativeString)testCase->sourceName,
+                                                     strlen(testCase->sourceName));
+        SZrAstNode *ast = ZrParser_Parse(state, testCase->source, strlen(testCase->source), sourceName);
+        SZrAstNode *successExpr = ZR_NULL;
+        SZrAstNode *failureExpr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(4, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        successExpr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
+        failureExpr = ast->data.script.statements->nodes[3]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(successExpr);
+        TEST_ASSERT_NOT_NULL(failureExpr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, successExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, failureExpr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, testCase->diagnosticNeedle));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_type_inference_source_import_function_call_uses_exported_signature(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Source Import Function Call Uses Exported Signature";
@@ -8079,6 +8175,7 @@ int main(void) {
     RUN_TEST(test_type_inference_source_generic_inheritance_substitutes_closed_base_member_type);
     RUN_TEST(test_type_inference_source_class_and_struct_constraints_are_enforced);
     RUN_TEST(test_type_inference_source_owner_constraint_is_enforced);
+    RUN_TEST(test_type_inference_source_specific_owner_constraints_are_enforced);
     RUN_TEST(test_type_inference_container_dotted_generic_new_returns_closed_registered_type);
     RUN_TEST(test_type_inference_container_computed_access_uses_registered_meta_types);
     RUN_TEST(test_type_inference_ffi_pointer_helpers_propagate_registered_pointer_types);

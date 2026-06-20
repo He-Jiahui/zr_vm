@@ -31,6 +31,74 @@ static TZrUInt32 count_opcode_recursive(const SZrFunction *function, EZrInstruct
     return count;
 }
 
+static const TZrInstruction *find_first_opcode_recursive(const SZrFunction *function,
+                                                         EZrInstructionCode opcode,
+                                                         TZrUInt32 depth) {
+    TZrUInt32 index;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(depth < 64);
+
+    for (index = 0; index < function->instructionsLength; index++) {
+        if ((EZrInstructionCode)function->instructionsList[index].instruction.operationCode == opcode) {
+            return &function->instructionsList[index];
+        }
+    }
+
+    if (function->childFunctionList != ZR_NULL) {
+        for (index = 0; index < function->childFunctionLength; index++) {
+            const TZrInstruction *match =
+                    find_first_opcode_recursive(&function->childFunctionList[index], opcode, depth + 1);
+            if (match != ZR_NULL) {
+                return match;
+            }
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool string_equals_native(const SZrString *name, const char *text) {
+    TZrNativeString nativeName;
+
+    if (name == ZR_NULL || text == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nativeName = name->shortStringLength < ZR_VM_LONG_STRING_FLAG
+            ? ZrCore_String_GetNativeStringShort((SZrString *)name)
+            : ZrCore_String_GetNativeString((SZrString *)name);
+    return nativeName != ZR_NULL && strcmp(nativeName, text) == 0;
+}
+
+static const SZrFunctionTypedLocalBinding *find_typed_local_binding_recursive(const SZrFunction *function,
+                                                                              const char *name,
+                                                                              TZrUInt32 depth) {
+    TZrUInt32 index;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(depth < 64);
+
+    for (index = 0; index < function->typedLocalBindingLength; index++) {
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+        if (string_equals_native(binding->name, name)) {
+            return binding;
+        }
+    }
+
+    if (function->childFunctionList != ZR_NULL) {
+        for (index = 0; index < function->childFunctionLength; index++) {
+            const SZrFunctionTypedLocalBinding *match =
+                    find_typed_local_binding_recursive(&function->childFunctionList[index], name, depth + 1);
+            if (match != ZR_NULL) {
+                return match;
+            }
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static SZrFunction *compile_source(SZrState *state, const char *source) {
     SZrString *sourceName;
 
@@ -80,9 +148,42 @@ static void test_typed_unsigned_to_float_cast_emits_direct_opcode_and_executes(v
 
     TEST_ASSERT_GREATER_THAN_UINT32(0u, count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED), 0));
     TEST_ASSERT_EQUAL_UINT32(0u, count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(TO_FLOAT), 0));
+    {
+        const TZrInstruction *conversion =
+                find_first_opcode_recursive(function, ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED), 0);
+        const SZrFunctionTypedLocalBinding *localBinding =
+                find_typed_local_binding_recursive(function, "u", 0);
+        TEST_ASSERT_NOT_NULL(conversion);
+        TEST_ASSERT_NOT_NULL(localBinding);
+        TEST_ASSERT_EQUAL_UINT32(localBinding->stackSlot, conversion->instruction.operand.operand1[0]);
+    }
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, function, &result));
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_FLOAT(result.type));
     TEST_ASSERT_DOUBLE_WITHIN(0.0001, 9.0, result.value.nativeObject.nativeDouble);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_typed_unsigned_binary_arithmetic_emits_direct_opcode_and_executes(void) {
+    const char *source =
+            "var u: uint = <uint>9;\n"
+            "var v: uint = <uint>4;\n"
+            "var sum: uint = u + v;\n"
+            "return <int> sum;\n";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function = ZR_NULL;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = compile_source(state, source);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_UNSIGNED), 0));
+    TEST_ASSERT_EQUAL_UINT32(0u, count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD), 0));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(13, result);
 
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
@@ -209,6 +310,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_typed_signed_to_float_cast_emits_direct_opcode_and_executes);
     RUN_TEST(test_typed_unsigned_to_float_cast_emits_direct_opcode_and_executes);
+    RUN_TEST(test_typed_unsigned_binary_arithmetic_emits_direct_opcode_and_executes);
     RUN_TEST(test_typed_float_to_signed_cast_emits_direct_opcode_and_executes);
     RUN_TEST(test_typed_unsigned_to_signed_cast_emits_direct_opcode_and_executes);
     RUN_TEST(test_typed_unsigned_to_signed_cast_wraps_high_bit_like_unchecked_csharp);

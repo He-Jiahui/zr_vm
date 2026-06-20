@@ -2,15 +2,33 @@
 related_code:
   - zr_vm_language_server/include/zr_vm_language_server/conf.h
   - zr_vm_language_server/include/zr_vm_language_server/lsp_interface.h
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_position_codec.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_position_codec.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_source_spans.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_imports.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_import_chain.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.h
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_decorator_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_super_navigation.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_token_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_document_links.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_editor_features.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_code_actions.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_folding_ranges.c
+  - zr_vm_language_server/include/zr_vm_language_server/incremental_parser.h
+  - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/stdio/stdio_editor_features.c
   - zr_vm_language_server/stdio/stdio_linked_editing.c
   - zr_vm_language_server/stdio/stdio_moniker.c
@@ -19,6 +37,7 @@ related_code:
   - zr_vm_language_server/stdio/stdio_inline_value_scan.h
   - zr_vm_language_server/stdio/stdio_inline_value_scan.c
   - zr_vm_language_server/stdio/stdio_requests.c
+  - zr_vm_language_server/stdio/stdio_position_encoding.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
   - zr_vm_language_server/CMakeLists.txt
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
@@ -31,14 +50,30 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
 implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_source_spans.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_imports.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_import_chain.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.h
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_decorator_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_super_navigation.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_token_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_document_links.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_editor_features.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_code_actions.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_folding_ranges.c
+  - zr_vm_language_server/include/zr_vm_language_server/incremental_parser.h
+  - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/stdio/stdio_editor_features.c
   - zr_vm_language_server/stdio/stdio_linked_editing.c
   - zr_vm_language_server/stdio/stdio_moniker.c
@@ -47,7 +82,10 @@ implementation_files:
   - zr_vm_language_server/stdio/stdio_inline_value_scan.h
   - zr_vm_language_server/stdio/stdio_inline_value_scan.c
   - zr_vm_language_server/stdio/stdio_requests.c
+  - zr_vm_language_server/stdio/stdio_position_encoding.c
   - zr_vm_language_server/include/zr_vm_language_server/lsp_interface.h
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_position_codec.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_position_codec.h
   - zr_vm_language_server/include/zr_vm_language_server/conf.h
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
@@ -65,9 +103,21 @@ tests:
   - tests/language_server/test_lsp_declaration_parser_diagnostics.c
   - tests/language_server/test_lsp_statement_parser_diagnostics.c
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_position_mapping.c
+  - tests/language_server/test_lsp_position_fuzz.c
+  - tests/language_server/test_lsp_decorator_utf16_ranges.c
+  - tests/language_server/test_lsp_code_lens_utf16_ranges.c
+  - tests/language_server/test_lsp_super_utf16_ranges.c
+  - tests/language_server/test_lsp_token_metadata_utf16_ranges.c
+  - tests/language_server/test_lsp_project_utf16_ranges.c
+  - tests/language_server/test_lsp_source_contracts.c
+  - tests/language_server/test_incremental_parser.c
+  - tests/language_server/test_lsp_expression_fact_hover.c
   - tests/language_server/test_lsp_local_semantic_hover.c
   - tests/language_server/test_lsp_computed_member_hover.c
+  - tests/acceptance/2026-06-20-lsp-position-stage0.md
   - tests/language_server/stdio_smoke.js
+  - tests/language_server/stdio_position_encoding_smoke.js
   - tests/language_server/stdio_inline_value_semantic_smoke.js
   - tests/CMakeLists.txt
 doc_type: module-detail
@@ -110,12 +160,12 @@ doc_type: module-detail
 `lsp_editor_features.c` / `lsp_code_actions.c` 是新的公共接口实现文件，避免继续扩大 `lsp_interface.c`。它们只负责编辑器形态的结果建模：
 
 - formatting 生成 `SZrLspTextEdit`，当前使用基于 brace/block 的保守缩进。
-- code action 使用 `SZrLspCodeAction`，第一阶段提供 `source.organizeImports` 和缺失分号 `quickfix`，返回最小 `TextEdit`；缺失分号 quickfix 会先确认 trimmed statement start 位于 code span，避免 block comment 正文中的 `return ...` 文本触发编辑。
+- code action 使用 `SZrLspCodeAction`，第一阶段提供 `source.organizeImports`、缺失 import quickfix 和缺失分号 `quickfix`，返回最小 `TextEdit`；code action 入口会先获取文件内容 owned snapshot，再把显式 content bytes 传给缺失 import alias/insert-offset 扫描和缺失分号 quickfix；缺失分号 quickfix 会先确认 trimmed statement start 位于 code span，避免 block comment 正文中的 `return ...` 文本触发编辑。
 - folding / selection range 从当前文档文本结构生成轻量结构范围，包含 block、连续 import/comment region，以及 word -> line -> block selection chain。
 - document link 扫描 `%import("...")` 字面量、`.zrp` 的 `source` / `binary` / `entry` 路径，以及 native virtual declaration 里的 module link；import 优先复用 definition 查询结果作为跳转目标。
 - declaration / typeDefinition / implementation 当前复用 definition 查询，保证和已有导航结果一致。
 - code lens 当前为函数/类型提供引用计数，并为 code span 中的 `%test(...)` 提供可运行入口；comment/string 中的 `%test(...)` 文本不会生成 run CodeLens。
-- call hierarchy 当前实现 prepare 和同文件直接 incoming/outgoing calls；incoming/outgoing 的 raw call scan 会先过滤 line comment、block comment 和 string literal 中的 call-looking 文本，例如 `helper(value)`；type hierarchy 当前返回同文件直接继承/派生关系。
+- call hierarchy 当前实现 prepare 和同文件直接 incoming/outgoing calls；incoming/outgoing 的 raw call scan 会先过滤 line comment、block comment 和 string literal 中的 call-looking 文本，例如 `helper(value)`；type hierarchy 当前返回同文件直接继承/派生关系；call/type hierarchy scan 会先获取 opened document owned snapshot，再读取同一份 content bytes。
 - pull diagnostics 复用现有 diagnostics 生成逻辑，不替代 `publishDiagnostics` 推送模型；`publishDiagnostics` / pull diagnostics 都保留 parser 结构化诊断 code/message/suggestion，例如空 `if ()` / `while ()` / `switch ()` 条件会报告 `missing_condition`，`if (ready { ... }`、`while (ready { ... }` 和 `switch (choice { ... }` 会报告 `missing_condition_close`，`func pick(value: int: int { ... }`、`class Box { func read(value: int: int { ... } }`、`interface Readable { read(value: int: int; }`、`interface Callable { @call(value: int: int; }`、`%extern("fixture") { NativeAdd(value: int: int; }` 和 `%extern("fixture") { delegate Callback(value: int: int; }` 会报告 `missing_parameter_list_close`，`return [1 2];` 会报告 `missing_array_element_separator`，`{a: 1 b: 2}` 会报告 `missing_object_property_separator`，`return 1\nvar next = 2;`、`var seed = 1\nvar next = 2;`、`%module "main"\nvar next = 2;`、`break\nvar next = 2;`、`continue\nvar next = 2;`、`throw 1\nvar next = 2;`、`out 1\nvar next = 2;` 和 `%using resource\nvar next = 2;` 会报告 `missing_statement_semicolon`，而不是只暴露 expected-token 信息。
 - pull diagnostics 也保留 interface method signature terminator 的结构化诊断：`interface Readable { read(value: int): int }` 会报告 `missing_statement_semicolon`、`Missing ';' after interface method signature statement` 和补 `;` 的 suggestion，而不是只暴露 expected-token 信息。
 - interface meta signature terminator 同样保留结构化诊断：`interface Callable { @call(value: int): int }` 会报告 `missing_statement_semicolon`、`Missing ';' after interface meta signature statement` 和补 `;` 的 suggestion。
@@ -138,6 +188,12 @@ doc_type: module-detail
 - switch case header close 同样保留结构化诊断：`switch (choice) { (1 { return 1; } }` 会报告 `missing_switch_case_header_close`、`Missing closing ')' in switch case header` 和在 case body 前补 `)` 的 suggestion，而不是只暴露 expected-token 信息。
 - switch body close 同样保留结构化诊断：`switch (choice) { (1) { return 1; }` 会报告 `missing_switch_body_close`、`Missing closing '}' for switch body` 和补 `}` 的 suggestion，而不是只暴露 expected-token 信息。
 - completion resolve 通过 completion item `data` 复用原始 URI/position，按 label 回填 detail/documentation。
+- LSP position mapping 的带 content 路径现在统一走 `lsp_position_codec.c/.h`。LSP 请求输入按 UTF-16 code unit 转成 UTF-8 byte offset，再从最终 clamped offset 反算 parser 风格的 `SZrFilePosition` 行号和字节列；对外返回的 `ZrLanguageServer_LspPosition_FromFilePositionWithContent` / `ZrLanguageServer_LspRange_FromFileRangeWithContent` 再按 offset 转回 UTF-16。这样中文、BMP 多字节字符、emoji surrogate pair、CRLF、tab、EOF 无换行、负数 position、越过行尾和越过文件尾的文档，hover/definition/diagnostic 等语义能力都能获得一致的内部光标落点。UTF-8 长度判定会先验证 continuation bytes；畸形 lead byte 或截断多字节序列按单字节降级，避免把后续换行吞进非法 codepoint。
+- `lsp_semantic_query.c` 的 definition/references location 输出、hover range 和 documentHighlight range，`lsp_interface.c` 的公开 hover fallback、prepareRename range 和 rename location normalization，`ZrLanguageServer_Lsp_GetDiagnostics` 的 parser/fallback hint/semantic/import diagnostic range，document/open-workspace symbol range，`lsp_project_imports.c` / `lsp_project_navigation.c` 的 project import/navigation references/highlights 和 binary metadata declaration hit 输入转换，`lsp_semantic_tokens.c` 的 analyzer symbol token range 和 raw text-scan token span，`lsp_inlay_hints.c` 的 hint position，`lsp_semantic_import_chain.c` 的 secondary member references/highlights，`lsp_local_semantic_query.c` 的 public local semantic fact hover fallback，`lsp_metadata_provider.c` 的 imported module/member hover，`lsp_virtual_documents.c` 的 virtual declaration lookup，`lsp_decorator_navigation.c` 的 decorator definition/hover range，`lsp_editor_features.c` 的 CodeLens reference-count range/position，`lsp_super_navigation.c` 的 super constructor definition/reference/highlight range，以及 `lsp_token_metadata.c` 的 meta-method hover range，现在都会在 target URI 已打开或虚拟文本可渲染时用 content-aware `FileRange -> LspRange`、`FilePosition -> LspPosition` 或 byte-offset span -> UTF-16 token 转换，避免 parser byte-column / raw scanner byte count 直接泄漏为 LSP `character`；diagnostic relatedInformation 也复用同一路径。`lsp_semantic_query.c` 的 semantic location/highlight/hover range 输出统一复用 `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument`，不再维护本地 content lookup 分支；`lsp_interface.c` 的公开 hover、rename location normalization、local-symbol rename append 和 prepareRename range 输出也复用同一 helper，不再维护私有 `lsp_range_from_file_range_for_document` 分支，虚拟 module-link definition 与 project/native module summary 默认 range 也不再直接调用无 content range API；`lsp_inlay_hints.c` 的 hint position 输出复用 `ZrLanguageServer_Lsp_PositionFromFilePositionForDocument`，不再维护私有 position helper；`lsp_project_navigation.c` 的 binary metadata declaration hit 输入不再直接调用旧 `ZrLanguageServer_LspPosition_ToFilePosition`，而是复用接口层 document position helper；`lsp_semantic_import_chain.c` 不再用 `g_semanticImportChainAppend*` 文件级静态状态暂存 opened document content，append location 也复用 `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument`，不再手写 content lookup/direct conversion。`SZrFileVersionContentSnapshot` 为中心转换 helper、`lsp_interface.c` 的 identifier scan / completion code-span filter / hover documentation extraction、`lsp_semantic_import_chain.c` 的 analyzer refresh、`lsp_token_metadata.c` 的 meta-method hover scan、`lsp_semantic_tokens.c` 的 source scan、`lsp_folding_ranges.c` 的 folding scan、`lsp_document_links.c` 的 opened-document link scan、`lsp_signature_help.c` 的 code-span guard、`lsp_code_action_imports.c` 的 import organize/unused cleanup、`lsp_code_actions.c` 的缺失 import / 缺失分号 quickfix scan/edit 路径、`lsp_hierarchy.c` 的 call/type hierarchy scan、`lsp_editor_features.c` 的 formatting/selectionRange/run CodeLens scan、`lsp_project_navigation.c` 的 project analyzer refresh/import target refinement、`lsp_project.c` 的 project source register/module graph/import-module-name collection、`lsp_metadata_provider.c` 的 member range refinement/analyzer refresh/imported member hover documentation scan、`stdio_document_color.c` 的 documentColor/colorPresentation scan、`stdio_completion.c` 的 completion prefix range scan、`stdio_moniker.c` 的 moniker identifier/code-span scan、`stdio_inline_completion.c` 的 inline keyword prefix/code-span scan、`stdio_linked_editing.c` 的 linked-editing fallback scan、`stdio_diagnostics.c` 的 diagnostic resultId hash scan、`stdio_documents.c` 的 didChange old-content base scan、`stdio_inline_value.c` 的 inline value line/fact scan、`stdio_position_encoding.c` 的 URI/request/response position encoding scan 和 `lsp_super_navigation.c` 的 super constructor target/reference/highlight scan 提供 owned content snapshot；shared range/position helper 与 `ZrLanguageServer_Lsp_GetDocumentFilePosition` 会先 acquire snapshot 再做 content-aware 转换，转换完成后释放，已锁定的函数段不再直接读取 `fileVersion->content`。已有 LSP location 转 documentHighlight 的路径保留原 LSP range，不再做无 content 的反向 roundtrip。stdio rename workspace edit 直接复用 C 层 location range，因此也获得 UTF-16-correct text edit range。旧无 content public API 已删除，后续按 `docs/plans/lsp` 阶段 0 继续处理跨模块 residual content 读取审计和完整并发快照防护。
+- `incremental_parser.c` 的 `ZrLanguageServer_IncrementalParser_Parse` 现在在 content hash、增量阈值、parser state 初始化和成功后 hash 存储前 acquire owned snapshot，并统一读取 snapshot content/length。文件内容创建、更新、释放和 snapshot-copy 本身仍是 `SZrFileVersion` 的 ownership 边界，后续版本化/引用计数式并发设计会继续处理这些边界。
+- Shared document range/position helper 在 snapshot 不可用时不再调用旧 no-content 转换，而是返回 0:0 空 range/position；`ZrLanguageServer_Lsp_GetDocumentFilePosition` 无 snapshot 时返回 `ZrParser_FilePosition_Create(0, 0, 0)`。旧 no-content public `ZrLanguageServer_LspRange_FromFileRange`、`ZrLanguageServer_LspRange_ToFileRange`、`ZrLanguageServer_LspPosition_FromFilePosition` 和 `ZrLanguageServer_LspPosition_ToFilePosition` 声明/实现已删除，source-contract suite 现锁定 35 项。
+- LSP 源码 live content residual 复扫确认，除 `incremental_parser.c` 的内容创建、更新、释放和 snapshot-copy ownership 边界外，生产 LSP 文件不再直接读取 `fileVersion->content` / `fileVersion->contentLength`；旧 no-content public API 在生产声明和调用点也已清空。
+- `stdio_position_encoding.c` 是 stdio 协议边界的 position codec adapter。核心 C API 继续以 UTF-16 LSP position/range 为内部模型；stdio `initialize` 默认声明 `utf-16`，当客户端在 `capabilities.general.positionEncodings` 中声明 `utf-8` 时回传 `capabilities.positionEncoding = "utf-8"`。之后所有常规请求 position/range 会按打开文档内容从 UTF-8 byte column 转回内部 UTF-16，响应、pull/publish diagnostics 和 text edit JSON 再转回客户端协商的编码；这些 URI/request/response 转换边界会先 acquire owned snapshot，再读取 snapshot content/length 做换算；`completionItem/resolve` 等携带服务器内部 `data.position` 的 resolve 请求不会被二次转换。
 
 `stdio_editor_features.c` 是协议层 glue：
 
@@ -145,7 +201,7 @@ doc_type: module-detail
 - 处理新增 request，并在失败或空结果时返回符合 LSP 习惯的空数组/空 report。
 - 保持 stdio request 分发文件只做 capability 广告和 method routing。
 
-`stdio_linked_editing.c` 为同文档 identifier 编辑返回 linked ranges。它优先使用语义引用；当语义引用不足以形成至少两个范围时，才退回轻量文档扫描。fallback 扫描现在会跳过 line comment、block comment 和 string literal，避免把注释或字面量里的普通单词加入 linked-editing rename 范围。
+`stdio_linked_editing.c` 为同文档 identifier 编辑返回 linked ranges。它优先使用语义引用；当语义引用不足以形成至少两个范围时，才退回轻量文档扫描。fallback 扫描现在会先 acquire owned snapshot，再跳过 line comment、block comment 和 string literal，避免把注释或字面量里的普通单词加入 linked-editing rename 范围。
 
 `stdio_moniker.c` 在 stdio 层为源码 identifier 返回 document-scoped moniker。它仍然是轻量 token 级能力，不做跨文件符号索引；在生成 moniker 前会跳过 line comment、block comment 和 string literal 中的候选词，避免把注释或字面量里的普通单词暴露成可索引符号。
 
@@ -153,21 +209,36 @@ doc_type: module-detail
 
 `stdio_document_color.c` 为 `textDocument/documentColor` / `colorPresentation` 提供轻量 hex color literal 支持。它仍会识别真实源码字符串中的 `"#336699"` 这类颜色字面量并返回 presentation edit，但 line comment 和 block comment 中的 `#RRGGBB` / `#RRGGBBAA` 文本不再生成 color entry；`colorPresentation` 也会先确认请求 range 对应同一组非注释 color literal，否则返回空数组，避免注释说明变成可编辑颜色 UI。
 
-`lsp_source_spans.c` 提供 shared LSP lexical span helper，用于识别 raw document offset 是否位于 line comment、block comment 或 string literal。它也提供 cursor-offset 形式，用于 completion 这类光标位于字符之间的 request。`lsp_semantic_query.c` 在 raw identifier fallback、receiver/member semantic query fallback 和最终 local-symbol fallback 前使用它，避免 `documentHighlight` / hover / definition / references 等语义查询把注释或字面量里的普通单词或 `receiver.member` 文本解析成真实 symbol/member；`lsp_interface.c` 在 completion 进入 token-prefix、import-chain、receiver、generic completion provider 前使用 cursor code-span check，避免 `// @constructor` 或 `"%compileTime"` 触发源码补全；`lsp_token_metadata.c` 在 meta-method hover 的 raw `@...` token scan 后检查 token start code span，避免 comment/string 中的 `@constructor` 渲染成 meta-method hover；`%import("...")` string literal 仍走已有 AST/import-chain 语义路径。
+`stdio_diagnostics.c` 为 push/pull/workspace diagnostics 生成 JSON report。诊断 range 仍由 C 层 `ZrLanguageServer_Lsp_GetDiagnostics` 统一生成；stdio 层现在在生成 resultId hash 时 acquire owned snapshot，用同一份 snapshot content/version/length 计算 full/unchanged report 标识，避免 resultId 计算期间直接读取 live `fileVersion->content`。
 
-`lsp_hierarchy.c` 为 call hierarchy 的 incoming/outgoing calls 做同文件轻量 call scan。它现在在统计 `name(...)` 候选前复用 editor code-span check，保留真实源码调用，同时避免 `// helper(value)` 或 `"helper(value)"` 这类说明文本被算作调用边。
+`stdio_documents.c` 处理 didOpen/didChange/didClose/didSave 文档生命周期。`textDocument/didChange` 在套用 incremental content changes 前会 acquire owned snapshot 作为旧内容基底，并用 snapshot version 推导默认下一版本，避免增量变更计算期间直接读取 live `fileVersion->content`。
 
-`lsp_editor_features.c` 仍承载 CodeLens 编排：symbol reference count lens 走 reference 查询，`%test(...)` run lens 是轻量 raw marker scan。run lens 现在在接受 `%test(` marker 前复用 editor code-span check，保留真实 test block，同时避免 comment/string 中的 `%test(...)` 说明文本生成可运行命令。
+`lsp_source_spans.c` 提供 shared LSP lexical span helper，用于识别 raw document offset 是否位于 line comment、block comment 或 string literal。它也提供 cursor-offset 形式，用于 completion 这类光标位于字符之间的 request。`lsp_semantic_query.c` 在 raw identifier fallback、receiver/member semantic query fallback 和最终 local-symbol fallback 前使用它，避免 `documentHighlight` / hover / definition / references 等语义查询把注释或字面量里的普通单词或 `receiver.member` 文本解析成真实 symbol/member；`lsp_interface.c` 在 completion 进入 token-prefix、import-chain、receiver、generic completion provider 前使用 cursor code-span check，避免 `// @constructor` 或 `"%compileTime"` 触发源码补全；`lsp_token_metadata.c` 在 meta-method hover 的 raw `@...` token scan 后检查 token start code span，避免 comment/string 中的 `@constructor` 渲染成 meta-method hover，并在文档已打开时把 meta-method hover parser range 转为 UTF-16 LSP columns；`%import("...")` string literal 仍走已有 AST/import-chain 语义路径。
+
+`lsp_hierarchy.c` 为 call hierarchy 的 incoming/outgoing calls 做同文件轻量 call scan。它现在在统计 `name(...)` 候选前复用 editor code-span check，保留真实源码调用，同时避免 `// helper(value)` 或 `"helper(value)"` 这类说明文本被算作调用边。call/type hierarchy 的 raw scan 和 inheritance header scan 会先 acquire `SZrFileVersionContentSnapshot`，再把显式 content/contentLength 传给 helper。
+
+`lsp_editor_features.c` 仍承载 formatting、selection range 和 CodeLens 编排。document/range formatting、selection range 的 word/line/block scan，以及 `%test(...)` run lens 的轻量 raw marker scan 都会先 acquire owned snapshot，再读取同一份 snapshot content/length。run lens 在接受 `%test(` marker 前复用 editor code-span check，保留真实 test block，同时避免 comment/string 中的 `%test(...)` 说明文本生成可运行命令。
+
+`lsp_project_navigation.c` 为 project-aware definition、references、documentHighlight 和 external metadata navigation 编排 analyzer refresh 与 import target refinement。打开文档存在时，这两处直接读取文档文本的路径现在都会 acquire owned snapshot；未打开文件仍保留磁盘读取 fallback，避免项目索引刷新必须依赖 live `fileVersion->content`。
+
+`lsp_project.c` 负责 project index 的 source record 注册、source module graph scan 和 import module name collection。打开文档存在时，这些 project refresh 路径会先 acquire owned snapshot，再把 snapshot content 交给 module-key 识别、FFI wrapper marker 检测和 import name collection；未打开文件仍保留磁盘读取 fallback，避免项目索引刷新期间直接依赖 live `fileVersion->content`。
+
+`lsp_metadata_provider.c` 负责 imported module/member hover、metadata-backed declaration range refinement 和按 URI 刷新 analyzer。打开文档存在时，member name range 精修、analyzer refresh 输入、imported member hover 的 markdown/documentation/leading-comment extraction 都会先 acquire owned snapshot，再读取 snapshot content/length；snapshot 不可用时 analyzer refresh 仍保留磁盘读取 fallback，避免 hover 路径直接依赖 live `fileVersion->content`。
+
+`lsp_semantic_query.c` 负责共享 semantic query 的 local symbol、import/member、external metadata 和 completion/hover 入口。打开文档存在时，identifier/code-span scan、enum member range refinement、analyzer refresh、external type/member reference scans、receiver/import alias target resolution、hover documentation/comment extraction、completion collection 和 completion metadata enrichment 都会先 acquire owned snapshot，再读取 snapshot content/length；snapshot 不可用时 analyzer refresh 仍保留磁盘 fallback，避免共享 semantic query 在请求处理中直接依赖 live `fileVersion->content`。
+
+`incremental_parser.c` 负责 file-version content ownership 和 parser refresh。`ZrLanguageServer_IncrementalParser_Parse` 进入解析前会 acquire owned snapshot，后续 hash 比较、增量阈值、parser 初始化和 lastContentHash 刷新均使用同一份 snapshot content/length；这样解析期间不会把 live `fileVersion->content` 指针直接传给 parser state。剩余 raw content 操作集中在文件版本创建、更新、释放和 snapshot-copy，本阶段仍作为 ownership 边界继续保留。
 
 `lsp_super_navigation.c` 为 `super(...)` 和 constructor declaration 提供 definition / references / documentHighlight 的 constructor-aware navigation。它现在复用 shared lexical span helper：raw `super` token scan 只接受 code span，constructor declaration fallback 也只在 cursor 位于 code span 时返回当前 constructor。这样保留真实 `super(seed)` 到 base constructor 的跳转，同时避免 constructor body 里的 `// super` 或 `"super"` 被当成 constructor target。
+在目标 URI 已打开时，它的 definition / references / documentHighlight range 也会通过 document-aware UTF-16 转换输出，避免 UTF-8 前缀后的 base constructor 或 `super` token range 泄漏 parser byte columns。
 
 `lsp_semantic_tokens.c` 为 source semantic tokens 做轻量文本扫描，补充 keyword/directive、decorator、meta-method 和 import-chain member token。该扫描现在和其它 raw-token LSP feature 保持一致：跳过 line comment、block comment、double/single quoted string 和 backtick/template string 后才生成 token entry。真实 source `%import`、`@constructor`、`#decorator#` 和 import-chain member 仍会被标记；template string 里的 `%import(...)`、`@constructor`、`#trace#` 不会被当成 source token 上色。
 
 `lsp_signature_help.c` 仍以 AST call context 和 semantic signature resolution 为主；进入 AST call-context 匹配前会复用 `lsp_source_spans.c` 的 cursor code-span 判定。真实 call argument 仍返回 signature help，但 call argument list 里的 comment/string 正文不会因为落在 call AST range 内而触发签名。
 
-`stdio_inline_value.c` 是 stdio 层的 inline value consumer。它继续返回调试器可用的 `InlineValueVariableLookup`，同时对 local initializer、单行 `return` 表达式，以及缩进后位于行首的简单 expression statement 调用 `ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt`。当 parser/type inference 已证明 numeric/logical fact 时，stdio 会追加 `InlineValueText`，例如变量名范围上的 `range 20..20` / `logical true, short-circuits`，return 表达式范围上的 `range 3..3`，或 `1 + 2;` / `true || false;` / `seed + 3;` statement expression 范围上的 `range 3..3` / `logical true, short-circuits` / `range 5..5`。`stdio_inline_value_scan.c/.h` 现在拥有 expression-statement 起点、语句结束、query token 和 raw line code-span 的轻量扫描，避免继续扩大 request consumer。简单 aggregate statement 只复用同一路径：`[1 + 2];` / `[true || false];` 会在 aggregate expression range 上显示 nested element/operator fact 对应的 `range 3..3` / `logical true, short-circuits`；当源码中对象字面量以计算键形式消歧，例如前面已有普通语句后的 `{[1 + 2]: 4};`，stdio 会把 `{` 当作保守 expression-statement start，并在对象表达式范围上显示 computed-key 的 `range 3..3`。当 editor request 只从 operator-split expression statement 的 continuation line 开始，例如 `1 +\n 2;` 的第二行，stdio 会回溯 owner statement 并仍返回覆盖完整表达式的 fact-backed inline value。当 shared expression fact 已有 call/member payload 时，同一路径也能在 `pick(42);` / `seed.value;` statement expression 范围上显示 `call pick args=1` / `member value`；当 local semantic query 同时返回 reference fact 时，stdio 会追加 `reference ...`，例如 `seed[index];` 显示 `member index, reference member access`。逐行 raw scan 现在会维护 block comment 状态并跳过 `//` / `/* ... */` 内容以及 double/single/backtick string literal，所以 comment 或 string 正文中的 `var ghost = 1;` 不会生成 `InlineValueVariableLookup` 或 fact-backed text。这条路径复用语义事实层，不在 stdio request handler 内重新实现数值范围、变量范围传播、短路推断、reference 分类、array/object element 推断或 call/member payload 推断。
+`stdio_inline_value.c` 是 stdio 层的 inline value consumer。它继续返回调试器可用的 `InlineValueVariableLookup`，同时对 local initializer、单行 `return` 表达式，以及缩进后位于行首的简单 expression statement 调用 `ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt`。request range 解析、逐行 raw scan 和 fact-backed inline text 查询都会先 acquire owned snapshot，再读取同一份 snapshot content/length。当 parser/type inference 已证明 numeric/logical fact 时，stdio 会追加 `InlineValueText`，例如变量名范围上的 `range 20..20` / `logical true, short-circuits`，return 表达式范围上的 `range 3..3`，或 `1 + 2;` / `true || false;` / `seed + 3;` statement expression 范围上的 `range 3..3` / `logical true, short-circuits` / `range 5..5`。`stdio_inline_value_scan.c/.h` 现在拥有 expression-statement 起点、语句结束、query token 和 raw line code-span 的轻量扫描，避免继续扩大 request consumer。简单 aggregate statement 只复用同一路径：`[1 + 2];` / `[true || false];` 会在 aggregate expression range 上显示 nested element/operator fact 对应的 `range 3..3` / `logical true, short-circuits`；当源码中对象字面量以计算键形式消歧，例如前面已有普通语句后的 `{[1 + 2]: 4};`，stdio 会把 `{` 当作保守 expression-statement start，并在对象表达式范围上显示 computed-key 的 `range 3..3`。当 editor request 只从 operator-split expression statement 的 continuation line 开始，例如 `1 +\n 2;` 的第二行，stdio 会回溯 owner statement 并仍返回覆盖完整表达式的 fact-backed inline value。当 shared expression fact 已有 call/member payload 时，同一路径也能在 `pick(42);` / `seed.value;` statement expression 范围上显示 `call pick args=1` / `member value`；当 local semantic query 同时返回 reference fact 时，stdio 会追加 `reference ...`，例如 `seed[index];` 显示 `member index, reference member access`。逐行 raw scan 现在会维护 block comment 状态并跳过 `//` / `/* ... */` 内容以及 double/single/backtick string literal，所以 comment 或 string 正文中的 `var ghost = 1;` 不会生成 `InlineValueVariableLookup` 或 fact-backed text。这条路径复用语义事实层，不在 stdio request handler 内重新实现数值范围、变量范围传播、短路推断、reference 分类、array/object element 推断或 call/member payload 推断。
 
-`lsp_local_semantic_query.c` 也是 hover/rich-hover 的局部事实 formatter。它在传统 symbol hover 之外追加 numeric/logical/reachability/reference/ownership facts，并且现在直接渲染 parser expression fact 的 kind/exactness/constant 与 call/member payload：`1 + 2` 显示 `Expression: binary exact` 和 `Constant: 3`，`pick(42)` 显示 `Call: pick args=1`，`seed.value` 显示 `Member: value`。对 `seed[index]` 这类 computed member，`[` 位置会用 member-access reference fact 找回 member payload，所以 hover/rich-hover 可以同时显示 `Reference: member access`、`Symbol: index` 和 `Member: index`。`lsp_interface.c` 的 rich-hover section parser 把这些 label 映射成稳定 `expression`、`constant`、`reference`、`symbol`、`call`、`member` roles，方便 VSCode 端结构化展示而不需要重新解析源码。
+`lsp_local_semantic_query.c` 也是 hover/rich-hover 的局部事实 formatter。它在传统 symbol hover 之外追加 numeric/logical/reachability/reference/ownership facts，并且现在直接渲染 parser expression fact 的 kind/exactness/constant 与 call/member payload：`1 + 2` 显示 `Expression: binary exact` 和 `Constant: 3`，`pick(42)` 显示 `Call: pick args=1`，`seed.value` 显示 `Member: value`。对 `seed[index]` 这类 computed member，`[` 位置会用 member-access reference fact 找回 member payload，所以 hover/rich-hover 可以同时显示 `Reference: member access`、`Symbol: index` 和 `Member: index`。公共 `textDocument/hover` 路径通过 `ZrLanguageServer_LspLocalSemanticQuery_BuildHoverForDocument` 在打开文档上输出 UTF-16-correct range；旧 `BuildHover` 仍作为无 content 兼容入口。`lsp_interface.c` 的 rich-hover section parser 把这些 label 映射成稳定 `expression`、`constant`、`reference`、`symbol`、`call`、`member` roles，方便 VSCode 端结构化展示而不需要重新解析源码。
 
 ## Capability 广告
 
@@ -192,13 +263,14 @@ doc_type: module-detail
 - `typeHierarchyProvider = true`
 - `diagnosticProvider.interFileDependencies = true`
 - `diagnosticProvider.workspaceDiagnostics = true`
+- `positionEncoding = "utf-16"` 或客户端声明 `utf-8` 时协商为 `"utf-8"`
 
 VS Code desktop/native stdio 模式会自动消费这些 standard providers；extension 侧不需要为 formatting、links、CodeLens 或 organize imports 增加专有命令。
 
 ## 当前限制
 
 - formatting 仍是保守文本缩进器，不是 AST pretty-printer；它不会重排表达式、参数列表或注释。
-- code action 第一阶段稳定输出 organize imports 和缺失分号 quickfix；缺失分号 quickfix 仍是轻量文本能力，只做 code-span 过滤和 line-comment 前插入，不声明 AST-backed rewrite。后续可按 diagnostics code/data 增加缺失 import、未解析成员等修复。
+- code action 第一阶段稳定输出 organize imports、缺失 import quickfix 和缺失分号 quickfix；缺失 import/缺失分号 quickfix 仍是轻量文本能力，使用 owned snapshot 做 alias/insert-offset/code-span 检查和 line-comment 前插入，不声明 AST-backed rewrite。后续可按 diagnostics code/data 增加未解析成员等修复。
 - declaration / typeDefinition / implementation 目前复用 definition 查询；后续如果 class/interface/extern 语义拆分，需要在统一语义查询层细化，不要在 stdio 层分叉。
 - workspace diagnostic 会为当前增量解析器已知文档返回 full report；document pull diagnostics 复用现有单文档诊断。
 - linked editing 仍优先依赖语义 references；fallback 是文档级 token 扫描，只用于语义 references 不足时的保守体验，不声明声明解析或跨文件 rename。
@@ -227,6 +299,27 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
   - missing semicolon quickfix keeps insertion before line comments and skips block-comment bodies
   - reference count 和 `%test(...)` CodeLens command
   - call hierarchy / type hierarchy prepare item
+- `tests/language_server/test_lsp_position_mapping.c`
+  - UTF-16 LSP position 到 UTF-8 byte offset 的 focused regression：BMP UTF-8、emoji surrogate pair、中文标识符、ASCII+emoji、CRLF、tab、EOF 无换行
+  - content-aware `LspPosition -> FilePosition` 的 parser byte-column、负数输入、行尾越界和文件尾越界归一化
+  - UTF-8 前缀后的 definition、hover、documentHighlight、prepareRename、rename、diagnostic、symbol、project import/navigation、binary metadata declaration input、semanticTokens、inlay hint、import-chain 和 local semantic fact hover output 必须使用 UTF-16 LSP columns，而不是 parser byte columns 或 raw scanner byte counts
+- `tests/language_server/test_incremental_parser.c`
+  - file-version content snapshot 必须在 live document 更新后仍保留 acquire 时的 content/version，供中心 LSP range/position 转换在短转换窗口内使用 owned copy
+- `tests/language_server/test_lsp_source_contracts.c`
+  - 已锁定的中心 helper、interface/import-chain/token-metadata/semanticTokens/semantic-query/incremental-parser-parse/folding/document-links/signature-help/code-action-imports/code-actions/hierarchy/editor-features/project-navigation/project-refresh/metadata-provider/super-navigation/stdio-document-color/stdio-completion/stdio-moniker/stdio-inline-completion/stdio-linked-editing/stdio-diagnostics/stdio-documents/stdio-inline-value/stdio-position-encoding 路径必须 acquire `SZrFileVersionContentSnapshot`，对应函数段/文件不得直接读取 `fileVersion->content`
+- `tests/language_server/test_lsp_project_utf16_ranges.c`
+  - UTF-8 前缀后的 `.zro` binary metadata declaration semantic query position 必须按 UTF-16 客户端列解析到 `binarySeed` 成员，而不是 no-content byte column
+- `tests/language_server/test_lsp_position_fuzz.c`
+  - malformed two-byte lead 和 truncated four-byte sequence 不得吞掉后续换行
+  - 固定种子的有效 UTF-8 语料覆盖 ASCII、换行、BMP 多字节、CJK 和 non-BMP emoji 边界，并断言 `offset -> UTF-16 position -> offset` 往返
+- `tests/language_server/test_lsp_decorator_utf16_ranges.c`
+  - UTF-8 前缀后的 decorator definition target 和 decorator hover parser range 必须返回 UTF-16 LSP columns，而不是 no-content byte columns
+- `tests/language_server/test_lsp_code_lens_utf16_ranges.c`
+  - UTF-8 前缀后的 CodeLens reference-count range 和 `positionArgument` 必须返回 UTF-16 LSP columns，而不是 no-content byte columns
+- `tests/language_server/test_lsp_super_utf16_ranges.c`
+  - UTF-8 前缀后的 super constructor definition、references 和 documentHighlights 必须返回 UTF-16 LSP columns，而不是 no-content byte columns
+- `tests/language_server/test_lsp_token_metadata_utf16_ranges.c`
+  - UTF-8 前缀后的 meta-method hover range 必须返回 UTF-16 LSP columns，而不是 no-content byte columns
 - `tests/language_server/stdio_smoke.js`
   - initialize capability wire shape
   - formatting / folding / selection / documentLink / codeAction / CodeLens / hierarchy request arrays
@@ -239,10 +332,15 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
   - `textDocument/inlineCompletion` expands real code keyword prefixes and ignores the same prefixes inside line comments, block comments, and string literals
   - `textDocument/documentColor` exposes real hex color literals and ignores hex colors inside line/block comments; `colorPresentation` returns edits only for ranges matching those exposed literals
   - inline value variable lookup 和 semantic fact-backed inline text
+- `tests/language_server/stdio_position_encoding_smoke.js`
+  - `initialize` negotiates `positionEncoding = "utf-8"` when the client advertises `general.positionEncodings`
+  - UTF-8-client `textDocument/hover` over a BMP UTF-8-prefixed import literal accepts UTF-8 byte columns and returns UTF-8 byte-column range values
 - `tests/language_server/test_lsp_interface.c`
   - parser-backed LSP diagnostics for empty `if ()` / `while ()` conditions expose `missing_condition`
   - statement-specific message and concrete suggestion text
   - `textDocument/definition`, `textDocument/references`, and `textDocument/documentHighlight` keep resolving real `super(...)` constructor calls, but return no locations/highlights for `super` text inside constructor comments or string literals
+  - imported module metadata hover after a UTF-8 prefix returns UTF-16 range columns
+  - `zr-decompiled:` virtual declaration lookup after a BMP UTF-8 module-link name no longer extends the declaration hit past the name
   - `textDocument/completion` keeps directive/meta-method completions for real `%` / `@` code prefixes, but returns an empty list for the same prefixes inside comments or string literals
   - `textDocument/hover` keeps meta-method hover for real `@constructor` declarations, but does not render meta-method documentation for `@constructor` text inside comments or string literals
   - `textDocument/semanticTokens/full` keeps classifying real source `%import` directives, but does not classify `%import(...)`, `@constructor`, or `#trace#` text inside backtick/template strings as keyword, meta-method, or decorator tokens
@@ -271,6 +369,7 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
   - local hover over `1 + 2` includes `Expression: binary exact` and `Constant: 3`
   - public `textDocument/hover` uses the same local semantic expression fact payload
   - rich-hover exposes stable `expression` / `constant` roles for the same payload
+  - public expression fact hover range after a UTF-8 prefix uses UTF-16 columns
 
 2026-04-24 验证命令：
 
@@ -704,6 +803,19 @@ wsl bash -lc "cd /mnt/e/Git/zr_vm && cmake --build build/codex-semantic-wsl-clan
 ```
 
 RED：新增 `interface Sized { get length: int }` 的 focused parser-diagnostics 断言后，旧 WSL gcc 路径只失败该 interface-property-signature semicolon case，没有 `missing_statement_semicolon` code、具体问题文本和建议。GREEN：`parse_interface_property_signature` 在读完 property name/type 后，如果当前 token 不是 `;`，复用现有 structured statement terminator reporter 并传入 `interface property signature` statement kind；同时 interface member dispatch 直接接受 line-start `get` / `set`，让无访问修饰符 property signature 进入 property parser，而不是落入 unknown-member fallback。第一次 GREEN 尝试只改了 terminator 后仍失败，证明 fixture 暴露了 dispatch gap；补上 direct `get` / `set` dispatch 后 WSL gcc focused target 通过。WSL clang 和 Windows MSVC focused validation 同步覆盖本 slice；本轮仍不声明全仓库绿色，也不触碰 AOT/value-type/core runtime、Debug 或 REPL 路径。
+
+2026-06-20 LSP stage 0 content snapshot ownership update:
+
+- `incremental_parser.c` now stores open-document text in versioned, refcounted `SZrFileVersionContentBlock` values instead of raw `SZrFileVersion.content/contentLength` fields.
+- `SZrFileVersionContentSnapshot` acquire/free now retains and releases the content block, exposes `contentGeneration`, and keeps snapshots valid across file updates and parser free.
+- `tests/language_server/test_lsp_source_contracts.c` now locks this ownership boundary and rejects production direct `fileVersion->content` / `fileVersion->contentLength` residuals.
+- Windows MSVC source-contract, incremental-parser, position-mapping, `lsp_interface`, and project UTF-16 range regressions passed for this slice. WSL verification remains pending because unrelated WSL build processes were still active.
+
+2026-06-20 LSP stage 0 stdio concurrency audit update:
+
+- The current stdio language server processes messages through a single sequential read/dispatch loop and synchronous request/notification handlers.
+- LSP/stdio/header source scans found no thread or lock primitives, and production source scans found no remaining direct `fileVersion->content` / `fileVersion->contentLength` reads.
+- Stage 0 keeps WSL verification and future-module content-read rescans open; future parallel/asynchronous LSP entrypoints require a fresh concurrency audit.
 
 2026-06-07 parser/LSP interface field declaration semicolon diagnostic 聚焦验证：
 

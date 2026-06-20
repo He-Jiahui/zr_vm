@@ -235,23 +235,19 @@ static TZrBool import_action_content_uses_alias_outside_range(const TZrChar *con
     return ZR_FALSE;
 }
 
-static TZrBool import_action_find_import_block(SZrFileVersion *fileVersion,
+static TZrBool import_action_find_import_block(const TZrChar *content,
+                                               TZrSize contentLength,
                                                TZrSize *outStart,
                                                TZrSize *outEnd) {
-    const TZrChar *content;
-    TZrSize contentLength;
     TZrSize cursor = 0;
     TZrSize firstImportStart = 0;
     TZrSize lastImportEnd = 0;
     TZrBool foundImport = ZR_FALSE;
 
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL ||
-        outStart == ZR_NULL || outEnd == ZR_NULL) {
+    if (content == ZR_NULL || outStart == ZR_NULL || outEnd == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    content = fileVersion->content;
-    contentLength = fileVersion->contentLength;
     while (cursor < contentLength) {
         TZrSize lineStart = cursor;
         TZrSize lineEnd = cursor;
@@ -307,8 +303,9 @@ static TZrBool import_action_find_import_block(SZrFileVersion *fileVersion,
 TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
                                                      SZrFileVersion *fileVersion,
                                                      SZrArray *edits) {
-    const TZrChar *content = fileVersion->content;
-    TZrSize contentLength = fileVersion->contentLength;
+    SZrFileVersionContentSnapshot snapshot = {0};
+    const TZrChar *content;
+    TZrSize contentLength;
     TZrSize importBlockStart = 0;
     TZrSize importBlockEnd = 0;
     TZrSize cursor;
@@ -318,7 +315,15 @@ TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
     SZrLspTextBuilder builder = {0};
     SZrLspRange editRange;
 
-    if (!import_action_find_import_block(fileVersion, &importBlockStart, &importBlockEnd)) {
+    if (state == ZR_NULL || edits == ZR_NULL ||
+        !ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        return ZR_FALSE;
+    }
+    content = snapshot.content;
+    contentLength = snapshot.contentLength;
+
+    if (!import_action_find_import_block(content, contentLength, &importBlockStart, &importBlockEnd)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_TRUE;
     }
 
@@ -358,6 +363,7 @@ TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
                         (SZrLspImportLine *)realloc(imports, sizeof(SZrLspImportLine) * nextCapacity);
                     if (next == ZR_NULL) {
                         import_action_free_import_lines(imports, importCount);
+                        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
                         return ZR_FALSE;
                     }
                     imports = next;
@@ -366,6 +372,7 @@ TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
                 imports[importCount].text = (TZrChar *)malloc(length + 1);
                 if (imports[importCount].text == ZR_NULL) {
                     import_action_free_import_lines(imports, importCount);
+                    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
                     return ZR_FALSE;
                 }
                 memcpy(imports[importCount].text, content + trimStart, length);
@@ -380,6 +387,7 @@ TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
 
     if (importCount == 0) {
         import_action_free_import_lines(imports, importCount);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_TRUE;
     }
 
@@ -389,6 +397,7 @@ TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
             !lsp_text_builder_append_char(&builder, '\n')) {
             import_action_free_import_lines(imports, importCount);
             free(builder.data);
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
             return ZR_FALSE;
         }
     }
@@ -397,6 +406,7 @@ TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
         memcmp(builder.data, content + importBlockStart, builder.length) == 0) {
         import_action_free_import_lines(imports, importCount);
         free(builder.data);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_TRUE;
     }
 
@@ -404,33 +414,38 @@ TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
     if (!lsp_editor_append_text_edit(state, edits, editRange, builder.data, builder.length)) {
         import_action_free_import_lines(imports, importCount);
         free(builder.data);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
     import_action_free_import_lines(imports, importCount);
     free(builder.data);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_TRUE;
 }
 
 TZrBool lsp_code_action_collect_unused_import_cleanup_edit(SZrState *state,
                                                            SZrFileVersion *fileVersion,
                                                            SZrArray *edits) {
+    SZrFileVersionContentSnapshot snapshot = {0};
     const TZrChar *content;
     TZrSize contentLength;
     TZrSize importBlockStart = 0;
     TZrSize importBlockEnd = 0;
     TZrSize cursor;
 
-    if (state == ZR_NULL || fileVersion == ZR_NULL || fileVersion->content == ZR_NULL || edits == ZR_NULL) {
+    if (state == ZR_NULL || edits == ZR_NULL ||
+        !ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         return ZR_FALSE;
     }
 
-    if (!import_action_find_import_block(fileVersion, &importBlockStart, &importBlockEnd)) {
+    content = snapshot.content;
+    contentLength = snapshot.contentLength;
+    if (!import_action_find_import_block(content, contentLength, &importBlockStart, &importBlockEnd)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_TRUE;
     }
 
-    content = fileVersion->content;
-    contentLength = fileVersion->contentLength;
     cursor = importBlockStart;
     while (cursor < importBlockEnd) {
         TZrSize lineStart = cursor;
@@ -467,6 +482,7 @@ TZrBool lsp_code_action_collect_unused_import_cleanup_edit(SZrState *state,
                                                             importBlockEnd)) {
             SZrLspRange deleteRange = lsp_editor_range_from_offsets(content, contentLength, lineStart, deleteEnd);
             if (!lsp_editor_append_text_edit(state, edits, deleteRange, "", 0)) {
+                ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
                 return ZR_FALSE;
             }
         }
@@ -474,5 +490,6 @@ TZrBool lsp_code_action_collect_unused_import_cleanup_edit(SZrState *state,
         cursor = deleteEnd;
     }
 
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_TRUE;
 }

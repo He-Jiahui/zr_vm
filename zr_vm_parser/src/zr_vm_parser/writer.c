@@ -833,6 +833,8 @@ static void write_function_typed_type_ref(FILE *file, SZrState *state, const SZr
     TZrUInt32 ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     TZrUInt8 isArray = ZR_FALSE;
     TZrUInt32 elementBaseType = ZR_VALUE_TYPE_OBJECT;
+    TZrUInt32 staticCType = ZR_STATIC_C_TYPE_DYNAMIC;
+    TZrUInt32 staticCTypeId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
 
     if (typeRef != ZR_NULL) {
         baseType = (TZrUInt32)typeRef->baseType;
@@ -840,6 +842,10 @@ static void write_function_typed_type_ref(FILE *file, SZrState *state, const SZr
         ownershipQualifier = (TZrUInt32)typeRef->ownershipQualifier;
         isArray = typeRef->isArray ? ZR_TRUE : ZR_FALSE;
         elementBaseType = (TZrUInt32)typeRef->elementBaseType;
+        staticCType = (TZrUInt32)typeRef->staticCType;
+        staticCTypeId = typeRef->staticCType == ZR_STATIC_C_TYPE_STRUCT
+                                ? typeRef->staticCTypeId
+                                : ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
     }
 
     fwrite(&baseType, sizeof(TZrUInt32), 1, file);
@@ -849,6 +855,8 @@ static void write_function_typed_type_ref(FILE *file, SZrState *state, const SZr
     write_string_with_length(state, file, typeRef != ZR_NULL ? typeRef->typeName : ZR_NULL);
     fwrite(&elementBaseType, sizeof(TZrUInt32), 1, file);
     write_string_with_length(state, file, typeRef != ZR_NULL ? typeRef->elementTypeName : ZR_NULL);
+    fwrite(&staticCType, sizeof(TZrUInt32), 1, file);
+    fwrite(&staticCTypeId, sizeof(TZrUInt32), 1, file);
 }
 
 static void write_function_typed_local_bindings(FILE *file, SZrState *state, SZrFunction *function) {
@@ -1035,6 +1043,7 @@ static void write_function_module_effect(FILE *file, SZrState *state, const SZrF
     TZrMetadataToken targetSignatureToken = 0;
     TZrUInt64 targetSignatureHash = 0;
     TZrUInt64 targetModuleSignatureHash = 0;
+    SZrString *assemblyName = ZR_NULL;
     SZrString *requestedModuleVersion = ZR_NULL;
     SZrString *minModuleVersionInclusive = ZR_NULL;
     SZrString *maxModuleVersionExclusive = ZR_NULL;
@@ -1052,6 +1061,7 @@ static void write_function_module_effect(FILE *file, SZrState *state, const SZrF
         targetSignatureToken = effect->targetSignatureToken;
         targetSignatureHash = effect->targetSignatureHash;
         targetModuleSignatureHash = effect->targetModuleSignatureHash;
+        assemblyName = effect->assemblyName;
         requestedModuleVersion = effect->requestedModuleVersion;
         minModuleVersionInclusive = effect->minModuleVersionInclusive;
         maxModuleVersionExclusive = effect->maxModuleVersionExclusive;
@@ -1062,6 +1072,7 @@ static void write_function_module_effect(FILE *file, SZrState *state, const SZrF
     fwrite(&readiness, sizeof(TZrUInt8), 1, file);
     fwrite(&reserved0, sizeof(TZrUInt8), 1, file);
     write_string_with_length(state, file, effect != ZR_NULL ? effect->moduleName : ZR_NULL);
+    write_string_with_length(state, file, assemblyName);
     write_string_with_length(state, file, effect != ZR_NULL ? effect->symbolName : ZR_NULL);
     fwrite(&lineInSourceStart, sizeof(TZrUInt32), 1, file);
     fwrite(&columnInSourceStart, sizeof(TZrUInt32), 1, file);

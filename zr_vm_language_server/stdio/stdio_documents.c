@@ -40,7 +40,7 @@ int get_uri_and_position(SZrStdioServer *server,
     }
 
     positionJson = get_object_item(params, ZR_LSP_FIELD_POSITION);
-    return parse_position(positionJson, outPosition);
+    return parse_position_for_uri(server, *outUri, positionJson, outPosition);
 }
 
 int handle_did_open(SZrStdioServer *server, const cJSON *params) {
@@ -79,6 +79,7 @@ int handle_did_change(SZrStdioServer *server, const cJSON *params) {
     const char *uriText;
     SZrString *uri;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     const char *originalContent;
     size_t originalLength;
     char *updatedContent;
@@ -98,17 +99,18 @@ int handle_did_change(SZrStdioServer *server, const cJSON *params) {
     }
 
     fileVersion = get_file_version_for_uri(server, uri);
-    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
-        originalContent = fileVersion->content;
-        originalLength = (size_t)fileVersion->contentLength;
-        version = parse_size_value(versionJson, fileVersion->version + 1);
+    if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
+        originalContent = snapshot.content;
+        originalLength = snapshot.contentLength;
+        version = parse_size_value(versionJson, snapshot.version + 1);
     } else {
         originalContent = "";
         originalLength = 0;
         version = parse_size_value(versionJson, 0);
     }
 
-    updatedContent = apply_content_changes(uri, originalContent, originalLength, changes, &updatedLength);
+    updatedContent = apply_content_changes(server, uri, originalContent, originalLength, changes, &updatedLength);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
     if (updatedContent == NULL) {
         return 0;
     }

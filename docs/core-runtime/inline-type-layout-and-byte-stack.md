@@ -37,9 +37,22 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_semir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_semir.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_conversion.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_conversion.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_bitwise.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_bitwise.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c
   - tests/core/test_type_layout_inline_copy.c
   - tests/core/test_precall_frame_slot_reset.c
   - tests/core/test_tail_reuse_callinfo_reset.c
@@ -84,13 +97,29 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_semir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_semir.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_conversion.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_conversion.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_bitwise.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_bitwise.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c
 plan_sources:
   - user: 2026-05-16 struct inline stack storage and memcpy parameter passing
   - user: 2026-05-18 real GC/native entry wiring without claiming full ABI completion
   - user: 2026-06-04 align struct value execution with lua/hybridclr and lua/il2cpp architecture
+  - docs/plans/aot/03-instruction-set-refactor.md
+  - docs/plans/aot/04-semir-and-c-backend.md
+  - docs/plans/aot/06-implementation-blueprint.md
 tests:
   - tests/core/test_type_layout_inline_copy.c
   - tests/core/test_precall_frame_slot_reset.c
@@ -101,8 +130,18 @@ tests:
   - tests/parser/test_compiler_features.c
   - tests/parser/test_compiler_integration_main.c
   - tests/parser/test_value_type_runtime.c
+  - tests/parser/test_semir_type_conflict_deopt.c
+  - tests/parser/test_semir_dynamic_arithmetic_deopt.c
+  - tests/parser/test_semir_dynamic_member_deopt.c
+  - tests/parser/test_semir_dynamic_call_deopt.c
+  - tests/parser/test_semir_dynamic_iter_deopt.c
+  - tests/parser/test_semir_dynamic_index_deopt.c
+  - tests/parser/test_aot_c_typed_scalar.c
   - tests/acceptance/2026-05-16-inline-struct-byte-stack.md
   - tests/acceptance/2026-05-18-inline-frame-gc-native-entry.md
+  - tests/acceptance/2026-06-20-aot-m1-semir-type-conflict-deopt.md
+  - tests/acceptance/2026-06-20-aot-m1-semir-dynamic-index-deopt.md
+  - tests/acceptance/2026-06-20-aot-m2-typed-scalar-i64.md
 doc_type: module-detail
 ---
 
@@ -118,8 +157,14 @@ This module is the first runtime layer for moving `struct` values toward inline,
 - `copyKind` selects POD raw copy versus field-aware copy.
 - `dropKind` selects no-op drop versus field-aware drop.
 - `fields` describes managed subfields such as embedded `SZrTypeValue` slots.
+- `blittable` records the computed raw-copy eligibility used by `ZrCore_TypeLayout_CanRawCopy`.
+- `cTypeId` is the stable generated-C type identifier reserved for AOT layout emission.
+- `gcFieldOffsets` and `ownershipFieldOffsets` carry precomputed managed subfield locations for
+  generated C, GC scanning, and ownership/drop lowering.
 
 POD layouts use `memmove` through `ZrCore_TypeLayout_CopyInline`, so overlapping source and destination spans are safe. Field-copy layouts copy unmanaged byte ranges directly and route `SZrTypeValue` fields through the existing value/ownership copy path. Field-drop layouts release only embedded value slots marked with `ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE` through `ZrCore_Ownership_ReleaseValue`; GC-only value fields stay available for mark/rewrite visitors without being treated as owned storage.
+
+`ZrCore_TypeLayout_InitStructWithMetadata` is the AOT-facing initializer for these generated-C metadata fields. The existing `ZrCore_TypeLayout_InitStruct` entry remains the compatibility path and initializes neutral metadata (`cTypeId == 0`, no offset tables). Metadata field counts are still derived from the layout field flags, so the offset tables must describe the same field model as the canonical `SZrTypeLayout`.
 
 `ZR_TYPE_LAYOUT_KIND_VALUE` is a special layout for a standalone `SZrTypeValue`. It always copies through `ZrCore_Value_Copy`, so boxed struct objects still clone instead of being raw-copied by pointer. Dropping a value layout releases the value slot through the ownership runtime.
 
@@ -155,6 +200,72 @@ The resolver succeeds only when it can prove the inline representation is safe:
 - Bad prototype ids, malformed prototype data, unsafe managed field sizes, recursive cache re-entry, unknown non-local field type names, pointer-sized reference fields, and imported layouts without explicit serialized type-layout metadata cache as failed and return `ZR_NULL`.
 
 That failure mode is intentional. Callers must treat a `ZR_NULL` layout as "inline handling unavailable" and keep the boxed or older path rather than pretending the byte span has a proven lifecycle model.
+
+## AOT C Layout Declarations
+
+The AOT C backend now emits a declaration layer for proven inline struct layouts before function bodies are emitted. `backend_aot_c_type_layouts.c` scans the `SZrAotFunctionTable` for inline struct frame slots, resolves each unique `typeLayoutId` through `ZrCore_Function_ResolvePrototypeFrameTypeLayout`, and walks fields through `ZrCore_Function_VisitPrototypeFrameFieldLayouts`.
+
+For each resolved struct layout the generated file contains a `ZrLayout_<typeLayoutId>` C type, explicit padding members, generated field members, and static assertions for `sizeof`, `_Alignof`, and every field `offsetof`. The generated `ZR_AOT_C_LAYOUT_STRUCT` macro carries metadata alignment into the C type so a layout whose runtime `byteAlign` is larger than the natural alignment of its current fields still fails or passes by the same metadata rule as the interpreter/runtime resolver.
+
+This layer is a drift detector and type-shape anchor for later pure C lowering. It does not yet make struct operations themselves pure C: value SemIR field loads/stores and struct copy/call lowering still need their own slices before the full value-type shared-library smoke can execute without the existing `unsupported AOT value SemIR field` fallback.
+
+## SemIR Static C Types
+
+`SZrFunctionTypedTypeRef` now carries `staticCType` and `staticCTypeId` alongside the existing language type metadata. The compiler annotates SemIR type-table entries with an AOT-facing `EZrStaticCType` category for proven bool, integer, floating-point, GC reference, native pointer/data, and inline struct values. Inline struct entries use `staticCTypeId` to point at the same frame type-layout id that drives `ZrLayout_<typeLayoutId>` declaration emission.
+
+The binary writer and runtime loader preserve these fields behind `ZR_IO_SOURCE_PATCH_HAS_SEMIR_STATIC_C_TYPES`, so generated C, parser tests, and loaded runtime functions observe the same static type table after `.zro` roundtrip. Older binaries load with dynamic/none annotations, and non-struct entries normalize the id to `ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE`.
+
+This is only the type annotation layer for AOT C lowering. Conflict analysis, typed-block deopt insertion, and rejection of generic arithmetic opcodes in typed blocks remain separate instruction-set refactor slices.
+
+## Typed Scalar SemIR
+
+The SemIR layer now has typed scalar operation rows for arithmetic, comparisons, and the first bitwise/shift slice: `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `EQ`, `NE`, `LT`, `LE`, `GT`, `GE`, `BIT_NOT`, `BIT_AND`, `BIT_OR`, `BIT_XOR`, `SHL`, and `SHR`. The compiler maps already-specialized numeric bytecode such as signed, unsigned, and floating-point arithmetic/comparison instructions into these SemIR opcodes. Typed bitwise and shift bytecode uses typed local static C type hints to keep signed and unsigned integer lowering explicit. Generic dynamic arithmetic bytecode remains outside this typed scalar path.
+
+Scalar SemIR rows carry an explicit result `EZrStaticCType` when the destination is a temporary slot rather than a declared typed local. During SemIR table construction, that explicit static C type is resolved back to the function's `semIrTypeTable`, so a later C backend can choose the C operator and C storage type without re-reading VM value tags.
+
+The first AOT C lowering slices now consume these rows for signed `i64` binary arithmetic and comparisons, unsigned `u64` binary arithmetic and comparisons, `f64` binary arithmetic, focused numeric conversions, and signed `i64` bitwise/shift expressions. `backend_aot_c_scalar_semir.c` matches the ExecIR instruction to its SemIR row, validates the frame-slot bounds and signed-int, unsigned-int, or float tags, emits divide/modulo zero checks for arithmetic, and writes integer, unsigned integer, bool, or double destinations through direct frame-slot value fields instead of `ZrCore_Stack_GetValue` plus `ZR_VALUE_FAST_SET`. `backend_aot_c_scalar_conversion.c` handles the first numeric conversion set for `TO_INT`, `TO_UINT`, and `TO_FLOAT` specialized variants by writing `nativeInt64`, `nativeUInt64`, or `nativeDouble` directly. `backend_aot_c_scalar_bitwise.c` handles focused `~`, `&`, `|`, `^`, `<<`, and `>>` emission with direct `nativeInt64` / `nativeUInt64` reads and writes plus shift-count bounds checks. `backend_aot_c_scalar_stack_copy.c` handles the first typed scalar local-copy slice for bool, signed `i64`, unsigned `u64`, and `f64` `GET_STACK` / `SET_STACK` instructions by dispatching direct frame-slot scalar copies before the older generic stack-copy fallback. `backend_aot_c_lowering_control.c` now handles the first typed branch slice for bool false and fused signed `i64` comparisons by reading `&frame.slotBase[slot].value` directly and emitting C `goto` branches without branch-specific `ZrCore_Stack_GetValue` or typed-place fallback code; when both fused signed branch operands are proven `i64` scalar locals, it synchronizes them into `zr_aot_sN` and emits `if (zr_aot_sL op zr_aot_sR)`.
+
+`backend_aot_c_scalar_locals.c` is the first 04-S3 declaration slice. After generated frame setup and before value SemIR / bytecode dispatch emission, it scans `typedLocalBindings` and SemIR destination static C types to emit a `zr_aot_scalar_locals_begin` / `zr_aot_scalar_locals_end` block of `TZrBool zr_aot_bN`, `TZrInt64 zr_aot_sN`, `TZrUInt64 zr_aot_uN`, and `TZrFloat64 zr_aot_fN` locals. Scalar local kind tracking is a per-slot bitmask, so source typed-local evidence and SemIR destination evidence merge instead of replacing each other; a reused slot can therefore declare multiple C mirrors such as `zr_aot_s16` and `zr_aot_f16` when different lifetimes prove different static C types.
+
+Signed `i64` binary arithmetic, signed `i64` comparisons, unsigned `u64` binary arithmetic, `f64` binary arithmetic, signed `i64` binary bitwise operations, the first signed `i64` shift, bit-not, and branch operand paths, and the first conversion source paths now have local-expression slices on top of those declarations. When arithmetic or bitwise destination and operands are proven declared scalar locals, the scalar lowering modules synchronize the frame-slot inputs into `zr_aot_sN`, `zr_aot_uN`, or `zr_aot_fN` locals, emit expressions such as `zr_aot_s2 = zr_aot_s0 * zr_aot_s1;`, `zr_aot_u8 = zr_aot_u6 + zr_aot_u7;`, `zr_aot_f28 = zr_aot_f16 * zr_aot_f17;`, and `zr_aot_s13 = zr_aot_s9 & zr_aot_s0;`, then mirror that local result back to the existing frame slot ABI. When a signed compare destination is a proven bool local and both operands are proven `i64` locals, the same module emits a bool local expression such as `zr_aot_b24 = (TZrBool)(zr_aot_s2 > zr_aot_s4);` before mirroring the bool result back to the frame slot. Fused signed branches now also split branch operand eligibility: if both branch operands are proven `i64` locals, generated C validates the frame-slot values, synchronizes them into `zr_aot_sN`, and branches on a local expression such as `if (zr_aot_s2 <= zr_aot_s4) {`. Signed `i64` shifts and bit-not now use the bitmask declarations to write destination locals for reused temporary slots when SemIR destination metadata proves `i64`, for example `zr_aot_s16 = (TZrInt64)((TZrUInt64)zr_aot_s12 << zr_aot_s1);`, `zr_aot_s17 = zr_aot_s13 >> zr_aot_s1;`, and `zr_aot_s16 = ~zr_aot_s1;`. `TO_FLOAT` conversion can compute from `zr_aot_sSource` or `zr_aot_uSource`, and `TO_INT_FLOAT` can compute from `zr_aot_fSource`, when the source slot is a declared scalar local.
+
+This is still an incremental M2 scalar backend step. Signed `i64` binary arithmetic, signed `i64` comparisons, unsigned `u64` binary arithmetic, `f64` binary arithmetic, and signed `i64` binary bitwise currently use declared `sN` / `bN` / `uN` / `fN` locals for primary expressions; signed `i64` shifts and bit-not can now also write reused temporary `sN` destinations when SemIR provides `i64` destination evidence. Fused signed branches and the first numeric conversion source paths use declared `sN/uN/fN` operands when available. The generated code still mirrors through existing frame slot storage. Focused typed scalar local copies and focused typed branch helpers no longer use the old stack/value fallback paths, and scalar C local declarations now exist, but conversion destination-local coverage, broader branch variants, broader C-local mirroring, GC root registration, non-numeric/generic conversions, and typed/dynamic bridge/deopt execution remain separate slices.
+
+## Dynamic Arithmetic Deopt Boundary
+
+Generic dynamic arithmetic bytecode now has an explicit SemIR boundary instead of disappearing from the typed model. The compiler maps generic `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `LOGICAL_EQUAL`, and `LOGICAL_NOT_EQUAL` to `DYN_ARITHMETIC` rows marked as `DYNAMIC_RUNTIME` effects. Each row records the original destination and operand slots and receives a `deoptId` entry that points back to the exec instruction index.
+
+This keeps invariant A visible in metadata: operations that are not proven to have a single static C type stay dynamic and are represented as deopt-capable runtime points. It is not the full conflict analysis yet. Broader type-flow conflicts and mixed typed/dynamic block splitting remain part of the remaining instruction-set refactor work.
+
+## Static Type Conflict Deopt Boundary
+
+Typed scalar SemIR now has a conservative conflict guard before emitting pure typed arithmetic/comparison rows. If an instruction's destination or operand slot has multiple typed-local bindings whose annotated static C type differs, the mapper emits `DYN_ARITHMETIC` instead of the typed scalar opcode. The row is marked `DYNAMIC_RUNTIME`, receives a deopt entry, and preserves the original destination and operands.
+
+This is the first concrete 03-S2 conflict trigger. It prevents known contradictory slot metadata from entering the typed path, but it is still narrower than full type-flow analysis: def/use joins, block splitting, and deopt execution remain later work.
+
+## Dynamic Member Deopt Boundary
+
+Generic member-access bytecode now has explicit SemIR runtime boundaries. The compiler maps generic `GET_MEMBER` and `SET_MEMBER` to `META_GET` and `META_SET` rows marked as `DYNAMIC_RUNTIME` effects. Each row receives a `deoptId` entry and preserves the destination/value, receiver, and member-entry operands from the exec instruction.
+
+This separates dynamic object/member dispatch from typed inline struct access. Proven inline struct field operations continue to use typed value-place SemIR such as `FIELD_ADDR`, `LOAD_VALUE`, and `STORE_VALUE`, while generic member dispatch stays visible as a deopt-capable runtime point until later lowering can bridge or reject it explicitly.
+
+## Dynamic Call Deopt Boundary
+
+Generic call bytecode that is not proven to be a typed value call now remains visible in SemIR. After the value-type `CALL_TYPED` lowering pass declines a generic `FUNCTION_CALL`, the fallback mapper records it as `DYN_CALL`; `FUNCTION_TAIL_CALL` records as `DYN_TAIL_CALL`. Both rows are `DYNAMIC_RUNTIME` effects, receive deopt entries, and preserve the result slot, callee slot, and argument count.
+
+This keeps call lowering in the same two-path shape used elsewhere in the AOT plan: typed calls use `CALL_TYPED`, while unproven dynamic calls stay explicit runtime/deopt boundaries. Direct C call ABI lowering and typed/dynamic bridge execution remain later work.
+
+## Dynamic Iterator Deopt Boundary
+
+Generic iterator bytecode now has explicit SemIR runtime boundaries when it is not lowered to a typed loop. The fallback mapper records `ITER_INIT` as `DYN_ITER_INIT` and `ITER_MOVE_NEXT` as `DYN_ITER_MOVE_NEXT`. Both rows are `DYNAMIC_RUNTIME` effects, receive deopt entries, and preserve the result plus iterator/source operands.
+
+This records the current dynamic iterator contract without pretending it is pure C. Typed iterator lowering to indexed `for` loops, array-specific fast paths, and branch-shaped iterator control flow remain later decomposition work.
+
+## Dynamic Index Deopt Boundary
+
+Generic index bytecode now has explicit SemIR runtime boundaries when it is not lowered to typed array element access. The fallback mapper records `GET_BY_INDEX` as `DYN_INDEX_GET` and `SET_BY_INDEX` as `DYN_INDEX_SET`. Both rows are `DYNAMIC_RUNTIME` effects, receive deopt entries, and preserve the destination/value slot, receiver slot, and index slot from the exec instruction.
+
+This keeps array and object indexing in the same two-path model as member access and calls: proven typed array work must later lower into explicit bounds checks plus address/value operations, while unproven indexing remains a dynamic runtime/deopt boundary. The current slice records the boundary only; pure C array element lowering and bounds-check SemIR are still later work.
 
 ## Function Frame Layout Metadata
 
@@ -238,6 +349,7 @@ The implemented boundary covers:
 - Frame post-call and tail-call reuse drop wiring for owned embedded inline values.
 - Native callback inline argument spans in the real dispatch context for already-inline VM frame payloads, including span refresh after native callback stack relocation in stack-root, stable fast/inline-pinned, and generic dispatcher lanes, with non-parameter inline slots rejected, ordinary boxed argument reads blocked for inline struct parameters, and missing/non-inline metadata preserving boxed argument reads.
 - Runtime validation for local struct field mutation, frame-byte probes, by-value parameter mutation, by-value return mutation, large POD values, managed string fields, GC scanning of embedded value fields, constructor copyback, and nested struct field copy.
+- AOT typed scalar generated C currently declares `sN/uN/fN/bN` locals for proven bool, signed `i64`, unsigned `u64`, and `f64` slots before dispatch; signed `i64` binary arithmetic, signed `i64` comparison, unsigned `u64` binary arithmetic, `f64` binary arithmetic, and signed `i64` binary bitwise can emit the first `sN = sN op sN` / `bN = (sN cmp sN)` / `uN = uN op uN` / `fN = fN op fN` expressions and mirror them back to frame slots. Signed `i64` shift, signed `i64` bit-not, fused signed branch comparisons, unsigned `u64` comparison, and the first numeric conversion source paths (`TO_UINT`, `TO_UINT_SIGNED`, `TO_UINT_FLOAT`, `TO_FLOAT`, `TO_INT_FLOAT`, and `TO_INT_UNSIGNED`) now reuse proven `sN/uN/fN` source locals when available, while the declarations remain a partial 04-S3 skeleton for other scalar operations.
 - Typed union constructor materialization into inline frame bytes for POD and value-sized payload fields, using the same type-layout bridge as struct inline values.
 - Typed union constructor assignment into existing inline locals, including replacement of an active owner payload before writing the new variant.
 - Typed union inline pseudo-member reads for `__zr_unionVariant` and `__zr_unionPayloadN`, allowing `switch`/`using` pattern matching to read tag and POD payload bytes from inline local slots.

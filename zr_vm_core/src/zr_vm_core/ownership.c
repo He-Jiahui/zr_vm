@@ -486,8 +486,8 @@ TZrBool ZrCore_Ownership_LoanValue(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    ownership_set_value_from_object(destination, object, ZR_OWNERSHIP_VALUE_KIND_LOANED, control);
     ownership_reset_value_storage(source);
+    ownership_set_value_from_object(destination, object, ZR_OWNERSHIP_VALUE_KIND_LOANED, control);
     ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);
     return ZR_TRUE;
 }
@@ -524,8 +524,8 @@ TZrBool ZrCore_Ownership_ReturnLoanValue(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    ownership_set_value_from_object(destination, object, ZR_OWNERSHIP_VALUE_KIND_UNIQUE, control);
     ownership_reset_value_storage(source);
+    ownership_set_value_from_object(destination, object, ZR_OWNERSHIP_VALUE_KIND_UNIQUE, control);
     ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);
     return ZR_TRUE;
 }
@@ -563,8 +563,8 @@ TZrBool ZrCore_Ownership_ShareValue(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    ownership_set_value_from_object(destination, object, ZR_OWNERSHIP_VALUE_KIND_SHARED, control);
     ownership_reset_value_storage(source);
+    ownership_set_value_from_object(destination, object, ZR_OWNERSHIP_VALUE_KIND_SHARED, control);
     ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);
     return ZR_TRUE;
 }
@@ -732,11 +732,8 @@ TZrBool ZrCore_Ownership_ReturnToGcValue(struct SZrState *state,
     ownership_return_control_to_gc(state, control);
     ownership_release_strong_ref(state, control);
 
-    ZrCore_Value_InitAsRawObject(state, destination, object);
-    source->ownershipControl = ZR_NULL;
-    source->ownershipWeakRef = ZR_NULL;
-    source->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
     ownership_reset_value_storage(source);
+    ZrCore_Value_InitAsRawObject(state, destination, object);
 
     ownership_try_free_control(state, control);
     return ZR_TRUE;

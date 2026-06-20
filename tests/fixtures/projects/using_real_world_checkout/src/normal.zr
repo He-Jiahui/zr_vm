@@ -1,0 +1,36 @@
+union OrderState {
+    Empty;
+    @Ready { subtotal: int; tax: int; discount: int; }
+}
+
+union PaymentResult {
+    @Ok(value: int);
+    Err(error: int);
+}
+
+using (var catalog = %import("catalog")) {
+    var order: OrderState = OrderState.Ready {
+        subtotal: catalog.baseSubtotal(),
+        tax: catalog.taxAmount(),
+        discount: catalog.discountAmount(),
+    };
+
+    using {subtotal, taxDue: tax, discount} = order;
+    var payment: PaymentResult = PaymentResult.Ok(subtotal + taxDue - discount);
+
+    switch (payment) {
+        (Ok(total)) {
+            if (total == 125) {
+                return "USING_UNION_NORMAL_PASS 125";
+            }
+            return "USING_UNION_NORMAL_FAIL";
+        }
+        (Err(code)) {
+            return "USING_UNION_NORMAL_FAIL";
+        }
+    }
+
+    return "USING_UNION_NORMAL_FAIL";
+} else {
+    return "USING_UNION_NORMAL_FAIL";
+}

@@ -5,6 +5,14 @@
 #include "compile_expression_internal.h"
 
 static TZrBool primary_expression_starts_with_member_call(const SZrPrimaryExpression *primary);
+static TZrBool primary_expression_starts_with_ownership_member_call(const SZrPrimaryExpression *primary);
+static TZrBool primary_expression_resolve_direct_ownership_receiver(
+        SZrCompilerState *cs,
+        const SZrPrimaryExpression *primary,
+        TZrUInt32 *outReceiverSlot,
+        SZrString **outRootTypeName,
+        TZrBool *outRootIsTypeReference,
+        EZrOwnershipQualifier *outRootOwnershipQualifier);
 static TZrBool primary_expression_returns_inline_type(SZrCompilerState *cs, SZrAstNode *node);
 static TZrUInt32 compile_inline_receiver_property_into_slot(SZrCompilerState *cs,
                                                             SZrAstNode *property,
@@ -644,6 +652,7 @@ static TZrUInt32 compile_primary_expression_result_slot(SZrCompilerState *cs,
     TZrSize memberStartIndex = 0;
     TZrBool rootUsesSuperLookup = ZR_FALSE;
     TZrUInt32 superReceiverSlot = ZR_PARSER_SLOT_NONE;
+    TZrBool rootResolvedFromDirectOwnershipReceiver = ZR_FALSE;
 
     // 1. 编译基础属性（标识符或表达式）
     if (primary->property != ZR_NULL) {
@@ -667,9 +676,21 @@ static TZrUInt32 compile_primary_expression_result_slot(SZrCompilerState *cs,
             rootIsTypeReference = ZR_FALSE;
             rootUsesSuperLookup = ZR_TRUE;
         } else {
-            compile_expression_non_tail(cs, primary->property);
+            rootResolvedFromDirectOwnershipReceiver =
+                    primary_expression_resolve_direct_ownership_receiver(cs,
+                                                                         primary,
+                                                                         &currentSlot,
+                                                                         &rootTypeName,
+                                                                         &rootIsTypeReference,
+                                                                         &rootOwnershipQualifier);
             if (cs->hasError) {
                 return ZR_PARSER_SLOT_NONE;
+            }
+            if (!rootResolvedFromDirectOwnershipReceiver) {
+                compile_expression_non_tail(cs, primary->property);
+                if (cs->hasError) {
+                    return ZR_PARSER_SLOT_NONE;
+                }
             }
         }
     } else {
@@ -678,15 +699,17 @@ static TZrUInt32 compile_primary_expression_result_slot(SZrCompilerState *cs,
     }
 
     if (!rootUsesSuperLookup) {
-        currentSlot = cs->lastExpressionSlot;
-        if (currentSlot == ZR_PARSER_SLOT_NONE) {
-            ZrParser_Compiler_Error(cs, "Failed to compile primary expression root", node->location);
-            return ZR_PARSER_SLOT_NONE;
-        }
-        resolve_expression_root_type(cs, primary->property, &rootTypeName, &rootIsTypeReference);
-        rootOwnershipQualifier = infer_expression_ownership_qualifier_local(cs, primary->property);
-        if (cs->hasError) {
-            return ZR_PARSER_SLOT_NONE;
+        if (!rootResolvedFromDirectOwnershipReceiver) {
+            currentSlot = cs->lastExpressionSlot;
+            if (currentSlot == ZR_PARSER_SLOT_NONE) {
+                ZrParser_Compiler_Error(cs, "Failed to compile primary expression root", node->location);
+                return ZR_PARSER_SLOT_NONE;
+            }
+            resolve_expression_root_type(cs, primary->property, &rootTypeName, &rootIsTypeReference);
+            rootOwnershipQualifier = infer_expression_ownership_qualifier_local(cs, primary->property);
+            if (cs->hasError) {
+                return ZR_PARSER_SLOT_NONE;
+            }
         }
     }
     compile_primary_member_chain(cs, primary->property, primary->members, memberStartIndex, &currentSlot,
@@ -713,6 +736,92 @@ static TZrBool primary_expression_starts_with_member_call(const SZrPrimaryExpres
            primary->members->nodes[0]->type == ZR_AST_MEMBER_EXPRESSION &&
            primary->members->nodes[1] != ZR_NULL &&
            primary->members->nodes[1]->type == ZR_AST_FUNCTION_CALL;
+}
+
+static TZrBool primary_expression_starts_with_ownership_member_call(const SZrPrimaryExpression *primary) {
+    SZrAstNode *firstMemberNode;
+    SZrMemberExpression *firstMemberExpr;
+    EZrOwnershipBuiltinKind ownershipMemberKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+
+    if (!primary_expression_starts_with_member_call(primary)) {
+        return ZR_FALSE;
+    }
+
+    firstMemberNode = primary->members->nodes[0];
+    if (firstMemberNode == ZR_NULL || firstMemberNode->type != ZR_AST_MEMBER_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    firstMemberExpr = &firstMemberNode->data.memberExpression;
+    if (firstMemberExpr->computed ||
+        firstMemberExpr->property == ZR_NULL ||
+        firstMemberExpr->property->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_FALSE;
+    }
+
+    return ZrParser_OwnershipMemberNameToBuiltinKind(firstMemberExpr->property->data.identifier.name,
+                                                     &ownershipMemberKind);
+}
+
+static TZrBool primary_expression_resolve_direct_ownership_receiver(
+        SZrCompilerState *cs,
+        const SZrPrimaryExpression *primary,
+        TZrUInt32 *outReceiverSlot,
+        SZrString **outRootTypeName,
+        TZrBool *outRootIsTypeReference,
+        EZrOwnershipQualifier *outRootOwnershipQualifier) {
+    TZrUInt32 receiverSlot;
+    SZrString *rootTypeName = ZR_NULL;
+    TZrBool rootIsTypeReference = ZR_FALSE;
+    EZrOwnershipQualifier rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+
+    if (outReceiverSlot != ZR_NULL) {
+        *outReceiverSlot = ZR_PARSER_SLOT_NONE;
+    }
+    if (outRootTypeName != ZR_NULL) {
+        *outRootTypeName = ZR_NULL;
+    }
+    if (outRootIsTypeReference != ZR_NULL) {
+        *outRootIsTypeReference = ZR_FALSE;
+    }
+    if (outRootOwnershipQualifier != ZR_NULL) {
+        *outRootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+
+    if (cs == ZR_NULL || primary == ZR_NULL || primary->property == ZR_NULL || cs->hasError ||
+        !primary_expression_starts_with_ownership_member_call(primary) ||
+        compiler_is_super_identifier_node(primary->property) ||
+        primary->property->type != ZR_AST_IDENTIFIER_LITERAL ||
+        primary->property->data.identifier.name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    receiverSlot = find_local_var(cs, primary->property->data.identifier.name);
+    if (receiverSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+
+    resolve_expression_root_type(cs, primary->property, &rootTypeName, &rootIsTypeReference);
+    rootOwnershipQualifier = infer_expression_ownership_qualifier_local(cs, primary->property);
+    if (cs->hasError ||
+        rootIsTypeReference ||
+        rootOwnershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE) {
+        return ZR_FALSE;
+    }
+
+    if (outReceiverSlot != ZR_NULL) {
+        *outReceiverSlot = receiverSlot;
+    }
+    if (outRootTypeName != ZR_NULL) {
+        *outRootTypeName = rootTypeName;
+    }
+    if (outRootIsTypeReference != ZR_NULL) {
+        *outRootIsTypeReference = rootIsTypeReference;
+    }
+    if (outRootOwnershipQualifier != ZR_NULL) {
+        *outRootOwnershipQualifier = rootOwnershipQualifier;
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool compiler_type_prototype_is_inline_value(const SZrTypePrototypeInfo *prototypeInfo) {
@@ -916,6 +1025,40 @@ TZrUInt32 compile_primary_expression_into_slot(SZrCompilerState *cs, SZrAstNode 
             return ZR_PARSER_SLOT_NONE;
         }
         return normalize_known_result_to_slot(cs, currentSlot, targetSlot);
+    }
+    if (cs->hasError) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+
+    if (primary_expression_resolve_direct_ownership_receiver(cs,
+                                                             primary,
+                                                             &currentSlot,
+                                                             &rootTypeName,
+                                                             &rootIsTypeReference,
+                                                             &rootOwnershipQualifier)) {
+        if (targetSlot == (TZrUInt32)cs->stackSlotCount && allocate_stack_slot(cs) != targetSlot) {
+            return ZR_PARSER_SLOT_NONE;
+        }
+
+        compile_primary_member_chain(cs,
+                                     primary->property,
+                                     primary->members,
+                                     0,
+                                     &currentSlot,
+                                     &rootTypeName,
+                                     &rootIsTypeReference,
+                                     &rootOwnershipQualifier,
+                                     ZR_FALSE,
+                                     ZR_PARSER_SLOT_NONE,
+                                     targetSlot);
+        if (currentSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
+            return ZR_PARSER_SLOT_NONE;
+        }
+        if (currentSlot != targetSlot) {
+            return normalize_known_result_to_slot(cs, currentSlot, targetSlot);
+        }
+        cs->lastExpressionSlot = currentSlot;
+        return currentSlot;
     }
     if (cs->hasError) {
         return ZR_PARSER_SLOT_NONE;

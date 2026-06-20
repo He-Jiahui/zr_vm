@@ -18,6 +18,7 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/type_layout.h"
 #include "zr_vm_core/value.h"
 
 typedef struct SZrCompilerState SZrCompilerState;
@@ -93,8 +94,22 @@ typedef enum EZrDebugVariableHandleKind {
     ZR_DEBUG_VARIABLE_HANDLE_KIND_PROTOTYPE = 3,
     ZR_DEBUG_VARIABLE_HANDLE_KIND_PROTOTYPE_VIEW = 4,
     ZR_DEBUG_VARIABLE_HANDLE_KIND_EXCEPTION = 5,
-    ZR_DEBUG_VARIABLE_HANDLE_KIND_INDEX_WINDOW = 6
+    ZR_DEBUG_VARIABLE_HANDLE_KIND_INDEX_WINDOW = 6,
+    ZR_DEBUG_VARIABLE_HANDLE_KIND_INLINE_UNION = 7
 } EZrDebugVariableHandleKind;
+
+typedef struct ZrDebugUnionView {
+    TZrChar type_name[ZR_DEBUG_NAME_CAPACITY];
+    TZrChar variant_name[ZR_DEBUG_NAME_CAPACITY];
+    const SZrFunction *entry_function;
+    const struct SZrCompiledPrototypeInfo *prototype;
+    const struct SZrCompiledMemberInfo *members;
+    const struct SZrCompiledMemberInfo *variant_member;
+    SZrObject *variant_metadata;
+    SZrObject *payload_fields;
+    TZrUInt32 payload_count;
+    TZrUInt32 tag_size;
+} ZrDebugUnionView;
 
 typedef struct ZrDebugVariableHandle {
     TZrUInt32 handle_id;
@@ -103,6 +118,8 @@ typedef struct ZrDebugVariableHandle {
     EZrDebugPrototypeViewKind prototype_view_kind;
     TZrSize window_start;
     TZrSize window_count;
+    TZrUInt32 frame_id;
+    TZrUInt32 stack_slot;
     SZrTypeValue value;
     SZrObjectPrototype *prototype;
 } ZrDebugVariableHandle;
@@ -177,6 +194,54 @@ void zr_debug_value_semantic_summary(SZrState *state,
                                      TZrSize indexedVariables,
                                      TZrChar *buffer,
                                      TZrSize bufferSize);
+TZrBool zr_debug_value_is_union_carrier(SZrState *state, const SZrTypeValue *value);
+TZrSize zr_debug_count_union_carrier_payload_fields(SZrState *state, const SZrTypeValue *value);
+TZrBool zr_debug_union_value_view(ZrDebugAgent *agent,
+                                  const SZrTypeValue *value,
+                                  ZrDebugUnionView *outView);
+TZrBool zr_debug_inline_union_view(ZrDebugAgent *agent,
+                                   const SZrFunction *function,
+                                   const SZrFunctionFrameSlotLayout *slotLayout,
+                                   const SZrStackFramePlace *place,
+                                   ZrDebugUnionView *outView);
+TZrBool zr_debug_inline_union_slot_view(ZrDebugAgent *agent,
+                                        const SZrFunction *function,
+                                        const SZrCallInfo *callInfo,
+                                        TZrUInt32 stackSlot,
+                                        SZrStackFramePlace *outPlace,
+                                        ZrDebugUnionView *outView);
+TZrBool zr_debug_union_payload_display_name(SZrState *state,
+                                            const ZrDebugUnionView *view,
+                                            TZrUInt32 payloadIndex,
+                                            TZrChar *buffer,
+                                            TZrSize bufferSize);
+TZrBool zr_debug_union_payload_value_from_carrier(ZrDebugAgent *agent,
+                                                  const SZrTypeValue *value,
+                                                  const ZrDebugUnionView *view,
+                                                  TZrUInt32 payloadIndex,
+                                                  SZrTypeValue *outValue);
+TZrBool zr_debug_union_payload_value_from_inline(ZrDebugAgent *agent,
+                                                 const SZrFunction *function,
+                                                 const SZrStackFramePlace *place,
+                                                 const ZrDebugUnionView *view,
+                                                 TZrUInt32 payloadIndex,
+                                                 SZrTypeValue *outValue);
+TZrBool zr_debug_materialize_inline_union_slot(ZrDebugAgent *agent,
+                                               const SZrFunction *function,
+                                               const SZrCallInfo *callInfo,
+                                               TZrUInt32 stackSlot,
+                                               SZrTypeValue *outValue);
+TZrBool zr_debug_union_safe_get_member_value(ZrDebugAgent *agent,
+                                             const SZrTypeValue *receiver,
+                                             const TZrChar *memberName,
+                                             SZrTypeValue *outValue);
+TZrBool zr_debug_format_union_value_text(ZrDebugAgent *agent,
+                                         const SZrTypeValue *value,
+                                         TZrChar *buffer,
+                                         TZrSize bufferSize);
+void zr_debug_format_inline_union_text(const ZrDebugUnionView *view,
+                                       TZrChar *buffer,
+                                       TZrSize bufferSize);
 ZR_DEBUG_API void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
                                                             TZrUInt32 frameId,
                                                             const TZrChar *expression,

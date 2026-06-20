@@ -131,6 +131,53 @@ static TZrBool zr_debug_agent_accept_client(ZrDebugAgent *agent, TZrUInt32 timeo
     return ZR_TRUE;
 }
 
+static const TZrChar *zr_debug_exception_string_field(SZrState *state,
+                                                      const SZrTypeValue *objectValue,
+                                                      const TZrChar *fieldName) {
+    SZrObject *object;
+    SZrString *fieldString;
+    SZrTypeValue key;
+    const SZrTypeValue *fieldValue;
+
+    if (state == ZR_NULL || objectValue == ZR_NULL || objectValue->value.object == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    object = ZR_CAST_OBJECT(state, objectValue->value.object);
+    if (object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    fieldString = ZrCore_String_CreateFromNative(state, (TZrNativeString)fieldName);
+    if (fieldString == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    fieldValue = ZrCore_Object_GetValue(state, object, &key);
+    if (fieldValue == ZR_NULL || fieldValue->type != ZR_VALUE_TYPE_STRING || fieldValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_GetNativeString(ZR_CAST_STRING(state, fieldValue->value.object));
+}
+
+static void zr_debug_agent_fill_exception_stack(ZrDebugAgent *agent) {
+    const TZrChar *stackText;
+
+    if (agent == ZR_NULL || agent->state == ZR_NULL || !agent->state->hasCurrentException) {
+        return;
+    }
+
+    stackText = zr_debug_exception_string_field(agent->state, &agent->state->currentException, "stack");
+    if (stackText != ZR_NULL && stackText[0] != '\0') {
+        zr_debug_copy_text(agent->lastStopEvent.exception_stack,
+                           sizeof(agent->lastStopEvent.exception_stack),
+                           stackText);
+    }
+}
+
 void zr_debug_agent_fill_stop_event(ZrDebugAgent *agent,
                                     EZrDebugStopReason reason,
                                     EZrDebugExceptionFilter exceptionFilter,
@@ -168,6 +215,9 @@ void zr_debug_agent_fill_stop_event(ZrDebugAgent *agent,
     zr_debug_copy_text(agent->lastStopEvent.function_name,
                        sizeof(agent->lastStopEvent.function_name),
                        zr_debug_function_name(function));
+    if (reason == ZR_DEBUG_STOP_REASON_EXCEPTION) {
+        zr_debug_agent_fill_exception_stack(agent);
+    }
 }
 
 static void zr_debug_agent_emit_stopped(ZrDebugAgent *agent) {
@@ -190,6 +240,9 @@ static void zr_debug_agent_emit_stopped(ZrDebugAgent *agent) {
     cJSON_AddNumberToObject(params, "line", agent->lastStopEvent.line);
     cJSON_AddNumberToObject(params, "instructionIndex", agent->lastStopEvent.instruction_index);
     cJSON_AddNumberToObject(params, "stateId", (double)agent->lastStopEvent.state_id);
+    if (agent->lastStopEvent.exception_stack[0] != '\0') {
+        cJSON_AddStringToObject(params, "exceptionStack", agent->lastStopEvent.exception_stack);
+    }
     zr_debug_agent_send_event(agent, "stopped", params);
 }
 

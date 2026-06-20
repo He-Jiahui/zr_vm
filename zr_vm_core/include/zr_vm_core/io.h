@@ -138,6 +138,8 @@ typedef struct SZrIoFunctionTypedTypeRef {
     struct SZrString *typeName;
     EZrValueType elementBaseType;
     struct SZrString *elementTypeName;
+    EZrStaticCType staticCType;
+    TZrUInt32 staticCTypeId;
 } SZrIoFunctionTypedTypeRef;
 
 typedef struct SZrIoFunctionTypedLocalBinding {
@@ -175,6 +177,7 @@ typedef struct SZrIoFunctionModuleEffect {
     TZrUInt8 readiness;
     TZrUInt8 reserved0;
     struct SZrString *moduleName;
+    struct SZrString *assemblyName;
     struct SZrString *symbolName;
     TZrUInt32 lineInSourceStart;
     TZrUInt32 columnInSourceStart;

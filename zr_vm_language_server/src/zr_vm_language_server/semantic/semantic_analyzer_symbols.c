@@ -3,6 +3,7 @@
 //
 
 #include "semantic/semantic_analyzer_internal.h"
+#include "semantic/semantic_analyzer_union_patterns.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
@@ -1759,6 +1760,147 @@ static void collect_symbols_from_node_array(SZrState *state,
     }
 }
 
+static void collect_using_statement_symbols(SZrState *state,
+                                            SZrSemanticAnalyzer *analyzer,
+                                            SZrAstNode *node) {
+    SZrUsingStatement *usingStmt;
+    SZrSemanticUnionPatternResolution resolution;
+    TZrBool hasUnionPattern;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_USING_STATEMENT) {
+        return;
+    }
+
+    usingStmt = &node->data.usingStatement;
+    if (usingStmt->resource != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, usingStmt->resource);
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionInit(state, &resolution);
+    hasUnionPattern = ZrLanguageServer_SemanticAnalyzer_ResolveUsingUnionPattern(state,
+                                                                                 analyzer,
+                                                                                 usingStmt,
+                                                                                 &resolution);
+    if (hasUnionPattern && usingStmt->body != ZR_NULL) {
+        SZrTypeEnvironment *savedTypeEnv = push_runtime_type_binding_scope(state, analyzer);
+        ZrLanguageServer_SymbolTable_EnterScope(state,
+                                                analyzer->symbolTable,
+                                                semantic_scope_range_for_node(node, usingStmt->body),
+                                                ZR_FALSE,
+                                                ZR_FALSE,
+                                                ZR_FALSE);
+        ZrLanguageServer_SemanticAnalyzer_RegisterUnionPatternBindings(state,
+                                                                       analyzer,
+                                                                       &resolution,
+                                                                       ZR_TRUE,
+                                                                       ZR_TRUE);
+        ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, usingStmt->body);
+        ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
+        pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
+    } else {
+        if (hasUnionPattern) {
+            ZrLanguageServer_SemanticAnalyzer_RegisterUnionPatternBindings(state,
+                                                                           analyzer,
+                                                                           &resolution,
+                                                                           ZR_TRUE,
+                                                                           ZR_TRUE);
+        }
+        if (!hasUnionPattern && usingStmt->body != ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, usingStmt->body);
+        }
+    }
+
+    if (usingStmt->elseBody != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, usingStmt->elseBody);
+    }
+    ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionFree(state, &resolution);
+}
+
+static void collect_switch_expression_symbols(SZrState *state,
+                                              SZrSemanticAnalyzer *analyzer,
+                                              SZrAstNode *node) {
+    SZrSwitchExpression *switchExpr;
+    SZrInferredType subjectType;
+    TZrBool subjectTypeInitialized = ZR_FALSE;
+    TZrBool hasSubjectType = ZR_FALSE;
+    TZrSize index;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_SWITCH_EXPRESSION) {
+        return;
+    }
+
+    switchExpr = &node->data.switchExpression;
+    if (switchExpr->expr != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, switchExpr->expr);
+        ZrParser_InferredType_Init(state, &subjectType, ZR_VALUE_TYPE_OBJECT);
+        subjectTypeInitialized = ZR_TRUE;
+        hasSubjectType = ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(state,
+                                                                                    analyzer,
+                                                                                    switchExpr->expr,
+                                                                                    &subjectType);
+        if (!hasSubjectType && analyzer->compilerState != ZR_NULL && analyzer->compilerState->hasError) {
+            ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(state,
+                                                                             analyzer,
+                                                                             switchExpr->expr->location);
+        }
+    }
+
+    if (switchExpr->cases != ZR_NULL && switchExpr->cases->nodes != ZR_NULL) {
+        for (index = 0; index < switchExpr->cases->count; index++) {
+            SZrAstNode *caseNode = switchExpr->cases->nodes[index];
+            SZrSwitchCase *switchCase;
+            SZrSemanticUnionPatternResolution resolution;
+            TZrBool hasUnionPattern;
+
+            if (caseNode == ZR_NULL || caseNode->type != ZR_AST_SWITCH_CASE) {
+                continue;
+            }
+
+            switchCase = &caseNode->data.switchCase;
+            ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionInit(state, &resolution);
+            hasUnionPattern = hasSubjectType &&
+                              ZrLanguageServer_SemanticAnalyzer_ResolveSwitchUnionPattern(state,
+                                                                                          analyzer,
+                                                                                          switchCase->value,
+                                                                                          &subjectType,
+                                                                                          &resolution);
+            if (hasUnionPattern && switchCase->block != ZR_NULL) {
+                SZrTypeEnvironment *savedTypeEnv = push_runtime_type_binding_scope(state, analyzer);
+                ZrLanguageServer_SymbolTable_EnterScope(state,
+                                                        analyzer->symbolTable,
+                                                        semantic_scope_range_for_node(caseNode, switchCase->block),
+                                                        ZR_FALSE,
+                                                        ZR_FALSE,
+                                                        ZR_FALSE);
+                ZrLanguageServer_SemanticAnalyzer_RegisterUnionPatternBindings(state,
+                                                                               analyzer,
+                                                                               &resolution,
+                                                                               ZR_TRUE,
+                                                                               ZR_TRUE);
+                ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, switchCase->block);
+                ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
+                pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
+            } else {
+                ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, switchCase->value);
+                ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, switchCase->block);
+            }
+            ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionFree(state, &resolution);
+        }
+    }
+
+    if (switchExpr->defaultCase != ZR_NULL &&
+        switchExpr->defaultCase->type == ZR_AST_SWITCH_DEFAULT) {
+        ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(
+                state,
+                analyzer,
+                switchExpr->defaultCase->data.switchDefault.block);
+    }
+
+    if (subjectTypeInitialized) {
+        ZrParser_InferredType_Free(state, &subjectType);
+    }
+}
+
 void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZrSemanticAnalyzer *analyzer, SZrAstNode *node) {
     if (state == ZR_NULL || analyzer == ZR_NULL || node == ZR_NULL) {
         return;
@@ -1837,10 +1979,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
         }
 
         case ZR_AST_USING_STATEMENT: {
-            SZrUsingStatement *usingStmt = &node->data.usingStatement;
-            if (usingStmt->body != ZR_NULL) {
-                ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, usingStmt->body);
-            }
+            collect_using_statement_symbols(state, analyzer, node);
             return;
         }
         
@@ -2633,6 +2772,10 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state,
                                                                     analyzer,
                                                                     node->data.ifExpression.elseExpr);
+            return;
+
+        case ZR_AST_SWITCH_EXPRESSION:
+            collect_switch_expression_symbols(state, analyzer, node);
             return;
 
         case ZR_AST_WHILE_LOOP:

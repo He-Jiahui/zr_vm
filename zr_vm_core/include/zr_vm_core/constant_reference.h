@@ -89,11 +89,14 @@ typedef struct SZrCompiledMemberInfo {
 #pragma pack(pop)
 
 // 常量引用路径结构（从parser模块引用）
+#ifndef ZR_CONSTANT_REFERENCE_PATH_DECLARED
+#define ZR_CONSTANT_REFERENCE_PATH_DECLARED
 typedef struct SZrConstantReferencePath {
     TZrUInt32 depth;              // 路径深度（总步骤数）
     TZrUInt32 *steps;             // 路径步骤数组（depth个元素）
     EZrValueType type;          // 常量类型记录
 } SZrConstantReferencePath;
+#endif
 
 // 解析常量引用路径，返回目标对象
 // 从startFunction开始，按照path中的步骤解析引用

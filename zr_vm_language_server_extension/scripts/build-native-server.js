@@ -8,6 +8,7 @@ const layout = createArtifactLayout({
     extensionRoot: path.resolve(__dirname, '..'),
 });
 const repositoryRoot = layout.repositoryRoot;
+const extensionRoot = layout.extensionRoot;
 const buildDir = layout.native.buildDir;
 const buildConfig = layout.nativeBuildConfig;
 const targets = (process.env.ZR_NATIVE_BUILD_TARGET || 'zr_vm_language_server_stdio,zr_vm_cli_executable')
@@ -118,12 +119,42 @@ function importVsDevCmdEnvironment() {
 const env = process.platform === 'win32' && !process.env.VSCMD_VER
     ? importVsDevCmdEnvironment()
     : process.env;
+const nativeToolchainEnv = sanitizeNativeToolchainEnvironment(env);
 
 try {
-    buildAndVerifyNativeAssets(env);
+    buildAndVerifyNativeAssets(nativeToolchainEnv);
 } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
+}
+
+function sanitizeNativeToolchainEnvironment(sourceEnv) {
+    const sanitizedEnv = { ...sourceEnv };
+    const pathKey = Object.keys(sanitizedEnv).find((key) => key.toLowerCase() === 'path') || 'PATH';
+    const pathValue = sanitizedEnv[pathKey];
+    const extensionNodeBin = path.resolve(extensionRoot, 'node_modules', '.bin');
+
+    if (typeof pathValue !== 'string' || pathValue.length === 0) {
+        return sanitizedEnv;
+    }
+
+    sanitizedEnv[pathKey] = pathValue
+        .split(path.delimiter)
+        .filter((entry) => !pathsEqual(entry, extensionNodeBin))
+        .join(path.delimiter);
+    return sanitizedEnv;
+}
+
+function pathsEqual(left, right) {
+    if (!left || !right) {
+        return false;
+    }
+
+    const leftResolved = path.resolve(left);
+    const rightResolved = path.resolve(right);
+    return process.platform === 'win32'
+        ? leftResolved.toLowerCase() === rightResolved.toLowerCase()
+        : leftResolved === rightResolved;
 }
 
 function ensureBuildDirectory(env) {

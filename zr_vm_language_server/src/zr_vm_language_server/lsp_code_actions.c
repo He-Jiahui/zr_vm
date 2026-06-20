@@ -165,29 +165,27 @@ static TZrSize lsp_editor_find_line_comment_start(const TZrChar *content,
     return lineEnd;
 }
 
-static TZrBool lsp_editor_has_import_alias(SZrFileVersion *fileVersion,
+static TZrBool lsp_editor_has_import_alias(const TZrChar *content,
+                                           TZrSize contentLength,
                                            const TZrChar *alias,
                                            TZrSize aliasLength) {
-    const TZrChar *content;
     TZrSize cursor = 0;
 
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL ||
-        alias == ZR_NULL || aliasLength == 0) {
+    if (content == ZR_NULL || alias == ZR_NULL || aliasLength == 0) {
         return ZR_FALSE;
     }
 
-    content = fileVersion->content;
-    while (cursor < fileVersion->contentLength) {
+    while (cursor < contentLength) {
         TZrSize lineStart = cursor;
         TZrSize lineEnd = cursor;
-        while (lineEnd < fileVersion->contentLength && content[lineEnd] != '\n') {
+        while (lineEnd < contentLength && content[lineEnd] != '\n') {
             lineEnd++;
         }
-        if (lsp_editor_offset_is_code(content, fileVersion->contentLength, lineStart) &&
+        if (lsp_editor_offset_is_code(content, contentLength, lineStart) &&
             lsp_editor_line_declares_import_alias(content + lineStart, lineEnd - lineStart, alias, aliasLength)) {
             return ZR_TRUE;
         }
-        cursor = lineEnd < fileVersion->contentLength ? lineEnd + 1 : lineEnd;
+        cursor = lineEnd < contentLength ? lineEnd + 1 : lineEnd;
     }
 
     return ZR_FALSE;
@@ -364,21 +362,19 @@ static TZrBool lsp_editor_requested_range_intersects_line_span(SZrLspRange range
 static TZrBool lsp_editor_find_missing_import_candidate_on_line(SZrState *state,
                                                                 SZrLspContext *context,
                                                                 SZrString *uri,
-                                                                SZrFileVersion *fileVersion,
+                                                                const TZrChar *content,
+                                                                TZrSize contentLength,
                                                                 SZrLspRange range,
                                                                 SZrLspMissingImportCandidate *candidate) {
     TZrSize lineStart;
     TZrSize lineEnd;
-    const TZrChar *content;
 
-    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || fileVersion == ZR_NULL ||
-        fileVersion->content == ZR_NULL || candidate == ZR_NULL) {
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || content == ZR_NULL || candidate == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    content = fileVersion->content;
-    lineStart = lsp_editor_line_start_offset(content, fileVersion->contentLength, range.start.line);
-    lineEnd = lsp_editor_line_end_offset(content, fileVersion->contentLength, range.start.line);
+    lineStart = lsp_editor_line_start_offset(content, contentLength, range.start.line);
+    lineEnd = lsp_editor_line_end_offset(content, contentLength, range.start.line);
     for (TZrSize cursor = lineStart; cursor + 1 < lineEnd;) {
         TZrSize aliasStart;
         TZrSize aliasEnd;
@@ -399,13 +395,13 @@ static TZrBool lsp_editor_find_missing_import_candidate_on_line(SZrState *state,
         while (aliasEnd < lineEnd && lsp_editor_is_identifier_part(content[aliasEnd])) {
             aliasEnd++;
         }
-        if (!lsp_editor_offset_is_code(content, fileVersion->contentLength, aliasStart)) {
+        if (!lsp_editor_offset_is_code(content, contentLength, aliasStart)) {
             cursor = aliasEnd + 1;
             continue;
         }
         if (aliasEnd >= lineEnd || content[aliasEnd] != '.' ||
             lsp_editor_is_keyword_identifier(content + aliasStart, aliasEnd - aliasStart) ||
-            lsp_editor_has_import_alias(fileVersion, content + aliasStart, aliasEnd - aliasStart)) {
+            lsp_editor_has_import_alias(content, contentLength, content + aliasStart, aliasEnd - aliasStart)) {
             cursor = aliasEnd + 1;
             continue;
         }
@@ -435,17 +431,15 @@ static TZrBool lsp_editor_find_missing_import_candidate_on_line(SZrState *state,
     return ZR_FALSE;
 }
 
-static TZrSize lsp_editor_missing_import_insert_offset(SZrFileVersion *fileVersion) {
-    const TZrChar *content;
+static TZrSize lsp_editor_missing_import_insert_offset(const TZrChar *content, TZrSize contentLength) {
     TZrSize cursor = 0;
     TZrSize insertOffset = 0;
 
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (content == ZR_NULL) {
         return 0;
     }
 
-    content = fileVersion->content;
-    while (cursor < fileVersion->contentLength) {
+    while (cursor < contentLength) {
         TZrSize lineStart = cursor;
         TZrSize lineEnd = cursor;
         TZrSize trimStart;
@@ -454,7 +448,7 @@ static TZrSize lsp_editor_missing_import_insert_offset(SZrFileVersion *fileVersi
         TZrBool isModuleDeclaration;
         TZrBool isImport;
 
-        while (lineEnd < fileVersion->contentLength && content[lineEnd] != '\n') {
+        while (lineEnd < contentLength && content[lineEnd] != '\n') {
             lineEnd++;
         }
         trimStart = lineStart;
@@ -475,7 +469,7 @@ static TZrSize lsp_editor_missing_import_insert_offset(SZrFileVersion *fileVersi
         if (!isBlank && !isModuleDeclaration && !isImport) {
             break;
         }
-        insertOffset = lineEnd < fileVersion->contentLength && content[lineEnd] == '\n' ? lineEnd + 1 : lineEnd;
+        insertOffset = lineEnd < contentLength && content[lineEnd] == '\n' ? lineEnd + 1 : lineEnd;
         cursor = insertOffset;
     }
 
@@ -485,7 +479,8 @@ static TZrSize lsp_editor_missing_import_insert_offset(SZrFileVersion *fileVersi
 static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
                                                        SZrLspContext *context,
                                                        SZrString *uri,
-                                                       SZrFileVersion *fileVersion,
+                                                       const TZrChar *content,
+                                                       TZrSize contentLength,
                                                        SZrLspRange range,
                                                        SZrArray *result) {
     SZrLspMissingImportCandidate candidate;
@@ -497,7 +492,13 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
     SZrLspRange editRange;
     SZrLspCodeAction *action;
 
-    if (!lsp_editor_find_missing_import_candidate_on_line(state, context, uri, fileVersion, range, &candidate)) {
+    if (!lsp_editor_find_missing_import_candidate_on_line(state,
+                                                          context,
+                                                          uri,
+                                                          content,
+                                                          contentLength,
+                                                          range,
+                                                          &candidate)) {
         return ZR_TRUE;
     }
 
@@ -527,8 +528,8 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
     action->isPreferred = ZR_FALSE;
     ZrCore_Array_Init(state, &action->edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
 
-    insertOffset = lsp_editor_missing_import_insert_offset(fileVersion);
-    editRange.start = lsp_editor_position_from_offset(fileVersion->content, fileVersion->contentLength, insertOffset);
+    insertOffset = lsp_editor_missing_import_insert_offset(content, contentLength);
+    editRange.start = lsp_editor_position_from_offset(content, contentLength, insertOffset);
     editRange.end = editRange.start;
     if (!lsp_editor_append_text_edit(state, &action->edits, editRange, editText, strlen(editText))) {
         free(title);
@@ -569,7 +570,8 @@ static TZrBool lsp_editor_line_can_accept_semicolon(const TZrChar *content,
 }
 
 static TZrBool lsp_editor_append_missing_semicolon_action(SZrState *state,
-                                                          SZrFileVersion *fileVersion,
+                                                          const TZrChar *content,
+                                                          TZrSize contentLength,
                                                           SZrLspRange range,
                                                           SZrArray *result) {
     TZrSize lineStart;
@@ -579,26 +581,26 @@ static TZrBool lsp_editor_append_missing_semicolon_action(SZrState *state,
     SZrLspRange editRange;
     SZrLspCodeAction *action;
 
-    if (state == ZR_NULL || fileVersion == ZR_NULL || fileVersion->content == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || content == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    lineStart = lsp_editor_line_start_offset(fileVersion->content, fileVersion->contentLength, range.start.line);
-    lineEnd = lsp_editor_line_end_offset(fileVersion->content, fileVersion->contentLength, range.start.line);
+    lineStart = lsp_editor_line_start_offset(content, contentLength, range.start.line);
+    lineEnd = lsp_editor_line_end_offset(content, contentLength, range.start.line);
     trimStart = lineStart;
     trimEnd = lineEnd;
-    trimEnd = lsp_editor_find_line_comment_start(fileVersion->content, lineStart, lineEnd);
+    trimEnd = lsp_editor_find_line_comment_start(content, lineStart, lineEnd);
     while (trimStart < trimEnd &&
-           (fileVersion->content[trimStart] == ' ' || fileVersion->content[trimStart] == '\t')) {
+           (content[trimStart] == ' ' || content[trimStart] == '\t')) {
         trimStart++;
     }
     while (trimEnd > trimStart &&
-           (fileVersion->content[trimEnd - 1] == ' ' || fileVersion->content[trimEnd - 1] == '\t')) {
+           (content[trimEnd - 1] == ' ' || content[trimEnd - 1] == '\t')) {
         trimEnd--;
     }
 
-    if (!lsp_editor_offset_is_code(fileVersion->content, fileVersion->contentLength, trimStart) ||
-        !lsp_editor_line_can_accept_semicolon(fileVersion->content, trimStart, trimEnd)) {
+    if (!lsp_editor_offset_is_code(content, contentLength, trimStart) ||
+        !lsp_editor_line_can_accept_semicolon(content, trimStart, trimEnd)) {
         return ZR_TRUE;
     }
 
@@ -616,7 +618,7 @@ static TZrBool lsp_editor_append_missing_semicolon_action(SZrState *state,
     action->isPreferred = ZR_TRUE;
     ZrCore_Array_Init(state, &action->edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
 
-    editRange.start = lsp_editor_position_from_offset(fileVersion->content, fileVersion->contentLength, trimEnd);
+    editRange.start = lsp_editor_position_from_offset(content, contentLength, trimEnd);
     editRange.end = editRange.start;
     if (!lsp_editor_append_text_edit(state, &action->edits, editRange, ";", 1)) {
         ZrLanguageServer_Lsp_FreeTextEdits(state, &action->edits);
@@ -672,7 +674,11 @@ TZrBool ZrLanguageServer_Lsp_GetCodeActions(SZrState *state,
                                             SZrLspRange range,
                                             SZrArray *result) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
+    const TZrChar *content;
+    TZrSize contentLength;
     SZrLspCodeAction *action;
+    TZrBool ok;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -682,12 +688,15 @@ TZrBool ZrLanguageServer_Lsp_GetCodeActions(SZrState *state,
     }
 
     fileVersion = lsp_editor_get_file_version(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         return ZR_FALSE;
     }
+    content = snapshot.content;
+    contentLength = snapshot.contentLength;
 
     action = (SZrLspCodeAction *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspCodeAction));
     if (action == ZR_NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
     action->title = lsp_editor_create_string(state, "Organize Zr imports", strlen("Organize Zr imports"));
@@ -700,19 +709,24 @@ TZrBool ZrLanguageServer_Lsp_GetCodeActions(SZrState *state,
     if (!lsp_code_action_collect_import_organize_edit(state, fileVersion, &action->edits)) {
         ZrLanguageServer_Lsp_FreeTextEdits(state, &action->edits);
         ZrCore_Memory_RawFree(state->global, action, sizeof(SZrLspCodeAction));
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
     if (action->edits.length == 0) {
         ZrLanguageServer_Lsp_FreeTextEdits(state, &action->edits);
         ZrCore_Memory_RawFree(state->global, action, sizeof(SZrLspCodeAction));
-        return lsp_editor_append_unused_import_cleanup_action(state, fileVersion, result) &&
-               lsp_editor_append_missing_import_action(state, context, uri, fileVersion, range, result) &&
-               lsp_editor_append_missing_semicolon_action(state, fileVersion, range, result);
+        ok = lsp_editor_append_unused_import_cleanup_action(state, fileVersion, result) &&
+             lsp_editor_append_missing_import_action(state, context, uri, content, contentLength, range, result) &&
+             lsp_editor_append_missing_semicolon_action(state, content, contentLength, range, result);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        return ok;
     }
 
     ZrCore_Array_Push(state, result, &action);
-    return lsp_editor_append_unused_import_cleanup_action(state, fileVersion, result) &&
-           lsp_editor_append_missing_import_action(state, context, uri, fileVersion, range, result) &&
-           lsp_editor_append_missing_semicolon_action(state, fileVersion, range, result);
+    ok = lsp_editor_append_unused_import_cleanup_action(state, fileVersion, result) &&
+         lsp_editor_append_missing_import_action(state, context, uri, content, contentLength, range, result) &&
+         lsp_editor_append_missing_semicolon_action(state, content, contentLength, range, result);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+    return ok;
 }

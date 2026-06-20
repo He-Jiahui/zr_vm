@@ -1,4 +1,5 @@
 #include "backend_aot_c_emitter.h"
+#include "backend_aot_c_scalar_locals.h"
 #include "backend_aot_internal.h"
 
 void backend_aot_write_c_unsupported_instruction_expr(FILE *file,
@@ -476,38 +477,42 @@ void backend_aot_write_c_direct_jump(FILE *file, TZrUInt32 functionIndex, TZrUIn
 }
 
 void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
+                                                   const SZrAotExecIrFunction *functionIr,
                                                    TZrUInt32 functionIndex,
                                                    TZrUInt32 conditionSlot,
                                                    TZrUInt32 targetInstructionIndex) {
+    TZrBool useScalarCondition;
+
     if (file == ZR_NULL) {
+        return;
+    }
+
+    useScalarCondition = backend_aot_c_scalar_locals_has_bool_slot(functionIr, conditionSlot);
+
+    if (useScalarCondition) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_jump_if_bool_false */\n"
+                "        /* zr_aot_jump_if_bool_false_scalar_local */\n"
+                "        if (!zr_aot_b%u) {\n"
+                "            goto zr_aot_fn_%u_ins_%u;\n"
+                "        }\n"
+                "    }\n",
+                (unsigned)conditionSlot,
+                (unsigned)functionIndex,
+                (unsigned)targetInstructionIndex);
         return;
     }
 
     fprintf(file,
             "    {\n"
             "        /* zr_aot_jump_if_bool_false */\n"
-            "        const SZrFunctionFrameSlotLayout *zr_aot_condition_layout =\n"
-            "                ZrCore_Function_FindFrameSlotLayout(frame.function, %u);\n"
-            "        const SZrTypeValue *zr_aot_dense_condition = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_condition = zr_aot_dense_condition;\n"
-            "        SZrStackFramePlace zr_aot_condition_place;\n"
+            "        const SZrTypeValue *zr_aot_condition = ZR_NULL;\n"
             "        TZrBool zr_aot_condition_bool;\n"
-            "        if (frame.function == ZR_NULL || frame.slotBase == ZR_NULL || zr_aot_dense_condition == ZR_NULL) {\n"
+            "        if (frame.slotBase == ZR_NULL || %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        if (zr_aot_condition_layout != ZR_NULL &&\n"
-            "            zr_aot_condition_layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&\n"
-            "            zr_aot_condition_layout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue)) {\n"
-            "            if (!ZrCore_Function_MakeFrameSlotPlace(\n"
-            "                    state, frame.function, frame.slotBase, %u, &zr_aot_condition_place)) {\n"
-            "                ZR_AOT_C_FAIL();\n"
-            "            }\n"
-            "            zr_aot_condition = (const SZrTypeValue *)zr_aot_condition_place.address;\n"
-            "            if (ZR_VALUE_IS_TYPE_NULL(zr_aot_condition->type) &&\n"
-            "                !ZR_VALUE_IS_TYPE_NULL(zr_aot_dense_condition->type)) {\n"
-            "                zr_aot_condition = zr_aot_dense_condition;\n"
-            "            }\n"
-            "        }\n"
+            "        zr_aot_condition = &frame.slotBase[%u].value;\n"
             "        if (!ZR_VALUE_IS_TYPE_BOOL(zr_aot_condition->type)) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
@@ -516,7 +521,6 @@ void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
             "            goto zr_aot_fn_%u_ins_%u;\n"
             "        }\n"
             "    }\n",
-            (unsigned)conditionSlot,
             (unsigned)conditionSlot,
             (unsigned)conditionSlot,
             (unsigned)functionIndex,
@@ -539,47 +543,77 @@ static TZrBool backend_aot_c_format_signed_branch_const_literal(char *buffer,
 }
 
 static void backend_aot_write_c_direct_signed_branch(FILE *file,
+                                                     const SZrAotExecIrFunction *functionIr,
                                                      const char *expressionText,
+                                                     const char *operatorText,
                                                      TZrUInt32 functionIndex,
                                                      TZrUInt32 leftSlot,
                                                      TZrUInt32 rightSlot,
+                                                     TZrUInt32 execInstructionIndex,
                                                      TZrUInt32 targetInstructionIndex) {
-    if (file == ZR_NULL || expressionText == ZR_NULL) {
+    TZrBool useScalarOperands;
+
+    if (file == ZR_NULL || expressionText == ZR_NULL || operatorText == ZR_NULL) {
         return;
     }
+
+    useScalarOperands =
+            (TZrBool)(backend_aot_c_scalar_locals_i64_written_before(functionIr, leftSlot, execInstructionIndex) &&
+                      backend_aot_c_scalar_locals_i64_written_before(functionIr, rightSlot, execInstructionIndex));
 
     fprintf(file,
             "    {\n"
             "        /* zr_aot_jump_if_signed_compare */\n"
-            "        const SZrTypeValue *zr_aot_left = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_right = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        TZrInt64 zr_aot_left_scalar;\n"
-            "        TZrInt64 zr_aot_right_scalar;\n"
-            "        if (zr_aot_left == ZR_NULL || zr_aot_right == ZR_NULL) {\n"
+            "        const SZrTypeValue *zr_aot_left = ZR_NULL;\n"
+            "        const SZrTypeValue *zr_aot_right = ZR_NULL;\n"
+            "        if (frame.slotBase == ZR_NULL || %u >= frame.generatedFrameSlotCount ||\n"
+            "            %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
+            "        zr_aot_left = &frame.slotBase[%u].value;\n"
+            "        zr_aot_right = &frame.slotBase[%u].value;\n"
             "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_left->type) || !ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_right->type)) {\n"
             "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        zr_aot_left_scalar = zr_aot_left->value.nativeObject.nativeInt64;\n"
-            "        zr_aot_right_scalar = zr_aot_right->value.nativeObject.nativeInt64;\n"
-            "        if (%s) {\n"
-            "            goto zr_aot_fn_%u_ins_%u;\n"
-            "        }\n"
-            "    }\n",
+            "        }\n",
             (unsigned)leftSlot,
             (unsigned)rightSlot,
-            expressionText,
-            (unsigned)functionIndex,
-            (unsigned)targetInstructionIndex);
+            (unsigned)leftSlot,
+            (unsigned)rightSlot);
+    if (useScalarOperands) {
+        fprintf(file,
+                "        if (zr_aot_s%u %s zr_aot_s%u) {\n"
+                "            goto zr_aot_fn_%u_ins_%u;\n"
+                "        }\n",
+                (unsigned)leftSlot,
+                operatorText,
+                (unsigned)rightSlot,
+                (unsigned)functionIndex,
+                (unsigned)targetInstructionIndex);
+    } else {
+        fprintf(file,
+                "        TZrInt64 zr_aot_left_scalar;\n"
+                "        TZrInt64 zr_aot_right_scalar;\n"
+                "        zr_aot_left_scalar = zr_aot_left->value.nativeObject.nativeInt64;\n"
+                "        zr_aot_right_scalar = zr_aot_right->value.nativeObject.nativeInt64;\n"
+                "        if (%s) {\n"
+                "            goto zr_aot_fn_%u_ins_%u;\n"
+                "        }\n",
+                expressionText,
+                (unsigned)functionIndex,
+                (unsigned)targetInstructionIndex);
+    }
+    fprintf(file, "    }\n");
 }
 
 static void backend_aot_write_c_direct_signed_branch_const(FILE *file,
+                                                           const SZrAotExecIrFunction *functionIr,
                                                            const SZrFunction *function,
                                                            const char *expressionText,
+                                                           const char *operatorText,
                                                            TZrUInt32 functionIndex,
                                                            TZrUInt32 leftSlot,
                                                            TZrUInt32 constantIndex,
+                                                           TZrUInt32 execInstructionIndex,
                                                            TZrUInt32 targetInstructionIndex) {
     const SZrTypeValue *constantValue;
     char rightLiteral[64];
@@ -598,15 +632,44 @@ static void backend_aot_write_c_direct_signed_branch_const(FILE *file,
         return;
     }
 
+    if (operatorText != ZR_NULL &&
+        backend_aot_c_scalar_locals_i64_written_before(functionIr, leftSlot, execInstructionIndex)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_jump_if_signed_compare */\n"
+                "        const SZrTypeValue *zr_aot_left = ZR_NULL;\n"
+                "        TZrInt64 zr_aot_right_literal = %s;\n"
+                "        if (frame.slotBase == ZR_NULL || %u >= frame.generatedFrameSlotCount) {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n"
+                "        zr_aot_left = &frame.slotBase[%u].value;\n"
+                "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_left->type)) {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n"
+                "        if (zr_aot_s%u %s zr_aot_right_literal) {\n"
+                "            goto zr_aot_fn_%u_ins_%u;\n"
+                "        }\n"
+                "    }\n",
+                rightLiteral,
+                (unsigned)leftSlot,
+                (unsigned)leftSlot,
+                (unsigned)leftSlot,
+                operatorText,
+                (unsigned)functionIndex,
+                (unsigned)targetInstructionIndex);
+        return;
+    }
+
     fprintf(file,
             "    {\n"
             "        /* zr_aot_jump_if_signed_compare */\n"
-            "        const SZrTypeValue *zr_aot_left = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        const SZrTypeValue *zr_aot_left = ZR_NULL;\n"
             "        TZrInt64 zr_aot_left_scalar;\n"
             "        TZrInt64 zr_aot_right_literal = %s;\n"
-            "        if (zr_aot_left == ZR_NULL) {\n"
+            "        if (frame.slotBase == ZR_NULL || %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
+            "        zr_aot_left = &frame.slotBase[%u].value;\n"
             "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_left->type)) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
@@ -615,64 +678,85 @@ static void backend_aot_write_c_direct_signed_branch_const(FILE *file,
             "            goto zr_aot_fn_%u_ins_%u;\n"
             "        }\n"
             "    }\n",
-            (unsigned)leftSlot,
             rightLiteral,
+            (unsigned)leftSlot,
+            (unsigned)leftSlot,
             expressionText,
             (unsigned)functionIndex,
             (unsigned)targetInstructionIndex);
 }
 
 void backend_aot_write_c_direct_jump_if_greater_signed(FILE *file,
+                                                       const SZrAotExecIrFunction *functionIr,
                                                        TZrUInt32 functionIndex,
                                                        TZrUInt32 leftSlot,
                                                        TZrUInt32 rightSlot,
+                                                       TZrUInt32 execInstructionIndex,
                                                        TZrUInt32 targetInstructionIndex) {
     backend_aot_write_c_direct_signed_branch(file,
+                                             functionIr,
                                              "zr_aot_left_scalar > zr_aot_right_scalar",
+                                             ">",
                                              functionIndex,
                                              leftSlot,
                                              rightSlot,
+                                             execInstructionIndex,
                                              targetInstructionIndex);
 }
 
 void backend_aot_write_c_direct_jump_if_less_equal_signed(FILE *file,
+                                                          const SZrAotExecIrFunction *functionIr,
                                                           TZrUInt32 functionIndex,
                                                           TZrUInt32 leftSlot,
                                                           TZrUInt32 rightSlot,
+                                                          TZrUInt32 execInstructionIndex,
                                                           TZrUInt32 targetInstructionIndex) {
     backend_aot_write_c_direct_signed_branch(file,
+                                             functionIr,
                                              "zr_aot_left_scalar <= zr_aot_right_scalar",
+                                             "<=",
                                              functionIndex,
                                              leftSlot,
                                              rightSlot,
+                                             execInstructionIndex,
                                              targetInstructionIndex);
 }
 
 void backend_aot_write_c_direct_jump_if_not_equal_signed(FILE *file,
+                                                         const SZrAotExecIrFunction *functionIr,
                                                          TZrUInt32 functionIndex,
                                                          TZrUInt32 leftSlot,
                                                          TZrUInt32 rightSlot,
+                                                         TZrUInt32 execInstructionIndex,
                                                          TZrUInt32 targetInstructionIndex) {
     backend_aot_write_c_direct_signed_branch(file,
+                                             functionIr,
                                              "zr_aot_left_scalar != zr_aot_right_scalar",
+                                             "!=",
                                              functionIndex,
                                              leftSlot,
                                              rightSlot,
+                                             execInstructionIndex,
                                              targetInstructionIndex);
 }
 
 void backend_aot_write_c_direct_jump_if_not_equal_signed_const(FILE *file,
+                                                               const SZrAotExecIrFunction *functionIr,
                                                                const SZrFunction *function,
                                                                TZrUInt32 functionIndex,
                                                                TZrUInt32 leftSlot,
                                                                TZrUInt32 constantIndex,
+                                                               TZrUInt32 execInstructionIndex,
                                                                TZrUInt32 targetInstructionIndex) {
     backend_aot_write_c_direct_signed_branch_const(file,
+                                                   functionIr,
                                                    function,
                                                    "zr_aot_left_scalar != zr_aot_right_literal",
+                                                   "!=",
                                                    functionIndex,
                                                    leftSlot,
                                                    constantIndex,
+                                                   execInstructionIndex,
                                                    targetInstructionIndex);
 }
 
@@ -699,8 +783,8 @@ void backend_aot_write_c_direct_return(FILE *file, TZrUInt32 sourceSlot) {
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
             "        zr_aot_result_slot = frame.slotBase + %u;\n"
-            "        zr_aot_result_value = ZrCore_Stack_GetValue(zr_aot_result_slot);\n"
-            "        zr_aot_caller_result_value = ZrCore_Stack_GetValue(zr_aot_call_info->functionBase.valuePointer);\n"
+            "        zr_aot_result_value = &zr_aot_result_slot->value;\n"
+            "        zr_aot_caller_result_value = &zr_aot_call_info->functionBase.valuePointer->value;\n"
             "        if (zr_aot_result_value == ZR_NULL || zr_aot_caller_result_value == ZR_NULL) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"

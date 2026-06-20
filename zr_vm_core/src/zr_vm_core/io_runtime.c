@@ -95,6 +95,8 @@ static void io_runtime_copy_typed_type_ref(SZrFunctionTypedTypeRef *destination,
     ZrCore_Memory_RawSet(destination, 0, sizeof(*destination));
     destination->baseType = ZR_VALUE_TYPE_OBJECT;
     destination->elementBaseType = ZR_VALUE_TYPE_OBJECT;
+    destination->staticCType = ZR_STATIC_C_TYPE_DYNAMIC;
+    destination->staticCTypeId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
     if (source == ZR_NULL) {
         return;
     }
@@ -106,6 +108,8 @@ static void io_runtime_copy_typed_type_ref(SZrFunctionTypedTypeRef *destination,
     destination->typeName = source->typeName;
     destination->elementBaseType = source->elementBaseType;
     destination->elementTypeName = source->elementTypeName;
+    destination->staticCType = source->staticCType;
+    destination->staticCTypeId = source->staticCTypeId;
 }
 
 static TZrBool io_runtime_copy_metadata_token_model(SZrState *state,
@@ -1201,6 +1205,7 @@ static TZrBool io_runtime_copy_module_effects(SZrState *state,
         (*outEffects)[index].readiness = sourceEffects[index].readiness;
         (*outEffects)[index].reserved0 = sourceEffects[index].reserved0;
         (*outEffects)[index].moduleName = sourceEffects[index].moduleName;
+        (*outEffects)[index].assemblyName = sourceEffects[index].assemblyName;
         (*outEffects)[index].symbolName = sourceEffects[index].symbolName;
         (*outEffects)[index].lineInSourceStart = sourceEffects[index].lineInSourceStart;
         (*outEffects)[index].columnInSourceStart = sourceEffects[index].columnInSourceStart;

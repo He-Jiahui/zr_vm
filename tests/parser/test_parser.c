@@ -921,8 +921,51 @@ static void test_interface_variance_and_where_parsing(void) {
         TEST_ASSERT_TRUE(genericParam->data.parameter.genericRequiresClass);
         TEST_ASSERT_TRUE(genericParam->data.parameter.genericRequiresNew);
         TEST_ASSERT_TRUE(genericParam->data.parameter.genericRequiresOwner);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_NONE,
+                              genericParam->data.parameter.genericRequiredOwnershipQualifier);
         TEST_ASSERT_NOT_NULL(genericParam->data.parameter.genericTypeConstraints);
         TEST_ASSERT_EQUAL_INT(1, (int)genericParam->data.parameter.genericTypeConstraints->count);
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "func own<T, U, V>(): int where T: unique where U: shared where V: weak { return 1; }";
+        SZrString *sourceName = ZrCore_String_Create(state, "specific_owner_where.zr", 23);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *decl;
+        SZrAstNode *uniqueParam;
+        SZrAstNode *sharedParam;
+        SZrAstNode *weakParam;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        decl = ast->data.script.statements->nodes[0];
+        TEST_ASSERT_NOT_NULL(decl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, decl->type);
+        TEST_ASSERT_NOT_NULL(decl->data.functionDeclaration.generic);
+        TEST_ASSERT_NOT_NULL(decl->data.functionDeclaration.generic->params);
+        TEST_ASSERT_EQUAL_INT(3, (int)decl->data.functionDeclaration.generic->params->count);
+
+        uniqueParam = decl->data.functionDeclaration.generic->params->nodes[0];
+        sharedParam = decl->data.functionDeclaration.generic->params->nodes[1];
+        weakParam = decl->data.functionDeclaration.generic->params->nodes[2];
+        TEST_ASSERT_TRUE(uniqueParam->data.parameter.genericRequiresOwner);
+        TEST_ASSERT_TRUE(sharedParam->data.parameter.genericRequiresOwner);
+        TEST_ASSERT_TRUE(weakParam->data.parameter.genericRequiresOwner);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+                              uniqueParam->data.parameter.genericRequiredOwnershipQualifier);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED,
+                              sharedParam->data.parameter.genericRequiredOwnershipQualifier);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_WEAK,
+                              weakParam->data.parameter.genericRequiredOwnershipQualifier);
 
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);

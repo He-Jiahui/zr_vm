@@ -425,24 +425,25 @@ ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspSignatureHelp_Free(SZrState *sta
 
 // 工具函数
 
-// 转换 FileRange 到 LspRange
-ZR_LANGUAGE_SERVER_API SZrLspRange ZrLanguageServer_LspRange_FromFileRange(SZrFileRange fileRange);
-
-// 转换 LspRange 到 FileRange
-ZR_LANGUAGE_SERVER_API SZrFileRange ZrLanguageServer_LspRange_ToFileRange(SZrLspRange lspRange, SZrString *uri);
+// 转换 FileRange 到 LspRange（带文件内容）
+ZR_LANGUAGE_SERVER_API SZrLspRange ZrLanguageServer_LspRange_FromFileRangeWithContent(SZrFileRange fileRange,
+                                                                                       const TZrChar *content,
+                                                                                       TZrSize contentLength);
 
 // 转换 LspRange 到 FileRange（带文件内容）
-ZR_LANGUAGE_SERVER_API SZrFileRange ZrLanguageServer_LspRange_ToFileRangeWithContent(SZrLspRange lspRange, SZrString *uri, 
-                                                                       const TZrChar *content, TZrSize contentLength);
+ZR_LANGUAGE_SERVER_API SZrFileRange ZrLanguageServer_LspRange_ToFileRangeWithContent(SZrLspRange lspRange,
+                                                                                     SZrString *uri,
+                                                                                     const TZrChar *content,
+                                                                                     TZrSize contentLength);
 
-// 转换 FilePosition 到 LspPosition
-ZR_LANGUAGE_SERVER_API SZrLspPosition ZrLanguageServer_LspPosition_FromFilePosition(SZrFilePosition filePosition);
-
-// 转换 LspPosition 到 FilePosition
-ZR_LANGUAGE_SERVER_API SZrFilePosition ZrLanguageServer_LspPosition_ToFilePosition(SZrLspPosition lspPosition);
+// 转换 FilePosition 到 LspPosition（带文件内容）
+ZR_LANGUAGE_SERVER_API SZrLspPosition ZrLanguageServer_LspPosition_FromFilePositionWithContent(
+        SZrFilePosition filePosition,
+        const TZrChar *content,
+        TZrSize contentLength);
 
 // 转换 LspPosition 到 FilePosition（带文件内容）
 ZR_LANGUAGE_SERVER_API SZrFilePosition ZrLanguageServer_LspPosition_ToFilePositionWithContent(SZrLspPosition lspPosition,
-                                                                                const TZrChar *content, TZrSize contentLength);
+                                                                                 const TZrChar *content, TZrSize contentLength);
 
 #endif //ZR_VM_LANGUAGE_SERVER_LSP_INTERFACE_H

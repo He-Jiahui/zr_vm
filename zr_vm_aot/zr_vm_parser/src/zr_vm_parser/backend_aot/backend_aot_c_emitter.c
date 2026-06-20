@@ -1,4 +1,5 @@
 #include "backend_aot_c_function_body.h"
+#include "backend_aot_c_type_layouts.h"
 #include "backend_aot_internal.h"
 
 #include "zr_vm_common/zr_aot_abi.h"
@@ -225,6 +226,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file, "#include \"zr_vm_core/type_layout.h\"\n");
     fprintf(file, "#include \"zr_vm_library/aot_runtime.h\"\n");
     fprintf(file, "#include <math.h>\n");
+    fprintf(file, "#include <stddef.h>\n");
     fprintf(file, "#include <string.h>\n");
     fprintf(file, "\n");
     backend_aot_write_c_guard_macro(file);
@@ -240,6 +242,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     backend_aot_write_embedded_blob_c(file,
                                       options != ZR_NULL ? options->embeddedModuleBlob : ZR_NULL,
                                       options != ZR_NULL ? options->embeddedModuleBlobLength : 0);
+    fprintf(file, "\n");
+    backend_aot_write_c_type_layout_declarations(file, state, &functionTable);
     fprintf(file, "\n");
     backend_aot_write_c_function_forward_decls(file, &functionTable);
     fprintf(file, "\n");

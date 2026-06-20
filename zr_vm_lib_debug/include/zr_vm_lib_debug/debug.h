@@ -66,6 +66,7 @@ typedef struct ZrDebugStopEvent {
     TZrChar module_name[ZR_DEBUG_TEXT_CAPACITY];
     TZrChar source_file[ZR_DEBUG_TEXT_CAPACITY];
     TZrChar function_name[ZR_DEBUG_NAME_CAPACITY];
+    TZrChar exception_stack[ZR_DEBUG_EXCEPTION_STACK_CAPACITY];
 } ZrDebugStopEvent;
 
 typedef struct ZrDebugFrameSnapshot {

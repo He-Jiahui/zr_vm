@@ -1,0 +1,29 @@
+union Coupon {
+    Missing;
+    @Found { amount: int; code: int; }
+}
+
+union Option<T> {
+    None;
+    @Some(value: T);
+}
+
+using (var catalog = %import("catalog")) {
+    var subtotal = 120;
+    var coupon: Coupon = Coupon.Found {
+        amount: catalog.discountAmount(),
+        code: catalog.loyaltyCode(),
+    };
+    using {discount: amount, code} = coupon;
+
+    using [ship] = Option<int>.Some(8);
+
+    var total = subtotal - discount + code + ship;
+    if (total == 120) {
+        return "USING_REAL_WORLD_CHECKOUT_PASS 120";
+    }
+
+    return "USING_REAL_WORLD_CHECKOUT_FAIL";
+} else {
+    return "USING_REAL_WORLD_CHECKOUT_FAIL";
+}

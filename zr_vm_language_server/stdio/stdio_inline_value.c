@@ -801,6 +801,7 @@ cJSON *handle_inline_value_request(SZrStdioServer *server, const cJSON *params) 
     SZrString *uri;
     SZrLspRange requestRange;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     const char *content;
     size_t contentLength;
     size_t lineStart = 0;
@@ -809,23 +810,24 @@ cJSON *handle_inline_value_request(SZrStdioServer *server, const cJSON *params) 
     int inBlockComment = 0;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri) ||
-        !parse_range(get_object_item(params, ZR_LSP_FIELD_RANGE), &requestRange)) {
+        !parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &requestRange)) {
         return cJSON_CreateArray();
     }
     ZR_UNUSED_PARAMETER(uriText);
 
     fileVersion = get_file_version_for_uri(server, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
         return cJSON_CreateArray();
     }
 
     result = cJSON_CreateArray();
     if (result == NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return NULL;
     }
 
-    content = fileVersion->content;
-    contentLength = (size_t)fileVersion->contentLength;
+    content = snapshot.content;
+    contentLength = snapshot.contentLength;
     for (size_t offset = 0; offset <= contentLength; offset++) {
         if (offset == contentLength || content[offset] == '\n') {
             if (line >= requestRange.start.line && line <= requestRange.end.line) {
@@ -854,5 +856,6 @@ cJSON *handle_inline_value_request(SZrStdioServer *server, const cJSON *params) 
         }
     }
 
+    ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
     return result;
 }

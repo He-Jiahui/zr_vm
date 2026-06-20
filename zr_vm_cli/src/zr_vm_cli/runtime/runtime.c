@@ -489,6 +489,10 @@ static TZrBool zr_cli_runtime_source_first_loader(SZrState *state, TZrNativeStri
         return ZrCli_Project_OpenFileIo(state, resolvedPath, ZR_TRUE, io);
     }
 
+    if (ZrLibrary_Project_SourceLoadImplementation(state, path, md5, io)) {
+        return ZR_TRUE;
+    }
+
     return ZR_FALSE;
 }
 
@@ -519,6 +523,10 @@ static TZrBool zr_cli_runtime_binary_first_loader(SZrState *state, TZrNativeStri
     if (ZrCli_Project_ResolveSourcePath(&project, path, resolvedPath, sizeof(resolvedPath)) &&
         ZrLibrary_File_Exist(resolvedPath) == ZR_LIBRARY_FILE_IS_FILE) {
         return ZrCli_Project_OpenFileIo(state, resolvedPath, ZR_FALSE, io);
+    }
+
+    if (ZrLibrary_Project_SourceLoadImplementation(state, path, md5, io)) {
+        return ZR_TRUE;
     }
 
     return ZR_FALSE;

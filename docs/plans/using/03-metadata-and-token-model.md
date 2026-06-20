@@ -14,6 +14,14 @@ related_code:
   - zr_vm_core/src/zr_vm_core/module/module_import_signature_binding.c
   - zr_vm_core/src/zr_vm_core/module/module_import_signature_binding.h
   - zr_vm_core/src/zr_vm_core/module/module_prototype.c
+  - zr_vm_library/include/zr_vm_library/project.h
+  - zr_vm_library/include/zr_vm_library/zrm.h
+  - zr_vm_library/src/zr_vm_library/project/project.c
+  - zr_vm_library/src/zr_vm_library/project/project_import_resolver.c
+  - zr_vm_library/src/zr_vm_library/zrm.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+  - zr_vm_lib_system/include/zr_vm_lib_system/assembly.h
+  - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
@@ -42,11 +50,34 @@ tests:
   - tests/module/test_metadata_type_ref_binding.c
   - tests/module/test_metadata_runtime_query.c
   - tests/module/test_metadata_module_hash_golden.c
+  - tests/library/test_zrm_container.c
+  - tests/library/test_project_import_resolver.c
+  - tests/cli/test_cli_args.c
+  - tests/cli/test_cli_project_incremental.c
+  - tests/system/test_system_assembly_module.c
 ---
 
 # 03 · 模仿 C# 程序集的 metadata / token 模型
 
 目标：给 `.zro` 模块（以及外部 DLL 插件）一套 **C# (ECMA-335) 风格的 metadata token 体系**，让 DLL 之间**通过签名访问**彼此的类型与成员，而不依赖编译顺序、物理 slot 布局或裸名字符串匹配。这是 [02 篇插件守卫](02-using-scopes-and-plugin-guards.md) 的"签名比对"和 [01 篇所有权泛型](01-ownership-as-generics.md) 的"种类参与类型身份"的共同地基。
+
+> 进度更新（2026-06-19 23:52:59 +08:00）
+>
+> 完成状态：完成。P0 `.zro` / `.zrm` 程序集边界、`.zrm` 容器基础和 runtime fixture 测试已落地。`.zro` 现在明确只保留单脚本/单模块编译中间文件职责，继续承载 typed metadata、token/signature、module ABI hash 和 import verification sidecar；程序集级语义链新增独立 `.zrm` 容器，作为类似 CLR DLL/JAR 的单文件 assembly/package，可用于第三方模块库分发。
+>
+> 实现：新增 `zr_vm_library/zrm` ZIP 容器 API，写入 `META-INF/zrm.json` manifest、`modules/<module>.zro` 模块 payload 和 `resources/<logicalName>` 资源 entry，并支持资源压缩与安全逻辑名校验；`.zrp` manifest 新增 `assembly.output`、`resources` 和 `.zrm references` 解析，project resolver/source loader 可从 referenced `.zrm` 中解析 `$alias@version/module` 并读取模块 `.zro`；CLI 新增 `--emit-zrm`，可把当前 project 可达模块与声明资源打包为 assembly；runtime 新增 `zr.system.assembly`，提供 `resourceExists`、`readResourceText`、`readResourceBytes` 读取当前 project assembly 资源；`zrp.schema.json` 与 `docs/module-system/zrm-assembly-container.md` 已同步。
+>
+> 说明备注：本切片不把程序集 manifest、资源压缩或第三方库分发语义继续塞入 `.zro` patch；`.zro` 仍是 `.zrm` 内部 module payload 与单文件编译缓存。`.zrm` open 现在拒绝损坏 ZIP、缺 manifest、manifest entry path traversal 和非 canonical module/resource entry。当前 `.zrm` 运行期资源 API 绑定当前 project assembly output，暂不声明直接执行 loose `.zrm` 或自动合成 loose resources。
+>
+> 验证：WSL GCC 与 WSL clang focused 均重新构建并通过 `zr_vm_zrm_container_test` 4/0、`zr_vm_project_import_resolver_test` 9/0、`zr_vm_system_assembly_test` 2/0、`zr_vm_cli_zrm_fixture_test` 1/0；MSVC focused 同四个目标构建通过并运行 4/0、9/0、2/0、1/0。`zr_vm_cli_zrm_fixture_test` 实际编译 provider `.zrm`、consumer `.zrm`，运行 consumer 从 referenced provider `.zrm` 加载模块并读取 provider 导出的 `answer` 返回 `42`，再运行 `resource_probe` 通过 `zr.system.assembly.readResourceText("config/runtime.txt")` 读取当前 consumer `.zrm` 资源。WSL GCC/clang 的 `zr_vm_cli_args_test` 均输出 `cli args tests passed`。验证期间，一个更强的临时 fixture 版本在 MSVC 上调用 referenced `.zrm` provider 导出函数时触发 `ownership_try_free_control` 访问冲突；最终 fixture 收敛为本阶段目标所需的 `.zrm` 模块加载 + 导出值读取，跨程序集导出函数调用的 Windows 所有权路径另行跟进。当前完整 `zr_vm_cli_project_incremental_test` 仍有 3 个既有 binary-run signature mismatch 失败，未作为本切片通过项。
+
+> 进度更新（2026-06-19 04:19:38 +08:00）
+>
+> 状态：P0 metadata/token 的 `.zrp` assembly identity 与 alias-based references 切片已完成。`.zrp` 新增 `manifestVersion`、`assembly` 与 `references`；旧 `name/version/dependencies` 仍兼容。`references.<alias>` 会把源码导入规范化为 `$alias@version/path`，同时把真实程序集名写入 import effect 的 `assemblyName`，让 `ASSEMBLY_REF` signature 使用真实 assembly identity（例如 `zr.math`）而不是源码 alias key。
+>
+> 说明：`.zro` schema 升级到 patch 33，module effect 写入/读取/runtime copy 新增 `assemblyName` 字段；旧 patch 读取时该字段置 null，并回退到 canonical module key。project source loader 已覆盖 binary-only referenced assembly：目标源码移除后，引用方仍可从 referenced package 的 `.zro` summary 做语义分析并生成带真实 AssemblyRef 身份和版本范围的 token。
+>
+> 验证：TDD RED/GREEN 覆盖 `.zrp` references 规范化、AssemblyRef 真实身份、module effect assembly identity binary roundtrip、以及 referenced assembly 仅 `.zro` 存在时的语义导入。最终验证（2026-06-19 04:38:35 +08:00）：WSL clang direct `zr_vm_project_import_resolver_test` 7/0、`zr_vm_project_import_canonicalization_test` 34/0、`zr_vm_metadata_token_model_test` 21/0、`zr_vm_gc_test` 66/0；`zrp.schema.json` 可被 `ConvertFrom-Json` 解析；touched-file `git diff --check` 退出 0，仅有 LF/CRLF 策略提示。
 
 > 进度更新（2026-06-19 00:56:14 +08:00）
 >

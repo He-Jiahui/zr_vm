@@ -42,6 +42,29 @@ static TZrBool zr_debug_make_string_key(SZrState *state, const TZrChar *name, SZ
     return ZR_TRUE;
 }
 
+static void zr_debug_copy_value_snapshot(SZrTypeValue *destination, const SZrTypeValue *source) {
+    if (destination == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Value_ResetAsNull(destination);
+    if (source == ZR_NULL) {
+        return;
+    }
+
+    *destination = *source;
+    if (!destination->isGarbageCollectable ||
+        ZR_VALUE_IS_TYPE_NULL(destination->type) ||
+        destination->value.object == ZR_NULL) {
+        destination->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+        destination->ownershipControl = ZR_NULL;
+        destination->ownershipWeakRef = ZR_NULL;
+    } else if (destination->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE) {
+        destination->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_BORROWED;
+        destination->ownershipWeakRef = ZR_NULL;
+    }
+}
+
 static TZrBool zr_debug_is_receiver_name(const TZrChar *name) {
     return (TZrBool)(name != ZR_NULL && (strcmp(name, "this") == 0 || strcmp(name, "self") == 0));
 }
@@ -567,6 +590,26 @@ static TZrUInt32 zr_debug_register_index_window_handle(ZrDebugAgent *agent,
     return handle->handle_id;
 }
 
+static TZrUInt32 zr_debug_register_inline_union_handle(ZrDebugAgent *agent,
+                                                       TZrUInt32 frameId,
+                                                       TZrUInt32 stackSlot) {
+    ZrDebugVariableHandle *handle;
+
+    if (agent == ZR_NULL || agent->state == ZR_NULL || frameId == 0u) {
+        return 0;
+    }
+
+    handle = zr_debug_alloc_variable_handle(agent);
+    if (handle == ZR_NULL) {
+        return 0;
+    }
+
+    handle->kind = ZR_DEBUG_VARIABLE_HANDLE_KIND_INLINE_UNION;
+    handle->frame_id = frameId;
+    handle->stack_slot = stackSlot;
+    return handle->handle_id;
+}
+
 static void zr_debug_fill_text_preview(ZrDebugValuePreview *preview,
                                        EZrDebugScopeKind scopeKind,
                                        const TZrChar *name,
@@ -613,7 +656,9 @@ static TZrBool zr_debug_fill_value_preview(ZrDebugAgent *agent,
                                value,
                                &preview->named_variables,
                                &preview->indexed_variables);
-    zr_debug_format_value_text_safe(agent->state, value, preview->value_text, sizeof(preview->value_text));
+    if (!zr_debug_format_union_value_text(agent, value, preview->value_text, sizeof(preview->value_text))) {
+        zr_debug_format_value_text_safe(agent->state, value, preview->value_text, sizeof(preview->value_text));
+    }
     zr_debug_value_semantic_summary(agent->state,
                                     value,
                                     preview->named_variables,
@@ -665,7 +710,7 @@ static void zr_debug_read_indexed_storage_value(SZrState *state,
     ZrCore_Value_InitAsInt(state, &key, (TZrInt64)index);
     resolvedValue = ZrCore_Object_GetValue(state, storage, &key);
     if (resolvedValue != ZR_NULL) {
-        *outValue = *resolvedValue;
+        zr_debug_copy_value_snapshot(outValue, resolvedValue);
     }
 }
 
@@ -1260,6 +1305,164 @@ static TZrBool zr_debug_expand_exception_value(ZrDebugAgent *agent,
     return ZR_TRUE;
 }
 
+static TZrBool zr_debug_expand_union_value_handle(ZrDebugAgent *agent,
+                                                  const SZrTypeValue *value,
+                                                  EZrDebugScopeKind scopeKind,
+                                                  ZrDebugValuePreview **outValues,
+                                                  TZrSize *outCount,
+                                                  TZrSize *outNamedVariables,
+                                                  TZrSize *outIndexedVariables) {
+    ZrDebugUnionView view;
+    ZrDebugValuePreview *values;
+    TZrSize count;
+    TZrSize index = 0;
+
+    if (outValues != ZR_NULL) {
+        *outValues = ZR_NULL;
+    }
+    if (outCount != ZR_NULL) {
+        *outCount = 0;
+    }
+    if (outNamedVariables != ZR_NULL) {
+        *outNamedVariables = 0;
+    }
+    if (outIndexedVariables != ZR_NULL) {
+        *outIndexedVariables = 0;
+    }
+    if (agent == ZR_NULL ||
+        value == ZR_NULL ||
+        outValues == ZR_NULL ||
+        outCount == ZR_NULL ||
+        !zr_debug_union_value_view(agent, value, &view)) {
+        return ZR_FALSE;
+    }
+
+    count = 1u + view.payload_count;
+    values = count > 0 ? (ZrDebugValuePreview *)calloc(count, sizeof(*values)) : ZR_NULL;
+    if (count > 0 && values == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    {
+        SZrTypeValue variantValue;
+        ZrCore_Value_ResetAsNull(&variantValue);
+        if (zr_debug_union_safe_get_member_value(agent, value, "variant", &variantValue)) {
+            zr_debug_fill_value_preview(agent, "variant", scopeKind, &variantValue, &values[index]);
+        } else {
+            zr_debug_fill_text_preview(&values[index], scopeKind, "variant", "string", view.variant_name, 0);
+        }
+        index++;
+    }
+
+    for (TZrUInt32 payloadIndex = 0u; payloadIndex < view.payload_count; payloadIndex++) {
+        TZrChar displayName[ZR_DEBUG_NAME_CAPACITY];
+        SZrTypeValue payloadValue;
+
+        ZrCore_Value_ResetAsNull(&payloadValue);
+        if (!zr_debug_union_payload_display_name(agent->state,
+                                                 &view,
+                                                 payloadIndex,
+                                                 displayName,
+                                                 sizeof(displayName))) {
+            snprintf(displayName, sizeof(displayName), "payload%u", (unsigned)payloadIndex);
+            displayName[sizeof(displayName) - 1u] = '\0';
+        }
+        if (zr_debug_union_payload_value_from_carrier(agent, value, &view, payloadIndex, &payloadValue)) {
+            zr_debug_fill_value_preview(agent, displayName, scopeKind, &payloadValue, &values[index]);
+        } else {
+            zr_debug_fill_text_preview(&values[index], scopeKind, displayName, "value", "<unavailable>", 0);
+        }
+        index++;
+    }
+
+    *outValues = values;
+    *outCount = index;
+    if (outNamedVariables != ZR_NULL) {
+        *outNamedVariables = index;
+    }
+    if (outIndexedVariables != ZR_NULL) {
+        *outIndexedVariables = 0;
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool zr_debug_expand_inline_union_handle(ZrDebugAgent *agent,
+                                                   TZrUInt32 frameId,
+                                                   TZrUInt32 stackSlot,
+                                                   EZrDebugScopeKind scopeKind,
+                                                   ZrDebugValuePreview **outValues,
+                                                   TZrSize *outCount,
+                                                   TZrSize *outNamedVariables,
+                                                   TZrSize *outIndexedVariables) {
+    SZrFunction *function = ZR_NULL;
+    SZrCallInfo *callInfo;
+    SZrStackFramePlace place;
+    ZrDebugUnionView view;
+    ZrDebugValuePreview *values;
+    TZrSize count;
+    TZrSize index = 0;
+
+    if (outValues != ZR_NULL) {
+        *outValues = ZR_NULL;
+    }
+    if (outCount != ZR_NULL) {
+        *outCount = 0;
+    }
+    if (outNamedVariables != ZR_NULL) {
+        *outNamedVariables = 0;
+    }
+    if (outIndexedVariables != ZR_NULL) {
+        *outIndexedVariables = 0;
+    }
+    if (agent == ZR_NULL || outValues == ZR_NULL || outCount == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    callInfo = zr_debug_find_call_info_by_frame_id(agent, frameId, &function);
+    if (!zr_debug_inline_union_slot_view(agent, function, callInfo, stackSlot, &place, &view)) {
+        return ZR_FALSE;
+    }
+
+    count = 1u + view.payload_count;
+    values = count > 0 ? (ZrDebugValuePreview *)calloc(count, sizeof(*values)) : ZR_NULL;
+    if (count > 0 && values == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    zr_debug_fill_text_preview(&values[index++], scopeKind, "variant", "string", view.variant_name, 0);
+
+    for (TZrUInt32 payloadIndex = 0u; payloadIndex < view.payload_count; payloadIndex++) {
+        TZrChar displayName[ZR_DEBUG_NAME_CAPACITY];
+        SZrTypeValue payloadValue;
+
+        ZrCore_Value_ResetAsNull(&payloadValue);
+        if (!zr_debug_union_payload_display_name(agent->state,
+                                                 &view,
+                                                 payloadIndex,
+                                                 displayName,
+                                                 sizeof(displayName))) {
+            snprintf(displayName, sizeof(displayName), "payload%u", (unsigned)payloadIndex);
+            displayName[sizeof(displayName) - 1u] = '\0';
+        }
+        if (zr_debug_union_payload_value_from_inline(agent, function, &place, &view, payloadIndex, &payloadValue)) {
+            zr_debug_fill_value_preview(agent, displayName, scopeKind, &payloadValue, &values[index]);
+        } else {
+            zr_debug_fill_text_preview(&values[index], scopeKind, displayName, "value", "<unavailable>", 0);
+        }
+        index++;
+    }
+
+    *outValues = values;
+    *outCount = index;
+    if (outNamedVariables != ZR_NULL) {
+        *outNamedVariables = index;
+    }
+    if (outIndexedVariables != ZR_NULL) {
+        *outIndexedVariables = 0;
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool zr_debug_expand_value_handle(ZrDebugAgent *agent,
                                             const SZrTypeValue *value,
                                             TZrSize start,
@@ -1304,6 +1507,16 @@ static TZrBool zr_debug_expand_value_handle(ZrDebugAgent *agent,
     }
 
     prototype = zr_debug_resolve_value_prototype(agent->state, value);
+    if (zr_debug_value_is_union_carrier(agent->state, value)) {
+        return zr_debug_expand_union_value_handle(agent,
+                                                 value,
+                                                 scopeKind,
+                                                 outValues,
+                                                 outCount,
+                                                 outNamedVariables,
+                                                 outIndexedVariables);
+    }
+
     if (zr_debug_try_resolve_indexed_storage(agent->state,
                                              value,
                                              &indexedStorage,
@@ -1447,14 +1660,58 @@ const SZrTypeValue *zr_debug_closure_capture_value(ZrDebugAgent *agent,
     }
 
     for (slotIndex = 0; slotIndex < function->closureValueLength; slotIndex++) {
-        if (function->closureValueList[slotIndex].name != ZR_NULL &&
-            strcmp(zr_debug_string_native(function->closureValueList[slotIndex].name), name) == 0 &&
-            slotIndex < closure->closureValueCount) {
-            return ZrCore_ClosureValue_GetValue(closure->closureValuesExtend[slotIndex]);
+        TZrNativeString upvalueName = ZrCore_Debug_GetUpvalue(agent->state, closure, (TZrInt32)slotIndex + 1, ZR_NULL);
+        SZrClosureValue *upvalueId = (SZrClosureValue *)ZrCore_Debug_GetUpvalueId(agent->state,
+                                                                                  closure,
+                                                                                  (TZrInt32)slotIndex + 1);
+        if (upvalueName != ZR_NULL && strcmp(upvalueName, name) == 0 && upvalueId != ZR_NULL) {
+            return ZrCore_ClosureValue_GetValue(upvalueId);
         }
     }
 
     return ZR_NULL;
+}
+
+static TZrBool zr_debug_fill_inline_union_preview(ZrDebugAgent *agent,
+                                                  const TZrChar *name,
+                                                  EZrDebugScopeKind scopeKind,
+                                                  TZrUInt32 frameId,
+                                                  const SZrFunction *function,
+                                                  const SZrCallInfo *callInfo,
+                                                  TZrUInt32 stackSlot,
+                                                  ZrDebugValuePreview *preview) {
+    SZrStackFramePlace place;
+    ZrDebugUnionView view;
+    TZrChar valueText[ZR_DEBUG_TEXT_CAPACITY];
+    TZrUInt32 variablesReference;
+    TZrSize namedVariables;
+
+    if (agent == ZR_NULL ||
+        preview == ZR_NULL ||
+        !zr_debug_inline_union_slot_view(agent, function, callInfo, stackSlot, &place, &view)) {
+        return ZR_FALSE;
+    }
+
+    ZR_UNUSED_PARAMETER(place);
+    zr_debug_format_inline_union_text(&view, valueText, sizeof(valueText));
+    variablesReference = zr_debug_register_inline_union_handle(agent, frameId, stackSlot);
+    namedVariables = 1u + view.payload_count;
+    zr_debug_fill_text_preview(preview,
+                               scopeKind,
+                               name,
+                               view.type_name[0] != '\0' ? view.type_name : "union",
+                               valueText,
+                               variablesReference);
+    preview->named_variables = namedVariables;
+    preview->indexed_variables = 0;
+    snprintf(preview->semantic_summary,
+             sizeof(preview->semantic_summary),
+             "union %s.%s, named %llu",
+             view.type_name[0] != '\0' ? view.type_name : "value",
+             view.variant_name[0] != '\0' ? view.variant_name : "variant",
+             (unsigned long long)namedVariables);
+    preview->semantic_summary[sizeof(preview->semantic_summary) - 1u] = '\0';
+    return ZR_TRUE;
 }
 
 TZrBool zr_debug_resolve_identifier_value(ZrDebugAgent *agent,
@@ -1483,7 +1740,7 @@ TZrBool zr_debug_resolve_identifier_value(ZrDebugAgent *agent,
     if (callInfo != ZR_NULL && function != ZR_NULL) {
         const SZrTypeValue *closureSlot = zr_debug_closure_capture_value(agent, function, callInfo, name);
         if (closureSlot != ZR_NULL) {
-            *outValue = *closureSlot;
+            zr_debug_copy_value_snapshot(outValue, closureSlot);
             return ZR_TRUE;
         }
 
@@ -1491,9 +1748,12 @@ TZrBool zr_debug_resolve_identifier_value(ZrDebugAgent *agent,
         for (slotIndex = 0; slotIndex < function->stackSize; slotIndex++) {
             SZrString *localName = ZrCore_Function_GetLocalVariableName(function, slotIndex, pc);
             if (localName != ZR_NULL && strcmp(zr_debug_string_native(localName), name) == 0) {
+                if (zr_debug_materialize_inline_union_slot(agent, function, callInfo, slotIndex, outValue)) {
+                    return ZR_TRUE;
+                }
                 const SZrTypeValue *slotValue = zr_debug_frame_value_slot(agent->state, function, callInfo, slotIndex);
                 if (slotValue != ZR_NULL) {
-                    *outValue = *slotValue;
+                    zr_debug_copy_value_snapshot(outValue, slotValue);
                     return ZR_TRUE;
                 }
             }
@@ -1502,15 +1762,15 @@ TZrBool zr_debug_resolve_identifier_value(ZrDebugAgent *agent,
     }
 
     if (strcmp(name, "zr") == 0) {
-        *outValue = agent->state->global->zrObject;
+        zr_debug_copy_value_snapshot(outValue, &agent->state->global->zrObject);
         return ZR_TRUE;
     }
     if (strcmp(name, "loadedModules") == 0) {
-        *outValue = agent->state->global->loadedModulesRegistry;
+        zr_debug_copy_value_snapshot(outValue, &agent->state->global->loadedModulesRegistry);
         return ZR_TRUE;
     }
     if (strcmp(name, "error") == 0 && agent->state->hasCurrentException) {
-        *outValue = agent->state->currentException;
+        zr_debug_copy_value_snapshot(outValue, &agent->state->currentException);
         return ZR_TRUE;
     }
 
@@ -1546,6 +1806,10 @@ TZrBool zr_debug_safe_get_member_value(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
+    if (zr_debug_union_safe_get_member_value(agent, receiver, memberName, outValue)) {
+        return ZR_TRUE;
+    }
+
     memberString = ZrCore_String_CreateFromNative(agent->state, (TZrNativeString)memberName);
     if (memberString == ZR_NULL || !zr_debug_make_string_key(agent->state, memberName, &key)) {
         zr_debug_copy_text(errorBuffer, errorBufferSize, "failed to allocate debug member name");
@@ -1558,7 +1822,7 @@ TZrBool zr_debug_safe_get_member_value(ZrDebugAgent *agent,
         if (object != ZR_NULL) {
             resolvedValue = ZrCore_Object_GetValue(agent->state, object, &key);
             if (resolvedValue != ZR_NULL) {
-                *outValue = *resolvedValue;
+                zr_debug_copy_value_snapshot(outValue, resolvedValue);
                 return ZR_TRUE;
             }
         }
@@ -1582,7 +1846,7 @@ TZrBool zr_debug_safe_get_member_value(ZrDebugAgent *agent,
 
         resolvedValue = ZrCore_Object_GetValue(agent->state, &prototype->super, &key);
         if (resolvedValue != ZR_NULL && (descriptor == ZR_NULL || !descriptor->isStatic || isPrototypeReceiver)) {
-            *outValue = *resolvedValue;
+            zr_debug_copy_value_snapshot(outValue, resolvedValue);
             return ZR_TRUE;
         }
 
@@ -1635,7 +1899,7 @@ TZrBool zr_debug_safe_get_index_value(ZrDebugAgent *agent,
         ZrCore_Value_InitAsInt(agent->state, &normalizedKey, (TZrInt64)indexValue);
         resolvedValue = ZrCore_Object_GetValue(agent->state, indexedStorage, &normalizedKey);
         if (resolvedValue != ZR_NULL) {
-            *outValue = *resolvedValue;
+            zr_debug_copy_value_snapshot(outValue, resolvedValue);
         } else {
             ZrCore_Value_ResetAsNull(outValue);
         }
@@ -1656,7 +1920,7 @@ TZrBool zr_debug_safe_get_index_value(ZrDebugAgent *agent,
     if (resolvedValue == ZR_NULL) {
         ZrCore_Value_ResetAsNull(outValue);
     } else {
-        *outValue = *resolvedValue;
+        zr_debug_copy_value_snapshot(outValue, resolvedValue);
     }
 
     return ZR_TRUE;
@@ -1934,7 +2198,6 @@ TZrBool ZrDebug_Evaluate(ZrDebugAgent *agent,
         zr_debug_copy_text(errorBuffer, errorBufferSize, "evaluate is only available while paused");
         return ZR_FALSE;
     }
-
     if (zr_debug_try_evaluate_index_window(agent,
                                            frameId == 0 ? 1u : frameId,
                                            expression,
@@ -1956,10 +2219,21 @@ TZrBool ZrDebug_Evaluate(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
-    zr_debug_copy_text(outResult->type_name,
-                       sizeof(outResult->type_name),
-                       zr_debug_value_type_name_safe(agent->state, &value));
-    zr_debug_format_value_text_safe(agent->state, &value, outResult->value_text, sizeof(outResult->value_text));
+    if (zr_debug_value_is_union_carrier(agent->state, &value)) {
+        ZrDebugUnionView view;
+        if (zr_debug_union_value_view(agent, &value, &view)) {
+            zr_debug_copy_text(outResult->type_name, sizeof(outResult->type_name), view.type_name);
+        } else {
+            zr_debug_copy_text(outResult->type_name, sizeof(outResult->type_name), "union");
+        }
+    } else {
+        zr_debug_copy_text(outResult->type_name,
+                           sizeof(outResult->type_name),
+                           zr_debug_value_type_name_safe(agent->state, &value));
+    }
+    if (!zr_debug_format_union_value_text(agent, &value, outResult->value_text, sizeof(outResult->value_text))) {
+        zr_debug_format_value_text_safe(agent->state, &value, outResult->value_text, sizeof(outResult->value_text));
+    }
     outResult->variables_reference = zr_debug_value_is_expandable(agent->state, &value)
                                              ? zr_debug_register_value_handle(agent, &value)
                                              : 0;
@@ -2345,6 +2619,15 @@ TZrBool ZrDebug_ReadVariables(ZrDebugAgent *agent,
                                                       outNamedVariables,
                                                       outIndexedVariables);
             }
+            case ZR_DEBUG_VARIABLE_HANDLE_KIND_INLINE_UNION:
+                return zr_debug_expand_inline_union_handle(agent,
+                                                           handle->frame_id,
+                                                           handle->stack_slot,
+                                                           ZR_DEBUG_SCOPE_KIND_LOCALS,
+                                                           outValues,
+                                                           outCount,
+                                                           outNamedVariables,
+                                                           outIndexedVariables);
             case ZR_DEBUG_VARIABLE_HANDLE_KIND_NONE:
             default:
                 return ZR_FALSE;
@@ -2408,11 +2691,20 @@ TZrBool ZrDebug_ReadVariables(ZrDebugAgent *agent,
             if (name == ZR_NULL) {
                 continue;
             }
-            zr_debug_fill_value_preview(agent,
-                                        zr_debug_string_native(name),
-                                        scopeKind,
-                                        zr_debug_frame_value_slot(agent->state, function, callInfo, slotIndex),
-                                        &values[index]);
+            if (!zr_debug_fill_inline_union_preview(agent,
+                                                    zr_debug_string_native(name),
+                                                    scopeKind,
+                                                    frameId,
+                                                    function,
+                                                    callInfo,
+                                                    slotIndex,
+                                                    &values[index])) {
+                zr_debug_fill_value_preview(agent,
+                                            zr_debug_string_native(name),
+                                            scopeKind,
+                                            zr_debug_frame_value_slot(agent->state, function, callInfo, slotIndex),
+                                            &values[index]);
+            }
             zr_debug_reference_summary_from_scope(scopeKind,
                                                   zr_debug_string_native(name),
                                                   values[index].reference_summary,
@@ -2444,20 +2736,30 @@ TZrBool ZrDebug_ReadVariables(ZrDebugAgent *agent,
         }
 
         for (closureIndex = 0; closureIndex < function->closureValueLength; closureIndex++) {
-            const SZrTypeValue *value = closure != ZR_NULL && closureIndex < closure->closureValueCount
-                                                ? ZrCore_ClosureValue_GetValue(closure->closureValuesExtend[closureIndex])
-                                                : &agent->state->global->nullValue;
+            SZrClosureValue *upvalueId = closure != ZR_NULL
+                                                 ? (SZrClosureValue *)ZrCore_Debug_GetUpvalueId(
+                                                           agent->state,
+                                                           closure,
+                                                           (TZrInt32)closureIndex + 1)
+                                                 : ZR_NULL;
+            TZrNativeString upvalueName = closure != ZR_NULL
+                                                  ? ZrCore_Debug_GetUpvalue(
+                                                            agent->state,
+                                                            closure,
+                                                            (TZrInt32)closureIndex + 1,
+                                                            ZR_NULL)
+                                                  : ZR_NULL;
+            const SZrTypeValue *previewValue = upvalueId != ZR_NULL
+                                                       ? ZrCore_ClosureValue_GetValue(upvalueId)
+                                                       : &agent->state->global->nullValue;
+            const TZrChar *previewName = upvalueName != ZR_NULL ? upvalueName : "<closure>";
             zr_debug_fill_value_preview(agent,
-                                        function->closureValueList[closureIndex].name != ZR_NULL
-                                                ? zr_debug_string_native(function->closureValueList[closureIndex].name)
-                                                : "<closure>",
+                                        previewName,
                                         scopeKind,
-                                        value,
+                                        previewValue,
                                         &values[closureIndex]);
             zr_debug_reference_summary_from_scope(scopeKind,
-                                                  function->closureValueList[closureIndex].name != ZR_NULL
-                                                          ? zr_debug_string_native(function->closureValueList[closureIndex].name)
-                                                          : "<closure>",
+                                                  previewName,
                                                   values[closureIndex].reference_summary,
                                                   sizeof(values[closureIndex].reference_summary));
         }

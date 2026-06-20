@@ -41,6 +41,12 @@ typedef struct SZrTypeLayoutField {
     TZrUInt32 activeTag;
 } SZrTypeLayoutField;
 
+typedef struct SZrTypeLayoutMetadata {
+    TZrUInt32 cTypeId;
+    const TZrUInt32 *gcFieldOffsets;
+    const TZrUInt32 *ownershipFieldOffsets;
+} SZrTypeLayoutMetadata;
+
 typedef struct SZrTypeLayout {
     TZrUInt32 byteSize;
     TZrUInt32 byteAlign;
@@ -54,6 +60,13 @@ typedef struct SZrTypeLayout {
     TZrUInt32 ownershipFieldCount;
     TZrUInt32 tagOffset;
     TZrUInt32 tagSize;
+    TZrBool blittable;
+    TZrUInt8 reserved1;
+    TZrUInt8 reserved2;
+    TZrUInt8 reserved3;
+    TZrUInt32 cTypeId;
+    const TZrUInt32 *gcFieldOffsets;
+    const TZrUInt32 *ownershipFieldOffsets;
 } SZrTypeLayout;
 
 typedef struct SZrStackFrameLayoutSlot {
@@ -80,6 +93,15 @@ ZR_CORE_API void ZrCore_TypeLayout_InitStruct(SZrTypeLayout *layout,
                                               EZrTypeLayoutDropKind dropKind,
                                               const SZrTypeLayoutField *fields,
                                               TZrUInt32 fieldCount);
+
+ZR_CORE_API void ZrCore_TypeLayout_InitStructWithMetadata(SZrTypeLayout *layout,
+                                                          TZrUInt32 byteSize,
+                                                          TZrUInt32 byteAlign,
+                                                          EZrTypeLayoutCopyKind copyKind,
+                                                          EZrTypeLayoutDropKind dropKind,
+                                                          const SZrTypeLayoutField *fields,
+                                                          TZrUInt32 fieldCount,
+                                                          const SZrTypeLayoutMetadata *metadata);
 
 ZR_CORE_API void ZrCore_TypeLayout_InitUnion(SZrTypeLayout *layout,
                                              TZrUInt32 byteSize,

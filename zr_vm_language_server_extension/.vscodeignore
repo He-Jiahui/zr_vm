@@ -8,6 +8,11 @@ src/**
 vsc-extension-quickstart.md
 scripts/**
 test/**
+build/**
+*.log
+*.pid
+*.exit
+*.vsix
 pnpm-lock.yaml
 package-lock.json
 **/tsconfig.json

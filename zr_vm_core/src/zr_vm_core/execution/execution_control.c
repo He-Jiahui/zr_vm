@@ -47,26 +47,29 @@ TZrSize close_scope_cleanup_registrations(SZrState *state, TZrSize cleanupCount)
 }
 
 
-TZrBool execution_invoke_meta_call(SZrState *state,
-                                   SZrCallInfo *savedCallInfo,
-                                   TZrStackValuePointer savedStackTop,
-                                   TZrStackValuePointer requestedScratchBase,
-                                   SZrMeta *meta,
-                                   const SZrTypeValue *arg0,
-                                   const SZrTypeValue *arg1,
-                                   TZrSize argumentCount,
-                                   TZrStackValuePointer *outMetaBase,
-                                   TZrStackValuePointer *outSavedStackTop) {
+TZrBool execution_invoke_meta_call_to_destination(SZrState *state,
+                                                  SZrCallInfo *savedCallInfo,
+                                                  TZrStackValuePointer savedStackTop,
+                                                  TZrStackValuePointer requestedScratchBase,
+                                                  SZrMeta *meta,
+                                                  const SZrTypeValue *arg0,
+                                                  const SZrTypeValue *arg1,
+                                                  TZrSize argumentCount,
+                                                  TZrStackValuePointer returnDestination,
+                                                  TZrStackValuePointer *outMetaBase,
+                                                  TZrStackValuePointer *outSavedStackTop) {
     SZrTypeValue stableArguments[ZR_META_CALL_MAX_ARGUMENTS];
     SZrFunctionStackAnchor savedStackTopAnchor;
     SZrFunctionStackAnchor metaBaseAnchor;
     SZrFunctionStackAnchor callInfoBaseAnchor;
     SZrFunctionStackAnchor originalCallInfoTopAnchor;
     SZrFunctionStackAnchor activeCallInfoTopAnchor;
+    SZrFunctionStackAnchor returnDestinationAnchor;
     TZrStackValuePointer scratchBase;
     TZrStackValuePointer metaBase;
     TZrBool hasCallInfoAnchors = ZR_FALSE;
     TZrBool hasActiveCallInfoTopAnchor = ZR_FALSE;
+    TZrBool hasReturnDestinationAnchor = ZR_FALSE;
 
     scratchBase = execution_resolve_meta_scratch_base(savedStackTop, requestedScratchBase, savedCallInfo);
     ZrCore_Profile_RecordSlowPathCurrent(ZR_PROFILE_SLOWPATH_META_FALLBACK);
@@ -93,6 +96,10 @@ TZrBool execution_invoke_meta_call(SZrState *state,
 
     ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
     ZrCore_Function_StackAnchorInit(state, scratchBase, &metaBaseAnchor);
+    if (returnDestination != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(state, returnDestination, &returnDestinationAnchor);
+        hasReturnDestinationAnchor = ZR_TRUE;
+    }
     if (savedCallInfo != ZR_NULL) {
         ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionBase.valuePointer, &callInfoBaseAnchor);
         ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &originalCallInfoTopAnchor);
@@ -106,6 +113,9 @@ TZrBool execution_invoke_meta_call(SZrState *state,
     }
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
     metaBase = ZrCore_Function_StackAnchorRestore(state, &metaBaseAnchor);
+    if (hasReturnDestinationAnchor) {
+        returnDestination = ZrCore_Function_StackAnchorRestore(state, &returnDestinationAnchor);
+    }
     if (hasCallInfoAnchors) {
         savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
         savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &originalCallInfoTopAnchor);
@@ -121,6 +131,9 @@ TZrBool execution_invoke_meta_call(SZrState *state,
     ZrCore_Stack_SetRawObjectValue(state, metaBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
     ZrCore_Stack_CopyValue(state, ZR_META_CALL_SELF_SLOT(metaBase), &stableArguments[0]);
     metaBase = ZrCore_Function_StackAnchorRestore(state, &metaBaseAnchor);
+    if (hasReturnDestinationAnchor) {
+        returnDestination = ZrCore_Function_StackAnchorRestore(state, &returnDestinationAnchor);
+    }
     if (hasCallInfoAnchors) {
         savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
         savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
@@ -131,6 +144,9 @@ TZrBool execution_invoke_meta_call(SZrState *state,
     if (argumentCount > ZR_META_CALL_UNARY_ARGUMENT_COUNT) {
         ZrCore_Stack_CopyValue(state, ZR_META_CALL_SECOND_ARGUMENT_SLOT(metaBase), &stableArguments[1]);
         metaBase = ZrCore_Function_StackAnchorRestore(state, &metaBaseAnchor);
+        if (hasReturnDestinationAnchor) {
+            returnDestination = ZrCore_Function_StackAnchorRestore(state, &returnDestinationAnchor);
+        }
         if (hasCallInfoAnchors) {
             savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
             savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
@@ -140,7 +156,12 @@ TZrBool execution_invoke_meta_call(SZrState *state,
         }
     }
 
-    metaBase = ZrCore_Function_CallWithoutYieldAndRestore(state, metaBase, 1);
+    if (returnDestination != ZR_NULL) {
+        metaBase = ZrCore_Function_CallWithoutYieldAndRestoreWithReturnDestination(
+                state, metaBase, 1, returnDestination);
+    } else {
+        metaBase = ZrCore_Function_CallWithoutYieldAndRestore(state, metaBase, 1);
+    }
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
     if (hasCallInfoAnchors) {
         savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
@@ -154,6 +175,29 @@ TZrBool execution_invoke_meta_call(SZrState *state,
     }
 
     return state->threadStatus == ZR_THREAD_STATUS_FINE;
+}
+
+TZrBool execution_invoke_meta_call(SZrState *state,
+                                   SZrCallInfo *savedCallInfo,
+                                   TZrStackValuePointer savedStackTop,
+                                   TZrStackValuePointer requestedScratchBase,
+                                   SZrMeta *meta,
+                                   const SZrTypeValue *arg0,
+                                   const SZrTypeValue *arg1,
+                                   TZrSize argumentCount,
+                                   TZrStackValuePointer *outMetaBase,
+                                   TZrStackValuePointer *outSavedStackTop) {
+    return execution_invoke_meta_call_to_destination(state,
+                                                     savedCallInfo,
+                                                     savedStackTop,
+                                                     requestedScratchBase,
+                                                     meta,
+                                                     arg0,
+                                                     arg1,
+                                                     argumentCount,
+                                                     ZR_NULL,
+                                                     outMetaBase,
+                                                     outSavedStackTop);
 }
 
 static TZrStackValuePointer execution_resolve_meta_scratch_base(TZrStackValuePointer savedStackTop,

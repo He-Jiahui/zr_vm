@@ -11,6 +11,8 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_library/file.h"
+#include "zr_vm_library/project.h"
+#include "zr_vm_library/zrm.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
@@ -162,6 +164,151 @@ static TZrBool zr_cli_hash_file(const TZrChar *path, TZrChar *buffer, TZrSize bu
     fclose(file);
     ZrCli_Project_HashToHex(hash, buffer, bufferSize);
     return ZR_TRUE;
+}
+
+static const TZrChar *zr_cli_compiler_string_text(SZrString *value) {
+    if (value == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (value->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        return ZrCore_String_GetNativeStringShort(value);
+    }
+
+    return ZrCore_String_GetNativeString(value);
+}
+
+static TZrBool zr_cli_compiler_resolve_project_resource_path(const SZrCliProjectContext *project,
+                                                             const TZrChar *resourcePath,
+                                                             TZrChar *buffer,
+                                                             TZrSize bufferSize) {
+    TZrChar joinedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    if (project == ZR_NULL || resourcePath == ZR_NULL || resourcePath[0] == '\0' ||
+        buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    if (ZrLibrary_File_IsAbsolutePath((TZrNativeString)resourcePath)) {
+        return ZrLibrary_File_NormalizePath((TZrNativeString)resourcePath, buffer, bufferSize);
+    }
+
+    ZrLibrary_File_PathJoin(project->projectRoot, resourcePath, joinedPath);
+    return joinedPath[0] != '\0' && ZrLibrary_File_NormalizePath(joinedPath, buffer, bufferSize);
+}
+
+static TZrBool zr_cli_pack_zrm_assembly(const SZrCliProjectContext *project,
+                                        const SZrCliModuleCollection *modules,
+                                        SZrCliCompileSummary *summary) {
+    const SZrLibrary_Project *libraryProject;
+    SZrLibrary_ZrmAssemblyInfo assembly;
+    SZrLibrary_ZrmPackModule *packModules = ZR_NULL;
+    SZrLibrary_ZrmPackResource *packResources = ZR_NULL;
+    TZrChar (*resourcePaths)[ZR_LIBRARY_MAX_PATH_LENGTH] = ZR_NULL;
+    TZrChar outputPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar error[ZR_LIBRARY_ZRM_ERROR_BUFFER_LENGTH];
+    const TZrChar *assemblyName;
+    const TZrChar *assemblyVersion;
+    const TZrChar *assemblyCulture;
+    const TZrChar *assemblyPublicKeyToken;
+    const TZrChar *assemblyKind;
+    TZrBool success = ZR_FALSE;
+
+    if (project == ZR_NULL || modules == ZR_NULL || project->libraryProject == ZR_NULL ||
+        !ZrLibrary_Project_ResolveAssemblyOutputPath(project->libraryProject, outputPath, sizeof(outputPath))) {
+        return ZR_FALSE;
+    }
+
+    libraryProject = project->libraryProject;
+    assemblyName = zr_cli_compiler_string_text(libraryProject->assemblyName);
+    if (assemblyName == ZR_NULL || assemblyName[0] == '\0') {
+        assemblyName = zr_cli_compiler_string_text(libraryProject->name);
+    }
+    assemblyVersion = zr_cli_compiler_string_text(libraryProject->version);
+    assemblyCulture = zr_cli_compiler_string_text(libraryProject->assemblyCulture);
+    assemblyPublicKeyToken = zr_cli_compiler_string_text(libraryProject->assemblyPublicKeyToken);
+    assemblyKind = zr_cli_compiler_string_text(libraryProject->assemblyKind);
+    if (assemblyName == ZR_NULL || assemblyName[0] == '\0' ||
+        assemblyVersion == ZR_NULL || assemblyVersion[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    packModules = modules->count > 0
+                ? (SZrLibrary_ZrmPackModule *)calloc(modules->count, sizeof(*packModules))
+                : ZR_NULL;
+    packResources = libraryProject->resourceCount > 0
+                  ? (SZrLibrary_ZrmPackResource *)calloc(libraryProject->resourceCount, sizeof(*packResources))
+                  : ZR_NULL;
+    resourcePaths = libraryProject->resourceCount > 0
+                  ? (TZrChar (*)[ZR_LIBRARY_MAX_PATH_LENGTH])calloc(libraryProject->resourceCount, sizeof(*resourcePaths))
+                  : ZR_NULL;
+    if ((modules->count > 0 && packModules == ZR_NULL) ||
+        (libraryProject->resourceCount > 0 && (packResources == ZR_NULL || resourcePaths == ZR_NULL))) {
+        goto cleanup;
+    }
+
+    for (TZrSize index = 0; index < modules->count; index++) {
+        const SZrCliModuleRecord *record = &modules->records[index];
+        if (record->zroPath[0] == '\0' ||
+            ZrLibrary_File_Exist((TZrNativeString)record->zroPath) != ZR_LIBRARY_FILE_IS_FILE) {
+            goto cleanup;
+        }
+        packModules[index].moduleKey = record->moduleName;
+        packModules[index].sourcePath = record->zroPath;
+        packModules[index].hash = record->zroHash[0] != '\0' ? record->zroHash : ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < libraryProject->resourceCount; index++) {
+        const SZrLibrary_ProjectResource *resource = &libraryProject->resources[index];
+        const TZrChar *logicalName = zr_cli_compiler_string_text(resource->logicalName);
+        const TZrChar *sourcePath = zr_cli_compiler_string_text(resource->sourcePath);
+
+        if (logicalName == ZR_NULL ||
+            sourcePath == ZR_NULL ||
+            !zr_cli_compiler_resolve_project_resource_path(project,
+                                                           sourcePath,
+                                                           resourcePaths[index],
+                                                           ZR_LIBRARY_MAX_PATH_LENGTH) ||
+            ZrLibrary_File_Exist((TZrNativeString)resourcePaths[index]) != ZR_LIBRARY_FILE_IS_FILE) {
+            goto cleanup;
+        }
+
+        packResources[index].logicalName = logicalName;
+        packResources[index].sourcePath = resourcePaths[index];
+        packResources[index].hash = ZR_NULL;
+        packResources[index].compress = resource->compress;
+    }
+
+    memset(&assembly, 0, sizeof(assembly));
+    assembly.name = assemblyName;
+    assembly.version = assemblyVersion;
+    assembly.culture = assemblyCulture;
+    assembly.publicKeyToken = assemblyPublicKeyToken;
+    assembly.kind = assemblyKind;
+    assembly.entryModule = project->entryModule;
+    memset(error, 0, sizeof(error));
+    {
+        SZrLibrary_ZrmPackRequest request;
+        memset(&request, 0, sizeof(request));
+        request.outputPath = outputPath;
+        request.assembly = assembly;
+        request.modules = packModules;
+        request.moduleCount = modules->count;
+        request.resources = packResources;
+        request.resourceCount = libraryProject->resourceCount;
+        success = ZrLibrary_Zrm_WriteArchive(&request, error, sizeof(error));
+    }
+
+    if (success && summary != ZR_NULL) {
+        summary->packedAssembly = ZR_TRUE;
+        snprintf(summary->zrmPath, sizeof(summary->zrmPath), "%s", outputPath);
+    }
+
+cleanup:
+    free(resourcePaths);
+    free(packResources);
+    free(packModules);
+    return success;
 }
 
 static TZrBool zr_cli_load_binary_function(SZrState *state, const TZrChar *path, SZrFunction **outFunction) {
@@ -888,6 +1035,12 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
             success = ZR_FALSE;
             goto cleanup;
         }
+    }
+
+    if (command->emitZrm && !zr_cli_pack_zrm_assembly(&project, &modules, &localSummary)) {
+        ZrCore_Log_Error(scanGlobal->mainThreadState, "failed to pack .zrm assembly for project: %s\n", project.projectPath);
+        success = ZR_FALSE;
+        goto cleanup;
     }
 
 cleanup:

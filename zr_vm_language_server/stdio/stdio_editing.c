@@ -30,7 +30,7 @@ cJSON *handle_range_formatting_request(SZrStdioServer *server, const cJSON *para
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri) ||
-        !parse_range(get_object_item(params, ZR_LSP_FIELD_RANGE), &range)) {
+        !parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &range)) {
         return cJSON_CreateArray();
     }
 
@@ -70,7 +70,7 @@ cJSON *handle_ranges_formatting_request(SZrStdioServer *server, const cJSON *par
         SZrArray edits = {0};
         SZrLspRange range;
 
-        if (!parse_range(rangeJson, &range)) {
+        if (!parse_range_for_uri(server, uri, rangeJson, &range)) {
             continue;
         }
 
@@ -102,8 +102,8 @@ cJSON *handle_on_type_formatting_request(SZrStdioServer *server, const cJSON *pa
     chJson = get_object_item(params, ZR_LSP_FIELD_CH);
     if (!cJSON_IsString(chJson) ||
         (strcmp(chJson->valuestring, "}") != 0 && strcmp(chJson->valuestring, ";") != 0) ||
-        !parse_position(get_object_item(params, ZR_LSP_FIELD_POSITION), &position) ||
-        !get_uri_from_text_document(server, params, &uriText, &uri)) {
+        !get_uri_from_text_document(server, params, &uriText, &uri) ||
+        !parse_position_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_POSITION), &position)) {
         return cJSON_CreateArray();
     }
 
@@ -134,7 +134,7 @@ cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
         return cJSON_CreateArray();
     }
-    parse_range(get_object_item(params, ZR_LSP_FIELD_RANGE), &range);
+    parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &range);
 
     ZrCore_Array_Init(server->state, &actions, sizeof(SZrLspCodeAction *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetCodeActions(server->state, server->context, uri, range, &actions)) {

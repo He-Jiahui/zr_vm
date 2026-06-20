@@ -516,9 +516,9 @@ static SZrFunction *garbage_collector_call_info_metadata_function(SZrState *thre
     return ZrCore_Closure_GetMetadataFunctionFromCallInfo(threadState, (SZrCallInfo *)callInfo);
 }
 
-static TZrBool garbage_collector_function_has_resolved_inline_frame_layouts(SZrState *threadState,
-                                                                           const SZrFunction *function) {
-    TZrBool hasInlineStruct = ZR_FALSE;
+static TZrBool garbage_collector_function_has_frame_gc_layouts(SZrState *threadState,
+                                                               const SZrFunction *function) {
+    TZrBool hasGcLayout = ZR_FALSE;
 
     if (threadState == ZR_NULL || function == ZR_NULL ||
         function->frameSlotLayouts == ZR_NULL ||
@@ -529,11 +529,18 @@ static TZrBool garbage_collector_function_has_resolved_inline_frame_layouts(SZrS
     for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
         const SZrFunctionFrameSlotLayout *slotLayout = &function->frameSlotLayouts[index];
 
+        if (slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE) {
+            if (slotLayout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue)) {
+                hasGcLayout = ZR_TRUE;
+            }
+            continue;
+        }
+
         if (slotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
             continue;
         }
 
-        hasInlineStruct = ZR_TRUE;
+        hasGcLayout = ZR_TRUE;
         if (ZrCore_Function_ResolvePrototypeFrameTypeLayout(function,
                                                             slotLayout->typeLayoutId,
                                                             threadState) == ZR_NULL) {
@@ -541,7 +548,7 @@ static TZrBool garbage_collector_function_has_resolved_inline_frame_layouts(SZrS
         }
     }
 
-    return hasInlineStruct;
+    return hasGcLayout;
 }
 
 static void garbage_collector_mark_inline_frame_value(SZrState *state, SZrTypeValue *value, TZrPtr userData) {
@@ -570,8 +577,8 @@ static TZrBool garbage_collector_stack_slot_intersects_resolved_inline_frame(SZr
         SZrFunction *function = garbage_collector_call_info_metadata_function(threadState, callInfo);
 
         if (callInfo->functionBase.valuePointer != ZR_NULL &&
-            garbage_collector_function_has_resolved_inline_frame_layouts(threadState, function) &&
-            ZrCore_Function_FrameStackSlotIntersectsInlineStruct(function,
+            garbage_collector_function_has_frame_gc_layouts(threadState, function) &&
+            ZrCore_Function_FrameStackSlotIntersectsFrameGcValue(function,
                                                                  callInfo->functionBase.valuePointer + 1,
                                                                  stackSlot)) {
             return ZR_TRUE;
@@ -589,17 +596,17 @@ static TZrBool garbage_collector_mark_resolved_inline_frame_values(SZrState *sta
                                                                    TZrSize *work) {
     SZrGcInlineFrameMarkWork markWork = {0u};
 
-    if (!garbage_collector_function_has_resolved_inline_frame_layouts(threadState, function)) {
+    if (!garbage_collector_function_has_frame_gc_layouts(threadState, function)) {
         return ZR_FALSE;
     }
 
-    if (!ZrCore_Function_VisitInlineFrameGcValues(state,
-                                                  function,
-                                                  frameBase,
-                                                  ZrCore_Function_ResolvePrototypeFrameTypeLayout,
-                                                  threadState,
-                                                  garbage_collector_mark_inline_frame_value,
-                                                  &markWork)) {
+    if (!ZrCore_Function_VisitFrameGcValues(state,
+                                            function,
+                                            frameBase,
+                                            ZrCore_Function_ResolvePrototypeFrameTypeLayout,
+                                            threadState,
+                                            garbage_collector_mark_inline_frame_value,
+                                            &markWork)) {
         return ZR_FALSE;
     }
 
@@ -945,8 +952,10 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
 
                 garbage_collector_mark_string_if_present(state, symbol->name);
                 garbage_collector_mark_typed_type_ref(state, &symbol->valueType);
-                for (TZrUInt32 parameterIndex = 0; parameterIndex < symbol->parameterCount; parameterIndex++) {
-                    garbage_collector_mark_typed_type_ref(state, &symbol->parameterTypes[parameterIndex]);
+                if (symbol->parameterTypes != ZR_NULL) {
+                    for (TZrUInt32 parameterIndex = 0; parameterIndex < symbol->parameterCount; parameterIndex++) {
+                        garbage_collector_mark_typed_type_ref(state, &symbol->parameterTypes[parameterIndex]);
+                    }
                 }
             }
             if (function->staticImports != ZR_NULL) {
@@ -1132,7 +1141,7 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                         if (funcTop != ZR_NULL && funcTop > funcBase) {
                             while (funcBase < funcTop) {
                                 if (!inlineFrameVisited ||
-                                    !ZrCore_Function_FrameStackSlotIntersectsInlineStruct(metadataFunction,
+                                    !ZrCore_Function_FrameStackSlotIntersectsFrameGcValue(metadataFunction,
                                                                                           frameBase,
                                                                                           funcBase)) {
                                     garbage_collector_mark_value(state, &funcBase->value);

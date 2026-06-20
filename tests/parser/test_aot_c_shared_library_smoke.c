@@ -545,7 +545,7 @@ static void test_aot_c_generated_shared_library_executes_primitive_constant_writ
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_primitive_constant"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_destination"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_destination->value.nativeObject.nativeInt64"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SetConstant"));
     free(generatedCText);

@@ -103,6 +103,18 @@ const TZrChar *backend_aot_exec_ir_semir_opcode_name(TZrUInt32 opcode) {
             return "CALL_TYPED";
         case ZR_SEMIR_OPCODE_RETURN_TYPED:
             return "RETURN_TYPED";
+        case ZR_SEMIR_OPCODE_BIT_NOT:
+            return "BIT_NOT";
+        case ZR_SEMIR_OPCODE_BIT_AND:
+            return "BIT_AND";
+        case ZR_SEMIR_OPCODE_BIT_OR:
+            return "BIT_OR";
+        case ZR_SEMIR_OPCODE_BIT_XOR:
+            return "BIT_XOR";
+        case ZR_SEMIR_OPCODE_SHL:
+            return "SHL";
+        case ZR_SEMIR_OPCODE_SHR:
+            return "SHR";
         case ZR_SEMIR_OPCODE_NOP:
         default:
             return "NOP";

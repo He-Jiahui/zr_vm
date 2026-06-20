@@ -41,9 +41,24 @@
     - Missing imported members now publish stable diagnostic code `plugin_unknown_export`.
     - The existing missing-member message and cross-file relatedInformation import trace are preserved.
     - stdio diagnostics serialize the same code into the top-level diagnostic and diagnostic data.
+  - Follow-up P1 ownership member-method lowering/runtime slice:
+    - `Unique<T>` / `Shared<T>` / `Weak<T>` ownership wrappers now support zero-argument member calls `share()`, `weak()`, `borrow()`, `loan()`, `upgrade()`, `release()`, and `detach()`.
+    - The compiler lowers those calls to dedicated `OWN_*` opcodes instead of ordinary member lookup.
+    - `using (owner.loan())` resolves the direct local owner source and returns the loan through `OWN_RETURN_LOAN`.
+    - Runtime null-slot quickening writes the active frame slot, so moved/detached owners compare correctly with `null`.
 
 ## Evidence
 
+- Follow-up timestamp: 2026-06-19 06:01:06 +08:00.
+- Ownership member-method suite:
+  - Built WSL clang targets `zr_vm_core_shared`, `zr_vm_parser_shared`, `zr_vm_cli`, and `zr_vm_compiler_integration_test`.
+  - `test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute`: PASS.
+  - `test_ownership_generic_real_fixture_executes_session_lifecycle`: PASS.
+  - The real fixture `generic_session_lifecycle_pass.zr` returns runtime mask `63`.
+  - Full compiler integration result remains the existing dirty-worktree baseline: `127 Tests 21 Failures 0 Ignored`.
+- Reference manifest contracts:
+  - `zr_vm_reference_manifest_contracts_test`
+  - Result: `1 Tests 0 Failures 0 Ignored OK`
 - Timestamp: 2026-06-17 16:26:11 +08:00.
 - Build directory: `build/codex-using-exhaustive-wsl-gcc-debug`.
 - Parser/compiler suite:
@@ -758,6 +773,44 @@
   - More complete global async plugin escape analysis.
   - Switch and other complex-expression/member mutation matrices.
   - Complete load+verify/ref binding/release.
+
+## Update: plugin guard member assignment storage boundary
+
+- Timestamp: 2026-06-19 03:55:11 +08:00.
+- Build directory: `build-wsl-gcc`.
+- Scope:
+  - Compile-time plugin guard escape scanning now classifies member/index storage assignment targets as field/container persistence.
+  - `box.handle = math` reports `plugin_type_escape ... through field/container` when `math` is a guard-scoped plugin value.
+  - Guard-local bare identifier assignments still propagate aliases, while plain outer/global assignments keep the dedicated `outer/global assignment` reason.
+- TDD evidence:
+  - RED: `test_plugin_guard_member_assignment_reports_escape_boundary` initially failed because the compiler reported `plugin_type_escape ... through outer/global assignment`.
+  - GREEN: adding member-storage target detection in `compiler_using_plugin_guard_escape_expression.c` made the same source report `plugin_type_escape ... through field/container`.
+- Rerun evidence:
+  - `cmake --build build-wsl-gcc --target zr_vm_compiler_integration_test -j2`: succeeded.
+  - Full `zr_vm_compiler_integration_test`: new member-assignment case PASSed; full target remains `125 Tests 21 Failures 0 Ignored` with existing dirty-worktree baseline failures.
+  - MSVC `zr_vm_compiler_integration_test` remains blocked by unrelated W2 quickening `create_instruction_*` unresolved externals.
+- Remaining work:
+  - More complete global async plugin escape analysis.
+  - Switch and other complex-expression matrices.
+  - Complete load+verify/ref binding/release.
+
+## Update: ownership generic real fixture lifecycle
+
+- Timestamp: 2026-06-19 04:27:20 +08:00.
+- Build directory: `build-wsl-clang`.
+- Scope:
+  - Added `tests/fixtures/reference/core_semantics/ownership_using_resource_lifecycle/generic_session_lifecycle_pass.zr`.
+  - The fixture uses `Unique<T>`, `Shared<T>`, `Borrow<T>`, `Loan<T>`, and `Weak<T>` in a session-style lifecycle, then exercises `%detach`, `%upgrade`, and `%release`.
+  - Added manifest case `ownership-generic-session-lifecycle-pass` under `ownership_using_resource_lifecycle`.
+  - Added `test_ownership_generic_real_fixture_executes_session_lifecycle`, which reads the `.zr` fixture, compiles it, checks the ownership opcode family in the real child function, and executes it.
+- TDD evidence:
+  - RED: after registering the C test before adding the fixture, the new test entry failed because it could not read `generic_session_lifecycle_pass.zr`.
+  - GREEN: after adding the fixture and using the child function for opcode assertions, the new compiler integration case PASSed.
+- Rerun evidence:
+  - `cmake --build build-wsl-clang --target zr_vm_compiler_integration_test -j2`: succeeded.
+  - Focused output: `test_ownership_generic_real_fixture_executes_session_lifecycle:PASS`.
+  - Full `zr_vm_compiler_integration_test`: new fixture case PASSed; full target remains `126 Tests 21 Failures 0 Ignored` with existing dirty-worktree baseline failures.
+  - `zr_vm_reference_manifest_contracts_test`: `1 Tests 0 Failures 0 Ignored OK`.
 
 ## Update: plugin guard nested callable destructuring shadowing
 

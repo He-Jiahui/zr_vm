@@ -6,6 +6,7 @@ add_subdirectory(third_party)
 zr_declare_module(${zr_curr_module_name} ON)
 
 zr_link_third_party_for_module(${zr_curr_module_name} "zr_c_json")
+zr_link_third_party_for_module(${zr_curr_module_name} "zr_miniz")
 zr_link_third_party_for_module(${zr_curr_module_name} "zr_tiny_dir")
 
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_core")

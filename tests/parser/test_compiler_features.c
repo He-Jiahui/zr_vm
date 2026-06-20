@@ -8,6 +8,7 @@
 #include <time.h>
 #include "unity.h"
 #include "module_fixture_support.h"
+#include "reference_support.h"
 #include "runtime_support.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/conversion.h"
@@ -3582,6 +3583,90 @@ void test_intrinsic_ownership_generic_constructors_emit_dedicated_opcodes(void) 
     ZR_TEST_DIVIDER();
 }
 
+void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Generic Member Methods Emit Dedicated Opcodes And Execute";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Ownership generic member method lowering",
+              "Testing that owner.share()/weak()/borrow()/loan()/detach()/upgrade()/release() lower through ownership opcodes");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "class Session {}\n"
+            "runMemberLifecycle(): int {\n"
+            "var sessionSeed = Unique<Session>(new Session());\n"
+            "var sharedSession = sessionSeed.share();\n"
+            "var watcher = sharedSession.weak();\n"
+            "var mask = 0;\n"
+            "using (sharedSession.borrow()) {\n"
+            "    if (sharedSession != null) { mask = mask + 1; }\n"
+            "}\n"
+            "var cacheSeed = Unique<string>(\"session-cache\");\n"
+            "using (cacheSeed.loan()) {\n"
+            "    if (cacheSeed == null) { mask = mask + 2; }\n"
+            "}\n"
+            "if (cacheSeed != null) { mask = mask + 4; }\n"
+            "var detachedSeed = Unique<Session>(new Session());\n"
+            "var rawSession = detachedSeed.detach();\n"
+            "if (detachedSeed == null && rawSession != null) { mask = mask + 8; }\n"
+            "var upgradedSession = watcher.upgrade();\n"
+            "if (upgradedSession != null) { mask = mask + 16; }\n"
+            "var releasedShared = sharedSession.release();\n"
+            "var releasedUpgrade = upgradedSession.release();\n"
+            "var expiredSession = watcher.upgrade();\n"
+            "if (releasedShared == null && releasedUpgrade == null &&\n"
+            "    sharedSession == null && upgradedSession == null && expiredSession == null) {\n"
+            "    mask = mask + 32;\n"
+            "}\n"
+            "return mask;\n"
+            "}\n"
+            "return runMemberLifecycle();\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "ownership_generic_member_methods.zr",
+                                                     strlen("ownership_generic_member_methods.zr"));
+        SZrFunction *func;
+        SZrFunction *lifecycleFunc;
+        TZrInt64 result = 0;
+
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile ownership generic member method source");
+            destroy_test_state(state);
+            return;
+        }
+
+        lifecycleFunc = find_single_function_constant_with_opcode(state, func, ZR_INSTRUCTION_ENUM(OWN_UNIQUE));
+        TEST_ASSERT_NOT_NULL(lifecycleFunc);
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
+        TEST_ASSERT_EQUAL_INT64(63, result);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
 void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Borrow Loan And Detach Emit Dedicated Opcodes";
@@ -3743,6 +3828,92 @@ void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void)
         TEST_ASSERT_EQUAL_INT64(127, result);
 
         ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_ownership_generic_real_fixture_executes_session_lifecycle(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Generic Real Fixture Executes Session Lifecycle";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Ownership generic fixture lifecycle",
+              "Testing that a repository .zr fixture exercises Unique<T>, Shared<T>, Borrow<T>, Loan<T>, Weak<T>, detach, release, and upgrade together");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        TZrSize sourceLength = 0;
+        TZrChar *source = ZrTests_Reference_ReadFixture(
+                "core_semantics/ownership_using_resource_lifecycle/generic_session_lifecycle_pass.zr",
+                &sourceLength);
+        SZrString *sourceName;
+        SZrFunction *func;
+        SZrFunction *lifecycleFunc;
+        TZrInt64 result = 0;
+
+        if (source == ZR_NULL || sourceLength == 0) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to read ownership generic session lifecycle fixture");
+            free(source);
+            destroy_test_state(state);
+            return;
+        }
+
+        sourceName = ZrCore_String_Create(state,
+                                          "generic_session_lifecycle_pass.zr",
+                                          strlen("generic_session_lifecycle_pass.zr"));
+        TEST_ASSERT_NOT_NULL(sourceName);
+
+        func = ZrParser_Source_Compile(state, source, sourceLength, sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile ownership generic session lifecycle fixture");
+            free(source);
+            destroy_test_state(state);
+            return;
+        }
+
+        lifecycleFunc = find_single_function_constant_with_opcode(state, func, ZR_INSTRUCTION_ENUM(OWN_UNIQUE));
+        TEST_ASSERT_NOT_NULL(lifecycleFunc);
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to execute ownership generic session lifecycle fixture");
+            ZrCore_Function_Free(state, func);
+            free(source);
+            destroy_test_state(state);
+            return;
+        }
+        if (result != 63) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Ownership generic session lifecycle fixture returned unexpected mask");
+            ZrCore_Function_Free(state, func);
+            free(source);
+            destroy_test_state(state);
+            return;
+        }
+
+        ZrCore_Function_Free(state, func);
+        free(source);
     }
 
     timer.endTime = clock();

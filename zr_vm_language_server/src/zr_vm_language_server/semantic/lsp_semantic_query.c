@@ -212,7 +212,9 @@ static SZrSymbol *semantic_query_lookup_identifier_at_position(SZrState *state,
                                                                SZrString *uri,
                                                                SZrFileRange position) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrString *name;
+    SZrSymbol *symbol = ZR_NULL;
 
     if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL ||
         analyzer->symbolTable == ZR_NULL || uri == ZR_NULL) {
@@ -220,50 +222,59 @@ static SZrSymbol *semantic_query_lookup_identifier_at_position(SZrState *state,
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         return ZR_NULL;
     }
-    if (!ZrLanguageServer_Lsp_IsOffsetInCodeSpan(fileVersion->content,
-                                                 fileVersion->contentLength,
+    if (!ZrLanguageServer_Lsp_IsOffsetInCodeSpan(snapshot.content,
+                                                 snapshot.contentLength,
                                                  position.start.offset)) {
-        return ZR_NULL;
+        goto cleanup;
     }
 
     name = semantic_query_extract_identifier_at_offset(state,
-                                                       fileVersion->content,
-                                                       fileVersion->contentLength,
+                                                       snapshot.content,
+                                                       snapshot.contentLength,
                                                        position.start.offset);
     if (name == ZR_NULL) {
-        return ZR_NULL;
+        goto cleanup;
     }
 
-    return ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable, name, position);
+    symbol = ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable, name, position);
+
+cleanup:
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+    return symbol;
 }
 
 static TZrBool semantic_query_position_is_code_span(SZrLspContext *context,
                                                     SZrString *uri,
                                                     SZrLspPosition position) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrFilePosition filePosition;
+    TZrBool result;
 
-    if (context == ZR_NULL || uri == ZR_NULL) {
+    if (context == ZR_NULL || context->state == ZR_NULL || uri == ZR_NULL) {
         return ZR_FALSE;
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(context->state, fileVersion, &snapshot)) {
         return ZR_FALSE;
     }
 
     filePosition = ZrLanguageServer_LspPosition_ToFilePositionWithContent(position,
-                                                                          fileVersion->content,
-                                                                          fileVersion->contentLength);
-    return ZrLanguageServer_Lsp_IsOffsetInCodeSpan(fileVersion->content,
-                                                   fileVersion->contentLength,
-                                                   filePosition.offset);
+                                                                          snapshot.content,
+                                                                          snapshot.contentLength);
+    result = ZrLanguageServer_Lsp_IsOffsetInCodeSpan(snapshot.content,
+                                                     snapshot.contentLength,
+                                                     filePosition.offset);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(context->state, &snapshot);
+    return result;
 }
 
 static TZrBool semantic_query_append_location(SZrState *state,
+                                              SZrLspContext *context,
                                               SZrArray *result,
                                               SZrString *uri,
                                               SZrFileRange range) {
@@ -283,7 +294,7 @@ static TZrBool semantic_query_append_location(SZrState *state,
     }
 
     location->uri = uri;
-    location->range = ZrLanguageServer_LspRange_FromFileRange(range);
+    location->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
     ZrCore_Array_Push(state, result, &location);
     return ZR_TRUE;
 }
@@ -326,6 +337,7 @@ static TZrBool semantic_query_try_enum_member_name_range(SZrLspContext *context,
                                                          SZrSymbol *symbol,
                                                          SZrFileRange *outRange) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     const TZrChar *content;
     TZrSize contentLength;
     const TZrChar *nameText;
@@ -334,24 +346,25 @@ static TZrBool semantic_query_try_enum_member_name_range(SZrLspContext *context,
     TZrSize rangeEndOffset;
     TZrSize searchStart;
     TZrSize searchEnd;
+    TZrBool found = ZR_FALSE;
 
-    if (context == ZR_NULL || symbol == ZR_NULL || outRange == ZR_NULL ||
+    if (context == ZR_NULL || context->state == ZR_NULL || symbol == ZR_NULL || outRange == ZR_NULL ||
         symbol->type != ZR_SYMBOL_ENUM_MEMBER || symbol->name == ZR_NULL || symbol->location.source == ZR_NULL) {
         return ZR_FALSE;
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, symbol->location.source);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(context->state, fileVersion, &snapshot)) {
         return ZR_FALSE;
     }
 
-    content = fileVersion->content;
-    contentLength = fileVersion->contentLength;
+    content = snapshot.content;
+    contentLength = snapshot.contentLength;
     nameText = symbol->name->shortStringLength < ZR_VM_LONG_STRING_FLAG
                    ? ZrCore_String_GetNativeStringShort(symbol->name)
                    : ZrCore_String_GetNativeString(symbol->name);
     if (nameText == ZR_NULL || nameText[0] == '\0') {
-        return ZR_FALSE;
+        goto cleanup;
     }
 
     nameLength = strlen(nameText);
@@ -386,10 +399,13 @@ static TZrBool semantic_query_try_enum_member_name_range(SZrLspContext *context,
                                                                                        contentLength,
                                                                                        index + nameLength),
                                               symbol->location.source);
-        return ZR_TRUE;
+        found = ZR_TRUE;
+        break;
     }
 
-    return ZR_FALSE;
+cleanup:
+    ZrLanguageServer_FileVersionContentSnapshot_Free(context->state, &snapshot);
+    return found;
 }
 
 static SZrFileRange semantic_query_symbol_lookup_range(SZrLspContext *context, SZrSymbol *symbol) {
@@ -404,6 +420,8 @@ static SZrFileRange semantic_query_symbol_lookup_range(SZrLspContext *context, S
 }
 
 static TZrBool semantic_query_append_document_highlight(SZrState *state,
+                                                        SZrLspContext *context,
+                                                        SZrString *uri,
                                                         SZrArray *result,
                                                         SZrFileRange range,
                                                         TZrInt32 kind) {
@@ -422,7 +440,32 @@ static TZrBool semantic_query_append_document_highlight(SZrState *state,
         return ZR_FALSE;
     }
 
-    highlight->range = ZrLanguageServer_LspRange_FromFileRange(range);
+    highlight->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
+    highlight->kind = kind;
+    ZrCore_Array_Push(state, result, &highlight);
+    return ZR_TRUE;
+}
+
+static TZrBool semantic_query_append_lsp_document_highlight(SZrState *state,
+                                                            SZrArray *result,
+                                                            SZrLspRange range,
+                                                            TZrInt32 kind) {
+    SZrLspDocumentHighlight *highlight;
+
+    if (state == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!result->isValid) {
+        ZrCore_Array_Init(state, result, sizeof(SZrLspDocumentHighlight *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    }
+
+    highlight = (SZrLspDocumentHighlight *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspDocumentHighlight));
+    if (highlight == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    highlight->range = range;
     highlight->kind = kind;
     ZrCore_Array_Push(state, result, &highlight);
     return ZR_TRUE;
@@ -503,6 +546,8 @@ static SZrString *semantic_query_append_markdown_section(SZrState *state, SZrStr
 }
 
 static TZrBool semantic_query_create_hover_from_content(SZrState *state,
+                                                        SZrLspContext *context,
+                                                        SZrString *uri,
                                                         SZrString *content,
                                                         SZrFileRange range,
                                                         SZrLspHover **result) {
@@ -519,12 +564,13 @@ static TZrBool semantic_query_create_hover_from_content(SZrState *state,
 
     ZrCore_Array_Init(state, &hover->contents, sizeof(SZrString *), 1);
     ZrCore_Array_Push(state, &hover->contents, &content);
-    hover->range = ZrLanguageServer_LspRange_FromFileRange(range);
+    hover->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
     *result = hover;
     return ZR_TRUE;
 }
 
 static TZrBool semantic_query_append_local_symbol_references(SZrState *state,
+                                                             SZrLspContext *context,
                                                              SZrLspSemanticQuery *query,
                                                              TZrBool includeDeclaration,
                                                              SZrArray *result) {
@@ -537,6 +583,7 @@ static TZrBool semantic_query_append_local_symbol_references(SZrState *state,
 
     if (includeDeclaration &&
         !semantic_query_append_location(state,
+                                        context,
                                         result,
                                         query->symbol->location.source,
                                         semantic_query_symbol_lookup_range(ZR_NULL, query->symbol))) {
@@ -562,6 +609,7 @@ static TZrBool semantic_query_append_local_symbol_references(SZrState *state,
 
         referenceRange = semantic_query_normalize_symbol_reference_range(query->symbol, (*referencePtr)->location);
         if (!semantic_query_append_location(state,
+                                            context,
                                             result,
                                             referenceRange.source,
                                             referenceRange)) {
@@ -575,6 +623,7 @@ static TZrBool semantic_query_append_local_symbol_references(SZrState *state,
 }
 
 static TZrBool semantic_query_append_local_symbol_highlights(SZrState *state,
+                                                             SZrLspContext *context,
                                                              SZrLspSemanticQuery *query,
                                                              SZrArray *result) {
     SZrArray references;
@@ -586,6 +635,8 @@ static TZrBool semantic_query_append_local_symbol_highlights(SZrState *state,
 
     if (ZrLanguageServer_Lsp_StringsEqual(query->symbol->location.source, query->uri) &&
         !semantic_query_append_document_highlight(state,
+                                                  context,
+                                                  query->uri,
                                                   result,
                                                   semantic_query_symbol_lookup_range(ZR_NULL, query->symbol),
                                                   3)) {
@@ -611,6 +662,8 @@ static TZrBool semantic_query_append_local_symbol_highlights(SZrState *state,
 
         referenceRange = semantic_query_normalize_symbol_reference_range(query->symbol, (*referencePtr)->location);
         if (!semantic_query_append_document_highlight(state,
+                                                      context,
+                                                      query->uri,
                                                       result,
                                                       referenceRange,
                                                       (*referencePtr)->type == ZR_REFERENCE_WRITE ? 3 : 2)) {
@@ -677,9 +730,12 @@ static TZrBool semantic_query_try_get_analyzer_for_uri(SZrState *state,
                                                        SZrSemanticAnalyzer **outAnalyzer) {
     SZrSemanticAnalyzer *analyzer;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     TZrNativeString sourceBuffer = ZR_NULL;
     TZrSize sourceLength = 0;
+    TZrSize sourceVersion = 0;
     TZrBool loadedFromDisk = ZR_FALSE;
+    TZrBool hasSnapshot = ZR_FALSE;
     TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
 
     if (outAnalyzer != ZR_NULL) {
@@ -696,12 +752,15 @@ static TZrBool semantic_query_try_get_analyzer_for_uri(SZrState *state,
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
-        sourceBuffer = fileVersion->content;
-        sourceLength = fileVersion->contentLength;
+    if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        sourceBuffer = snapshot.content;
+        sourceLength = snapshot.contentLength;
+        sourceVersion = snapshot.version;
+        hasSnapshot = ZR_TRUE;
     } else if (state->global != ZR_NULL && semantic_query_uri_to_native_path(uri, nativePath, sizeof(nativePath))) {
         sourceBuffer = ZrLibrary_File_ReadAll(state->global, nativePath);
         sourceLength = sourceBuffer != ZR_NULL ? strlen(sourceBuffer) : 0;
+        sourceVersion = fileVersion != ZR_NULL ? fileVersion->version : 0;
         loadedFromDisk = sourceBuffer != ZR_NULL;
     }
 
@@ -714,8 +773,11 @@ static TZrBool semantic_query_try_get_analyzer_for_uri(SZrState *state,
                                                  uri,
                                                  sourceBuffer,
                                                  sourceLength,
-                                                 fileVersion != ZR_NULL ? fileVersion->version : 0,
+                                                 sourceVersion,
                                                  ZR_FALSE)) {
+        if (hasSnapshot) {
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        }
         if (loadedFromDisk) {
             ZrCore_Memory_RawFreeWithType(state->global,
                                           sourceBuffer,
@@ -725,6 +787,9 @@ static TZrBool semantic_query_try_get_analyzer_for_uri(SZrState *state,
         return ZR_FALSE;
     }
 
+    if (hasSnapshot) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+    }
     if (loadedFromDisk) {
         ZrCore_Memory_RawFreeWithType(state->global,
                                       sourceBuffer,
@@ -754,10 +819,7 @@ static TZrBool semantic_query_append_locations_as_highlights(SZrState *state,
             continue;
         }
 
-        if (!semantic_query_append_document_highlight(state,
-                                                      result,
-                                                      ZrLanguageServer_LspRange_ToFileRange((*locationPtr)->range, uri),
-                                                      kind)) {
+        if (!semantic_query_append_lsp_document_highlight(state, result, (*locationPtr)->range, kind)) {
             return ZR_FALSE;
         }
     }
@@ -1004,6 +1066,7 @@ static TZrBool semantic_query_try_resolve_receiver_external_type_member(SZrState
 }
 
 static TZrBool semantic_query_append_external_type_member_locations_recursive(SZrState *state,
+                                                                              SZrLspContext *context,
                                                                               SZrLspProjectIndex *projectIndex,
                                                                               SZrSemanticAnalyzer *analyzer,
                                                                               SZrAstNode *astRoot,
@@ -1015,6 +1078,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                               SZrArray *result);
 
 static TZrBool semantic_query_append_external_type_member_locations_in_node_array(SZrState *state,
+                                                                                  SZrLspContext *context,
                                                                                   SZrLspProjectIndex *projectIndex,
                                                                                   SZrSemanticAnalyzer *analyzer,
                                                                                   SZrAstNode *astRoot,
@@ -1031,7 +1095,7 @@ static TZrBool semantic_query_append_external_type_member_locations_in_node_arra
     }
 
     for (TZrSize index = 0; index < nodes->count; index++) {
-        if (semantic_query_append_external_type_member_locations_recursive(state,
+        if (semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                            projectIndex,
                                                                            analyzer,
                                                                            astRoot,
@@ -1049,6 +1113,7 @@ static TZrBool semantic_query_append_external_type_member_locations_in_node_arra
 }
 
 static TZrBool semantic_query_try_append_primary_external_type_member_locations(SZrState *state,
+                                                                                SZrLspContext *context,
                                                                                 SZrLspProjectIndex *projectIndex,
                                                                                 SZrSemanticAnalyzer *analyzer,
                                                                                 SZrAstNode *astRoot,
@@ -1103,7 +1168,7 @@ static TZrBool semantic_query_try_append_primary_external_type_member_locations(
                                                                      cursorOffset,
                                                                      resolvedName != ZR_NULL ? strlen(resolvedName) : 0,
                                                                      uri);
-            if (semantic_query_append_location(state, result, uri, location)) {
+            if (semantic_query_append_location(state, context, result, uri, location)) {
                 appended = ZR_TRUE;
             }
         }
@@ -1113,6 +1178,7 @@ static TZrBool semantic_query_try_append_primary_external_type_member_locations(
 }
 
 static TZrBool semantic_query_append_external_type_member_locations_recursive(SZrState *state,
+                                                                              SZrLspContext *context,
                                                                               SZrLspProjectIndex *projectIndex,
                                                                               SZrSemanticAnalyzer *analyzer,
                                                                               SZrAstNode *astRoot,
@@ -1129,6 +1195,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
     }
 
     if (semantic_query_try_append_primary_external_type_member_locations(state,
+                                                                         context,
                                                                          projectIndex,
                                                                          analyzer,
                                                                          astRoot,
@@ -1143,7 +1210,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
 
     switch (node->type) {
         case ZR_AST_SCRIPT:
-            return semantic_query_append_external_type_member_locations_in_node_array(state,
+            return semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1155,7 +1222,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       result) || appended;
 
         case ZR_AST_BLOCK:
-            return semantic_query_append_external_type_member_locations_in_node_array(state,
+            return semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1167,7 +1234,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       result) || appended;
 
         case ZR_AST_COMPILE_TIME_DECLARATION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1179,7 +1246,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_EXTERN_BLOCK:
-            return semantic_query_append_external_type_member_locations_in_node_array(state,
+            return semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1191,7 +1258,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       result) || appended;
 
         case ZR_AST_STRUCT_DECLARATION:
-            return semantic_query_append_external_type_member_locations_in_node_array(state,
+            return semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1203,7 +1270,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       result) || appended;
 
         case ZR_AST_CLASS_DECLARATION:
-            return semantic_query_append_external_type_member_locations_in_node_array(state,
+            return semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1215,7 +1282,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       result) || appended;
 
         case ZR_AST_INTERFACE_DECLARATION:
-            return semantic_query_append_external_type_member_locations_in_node_array(state,
+            return semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1227,7 +1294,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       result) || appended;
 
         case ZR_AST_ENUM_DECLARATION:
-            return semantic_query_append_external_type_member_locations_in_node_array(state,
+            return semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1239,7 +1306,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       result) || appended;
 
         case ZR_AST_FUNCTION_DECLARATION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1251,7 +1318,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_TEST_DECLARATION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1263,7 +1330,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_STRUCT_METHOD:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1275,7 +1342,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_STRUCT_META_FUNCTION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1287,7 +1354,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_CLASS_METHOD:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1299,7 +1366,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_CLASS_META_FUNCTION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1311,7 +1378,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_PROPERTY_GET:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1323,7 +1390,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_PROPERTY_SET:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1335,7 +1402,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_CLASS_PROPERTY:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1347,7 +1414,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_VARIABLE_DECLARATION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1359,7 +1426,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_STRUCT_FIELD:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1371,7 +1438,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_CLASS_FIELD:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1383,7 +1450,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_ENUM_MEMBER:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1395,7 +1462,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_RETURN_STATEMENT:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1407,7 +1474,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_EXPRESSION_STATEMENT:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1419,7 +1486,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_USING_STATEMENT:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1429,7 +1496,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1441,7 +1508,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_BREAK_CONTINUE_STATEMENT:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1453,7 +1520,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_THROW_STATEMENT:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1465,7 +1532,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_OUT_STATEMENT:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1477,7 +1544,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1487,7 +1554,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_in_node_array(state,
+                   semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1497,7 +1564,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       query,
                                                                                       uri,
                                                                                       result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1509,7 +1576,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_CATCH_CLAUSE:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1521,7 +1588,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_ASSIGNMENT_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1531,7 +1598,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1544,7 +1611,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
 
         case ZR_AST_BINARY_EXPRESSION:
         case ZR_AST_LOGICAL_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1556,7 +1623,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1570,7 +1637,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_CONDITIONAL_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1580,7 +1647,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1590,7 +1657,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1602,7 +1669,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_UNARY_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1614,7 +1681,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_TYPE_CAST_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1626,7 +1693,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_LAMBDA_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1638,7 +1705,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_IF_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1648,7 +1715,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1658,7 +1725,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1670,7 +1737,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_SWITCH_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1680,7 +1747,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_in_node_array(state,
+                   semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1690,7 +1757,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       query,
                                                                                       uri,
                                                                                       result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1702,7 +1769,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_SWITCH_CASE:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1712,7 +1779,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1724,7 +1791,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_SWITCH_DEFAULT:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1736,7 +1803,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_FUNCTION_CALL:
-            return semantic_query_append_external_type_member_locations_in_node_array(state,
+            return semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1748,7 +1815,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       result) || appended;
 
         case ZR_AST_CONSTRUCT_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1758,7 +1825,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_in_node_array(state,
+                   semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1770,7 +1837,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       result) || appended;
 
         case ZR_AST_PRIMARY_EXPRESSION:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1780,7 +1847,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_in_node_array(state,
+                   semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1793,7 +1860,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
 
         case ZR_AST_MEMBER_EXPRESSION:
             return node->data.memberExpression.computed
-                       ? semantic_query_append_external_type_member_locations_recursive(state,
+                       ? semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                          projectIndex,
                                                                                          analyzer,
                                                                                          astRoot,
@@ -1807,7 +1874,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                        : appended;
 
         case ZR_AST_ARRAY_LITERAL:
-            return semantic_query_append_external_type_member_locations_in_node_array(state,
+            return semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1819,7 +1886,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       result) || appended;
 
         case ZR_AST_OBJECT_LITERAL:
-            return semantic_query_append_external_type_member_locations_in_node_array(state,
+            return semantic_query_append_external_type_member_locations_in_node_array(state, context,
                                                                                       projectIndex,
                                                                                       analyzer,
                                                                                       astRoot,
@@ -1831,7 +1898,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                       result) || appended;
 
         case ZR_AST_KEY_VALUE_PAIR:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1841,7 +1908,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1853,7 +1920,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_WHILE_LOOP:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1863,7 +1930,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1875,7 +1942,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_FOR_LOOP:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1885,7 +1952,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1895,7 +1962,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1905,7 +1972,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1917,7 +1984,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   result) || appended;
 
         case ZR_AST_FOREACH_LOOP:
-            return semantic_query_append_external_type_member_locations_recursive(state,
+            return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1927,7 +1994,7 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   query,
                                                                                   uri,
                                                                                   result) ||
-                   semantic_query_append_external_type_member_locations_recursive(state,
+                   semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,
                                                                                   analyzer,
                                                                                   astRoot,
@@ -1951,6 +2018,8 @@ static TZrBool semantic_query_append_external_type_member_locations_for_uri(SZrS
                                                                             SZrArray *result) {
     SZrSemanticAnalyzer *analyzer = ZR_NULL;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
+    TZrBool appended;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || query == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -1962,20 +2031,22 @@ static TZrBool semantic_query_append_external_type_member_locations_for_uri(SZrS
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         return ZR_FALSE;
     }
 
-    return semantic_query_append_external_type_member_locations_recursive(state,
-                                                                          projectIndex,
-                                                                          analyzer,
-                                                                          analyzer->ast,
-                                                                          analyzer->ast,
-                                                                          fileVersion->content,
-                                                                          fileVersion->contentLength,
-                                                                          query,
-                                                                          uri,
-                                                                          result);
+    appended = semantic_query_append_external_type_member_locations_recursive(state, context,
+                                                                              projectIndex,
+                                                                              analyzer,
+                                                                              analyzer->ast,
+                                                                              analyzer->ast,
+                                                                              snapshot.content,
+                                                                              snapshot.contentLength,
+                                                                              query,
+                                                                              uri,
+                                                                              result);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+    return appended;
 }
 
 static TZrBool semantic_query_append_project_external_type_member_references(SZrState *state,
@@ -2057,6 +2128,8 @@ static TZrBool semantic_query_append_external_type_member_highlights(SZrState *s
         query->resolvedMember.declarationUri != ZR_NULL &&
         ZrLanguageServer_Lsp_StringsEqual(query->resolvedMember.declarationUri, query->uri) &&
         !semantic_query_append_document_highlight(state,
+                                                  context,
+                                                  query->uri,
                                                   result,
                                                   query->resolvedMember.declarationRange,
                                                   3)) {
@@ -2154,7 +2227,9 @@ static TZrBool semantic_query_resolve_receiver_type_member_target(SZrState *stat
                                                                   SZrSemanticAnalyzer *analyzer,
                                                                   SZrLspSemanticQuery *query) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrLspMetadataProvider provider;
+    TZrBool resolved;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || analyzer == ZR_NULL || query == ZR_NULL) {
         return ZR_FALSE;
@@ -2165,17 +2240,22 @@ static TZrBool semantic_query_resolve_receiver_type_member_target(SZrState *stat
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL || analyzer->ast == ZR_NULL ||
-        !semantic_query_try_resolve_receiver_external_type_member(state,
-                                                                  context,
-                                                                  query->projectIndex,
-                                                                  analyzer,
-                                                                  uri,
-                                                                  analyzer->ast,
-                                                                  fileVersion->content,
-                                                                  fileVersion->contentLength,
-                                                                  query->queryRange.start.offset,
-                                                                  &query->resolvedMember)) {
+    if (analyzer->ast == ZR_NULL ||
+        !ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        return ZR_FALSE;
+    }
+    resolved = semantic_query_try_resolve_receiver_external_type_member(state,
+                                                                        context,
+                                                                        query->projectIndex,
+                                                                        analyzer,
+                                                                        uri,
+                                                                        analyzer->ast,
+                                                                        snapshot.content,
+                                                                        snapshot.contentLength,
+                                                                        query->queryRange.start.offset,
+                                                                        &query->resolvedMember);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+    if (!resolved) {
         return ZR_FALSE;
     }
 
@@ -2372,6 +2452,7 @@ static TZrBool semantic_query_resolve_import_alias_token_target(SZrState *state,
                                                                 SZrString *uri,
                                                                 SZrLspSemanticQuery *query) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     TZrSize cursorOffset;
     SZrString *name;
     SZrSymbol *symbol;
@@ -2384,24 +2465,24 @@ static TZrBool semantic_query_resolve_import_alias_token_target(SZrState *state,
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         return ZR_FALSE;
     }
 
-    cursorOffset = semantic_query_lsp_offset_from_position(fileVersion->content,
-                                                           fileVersion->contentLength,
+    cursorOffset = semantic_query_lsp_offset_from_position(snapshot.content,
+                                                           snapshot.contentLength,
                                                            query->position);
-    if (!ZrLanguageServer_Lsp_IsOffsetInCodeSpan(fileVersion->content,
-                                                 fileVersion->contentLength,
+    if (!ZrLanguageServer_Lsp_IsOffsetInCodeSpan(snapshot.content,
+                                                 snapshot.contentLength,
                                                  cursorOffset)) {
-        return ZR_FALSE;
+        goto cleanup;
     }
     name = semantic_query_extract_identifier_at_offset(state,
-                                                       fileVersion->content,
-                                                       fileVersion->contentLength,
+                                                       snapshot.content,
+                                                       snapshot.contentLength,
                                                        cursorOffset);
     if (name == ZR_NULL) {
-        return ZR_FALSE;
+        goto cleanup;
     }
     symbol = ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(analyzer, query->queryRange);
 
@@ -2425,6 +2506,8 @@ static TZrBool semantic_query_resolve_import_alias_token_target(SZrState *state,
                                                                        query);
     }
     ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+cleanup:
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return resolved;
 }
 
@@ -2701,8 +2784,10 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
         SZrHoverInfo *hoverInfo = ZR_NULL;
         SZrHoverInfo *symbolHoverInfo = ZR_NULL;
         SZrFileVersion *fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, query->uri);
+        SZrFileVersionContentSnapshot snapshot = {0};
         SZrString *content = ZR_NULL;
         TZrBool analyzerHoverIsUnresolved = ZR_FALSE;
+        TZrBool hasSnapshot = ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot);
 
         if (ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state,
                                                            query->analyzer,
@@ -2727,14 +2812,17 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
             !semantic_query_hover_is_unresolved_expression(symbolHoverInfo->contents)) {
             content = symbolHoverInfo->contents;
         }
-        if (content == ZR_NULL && query->symbol != ZR_NULL && fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
+        if (content == ZR_NULL && query->symbol != ZR_NULL && hasSnapshot) {
             content = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(state,
                                                                              query->symbol,
-                                                                             fileVersion->content,
-                                                                            fileVersion->contentLength);
+                                                                             snapshot.content,
+                                                                             snapshot.contentLength);
         }
 
         if (content == ZR_NULL) {
+            if (hasSnapshot) {
+                ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+            }
             if (hoverInfo != ZR_NULL) {
                 ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
             }
@@ -2744,14 +2832,17 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
             return ZR_FALSE;
         }
 
-        if (query->symbol != ZR_NULL && fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
+        if (query->symbol != ZR_NULL && hasSnapshot) {
             SZrString *comment = ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(state,
                                                                                     query->symbol,
-                                                                                    fileVersion->content,
-                                                                                    fileVersion->contentLength);
+                                                                                    snapshot.content,
+                                                                                    snapshot.contentLength);
             content = semantic_query_append_markdown_section(state, content, comment);
         }
 
+        if (hasSnapshot) {
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        }
         if (hoverInfo != ZR_NULL) {
             ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
         }
@@ -2759,6 +2850,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
             ZrLanguageServer_HoverInfo_Free(state, symbolHoverInfo);
         }
         return semantic_query_create_hover_from_content(state,
+                                                        context,
+                                                        query->uri,
                                                         content,
                                                         query->symbol != ZR_NULL
                                                             ? ZrLanguageServer_Lsp_GetSymbolLookupRange(query->symbol)
@@ -2787,6 +2880,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
     SZrSemanticAnalyzer *fallbackAnalyzer = ZR_NULL;
     SZrLspSemanticQuery semanticQuery;
     SZrLspMetadataProvider provider;
+    SZrFileVersionContentSnapshot snapshot = {0};
+    TZrBool hasSnapshot = ZR_FALSE;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -2812,7 +2907,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL && fileVersion->usesFallbackAst) {
+    hasSnapshot = ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot);
+    if (hasSnapshot && snapshot.usesFallbackAst) {
         /*
          * Completion still needs the live cursor offset even when the parser fell back to the
          * previous AST. Receiver/import completion scans the current buffer text first, then
@@ -2820,15 +2916,15 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
          * generic file-scope completions.
          */
         filePos = ZrLanguageServer_LspPosition_ToFilePositionWithContent(position,
-                                                                         fileVersion->content,
-                                                                         fileVersion->contentLength);
+                                                                         snapshot.content,
+                                                                         snapshot.contentLength);
         fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
     }
     ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
-    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL && analyzer->ast != ZR_NULL) {
+    if (hasSnapshot && analyzer->ast != ZR_NULL) {
         hasStructuredCompletions = ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(state,
-                                                                                         fileVersion->content,
-                                                                                         fileVersion->contentLength,
+                                                                                         snapshot.content,
+                                                                                         snapshot.contentLength,
                                                                                          filePos.offset,
                                                                                          &completions);
         if (!hasStructuredCompletions) {
@@ -2848,8 +2944,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
                                                                                         completionProjectIndex,
                                                                                         analyzer,
                                                                                         &bindings,
-                                                                                        fileVersion->content,
-                                                                                        fileVersion->contentLength,
+                                                                                        snapshot.content,
+                                                                                        snapshot.contentLength,
                                                                                         filePos.offset,
                                                                                         &completionModule)) {
                 ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
@@ -2880,8 +2976,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
                                                                                           analyzer,
                                                                                           uri,
                                                                                           analyzer->ast,
-                                                                                          fileVersion->content,
-                                                                                          fileVersion->contentLength,
+                                                                                          snapshot.content,
+                                                                                          snapshot.contentLength,
                                                                                           filePos.offset,
                                                                                           &completions);
         }
@@ -2890,13 +2986,16 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
     if (!hasStructuredCompletions &&
         !ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, fileRange, &completions)) {
         ZrCore_Array_Free(state, &completions);
+        if (hasSnapshot) {
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        }
         ZrLanguageServer_LspSemanticQuery_Free(state, &semanticQuery);
         return ZR_FALSE;
     }
 
     if (completions.length == 0 &&
         fileVersion != ZR_NULL &&
-        fileVersion->content != ZR_NULL &&
+        hasSnapshot &&
         fileVersion->ast != ZR_NULL) {
         fallbackAnalyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         if (fallbackAnalyzer != ZR_NULL &&
@@ -2908,8 +3007,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
                                                                                           fallbackAnalyzer,
                                                                                           uri,
                                                                                           fileVersion->ast,
-                                                                                          fileVersion->content,
-                                                                                          fileVersion->contentLength,
+                                                                                          snapshot.content,
+                                                                                          snapshot.contentLength,
                                                                                           filePos.offset,
                                                                                           &completions);
             if (!hasStructuredCompletions) {
@@ -2927,14 +3026,14 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
             continue;
         }
 
-        if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
+        if (hasSnapshot) {
             ZrLanguageServer_Lsp_EnrichCompletionItemMetadata(state,
                                                               metadataAnalyzer,
                                                               *itemPtr,
                                                               hoveredSymbolName,
                                                               resolvedTypeText,
-                                                              fileVersion->content,
-                                                              fileVersion->contentLength);
+                                                              snapshot.content,
+                                                              snapshot.contentLength);
         }
         ZrCore_Array_Push(state, result, itemPtr);
     }
@@ -2942,6 +3041,9 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
     ZrCore_Array_Free(state, &completions);
     if (fallbackAnalyzer != ZR_NULL) {
         ZrLanguageServer_SemanticAnalyzer_Free(state, fallbackAnalyzer);
+    }
+    if (hasSnapshot) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     }
     ZrLanguageServer_LspSemanticQuery_Free(state, &semanticQuery);
     return ZR_TRUE;
@@ -2959,6 +3061,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDefinitio
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_IMPORTED_MEMBER) {
         if (query->resolvedMember.hasDeclaration && query->resolvedMember.declarationUri != ZR_NULL) {
             return semantic_query_append_location(state,
+                                                  context,
                                                   result,
                                                   query->resolvedMember.declarationUri,
                                                   query->resolvedMember.declarationRange);
@@ -2970,6 +3073,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDefinitio
         return query->resolvedMember.hasDeclaration &&
                query->resolvedMember.declarationUri != ZR_NULL &&
                semantic_query_append_location(state,
+                                              context,
                                               result,
                                               query->resolvedMember.declarationUri,
                                               query->resolvedMember.declarationRange);
@@ -2979,6 +3083,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDefinitio
         return query->resolvedMember.hasDeclaration &&
                query->resolvedMember.declarationUri != ZR_NULL &&
                semantic_query_append_location(state,
+                                              context,
                                               result,
                                               query->resolvedMember.declarationUri,
                                               query->resolvedMember.declarationRange);
@@ -2987,6 +3092,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDefinitio
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL) {
         return query->symbol != ZR_NULL &&
                semantic_query_append_location(state,
+                                              context,
                                               result,
                                               query->symbol->location.source,
                                               semantic_query_symbol_lookup_range(context, query->symbol));
@@ -3012,6 +3118,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
             query->resolvedMember.hasDeclaration &&
             query->resolvedMember.declarationUri != ZR_NULL &&
             !semantic_query_append_location(state,
+                                            context,
                                             result,
                                             query->resolvedMember.declarationUri,
                                             query->resolvedMember.declarationRange)) {
@@ -3068,6 +3175,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
                 query->resolvedMember.hasDeclaration &&
                 query->resolvedMember.declarationUri != ZR_NULL &&
                 !semantic_query_append_location(state,
+                                                context,
                                                 result,
                                                 query->resolvedMember.declarationUri,
                                                 query->resolvedMember.declarationRange)) {
@@ -3099,6 +3207,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
             query->resolvedMember.hasDeclaration &&
             query->resolvedMember.declarationUri != ZR_NULL &&
             !semantic_query_append_location(state,
+                                            context,
                                             result,
                                             query->resolvedMember.declarationUri,
                                             query->resolvedMember.declarationRange)) {
@@ -3110,7 +3219,11 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
     }
 
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL) {
-        TZrBool appended = semantic_query_append_local_symbol_references(state, query, includeDeclaration, result);
+        TZrBool appended = semantic_query_append_local_symbol_references(state,
+                                                                         context,
+                                                                         query,
+                                                                         includeDeclaration,
+                                                                         result);
 
         if (!appended || query->projectIndex == ZR_NULL || query->symbol == ZR_NULL ||
             query->symbol->accessModifier != ZR_ACCESS_PUBLIC) {
@@ -3172,7 +3285,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDocumentH
     }
 
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL) {
-        return semantic_query_append_local_symbol_highlights(state, query, result);
+        return semantic_query_append_local_symbol_highlights(state, context, query, result);
     }
 
     return ZR_FALSE;

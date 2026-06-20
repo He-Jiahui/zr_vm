@@ -949,6 +949,64 @@ cleanup:
     return status;
 }
 
+static int test_cli_unhandled_error_prints_traceback(void) {
+    const char *testName = "cli_unhandled_error_prints_traceback";
+    ZrCliE2eProcess process;
+    char cliPath[CLI_E2E_PATH_CAPACITY];
+    char cliWorkingDirectory[CLI_E2E_PATH_CAPACITY];
+    char error[CLI_E2E_ERROR_CAPACITY];
+    const char *command[4];
+    const char *output;
+    int status = 1;
+
+    memset(&process, 0, sizeof(process));
+#if !defined(_WIN32)
+    process.stdoutFd = -1;
+#endif
+
+    if (!cli_build_cli_executable_path(cliPath, sizeof(cliPath), cliWorkingDirectory, sizeof(cliWorkingDirectory))) {
+        return cli_fail(testName, "failed to resolve zr_vm_cli beside test executable");
+    }
+
+    command[0] = cliPath;
+    command[1] = "-e";
+    command[2] =
+            "func leaf(): int { throw \"boom\"; return 0; } "
+            "func middle(): int { var value = leaf(); return value; } "
+            "func root(): int { var value = middle(); return value; } "
+            "return root();";
+    command[3] = NULL;
+
+    if (!cli_process_start(&process, cliWorkingDirectory, command, error, sizeof(error))) {
+        return cli_fail(testName, "%s", error);
+    }
+
+    if (!cli_process_wait_for_exit(&process, CLI_E2E_EXIT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "timed out waiting for cli exit");
+        goto cleanup;
+    }
+
+    output = cli_process_output(&process);
+    if (strstr(output, "Error:") == NULL ||
+        strstr(output, "payload:") == NULL ||
+        strstr(output, "  at leaf (-e:") == NULL ||
+        strstr(output, "  at middle (-e:") == NULL ||
+        strstr(output, "  at root (-e:") == NULL) {
+        status = cli_fail(testName, "expected unhandled error output to include traceback\nOutput:\n%s", output);
+        goto cleanup;
+    }
+
+    status = 0;
+
+cleanup:
+    if (!process.hasExited) {
+        cli_process_terminate(&process);
+    }
+    cli_process_close(&process);
+    return status;
+}
+
 static int test_debug_wait_hits_import_basic_launch_breakpoint(void) {
     const char *testName = "debug_wait_hits_import_basic_launch_breakpoint";
     ZrCliE2eProcess process;
@@ -1183,7 +1241,16 @@ static int test_debug_wait_hits_import_basic_launch_breakpoint(void) {
     }
     if (strcmp(cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"), "breakpoint") != 0) {
         cli_process_terminate(&process);
-        status = cli_fail(testName, "expected continue to stop on the configured breakpoint");
+        status = cli_fail(testName,
+                          "expected continue to stop on the configured breakpoint\n"
+                          "Observed reason: %s\n"
+                          "Observed source: %s\n"
+                          "Observed line: %d\n"
+                          "Output so far:\n%s",
+                          cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"),
+                          cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile"),
+                          cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"),
+                          cli_process_output(&process));
         goto cleanup;
     }
     if (cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 3) {
@@ -2165,6 +2232,9 @@ int main(void) {
         return 1;
     }
     if (test_debug_wait_prints_endpoint_and_accepts_client() != 0) {
+        return 1;
+    }
+    if (test_cli_unhandled_error_prints_traceback() != 0) {
         return 1;
     }
     if (test_debug_wait_hits_import_basic_launch_breakpoint() != 0) {

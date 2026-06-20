@@ -73,9 +73,14 @@ cJSON *handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const c
 cJSON *handle_semantic_tokens_range_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspRange range;
 
-    if (!parse_range(get_object_item(params, ZR_LSP_FIELD_RANGE), &range)) {
+    const char *uriText;
+    SZrString *uri;
+
+    if (!get_uri_from_text_document(server, params, &uriText, &uri) ||
+        !parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &range)) {
         return cJSON_CreateNull();
     }
 
+    ZR_UNUSED_PARAMETER(uriText);
     return create_semantic_tokens_response(server, params, &range);
 }

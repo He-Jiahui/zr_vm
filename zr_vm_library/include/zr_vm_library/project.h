@@ -6,6 +6,7 @@
 #define ZR_VM_LIBRARY_PROJECT_H
 
 #include "zr_vm_library/conf.h"
+#include "zr_vm_library/zrm.h"
 
 
 #define ZR_LIBRARY_BINARY_FILE_EXT ZR_VM_BINARY_MODULE_FILE_EXTENSION
@@ -25,7 +26,13 @@ typedef struct SZrLibrary_ProjectDependencyReference {
     TZrBool useAliasForModuleKey;
 } SZrLibrary_ProjectDependencyReference;
 
+typedef enum EZrLibrary_ProjectDependencyPackageArtifactKind {
+    ZR_LIBRARY_PROJECT_DEPENDENCY_PACKAGE_PROJECT = 0,
+    ZR_LIBRARY_PROJECT_DEPENDENCY_PACKAGE_ZRM = 1
+} EZrLibrary_ProjectDependencyPackageArtifactKind;
+
 typedef struct SZrLibrary_ProjectDependencyPackage {
+    EZrLibrary_ProjectDependencyPackageArtifactKind artifactKind;
     SZrString *name;
     SZrString *assemblyName;
     SZrString *version;
@@ -42,7 +49,15 @@ typedef struct SZrLibrary_ProjectDependencyPackage {
     SZrLibrary_ProjectDependencyReference *dependencyRefs;
     TZrSize dependencyRefCount;
     TZrSize dependencyRefCapacity;
+    SZrLibrary_ZrmArchive zrmArchive;
+    TZrBool zrmArchiveOpen;
 } SZrLibrary_ProjectDependencyPackage;
+
+typedef struct SZrLibrary_ProjectResource {
+    SZrString *logicalName;
+    SZrString *sourcePath;
+    TZrBool compress;
+} SZrLibrary_ProjectResource;
 
 struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     TZrUInt64 signature;
@@ -54,6 +69,7 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     SZrString *assemblyCulture;
     SZrString *assemblyPublicKeyToken;
     SZrString *assemblyKind;
+    SZrString *assemblyOutput;
     SZrString *description;
     SZrString *author;
     SZrString *email;
@@ -68,6 +84,9 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     TZrPtr aotRuntime;
     SZrLibrary_ProjectPathAlias *pathAliases;
     TZrSize pathAliasCount;
+    SZrLibrary_ProjectResource *resources;
+    TZrSize resourceCount;
+    TZrSize resourceCapacity;
     SZrLibrary_ProjectDependencyPackage *dependencyPackages;
     TZrSize dependencyPackageCount;
     TZrSize dependencyPackageCapacity;
@@ -109,6 +128,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_GetDependencyImportVersionRange(
         const SZrLibrary_Project *project,
         const TZrChar *currentModuleKey,
         const TZrChar *resolvedModuleKey,
+        SZrString **outAssemblyName,
         SZrString **outRequestedVersion,
         SZrString **outMinVersionInclusive,
         SZrString **outMaxVersionExclusive);
@@ -127,6 +147,16 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveIntermediatePath(const SZrLibrar
                                                                  const TZrChar *moduleName,
                                                                  TZrChar *buffer,
                                                                  TZrSize bufferSize);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveAssemblyOutputPath(const SZrLibrary_Project *project,
+                                                                   TZrChar *buffer,
+                                                                   TZrSize bufferSize);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveZrmModuleEntry(
+        const SZrLibrary_Project *project,
+        const TZrChar *moduleName,
+        const SZrLibrary_ZrmArchive **outArchive,
+        const SZrLibrary_ZrmEntryInfo **outEntry);
 
 ZR_LIBRARY_API EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result);
 

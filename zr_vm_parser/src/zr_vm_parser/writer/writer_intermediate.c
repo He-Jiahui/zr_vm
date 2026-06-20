@@ -430,6 +430,10 @@ static const TZrChar *writer_intermediate_semir_opcode_name(TZrUInt32 opcode) {
             return "DYN_ITER_INIT";
         case ZR_SEMIR_OPCODE_DYN_ITER_MOVE_NEXT:
             return "DYN_ITER_MOVE_NEXT";
+        case ZR_SEMIR_OPCODE_DYN_INDEX_GET:
+            return "DYN_INDEX_GET";
+        case ZR_SEMIR_OPCODE_DYN_INDEX_SET:
+            return "DYN_INDEX_SET";
         case ZR_SEMIR_OPCODE_VALUE_ADDR:
             return "VALUE_ADDR";
         case ZR_SEMIR_OPCODE_FIELD_ADDR:
@@ -446,6 +450,30 @@ static const TZrChar *writer_intermediate_semir_opcode_name(TZrUInt32 opcode) {
             return "CALL_TYPED";
         case ZR_SEMIR_OPCODE_RETURN_TYPED:
             return "RETURN_TYPED";
+        case ZR_SEMIR_OPCODE_ADD:
+            return "ADD";
+        case ZR_SEMIR_OPCODE_SUB:
+            return "SUB";
+        case ZR_SEMIR_OPCODE_MUL:
+            return "MUL";
+        case ZR_SEMIR_OPCODE_DIV:
+            return "DIV";
+        case ZR_SEMIR_OPCODE_MOD:
+            return "MOD";
+        case ZR_SEMIR_OPCODE_EQ:
+            return "EQ";
+        case ZR_SEMIR_OPCODE_NE:
+            return "NE";
+        case ZR_SEMIR_OPCODE_LT:
+            return "LT";
+        case ZR_SEMIR_OPCODE_LE:
+            return "LE";
+        case ZR_SEMIR_OPCODE_GT:
+            return "GT";
+        case ZR_SEMIR_OPCODE_GE:
+            return "GE";
+        case ZR_SEMIR_OPCODE_DYN_ARITHMETIC:
+            return "DYN_ARITHMETIC";
         case ZR_SEMIR_OPCODE_NOP:
         default:
             return "NOP";

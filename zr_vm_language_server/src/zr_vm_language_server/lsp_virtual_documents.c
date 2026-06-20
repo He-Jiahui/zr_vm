@@ -688,12 +688,34 @@ static TZrBool virtual_documents_build(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool virtual_documents_range_contains_file_position(SZrFileRange range, SZrFilePosition position) {
+    TZrInt32 line = position.line;
+    TZrInt32 column = position.column;
+
+    return (range.start.line < line || (range.start.line == line && range.start.column <= column)) &&
+           (line < range.end.line || (line == range.end.line && column <= range.end.column));
+}
+
 static TZrBool virtual_documents_range_contains_position(SZrFileRange range, SZrLspPosition position) {
     TZrInt32 line = position.line + 1;
     TZrInt32 column = position.character + 1;
 
     return (range.start.line < line || (range.start.line == line && range.start.column <= column)) &&
            (line < range.end.line || (line == range.end.line && column <= range.end.column));
+}
+
+static TZrBool virtual_documents_range_contains_lsp_position(SZrFileRange range,
+                                                             SZrLspPosition position,
+                                                             const TZrChar *content,
+                                                             TZrSize contentLength) {
+    SZrFilePosition filePosition;
+
+    if (content == ZR_NULL) {
+        return virtual_documents_range_contains_position(range, position);
+    }
+
+    filePosition = ZrLanguageServer_LspPosition_ToFilePositionWithContent(position, content, contentLength);
+    return virtual_documents_range_contains_file_position(range, filePosition);
 }
 
 static TZrBool virtual_documents_uri_is_virtual_declaration(SZrString *uri) {
@@ -1076,6 +1098,9 @@ TZrBool ZrLanguageServer_LspVirtualDocuments_FindDeclarationAtPosition(SZrState 
                                                                        SZrLspPosition position,
                                                                        SZrLspVirtualDeclarationMatch *outMatch) {
     SZrArray records;
+    SZrString *renderedText = ZR_NULL;
+    const TZrChar *content = ZR_NULL;
+    TZrSize contentLength = 0;
 
     if (outMatch != ZR_NULL) {
         memset(outMatch, 0, sizeof(*outMatch));
@@ -1084,14 +1109,22 @@ TZrBool ZrLanguageServer_LspVirtualDocuments_FindDeclarationAtPosition(SZrState 
         return ZR_FALSE;
     }
 
-    if (!virtual_documents_collect_records(state, descriptor, uri, &records)) {
+    ZrCore_Array_Construct(&records);
+    if (virtual_documents_uri_is_virtual_declaration(uri)) {
+        if (!virtual_documents_build(state, descriptor, uri, &renderedText, &records)) {
+            return ZR_FALSE;
+        }
+        content = virtual_documents_string_text(renderedText);
+        contentLength = content != ZR_NULL ? strlen(content) : 0;
+    } else if (!virtual_documents_collect_records(state, descriptor, uri, &records)) {
         return ZR_FALSE;
     }
 
     for (TZrSize index = 0; index < records.length; index++) {
         SZrLspVirtualRecord *record = (SZrLspVirtualRecord *)ZrCore_Array_Get(&records, index);
 
-        if (record != ZR_NULL && virtual_documents_range_contains_position(record->range, position)) {
+        if (record != ZR_NULL &&
+            virtual_documents_range_contains_lsp_position(record->range, position, content, contentLength)) {
             outMatch->kind = record->kind;
             outMatch->descriptor = descriptor;
             outMatch->moduleName = descriptor->moduleName;

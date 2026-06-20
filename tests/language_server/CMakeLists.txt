@@ -230,6 +230,13 @@ if (NODE_EXECUTABLE AND TARGET zr_vm_language_server_stdio)
             $<TARGET_FILE:zr_vm_language_server_stdio>
     )
     add_test(
+        NAME language_server_stdio_position_encoding_smoke
+        COMMAND
+            ${NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/stdio_position_encoding_smoke.js
+            $<TARGET_FILE:zr_vm_language_server_stdio>
+    )
+    add_test(
         NAME language_server_stdio_type_hierarchy_smoke
         COMMAND
             ${NODE_EXECUTABLE}

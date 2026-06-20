@@ -573,6 +573,7 @@ static TZrBool execution_inline_frame_checked_mul_size(TZrSize left, TZrSize rig
 
 static const SZrFunction *execution_inline_frame_entry_function(const SZrFunction *function) {
     const SZrFunction *entryFunction = function;
+    const SZrFunction *prototypeContextFunction;
 
     if (entryFunction == ZR_NULL) {
         return ZR_NULL;
@@ -588,7 +589,15 @@ static const SZrFunction *execution_inline_frame_entry_function(const SZrFunctio
         return entryFunction;
     }
 
-    return function->prototypeContextFunction != ZR_NULL ? function->prototypeContextFunction : entryFunction;
+    prototypeContextFunction = function->prototypeContextFunction;
+    if (prototypeContextFunction != ZR_NULL &&
+        prototypeContextFunction->prototypeData != ZR_NULL &&
+        prototypeContextFunction->prototypeDataLength >= sizeof(TZrUInt32) &&
+        prototypeContextFunction->prototypeCount > 0u) {
+        return prototypeContextFunction;
+    }
+
+    return entryFunction;
 }
 
 static TZrBool execution_inline_frame_find_prototype_record(
@@ -683,6 +692,41 @@ static TZrBool execution_inline_frame_text_equals(const TZrChar *left, const TZr
     }
 
     return (TZrBool)(strcmp(left, right) == 0);
+}
+
+static TZrBool execution_inline_frame_union_carrier_type_matches_prototype(SZrString *carrierType,
+                                                                           SZrString *prototypeName) {
+    const TZrChar *carrierText;
+    const TZrChar *prototypeText;
+    const TZrChar *genericStart;
+    TZrSize baseLength;
+
+    if (carrierType == ZR_NULL || prototypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (ZrCore_String_Equal(carrierType, prototypeName)) {
+        return ZR_TRUE;
+    }
+
+    carrierText = ZrCore_String_GetNativeString(carrierType);
+    prototypeText = ZrCore_String_GetNativeString(prototypeName);
+    genericStart = carrierText != ZR_NULL ? strchr(carrierText, '<') : ZR_NULL;
+    if (carrierText == ZR_NULL || prototypeText == ZR_NULL || genericStart == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    baseLength = (TZrSize)(genericStart - carrierText);
+    while (baseLength > 0u &&
+           (carrierText[baseLength - 1u] == ' ' ||
+            carrierText[baseLength - 1u] == '\t' ||
+            carrierText[baseLength - 1u] == '\r' ||
+            carrierText[baseLength - 1u] == '\n')) {
+        baseLength--;
+    }
+
+    return (TZrBool)(baseLength > 0u &&
+                     strlen(prototypeText) == baseLength &&
+                     strncmp(prototypeText, carrierText, baseLength) == 0);
 }
 
 static TZrUInt32 execution_inline_frame_select_union_tag_size(TZrUInt32 variantCount) {
@@ -1001,31 +1045,8 @@ static TZrBool execution_inline_frame_store_union_payload_value(SZrState *state,
         return ZR_FALSE;
     }
 
-    memset(&fieldLayout, 0, sizeof(fieldLayout));
-    fieldLayout.byteOffset = byteOffset;
-    fieldLayout.byteSize = byteSize;
-    fieldLayout.typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
-    fieldLayout.valueType = ZR_VALUE_TYPE_UNKNOWN;
-    fieldLayout.isPrimitivePod = ZR_TRUE;
-
-    switch (payloadValue->type) {
-        ZR_VALUE_CASES_SIGNED_INT
-            fieldLayout.valueType = ZR_VALUE_TYPE_INT64;
-            break;
-        ZR_VALUE_CASES_UNSIGNED_INT
-            fieldLayout.valueType = ZR_VALUE_TYPE_UINT64;
-            break;
-        case ZR_VALUE_TYPE_BOOL:
-            fieldLayout.valueType = ZR_VALUE_TYPE_BOOL;
-            break;
-        case ZR_VALUE_TYPE_FLOAT:
-        case ZR_VALUE_TYPE_DOUBLE:
-            fieldLayout.valueType = byteSize == sizeof(TZrFloat32) ? ZR_VALUE_TYPE_FLOAT : ZR_VALUE_TYPE_DOUBLE;
-            break;
-        default:
-            fieldLayout.isPrimitivePod = ZR_FALSE;
-            fieldLayout.isValueSlot = byteSize >= sizeof(SZrTypeValue);
-            break;
+    if (!execution_inline_frame_union_payload_field_layout(state, fieldMetadata, &fieldLayout)) {
+        return ZR_FALSE;
     }
 
     ZR_UNUSED_PARAMETER(byteAlign);
@@ -1087,7 +1108,7 @@ static TZrBool execution_inline_frame_materialize_union_carrier_to_inline_storag
     if (carrierType == ZR_NULL ||
         carrierVariant == ZR_NULL ||
         prototypeName == ZR_NULL ||
-        !ZrCore_String_Equal(carrierType, prototypeName)) {
+        !execution_inline_frame_union_carrier_type_matches_prototype(carrierType, prototypeName)) {
         return ZR_FALSE;
     }
 
@@ -1702,7 +1723,6 @@ TZrBool execution_inline_frame_try_copy_stack_slot(SZrState *state,
     if (destinationSlot == ZR_INSTRUCTION_USE_RET_FLAG || sourceSlot == ZR_INSTRUCTION_USE_RET_FLAG) {
         return ZR_FALSE;
     }
-
     destinationLayout = ZrCore_Function_FindFrameSlotLayout(function, destinationSlot);
     sourceLayout = ZrCore_Function_FindFrameSlotLayout(function, sourceSlot);
     destinationValue = execution_inline_frame_get_value_slot(state, function, frameBase, destinationSlot);
@@ -1750,6 +1770,30 @@ TZrBool execution_inline_frame_try_copy_stack_slot(SZrState *state,
     }
 
     if (execution_inline_frame_make_place(state, function, frameBase, sourceLayout, &sourcePlace)) {
+        if (sourceValue != ZR_NULL &&
+            !ZR_VALUE_IS_TYPE_NULL(sourceValue->type)) {
+            ZrCore_Value_Copy(state, destinationValue, sourceValue);
+            return ZR_TRUE;
+        }
+        if (sourcePhysicalValue != ZR_NULL &&
+            sourcePhysicalValue != sourceValue &&
+            !ZR_VALUE_IS_TYPE_NULL(sourcePhysicalValue->type)) {
+            ZrCore_Value_Copy(state, destinationValue, sourcePhysicalValue);
+            return ZR_TRUE;
+        }
+
+        ZrCore_Value_ResetAsNull(&materializedValue);
+        if (execution_inline_frame_materialize_inline_storage_to_object_value(state,
+                                                                             function,
+                                                                             sourceLayout->typeLayoutId,
+                                                                             (const TZrByte *)sourcePlace.address,
+                                                                             sourcePlace.byteSize,
+                                                                             &materializedValue)) {
+            ZrCore_Value_Copy(state, destinationValue, &materializedValue);
+            ZrCore_Value_ResetAsNull(&materializedValue);
+            return ZR_TRUE;
+        }
+
         if (execution_inline_frame_value_is_object_struct(sourcePhysicalValue, &sourceObject)) {
             ZrCore_Value_Copy(state, destinationValue, sourcePhysicalValue);
             return ZR_TRUE;
@@ -1758,19 +1802,14 @@ TZrBool execution_inline_frame_try_copy_stack_slot(SZrState *state,
             ZrCore_Value_Copy(state, destinationValue, sourceValue);
             return ZR_TRUE;
         }
-
-        ZrCore_Value_ResetAsNull(&materializedValue);
-        if (!execution_inline_frame_materialize_inline_storage_to_object_value(state,
-                                                                              function,
-                                                                              sourceLayout->typeLayoutId,
-                                                                              (const TZrByte *)sourcePlace.address,
-                                                                              sourcePlace.byteSize,
-                                                                              &materializedValue)) {
-            return ZR_FALSE;
+        if (sourcePhysicalValue != ZR_NULL &&
+            sourcePhysicalValue != sourceValue &&
+            !ZR_VALUE_IS_TYPE_NULL(sourcePhysicalValue->type)) {
+            ZrCore_Value_Copy(state, destinationValue, sourcePhysicalValue);
+            return ZR_TRUE;
         }
-        ZrCore_Value_Copy(state, destinationValue, &materializedValue);
-        ZrCore_Value_ResetAsNull(&materializedValue);
-        return ZR_TRUE;
+
+        return ZR_FALSE;
     }
 
     return ZR_FALSE;

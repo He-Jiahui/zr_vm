@@ -11,25 +11,18 @@ static TZrBool semantic_import_chain_uri_to_native_path(SZrString *uri, TZrChar 
     return ZrLanguageServer_Lsp_FileUriToNativePath(uri, buffer, bufferSize);
 }
 
-static const TZrChar *g_semanticImportChainAppendContent = ZR_NULL;
-static TZrSize g_semanticImportChainAppendContentLength = 0;
-static SZrString *g_semanticImportChainAppendUri = ZR_NULL;
-
-static SZrFileRange semantic_import_chain_range_from_offset(const TZrChar *content,
-                                                            TZrSize contentLength,
-                                                            TZrSize startOffset,
-                                                            TZrSize length,
-                                                            SZrString *uri);
-
 static TZrBool semantic_import_chain_try_get_analyzer_for_uri(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri,
                                                               SZrSemanticAnalyzer **outAnalyzer) {
     SZrSemanticAnalyzer *analyzer;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     TZrNativeString sourceBuffer = ZR_NULL;
     TZrSize sourceLength = 0;
+    TZrSize sourceVersion = 0;
     TZrBool loadedFromDisk = ZR_FALSE;
+    TZrBool hasSnapshot = ZR_FALSE;
     TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
 
     if (outAnalyzer != ZR_NULL) {
@@ -46,9 +39,11 @@ static TZrBool semantic_import_chain_try_get_analyzer_for_uri(SZrState *state,
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
-        sourceBuffer = fileVersion->content;
-        sourceLength = fileVersion->contentLength;
+    if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        sourceBuffer = snapshot.content;
+        sourceLength = snapshot.contentLength;
+        sourceVersion = snapshot.version;
+        hasSnapshot = ZR_TRUE;
     } else if (state->global != ZR_NULL &&
                semantic_import_chain_uri_to_native_path(uri, nativePath, sizeof(nativePath))) {
         sourceBuffer = ZrLibrary_File_ReadAll(state->global, nativePath);
@@ -65,8 +60,11 @@ static TZrBool semantic_import_chain_try_get_analyzer_for_uri(SZrState *state,
                                                  uri,
                                                  sourceBuffer,
                                                  sourceLength,
-                                                 fileVersion != ZR_NULL ? fileVersion->version : 0,
+                                                 sourceVersion,
                                                  ZR_FALSE)) {
+        if (hasSnapshot) {
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        }
         if (loadedFromDisk) {
             ZrCore_Memory_RawFreeWithType(state->global,
                                           sourceBuffer,
@@ -81,6 +79,9 @@ static TZrBool semantic_import_chain_try_get_analyzer_for_uri(SZrState *state,
                                       sourceBuffer,
                                       sourceLength + 1,
                                       ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    }
+    if (hasSnapshot) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     }
 
     analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
@@ -166,11 +167,12 @@ static TZrBool semantic_import_chain_resolve_linked_member_internal(
 }
 
 static TZrBool semantic_import_chain_append_location(SZrState *state,
+                                                     SZrLspMetadataProvider *provider,
                                                      SZrArray *result,
                                                      SZrString *uri,
                                                      SZrFileRange range) {
     SZrLspLocation *location;
-    TZrSize length;
+    SZrLspContext *context = provider != ZR_NULL ? provider->context : ZR_NULL;
 
     if (state == ZR_NULL || result == ZR_NULL || uri == ZR_NULL) {
         return ZR_FALSE;
@@ -185,21 +187,9 @@ static TZrBool semantic_import_chain_append_location(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (g_semanticImportChainAppendContent != ZR_NULL &&
-        g_semanticImportChainAppendUri != ZR_NULL &&
-        ZrLanguageServer_Lsp_StringsEqual(g_semanticImportChainAppendUri, uri) &&
-        range.start.offset < g_semanticImportChainAppendContentLength &&
-        range.end.offset > range.start.offset) {
-        length = range.end.offset - range.start.offset;
-        range = semantic_import_chain_range_from_offset(g_semanticImportChainAppendContent,
-                                                        g_semanticImportChainAppendContentLength,
-                                                        range.start.offset,
-                                                        length,
-                                                        uri);
-    }
-
     location->uri = uri;
-    location->range = ZrLanguageServer_LspRange_FromFileRange(range);
+    location->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
+
     ZrCore_Array_Push(state, result, &location);
     return ZR_TRUE;
 }
@@ -211,47 +201,6 @@ static const TZrChar *semantic_import_chain_string_text(SZrString *value) {
     return value->shortStringLength < ZR_VM_LONG_STRING_FLAG
                ? ZrCore_String_GetNativeStringShort(value)
                : ZrCore_String_GetNativeString(value);
-}
-
-static SZrFileRange semantic_import_chain_range_from_offset(const TZrChar *content,
-                                                            TZrSize contentLength,
-                                                            TZrSize startOffset,
-                                                            TZrSize length,
-                                                            SZrString *uri) {
-    SZrFileRange range;
-    TZrSize offset = 0;
-    TZrInt32 line = 1;
-    TZrInt32 column = 1;
-
-    while (offset < contentLength && offset < startOffset) {
-        if (content[offset] == '\n') {
-            line++;
-            column = 1;
-        } else if (content[offset] != '\r') {
-            column++;
-        }
-        offset++;
-    }
-
-    range.start.line = line;
-    range.start.column = column;
-    range.start.offset = startOffset;
-
-    while (offset < contentLength && offset < startOffset + length) {
-        if (content[offset] == '\n') {
-            line++;
-            column = 1;
-        } else if (content[offset] != '\r') {
-            column++;
-        }
-        offset++;
-    }
-
-    range.end.line = line;
-    range.end.column = column;
-    range.end.offset = startOffset + length;
-    range.source = uri;
-    return range;
 }
 
 static TZrBool semantic_import_chain_resolve_primary_expression(SZrState *state,
@@ -416,6 +365,7 @@ static TZrBool semantic_import_chain_append_primary_expression_matches(SZrState 
         if (ZrLanguageServer_Lsp_StringsEqual(currentModuleName, targetModuleName) &&
             ZrLanguageServer_Lsp_StringsEqual(memberName, targetMemberName) &&
             semantic_import_chain_append_location(state,
+                                                  provider,
                                                   result,
                                                   uri,
                                                   memberNode->data.memberExpression.property->location)) {
@@ -2069,10 +2019,6 @@ TZrBool ZrLanguageServer_LspSemanticImportChain_AppendMatchingLocationsForUri(SZ
     SZrSemanticAnalyzer *analyzer = ZR_NULL;
     SZrArray bindings;
     SZrLspMetadataProvider provider;
-    SZrFileVersion *fileVersion;
-    const TZrChar *oldAppendContent;
-    TZrSize oldAppendContentLength;
-    SZrString *oldAppendUri;
     TZrBool appended = ZR_FALSE;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || moduleName == ZR_NULL ||
@@ -2092,15 +2038,6 @@ TZrBool ZrLanguageServer_LspSemanticImportChain_AppendMatchingLocationsForUri(SZ
     ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
     ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
-    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    oldAppendContent = g_semanticImportChainAppendContent;
-    oldAppendContentLength = g_semanticImportChainAppendContentLength;
-    oldAppendUri = g_semanticImportChainAppendUri;
-    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
-        g_semanticImportChainAppendContent = fileVersion->content;
-        g_semanticImportChainAppendContentLength = fileVersion->contentLength;
-        g_semanticImportChainAppendUri = uri;
-    }
     appended = semantic_import_chain_append_recursive(state,
                                                       &provider,
                                                       analyzer,
@@ -2111,9 +2048,6 @@ TZrBool ZrLanguageServer_LspSemanticImportChain_AppendMatchingLocationsForUri(SZ
                                                       moduleName,
                                                       memberName,
                                                       result);
-    g_semanticImportChainAppendContent = oldAppendContent;
-    g_semanticImportChainAppendContentLength = oldAppendContentLength;
-    g_semanticImportChainAppendUri = oldAppendUri;
     ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
     return appended;
 }

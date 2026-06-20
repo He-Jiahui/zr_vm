@@ -60,6 +60,26 @@ static TZrBool type_layout_is_union(const SZrTypeLayout *layout) {
     return (TZrBool)(layout != ZR_NULL && layout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION);
 }
 
+static TZrBool type_layout_is_blittable(EZrTypeLayoutCopyKind copyKind,
+                                        EZrTypeLayoutDropKind dropKind,
+                                        TZrUInt32 gcFieldCount,
+                                        TZrUInt32 ownershipFieldCount) {
+    return (TZrBool)(copyKind == ZR_TYPE_LAYOUT_COPY_KIND_POD &&
+                     dropKind == ZR_TYPE_LAYOUT_DROP_KIND_NONE &&
+                     gcFieldCount == 0u &&
+                     ownershipFieldCount == 0u);
+}
+
+static void type_layout_apply_metadata(SZrTypeLayout *layout, const SZrTypeLayoutMetadata *metadata) {
+    if (layout == ZR_NULL) {
+        return;
+    }
+
+    layout->cTypeId = metadata != ZR_NULL ? metadata->cTypeId : 0u;
+    layout->gcFieldOffsets = metadata != ZR_NULL ? metadata->gcFieldOffsets : ZR_NULL;
+    layout->ownershipFieldOffsets = metadata != ZR_NULL ? metadata->ownershipFieldOffsets : ZR_NULL;
+}
+
 static SZrTypeValue *type_layout_value_at(TZrPtr storage, TZrUInt32 byteOffset) {
     return (SZrTypeValue *)((TZrBytePtr)storage + byteOffset);
 }
@@ -189,6 +209,11 @@ void ZrCore_TypeLayout_InitValue(SZrTypeLayout *layout) {
     layout->ownershipFieldCount = 1u;
     layout->tagOffset = 0u;
     layout->tagSize = 0u;
+    layout->blittable = ZR_FALSE;
+    layout->reserved1 = 0u;
+    layout->reserved2 = 0u;
+    layout->reserved3 = 0u;
+    type_layout_apply_metadata(layout, ZR_NULL);
 }
 
 void ZrCore_TypeLayout_InitStruct(SZrTypeLayout *layout,
@@ -198,6 +223,24 @@ void ZrCore_TypeLayout_InitStruct(SZrTypeLayout *layout,
                                   EZrTypeLayoutDropKind dropKind,
                                   const SZrTypeLayoutField *fields,
                                   TZrUInt32 fieldCount) {
+    ZrCore_TypeLayout_InitStructWithMetadata(layout,
+                                             byteSize,
+                                             byteAlign,
+                                             copyKind,
+                                             dropKind,
+                                             fields,
+                                             fieldCount,
+                                             ZR_NULL);
+}
+
+void ZrCore_TypeLayout_InitStructWithMetadata(SZrTypeLayout *layout,
+                                              TZrUInt32 byteSize,
+                                              TZrUInt32 byteAlign,
+                                              EZrTypeLayoutCopyKind copyKind,
+                                              EZrTypeLayoutDropKind dropKind,
+                                              const SZrTypeLayoutField *fields,
+                                              TZrUInt32 fieldCount,
+                                              const SZrTypeLayoutMetadata *metadata) {
     TZrUInt32 gcFieldCount = 0u;
     TZrUInt32 ownershipFieldCount = 0u;
 
@@ -205,7 +248,7 @@ void ZrCore_TypeLayout_InitStruct(SZrTypeLayout *layout,
         return;
     }
 
-    for (TZrUInt32 index = 0; index < fieldCount; index++) {
+    for (TZrUInt32 index = 0; fields != ZR_NULL && index < fieldCount; index++) {
         if (type_layout_field_is_gc_value(&fields[index])) {
             gcFieldCount++;
         }
@@ -226,6 +269,11 @@ void ZrCore_TypeLayout_InitStruct(SZrTypeLayout *layout,
     layout->ownershipFieldCount = ownershipFieldCount;
     layout->tagOffset = 0u;
     layout->tagSize = 0u;
+    layout->blittable = type_layout_is_blittable(copyKind, dropKind, gcFieldCount, ownershipFieldCount);
+    layout->reserved1 = 0u;
+    layout->reserved2 = 0u;
+    layout->reserved3 = 0u;
+    type_layout_apply_metadata(layout, metadata);
 }
 
 void ZrCore_TypeLayout_InitUnion(SZrTypeLayout *layout,
@@ -245,14 +293,15 @@ void ZrCore_TypeLayout_InitUnion(SZrTypeLayout *layout,
     layout->kind = (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION;
     layout->tagOffset = tagOffset;
     layout->tagSize = tagSize;
+    layout->blittable = type_layout_is_blittable(copyKind,
+                                                 dropKind,
+                                                 layout->gcFieldCount,
+                                                 layout->ownershipFieldCount);
 }
 
 TZrBool ZrCore_TypeLayout_CanRawCopy(const SZrTypeLayout *layout) {
     return (TZrBool)(layout != ZR_NULL &&
-                     layout->copyKind == (TZrUInt8)ZR_TYPE_LAYOUT_COPY_KIND_POD &&
-                     layout->dropKind == (TZrUInt8)ZR_TYPE_LAYOUT_DROP_KIND_NONE &&
-                     layout->gcFieldCount == 0u &&
-                     layout->ownershipFieldCount == 0u);
+                     layout->blittable);
 }
 
 TZrBool ZrCore_TypeLayout_CopyInline(struct SZrState *state,

@@ -165,6 +165,8 @@ typedef struct SZrFunctionTypedTypeRef {
     struct SZrString *typeName;
     EZrValueType elementBaseType;
     struct SZrString *elementTypeName;
+    EZrStaticCType staticCType;
+    TZrUInt32 staticCTypeId;
 } SZrFunctionTypedTypeRef;
 
 typedef struct SZrFunctionTypedLocalBinding {
@@ -202,6 +204,7 @@ typedef struct SZrFunctionModuleEffect {
     TZrUInt8 readiness;
     TZrUInt8 reserved0;
     struct SZrString *moduleName;
+    struct SZrString *assemblyName;
     struct SZrString *symbolName;
     TZrUInt32 lineInSourceStart;
     TZrUInt32 columnInSourceStart;
@@ -329,7 +332,27 @@ typedef enum EZrSemIrOpcode {
     ZR_SEMIR_OPCODE_COPY_VALUE = 23,
     ZR_SEMIR_OPCODE_CALL_TYPED = 24,
     ZR_SEMIR_OPCODE_RETURN_TYPED = 25,
-    ZR_SEMIR_OPCODE_OWN_RETURN_LOAN = 26
+    ZR_SEMIR_OPCODE_OWN_RETURN_LOAN = 26,
+    ZR_SEMIR_OPCODE_ADD = 27,
+    ZR_SEMIR_OPCODE_SUB = 28,
+    ZR_SEMIR_OPCODE_MUL = 29,
+    ZR_SEMIR_OPCODE_DIV = 30,
+    ZR_SEMIR_OPCODE_MOD = 31,
+    ZR_SEMIR_OPCODE_EQ = 32,
+    ZR_SEMIR_OPCODE_NE = 33,
+    ZR_SEMIR_OPCODE_LT = 34,
+    ZR_SEMIR_OPCODE_LE = 35,
+    ZR_SEMIR_OPCODE_GT = 36,
+    ZR_SEMIR_OPCODE_GE = 37,
+    ZR_SEMIR_OPCODE_DYN_ARITHMETIC = 38,
+    ZR_SEMIR_OPCODE_DYN_INDEX_GET = 39,
+    ZR_SEMIR_OPCODE_DYN_INDEX_SET = 40,
+    ZR_SEMIR_OPCODE_BIT_NOT = 41,
+    ZR_SEMIR_OPCODE_BIT_AND = 42,
+    ZR_SEMIR_OPCODE_BIT_OR = 43,
+    ZR_SEMIR_OPCODE_BIT_XOR = 44,
+    ZR_SEMIR_OPCODE_SHL = 45,
+    ZR_SEMIR_OPCODE_SHR = 46
 } EZrSemIrOpcode;
 
 typedef enum EZrSemIrEffectKind {
@@ -615,6 +638,10 @@ ZR_CORE_API void ZrCore_Function_Call(struct SZrState *state, TZrStackValuePoint
 
 ZR_CORE_API void ZrCore_Function_CallWithoutYield(struct SZrState *state, TZrStackValuePointer stackPointer,
                                             TZrSize resultCount);
+ZR_CORE_API void ZrCore_Function_CallWithoutYieldToDestination(struct SZrState *state,
+                                                               TZrStackValuePointer stackPointer,
+                                                               TZrSize resultCount,
+                                                               TZrStackValuePointer returnDestination);
 
 ZR_CORE_API void ZrCore_Function_StackAnchorInit(struct SZrState *state,
                                            TZrStackValuePointer stackPointer,
@@ -694,6 +721,9 @@ ZR_CORE_API void ZrCore_Function_InitializeFrameLayoutStorage(struct SZrState *s
 ZR_CORE_API TZrBool ZrCore_Function_FrameStackSlotIntersectsInlineStruct(const SZrFunction *function,
                                                                          TZrStackValuePointer frameBase,
                                                                          TZrStackValuePointer stackSlot);
+ZR_CORE_API TZrBool ZrCore_Function_FrameStackSlotIntersectsFrameGcValue(const SZrFunction *function,
+                                                                         TZrStackValuePointer frameBase,
+                                                                         TZrStackValuePointer stackSlot);
 ZR_CORE_API TZrBool ZrCore_Function_CopyFrameSlotInline(struct SZrState *state,
                                                         const SZrTypeLayout *layout,
                                                         const SZrFunction *destinationFunction,
@@ -755,6 +785,11 @@ ZR_CORE_API TZrBool ZrCore_Function_TryCopyInlineFrameReturnValue(struct SZrStat
                                                                   TZrStackValuePointer returnDestination,
                                                                   FZrFunctionFrameTypeLayoutResolver resolver,
                                                                   TZrPtr resolverUserData);
+ZR_CORE_API TZrBool ZrCore_Function_TryCopyObjectReturnValueToInlineDestination(
+        struct SZrState *state,
+        const struct SZrCallInfo *callInfo,
+        TZrStackValuePointer returnDestination,
+        const struct SZrTypeValue *returnValue);
 ZR_CORE_API void ZrCore_Function_TryCopyInlineConstructorReceiverBack(struct SZrState *state,
                                                                       const struct SZrCallInfo *callInfo);
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_GetCallInfoFrameStorageTop(struct SZrState *state,
@@ -769,6 +804,13 @@ ZR_CORE_API TZrBool ZrCore_Function_VisitInlineFrameGcValues(struct SZrState *st
                                                              TZrPtr resolverUserData,
                                                              FZrFunctionFrameGcValueVisitor visitor,
                                                              TZrPtr visitorUserData);
+ZR_CORE_API TZrBool ZrCore_Function_VisitFrameGcValues(struct SZrState *state,
+                                                       const SZrFunction *function,
+                                                       TZrStackValuePointer frameBase,
+                                                       FZrFunctionFrameTypeLayoutResolver resolver,
+                                                       TZrPtr resolverUserData,
+                                                       FZrFunctionFrameGcValueVisitor visitor,
+                                                       TZrPtr visitorUserData);
 ZR_CORE_API TZrBool ZrCore_Function_DropInlineFrameValues(struct SZrState *state,
                                                           const SZrFunction *function,
                                                           TZrStackValuePointer frameBase,
@@ -792,6 +834,11 @@ ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallAndRestore(struct SZrState 
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldAndRestore(struct SZrState *state,
                                                                        TZrStackValuePointer stackPointer,
                                                                        TZrSize resultCount);
+ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldAndRestoreWithReturnDestination(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        TZrSize resultCount,
+        TZrStackValuePointer returnDestination);
 
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldKnownValueAndRestore(struct SZrState *state,
                                                                                  TZrStackValuePointer stackPointer,
@@ -826,6 +873,14 @@ ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownVmValue(struct SZrSt
                                                              struct SZrTypeValue *callableValue,
                                                              TZrSize resultCount,
                                                              TZrStackValuePointer returnDestination);
+ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownVmValueWithArgumentSource(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        struct SZrTypeValue *callableValue,
+        TZrSize resultCount,
+        TZrStackValuePointer returnDestination,
+        TZrStackValuePointer argumentSourceFrameBase,
+        TZrUInt32 argumentSourceStartSlot);
 
 ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallResolvedVmFunction(struct SZrState *state,
                                                                      TZrStackValuePointer stackPointer,

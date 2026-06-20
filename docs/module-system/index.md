@@ -8,6 +8,10 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
+  - zr_vm_library/include/zr_vm_library/zrm.h
+  - zr_vm_library/src/zr_vm_library/zrm.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/include/zr_vm_core/io.h
@@ -17,6 +21,10 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
+  - zr_vm_library/include/zr_vm_library/zrm.h
+  - zr_vm_library/src/zr_vm_library/zrm.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c
 plan_sources:
   - user: 2026-03-31 实现 “M6 强类型推断完整闭环计划”
   - .codex/plans/M6 强类型推断完整闭环计划.md
@@ -27,6 +35,8 @@ tests:
   - tests/parser/test_instruction_execution.c
   - tests/scripts/test_artifact_golden.c
   - tests/cmake/run_projects_suite.cmake
+  - tests/library/test_zrm_container.c
+  - tests/system/test_system_assembly_module.c
 doc_type: category-index
 ---
 
@@ -41,6 +51,11 @@ doc_type: category-index
   - native / source / binary import 的编译期归一化装载
   - `.zro` 作为正式 typed metadata 语义源，`.zri` 仅保留 debug / intermediate 职责
   - typed opcode 选择与 imported typed call 运行时约束
+- `zrm-assembly-container.md`
+  - `.zrm` 程序集容器格式、ZIP entry 布局和 manifest 约束
+  - `.zrp` 的 `assembly.output`、`resources` 和 `.zrm` references
+  - CLI `--emit-zrm` 打包路径
+  - `zr.system.assembly` 当前程序集资源读取 API
 
 ## Import Path Contract
 
@@ -58,4 +73,5 @@ doc_type: category-index
 ## 阅读顺序
 
 1. 先看 `typed-module-metadata.md`，了解 M6 强类型推断闭环的元数据结构、导入路径和序列化边界。
-2. 需要落代码时，再沿 frontmatter 的 `related_code` / `tests` 进入具体实现和验证入口。
+2. 再看 `zrm-assembly-container.md`，了解 `.zro` 单模块产物如何被 `.zrm` 程序集容器聚合和引用。
+3. 需要落代码时，再沿 frontmatter 的 `related_code` / `tests` 进入具体实现和验证入口。

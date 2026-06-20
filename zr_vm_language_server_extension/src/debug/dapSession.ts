@@ -51,6 +51,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
     private initialStopSeen = false;
     private pendingAutoContinue = false;
     private currentStateId = 0;
+    private lastExceptionStack: string | undefined;
     private terminated = false;
     private launchMode = false;
     private launchSourceContext: LaunchSourceContext | undefined;
@@ -125,6 +126,9 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
             case 'evaluate':
                 await this.handleEvaluate(request);
                 return;
+            case 'exceptionInfo':
+                this.handleExceptionInfo(request);
+                return;
             case 'source':
                 await this.handleSource(request);
                 return;
@@ -162,6 +166,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
             supportsLogPoints: true,
             supportsVariablePaging: true,
             supportsEvaluateForHovers: true,
+            supportsExceptionInfoRequest: true,
             exceptionBreakpointFilters: [
                 {
                     filter: 'caught',
@@ -508,6 +513,23 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         });
     }
 
+    private handleExceptionInfo(request: DapRequest): void {
+        const stackTrace = this.lastExceptionStack ?? '';
+        const firstLine = stackTrace.split(/\r?\n/, 1)[0] ?? 'ZR exception';
+
+        this.sendResponse(request, {
+            exceptionId: 'zr.exception',
+            breakMode: 'unhandled',
+            description: stackTrace || 'ZR exception',
+            details: stackTrace
+                ? {
+                    message: firstLine,
+                    stackTrace,
+                }
+                : undefined,
+        });
+    }
+
     private async handleSource(request: DapRequest): Promise<void> {
         const source = (request.arguments ?? {}).source as { path?: unknown; name?: unknown } | undefined;
         const sourcePath = typeof source?.path === 'string' ? source.path : undefined;
@@ -549,6 +571,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.client = undefined;
         this.launcher = undefined;
         this.launchSourceContext = undefined;
+        this.lastExceptionStack = undefined;
 
         if (client) {
             try {
@@ -605,12 +628,27 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                     }
                     break;
                 }
-                this.sendEvent('stopped', {
-                    reason: String(message.params?.reason ?? 'pause'),
-                    threadId: ZR_DEBUG_MAIN_THREAD_ID,
-                    allThreadsStopped: true,
-                    text: typeof message.params?.functionName === 'string' ? message.params.functionName : undefined,
-                });
+                {
+                    const reason = String(message.params?.reason ?? 'pause');
+                    const exceptionStack =
+                        typeof message.params?.exceptionStack === 'string' && message.params.exceptionStack.length > 0
+                            ? message.params.exceptionStack
+                            : undefined;
+                    this.lastExceptionStack = reason === 'exception' ? exceptionStack : undefined;
+                    if (reason === 'exception' && exceptionStack) {
+                        this.sendEvent('output', {
+                            category: 'stderr',
+                            output: exceptionStack.endsWith('\n') ? exceptionStack : `${exceptionStack}\n`,
+                        });
+                    }
+                    this.sendEvent('stopped', {
+                        reason,
+                        threadId: ZR_DEBUG_MAIN_THREAD_ID,
+                        allThreadsStopped: true,
+                        text: exceptionStack ?? (typeof message.params?.functionName === 'string' ? message.params.functionName : undefined),
+                        description: exceptionStack,
+                    });
+                }
                 break;
             case 'output':
                 this.sendEvent('output', {
@@ -620,6 +658,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                 break;
             case 'continued':
                 this.currentStateId = 0;
+                this.lastExceptionStack = undefined;
                 this.variableHandles.clear();
                 this.sendEvent('continued', {
                     threadId: ZR_DEBUG_MAIN_THREAD_ID,
@@ -627,6 +666,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                 });
                 break;
             case 'terminated':
+                this.lastExceptionStack = undefined;
                 this.sendTerminatedEvent();
                 break;
             case 'moduleLoaded':

@@ -43,12 +43,18 @@ typedef struct SZrSemanticTokenCache {
     size_t capacity;
 } SZrSemanticTokenCache;
 
+typedef enum EZrStdioPositionEncoding {
+    ZR_STDIO_POSITION_ENCODING_UTF16 = 0,
+    ZR_STDIO_POSITION_ENCODING_UTF8 = 1,
+} EZrStdioPositionEncoding;
+
 typedef struct SZrStdioServer {
     SZrGlobalState *global;
     SZrState *state;
     SZrLspContext *context;
     SZrUriCache uriCache;
     SZrSemanticTokenCache semanticTokenCache;
+    EZrStdioPositionEncoding positionEncoding;
     TZrBool shutdownRequested;
 } SZrStdioServer;
 
@@ -110,10 +116,33 @@ void free_signature_help(SZrState *state, SZrLspSignatureHelp *help);
 
 int parse_position(const cJSON *json, SZrLspPosition *outPosition);
 int parse_range(const cJSON *json, SZrLspRange *outRange);
+int parse_position_for_uri(SZrStdioServer *server,
+                           SZrString *uri,
+                           const cJSON *json,
+                           SZrLspPosition *outPosition);
+int parse_range_for_uri(SZrStdioServer *server,
+                        SZrString *uri,
+                        const cJSON *json,
+                        SZrLspRange *outRange);
+int parse_range_for_content(SZrStdioServer *server,
+                            const char *content,
+                            size_t contentLength,
+                            const cJSON *json,
+                            SZrLspRange *outRange);
+void negotiate_position_encoding(SZrStdioServer *server, const cJSON *params);
+const char *position_encoding_name(const SZrStdioServer *server);
+void apply_position_encoding_to_response(SZrStdioServer *server,
+                                         const char *method,
+                                         const cJSON *requestParams,
+                                         cJSON *response);
+void apply_position_encoding_to_json_for_uri(SZrStdioServer *server,
+                                             const char *uriText,
+                                             cJSON *json);
 
 SZrFileVersion *get_file_version_for_uri(SZrStdioServer *server, SZrString *uri);
 char *read_document_text_from_uri(SZrString *uri, size_t *outLength);
-char *apply_content_changes(SZrString *uri,
+char *apply_content_changes(SZrStdioServer *server,
+                            SZrString *uri,
                             const char *original,
                             size_t originalLength,
                             const cJSON *changes,

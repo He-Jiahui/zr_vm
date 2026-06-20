@@ -3,25 +3,13 @@
 //
 
 #include "semantic/semantic_analyzer_internal.h"
+#include "semantic/semantic_analyzer_union_patterns.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 void free_resolved_call_signature(SZrState *state, SZrResolvedCallSignature *signature);
 TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
                                                          const SZrInferredType *iterableType,
                                                          SZrInferredType *outType);
-TZrBool try_resolve_union_variant_pattern_for_type(SZrCompilerState *cs,
-                                                   SZrAstNode *node,
-                                                   SZrString *typeName,
-                                                   SZrString **outVariantName,
-                                                   SZrAstNodeArray **outBindings,
-                                                   SZrAstNode **outVariant);
-TZrBool try_resolve_union_variant_pattern_with_type_annotation(SZrCompilerState *cs,
-                                                               SZrAstNode *pattern,
-                                                               SZrType *variantTypeInfo,
-                                                               SZrString *resourceTypeName,
-                                                               SZrString **outVariantName,
-                                                               SZrAstNodeArray **outBindings,
-                                                               SZrAstNode **outVariant);
 static TZrBool semantic_type_from_ast(SZrState *state,
                                       SZrSemanticAnalyzer *analyzer,
                                       const SZrType *typeNode,
@@ -31,9 +19,12 @@ static TZrBool semantic_infer_node_type(SZrState *state,
                                         SZrAstNode *node,
                                         SZrInferredType *result);
 
-static void semantic_validate_using_union_pattern(SZrState *state,
-                                                  SZrSemanticAnalyzer *analyzer,
-                                                  SZrUsingStatement *usingStmt);
+static void semantic_typecheck_using_statement(SZrState *state,
+                                               SZrSemanticAnalyzer *analyzer,
+                                               SZrAstNode *node);
+static void semantic_typecheck_switch_expression(SZrState *state,
+                                                 SZrSemanticAnalyzer *analyzer,
+                                                 SZrAstNode *node);
 
 static const TZrChar *semantic_identifier_node_text(SZrAstNode *node) {
     if (node == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL || node->data.identifier.name == ZR_NULL) {
@@ -1565,52 +1556,123 @@ static TZrBool semantic_infer_node_type(SZrState *state,
     return ZR_FALSE;
 }
 
-static void semantic_validate_using_union_pattern(SZrState *state,
-                                                  SZrSemanticAnalyzer *analyzer,
-                                                  SZrUsingStatement *usingStmt) {
-    SZrInferredType resourceType;
-    SZrString *variantName = ZR_NULL;
-    SZrAstNodeArray *bindings = ZR_NULL;
-    SZrAstNode *variant = ZR_NULL;
+static void semantic_typecheck_using_statement(SZrState *state,
+                                               SZrSemanticAnalyzer *analyzer,
+                                               SZrAstNode *node) {
+    SZrUsingStatement *usingStmt;
+    SZrSemanticUnionPatternResolution resolution;
+    TZrBool hasUnionPattern;
 
-    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
-        usingStmt == ZR_NULL || usingStmt->pattern == ZR_NULL || usingStmt->resource == ZR_NULL) {
+    if (state == ZR_NULL || analyzer == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_USING_STATEMENT) {
         return;
     }
 
-    ZrParser_InferredType_Init(state, &resourceType, ZR_VALUE_TYPE_OBJECT);
-    if (!semantic_infer_node_type(state, analyzer, usingStmt->resource, &resourceType)) {
-        ZrParser_InferredType_Free(state, &resourceType);
+    usingStmt = &node->data.usingStatement;
+    ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, usingStmt->resource);
+
+    ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionInit(state, &resolution);
+    hasUnionPattern = ZrLanguageServer_SemanticAnalyzer_ResolveUsingUnionPattern(state,
+                                                                                 analyzer,
+                                                                                 usingStmt,
+                                                                                 &resolution);
+    if (hasUnionPattern && usingStmt->body != ZR_NULL) {
+        SZrTypeEnvironment *savedTypeEnv =
+            semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
+        ZrLanguageServer_SemanticAnalyzer_RegisterUnionPatternBindings(state,
+                                                                       analyzer,
+                                                                       &resolution,
+                                                                       ZR_FALSE,
+                                                                       ZR_TRUE);
+        ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, usingStmt->body);
+        semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
+    } else {
+        if (hasUnionPattern) {
+            ZrLanguageServer_SemanticAnalyzer_RegisterUnionPatternBindings(state,
+                                                                           analyzer,
+                                                                           &resolution,
+                                                                           ZR_FALSE,
+                                                                           ZR_TRUE);
+        }
+        if (!hasUnionPattern && usingStmt->body != ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, usingStmt->body);
+        }
+    }
+
+    if (usingStmt->elseBody != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, usingStmt->elseBody);
+    }
+    ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionFree(state, &resolution);
+}
+
+static void semantic_typecheck_switch_expression(SZrState *state,
+                                                 SZrSemanticAnalyzer *analyzer,
+                                                 SZrAstNode *node) {
+    SZrSwitchExpression *switchExpr;
+    SZrInferredType subjectType;
+    TZrBool subjectTypeInitialized = ZR_FALSE;
+    TZrBool hasSubjectType = ZR_FALSE;
+    TZrSize index;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_SWITCH_EXPRESSION) {
         return;
     }
 
-    if (resourceType.typeName != ZR_NULL) {
-        if (usingStmt->guardTypeInfo != ZR_NULL) {
-            (void)try_resolve_union_variant_pattern_with_type_annotation(analyzer->compilerState,
-                                                                         usingStmt->pattern,
-                                                                         usingStmt->guardTypeInfo,
-                                                                         resourceType.typeName,
-                                                                         &variantName,
-                                                                         &bindings,
-                                                                         &variant);
-        } else {
-            (void)try_resolve_union_variant_pattern_for_type(analyzer->compilerState,
-                                                             usingStmt->pattern,
-                                                             resourceType.typeName,
-                                                             &variantName,
-                                                             &bindings,
-                                                             &variant);
-        }
+    switchExpr = &node->data.switchExpression;
+    ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, switchExpr->expr);
+    if (switchExpr->expr != ZR_NULL) {
+        ZrParser_InferredType_Init(state, &subjectType, ZR_VALUE_TYPE_OBJECT);
+        subjectTypeInitialized = ZR_TRUE;
+        hasSubjectType = semantic_infer_node_type(state, analyzer, switchExpr->expr, &subjectType);
+    }
 
-        if (analyzer->compilerState->hasError) {
-            ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(
-                    state,
-                    analyzer,
-                    usingStmt->pattern->location);
+    if (switchExpr->cases != ZR_NULL && switchExpr->cases->nodes != ZR_NULL) {
+        for (index = 0; index < switchExpr->cases->count; index++) {
+            SZrAstNode *caseNode = switchExpr->cases->nodes[index];
+            SZrSwitchCase *switchCase;
+            SZrSemanticUnionPatternResolution resolution;
+            TZrBool hasUnionPattern;
+
+            if (caseNode == ZR_NULL || caseNode->type != ZR_AST_SWITCH_CASE) {
+                continue;
+            }
+
+            switchCase = &caseNode->data.switchCase;
+            ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionInit(state, &resolution);
+            hasUnionPattern = hasSubjectType &&
+                              ZrLanguageServer_SemanticAnalyzer_ResolveSwitchUnionPattern(state,
+                                                                                          analyzer,
+                                                                                          switchCase->value,
+                                                                                          &subjectType,
+                                                                                          &resolution);
+            if (hasUnionPattern && switchCase->block != ZR_NULL) {
+                SZrTypeEnvironment *savedTypeEnv =
+                    semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
+                ZrLanguageServer_SemanticAnalyzer_RegisterUnionPatternBindings(state,
+                                                                               analyzer,
+                                                                               &resolution,
+                                                                               ZR_FALSE,
+                                                                               ZR_TRUE);
+                ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, switchCase->block);
+                semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
+            } else {
+                ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, switchCase->value);
+                ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, switchCase->block);
+            }
+            ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionFree(state, &resolution);
         }
     }
 
-    ZrParser_InferredType_Free(state, &resourceType);
+    if (switchExpr->defaultCase != ZR_NULL &&
+        switchExpr->defaultCase->type == ZR_AST_SWITCH_DEFAULT) {
+        ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(
+                state,
+                analyzer,
+                switchExpr->defaultCase->data.switchDefault.block);
+    }
+
+    if (subjectTypeInitialized) {
+        ZrParser_InferredType_Free(state, &subjectType);
+    }
 }
 
 static TZrBool semantic_call_matches_parameters(SZrState *state,
@@ -2558,10 +2620,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         }
 
         case ZR_AST_USING_STATEMENT: {
-            SZrUsingStatement *usingStmt = &node->data.usingStatement;
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, usingStmt->resource);
-            semantic_validate_using_union_pattern(state, analyzer, usingStmt);
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, usingStmt->body);
+            semantic_typecheck_using_statement(state, analyzer, node);
             break;
         }
 
@@ -2671,6 +2730,11 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, ifExpr->condition);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, ifExpr->thenExpr);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, ifExpr->elseExpr);
+            break;
+        }
+
+        case ZR_AST_SWITCH_EXPRESSION: {
+            semantic_typecheck_switch_expression(state, analyzer, node);
             break;
         }
         

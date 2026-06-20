@@ -65,6 +65,25 @@ enum EZrValueType {
 
 typedef enum EZrValueType EZrValueType;
 
+typedef enum EZrStaticCType {
+    ZR_STATIC_C_TYPE_DYNAMIC = 0,
+    ZR_STATIC_C_TYPE_BOOL,
+    ZR_STATIC_C_TYPE_I8,
+    ZR_STATIC_C_TYPE_I16,
+    ZR_STATIC_C_TYPE_I32,
+    ZR_STATIC_C_TYPE_I64,
+    ZR_STATIC_C_TYPE_U8,
+    ZR_STATIC_C_TYPE_U16,
+    ZR_STATIC_C_TYPE_U32,
+    ZR_STATIC_C_TYPE_U64,
+    ZR_STATIC_C_TYPE_F32,
+    ZR_STATIC_C_TYPE_F64,
+    ZR_STATIC_C_TYPE_GC_REF,
+    ZR_STATIC_C_TYPE_STRUCT,
+    ZR_STATIC_C_TYPE_NATIVE_POINTER,
+    ZR_STATIC_C_TYPE_NATIVE_DATA
+} EZrStaticCType;
+
 #define ZR_VALUE_IS_TYPE_NULL(valueType) ((valueType) == ZR_VALUE_TYPE_NULL)
 #define ZR_VALUE_IS_TYPE_BOOL(valueType) ((valueType) == ZR_VALUE_TYPE_BOOL)
 #define ZR_VALUE_IS_TYPE_SIGNED_INT(valueType) ((valueType) >= ZR_VALUE_TYPE_INT8 && (valueType) <= ZR_VALUE_TYPE_INT64)

@@ -189,6 +189,7 @@ static cJSON *linked_editing_ranges_from_document(SZrStdioServer *server,
                                                   SZrLspPosition position,
                                                   int *outRangeCount) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     const char *content;
     size_t contentLength;
     size_t offset;
@@ -202,22 +203,25 @@ static cJSON *linked_editing_ranges_from_document(SZrStdioServer *server,
     }
 
     fileVersion = get_file_version_for_uri(server, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
         return cJSON_CreateArray();
     }
 
-    content = fileVersion->content;
-    contentLength = (size_t)fileVersion->contentLength;
+    content = snapshot.content;
+    contentLength = snapshot.contentLength;
     if (!linked_editing_offset_from_position(content, contentLength, position, &offset)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return cJSON_CreateArray();
     }
     if (offset >= contentLength || !linked_editing_is_identifier_part(content[offset])) {
         if (offset == 0 || !linked_editing_is_identifier_part(content[offset - 1])) {
+            ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
             return cJSON_CreateArray();
         }
         offset--;
     }
     if (!linked_editing_offset_is_in_code(content, contentLength, offset)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return cJSON_CreateArray();
     }
 
@@ -232,11 +236,13 @@ static cJSON *linked_editing_ranges_from_document(SZrStdioServer *server,
 
     wordLength = wordEnd - wordStart;
     if (wordLength == 0 || !linked_editing_is_identifier_start(content[wordStart])) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return cJSON_CreateArray();
     }
 
     ranges = cJSON_CreateArray();
     if (ranges == NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return NULL;
     }
 
@@ -258,6 +264,7 @@ static cJSON *linked_editing_ranges_from_document(SZrStdioServer *server,
         }
     }
 
+    ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
     return ranges;
 }
 

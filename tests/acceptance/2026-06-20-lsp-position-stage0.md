@@ -1,0 +1,954 @@
+# LSP Position Stage 0
+
+## Scope
+- Tighten the Stage 0 LSP position codec slice from `docs/plans/lsp/03-lsp-robustness-and-position.md`.
+- Affected layers: language server LSP interface position conversion, focused language server tests, and LSP plan/module documentation.
+
+## Baseline
+- The first Stage 0 slice already mapped LSP UTF-16 positions to UTF-8 byte offsets for BMP UTF-8, emoji surrogate pairs, Chinese identifiers, CRLF, tab, EOF without newline, and offset/position roundtrip.
+- The remaining defect was that content-aware `LspPosition -> FilePosition` still kept the raw LSP line/character in `SZrFilePosition.line/column` even when the computed byte offset was clamped. Internal parser ranges use byte columns, so this could leave semantic lookup with impossible lines or UTF-16 columns instead of parser byte columns.
+- The repository worktree remains heavily dirty with unrelated AOT/debug/zrm work. This acceptance record covers only the LSP position target.
+
+## Test Inventory
+- `tests/language_server/test_lsp_position_mapping.c`
+- Existing cases:
+  - BMP UTF-8 before cursor maps from UTF-16 character.
+  - Non-BMP UTF-8 counts as two UTF-16 units.
+  - Chinese identifier maps one UTF-16 unit to a three-byte UTF-8 codepoint.
+  - Mixed ASCII and emoji maps inside a line.
+  - CRLF line start maps after LF.
+  - Tab counts as one UTF-16 unit.
+  - EOF without trailing newline maps to content end.
+  - Offset -> UTF-16 position -> offset roundtrip.
+- New boundary cases:
+  - Internal `SZrFilePosition.column` remains parser byte-column after a BMP UTF-8 codepoint.
+  - Negative LSP line/character clamp to file start.
+  - Character beyond line clamps to line-end byte column.
+  - Line beyond file clamps to EOF file position.
+- New semantic-facing output case:
+  - `textDocument/definition` returns UTF-16 LSP columns for a declaration range after a BMP UTF-8 prefix, instead of leaking parser byte columns to the client.
+- New hover/highlight semantic-facing output cases:
+  - `textDocument/hover` returns UTF-16 LSP columns for the hovered declaration range after a BMP UTF-8 prefix.
+  - `textDocument/documentHighlight` returns UTF-16 LSP columns for both the declaration highlight after a BMP UTF-8 prefix and the ASCII usage highlight.
+- New prepare-rename semantic-facing output case:
+  - `textDocument/prepareRename` returns a UTF-16 LSP range for an identifier after a BMP UTF-8 prefix.
+- New diagnostic semantic-facing output case:
+  - `textDocument/diagnostic` returns a UTF-16 LSP range for a parser diagnostic after a BMP UTF-8 prefix.
+- New symbol semantic-facing output cases:
+  - `textDocument/documentSymbol` returns a UTF-16 LSP range for a function symbol after a BMP UTF-8 prefix.
+  - `workspace/symbol` returns a UTF-16 LSP range for an open-document function symbol after a BMP UTF-8 prefix.
+- New rename semantic-facing output case:
+  - `textDocument/rename` returns UTF-16 LSP ranges for both the declaration location after a BMP UTF-8 prefix and the ASCII usage location; stdio workspace edits reuse these location ranges.
+- New project import/navigation output case:
+  - Cross-file project references on the module entry of `greet.zr` return UTF-16 LSP ranges for `%import("greet")`, `greetModule` alias declaration, `greetModule` alias usage, and `.greet` member usage after a BMP UTF-8 prefix.
+  - `tests/language_server/test_lsp_project_utf16_ranges.c` is a focused target and is included in the `language_server` aggregate suite.
+- New semanticTokens output case:
+  - `textDocument/semanticTokens/full` returns a function semantic token at UTF-16 column `0:8` for an analyzer-backed symbol after a BMP UTF-8 prefix, instead of using parser byte columns.
+  - `textDocument/semanticTokens/full` returns a `%import` keyword token at UTF-16 column `0:21` for the raw text scanner after a BMP UTF-8 prefix, instead of using byte-counted scanner columns.
+- New inlay hint output case:
+  - `textDocument/inlayHint` returns an inferred `: int` hint at UTF-16 column `0:18` for an unannotated variable after a BMP UTF-8 prefix, instead of using parser byte columns.
+- New import-chain output case:
+  - Structured semantic query references/highlights for `system.console.printLine` after BMP UTF-8 prefixes return UTF-16 ranges for both secondary member usages, instead of using byte-counted chain ranges.
+- New stdio `positionEncoding` protocol case:
+  - `initialize` with `capabilities.general.positionEncodings: ["utf-8", "utf-16"]` negotiates `capabilities.positionEncoding: "utf-8"`.
+  - `textDocument/hover` sent with UTF-8 byte columns over `/* λ */ var system = %import("zr.system");` returns the import literal hover range as UTF-8 byte columns, while the C API and default stdio path keep UTF-16 semantics.
+- New position fuzz/robustness case:
+  - Malformed UTF-8 lead bytes and truncated four-byte sequences must not consume a following newline while converting between LSP positions and byte offsets.
+  - A fixed-seed valid UTF-8 corpus covers ASCII, newlines, BMP multi-byte codepoints, CJK, and non-BMP emoji boundaries with `offset -> UTF-16 position -> offset` roundtrip assertions.
+- New decorator navigation output case:
+  - `tests/language_server/test_lsp_decorator_utf16_ranges.c` covers `#singleton#` and `#trace#` after BMP UTF-8 prefixes, asserting decorator definition targets and decorator hover parser ranges return UTF-16 LSP columns instead of no-content byte columns.
+- New CodeLens output case:
+  - `tests/language_server/test_lsp_code_lens_utf16_ranges.c` covers a function reference-count lens after a BMP UTF-8 prefix, asserting both the lens range and `positionArgument` use UTF-16 LSP columns instead of no-content byte columns.
+- New super constructor navigation output case:
+  - `tests/language_server/test_lsp_super_utf16_ranges.c` covers base and derived constructors after BMP UTF-8 prefixes, asserting `super(...)` definition, references, and document highlights use UTF-16 LSP columns instead of no-content byte columns.
+- New token metadata output case:
+  - `tests/language_server/test_lsp_token_metadata_utf16_ranges.c` covers a class meta-method after a BMP UTF-8 prefix, asserting `@constructor` hover range uses UTF-16 LSP columns instead of no-content byte columns.
+- New project binary metadata declaration input case:
+  - `tests/language_server/test_lsp_project_utf16_ranges.c` now also covers a `.zro` declaration document after a BMP UTF-8 prefix; semantic query at UTF-16 column `0:16` must resolve the `binarySeed` binary export member instead of missing due to no-content byte-column conversion.
+- New import-chain source contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `lsp_semantic_import_chain.c` no longer uses `g_semanticImportChainAppend*` file-static state to temporarily store opened document content while appending import-chain locations.
+  - The same contract now keeps `semantic_import_chain_append_location` routed through the shared `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument` helper and blocks direct `ZrLanguageServer_LspRange_FromFileRangeWithContent` / `ZrLanguageServer_LspRange_FromFileRange(range)` calls in that source file.
+- New semantic query source contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `lsp_semantic_query.c` no longer owns a local `semantic_query_get_document_content` / `semantic_query_lsp_range_from_file_range` conversion branch.
+  - Semantic query location, highlight, and hover range construction must call the shared `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument` helper instead of directly calling `ZrLanguageServer_LspRange_FromFileRangeWithContent`.
+- New interface source contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `lsp_interface.c` no longer owns a local `lsp_range_from_file_range_for_document` conversion branch.
+  - Interface hover fallback, rename location normalization, local-symbol rename append, and prepareRename range construction must call the shared `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument` helper instead of directly calling `ZrLanguageServer_LspRange_FromFileRangeWithContent`.
+- New inlay source contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `lsp_inlay_hints.c` no longer owns a local `lsp_inlay_position_from_file_position` conversion branch.
+  - Inlay hint positions must call the shared `ZrLanguageServer_Lsp_PositionFromFilePositionForDocument` helper instead of directly calling `ZrLanguageServer_LspPosition_FromFilePositionWithContent`.
+- New file-version content snapshot case:
+  - `tests/language_server/test_incremental_parser.c` locks that `ZrLanguageServer_FileVersionContentSnapshot_Acquire` returns an owned content copy with the current version.
+  - The snapshot must keep the original content after `ZrLanguageServer_IncrementalParser_UpdateFile` replaces the live file buffer.
+- New interface direct content snapshot contract cases:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `lsp_interface.c` identifier scanning, completion code-span filtering, and hover documentation/comment extraction acquire `SZrFileVersionContentSnapshot` instead of directly reading `fileVersion->content`.
+  - This covers prepareRename/rename identifier range normalization, completion non-code filtering, and hover symbol markdown/leading comment extraction.
+- New cross-module direct content snapshot contract cases:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `lsp_semantic_import_chain.c` analyzer refresh, `lsp_token_metadata.c` meta-method hover, and `lsp_semantic_tokens.c` source scanning acquire `SZrFileVersionContentSnapshot`.
+  - These contracts reject direct `fileVersion->content` reads in the corresponding function sections while preserving existing import-chain, token metadata, and semanticTokens behavior tests.
+- New editor/navigation direct content snapshot contract cases:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `lsp_folding_ranges.c`, `lsp_document_links.c`, `lsp_signature_help.c`, `lsp_code_action_imports.c`, and `lsp_super_navigation.c` acquire `SZrFileVersionContentSnapshot` for opened-document content reads.
+  - These contracts reject direct `fileVersion->content` reads in the covered function sections/files while preserving folding ranges, document links, signature help, import code actions, and super constructor navigation behavior tests.
+- New code actions direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `ZrLanguageServer_Lsp_GetCodeActions` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `lsp_code_actions.c`, covering missing import alias/insert-offset scans and missing semicolon quickfix raw edits.
+- New hierarchy direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `lsp_hierarchy.c` acquires `SZrFileVersionContentSnapshot` for call hierarchy incoming/outgoing and type hierarchy super/subtype scans.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `lsp_hierarchy.c`, covering raw call scans and direct inheritance header scans.
+- New stdio document color direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `stdio_document_color.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `stdio_document_color.c`, covering `textDocument/documentColor` scanning and `textDocument/colorPresentation` range validation.
+- New stdio completion direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `stdio_completion.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `stdio_completion.c`, covering `textDocument/completion` and `completionItem/resolve` prefix `textEdit.range` calculation.
+- New stdio moniker direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `stdio_moniker.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `stdio_moniker.c`, covering `textDocument/moniker` identifier/code-span scanning and document-scoped moniker identifier construction.
+- New stdio inline completion direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `stdio_inline_completion.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `stdio_inline_completion.c`, covering `textDocument/inlineCompletion` keyword prefix and code-span checks.
+- New stdio linked editing direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `stdio_linked_editing.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `stdio_linked_editing.c`, covering `textDocument/linkedEditingRange` fallback identifier scanning and range synthesis.
+- New stdio diagnostics direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `stdio_diagnostics.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `stdio_diagnostics.c`, covering document/workspace diagnostic report resultId hashing.
+- New stdio documents direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `stdio_documents.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `stdio_documents.c`, covering `textDocument/didChange` old-content base reads before applying incremental content changes.
+- New stdio inline value direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `stdio_inline_value.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `stdio_inline_value.c`, covering `textDocument/inlineValue` request range parsing, line scanning, and fact-backed inline text lookup.
+- New stdio position encoding direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `stdio_position_encoding.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `stdio_position_encoding.c`, covering URI/request/response range and position conversion for negotiated client encodings.
+- New editor features direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `lsp_editor_features.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `lsp_editor_features.c`, covering document formatting, range formatting, selection ranges, and `%test(...)` run CodeLens scanning.
+- New project navigation direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `lsp_project_navigation.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `lsp_project_navigation.c`, covering project analyzer refresh and import target binding refinement while preserving disk fallback for unopened files.
+- New project refresh direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `lsp_project.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `lsp_project.c`, covering loaded document registration, source module graph scanning, and import-module-name collection while preserving disk fallback for unopened source files.
+- New metadata provider direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `lsp_metadata_provider.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `lsp_metadata_provider.c`, covering type/member declaration range refinement, analyzer refresh, imported member hover markdown/documentation/leading-comment extraction, and the analyzer refresh disk fallback.
+- New semantic query direct content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `lsp_semantic_query.c` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` reads anywhere in `lsp_semantic_query.c`, covering identifier/code-span scan, enum member range refinement, analyzer refresh, external type/member references, receiver/import alias target resolution, hover documentation/comment extraction, and completion collection/enrichment.
+- New incremental parser Parse content snapshot contract case:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that `ZrLanguageServer_IncrementalParser_Parse` acquires `SZrFileVersionContentSnapshot`.
+  - The contract rejects direct `fileVersion->content` and `fileVersion->contentLength` reads inside the Parse function, covering content hashing, incremental threshold calculation, parser state initialization, and stored hash refresh.
+- New legacy fallback / no-content API removal contract cases:
+  - `tests/language_server/test_lsp_source_contracts.c` locks that shared document range/position helpers no longer return legacy no-content conversions when a snapshot is unavailable.
+  - The contract locks that `ZrLanguageServer_Lsp_GetDocumentFilePosition` no longer falls back to old no-content `ToFilePosition`.
+  - The contract locks that old no-content `LspRange/Position` public declarations and implementations are removed from `lsp_interface.h` and `lsp_interface_position.c`.
+
+## Tooling Evidence
+- WSL gcc focused RED:
+  - Command: `wsl -e bash -lc 'cd /mnt/e/Git/zr_vm && cmake --build .codex/build-lsp-position-wsl-gcc --target zr_vm_language_server_lsp_position_mapping_test -j 2 >/tmp/zr_lsp_position_red_build.log 2>&1 && ./.codex/build-lsp-position-wsl-gcc/bin/zr_vm_language_server_lsp_position_mapping_test >/tmp/zr_lsp_position_red_test.log 2>&1; status=$?; cat /tmp/zr_lsp_position_red_build.log; cat /tmp/zr_lsp_position_red_test.log; exit $status'`
+  - Result: failed 4 new cases, confirming the test caught parser byte-column and clamped line/column defects.
+- WSL gcc focused GREEN:
+  - Command: `wsl -e bash -lc 'cd /mnt/e/Git/zr_vm && cmake --build .codex/build-lsp-position-wsl-gcc --target zr_vm_language_server_lsp_position_mapping_test -j 2 >/tmp/zr_lsp_position_green_build.log 2>&1 && ./.codex/build-lsp-position-wsl-gcc/bin/zr_vm_language_server_lsp_position_mapping_test >/tmp/zr_lsp_position_green_test.log 2>&1; status=$?; cat /tmp/zr_lsp_position_green_build.log; cat /tmp/zr_lsp_position_green_test.log; exit $status'`
+  - Result: 12 PASS and `All LSP Position Mapping Tests Completed`.
+- Windows MSVC focused smoke:
+  - Command: `. "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Import-VsDevCmdEnvironment.ps1"; cmake --build build\codex-msvc-lsp-debug --config Debug --target zr_vm_language_server_lsp_position_mapping_test --parallel 2; .\build\codex-msvc-lsp-debug\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: imported Visual Studio `VSCMD_VER=17.14.34`, built `zr_vm_language_server_lsp_position_mapping_test.exe`, 12 PASS and `All LSP Position Mapping Tests Completed`.
+- Windows MSVC semantic location RED:
+  - Command: `. "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Import-VsDevCmdEnvironment.ps1"; cmake --build build\codex-msvc-lsp-debug --config Debug --target zr_vm_language_server_lsp_position_mapping_test --parallel 2; .\build\codex-msvc-lsp-debug\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: failed the new definition-range case with `first=0:13-0:19`, confirming semantic query location output still used byte-column-derived LSP characters.
+- Windows MSVC semantic location GREEN:
+  - Command: same focused MSVC target.
+  - Result: 13 PASS and `All LSP Position Mapping Tests Completed`.
+- WSL gcc semantic location GREEN:
+  - Command: `wsl -e bash -lc 'cd /mnt/e/Git/zr_vm && ./.codex/build-lsp-position-wsl-gcc/bin/zr_vm_language_server_lsp_position_mapping_test'`
+  - Result: 13 PASS and `All LSP Position Mapping Tests Completed`.
+- WSL gcc advanced-editor regression:
+  - Command: `wsl -e bash -lc 'cd /mnt/e/Git/zr_vm && cmake --build .codex/build-lsp-position-wsl-gcc --target zr_vm_language_server_lsp_advanced_editor_features_test -j 1 >/tmp/zr_lsp_advanced_semantic_gcc_build.log 2>&1 && ./.codex/build-lsp-position-wsl-gcc/bin/zr_vm_language_server_lsp_advanced_editor_features_test >/tmp/zr_lsp_advanced_semantic_gcc_test.log 2>&1; status=$?; cat /tmp/zr_lsp_advanced_semantic_gcc_build.log; tail -120 /tmp/zr_lsp_advanced_semantic_gcc_test.log; exit $status'`
+  - Result: advanced editor feature tests completed with 0 failures.
+- Windows MSVC advanced-editor regression:
+  - Command: `. "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Import-VsDevCmdEnvironment.ps1"; cmake --build build\codex-msvc-lsp-debug --config Debug --target zr_vm_language_server_lsp_advanced_editor_features_test --parallel 2; .\build\codex-msvc-lsp-debug\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: advanced editor feature tests completed with 0 failures.
+- Windows MSVC hover/highlight RED:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" cmake --build build-msvc --config Debug --target zr_vm_language_server_lsp_position_mapping_test --parallel 2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: failed the new hover/highlight cases with hover range `0:13-0:19` and first documentHighlight range `0:13-0:19`, confirming those output paths still leaked parser byte columns.
+- Windows MSVC hover/highlight GREEN:
+  - Command: same focused MSVC target and executable.
+  - Result: 15 PASS and `All LSP Position Mapping Tests Completed`.
+- Windows MSVC advanced-editor hover/highlight regression:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" cmake --build build-msvc --config Debug --target zr_vm_language_server_lsp_advanced_editor_features_test --parallel 2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: advanced editor feature tests completed with 0 failures.
+- WSL gcc hover/highlight retry:
+  - Command: `wsl -e bash -lc "cd /mnt/e/Git/zr_vm && cmake --build build-wsl-gcc --target zr_vm_language_server_lsp_position_mapping_test -j1"`
+  - Result: timed out twice while unrelated WSL build processes were active in the shared checkout; no WSL GREEN is claimed for this hover/highlight sub-slice yet.
+- Windows MSVC prepareRename RED:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" cmake --build build-msvc --config Debug --target zr_vm_language_server_lsp_position_mapping_test --parallel 2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: failed the new prepareRename case with range `0:13-0:19`, confirming prepareRename still leaked parser byte columns.
+- Windows MSVC prepareRename GREEN:
+  - Command: same focused MSVC target and executable.
+  - Result: 16 PASS and `All LSP Position Mapping Tests Completed`.
+- Windows MSVC advanced-editor prepareRename regression:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: advanced editor feature tests completed with 0 failures.
+- WSL gcc prepareRename retry:
+  - Command: `wsl -e bash -lc 'cd /mnt/e/Git/zr_vm && cmake --build build-wsl-gcc --target zr_vm_language_server_lsp_position_mapping_test -j1'`
+  - Result: timed out while unrelated WSL build processes were active in the shared checkout; no WSL GREEN is claimed for this prepareRename sub-slice yet.
+- Windows MSVC diagnostic RED:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" cmake --build build-msvc --config Debug --target zr_vm_language_server_lsp_position_mapping_test --parallel 2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: failed the new diagnostic case with range `0:17-0:18`, confirming diagnostics still leaked parser byte columns.
+- Windows MSVC diagnostic GREEN:
+  - Command: same focused MSVC target and executable.
+  - Result: 17 PASS and `All LSP Position Mapping Tests Completed`.
+- Windows MSVC advanced-editor diagnostic regression:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: advanced editor feature tests completed with 0 failures.
+- Windows MSVC lsp_interface diagnostic regression:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" cmake --build build-msvc --config Debug --target zr_vm_language_server_lsp_interface_test --parallel 2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`, including existing parser diagnostics, rename, symbols, navigation, and semantic query coverage.
+- WSL gcc diagnostic retry:
+  - Command: `wsl.exe sh -lc "ps -eo pid,comm,args | grep -E 'cmake|ninja|make|cc|gcc|clang|cl$' | grep -v grep | wc -l"`
+  - Result: 23 active related build processes remained in the shared WSL checkout; no WSL GREEN is claimed for this diagnostic sub-slice yet.
+- Windows MSVC symbol RED:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" cmake --build build-msvc --config Debug --target zr_vm_language_server_lsp_position_mapping_test --parallel 2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: failed the new document/workspace symbol case with range `0:9-0:31`, confirming symbol ranges still leaked parser byte columns.
+- Windows MSVC symbol GREEN:
+  - Command: same focused MSVC target and executable.
+  - Result: 18 PASS and `All LSP Position Mapping Tests Completed`.
+- Windows MSVC advanced-editor symbol regression:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: advanced editor feature tests completed with 0 failures.
+- Windows MSVC lsp_interface symbol regression:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`, including existing document/workspace symbols, hierarchy, navigation, and semantic query coverage.
+- WSL gcc symbol retry:
+  - Command: `wsl.exe sh -lc "ps -eo pid,comm,args | grep -E 'cmake|ninja|make|cc|gcc|clang|cl$' | grep -v grep | wc -l"`
+  - Result: 7 active related build processes remained in the shared WSL checkout; no WSL GREEN is claimed for this symbol sub-slice yet.
+- Windows MSVC rename RED:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" cmake --build build-msvc --config Debug --target zr_vm_language_server_lsp_position_mapping_test --parallel 2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: failed the new rename case with declaration range `0:13-0:19`, confirming rename location output still leaked parser byte columns before this fix.
+- Windows MSVC rename GREEN:
+  - Command: same focused MSVC target and executable.
+  - Result: 19 PASS and `All LSP Position Mapping Tests Completed`.
+- Windows MSVC advanced-editor rename regression:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: advanced editor feature tests completed with 0 failures.
+- Windows MSVC lsp_interface rename regression:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`, including existing rename, prepareRename, references, document highlights, symbols, and semantic query coverage.
+- WSL gcc rename retry:
+  - Command: `wsl -e bash -lc "ps -eo pid,comm,args | grep -E '(cmake|ninja|ctest|gcc|g\+\+|clang|make|zr_vm)' | grep -v grep | wc -l"`
+  - Result: 19 active related build processes remained in the shared WSL checkout; no WSL GREEN is claimed for this rename sub-slice yet.
+- Windows MSVC project import/navigation RED:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" cmake --build build-msvc --config Debug --target zr_vm_language_server_lsp_project_utf16_ranges_test --parallel 2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_utf16_ranges_test.exe`
+  - Result: failed the new project UTF-16 range case, confirming project import/navigation references did not return the expected import/member UTF-16 ranges before this fix.
+- Windows MSVC project import/navigation GREEN:
+  - Command: same focused MSVC target and executable.
+  - Result: `PASS: Project UTF-16 module entry references use UTF-16 columns` and `All Project UTF-16 Range Tests Completed`.
+- Windows MSVC project import/navigation regression matrix:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" cmake --build build-msvc --config Debug --target zr_vm_language_server_lsp_project_utf16_ranges_test zr_vm_language_server_lsp_position_mapping_test zr_vm_language_server_lsp_interface_test zr_vm_language_server_lsp_project_features_test zr_vm_language_server_lsp_advanced_editor_features_test --parallel 2`
+  - Result: all requested targets built after CMake regenerated the MSVC graph.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_utf16_ranges_test.exe`
+  - Result: 1 PASS and `All Project UTF-16 Range Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 19 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: advanced editor feature tests completed with 0 failures.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_features_test.exe *> build-msvc\lsp_project_features_latest.log; Select-String -Path build-msvc\lsp_project_features_latest.log -Pattern '^Fail -'`
+  - Result: process exit code was 0, but output still contained two soft failures: `LSP Native Imports And Ownership Display` / `Hover should preserve ownership qualifiers in type display`, and `LSP Descriptor Plugin Type Member Navigation` / `Receiver completion on a descriptor-plugin native type should surface field and method members`. This suite is therefore not claimed as GREEN for this sub-slice.
+- Windows MSVC project import/navigation diff check:
+  - Command: `git diff --check -- tests/CMakeLists.txt tests/language_server/test_lsp_project_utf16_ranges.c zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_imports.c zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c`
+  - Result: no whitespace errors; only existing LF/CRLF line-ending warnings.
+- WSL gcc project import/navigation retry:
+  - Command: `wsl -e bash -lc "ps -eo pid,cmd | grep -E 'cmake|ninja|ctest|zr_vm' | grep -v grep | wc -l"`
+  - Result: 15 active related build/test processes remained in the shared WSL checkout; no WSL GREEN is claimed for this project import/navigation sub-slice yet.
+- Windows MSVC semanticTokens RED:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" cmake --build build-msvc --config Debug --target zr_vm_language_server_lsp_position_mapping_test --parallel 2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: failed the new semantic token case with `resolved=1 count=5`, confirming semanticTokens request succeeded but analyzer symbol token output did not contain the expected UTF-16 `0:8 length 6` function token.
+- Windows MSVC semanticTokens GREEN:
+  - Command: same focused MSVC target and executable.
+  - Result: 20 PASS and `All LSP Position Mapping Tests Completed`.
+- Windows MSVC semanticTokens regression:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" cmake --build build-msvc --config Debug --target zr_vm_language_server_lsp_interface_test zr_vm_language_server_lsp_advanced_editor_features_test --parallel 2`
+  - Result: both related targets built successfully.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`, including existing semanticTokens import-chain/template-string coverage.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: advanced editor feature tests completed with 0 failures.
+  - Command: `git diff --check -- tests/language_server/test_lsp_position_mapping.c zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c docs/plans/lsp/index.md docs/plans/lsp/03-lsp-robustness-and-position.md tests/acceptance/2026-06-20-lsp-position-stage0.md docs/cli-and-tooling/lsp-advanced-editor-features.md .codex/sessions/20260606-continue-semantic-debug-repl.md`
+  - Result: no whitespace errors; only existing LF/CRLF line-ending warnings.
+- WSL gcc semanticTokens retry:
+  - Command: `wsl -e bash -lc "ps -eo pid,cmd | grep -E 'cmake|ninja|ctest|zr_vm' | grep -v grep | wc -l"`
+  - Result: 21 active related build/test processes remained in the shared WSL checkout; no WSL GREEN is claimed for this semanticTokens sub-slice yet.
+- Windows MSVC semanticTokens text-scan normal build attempt:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" cmake --build build-msvc --config Debug --target zr_vm_language_server_lsp_position_mapping_test --parallel 2`
+  - Result: blocked before the focused test could run by an unrelated dirty core compile error in `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c(8429,79)`: missing `)` before `;`.
+- Windows MSVC semanticTokens text-scan RED:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" msbuild build-msvc\tests\zr_vm_language_server_lsp_position_mapping_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: failed the new text-scan case with `Text-scan semantic token after UTF-8 prefix expected keyword token 0:21 length 7`, confirming the raw scanner did not yet emit UTF-16 token columns.
+- Windows MSVC semanticTokens text-scan GREEN:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; & "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" msbuild build-msvc\tests\zr_vm_language_server_lsp_position_mapping_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: `PASS: Text-scan semantic token after UTF-8 prefix uses UTF-16 columns` and 21 PASS overall.
+- Windows MSVC semanticTokens text-scan regression:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: process exit code 0 and `All LSP Interface Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: process exit code 0 and advanced editor feature tests completed with 0 failures.
+- WSL gcc semanticTokens text-scan retry:
+  - Command: `wsl -e bash -lc "ps -eo pid,cmd | grep -E 'cmake|ninja|ctest|zr_vm' | grep -v grep | wc -l"`
+  - Result: 3 active related build/test processes remained in the shared WSL checkout; no WSL GREEN is claimed for this text-scan sub-slice yet.
+- Windows MSVC inlay hints RED:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" msbuild build-msvc\tests\zr_vm_language_server_lsp_position_mapping_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: failed the new inlay hint case with `first=0:19 label=: int...`, confirming inlay hint output still used parser byte columns instead of UTF-16 columns.
+- Windows MSVC inlay hints GREEN:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; & "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" msbuild build-msvc\tests\zr_vm_language_server_lsp_position_mapping_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: `PASS: Inlay hint after UTF-8 prefix uses UTF-16 columns` and 22 PASS overall.
+- Windows MSVC inlay hints regression:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: process exit code 0 and `All LSP Interface Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: process exit code 0 and advanced editor feature tests completed with 0 failures.
+- WSL gcc inlay hints retry:
+  - Command: `wsl -e bash -lc "ps -eo pid,cmd | grep -E 'cmake|ninja|ctest|zr_vm' | grep -v grep | wc -l"`
+  - Result: 16 active related build/test processes remained in the shared WSL checkout; no WSL GREEN is claimed for this inlay hints sub-slice yet.
+- Windows MSVC import-chain RED:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" msbuild build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `LSP Semantic Query Resolves Module-Link Chain Member Navigation` failed because references on `system.console.printLine` did not include both UTF-16-correct secondary member usage ranges after UTF-8 prefixes.
+- Windows MSVC import-chain GREEN:
+  - Command: `& "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; & "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1" msbuild build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: module-link chain test passed and `All LSP Interface Tests Completed`.
+- Windows MSVC import-chain regression:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: process exit code 0 and advanced editor feature tests completed with 0 failures.
+- WSL gcc import-chain retry:
+  - Command: `wsl -e bash -lc "ps -eo pid,cmd | grep -E 'cmake|ninja|ctest|zr_vm' | grep -v grep | wc -l"`
+  - Result: 24 active related build/test processes remained in the shared WSL checkout; no WSL GREEN is claimed for this import-chain sub-slice yet.
+- Windows MSVC local semantic hover RED:
+  - Command: no-deps MSBuild for `build-msvc\tests\zr_vm_language_server_expression_fact_hover_test.vcxproj`, then `.\build-msvc\bin\Debug\zr_vm_language_server_expression_fact_hover_test.exe`.
+  - Result: failed the new UTF-16 hover range case with `range=1:20-1:25` where the expected opened-document LSP range was `1:19-1:24`.
+- Windows MSVC local semantic hover GREEN:
+  - Command: no-deps MSBuild for `build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj`, no-deps MSBuild for `build-msvc\tests\zr_vm_language_server_expression_fact_hover_test.vcxproj`, then `.\build-msvc\bin\Debug\zr_vm_language_server_expression_fact_hover_test.exe`.
+  - Result: `PASS: LSP Hover Range After UTF-8 Prefix Uses UTF-16 Columns` and 3 PASS overall.
+- Windows MSVC local semantic hover regression:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: process exit code 0 and `All LSP Interface Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: process exit code 0 and advanced editor feature tests completed with 0 failures.
+  - Command: build and run `zr_vm_language_server_local_semantic_hover_test.exe`.
+  - Result: the adjacent suite still fails `LSP Local Hover Surfaces Loop Jump Exit Causes` because `ExpressionAt` does not return the expected loop-jump `reachabilityFact`; the failure occurs before hover range construction and is not counted as GREEN for this sub-slice.
+- WSL gcc local semantic hover retry:
+  - Command: `wsl.exe -e sh -lc "ps -eo pid,comm,args | grep -E '(cmake|ninja|gcc|g\+\+|clang|ctest|zr_vm)' | grep -v grep | head -50"`
+  - Result: unrelated AOT/core gcc tasks were active in the shared WSL checkout, including `zr_vm_compiler_integration_test` and a manual `test_semir_type_conflict_deopt` gcc compile; no WSL GREEN is claimed for this local semantic hover sub-slice yet.
+- Windows MSVC metadata hover RED:
+  - Command: no-deps MSBuild for `build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj`, then `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`.
+  - Result: `LSP Semantic Query Unifies Import Target Navigation` failed after adding a BMP UTF-8 prefix and a UTF-16 hover range assertion; hover content still resolved `module <zr.system>` / `Source: native builtin`, but the metadata provider hover range remained byte-column based.
+- Windows MSVC metadata hover GREEN:
+  - Command: no-deps MSBuild for `build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj`, no-deps MSBuild for `build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj`, then `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`.
+  - Result: `LSP Semantic Query Unifies Import Target Navigation` passed with import target hover range `0:29-0:40`, and the full `lsp_interface` suite completed.
+- Windows MSVC metadata hover regression:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_expression_fact_hover_test.exe`
+  - Result: expression-hover 3 PASS.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: process exit code 0 and advanced editor feature tests completed with 0 failures.
+- WSL gcc metadata hover retry:
+  - Command: `wsl.exe -e sh -lc "cd /mnt/e/Git/zr_vm && cmake --build build-wsl-gcc --target zr_vm_language_server_lsp_interface_test -j2 && ./build-wsl-gcc/bin/zr_vm_language_server_lsp_interface_test"`
+  - Result: timed out after 180 seconds without completion; no WSL GREEN is claimed for this metadata hover sub-slice yet.
+- Windows MSVC virtual declaration RED:
+  - Command: no-deps MSBuild for `build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj`, then `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`.
+  - Result: `LSP Virtual Declaration Position Uses UTF-16 Columns` failed because a UTF-16 position after a virtual module-link name containing BMP UTF-8 text still resolved to that module-link declaration.
+- Windows MSVC virtual declaration GREEN:
+  - Command: no-deps MSBuild for `build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj`, no-deps MSBuild for `build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj`, then `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`.
+  - Result: `LSP Virtual Declaration Position Uses UTF-16 Columns` passed, and the full `lsp_interface` suite completed.
+- Windows MSVC virtual declaration regression:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_expression_fact_hover_test.exe`
+  - Result: expression-hover 3 PASS.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: process exit code 0 and advanced editor feature tests completed with 0 failures.
+- WSL gcc virtual declaration retry:
+  - Command: `wsl.exe -e sh -lc "ps -eo pid,comm,args | grep -E '(cmake|ninja|gcc|g\+\+|clang|ctest|zr_vm)' | grep -v grep | head -50"`
+  - Result: unrelated gcc/ninja tasks were active in the shared WSL checkout; no WSL GREEN is claimed for this virtual declaration sub-slice yet.
+- Windows MSVC stdio `positionEncoding` RED:
+  - Command: `C:/nvm4w/nodejs/node.exe tests/language_server/stdio_position_encoding_smoke.js build-msvc/bin/Debug/zr_vm_language_server_stdio.exe`
+  - Result: failed with `server must negotiate utf-8 positionEncoding, got undefined`, confirming initialize did not yet advertise or store the negotiated encoding.
+- Windows MSVC stdio `positionEncoding` GREEN:
+  - Command: `cmake --build build-msvc --config Debug --target zr_vm_language_server_stdio -- /m`
+  - Result: `zr_vm_language_server_stdio.exe` built after adding stdio position encoding conversion.
+  - Command: `C:/nvm4w/nodejs/node.exe tests/language_server/stdio_position_encoding_smoke.js build-msvc/bin/Debug/zr_vm_language_server_stdio.exe`
+  - Result: passed; initialize returned `positionEncoding: "utf-8"` and hover range returned UTF-8 byte columns.
+  - Command: `ctest --test-dir build-msvc -C Debug -R "language_server_stdio_position_encoding_smoke" --output-on-failure`
+  - Result: 1/1 passed after wiring the new smoke into the top-level CTest list.
+- Windows MSVC stdio `positionEncoding` regression:
+  - Command: `C:/nvm4w/nodejs/node.exe tests/language_server/stdio_minimal_open_smoke.js build-msvc/bin/Debug/zr_vm_language_server_stdio.exe`
+  - Result: passed.
+  - Command: `C:/nvm4w/nodejs/node.exe tests/language_server/stdio_smoke.js build-msvc/bin/Debug/zr_vm_language_server_stdio.exe`
+  - Result: passed after building `zr_vm_cli_executable` so the smoke fixture could regenerate binary metadata.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: process exit code 0 and `All LSP Interface Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: process exit code 0 and advanced editor feature tests completed with 0 failures.
+- Windows MSVC stdio adjacent-suite note:
+  - Command: `ctest --test-dir build-msvc -C Debug -R "language_server_stdio_(smoke|inline_value_semantic_smoke|position_encoding_smoke|type_hierarchy_smoke)" --output-on-failure`
+  - Result: `language_server_stdio_smoke`, `language_server_stdio_position_encoding_smoke`, and `language_server_stdio_type_hierarchy_smoke` passed; `language_server_stdio_inline_value_semantic_smoke` failed on the object-aggregate computed-key numeric facts assertion and is recorded as an adjacent inline-value residual, not as GREEN for the `positionEncoding` acceptance gate.
+- WSL gcc stdio `positionEncoding` retry:
+  - Command: `wsl.exe -e bash -lc 'cd /mnt/e/Git/zr_vm && cmake --build build-wsl-gcc --target zr_vm_language_server_stdio -j1 >/tmp/zr_stdio_position_encoding_wsl_build.log 2>&1 && node tests/language_server/stdio_position_encoding_smoke.js build-wsl-gcc/bin/zr_vm_language_server_stdio >/tmp/zr_stdio_position_encoding_wsl_test.log 2>&1; status=$?; tail -120 /tmp/zr_stdio_position_encoding_wsl_build.log; cat /tmp/zr_stdio_position_encoding_wsl_test.log 2>/dev/null; exit $status'`
+  - Result: timed out after 180 seconds without completing the focused stdio build; no WSL GREEN is claimed for this `positionEncoding` sub-slice yet.
+- Windows MSVC position fuzz RED:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_fuzz_test.exe`
+  - Result: failed 4 malformed/truncated UTF-8 newline-boundary assertions. The codec consumed the following newline as part of an invalid multi-byte sequence and returned positions such as `4:2:2` where `3:2:1` was expected.
+- Windows MSVC position fuzz GREEN:
+  - Command: `cmake --build build-msvc --config Debug --target zr_vm_language_server_lsp_position_fuzz_test zr_vm_language_server_lsp_position_mapping_test -- /m:2`
+  - Result: built `zr_vm_language_server_lsp_position_fuzz_test.exe` and rebuilt `zr_vm_language_server_lsp_position_mapping_test.exe` after the codec change.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_fuzz_test.exe`
+  - Result: passed malformed two-byte lead, truncated four-byte sequence, and deterministic valid UTF-8 roundtrip fuzz cases.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+- WSL gcc position fuzz retry:
+  - Command: `wsl.exe -e bash -lc "ps -eo pid,comm,args | grep -E '(cmake|ninja|ctest|gcc|g\+\+|clang|make|zr_vm)' | grep -v grep | head -50"`
+  - Result: shared WSL checkout still had active `cmake`/`gmake`/`gcc` work, including the earlier stdio build and unrelated AOT/core tasks; no WSL GREEN is claimed for this fuzz sub-slice yet.
+- Windows MSVC decorator navigation RED:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_decorator_utf16_ranges_test.exe`
+  - Result: failed class definition range with `first=1:15-1:29`, method definition range with `first=3:17-3:20`, and decorator hover with byte-column-derived range, confirming `lsp_decorator_navigation.c` still used no-content range conversion.
+- Windows MSVC decorator navigation GREEN:
+  - Command: `cmake --build build-msvc --target zr_vm_language_server_lsp_decorator_utf16_ranges_test --config Debug`
+  - Result: built `zr_vm_language_server_lsp_decorator_utf16_ranges_test.exe` after routing decorator definition/hover through `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_decorator_utf16_ranges_test.exe`
+  - Result: `PASS: Decorator navigation after UTF-8 prefix uses UTF-16 columns`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_fuzz_test.exe`
+  - Result: passed malformed/truncated UTF-8 and deterministic valid UTF-8 roundtrip cases.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`, including existing decorator definition and hover behavior.
+  - Command: `git diff --check -- tests/language_server/test_lsp_decorator_utf16_ranges.c zr_vm_language_server/src/zr_vm_language_server/lsp_decorator_navigation.c tests/CMakeLists.txt docs/plans/lsp/index.md docs/plans/lsp/03-lsp-robustness-and-position.md tests/acceptance/2026-06-20-lsp-position-stage0.md docs/cli-and-tooling/lsp-advanced-editor-features.md .codex/sessions/20260606-continue-semantic-debug-repl.md`
+  - Result: no whitespace errors; only LF/CRLF line-ending warnings.
+- WSL gcc decorator navigation retry:
+  - Command: `wsl.exe -e bash -lc "ps -eo pid,comm,args | grep -E '(cmake|ninja|ctest|gcc|g\+\+|clang|make|zr_vm)' | grep -v grep | head -50"`
+  - Result: shared WSL checkout still had active stdio/AOT/core `cmake`/`gmake`/`gcc` work; no WSL GREEN is claimed for this decorator sub-slice yet.
+- Windows MSVC CodeLens RED:
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_code_lens_utf16_ranges_test.exe`
+  - Result: failed with the reference-count lens range and `positionArgument` at `0:14` instead of UTF-16 `0:13`, confirming CodeLens still used no-content conversion for symbol ranges.
+- Windows MSVC CodeLens GREEN:
+  - Command: `cmake --build build-msvc --target zr_vm_language_server_lsp_code_lens_utf16_ranges_test --config Debug`
+  - Result: built `zr_vm_language_server_lsp_code_lens_utf16_ranges_test.exe` after changing CodeLens reference-count range construction.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_code_lens_utf16_ranges_test.exe`
+  - Result: `PASS: CodeLens reference count after UTF-8 prefix uses UTF-16 columns`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: advanced editor feature tests completed with 0 failures, including existing CodeLens test-command and reference-count behavior.
+- WSL gcc CodeLens retry:
+  - Command: `wsl.exe -e bash -lc "ps -eo pid,comm,args | grep -E '(cmake|ninja|ctest|gcc|g\+\+|clang|make|zr_vm)' | grep -v grep | head -50"`
+  - Result: shared WSL checkout still had active stdio/AOT/core `cmake`/`gmake`/`gcc` work; no WSL GREEN is claimed for this CodeLens sub-slice yet.
+- Windows MSVC super navigation normal build attempt:
+  - Command: `cmake --build build-msvc --target zr_vm_language_server_lsp_super_utf16_ranges_test --config Debug`
+  - Result: blocked before the focused test could run by an unrelated dirty core syntax error in `zr_vm_core/src/zr_vm_core/function.c`.
+- Windows MSVC super navigation RED:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_super_utf16_ranges_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_super_utf16_ranges_test.exe`
+  - Result: failed with base constructor range start `1:17` and super token byte-column output, confirming super navigation still used no-content conversion for locations/highlights.
+- Windows MSVC super navigation GREEN:
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; msbuild build-msvc\tests\zr_vm_language_server_lsp_super_utf16_ranges_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2`
+  - Result: rebuilt the language server library and focused super target after changing super navigation range construction.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_super_utf16_ranges_test.exe`
+  - Result: `PASS: Super constructor navigation after UTF-8 prefix uses UTF-16 columns`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`, including existing super constructor definition/references/highlights and non-code filtering behavior.
+- WSL gcc super navigation retry:
+  - Command: `wsl.exe -e bash -lc "ps -eo pid,comm,args | grep -E '(cmake|ninja|ctest|gcc|g\+\+|clang|make|zr_vm)' | grep -v grep | head -50"`
+  - Result: shared WSL checkout still had active stdio/AOT/core `cmake`/`gmake`/`gcc` work; no WSL GREEN is claimed for this super navigation sub-slice yet.
+- Windows MSVC token metadata normal build attempt:
+  - Command: `cmake --build build-msvc --target zr_vm_language_server_lsp_token_metadata_utf16_ranges_test --config Debug --parallel 2`
+  - Result: timed out after 124 seconds after generating the focused target project; the remaining token-metadata build processes from this attempt were stopped before continuing.
+- Windows MSVC token metadata RED:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_token_metadata_utf16_ranges_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_token_metadata_utf16_ranges_test.exe`
+  - Result: failed with meta-method hover range `1:17-1:29` instead of UTF-16 `1:16-1:28`, confirming token metadata still used no-content conversion for hover ranges.
+- Windows MSVC token metadata GREEN:
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; msbuild build-msvc\tests\zr_vm_language_server_lsp_token_metadata_utf16_ranges_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2`
+  - Result: rebuilt the language server library and focused token metadata target after changing meta-method hover range construction.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_token_metadata_utf16_ranges_test.exe`
+  - Result: `PASS: Meta-method hover after UTF-8 prefix uses UTF-16 columns`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`, including existing meta-method hover and non-code filtering behavior.
+- WSL gcc token metadata retry:
+  - Command: `wsl.exe -e bash -lc "ps -eo pid,comm,args | grep -E '(cmake|ninja|ctest|gcc|g\+\+|clang|make|zr_vm)' | grep -v grep | head -50"`
+  - Result: shared WSL checkout still had active stdio/AOT/core `cmake`/`gmake`/`gcc` work; no WSL GREEN is claimed for this token metadata sub-slice yet.
+- Windows MSVC project binary metadata RED:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_project_utf16_ranges_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_utf16_ranges_test.exe`
+  - Result: failed with `resolved=0 count=0` for UTF-16 position `0:16`, confirming binary metadata declaration lookup still used no-content conversion for hit testing.
+- Windows MSVC project binary metadata GREEN:
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; msbuild build-msvc\tests\zr_vm_language_server_lsp_project_utf16_ranges_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2`
+  - Result: rebuilt the language server library and focused project UTF-16 target after changing binary metadata declaration lookup input conversion.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_utf16_ranges_test.exe`
+  - Result: `PASS: Project UTF-16 binary metadata declaration uses UTF-16 columns` and all project UTF-16 range tests completed.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`.
+- WSL gcc project binary metadata retry:
+  - Command: `wsl.exe -e bash -lc "cd /mnt/e/Git/zr_vm && cmake --build .codex/build-lsp-position-wsl-gcc --target zr_vm_language_server_lsp_project_utf16_ranges_test -j 2 && ./.codex/build-lsp-position-wsl-gcc/bin/zr_vm_language_server_lsp_project_utf16_ranges_test"`
+  - Result: timed out after 240 seconds before producing a WSL GREEN result.
+  - Command: `wsl.exe -e bash -lc "ps -eo pid,ppid,comm,args | grep -E '(cmake|ninja|ctest|gcc|g\+\+|clang|make|zr_vm_language_server_lsp_project_utf16_ranges_test)' | grep -v grep | head -80"`
+  - Result: shared WSL checkout still had an active `build/codex-wsl-gcc-debug` core/parser gcc/ninja build; no WSL GREEN is claimed for this project binary metadata sub-slice yet.
+- Windows MSVC import-chain static append state RED:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - Result: failed with `Unexpected source contract text: g_semanticImportChainAppend`, confirming import-chain append location conversion still depended on file-static opened-document state.
+- Windows MSVC import-chain static append state GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - Result: `PASS: Import-chain location conversion avoids static append state` and `PASSED: LSP source contract tests`.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj /p:Configuration=Debug /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`, including structured module-link chain definition/references/highlights coverage.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+- Windows MSVC semantic query shared-helper RED:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - Result: failed with missing `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument` and unexpected `semantic_query_lsp_range_from_file_range`, `semantic_query_get_document_content`, and `ZrLanguageServer_LspRange_FromFileRangeWithContent`, confirming semantic query still maintained its own conversion branch.
+- Windows MSVC semantic query shared-helper GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - Result: `PASS: Semantic query location conversion uses shared document helper` and `PASSED: LSP source contract tests`.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj /p:Configuration=Debug /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`, including local symbol, semantic query, import target, import-chain, external metadata, hover, references, and document highlight coverage.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - WSL note: process scan still showed unrelated AOT/core/parser gcc/ninja work in the shared WSL checkout, so no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC interface shared-helper RED:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - Result: failed with missing `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument` and unexpected `lsp_range_from_file_range_for_document` / `ZrLanguageServer_LspRange_FromFileRangeWithContent`, confirming `lsp_interface.c` still maintained a duplicate conversion branch.
+- Windows MSVC interface shared-helper GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - Result: `PASS: LSP interface range conversion uses shared document helper` and `PASSED: LSP source contract tests`.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj /p:Configuration=Debug /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+- Windows MSVC import-chain shared-helper RED:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - Result: failed with missing `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument` and unexpected direct `ZrLanguageServer_LspRange_FromFileRangeWithContent` / `ZrLanguageServer_LspRange_FromFileRange(range)` calls, confirming import-chain append location still owned its conversion branch.
+- Windows MSVC import-chain shared-helper GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - Result: source-contract passed all three contracts.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj /p:Configuration=Debug /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`, including structured import-chain definition/references/highlights coverage.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+- Windows MSVC inlay shared-helper RED:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - Result: failed with missing `ZrLanguageServer_Lsp_PositionFromFilePositionForDocument` and unexpected `lsp_inlay_position_from_file_position` / `ZrLanguageServer_LspPosition_FromFilePositionWithContent`, confirming inlay hints still owned their position conversion branch.
+- Windows MSVC inlay shared-helper GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - Result: source-contract passed all four contracts.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj /p:Configuration=Debug /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`, including inlay hint behavior coverage.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+- Windows MSVC file-version content snapshot RED:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_incremental_parser_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2`
+  - Result: failed with undeclared `SZrFileVersionContentSnapshot` / `ZrLanguageServer_FileVersionContentSnapshot_Acquire` / `ZrLanguageServer_FileVersionContentSnapshot_Free`, confirming the new snapshot API did not exist yet.
+- Windows MSVC file-version content snapshot GREEN:
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2`
+  - Result: rebuilt `zr_vm_language_server.dll`; warnings were existing parser warnings and there were 0 errors.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_incremental_parser_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_incremental_parser_test.exe`
+  - Result: `Pass - File Version Content Snapshot Survives Update` and `All Incremental Parser Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - Result: all five source contracts passed.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `.\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`.
+  - Command: `git diff --check -- <touched LSP snapshot files>`
+  - Result: only LF/CRLF conversion warnings; no whitespace errors.
+- Windows MSVC interface direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: identifier contracts first failed because `lsp_position_is_identifier_char` and `lsp_try_get_identifier_range_at_position` lacked `SZrFileVersionContentSnapshot` acquire calls; after implementation, the contract was corrected to inspect function definitions instead of prototypes.
+  - RED result: completion contract failed because `ZrLanguageServer_Lsp_GetCompletion` lacked snapshot acquire and still contained `fileVersion->content`.
+  - RED result: hover contract failed because `ZrLanguageServer_Lsp_GetHover` lacked snapshot acquire and still contained `fileVersion->content`.
+  - GREEN result: source-contract passed 8 contracts.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2`
+  - Result: rebuilt with 0 warnings and 0 errors.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_position_mapping_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_incremental_parser_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_incremental_parser_test.exe`
+  - Result: completed including `File Version Content Snapshot Survives Update`.
+  - Command: `git diff --check -- <touched interface direct-content snapshot files>`
+  - Result: only LF/CRLF conversion warnings; no whitespace errors.
+- Windows MSVC cross-module direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: import-chain contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - RED result: token metadata contract failed with missing snapshot acquire and unexpected `fileVersion->content` in `ZrLanguageServer_Lsp_TryGetMetaMethodHover`.
+  - RED result: semanticTokens contract failed with missing snapshot acquire and unexpected `fileVersion->content` in `ZrLanguageServer_Lsp_GetSemanticTokens`.
+  - GREEN result: source-contract passed 10 contracts.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2`
+  - Result: rebuilt with 0 errors; current dirty tree dependency modules still emitted existing warnings on one run, while the final focused rebuild for the touched LSP objects reported 0 warnings / 0 errors.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_position_mapping_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - Result: 22 PASS and `All LSP Position Mapping Tests Completed`.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_token_metadata_utf16_ranges_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_token_metadata_utf16_ranges_test.exe`
+  - Result: meta-method hover UTF-16 range test passed.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`.
+  - WSL note: process scan showed unrelated gcc/ninja/cmake work still active in the shared checkout, and the LSP WSL build directory did not contain a source-contract binary, so no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC editor/navigation direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: folding ranges contract failed because `ZrLanguageServer_Lsp_GetFoldingRanges` lacked snapshot acquire and still contained `fileVersion->content`.
+  - RED result: document links contract failed because `ZrLanguageServer_Lsp_GetDocumentLinks` lacked snapshot acquire and still contained `fileVersion->content` for opened-document scans.
+  - RED result: signature help contract failed because `ZrLanguageServer_Lsp_GetSignatureHelp` lacked snapshot acquire and still contained `fileVersion->content` in the code-span guard.
+  - RED result: code-action imports contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - RED result: super navigation contract failed with missing snapshot acquire and unexpected `fileVersion->content`.
+  - GREEN result: source-contract passed 15 contracts.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2`
+  - Result: rebuilt with 0 errors; one run triggered dependency regeneration in the dirty tree and emitted existing dependency warnings outside the touched LSP files.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_advanced_editor_features_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: advanced-editor completed with 0 failures.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_super_utf16_ranges_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_super_utf16_ranges_test.exe`
+  - Result: super UTF-16 range focused test passed.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - Result: `All LSP Interface Tests Completed`.
+  - WSL note: process scan still showed unrelated gcc/ninja/cmake work active in the shared checkout, so no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC code actions direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: code actions contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` inside `ZrLanguageServer_Lsp_GetCodeActions` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2`
+  - Result: rebuilt with 0 errors; the run still emitted unrelated existing core warnings outside the touched LSP files.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - GREEN result: source-contract passed 16 contracts, including `PASS: Code actions use content snapshot`.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_advanced_editor_features_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: advanced-editor completed with 0 failures.
+  - WSL note: process scan still showed a stuck shared-checkout CMake process, and a focused WSL binary lookup timed out; no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC hierarchy direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: hierarchy contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2`
+  - Result: rebuilt with 0 warnings and 0 errors for this focused run.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - GREEN result: source-contract passed 17 contracts, including `PASS: Hierarchy uses content snapshot`.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_advanced_editor_features_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - Result: advanced-editor completed with 0 failures, including existing call hierarchy and type hierarchy coverage.
+  - WSL note: process scan still showed a stuck shared-checkout CMake process, and a focused WSL binary lookup timed out; no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC stdio document color direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: stdio document color contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2`
+  - Result: rebuilt with 0 warnings and 0 errors.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - GREEN result: source-contract passed 18 contracts, including `PASS: stdio document color uses content snapshot`.
+  - Command: `node tests\language_server\stdio_smoke.js .\build-msvc\bin\Debug\zr_vm_language_server_stdio.exe`
+  - Result: stdio smoke passed, including existing `textDocument/documentColor` and `textDocument/colorPresentation` coverage.
+  - WSL note: process scan still showed a stuck shared-checkout CMake process; no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC stdio completion direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: stdio completion contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2`
+  - Result: rebuilt with 0 warnings and 0 errors.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - GREEN result: source-contract passed 19 contracts, including `PASS: stdio completion uses content snapshot`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_stdio.vcxproj /p:Configuration=Debug /m:2; node tests\language_server\stdio_smoke.js .\build-msvc\bin\Debug\zr_vm_language_server_stdio.exe`
+  - Result: stdio executable rebuilt with 0 warnings and 0 errors; stdio smoke passed, including existing `textDocument/completion` and `completionItem/resolve` coverage.
+  - WSL note: process scan still showed unrelated shared-checkout `cmake`/`ninja`/`gcc` build processes; no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC stdio moniker direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: stdio moniker contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2`
+  - Result: rebuilt with 0 errors; the run triggered existing core dependency rebuild warnings outside touched LSP/stdio files.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - GREEN result: source-contract passed 20 contracts, including `PASS: stdio moniker uses content snapshot`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_stdio.vcxproj /p:Configuration=Debug /m:2; node tests\language_server\stdio_smoke.js .\build-msvc\bin\Debug\zr_vm_language_server_stdio.exe`
+  - Result: stdio executable rebuilt with 0 warnings and 0 errors; stdio smoke passed, including existing `textDocument/moniker` coverage.
+  - WSL note: process scan still showed unrelated shared-checkout `cmake`/`ninja`/`gcc` build processes; no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC stdio inline completion direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: stdio inline completion contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2`
+  - Result: rebuilt with 0 warnings and 0 errors.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - GREEN result: source-contract passed 21 contracts, including `PASS: stdio inline completion uses content snapshot`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_stdio.vcxproj /p:Configuration=Debug /m:2; node tests\language_server\stdio_smoke.js .\build-msvc\bin\Debug\zr_vm_language_server_stdio.exe`
+  - Result: stdio executable rebuilt with 0 warnings and 0 errors; stdio smoke passed, including existing `textDocument/inlineCompletion` coverage.
+  - WSL note: process scan still showed unrelated shared-checkout `cmake`/`ninja`/`gcc` build processes; no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC stdio linked editing direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: stdio linked editing contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2; msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe; msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_stdio.vcxproj /p:Configuration=Debug /m:2; node tests\language_server\stdio_smoke.js .\build-msvc\bin\Debug\zr_vm_language_server_stdio.exe`
+  - GREEN result: source-contract passed 22 contracts, including `PASS: stdio linked editing uses content snapshot`; stdio executable rebuilt with 0 warnings and 0 errors; stdio smoke passed, including existing `textDocument/linkedEditingRange` coverage.
+  - Note: the shared build path triggered existing core dependency warnings outside touched LSP/stdio files; no new LSP/stdio warning was emitted by the final stdio build.
+  - WSL note: process scan still showed unrelated shared-checkout `cmake`/`ninja`/`gcc` build processes; no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC stdio diagnostics direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: stdio diagnostics contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2; msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe; msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_stdio.vcxproj /p:Configuration=Debug /m:2; node tests\language_server\stdio_smoke.js .\build-msvc\bin\Debug\zr_vm_language_server_stdio.exe`
+  - GREEN result: source-contract passed 23 contracts, including `PASS: stdio diagnostics uses content snapshot`; stdio executable rebuilt with 0 warnings and 0 errors; stdio smoke passed, including existing diagnostic publish/pull/workspace coverage.
+  - WSL note: process scan still showed unrelated shared-checkout `cmake`/`ninja`/`gcc`/`cc` build processes; no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC stdio documents direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: stdio documents contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2; msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe; msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_stdio.vcxproj /p:Configuration=Debug /m:2; node tests\language_server\stdio_smoke.js .\build-msvc\bin\Debug\zr_vm_language_server_stdio.exe`
+  - GREEN result: source-contract passed 24 contracts, including `PASS: stdio documents uses content snapshot`; stdio executable rebuilt with 0 warnings and 0 errors; stdio smoke passed, including existing `textDocument/didChange` coverage.
+  - WSL note: process scan still showed unrelated shared-checkout `cmake`/`ninja`/`gcc`/`cc` build processes; no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC stdio inline value direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: stdio inline value contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2; msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe; msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_stdio.vcxproj /p:Configuration=Debug /m:2; node tests\language_server\stdio_smoke.js .\build-msvc\bin\Debug\zr_vm_language_server_stdio.exe`
+  - GREEN result: source-contract passed 25 contracts, including `PASS: stdio inline value uses content snapshot`; final stdio executable rebuilt with 0 warnings and 0 errors; stdio smoke passed, including existing `textDocument/inlineValue` coverage.
+  - Note: the shared build chain exited 0 but emitted existing core dependency warnings outside touched LSP/stdio files.
+  - WSL note: process scan still showed unrelated shared-checkout `cmake`/`ninja`/`gcc`/`cc` build processes; no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC stdio position encoding direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: stdio position encoding contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe; msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_stdio.vcxproj /p:Configuration=Debug /m:2; node tests\language_server\stdio_position_encoding_smoke.js .\build-msvc\bin\Debug\zr_vm_language_server_stdio.exe; node tests\language_server\stdio_smoke.js .\build-msvc\bin\Debug\zr_vm_language_server_stdio.exe`
+  - GREEN result: source-contract passed 26 contracts, including `PASS: stdio position encoding uses content snapshot`; stdio executable rebuilt with 0 warnings and 0 errors; `stdio_position_encoding_smoke.js` and stdio smoke passed.
+  - WSL note: process scan still showed unrelated shared-checkout `cmake`/`ninja`/`gcc`/`cc` build processes; no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC editor features direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: editor features contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2; msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - GREEN result: source-contract passed 27 contracts, including `PASS: Editor features use content snapshot`; language-server shared rebuilt with 0 warnings and 0 errors.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_advanced_editor_features_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; msbuild build-msvc\tests\zr_vm_language_server_lsp_code_lens_utf16_ranges_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_code_lens_utf16_ranges_test.exe`
+  - GREEN result: advanced-editor completed with 0 failures; CodeLens UTF-16 range test passed.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_stdio.vcxproj /p:Configuration=Debug /m:2; node tests\language_server\stdio_smoke.js .\build-msvc\bin\Debug\zr_vm_language_server_stdio.exe`
+  - GREEN result: stdio executable rebuilt with 0 warnings and 0 errors; stdio smoke passed.
+  - WSL note: process scan still showed unrelated shared-checkout clang/debug build processes; no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC project navigation direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: project navigation contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2; msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - GREEN result: source-contract passed 28 contracts, including `PASS: Project navigation uses content snapshot`; language-server shared rebuilt with exit 0 and 0 errors. The run still emitted existing dependency warnings outside the touched LSP file.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_project_utf16_ranges_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_utf16_ranges_test.exe`
+  - GREEN result: project UTF-16 range tests passed, including module entry and binary metadata declaration coverage.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_project_features_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_features_test.exe; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_features_test.exe 2>&1 | Select-String -Pattern '^(Pass|Fail) -|All .*Completed|PASSED|FAILED:|^==========|^Unit Test'`
+  - Result: process exit code was 0, but the filtered output still contained the previously recorded soft failures `LSP Native Imports And Ownership Display` / `Hover should preserve ownership qualifiers in type display`, and `LSP Descriptor Plugin Type Member Navigation` / `Receiver completion on a descriptor-plugin native type should surface field and method members`; this suite is not counted as GREEN for this sub-slice.
+  - WSL note: process scan still showed unrelated shared-checkout clang/debug build processes; no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC project refresh direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: project refresh contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2; msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - GREEN result: source-contract passed 29 contracts, including `PASS: Project refresh uses content snapshot`; language-server shared rebuilt with 0 warnings and 0 errors.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_project_utf16_ranges_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_utf16_ranges_test.exe`
+  - GREEN result: project UTF-16 range tests passed, including module entry and binary metadata declaration coverage.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_project_features_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_features_test.exe; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_features_test.exe 2>&1 | Select-String -Pattern '^Fail -|All Project Feature Tests Completed|^Pass -'`
+  - Result: process exit code was 0, but the filtered output still contained the previously recorded soft failures `LSP Native Imports And Ownership Display` and `LSP Descriptor Plugin Type Member Navigation`; this suite is not counted as GREEN for this sub-slice.
+  - WSL note: no WSL verification was completed for this sub-slice, so no WSL GREEN is claimed.
+- Windows MSVC metadata provider direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: metadata provider contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /m:2; msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - GREEN result: source-contract passed 30 contracts, including `PASS: Metadata provider uses content snapshot`; language-server shared rebuilt with 0 warnings and 0 errors.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - GREEN result: full `lsp_interface` suite completed.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_project_features_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_features_test.exe; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_features_test.exe 2>&1 | Select-String -Pattern '^Fail -|All Project Feature Tests Completed|^Pass -'`
+  - Result: process exit code was 0, but the filtered output still contained the previously recorded soft failures `LSP Native Imports And Ownership Display` and `LSP Descriptor Plugin Type Member Navigation`; this suite is not counted as GREEN for this sub-slice.
+  - WSL note: no WSL verification was completed for this sub-slice, so no WSL GREEN is claimed.
+- Windows MSVC semantic query direct content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: semantic query contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - GREEN result: source-contract passed 31 contracts, including `PASS: Semantic query uses content snapshot`; no-deps language-server shared rebuilt with 0 warnings and 0 errors. A prior full dependency build hit `LNK1168` on `zr_vm_core.dll` because another process held the DLL; the no-deps touched-target rebuild is the accepted build evidence for this slice.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - GREEN result: full `lsp_interface` suite completed.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_advanced_editor_features_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_advanced_editor_features_test.exe`
+  - GREEN result: advanced-editor completed with 0 failures.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_project_utf16_ranges_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_utf16_ranges_test.exe`
+  - GREEN result: project UTF-16 range tests passed.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_project_features_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_features_test.exe; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_features_test.exe 2>&1 | Select-String -Pattern '^(Pass|Fail|PASSED|FAILED|All|Unit Test|Testing)|LSP Native Imports And Ownership Display|LSP Descriptor Plugin Type Member Navigation'`
+  - Result: process exit code was 0, but the filtered output still contained the previously recorded soft failures `LSP Native Imports And Ownership Display` and `LSP Descriptor Plugin Type Member Navigation`; this suite is not counted as GREEN for this sub-slice.
+  - WSL note: no WSL verification was completed for this sub-slice, so no WSL GREEN is claimed.
+- Windows MSVC incremental parser Parse content snapshot RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: Parse contract failed with missing `ZrLanguageServer_FileVersionContentSnapshot_Acquire` and unexpected `fileVersion->content` / `fileVersion->contentLength` in `ZrLanguageServer_IncrementalParser_Parse`.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - GREEN result: source-contract passed 32 contracts, including `PASS: Incremental parser parse uses content snapshot`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; msbuild build-msvc\tests\zr_vm_language_server_incremental_parser_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_incremental_parser_test.exe`
+  - GREEN result: no-deps language-server shared rebuilt with 0 warnings and 0 errors; incremental parser suite completed.
+  - WSL note: process scan still showed unrelated shared-checkout build work, so no WSL GREEN is claimed for this sub-slice.
+- Windows MSVC legacy fallback / no-content API removal RED/GREEN:
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - RED result: new contracts failed because shared helpers still returned legacy `FromFileRange` / `FromFilePosition`, document file-position fallback still returned legacy `ToFilePosition`, and old no-content API declarations/definitions still existed.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_source_contracts_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_source_contracts_test.exe`
+  - GREEN result: source-contract passed 35 contracts, including `PASS: LSP shared document helpers avoid legacy fallbacks`, `PASS: LSP document file position avoids legacy fallback`, and `PASS: LSP no-content position/range APIs are removed`.
+  - Command: `msbuild build-msvc\zr_vm_language_server\zr_vm_language_server_shared.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2`
+  - GREEN result: language-server shared rebuilt with 0 warnings and 0 errors.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_position_mapping_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_position_mapping_test.exe`
+  - GREEN result: position mapping completed with 22 PASS.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_interface_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_interface_test.exe`
+  - GREEN result: full `lsp_interface` suite completed.
+  - Command: `msbuild build-msvc\tests\zr_vm_language_server_lsp_project_utf16_ranges_test.vcxproj /p:Configuration=Debug /p:BuildProjectReferences=false /m:2; .\build-msvc\bin\Debug\zr_vm_language_server_lsp_project_utf16_ranges_test.exe`
+  - GREEN result: project UTF-16 range tests passed.
+  - WSL note: no WSL verification was completed for this sub-slice, so no WSL GREEN is claimed.
+- LSP live content residual audit:
+  - Command: `Select-String -Path 'zr_vm_language_server/src/**/*.c','zr_vm_language_server/include/**/*.h','zr_vm_language_server/stdio/*.c' -Pattern 'fileVersion->content|fileVersion->contentLength|->contentLength|->content'`
+  - Result: direct `fileVersion->content` / `fileVersion->contentLength` residuals are limited to `incremental_parser.c` content create/update/free and snapshot-copy ownership boundaries; unrelated `hover->contents` / local data `content` fields are not live file-version content reads.
+  - Command: `Select-String -Path 'zr_vm_language_server/**/*.c','zr_vm_language_server/**/*.h' -Pattern 'ZrLanguageServer_LspRange_FromFileRange\(|ZrLanguageServer_LspRange_ToFileRange\(|ZrLanguageServer_LspPosition_FromFilePosition\(|ZrLanguageServer_LspPosition_ToFilePosition\('`
+  - Result: no production declarations or call sites remain; only source-contract negative assertion strings reference the old names.
+  - WSL note: process scan still showed unrelated shared-checkout `cmake`/`ninja`/`find` tasks, so no WSL GREEN is claimed for this audit.
+
+## Results
+- `ZrLanguageServer_LspPositionCodec_ByteOffsetToFilePosition` now returns parser-style byte columns from the final clamped offset.
+- `ZrLanguageServer_LspPosition_ToFilePositionWithContent` computes offset first, then derives normalized file line/byte-column from content.
+- `ZrLanguageServer_LspRange_ToFileRangeWithContent` now routes both endpoints through the content-aware position helper so start/end line, column, and offset stay consistent.
+- Negative no-content line/character conversion now clamps to 1-based file line/column.
+- `lsp_semantic_query.c` definition/references locations now use content-aware `FileRange -> LspRange` when the target URI is open in the LSP context, so parser byte columns after UTF-8 prefixes are converted back to UTF-16 client columns.
+- Local symbol references and external type-member reference collection now pass the LSP context into shared location construction; unopened targets retain the old no-content fallback.
+- Hover and documentHighlight output now use content-aware `FileRange -> LspRange` when the target URI is open in the LSP context.
+- Public `ZrLanguageServer_Lsp_GetHover` fallback construction now uses the same content-aware conversion for opened documents.
+- Existing LSP location-to-documentHighlight conversion now preserves the already-converted LSP range directly, avoiding a lossy no-content `LspRange -> FileRange -> LspRange` roundtrip.
+- `ZrLanguageServer_Lsp_PrepareRename` now uses content-aware range conversion for identifier-range, local-symbol, and member fallback outputs on opened documents.
+- `ZrLanguageServer_Lsp_AppendDiagnosticForDocument` now uses content-aware range conversion for main diagnostic ranges and relatedInformation ranges on opened documents, while the older no-content append helper remains as a compatibility fallback.
+- `ZrLanguageServer_Lsp_GetDiagnostics` now routes parser, fallback hint, semantic, and import diagnostics through the document-aware diagnostic append helper.
+- `ZrLanguageServer_Lsp_CreateSymbolInformationForDocument` now uses content-aware range conversion for document symbol and open-document workspace symbol ranges, while the older no-content symbol helper remains as a compatibility fallback.
+- `ZrLanguageServer_Lsp_Rename` now receives UTF-16-correct location ranges because local symbol declaration append and rename location normalization both use content-aware `FileRange -> LspRange` on opened documents.
+- The stdio rename workspace edit path consumes the corrected C-layer location ranges when serializing text edits.
+- `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument` now centralizes document-aware `FileRange -> LspRange` conversion for shared interface/project helpers, using `range.source` when available and falling back to the current request URI.
+- `lsp_project_imports.c` now passes LSP context/request URI through imported member/module, import binding, and import target location collection so project import references use UTF-16 LSP ranges when source documents are open.
+- `lsp_project_navigation.c` now passes context through project location/reference/highlight construction, including symbol tracker references, imported member/module/binding/target references, native/project import references, external metadata declaration locations, and project document highlights.
+- `tests/language_server/test_lsp_project_utf16_ranges.c` locks the project import/navigation behavior with a cross-file `%import("greet")` fixture that has a BMP UTF-8 prefix on both import and usage lines.
+- `lsp_semantic_tokens.c` now passes the LSP context/current URI into analyzer symbol token construction and converts symbol `selectionRange` through `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument`.
+- `tests/language_server/test_lsp_position_mapping.c` now includes semanticTokens coverage for analyzer-backed symbol tokens after a BMP UTF-8 prefix.
+- `lsp_semantic_tokens.c` now converts raw scanner token byte spans through `ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position` before appending `%import`/`using` keyword, decorator, meta-method, import alias, imported member, and import-chain tokens.
+- `tests/language_server/test_lsp_position_mapping.c` now includes semanticTokens coverage for raw text-scan tokens after a BMP UTF-8 prefix.
+- `lsp_inlay_hints.c` now converts inlay hint file positions through opened document content before appending variable, field, function, and method type hints.
+- `tests/language_server/test_lsp_position_mapping.c` now includes inlay hint position coverage after a BMP UTF-8 prefix.
+- `lsp_semantic_import_chain.c` now converts appended secondary member locations through opened document content instead of doing a local byte-count offset-to-range pass before no-content conversion.
+- `tests/language_server/test_lsp_interface.c` now includes UTF-16 coverage for structured module-link chain references and highlights after BMP UTF-8 prefixes.
+- `ZrLanguageServer_LspLocalSemanticQuery_BuildHoverForDocument` now lets public `textDocument/hover` local semantic fact fallback convert expression/numeric/logical/reachability/reference/ownership fact ranges through opened document content.
+- `ZrLanguageServer_LspLocalSemanticQuery_BuildHover` remains as the no-content compatibility entry point for existing direct tests and unopened-document callers.
+- `tests/language_server/test_lsp_expression_fact_hover.c` now includes UTF-16 coverage for public expression fact hover ranges after a BMP UTF-8 prefix.
+- `lsp_metadata_provider.c` now builds imported module/member hover ranges through the provider's LSP context and `range.source`, using `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument` when the source document is open.
+- `tests/language_server/test_lsp_interface.c` now includes UTF-16 coverage for imported module metadata hover ranges after a BMP UTF-8 prefix.
+- `ZrLanguageServer_LspVirtualDocuments_FindDeclarationAtPosition` now converts `zr-decompiled:` virtual document positions through rendered declaration text before comparing against virtual record ranges.
+- `tests/language_server/test_lsp_interface.c` now includes UTF-16 coverage for virtual declaration lookup boundaries with a BMP UTF-8 module-link name.
+- `zr_vm_language_server/stdio/stdio_position_encoding.c` now stores stdio `positionEncoding`, negotiates `utf-8` when the client advertises it, converts incoming request position/range values to the internal UTF-16 C API model, and rewrites response/diagnostic JSON ranges and positions back to the negotiated client encoding.
+- `tests/language_server/stdio_position_encoding_smoke.js` now locks the stdio protocol boundary with a UTF-8 client and a BMP UTF-8 prefix.
+- `lsp_position_codec.c` now validates UTF-8 continuation bytes before consuming multi-byte codepoints; malformed lead bytes degrade to a single byte so newline and ASCII boundaries remain visible to position conversion.
+- `tests/language_server/test_lsp_position_fuzz.c` now locks malformed/truncated UTF-8 newline robustness plus fixed-seed valid UTF-8 roundtrip coverage without further expanding the already large position-mapping suite.
+- `lsp_decorator_navigation.c` now passes context/request URI into decorator definition and hover range construction, routing both through `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument` for opened documents instead of the no-content `ZrLanguageServer_LspRange_FromFileRange` compatibility helper.
+- `tests/language_server/test_lsp_decorator_utf16_ranges.c` locks decorator definition and hover ranges after BMP UTF-8 prefixes, and the target is included in the `language_server` aggregate suite.
+- `lsp_editor_features.c` now builds reference-count CodeLens ranges through `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument` and reuses the resulting UTF-16 range start as the `showReferences` position argument and internal references query position.
+- `tests/language_server/test_lsp_code_lens_utf16_ranges.c` locks CodeLens reference-count range and position output after BMP UTF-8 prefixes, and the target is included in the `language_server` aggregate suite.
+- `lsp_super_navigation.c` now builds super constructor definition/reference/highlight locations through `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument` instead of direct no-content conversion.
+- `tests/language_server/test_lsp_super_utf16_ranges.c` locks super constructor navigation range output after BMP UTF-8 prefixes, and the target is included in the `language_server` aggregate suite.
+- `lsp_token_metadata.c` now builds meta-method hover ranges through `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument` instead of direct no-content conversion.
+- `tests/language_server/test_lsp_token_metadata_utf16_ranges.c` locks `@constructor` hover range output after a BMP UTF-8 prefix, and the target is included in the `language_server` aggregate suite.
+- `lsp_project_navigation.c` now uses `ZrLanguageServer_Lsp_GetDocumentFilePosition` for binary metadata export declaration lookup hit testing, preserving the no-content fallback only when the LSP context or opened document content is unavailable.
+- `tests/language_server/test_lsp_project_utf16_ranges.c` now also locks `.zro` binary metadata declaration hit input after BMP UTF-8 prefixes by asserting semantic query resolves `binarySeed` at UTF-16 column `0:16`.
+- `lsp_semantic_import_chain.c` no longer uses `g_semanticImportChainAppend*` file-static state while appending secondary member locations; `semantic_import_chain_append_location` now uses `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument` so opened-document conversion and no-content fallback are centralized in the shared helper.
+- `tests/language_server/test_lsp_source_contracts.c` locks this import-chain source contract and is included in the language-server aggregate target list.
+- `lsp_semantic_query.c` no longer owns a local content lookup / no-content fallback range helper for semantic query locations, highlights, and hovers; those paths now call `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument`.
+- `tests/language_server/test_lsp_source_contracts.c` also locks this semantic query shared-helper contract.
+- `lsp_interface.c` no longer owns a private document range conversion helper for hover fallback, rename location normalization, local-symbol rename append, and prepareRename; those paths now call `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument`.
+- `tests/language_server/test_lsp_source_contracts.c` also locks this interface shared-helper contract.
+- `lsp_inlay_hints.c` no longer owns a private document position conversion helper for variable, field, function, and method inlay hint positions; those paths now call `ZrLanguageServer_Lsp_PositionFromFilePositionForDocument`.
+- `tests/language_server/test_lsp_source_contracts.c` also locks this inlay shared-helper contract.
+- `lsp_project_navigation.c` no longer directly calls `ZrLanguageServer_LspPosition_ToFilePosition`; binary metadata export declaration lookup now routes LSP position input through `ZrLanguageServer_Lsp_GetDocumentFilePosition`, keeping no-content fallback centralized in the interface helper.
+- `tests/language_server/test_lsp_source_contracts.c` also locks this project navigation position-helper contract.
+- `lsp_interface.c` no longer directly calls `ZrLanguageServer_LspRange_FromFileRange`; virtual module-link definitions and project/native module summary entry ranges now route through `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument`, keeping default/no-content behavior centralized in the shared helper.
+- `tests/language_server/test_lsp_source_contracts.c` also locks this interface direct-range contract.
+- `incremental_parser.h` now defines `SZrFileVersionContentSnapshot`, and `incremental_parser.c` implements acquire/free for an owned copy of `content` plus captured `uri`, `version`, `contentLength`, and `usesFallbackAst`.
+- `tests/language_server/test_incremental_parser.c` now verifies a snapshot survives a later `UpdateFile` content replacement.
+- `ZrLanguageServer_Lsp_RangeFromFileRangeForDocument`, `ZrLanguageServer_Lsp_PositionFromFilePositionForDocument`, and `ZrLanguageServer_Lsp_GetDocumentFilePosition` now acquire a file-version content snapshot before performing content-aware conversion and free it before returning.
+- `lsp_interface.c` identifier scanning, completion code-span filtering, and hover symbol documentation/comment extraction now acquire an owned file-version content snapshot before reading document bytes; `fileVersion->content` no longer appears in `lsp_interface.c`.
+- `tests/language_server/test_lsp_source_contracts.c` now locks those three non-conversion content-read paths.
+- `lsp_semantic_import_chain.c` analyzer refresh now uses an owned content snapshot when refreshing an already opened document and keeps disk-read fallback only for unopened file-backed URIs.
+- `lsp_token_metadata.c` meta-method hover now uses an owned content snapshot for token lookup, code-span filtering, descriptor lookup, and hover range construction.
+- `lsp_semantic_tokens.c` source scanning now uses an owned content snapshot before emitting analyzer-backed and raw-scanner semantic tokens.
+- `tests/language_server/test_lsp_source_contracts.c` now locks these cross-module direct content-read paths, bringing the source-contract suite to 10 contracts.
+- `lsp_folding_ranges.c` now acquires an owned snapshot before scanning line runs, marker folding ranges, and structural folding ranges.
+- `lsp_document_links.c` now acquires an owned snapshot for opened-document `.zrp`, virtual module, and `%import` link scans while preserving the disk-read fallback for unopened file-backed URIs.
+- `lsp_signature_help.c` now acquires an owned snapshot for the cursor code-span guard before AST call-context matching.
+- `lsp_code_action_imports.c` now acquires owned snapshots for import organize and unused-import cleanup edits; the import-block helper now consumes explicit content bytes instead of `SZrFileVersion`.
+- `lsp_super_navigation.c` now acquires owned snapshots before resolving super constructor targets, references, and highlights.
+- `tests/language_server/test_lsp_source_contracts.c` now locks these editor/navigation direct content-read paths, bringing the source-contract suite to 15 contracts.
+- `lsp_code_actions.c` now acquires an owned snapshot in `ZrLanguageServer_Lsp_GetCodeActions` before running missing import and missing semicolon quickfix helpers.
+- Missing import alias scans, missing import insertion offset discovery, and missing semicolon code-span/raw edit checks now consume explicit snapshot content bytes instead of `SZrFileVersion`.
+- `lsp_hierarchy.c` now acquires owned snapshots before call hierarchy incoming/outgoing scans and type hierarchy direct super/subtype scans.
+- Hierarchy helper functions now consume explicit snapshot content bytes instead of `SZrFileVersion`, covering symbol start/end offsets, type header scans, and direct subtype/supertype inheritance matching.
+- `stdio_document_color.c` now acquires owned snapshots before `textDocument/documentColor` scanning and `textDocument/colorPresentation` selected-range validation.
+- `stdio_completion.c` now acquires owned snapshots before computing completion prefix ranges for `textDocument/completion` and `completionItem/resolve`.
+- `stdio_moniker.c` now acquires owned snapshots before scanning identifier/code spans and constructing document-scoped moniker identifiers.
+- `stdio_inline_completion.c` now acquires owned snapshots before scanning keyword prefixes and checking code spans for `textDocument/inlineCompletion`.
+- `stdio_linked_editing.c` now acquires owned snapshots before fallback identifier scanning and linked range synthesis for `textDocument/linkedEditingRange`.
+- `stdio_diagnostics.c` now acquires owned snapshots before hashing content/version/length into document and workspace diagnostic report resultIds.
+- `stdio_documents.c` now acquires owned snapshots before using the previous document text as the base for `textDocument/didChange` incremental content changes.
+- `stdio_inline_value.c` now acquires owned snapshots before scanning request lines and querying fact-backed inline values for `textDocument/inlineValue`.
+- `stdio_position_encoding.c` now acquires owned snapshots at URI/request/response conversion boundaries before translating UTF-8 client positions/ranges to internal UTF-16 and back.
+- `lsp_editor_features.c` now acquires owned snapshots before document formatting, range formatting, selection range scanning, and `%test(...)` run CodeLens marker scanning.
+- `lsp_project_navigation.c` now acquires owned snapshots before project analyzer refresh and import target binding refinement, while retaining the disk-read fallback for unopened file-backed URIs.
+- `lsp_project.c` now acquires owned snapshots before loaded document registration, source module graph scanning, and import-module-name collection, while retaining the disk-read fallback for unopened source files.
+- `lsp_metadata_provider.c` now acquires owned snapshots before type/member declaration range refinement, analyzer refresh, imported member hover markdown/documentation, and leading-comment extraction, while retaining analyzer refresh disk fallback for unopened files.
+- `lsp_semantic_query.c` now acquires owned snapshots before identifier/code-span scan, enum member name range refinement, analyzer refresh, external type/member reference scans, receiver/import alias target resolution, hover documentation/comment extraction, and completion collection/enrichment, while retaining analyzer refresh disk fallback for unopened files.
+- `ZrLanguageServer_IncrementalParser_Parse` now acquires an owned snapshot before content hashing, incremental threshold calculation, parser state initialization, and stored hash refresh; remaining raw `fileVersion->content` reads in `incremental_parser.c` are limited to content storage/update/free and snapshot-copy ownership boundaries.
+- Shared document range/position helpers no longer fall back to old no-content conversion APIs when a content snapshot is unavailable; they now return 0:0 empty range/position.
+- `ZrLanguageServer_Lsp_GetDocumentFilePosition` no longer falls back to old no-content `ToFilePosition`; no snapshot now returns `ZrParser_FilePosition_Create(0, 0, 0)`.
+- Old no-content `ZrLanguageServer_LspRange_FromFileRange`, `ZrLanguageServer_LspRange_ToFileRange`, `ZrLanguageServer_LspPosition_FromFilePosition`, and `ZrLanguageServer_LspPosition_ToFilePosition` declarations/definitions have been removed.
+- `tests/language_server/test_lsp_source_contracts.c` now locks the code actions, hierarchy, editor features, project navigation, project refresh, metadata provider, semantic query, incremental parser Parse, legacy fallback removal, no-content API removal, stdio document color, stdio completion, stdio moniker, stdio inline completion, stdio linked editing, stdio diagnostics, stdio documents, stdio inline value, and stdio position encoding entry paths too, bringing the source-contract suite to 35 contracts.
+- LSP live content residual scan is now clear outside `incremental_parser.c` ownership boundaries: content create/update/free and snapshot-copy remain the only direct `fileVersion->content` / `fileVersion->contentLength` users.
+- `incremental_parser.c` content ownership now uses `SZrFileVersionContentBlock` with `contentGeneration` and `refCount`; `SZrFileVersion` no longer directly stores raw `content/contentLength`, and snapshots retain/release content blocks instead of copying text.
+- The incremental parser tests now cover both update-stable snapshots and snapshots that outlive the parser, including generation checks. The source-contract suite now also rejects `fileVersion->content` / `fileVersion->contentLength` direct residuals and locks content-block retain/release, bringing the suite to 36 contracts.
+
+## Acceptance Decision
+- Accepted for the codec, bounds, and definition/references Stage 0 sub-slices after focused WSL gcc and Windows MSVC GREEN, plus WSL gcc advanced-editor regression coverage for semantic query navigation.
+- Accepted for the hover/documentHighlight Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage and Windows MSVC advanced-editor regression; WSL gcc verification is explicitly pending because the shared WSL environment was busy with unrelated builds and timed out.
+- Accepted for the prepareRename Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage and Windows MSVC advanced-editor regression; WSL gcc verification is explicitly pending because the shared WSL environment was busy with unrelated builds and timed out.
+- Accepted for the diagnostics Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage, Windows MSVC advanced-editor regression, and Windows MSVC lsp_interface regression; WSL gcc verification is explicitly pending because the shared WSL environment was busy with unrelated builds.
+- Accepted for the symbol Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage, Windows MSVC advanced-editor regression, and Windows MSVC lsp_interface regression; WSL gcc verification is explicitly pending because the shared WSL environment still had unrelated build processes.
+- Accepted for the rename Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage, Windows MSVC advanced-editor regression, and Windows MSVC lsp_interface regression; WSL gcc verification is explicitly pending because the shared WSL environment still had unrelated build processes.
+- Accepted for the project import/navigation Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage, Windows MSVC position-mapping/interface/advanced-editor regression, and focused diff check. `lsp_project_features` is recorded as a residual risk because it exits 0 while still printing two unrelated soft failures; it is not counted as GREEN here. WSL gcc verification is explicitly pending because the shared WSL environment still had unrelated build/test processes.
+- Accepted for the semanticTokens analyzer symbol Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage, Windows MSVC lsp_interface and advanced-editor regression, and focused diff check. WSL gcc verification is explicitly pending because the shared WSL environment still had unrelated build/test processes.
+- Accepted for the semanticTokens text-scan Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage plus Windows MSVC lsp_interface and advanced-editor regression. Ordinary CMake target build is explicitly recorded as blocked by an unrelated dirty core compile error; WSL gcc verification is explicitly pending because the shared WSL environment still had related build/test processes.
+- Accepted for the inlay hints Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage plus Windows MSVC lsp_interface and advanced-editor regression. WSL gcc verification is explicitly pending because the shared WSL environment still had related build/test processes.
+- Accepted for the import-chain Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage plus Windows MSVC position-mapping and advanced-editor regression. WSL gcc verification is explicitly pending because the shared WSL environment still had related build/test processes.
+- Accepted for the public local semantic hover Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage plus Windows MSVC position-mapping, lsp_interface, and advanced-editor regression. `local_semantic_hover` is recorded as a residual adjacent-suite failure because its loop-jump reachability fact case fails before hover range construction; it is not counted as GREEN here. WSL gcc verification is explicitly pending because unrelated AOT/core gcc tasks were active in the shared WSL checkout.
+- Accepted for the metadata hover Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage plus Windows MSVC expression-hover, position-mapping, lsp_interface, and advanced-editor regression. WSL gcc verification is explicitly pending because the focused build/run timed out after 180 seconds.
+- Accepted for the virtual declaration Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage plus Windows MSVC expression-hover, position-mapping, lsp_interface, and advanced-editor regression. WSL gcc verification is explicitly pending because unrelated gcc/ninja work was active in the shared WSL checkout.
+- Accepted for the stdio `positionEncoding` Stage 0 sub-slice after Windows MSVC RED/GREEN protocol smoke, focused CTest registration, stdio smoke/minimal-open regression, and Windows MSVC position-mapping/interface/advanced-editor regression. The wider stdio CTest group still records an adjacent `inline_value_semantic` object-aggregate failure, so that group is not counted as GREEN here. WSL gcc verification is explicitly pending because the focused stdio build timed out after 180 seconds.
+- Accepted for the position fuzz Stage 0 sub-slice after Windows MSVC RED/GREEN malformed UTF-8 coverage plus Windows MSVC position-mapping regression. WSL gcc verification is explicitly pending because the shared WSL checkout still had active unrelated and prior build tasks.
+- Accepted for the decorator navigation Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage plus Windows MSVC position-mapping, position-fuzz, and lsp_interface regression. WSL gcc verification is explicitly pending because the shared WSL checkout still had active stdio/AOT/core build tasks.
+- Accepted for the CodeLens Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage plus Windows MSVC position-mapping and advanced-editor regression. WSL gcc verification is explicitly pending because the shared WSL checkout still had active stdio/AOT/core build tasks.
+- Accepted for the super navigation Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage plus Windows MSVC position-mapping and lsp_interface regression. Ordinary CMake focused build was blocked by an unrelated dirty core syntax error, so no-deps MSBuild evidence is recorded for this slice; WSL gcc verification is explicitly pending because the shared WSL checkout still had active stdio/AOT/core build tasks.
+- Accepted for the token metadata Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage plus Windows MSVC position-mapping and lsp_interface regression. Ordinary CMake focused build timed out and its remaining processes were stopped, so no-deps MSBuild evidence is recorded for this slice; WSL gcc verification is explicitly pending because the shared WSL checkout still had active stdio/AOT/core build tasks.
+- Accepted for the project binary metadata declaration Stage 0 sub-slice after Windows MSVC RED/GREEN focused coverage plus Windows MSVC position-mapping and lsp_interface regression. `.zro` definition location remains the current module-entry range behavior, so this slice accepts member hit input conversion only; WSL gcc verification is explicitly pending because the focused WSL build/test timed out after 240 seconds and the shared WSL checkout still had active core/parser build tasks.
+- Accepted for the import-chain static append-state cleanup Stage 0 sub-slice after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC lsp_interface and position-mapping regression. This removes a shared mutable append-state hazard, but does not yet complete the broader versioned snapshot / reference-count concurrency guard work.
+- Accepted for the semantic query shared range-helper cleanup Stage 0 sub-slice after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC lsp_interface and position-mapping regression. WSL gcc verification is explicitly pending because unrelated AOT/core/parser gcc/ninja work was still active in the shared checkout.
+- Accepted for the interface shared range-helper cleanup Stage 0 sub-slice after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC lsp_interface and position-mapping regression.
+- Accepted for the import-chain shared range-helper cleanup Stage 0 sub-slice after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC lsp_interface and position-mapping regression.
+- Accepted for the inlay shared position-helper cleanup Stage 0 sub-slice after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC lsp_interface and position-mapping regression.
+- Accepted for the project navigation position-helper cleanup Stage 0 sub-slice after Windows MSVC source-contract RED/GREEN coverage plus serial Windows MSVC project UTF-16 range and project feature regression. Initial parallel project test runs failed at the build/link layer because both builds shared `zr_vm_parser.dll/.ilk`; serial reruns passed, so the failure is not counted as a behavior regression. WSL gcc verification remains pending.
+- Accepted for the interface direct-range cleanup Stage 0 sub-slice after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC lsp_interface and position-mapping regression.
+- Accepted for the file-version content snapshot foundation after Windows MSVC incremental-parser RED/GREEN coverage plus Windows MSVC source-contract, position-mapping, and lsp_interface regression. This accepts owned content snapshot copying for central position/range conversion helpers, not the full versioned/reference-count concurrency design.
+- Accepted for `lsp_interface.c` non-conversion direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build, lsp_interface, position-mapping, and incremental-parser regression. This clears direct `fileVersion->content` reads from `lsp_interface.c` only; broader cross-module content-read audit and full versioned/reference-count concurrency design remain open.
+- Accepted for import-chain/token-metadata/semanticTokens direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build, position-mapping, token-metadata UTF-16 range, and lsp_interface regression. This clears the locked function sections only; metadata/project/semantic/editor/hierarchy and stdio direct content reads still require a broader audit.
+- Accepted for folding/document-links/signature-help/code-action-imports/super-navigation direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build, advanced-editor, super UTF-16 range, and lsp_interface regression. This clears the locked function sections/files only; project/semantic/editor/hierarchy/project module refresh direct content reads still require a broader audit.
+- Accepted for `lsp_code_actions.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build and advanced-editor regression. This clears direct `fileVersion->content` reads from the code actions entry/helper path only; project/semantic/editor-features/hierarchy/project module refresh direct content reads still require a broader audit.
+- Accepted for `lsp_hierarchy.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build and advanced-editor regression. This clears direct `fileVersion->content` reads from call/type hierarchy scan paths only; project/semantic/editor-features/project module refresh direct content reads still require a broader audit.
+- Accepted for `stdio_document_color.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build and stdio smoke regression. This clears direct `fileVersion->content` reads from document color/color presentation only; other stdio handlers still require a broader audit.
+- Accepted for `stdio_completion.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build, stdio executable build, and stdio smoke regression. This clears direct `fileVersion->content` reads from completion prefix range calculation only; other stdio handlers still require a broader audit.
+- Accepted for `stdio_moniker.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build, stdio executable build, and stdio smoke regression. This clears direct `fileVersion->content` reads from moniker identifier/code-span scanning only; other stdio handlers still require a broader audit.
+- Accepted for `stdio_inline_completion.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build, stdio executable build, and stdio smoke regression. This clears direct `fileVersion->content` reads from inline completion keyword prefix scanning only; other stdio handlers still require a broader audit.
+- Accepted for `stdio_linked_editing.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build, stdio executable build, and stdio smoke regression. This clears direct `fileVersion->content` reads from linked-editing fallback scan only; other stdio handlers still require a broader audit.
+- Accepted for `stdio_diagnostics.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build, stdio executable build, and stdio smoke regression. This clears direct `fileVersion->content` reads from diagnostic resultId hashing only; other stdio handlers still require a broader audit.
+- Accepted for `stdio_documents.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build, stdio executable build, and stdio smoke regression. This clears direct `fileVersion->content` reads from didChange old-content base handling only; other stdio handlers still require a broader audit.
+- Accepted for `stdio_inline_value.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build, stdio executable build, and stdio smoke regression. This clears direct `fileVersion->content` reads from inline value request scanning only; broader cross-module content-read audit remains open.
+- Accepted for `stdio_position_encoding.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC stdio executable build, position-encoding smoke, and stdio smoke regression. This clears direct `fileVersion->content` reads from stdio position/range encoding conversion boundaries; broader cross-module content-read audit remains open.
+- Accepted for `lsp_editor_features.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build, advanced-editor regression, CodeLens UTF-16 range regression, stdio executable build, and stdio smoke regression. This clears direct `fileVersion->content` reads from formatting, selection ranges, and run CodeLens scanning; broader cross-module content-read audit remains open.
+- Accepted for `lsp_project_navigation.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build and project UTF-16 range regression. This clears direct `fileVersion->content` reads from project analyzer refresh and import-target refinement only; the project feature suite still prints the already-recorded ownership hover and descriptor-plugin receiver completion soft failures, so it is not counted as GREEN here.
+- Accepted for `lsp_project.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build and project UTF-16 range regression. This clears direct `fileVersion->content` reads from project source registration, project module graph scanning, and import-module-name collection; the project feature suite still prints the already-recorded ownership hover and descriptor-plugin receiver completion soft failures, so it is not counted as GREEN here.
+- Accepted for `lsp_metadata_provider.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared build and `lsp_interface` regression. This clears direct `fileVersion->content` reads from metadata provider range refinement, analyzer refresh, and imported member hover documentation paths; the project feature suite still prints the already-recorded ownership hover and descriptor-plugin receiver completion soft failures, so it is not counted as GREEN here.
+- Accepted for `lsp_semantic_query.c` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared no-deps build, `lsp_interface`, advanced-editor, and project UTF-16 range regressions. This clears direct `fileVersion->content` reads from semantic query identifier/code-span, hover, completion, analyzer refresh, external reference, and import alias/receiver target paths; the project feature suite still prints the already-recorded ownership hover and descriptor-plugin receiver completion soft failures, so it is not counted as GREEN here.
+- Accepted for `ZrLanguageServer_IncrementalParser_Parse` direct content read cleanup after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared no-deps build and incremental-parser regression. This clears direct `fileVersion->content` / `fileVersion->contentLength` reads from Parse's content hashing and parser initialization path only; `incremental_parser.c` content storage/update/free and snapshot-copy ownership boundaries remain open.
+- Accepted for shared-helper legacy fallback and no-content public API removal after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC language-server shared, position-mapping, lsp_interface, and project UTF-16 range regressions. This removes the old no-content public conversion declarations/definitions and prevents shared helpers from reintroducing byte-column fallback precision.
+- Accepted for the current LSP live content residual audit after production-source scans found direct `fileVersion->content` / `fileVersion->contentLength` only in `incremental_parser.c` ownership boundaries and old no-content public API searches found no production declarations/call sites.
+- Accepted for `incremental_parser.c` versioned/refcounted content-block ownership after Windows MSVC source-contract RED/GREEN coverage plus Windows MSVC incremental-parser behavior RED/GREEN, position-mapping, lsp_interface, and project UTF-16 range regressions. This removes the remaining production direct `fileVersion->content` / `fileVersion->contentLength` residuals and proves snapshots retain old content across updates and parser free.
+- Accepted for the current stdio cross-request concurrency audit after source review confirmed the server reads one payload, dispatches request/notification handlers synchronously, and does not introduce LSP/stdio thread or lock primitives. Combined with versioned/refcounted content blocks and a production direct-content rescan with no `fileVersion->content` / `fileVersion->contentLength` residuals, this closes the Stage 0 concurrency audit for the current stdio server model.
+- Stage 0 remains open for WSL retry and future module content-read rescan. If a future LSP entrypoint introduces parallel/asynchronous request handling, cross-request concurrency must be re-audited.

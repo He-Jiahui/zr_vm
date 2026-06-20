@@ -2976,6 +2976,7 @@ static void test_system_root_aggregates_leaf_modules_and_reuses_cached_instances
     } kExpectedModules[] = {
             {"console", "zr.system.console"},
             {"fs", "zr.system.fs"},
+            {"assembly", "zr.system.assembly"},
             {"env", "zr.system.env"},
             {"process", "zr.system.process"},
             {"gc", "zr.system.gc"},
@@ -3029,6 +3030,7 @@ static void test_system_root_exports_only_submodules(void) {
             "vmState",
             "gcDisable",
             "callModuleExport",
+            "resourceExists",
             "SystemFileInfo",
             "SystemVmState",
             "SystemLoadedModuleInfo",
@@ -3089,6 +3091,7 @@ static void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
             "getInfo",
             "SystemFileInfo",
     };
+    static const TZrChar *kAssemblyExports[] = {"resourceExists", "readResourceText", "readResourceBytes"};
     static const TZrChar *kEnvExports[] = {"getVariable"};
     static const TZrChar *kGcExports[] = {
             "enable",
@@ -3143,6 +3146,7 @@ static void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
         SZrState *state = create_test_state();
         SZrObjectModule *consoleModule;
         SZrObjectModule *fsModule;
+        SZrObjectModule *assemblyModule;
         SZrObjectModule *envModule;
         SZrObjectModule *processModule;
         SZrObjectModule *gcModule;
@@ -3163,6 +3167,7 @@ static void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
 
         consoleModule = import_native_module(state, "zr.system.console");
         fsModule = import_native_module(state, "zr.system.fs");
+        assemblyModule = import_native_module(state, "zr.system.assembly");
         envModule = import_native_module(state, "zr.system.env");
         processModule = import_native_module(state, "zr.system.process");
         gcModule = import_native_module(state, "zr.system.gc");
@@ -3171,6 +3176,7 @@ static void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
 
         TEST_ASSERT_NOT_NULL(consoleModule);
         TEST_ASSERT_NOT_NULL(fsModule);
+        TEST_ASSERT_NOT_NULL(assemblyModule);
         TEST_ASSERT_NOT_NULL(envModule);
         TEST_ASSERT_NOT_NULL(processModule);
         TEST_ASSERT_NOT_NULL(gcModule);
@@ -3214,6 +3220,10 @@ static void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
 
         for (index = 0; index < ZR_ARRAY_COUNT(kFsExports); index++) {
             TEST_ASSERT_NOT_NULL(get_module_export_value(state, fsModule, kFsExports[index]));
+        }
+
+        for (index = 0; index < ZR_ARRAY_COUNT(kAssemblyExports); index++) {
+            TEST_ASSERT_NOT_NULL(get_module_export_value(state, assemblyModule, kAssemblyExports[index]));
         }
 
         for (index = 0; index < ZR_ARRAY_COUNT(kEnvExports); index++) {
@@ -3404,6 +3414,7 @@ static void test_system_root_native_module_info_exposes_module_links(void) {
     } kExpectedModules[] = {
             {"console", "zr.system.console"},
             {"fs", "zr.system.fs"},
+            {"assembly", "zr.system.assembly"},
             {"env", "zr.system.env"},
             {"process", "zr.system.process"},
             {"gc", "zr.system.gc"},

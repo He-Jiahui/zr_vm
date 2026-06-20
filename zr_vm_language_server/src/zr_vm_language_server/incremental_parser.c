@@ -101,6 +101,64 @@ static void collect_structured_parser_diagnostic(TZrPtr userData,
     }
 }
 
+static SZrFileVersionContentBlock *content_block_new(SZrState *state,
+                                                     const TZrChar *content,
+                                                     TZrSize contentLength,
+                                                     TZrSize contentGeneration) {
+    SZrFileVersionContentBlock *block;
+
+    if (state == ZR_NULL || content == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    block = (SZrFileVersionContentBlock *)ZrCore_Memory_RawMalloc(
+        state->global,
+        sizeof(SZrFileVersionContentBlock));
+    if (block == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    block->content = (TZrChar *)ZrCore_Memory_RawMalloc(state->global, contentLength + 1);
+    if (block->content == ZR_NULL) {
+        ZrCore_Memory_RawFree(state->global, block, sizeof(SZrFileVersionContentBlock));
+        return ZR_NULL;
+    }
+
+    memcpy(block->content, content, contentLength);
+    block->content[contentLength] = '\0';
+    block->contentLength = contentLength;
+    block->contentGeneration = contentGeneration;
+    block->refCount = 1;
+    return block;
+}
+
+static void content_block_retain(SZrFileVersionContentBlock *block) {
+    if (block == ZR_NULL) {
+        return;
+    }
+
+    block->refCount++;
+}
+
+static void content_block_release(SZrState *state, SZrFileVersionContentBlock *block) {
+    if (state == ZR_NULL || block == ZR_NULL) {
+        return;
+    }
+
+    if (block->refCount > 0) {
+        block->refCount--;
+    }
+
+    if (block->refCount != 0) {
+        return;
+    }
+
+    if (block->content != ZR_NULL) {
+        ZrCore_Memory_RawFree(state->global, block->content, block->contentLength + 1);
+    }
+    ZrCore_Memory_RawFree(state->global, block, sizeof(SZrFileVersionContentBlock));
+}
+
 // 创建文件版本
 SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
                                   SZrString *uri,
@@ -110,15 +168,19 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
     if (state == ZR_NULL || uri == ZR_NULL || content == ZR_NULL) {
         return ZR_NULL;
     }
-    
+
     SZrFileVersion *fileVersion = (SZrFileVersion *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrFileVersion));
     if (fileVersion == ZR_NULL) {
         return ZR_NULL;
     }
-    
+
     fileVersion->uri = uri;
     fileVersion->version = version;
-    fileVersion->contentLength = contentLength;
+    fileVersion->textBlock = content_block_new(state, content, contentLength, 1);
+    if (fileVersion->textBlock == ZR_NULL) {
+        ZrCore_Memory_RawFree(state->global, fileVersion, sizeof(SZrFileVersion));
+        return ZR_NULL;
+    }
     fileVersion->ast = ZR_NULL;
     fileVersion->usesFallbackAst = ZR_FALSE;
     fileVersion->isDirty = ZR_TRUE;
@@ -134,16 +196,7 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
                       &fileVersion->parserDiagnostics,
                       sizeof(SZrDiagnostic *),
                       ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
-    
-    // 复制内容
-    fileVersion->content = (TZrChar *)ZrCore_Memory_RawMalloc(state->global, contentLength + 1);
-    if (fileVersion->content == ZR_NULL) {
-        ZrCore_Memory_RawFree(state->global, fileVersion, sizeof(SZrFileVersion));
-        return ZR_NULL;
-    }
-    memcpy(fileVersion->content, content, contentLength);
-    fileVersion->content[contentLength] = '\0';
-    
+
     return fileVersion;
 }
 
@@ -153,9 +206,8 @@ void ZrLanguageServer_FileVersion_Free(SZrState *state, SZrFileVersion *fileVers
         return;
     }
 
-    if (fileVersion->content != ZR_NULL) {
-        ZrCore_Memory_RawFree(state->global, fileVersion->content, fileVersion->contentLength + 1);
-    }
+    content_block_release(state, fileVersion->textBlock);
+    fileVersion->textBlock = ZR_NULL;
 
     if (fileVersion->ast != ZR_NULL) {
         ZrParser_Ast_Free(state, fileVersion->ast);
@@ -171,6 +223,42 @@ void ZrLanguageServer_FileVersion_Free(SZrState *state, SZrFileVersion *fileVers
     ZrCore_Memory_RawFree(state->global, fileVersion, sizeof(SZrFileVersion));
 }
 
+TZrBool ZrLanguageServer_FileVersionContentSnapshot_Acquire(
+    SZrState *state,
+    SZrFileVersion *fileVersion,
+    SZrFileVersionContentSnapshot *outSnapshot) {
+    if (outSnapshot != ZR_NULL) {
+        memset(outSnapshot, 0, sizeof(SZrFileVersionContentSnapshot));
+    }
+
+    if (state == ZR_NULL || fileVersion == ZR_NULL || outSnapshot == ZR_NULL ||
+        fileVersion->textBlock == ZR_NULL || fileVersion->textBlock->content == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    content_block_retain(fileVersion->textBlock);
+    outSnapshot->contentBlock = fileVersion->textBlock;
+    outSnapshot->content = fileVersion->textBlock->content;
+    outSnapshot->uri = fileVersion->uri;
+    outSnapshot->version = fileVersion->version;
+    outSnapshot->contentLength = fileVersion->textBlock->contentLength;
+    outSnapshot->contentGeneration = fileVersion->textBlock->contentGeneration;
+    outSnapshot->usesFallbackAst = fileVersion->usesFallbackAst;
+
+    return ZR_TRUE;
+}
+
+void ZrLanguageServer_FileVersionContentSnapshot_Free(SZrState *state,
+                                                      SZrFileVersionContentSnapshot *snapshot) {
+    if (state == ZR_NULL || snapshot == ZR_NULL) {
+        return;
+    }
+
+    content_block_release(state, snapshot->contentBlock);
+
+    memset(snapshot, 0, sizeof(SZrFileVersionContentSnapshot));
+}
+
 // 更新文件版本内容
 TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
                                  SZrFileVersion *fileVersion,
@@ -178,28 +266,23 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
                                  TZrSize contentLength,
                                  TZrSize version,
                                  SZrFileRange changeRange) {
+    SZrFileVersionContentBlock *newBlock;
+    TZrSize contentGeneration;
+
     if (state == ZR_NULL || fileVersion == ZR_NULL || content == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    /*
-     * 调用方可能传入 fileVersion->content（例如 LSP 从 fileVersion 取文本再交给 UpdateFile）。
-     * 若先释放 fileVersion->content 再 memcpy(content)，则 memcpy 读取的已是被释放内存。
-     */
-    if (fileVersion->content == ZR_NULL || fileVersion->content != (TZrChar *)content) {
-        if (fileVersion->content != ZR_NULL) {
-            ZrCore_Memory_RawFree(state->global, fileVersion->content, fileVersion->contentLength + 1);
-        }
-
-        fileVersion->content = (TZrChar *)ZrCore_Memory_RawMalloc(state->global, contentLength + 1);
-        if (fileVersion->content == ZR_NULL) {
-            return ZR_FALSE;
-        }
-        memcpy(fileVersion->content, content, contentLength);
-        fileVersion->content[contentLength] = '\0';
+    contentGeneration = fileVersion->textBlock != ZR_NULL ?
+        fileVersion->textBlock->contentGeneration + 1 :
+        1;
+    newBlock = content_block_new(state, content, contentLength, contentGeneration);
+    if (newBlock == ZR_NULL) {
+        return ZR_FALSE;
     }
 
-    fileVersion->contentLength = contentLength;
+    content_block_release(state, fileVersion->textBlock);
+    fileVersion->textBlock = newBlock;
     fileVersion->version = version;
     fileVersion->isDirty = ZR_TRUE;
     fileVersion->lastChangeRange = changeRange;
@@ -221,19 +304,19 @@ SZrIncrementalParser *ZrLanguageServer_IncrementalParser_New(SZrState *state) {
     if (state == ZR_NULL) {
         return ZR_NULL;
     }
-    
+
     SZrIncrementalParser *parser = (SZrIncrementalParser *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrIncrementalParser));
     if (parser == ZR_NULL) {
         return ZR_NULL;
     }
-    
+
     parser->state = state;
     ZrCore_HashSet_Construct(&parser->uriToFileMap);
     ZrCore_HashSet_Init(state, &parser->uriToFileMap, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
     parser->parserState = ZR_NULL; // 延迟初始化
     parser->enableIncrementalParse = ZR_TRUE; // 默认启用增量解析
     parser->enableContentHash = ZR_TRUE; // 默认启用内容哈希
-    
+
     return parser;
 }
 
@@ -252,7 +335,7 @@ void ZrLanguageServer_IncrementalParser_Free(SZrState *state, SZrIncrementalPars
                 // 释放节点中存储的数据
                 if (pair->key.type != ZR_VALUE_TYPE_NULL) {
                     if (pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
-                        SZrFileVersion *fileVersion = 
+                        SZrFileVersion *fileVersion =
                             (SZrFileVersion *)pair->value.value.nativeObject.nativePointer;
                         if (fileVersion != ZR_NULL) {
                             ZrLanguageServer_FileVersion_Free(state, fileVersion);
@@ -286,7 +369,7 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
     if (state == ZR_NULL || parser == ZR_NULL || uri == ZR_NULL || content == ZR_NULL) {
         return ZR_FALSE;
     }
-    
+
     // 查找是否已存在
     SZrFileVersion *fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
     if (fileVersion != ZR_NULL) {
@@ -303,11 +386,11 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
         if (fileVersion == ZR_NULL) {
             return ZR_FALSE;
         }
-        
+
         // 添加到哈希表
         SZrTypeValue key;
         ZrCore_Value_InitAsRawObject(state, &key, &uri->super);
-        
+
         // 使用 ZrCore_HashSet_Add 添加，然后设置值
         SZrHashKeyValuePair *pair = ZrCore_HashSet_Add(state, &parser->uriToFileMap, &key);
         if (pair != ZR_NULL) {
@@ -317,28 +400,28 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
             ZrCore_Value_Copy(state, &pair->value, &value);
         }
     }
-    
+
     return ZR_TRUE;
 }
 
 // 辅助函数：计算内容哈希（简化实现）
-static void compute_content_hash(SZrState *state, const TZrChar *content, TZrSize length, 
+static void compute_content_hash(SZrState *state, const TZrChar *content, TZrSize length,
                                   TZrChar **hash, TZrSize *hashLength) {
     if (state == ZR_NULL || content == ZR_NULL || hash == ZR_NULL || hashLength == ZR_NULL) {
         return;
     }
-    
+
     // TODO: 简化实现：使用简单的哈希算法
     TZrUInt64 hashValue = 0;
     for (TZrSize i = 0; i < length; i++) {
         hashValue = hashValue * ZR_LSP_HASH_MULTIPLIER + (TZrUInt8)content[i];
     }
-    
+
     // 转换为字符串
     TZrChar hashStr[ZR_LSP_SHORT_TEXT_BUFFER_LENGTH];
     snprintf(hashStr, sizeof(hashStr), "%llx", (unsigned long long)hashValue);
     TZrSize len = strlen(hashStr);
-    
+
     *hash = (TZrChar *)ZrCore_Memory_RawMalloc(state->global, len + 1);
     if (*hash != ZR_NULL) {
         memcpy(*hash, hashStr, len);
@@ -348,7 +431,7 @@ static void compute_content_hash(SZrState *state, const TZrChar *content, TZrSiz
 }
 
 // 辅助函数：比较内容哈希
-static TZrBool compare_content_hash(const TZrChar *hash1, TZrSize len1, 
+static TZrBool compare_content_hash(const TZrChar *hash1, TZrSize len1,
                                    const TZrChar *hash2, TZrSize len2) {
     if (hash1 == ZR_NULL || hash2 == ZR_NULL) {
         return ZR_FALSE;
@@ -366,54 +449,61 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
     if (state == ZR_NULL || parser == ZR_NULL || uri == ZR_NULL) {
         return ZR_FALSE;
     }
-    
+
     SZrFileVersion *fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    SZrFileVersionContentSnapshot snapshot;
     if (fileVersion == ZR_NULL) {
         return ZR_FALSE;
     }
-    
+
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        return ZR_FALSE;
+    }
+
     // 如果不需要重新解析，检查内容哈希（如果启用）
     if (!fileVersion->isDirty && fileVersion->ast != ZR_NULL) {
         if (parser->enableContentHash && fileVersion->lastContentHash != ZR_NULL) {
             // 计算当前内容哈希
             TZrChar *currentHash = ZR_NULL;
             TZrSize currentHashLength = 0;
-            compute_content_hash(state, fileVersion->content, fileVersion->contentLength,
+            compute_content_hash(state, snapshot.content, snapshot.contentLength,
                                 &currentHash, &currentHashLength);
-            
+
             if (currentHash != ZR_NULL) {
                 // 比较哈希
-                TZrBool isSame = compare_content_hash(fileVersion->lastContentHash, 
+                TZrBool isSame = compare_content_hash(fileVersion->lastContentHash,
                                                    fileVersion->lastContentHashLength,
                                                    currentHash, currentHashLength);
                 ZrCore_Memory_RawFree(state->global, currentHash, strlen(currentHash) + 1);
-                
+
                 if (isSame) {
                     // 内容未改变，不需要重新解析
+                    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
                     return ZR_TRUE;
                 }
             }
         } else {
             // 未启用内容哈希，直接返回
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
             return ZR_TRUE;
         }
     }
-    
+
     // 启用增量解析时，尝试增量更新 AST
-    if (parser->enableIncrementalParse && fileVersion->ast != ZR_NULL && 
+    if (parser->enableIncrementalParse && fileVersion->ast != ZR_NULL &&
         fileVersion->hasIncrementalInfo) {
         // TODO: 实现增量 AST 更新算法（简化版本）
         // 策略：如果变更范围较小且不影响语法结构，可以尝试增量更新
         // 否则回退到完全重新解析
-        
+
         SZrFileRange changeRange = fileVersion->lastChangeRange;
         TZrSize changeSize = 0;
         if (changeRange.end.offset > changeRange.start.offset) {
             changeSize = changeRange.end.offset - changeRange.start.offset;
         }
-        
+
         // 如果变更范围太大（超过文件长度的10%），完全重新解析
-        TZrSize threshold = fileVersion->contentLength / 10;
+        TZrSize threshold = snapshot.contentLength / 10;
         if (changeSize > threshold || changeSize == 0) {
             // 变更太大，完全重新解析
         } else {
@@ -426,7 +516,7 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
             // 3. 如果影响语法，需要重新解析受影响的部分
         }
     }
-    
+
     // 完全重新解析
     {
         SZrParserState parserState;
@@ -436,9 +526,10 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
         SZrAstNode *parsedAst;
 
         clear_parser_diagnostics(state, fileVersion);
-        ZrParser_State_Init(&parserState, state, fileVersion->content, fileVersion->contentLength, sourceName);
+        ZrParser_State_Init(&parserState, state, snapshot.content, snapshot.contentLength, sourceName);
         if (parserState.hasError) {
             ZrParser_State_Free(&parserState);
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
             return ZR_FALSE;
         }
 
@@ -473,23 +564,25 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
             fileVersion->usesFallbackAst = ZR_FALSE;
         }
     }
-    
+
     if (fileVersion->ast != ZR_NULL || fileVersion->parserDiagnostics.length > 0) {
         fileVersion->isDirty = ZR_FALSE;
-        
+
         // 计算并存储内容哈希
         if (parser->enableContentHash) {
             if (fileVersion->lastContentHash != ZR_NULL) {
                 ZrCore_Memory_RawFree(state->global, fileVersion->lastContentHash, fileVersion->lastContentHashLength + 1);
             }
-            compute_content_hash(state, fileVersion->content, fileVersion->contentLength,
-                                &fileVersion->lastContentHash, 
+            compute_content_hash(state, snapshot.content, snapshot.contentLength,
+                                &fileVersion->lastContentHash,
                                 &fileVersion->lastContentHashLength);
         }
-        
+
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_TRUE;
     }
-    
+
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_FALSE;
 }
 
@@ -499,12 +592,12 @@ SZrAstNode *ZrLanguageServer_IncrementalParser_GetAST(SZrIncrementalParser *pars
     if (parser == ZR_NULL || uri == ZR_NULL) {
         return ZR_NULL;
     }
-    
+
     SZrFileVersion *fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
     if (fileVersion == ZR_NULL) {
         return ZR_NULL;
     }
-    
+
     // 如果 AST 不存在或需要重新解析，先解析
     if (fileVersion->ast == ZR_NULL && !fileVersion->isDirty && fileVersion->parserDiagnostics.length > 0) {
         return ZR_NULL;
@@ -515,7 +608,7 @@ SZrAstNode *ZrLanguageServer_IncrementalParser_GetAST(SZrIncrementalParser *pars
             return ZR_NULL;
         }
     }
-    
+
     return fileVersion->ast;
 }
 
@@ -550,11 +643,11 @@ SZrFileVersion *ZrLanguageServer_IncrementalParser_GetFileVersion(SZrIncremental
     if (parser == ZR_NULL || uri == ZR_NULL) {
         return ZR_NULL;
     }
-    
+
     // 从哈希表中查找
     SZrTypeValue key;
     ZrCore_Value_InitAsRawObject(parser->state, &key, &uri->super);
-    
+
     SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(parser->state, &parser->uriToFileMap, &key);
     if (pair == ZR_NULL) {
         pair = ZrLanguageServer_Lsp_FindEquivalentUriKeyPair(parser->state, &parser->uriToFileMap, uri);
@@ -563,6 +656,6 @@ SZrFileVersion *ZrLanguageServer_IncrementalParser_GetFileVersion(SZrIncremental
         // 从原生指针中获取 SZrFileVersion
         return (SZrFileVersion *)pair->value.value.nativeObject.nativePointer;
     }
-    
+
     return ZR_NULL;
 }

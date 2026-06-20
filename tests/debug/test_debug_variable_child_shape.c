@@ -495,6 +495,212 @@ static void test_debug_protocol_reports_per_value_child_shape_metadata(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_debug_protocol_expands_union_variant_payloads(void) {
+    const char *sourcePath = "debug_union_variant_payload_fixture.zr";
+    const char *source =
+            "union Shape {\n"
+            "    Empty;\n"
+            "    Circle(radius: int);\n"
+            "    Rect { width: int; height: int; }\n"
+            "}\n"
+            "func pauseHere() {\n"
+            "    var circle: Shape = Shape.Circle(7);\n"
+            "    var rect: Shape = Shape.Rect { width: 3, height: 4 };\n"
+            "    return 1;\n"
+            "}\n"
+            "var marker = pauseHere();\n"
+            "return 1;";
+    const int breakpointLine = 9;
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    ZrDebugAgentConfig config;
+    ZrDebugAgent *agent = ZR_NULL;
+    SZrNetworkStream client;
+    ZrDebugExecutionThread thread;
+    TZrChar error[256];
+    cJSON *message;
+    cJSON *params;
+    cJSON *scopes;
+    cJSON *localsScope;
+    cJSON *values;
+    cJSON *circleItem;
+    cJSON *rectItem;
+    cJSON *variantItem;
+    cJSON *radiusItem;
+    cJSON *widthItem;
+    cJSON *heightItem;
+    cJSON *result;
+    int localsScopeId;
+    int circleHandle;
+    int rectHandle;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_debug_source(state, sourcePath, source);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&config, 0, sizeof(config));
+    config.address = "127.0.0.1:0";
+    config.suspend_on_start = ZR_TRUE;
+    config.auth_token = "secret";
+
+    TEST_ASSERT_TRUE(
+            ZrDebug_AgentStart(state, function, "tests.debug.union_variant_payload", &config, &agent, error, sizeof(error)));
+    memset(&client, 0, sizeof(client));
+    debug_client_connect(agent, &client);
+
+    memset(&thread, 0, sizeof(thread));
+    thread.state = state;
+    thread.function = function;
+    TEST_ASSERT_TRUE(debug_execution_thread_start(&thread));
+
+    debug_client_initialize(&client, "tests.debug.union_variant_payload");
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "moduleName", "tests.debug.union_variant_payload");
+    cJSON_AddStringToObject(params, "sourceFile", sourcePath);
+    cJSON_AddItemToObject(params, "lines", cJSON_CreateIntArray(&breakpointLine, 1));
+    debug_client_send_request(&client, 2, "setBreakpoints", params);
+    message = debug_client_expect_event(&client, "breakpointResolved");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved") != 0);
+    cJSON_Delete(message);
+    message = debug_client_expect_response(&client, 2);
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 3, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 3);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("breakpoint", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "frameId", 1);
+    debug_client_send_request(&client, 4, "scopes", params);
+    message = debug_client_expect_response(&client, 4);
+    scopes = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "scopes");
+    TEST_ASSERT_TRUE(cJSON_IsArray(scopes));
+    localsScope = debug_find_named_object(scopes, "Locals");
+    TEST_ASSERT_NOT_NULL(localsScope);
+    localsScopeId = debug_json_int(localsScope, "scopeId");
+    TEST_ASSERT_TRUE(localsScopeId > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", localsScopeId);
+    debug_client_send_request(&client, 5, "variables", params);
+    message = debug_client_expect_response(&client, 5);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    circleItem = debug_find_named_object(values, "circle");
+    rectItem = debug_find_named_object(values, "rect");
+    TEST_ASSERT_NOT_NULL(circleItem);
+    TEST_ASSERT_NOT_NULL(rectItem);
+    TEST_ASSERT_EQUAL_STRING("Shape", debug_json_string(circleItem, "type"));
+    TEST_ASSERT_EQUAL_STRING("<union Shape.Circle>", debug_json_string(circleItem, "value"));
+    TEST_ASSERT_EQUAL_INT(2, debug_json_int(circleItem, "namedVariables"));
+    TEST_ASSERT_EQUAL_INT(0, debug_json_int(circleItem, "indexedVariables"));
+    debug_assert_text_contains(debug_json_string(circleItem, "semanticSummary"), "union Shape.Circle");
+    TEST_ASSERT_EQUAL_STRING("Shape", debug_json_string(rectItem, "type"));
+    TEST_ASSERT_EQUAL_STRING("<union Shape.Rect>", debug_json_string(rectItem, "value"));
+    TEST_ASSERT_EQUAL_INT(3, debug_json_int(rectItem, "namedVariables"));
+    TEST_ASSERT_EQUAL_INT(0, debug_json_int(rectItem, "indexedVariables"));
+    debug_assert_text_contains(debug_json_string(rectItem, "semanticSummary"), "union Shape.Rect");
+    circleHandle = debug_json_int(circleItem, "variablesReference");
+    rectHandle = debug_json_int(rectItem, "variablesReference");
+    TEST_ASSERT_TRUE(circleHandle > 0);
+    TEST_ASSERT_TRUE(rectHandle > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", circleHandle);
+    debug_client_send_request(&client, 6, "variables", params);
+    message = debug_client_expect_response(&client, 6);
+    result = cJSON_GetObjectItemCaseSensitive(message, "result");
+    TEST_ASSERT_EQUAL_INT(2, debug_json_int(result, "namedVariables"));
+    TEST_ASSERT_EQUAL_INT(0, debug_json_int(result, "indexedVariables"));
+    values = cJSON_GetObjectItemCaseSensitive(result, "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    variantItem = debug_find_named_object(values, "variant");
+    radiusItem = debug_find_named_object(values, "radius");
+    TEST_ASSERT_NOT_NULL(variantItem);
+    TEST_ASSERT_NOT_NULL(radiusItem);
+    TEST_ASSERT_EQUAL_STRING("Circle", debug_json_string(variantItem, "value"));
+    TEST_ASSERT_EQUAL_STRING("7", debug_json_string(radiusItem, "value"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", rectHandle);
+    debug_client_send_request(&client, 7, "variables", params);
+    message = debug_client_expect_response(&client, 7);
+    result = cJSON_GetObjectItemCaseSensitive(message, "result");
+    TEST_ASSERT_EQUAL_INT(3, debug_json_int(result, "namedVariables"));
+    TEST_ASSERT_EQUAL_INT(0, debug_json_int(result, "indexedVariables"));
+    values = cJSON_GetObjectItemCaseSensitive(result, "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    variantItem = debug_find_named_object(values, "variant");
+    widthItem = debug_find_named_object(values, "width");
+    heightItem = debug_find_named_object(values, "height");
+    TEST_ASSERT_NOT_NULL(variantItem);
+    TEST_ASSERT_NOT_NULL(widthItem);
+    TEST_ASSERT_NOT_NULL(heightItem);
+    TEST_ASSERT_EQUAL_STRING("Rect", debug_json_string(variantItem, "value"));
+    TEST_ASSERT_EQUAL_STRING("3", debug_json_string(widthItem, "value"));
+    TEST_ASSERT_EQUAL_STRING("4", debug_json_string(heightItem, "value"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "expression", "circle.variant");
+    cJSON_AddNumberToObject(params, "frameId", 1);
+    debug_client_send_request(&client, 8, "evaluate", params);
+    message = debug_client_expect_response(&client, 8);
+    result = cJSON_GetObjectItemCaseSensitive(message, "result");
+    TEST_ASSERT_EQUAL_STRING("Circle", debug_json_string(result, "value"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "expression", "circle.radius");
+    cJSON_AddNumberToObject(params, "frameId", 1);
+    debug_client_send_request(&client, 9, "evaluate", params);
+    message = debug_client_expect_response(&client, 9);
+    result = cJSON_GetObjectItemCaseSensitive(message, "result");
+    TEST_ASSERT_EQUAL_STRING("7", debug_json_string(result, "value"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "expression", "rect.width + rect.height");
+    cJSON_AddNumberToObject(params, "frameId", 1);
+    debug_client_send_request(&client, 10, "evaluate", params);
+    message = debug_client_expect_response(&client, 10);
+    result = cJSON_GetObjectItemCaseSensitive(message, "result");
+    TEST_ASSERT_EQUAL_STRING("7", debug_json_string(result, "value"));
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 11, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 11);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+
+    debug_execution_thread_join(&thread);
+    TEST_ASSERT_TRUE(thread.success);
+    TEST_ASSERT_EQUAL_INT64(1, thread.result);
+
+    ZrNetwork_StreamClose(&client);
+    ZrDebug_AgentStop(agent);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_debug_evaluate_semantic_summary_uses_closure_captures(void) {
     const char *sourcePath = "debug_closure_capture_semantic_summary_fixture.zr";
     const char *source =
@@ -705,10 +911,19 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
-int main(void) {
+#define RUN_DEBUG_TEST(filter, testName) \
+    do { \
+        if ((filter) == ZR_NULL || strcmp((filter), #testName) == 0) { \
+            RUN_TEST(testName); \
+        } \
+    } while (0)
+
+int main(int argc, char **argv) {
+    const char *filter = argc > 1 ? argv[1] : ZR_NULL;
     UNITY_BEGIN();
-    RUN_TEST(test_debug_protocol_reports_per_value_child_shape_metadata);
-    RUN_TEST(test_debug_evaluate_semantic_summary_uses_closure_captures);
-    RUN_TEST(test_debug_evaluate_index_window_reports_base_reference_summary);
+    RUN_DEBUG_TEST(filter, test_debug_protocol_reports_per_value_child_shape_metadata);
+    RUN_DEBUG_TEST(filter, test_debug_protocol_expands_union_variant_payloads);
+    RUN_DEBUG_TEST(filter, test_debug_evaluate_semantic_summary_uses_closure_captures);
+    RUN_DEBUG_TEST(filter, test_debug_evaluate_index_window_reports_base_reference_summary);
     return UNITY_END();
 }

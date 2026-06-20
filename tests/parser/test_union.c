@@ -2835,6 +2835,79 @@ static void test_union_no_block_default_using_variant_binds_tuple_payload_withou
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_union_no_block_default_using_variant_binds_generic_tuple_payload_without_annotation(void) {
+    const char *source =
+            "union Option<T> {\n"
+            "    None;\n"
+            "    @Some(value: T);\n"
+            "}\n"
+            "using [directGeneric] = Option<int>.Some(76);\n"
+            "return directGeneric;\n";
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "union_no_block_using_generic_tuple_runtime.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(76, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_union_no_block_var_default_using_variant_binds_generic_tuple_payload_without_annotation(void) {
+    const char *source =
+            "union Option<T> {\n"
+            "    None;\n"
+            "    @Some(value: T);\n"
+            "}\n"
+            "using var [directGeneric] = Option<int>.Some(76);\n"
+            "return directGeneric;\n";
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "union_no_block_using_var_generic_tuple_runtime.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(76, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_union_default_using_variant_binds_generic_tuple_payload_inside_using_block(void) {
+    const char *source =
+            "union Option<T> {\n"
+            "    None;\n"
+            "    @Some(value: T);\n"
+            "}\n"
+            "using (var [holder] = Option<int>.Some(1)) {\n"
+            "    using [nestedGeneric] = Option<int>.Some(41);\n"
+            "    return nestedGeneric + 1;\n"
+            "} else {\n"
+            "    return -1;\n"
+            "}\n";
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "union_using_block_generic_tuple_runtime.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(42, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 static void test_union_no_block_using_variant_binds_tuple_payload_with_annotation(void) {
     const char *source =
             "union Choice {\n"
@@ -3438,6 +3511,9 @@ int main(void) {
     RUN_TEST(test_union_using_guard_rejects_struct_variant_tuple_destructuring);
     RUN_TEST(test_union_default_using_variant_binds_tuple_payload_without_annotation);
     RUN_TEST(test_union_no_block_default_using_variant_binds_tuple_payload_without_annotation);
+    RUN_TEST(test_union_no_block_default_using_variant_binds_generic_tuple_payload_without_annotation);
+    RUN_TEST(test_union_no_block_var_default_using_variant_binds_generic_tuple_payload_without_annotation);
+    RUN_TEST(test_union_default_using_variant_binds_generic_tuple_payload_inside_using_block);
     RUN_TEST(test_union_no_block_using_variant_binds_tuple_payload_with_annotation);
     RUN_TEST(test_union_default_using_variant_rejects_tuple_object_destructuring_without_annotation);
     RUN_TEST(test_union_default_using_variant_rejects_struct_tuple_destructuring_without_annotation);

@@ -4,6 +4,10 @@
 
 #include "compile_expression_internal.h"
 
+static TZrBool note_inline_struct_field_result_slot(SZrCompilerState *cs,
+                                                    TZrUInt32 stackSlot,
+                                                    SZrString *fieldTypeName);
+
 static const TZrChar *compound_assignment_base_operator(const TZrChar *op) {
     if (op == ZR_NULL) {
         return ZR_NULL;
@@ -67,6 +71,23 @@ static TZrBool compile_type_cast_is_bool(EZrValueType type) {
 
 static TZrBool compile_type_cast_is_string(EZrValueType type) {
     return (TZrBool)ZR_VALUE_IS_TYPE_STRING(type);
+}
+
+static void compile_type_cast_emit_conversion(SZrCompilerState *cs,
+                                              TZrUInt32 destSlot,
+                                              TZrUInt32 srcSlot,
+                                              EZrInstructionCode opcode) {
+    emit_type_conversion(cs, destSlot, srcSlot, opcode);
+    cs->lastExpressionSlot = destSlot;
+}
+
+static void compile_type_cast_emit_conversion_with_prototype(SZrCompilerState *cs,
+                                                             TZrUInt32 destSlot,
+                                                             TZrUInt32 srcSlot,
+                                                             EZrInstructionCode opcode,
+                                                             TZrUInt32 prototypeIndex) {
+    emit_type_conversion_with_prototype(cs, destSlot, srcSlot, opcode, prototypeIndex);
+    cs->lastExpressionSlot = destSlot;
 }
 
 static EZrInstructionCode compile_assignment_select_compound_opcode(SZrCompilerState *cs,
@@ -233,15 +254,15 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
                 return;
             }
             if (hasSourceTypeInfo && compile_type_cast_is_float(sourceBaseType)) {
-                emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_INT_FLOAT));
+                compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_INT_FLOAT));
                 return;
             }
             if (hasSourceTypeInfo && compile_type_cast_is_unsigned_int(sourceBaseType)) {
-                emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED));
+                compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED));
                 return;
             }
             // 转换为 int
-            emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_INT));
+            compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_INT));
             return;
         } else if (nameLen == 4 && strncmp(typeNameStr, "uint", 4) == 0) {
             if (hasSourceTypeInfo && compile_type_cast_is_unsigned_int(sourceBaseType)) {
@@ -249,15 +270,15 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
                 return;
             }
             if (hasSourceTypeInfo && compile_type_cast_is_float(sourceBaseType)) {
-                emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT));
+                compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT));
                 return;
             }
             if (hasSourceTypeInfo && compile_type_cast_is_signed_int(sourceBaseType)) {
-                emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED));
+                compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED));
                 return;
             }
             // 转换为 uint
-            emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_UINT));
+            compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_UINT));
             return;
         } else if (nameLen == 5 && strncmp(typeNameStr, "float", 5) == 0) {
             if (hasSourceTypeInfo && compile_type_cast_is_float(sourceBaseType)) {
@@ -265,15 +286,15 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
                 return;
             }
             if (hasSourceTypeInfo && compile_type_cast_is_signed_int(sourceBaseType)) {
-                emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED));
+                compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED));
                 return;
             }
             if (hasSourceTypeInfo && compile_type_cast_is_unsigned_int(sourceBaseType)) {
-                emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED));
+                compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED));
                 return;
             }
             // 转换为 float
-            emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT));
+            compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT));
             return;
         } else if (nameLen == 6 && strncmp(typeNameStr, "string", 6) == 0) {
             if (hasSourceTypeInfo && compile_type_cast_is_string(sourceBaseType)) {
@@ -281,7 +302,7 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
                 return;
             }
             // 转换为 string
-            emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
+            compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
             return;
         } else if (nameLen == 4 && strncmp(typeNameStr, "bool", 4) == 0) {
             if (hasSourceTypeInfo && compile_type_cast_is_bool(sourceBaseType)) {
@@ -289,7 +310,7 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
                 return;
             }
             // 转换为 bool
-            emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_BOOL));
+            compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_BOOL));
             return;
         }
         
@@ -306,15 +327,15 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
             // 根据类型声明类型生成相应的转换指令
             if (typeDecl->type == ZR_AST_STRUCT_DECLARATION) {
                 // 生成 TO_STRUCT 指令，将类型名称常量索引作为操作数
-                emit_type_conversion_with_prototype(cs, destSlot, srcSlot, 
-                                                    ZR_INSTRUCTION_ENUM(TO_STRUCT), 
-                                                    typeNameConstantIndex);
+                compile_type_cast_emit_conversion_with_prototype(cs, destSlot, srcSlot,
+                                                                 ZR_INSTRUCTION_ENUM(TO_STRUCT),
+                                                                 typeNameConstantIndex);
                 return;
             } else if (typeDecl->type == ZR_AST_CLASS_DECLARATION) {
                 // 生成 TO_OBJECT 指令，将类型名称常量索引作为操作数
-                emit_type_conversion_with_prototype(cs, destSlot, srcSlot, 
-                                                    ZR_INSTRUCTION_ENUM(TO_OBJECT), 
-                                                    typeNameConstantIndex);
+                compile_type_cast_emit_conversion_with_prototype(cs, destSlot, srcSlot,
+                                                                 ZR_INSTRUCTION_ENUM(TO_OBJECT),
+                                                                 typeNameConstantIndex);
                 return;
             }
         }
@@ -324,7 +345,7 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
         // 注意：从其他模块导入的类型在运行时通过模块系统查找
         // 编译器无法在编译期确定所有类型，因此使用运行时类型查找
         // 如果类型未在当前模块找到，运行时会在全局模块注册表中查找
-        emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
+        compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
     } else {
         // TODO: 对于复杂类型（泛型、元组等），暂时使用 TO_STRING
         // 实现完整的类型转换逻辑
@@ -332,7 +353,7 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
         // 泛型类型转换需要实例化类型参数
         // 元组类型转换需要逐个元素转换
         // TODO: 这里暂时使用TO_STRING作为默认转换，未来可以扩展支持更多类型
-        emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
+        compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
     }
 }
 
@@ -411,6 +432,7 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     TZrBool isComparisonOp = (strcmp(op, "<") == 0 || strcmp(op, ">") == 0 || 
                             strcmp(op, "<=") == 0 || strcmp(op, ">=") == 0 ||
                             strcmp(op, "==") == 0 || strcmp(op, "!=") == 0);
+    TZrBool isShiftOp = (strcmp(op, "<<") == 0 || strcmp(op, ">>") == 0);
     
     if (hasTypeInfo) {
         if (isComparisonOp) {
@@ -468,7 +490,7 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                 }
             }
             // 其他情况（如都是float，或类型不兼容）保持原类型
-        } else {
+        } else if (!isShiftOp) {
             // 对于非比较操作，根据结果类型进行转换
             // 检查左操作数是否需要转换
             EZrInstructionCode leftConvOp = ZrParser_InferredType_GetConversionOpcode(&leftType, &resultType);
@@ -497,6 +519,9 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     TZrUInt32 destSlot = allocate_stack_slot(cs);
     EZrInstructionCode opcode = ZR_INSTRUCTION_ENUM(ADD);  // 默认（通用加法指令）
+    if (hasTypeInfo && resultType.typeName != ZR_NULL) {
+        (void)note_inline_struct_field_result_slot(cs, destSlot, resultType.typeName);
+    }
     
     // 根据操作符和类型选择指令
     // 临时调试输出：检查操作符字符串的实际值
@@ -508,9 +533,15 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         opcode = compiler_select_binary_arithmetic_opcode(
                 op, hasTypeInfo, resultType.baseType, effectiveLeftType, effectiveRightType);
     } else if (strcmp(op, "<<") == 0) {
-        opcode = ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT);
+        opcode = hasTypeInfo && (ZR_VALUE_IS_TYPE_UNSIGNED_INT(effectiveLeftType) ||
+                                 ZR_VALUE_IS_TYPE_UNSIGNED_INT(effectiveRightType))
+                ? ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT)
+                : ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT);
     } else if (strcmp(op, ">>") == 0) {
-        opcode = ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT);
+        opcode = hasTypeInfo && (ZR_VALUE_IS_TYPE_UNSIGNED_INT(effectiveLeftType) ||
+                                 ZR_VALUE_IS_TYPE_UNSIGNED_INT(effectiveRightType))
+                ? ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT)
+                : ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT);
     } else if (strcmp(op, "==") == 0) {
         opcode = compiler_select_binary_equality_opcode(ZR_FALSE, hasTypeInfo, effectiveLeftType, effectiveRightType);
     } else if (strcmp(op, "!=") == 0) {
@@ -595,8 +626,8 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 清理类型信息
     if (hasTypeInfo) {
-        if (isComparisonOp) {
-            // 比较操作：清理 leftType, rightType 和 resultType
+        if (isComparisonOp || isShiftOp) {
+            // 比较/位移操作保留操作数原始类型到指令选择阶段后再清理
             ZrParser_InferredType_Free(cs->state, &leftType);
             ZrParser_InferredType_Free(cs->state, &rightType);
         }

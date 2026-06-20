@@ -92,6 +92,19 @@ ZR_PARSER_API TZrBool ZrParser_AstType_TryUnwrapOwnershipGeneric(const SZrType *
                                                                  EZrOwnershipQualifier *qualifier,
                                                                  const SZrType **innerType);
 
+ZR_PARSER_API TZrBool ZrParser_OwnershipMemberNameToBuiltinKind(SZrString *name,
+                                                                 EZrOwnershipBuiltinKind *builtinKind);
+
+ZR_PARSER_API TZrBool ZrParser_OwnershipBuiltinCanApplyToQualifier(EZrOwnershipBuiltinKind builtinKind,
+                                                                    EZrOwnershipQualifier qualifier);
+
+ZR_PARSER_API EZrOwnershipQualifier ZrParser_OwnershipBuiltinResultQualifier(
+        EZrOwnershipBuiltinKind builtinKind,
+        EZrOwnershipQualifier sourceQualifier);
+
+ZR_PARSER_API const TZrChar *ZrParser_OwnershipMemberCallErrorMessage(
+        EZrOwnershipBuiltinKind builtinKind);
+
 // 初始化类型（使用基础类型）
 ZR_PARSER_API void ZrParser_InferredType_Init(SZrState *state, SZrInferredType *type, EZrValueType baseType);
 

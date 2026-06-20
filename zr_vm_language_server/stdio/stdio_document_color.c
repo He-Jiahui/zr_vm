@@ -243,6 +243,7 @@ cJSON *handle_document_color_request(SZrStdioServer *server, const cJSON *params
     const char *uriText;
     SZrString *uri;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     const char *content;
     size_t contentLength;
     TZrInt32 line = 0;
@@ -259,17 +260,18 @@ cJSON *handle_document_color_request(SZrStdioServer *server, const cJSON *params
     ZR_UNUSED_PARAMETER(uriText);
 
     fileVersion = get_file_version_for_uri(server, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
         return cJSON_CreateArray();
     }
 
     result = cJSON_CreateArray();
     if (result == NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return NULL;
     }
 
-    content = fileVersion->content;
-    contentLength = (size_t)fileVersion->contentLength;
+    content = snapshot.content;
+    contentLength = (size_t)snapshot.contentLength;
     for (size_t offset = 0; offset < contentLength; offset++) {
         SZrStdioColorLiteral literal;
         size_t literalLength;
@@ -338,6 +340,7 @@ cJSON *handle_document_color_request(SZrStdioServer *server, const cJSON *params
         }
     }
 
+    ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
     return result;
 }
 
@@ -346,6 +349,7 @@ cJSON *handle_color_presentation_request(SZrStdioServer *server, const cJSON *pa
     const char *uriText;
     SZrString *uri;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrLspRange range;
     char label[10];
     unsigned int red;
@@ -355,20 +359,23 @@ cJSON *handle_color_presentation_request(SZrStdioServer *server, const cJSON *pa
     cJSON *result;
     cJSON *presentation;
 
-    if (params == NULL || !parse_range(get_object_item(params, ZR_LSP_FIELD_RANGE), &range)) {
+    if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
         return cJSON_CreateArray();
     }
-    if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
+    if (params == NULL || !parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &range)) {
         return cJSON_CreateArray();
     }
     ZR_UNUSED_PARAMETER(uriText);
 
     fileVersion = get_file_version_for_uri(server, uri);
-    if (fileVersion == ZR_NULL ||
-        fileVersion->content == ZR_NULL ||
-        !color_document_contains_literal_range(fileVersion->content, (size_t)fileVersion->contentLength, range)) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
         return cJSON_CreateArray();
     }
+    if (!color_document_contains_literal_range(snapshot.content, (size_t)snapshot.contentLength, range)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
+        return cJSON_CreateArray();
+    }
+    ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
 
     color = get_object_item(params, ZR_LSP_FIELD_COLOR);
     red = color_component_to_byte(get_object_item(color, ZR_LSP_FIELD_RED));

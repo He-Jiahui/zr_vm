@@ -1397,6 +1397,7 @@ static TZrUInt32 compiler_emit_import_module_expression_with_helper(SZrCompilerS
                                           (TZrUInt16)functionSlot,
                                           1));
     ZrParser_Compiler_TrimStackToSlot(cs, functionSlot);
+    cs->lastExpressionSlot = functionSlot;
     return functionSlot;
 }
 
@@ -1422,6 +1423,7 @@ ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitTypeQueryExpression(SZrCompilerSta
                                                                   SZrAstNode *operand,
                                                                   SZrFileRange location) {
     TZrUInt32 argumentSlot;
+    TZrUInt32 resultSlot;
 
     if (cs == ZR_NULL || operand == ZR_NULL || cs->hasError) {
         return ZR_PARSER_SLOT_NONE;
@@ -1432,13 +1434,19 @@ ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitTypeQueryExpression(SZrCompilerSta
         return ZR_PARSER_SLOT_NONE;
     }
 
+    resultSlot = allocate_fresh_stack_slot_after(cs, argumentSlot);
+    if (resultSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+
     emit_instruction(cs,
                      create_instruction_2(ZR_INSTRUCTION_ENUM(TYPEOF),
-                                          (TZrUInt16)argumentSlot,
+                                          (TZrUInt16)resultSlot,
                                           (TZrUInt16)argumentSlot,
                                           0));
-    ZrParser_Compiler_TrimStackToSlot(cs, argumentSlot);
+    ZrParser_Compiler_TrimStackToSlot(cs, resultSlot);
+    cs->lastExpressionSlot = resultSlot;
     ZR_UNUSED_PARAMETER(location);
-    return argumentSlot;
+    return resultSlot;
 }
 

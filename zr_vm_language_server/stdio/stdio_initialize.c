@@ -158,6 +158,8 @@ cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *params) {
     cJSON_AddBoolToObject(parts.inlayHintProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER, 1);
 
     cJSON_AddItemToObject(parts.capabilities, ZR_LSP_FIELD_TEXT_DOCUMENT_SYNC, parts.textDocumentSync);
+    negotiate_position_encoding(server, params);
+    cJSON_AddStringToObject(parts.capabilities, ZR_LSP_FIELD_POSITION_ENCODING, position_encoding_name(server));
     cJSON_AddItemToObject(parts.capabilities, ZR_LSP_FIELD_COMPLETION_PROVIDER, parts.completionProvider);
     cJSON_AddBoolToObject(parts.capabilities, ZR_LSP_FIELD_HOVER_PROVIDER, 1);
     cJSON_AddItemToObject(parts.capabilities, ZR_LSP_FIELD_SIGNATURE_HELP_PROVIDER, parts.signatureHelpProvider);

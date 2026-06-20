@@ -146,7 +146,7 @@ TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
 const TZrChar *receiver_ownership_call_error(EZrOwnershipQualifier receiverQualifier);
 SZrString *extract_imported_module_name(SZrFunctionCall *call);
 TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *moduleName);
-TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *moduleName);
+ZR_PARSER_API TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *moduleName);
 ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, SZrString *typeName);
 TZrBool infer_import_expression_type(SZrCompilerState *cs,
                                      SZrAstNode *node,

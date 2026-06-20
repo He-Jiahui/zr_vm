@@ -22,15 +22,20 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_type_def_layout.c
   - zr_vm_core/include/zr_vm_core/type_layout.h
   - zr_vm_core/src/zr_vm_core/type_layout.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
+  - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_core/include/zr_vm_core/metadata_token.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic_type_prototypes.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - tests/parser/test_union.c
   - tests/module/test_metadata_token_model.c
 implementation_files:
@@ -44,6 +49,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_union.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_type_def_layout.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_token.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
@@ -55,10 +61,14 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/type_layout.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
+  - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic_type_prototypes.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
 plan_sources:
   - user: 2026-06-17 Rust-like union syntax from docs/plans/using
   - docs/plans/using/04-union-types.md
@@ -67,6 +77,9 @@ tests:
   - tests/language_server/test_union_pattern_diagnostics.c
   - tests/module/test_metadata_token_model.c
   - tests/acceptance/2026-06-17-union-types.md
+  - tests/fixtures/projects/using_real_world_checkout
+  - tests/fixtures/projects/using_feature_matrix
+  - tests/fixtures/projects/using_edge_matrix
 doc_type: module-detail
 ---
 
@@ -124,12 +137,14 @@ This page records the implemented P3 union slice from `docs/plans/using`.
   - `using [value]: Choice.Num = choice;`
   - `using {width, h: height} = shape;`
   The binding is registered in the current scope, and the tag-mismatch branch skips the binding instructions. `else` is not part of this shorthand. `%import` guard shorthand remains block-scoped.
+- The language server semantic analyzer mirrors these payload binding scopes. No-block `using` payloads become current-scope local symbols; block-style `using` payloads are visible in the guard body; union `switch` payloads are visible in their case block. LSP type inference propagates the matched variant field type into those locals, including direct closed generic substitutions such as `Option<int>.Some(value: T)` to `int` and `Result<int,string>.Ok(value: T)` to `int`.
 - Union `switch` statements are checked for exhaustiveness when the switched expression has a known union type and the switch does not include a `()` default. Repeated cases for the same union variant are rejected as unreachable.
 - Typed export signature blobs encode known union types with `ZR_METADATA_SIGNATURE_NODE_UNION`, including generic arguments such as `Option<int>`.
 - Compiled `prototypeData` records union declarations as `ZR_OBJECT_PROTOTYPE_TYPE_UNION`, with each variant serialized as a `ZR_AST_UNION_VARIANT` member.
 - Variant member metadata constants record payload field descriptors: declared field name, runtime storage name, type name, positional index, and passing mode.
 - Union prototype and variant metadata include byte layout information: tag size, payload offset, prototype size/align, variant payload size/align, and each payload field's byte offset/size/align.
 - Union payload metadata records the ownership qualifier for value payload fields, so owner/gc payload slots can be reconstructed as embedded `SZrTypeValue` fields in the runtime type layout.
+- Generic payload fields that reference the current union's generic parameters are also represented as embedded `SZrTypeValue` fields. This keeps `Option<T>.Some(value: T)` and `Result<T, E>.Ok(value: T)` layout-correct after closure as `Option<int>` or `Result<int,string>`: prototype layout, metadata type-def layout, inline-frame materialization, payload store, and `__zr_unionPayloadN` reads all agree on full value-slot size and alignment.
 - Typed union local variables now receive inline frame slot layout metadata, and the runtime can materialize a constructor carrier in that slot into inline tag/payload bytes for POD payload fields.
 - Inline-frame member reads now expose `__zr_unionVariant` and `__zr_unionPayloadN` for typed union local slots, so `switch` and `using` pattern reads can consume inline tag/payload bytes after materialization.
 - Typed union local identifiers can be copied into another typed union local through declaration initialization (`var target: Choice = source`) or simple assignment (`target = source`) without first losing inline layout through an object-shaped temporary.
@@ -157,7 +172,7 @@ Variant constructors lower to a plain object with stable metadata fields:
 
 Tuple-style constructors write payload slots from call argument order. Struct-style constructors validate object payload keys against the declared variant fields, then write payload slots in declaration order so later pattern destructuring can share one carrier shape.
 
-This carrier keeps constructed values executable through the existing object runtime. When the destination is a typed union local with inline frame layout, the compiler emits a self `SET_STACK` after the initializer and the runtime converts the carrier into inline `[tag][payload]` bytes using serialized variant metadata. A later `target = Union.Variant(...)` assignment uses the same inline-frame copy hook: the runtime accepts the carrier from either the physical stack slot or the logical frame value slot, drops the destination's current active union payload through the resolved union type layout, and then writes the new tag/payload bytes. The verified path covers POD payload fields such as `Shape.Circle(radius: float)` and value-sized owner/gc payload fields that are stored as embedded `SZrTypeValue` slots.
+This carrier keeps constructed values executable through the existing object runtime. When the destination is a typed union local with inline frame layout, the compiler emits a self `SET_STACK` after the initializer and the runtime converts the carrier into inline `[tag][payload]` bytes using serialized variant metadata. A later `target = Union.Variant(...)` assignment uses the same inline-frame copy hook: the runtime accepts the carrier from either the physical stack slot or the logical frame value slot, drops the destination's current active union payload through the resolved union type layout, and then writes the new tag/payload bytes. The verified path covers POD payload fields such as `Shape.Circle(radius: float)` and value-sized owner/gc/generic payload fields that are stored as embedded `SZrTypeValue` slots. Frame layout storage initialization clears value slots without first releasing them; this prevents debug-build stack fill bytes from being treated as live owners before a typed union local has received a real value.
 
 When an expression is just a typed union local identifier and the destination slot is known, `compile_expression_into_slot` now emits a direct `SET_STACK` from the source local slot and records the destination union layout hint. Simple assignment uses the same union-only direct source slot path for `target = source`. This is intentionally not generalized to inline structs, whose constructor argument and nested-field copy paths continue to use their established temporary/normalization lowering.
 
@@ -169,7 +184,7 @@ Frame-layout hint preservation also depends on typed metadata not confusing cont
 
 Before lowering a union switch, the compiler infers the switched expression type and resolves the union declaration. If the switch has no `()` default, every declared variant must be covered by a union variant case; otherwise compilation reports `Non-exhaustive union switch; missing variant '<name>'`. The compiler also rejects a second case that covers an already-covered variant with `Unreachable union switch case; variant '<name>' is already covered`. A `()` default is the explicit escape hatch for intentionally partial variant lists.
 
-`using` pattern guards reuse the same pseudo-members for a single variant. The block-style form names the variant in the type annotation and uses the payload shape as the binding pattern: `using (var []: Shape.Empty = shape) { ... } else { ... }` for unit variants, `using (var [r]: Shape.Circle = shape) { ... } else { ... }` for tuple payloads, and `using (var {width, h: height}: Shape.Rect = shape) { ... } else { ... }` for struct payloads. The no-block shorthand uses the same destructuring shape with an ordinary assignment form, such as `using [value] = option;`, `using [value]: Choice.Num = choice;`, and `using {width, h: height} = shape;`. The compiler compares the tag, binds the destructured payload, and falls back to `else` when a block body exists. In no-block form, `body == NULL`; bindings are emitted in the current scope, and the false branch skips the binding instructions. The compiler rejects object destructuring for tuple variants and array/tuple destructuring for struct variants in both annotated and default-variant forms. Payload bindings share the same variant-field type registration as `switch` cases. Owner payloads are non-consuming by default: `using (var [handle]: Resource.Open = resource)` exposes a declared `Shared<Box>` payload as a borrowed local, so owner-consuming builtins such as `%release(handle)` are rejected. Explicit move syntax is available for block-style `using`: `using (var [move handle]: Resource.Open = resource)` and `using (var {move handle}: Resource.Open = resource)` bind the declared owner type instead. If the union declaration marks exactly one default validation variant with `@`, typed `using` may name only the union type and still match that default variant; tuple payloads bind through `var [field]`, while struct payloads require `var {field}` or alias forms. If `shape` is a typed union inline local, those pseudo-members are served from inline frame bytes; otherwise carrier object reads continue through ordinary object member lookup.
+`using` pattern guards reuse the same pseudo-members for a single variant. The block-style form names the variant in the type annotation and uses the payload shape as the binding pattern: `using (var []: Shape.Empty = shape) { ... } else { ... }` for unit variants, `using (var [r]: Shape.Circle = shape) { ... } else { ... }` for tuple payloads, and `using (var {width, h: height}: Shape.Rect = shape) { ... } else { ... }` for struct payloads. The no-block shorthand uses the same destructuring shape with an ordinary assignment form, such as `using [value] = option;`, `using var [value] = option;`, `using [value]: Choice.Num = choice;`, and `using {width, h: height} = shape;`; the optional `var` is accepted only before a no-block tuple/object destructuring pattern. The compiler compares the tag, binds the destructured payload, and falls back to `else` when a block body exists. In no-block form, `body == NULL`; bindings are emitted in the current scope, and the false branch skips the binding instructions. The compiler rejects object destructuring for tuple variants and array/tuple destructuring for struct variants in both annotated and default-variant forms. Payload bindings share the same variant-field type registration as `switch` cases. Owner payloads are non-consuming by default: `using (var [handle]: Resource.Open = resource)` exposes a declared `Shared<Box>` payload as a borrowed local, so owner-consuming builtins such as `%release(handle)` are rejected. Explicit move syntax is available for block-style `using`: `using (var [move handle]: Resource.Open = resource)` and `using (var {move handle}: Resource.Open = resource)` bind the declared owner type instead. If the union declaration marks exactly one default validation variant with `@`, typed `using` may name only the union type and still match that default variant; tuple payloads bind through `var [field]`, while struct payloads require `var {field}` or alias forms. If `shape` is a typed union inline local, those pseudo-members are served from inline frame bytes; otherwise carrier object reads continue through ordinary object member lookup.
 
 For explicit `move` bindings, statement lowering skips `OWN_BORROW`, registers the local with the payload field's declared ownership qualifier, and emits `SET_MEMBER_SLOT_NULL` against the matched `__zr_unionPayloadN` pseudo-member after the local has been bound. Runtime inline-frame member writes understand union payload pseudo-members, so the null write updates the active inline union storage instead of falling back to object member state. This is what prevents the moved owner from being released again when the active union variant later drops or is overwritten.
 
@@ -188,6 +203,8 @@ Each variant member also carries a metadata object through the existing member-l
 ## Tooling
 
 `ZR_OBJECT_PROTOTYPE_TYPE_UNION` is registered in display/reflection/metadata mappings. The language server can bootstrap union type prototypes and collect union declarations plus variants into the existing enum-style symbol path.
+
+LSP semantic payload binding is implemented in `semantic_analyzer_union_patterns.c/.h` and consumed by symbol collection/typecheck. The shared helper resolves the same using/switch union patterns as the compiler, builds payload local types from the matched variant fields, applies owner default-borrow semantics, and registers the bindings into the symbol table and type environment before analyzing the guarded body or switch case.
 
 ## Remaining Work
 

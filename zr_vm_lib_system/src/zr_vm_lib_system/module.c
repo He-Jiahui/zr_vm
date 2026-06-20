@@ -4,6 +4,7 @@
 
 #include "zr_vm_lib_system/module.h"
 
+#include "zr_vm_lib_system/assembly_registry.h"
 #include "zr_vm_lib_system/console_registry.h"
 #include "zr_vm_lib_system/env_registry.h"
 #include "zr_vm_lib_system/exception_registry.h"
@@ -25,6 +26,7 @@ static const TZrChar g_system_root_type_hints_json[] =
 static const ZrLibModuleLinkDescriptor g_system_module_links[] = {
         {"console", "zr.system.console", "Console output helpers."},
         {"fs", "zr.system.fs", "Filesystem helpers."},
+        {"assembly", "zr.system.assembly", "Current .zrm assembly resource helpers."},
         {"env", "zr.system.env", "Environment helpers."},
         {"process", "zr.system.process", "Process helpers."},
         {"gc", "zr.system.gc", "Garbage-collection controls."},
@@ -50,6 +52,7 @@ static const ZrLibModuleDescriptor g_system_root_module_descriptor = {
         "1.0.0",
         ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
         0,
+        ZR_NULL,
 };
 
 const ZrLibModuleDescriptor *ZrVmLibSystem_GetModuleDescriptor(void) {
@@ -60,6 +63,7 @@ TZrBool ZrVmLibSystem_Register(SZrGlobalState *global) {
     const ZrLibModuleDescriptor *leafModules[] = {
             ZrSystem_ConsoleRegistry_GetModule(),
             ZrSystem_FsRegistry_GetModule(),
+            ZrSystem_AssemblyRegistry_GetModule(),
             ZrSystem_EnvRegistry_GetModule(),
             ZrSystem_ProcessRegistry_GetModule(),
             ZrSystem_GcRegistry_GetModule(),

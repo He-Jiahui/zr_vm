@@ -60,9 +60,11 @@ extern void test_name_matched_iterator_members_without_builtin_interface_do_not_
 extern void test_interface_missing_member_is_rejected_by_compiler(void);
 extern void test_ownership_builtin_shared_expression_consumes_unique_owner(void);
 extern void test_intrinsic_ownership_generic_constructors_emit_dedicated_opcodes(void);
+extern void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(void);
 extern void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void);
 extern void test_ownership_unique_share_runtime_moves_source_to_null(void);
 extern void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void);
+extern void test_ownership_generic_real_fixture_executes_session_lifecycle(void);
 extern void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void);
 extern void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract(void);
 extern void test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry(void);
@@ -214,6 +216,7 @@ int main(void) {
     RUN_TEST(test_interface_missing_member_is_rejected_by_compiler);
     RUN_TEST(test_ownership_builtin_shared_expression_consumes_unique_owner);
     RUN_TEST(test_intrinsic_ownership_generic_constructors_emit_dedicated_opcodes);
+    RUN_TEST(test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute);
     RUN_TEST(test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes);
     RUN_TEST(test_ownership_builtin_compile_rejects_invalid_operands);
     RUN_TEST(test_plugin_guard_global_assignment_reports_escape_boundary);
@@ -231,6 +234,7 @@ int main(void) {
     RUN_TEST(test_plugin_load_available_import_guard_lowers_to_available_payload);
     RUN_TEST(test_ownership_unique_share_runtime_moves_source_to_null);
     RUN_TEST(test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract);
+    RUN_TEST(test_ownership_generic_real_fixture_executes_session_lifecycle);
     RUN_TEST(test_ownership_weak_runtime_expires_to_null_after_last_shared_release);
     RUN_TEST(test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract);
     RUN_TEST(test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry);

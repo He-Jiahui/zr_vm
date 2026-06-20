@@ -250,6 +250,7 @@ TZrBool ZrLanguageServer_Lsp_TryGetMetaMethodHover(SZrState *state,
                                                    SZrLspPosition position,
                                                    SZrLspHover **result) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrFilePosition filePosition;
     TZrSize tokenStart;
     TZrSize tokenEnd;
@@ -265,28 +266,35 @@ TZrBool ZrLanguageServer_Lsp_TryGetMetaMethodHover(SZrState *state,
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL || fileVersion->contentLength == 0) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        return ZR_FALSE;
+    }
+    if (snapshot.contentLength == 0) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
-    if (!token_metadata_find_prefixed_identifier_at_offset(fileVersion->content,
-                                                           fileVersion->contentLength,
+    if (!token_metadata_find_prefixed_identifier_at_offset(snapshot.content,
+                                                           snapshot.contentLength,
                                                            filePosition.offset,
                                                            '@',
                                                            &tokenStart,
                                                            &tokenEnd)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
-    if (!ZrLanguageServer_Lsp_IsOffsetInCodeSpan(fileVersion->content,
-                                                 fileVersion->contentLength,
+    if (!ZrLanguageServer_Lsp_IsOffsetInCodeSpan(snapshot.content,
+                                                 snapshot.contentLength,
                                                  tokenStart)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
     tokenLength = tokenEnd - tokenStart;
-    descriptor = token_metadata_find_meta_method_descriptor(fileVersion->content + tokenStart, tokenLength);
+    descriptor = token_metadata_find_meta_method_descriptor(snapshot.content + tokenStart, tokenLength);
     if (descriptor == ZR_NULL || descriptor->label == ZR_NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
@@ -299,26 +307,29 @@ TZrBool ZrLanguageServer_Lsp_TryGetMetaMethodHover(SZrState *state,
              descriptor->detail != ZR_NULL ? descriptor->detail : "meta method");
     markdown = ZrCore_String_Create(state, markdownBuffer, strlen(markdownBuffer));
     if (markdown == ZR_NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
     hover = (SZrLspHover *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspHover));
     if (hover == ZR_NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
 
-    range = ZrParser_FileRange_Create(token_metadata_file_position_from_offset(fileVersion->content,
-                                                                               fileVersion->contentLength,
+    range = ZrParser_FileRange_Create(token_metadata_file_position_from_offset(snapshot.content,
+                                                                               snapshot.contentLength,
                                                                                tokenStart),
-                                      token_metadata_file_position_from_offset(fileVersion->content,
-                                                                               fileVersion->contentLength,
+                                      token_metadata_file_position_from_offset(snapshot.content,
+                                                                               snapshot.contentLength,
                                                                                tokenEnd),
                                       uri);
 
     ZrCore_Array_Init(state, &hover->contents, sizeof(SZrString *), 1);
     ZrCore_Array_Push(state, &hover->contents, &markdown);
-    hover->range = ZrLanguageServer_LspRange_FromFileRange(range);
+    hover->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
 
     *result = hover;
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_TRUE;
 }

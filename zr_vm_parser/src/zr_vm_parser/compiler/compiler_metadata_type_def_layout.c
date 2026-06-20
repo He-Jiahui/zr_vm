@@ -54,6 +54,101 @@ static TZrUInt32 metadata_type_def_payload_field_ownership_qualifier(const SZrTy
     return (TZrUInt32)typeInfo->ownershipQualifier;
 }
 
+static TZrBool metadata_type_def_generic_parameter_name_matches(SZrGenericDeclaration *generic,
+                                                                SZrString *typeName) {
+    if (generic == ZR_NULL || generic->params == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < generic->params->count; index++) {
+        SZrAstNode *paramNode = generic->params->nodes[index];
+        if (paramNode != ZR_NULL &&
+            paramNode->type == ZR_AST_PARAMETER &&
+            paramNode->data.parameter.name != ZR_NULL &&
+            paramNode->data.parameter.name->name != ZR_NULL &&
+            ZrCore_String_Equal(paramNode->data.parameter.name->name, typeName)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool metadata_type_def_type_references_generic_parameter(SZrGenericDeclaration *generic,
+                                                                   const SZrType *typeInfo) {
+    EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    const SZrType *ownershipInnerType = ZR_NULL;
+
+    if (generic == ZR_NULL || generic->params == ZR_NULL || typeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrParser_AstType_TryUnwrapOwnershipGeneric(typeInfo, &ownershipQualifier, &ownershipInnerType)) {
+        ZR_UNUSED_PARAMETER(ownershipQualifier);
+        return metadata_type_def_type_references_generic_parameter(generic, ownershipInnerType);
+    }
+
+    if (typeInfo->subType != ZR_NULL &&
+        metadata_type_def_type_references_generic_parameter(generic, typeInfo->subType)) {
+        return ZR_TRUE;
+    }
+
+    if (typeInfo->name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeInfo->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return metadata_type_def_generic_parameter_name_matches(generic,
+                                                               typeInfo->name->data.identifier.name);
+    }
+
+    if (typeInfo->name->type == ZR_AST_GENERIC_TYPE) {
+        SZrGenericType *genericType = &typeInfo->name->data.genericType;
+        if (genericType->name != ZR_NULL &&
+            metadata_type_def_generic_parameter_name_matches(generic, genericType->name->name)) {
+            return ZR_TRUE;
+        }
+        if (genericType->params != ZR_NULL) {
+            for (TZrSize index = 0; index < genericType->params->count; index++) {
+                SZrAstNode *argumentNode = genericType->params->nodes[index];
+                if (argumentNode != ZR_NULL &&
+                    argumentNode->type == ZR_AST_TYPE &&
+                    metadata_type_def_type_references_generic_parameter(generic, &argumentNode->data.type)) {
+                    return ZR_TRUE;
+                }
+            }
+        }
+    }
+
+    if (typeInfo->name->type == ZR_AST_TUPLE_TYPE &&
+        typeInfo->name->data.tupleType.elements != ZR_NULL) {
+        SZrAstNodeArray *elements = typeInfo->name->data.tupleType.elements;
+        for (TZrSize index = 0; index < elements->count; index++) {
+            SZrAstNode *elementNode = elements->nodes[index];
+            if (elementNode != ZR_NULL &&
+                elementNode->type == ZR_AST_TYPE &&
+                metadata_type_def_type_references_generic_parameter(generic, &elementNode->data.type)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool metadata_type_def_payload_uses_value_slot(const SZrAstNode *unionDeclaration,
+                                                         const SZrType *typeInfo,
+                                                         TZrUInt32 ownershipQualifier) {
+    SZrGenericDeclaration *generic = ZR_NULL;
+
+    if (unionDeclaration != ZR_NULL && unionDeclaration->type == ZR_AST_UNION_DECLARATION) {
+        generic = unionDeclaration->data.unionDeclaration.generic;
+    }
+
+    return (TZrBool)(ownershipQualifier != (TZrUInt32)ZR_OWNERSHIP_QUALIFIER_NONE ||
+                     metadata_type_def_type_references_generic_parameter(generic, typeInfo));
+}
+
 static TZrUInt32 metadata_type_def_canonical_align_for_size(TZrUInt32 size) {
     if (size <= 1u) {
         return 1u;
@@ -95,6 +190,7 @@ static TZrBool metadata_type_def_try_get_prototype_align(SZrCompilerState *cs,
 }
 
 static void metadata_type_def_select_payload_field_layout(SZrCompilerState *cs,
+                                                          const SZrAstNode *unionDeclaration,
                                                           const SZrType *typeInfo,
                                                           TZrUInt32 ownershipQualifier,
                                                           TZrUInt32 *outSize,
@@ -102,7 +198,7 @@ static void metadata_type_def_select_payload_field_layout(SZrCompilerState *cs,
     TZrUInt32 fieldSize = ZR_METADATA_TYPE_DEF_LAYOUT_REFERENCE_SIZE;
     TZrUInt32 fieldAlign = ZR_METADATA_TYPE_DEF_LAYOUT_MAX_SCALAR_ALIGN;
 
-    if (ownershipQualifier != (TZrUInt32)ZR_OWNERSHIP_QUALIFIER_NONE) {
+    if (metadata_type_def_payload_uses_value_slot(unionDeclaration, typeInfo, ownershipQualifier)) {
         fieldSize = (TZrUInt32)sizeof(SZrTypeValue);
         fieldAlign = metadata_type_def_canonical_align_for_size(fieldSize);
     } else if (typeInfo != ZR_NULL) {
@@ -260,6 +356,7 @@ TZrBool compiler_metadata_type_def_compute_union_layout_identity(SZrCompilerStat
                         ownershipQualifier =
                                 metadata_type_def_payload_field_ownership_qualifier(field->typeInfo);
                         metadata_type_def_select_payload_field_layout(cs,
+                                                                      unionDeclaration,
                                                                       field->typeInfo,
                                                                       ownershipQualifier,
                                                                       &fieldSize,

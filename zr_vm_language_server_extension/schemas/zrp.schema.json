@@ -8,6 +8,53 @@
       "type": "string",
       "description": "Human-readable project name."
     },
+    "manifestVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Manifest schema version. Version 1 enables assembly identity and alias-based references."
+    },
+    "assembly": {
+      "type": "object",
+      "description": "Assembly identity written into metadata and AssemblyRef records. When present, assembly.name/version override legacy top-level name/version for assembly identity.",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\s/\\\\@$]+(?:\\.[^\\s/\\\\@$.]+)*$",
+          "description": "Stable assembly identity name, such as zr.math."
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\s/\\\\]+$",
+          "description": "Assembly version string."
+        },
+        "culture": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional assembly culture. Defaults to neutral."
+        },
+        "publicKeyToken": {
+          "type": "string",
+          "description": "Optional assembly public key token."
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional assembly kind. Defaults to library."
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\s]+\\.zrm$",
+          "description": "Optional .zrm assembly output path. Relative paths are resolved from the project manifest directory. Defaults to binary/<assembly-name>.zrm."
+        }
+      },
+      "additionalProperties": true
+    },
     "version": {
       "type": "string",
       "minLength": 1,
@@ -106,6 +153,18 @@
                   "minLength": 1,
                   "pattern": "^[^\\s/\\\\]+$",
                   "description": "Expected dependency version. If the dependency manifest also declares version, it must match."
+                },
+                "minVersionInclusive": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^\\s/\\\\]+$",
+                  "description": "Minimum accepted dependency version for emitted AssemblyRef metadata."
+                },
+                "maxVersionExclusive": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^\\s/\\\\]+$",
+                  "description": "Exclusive maximum accepted dependency version for emitted AssemblyRef metadata."
                 }
               },
               "additionalProperties": true
@@ -121,6 +180,115 @@
             "version": "1.0.0"
           },
           "$trig": "deps/trig/trig.zrp"
+        }
+      ]
+    },
+    "references": {
+      "type": "object",
+      "description": "Alias-based assembly references. Keys are source import aliases used as &alias imports; each entry names the real assembly identity and references either a .zrp project manifest or a .zrm assembly container.",
+      "patternProperties": {
+        "^[^\\s./\\\\@$][^\\s/\\\\@$]*$": {
+          "type": "object",
+          "required": [
+            "assembly",
+            "path"
+          ],
+          "properties": {
+            "assembly": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[^\\s/\\\\@$]+(?:\\.[^\\s/\\\\@$.]+)*$",
+              "description": "Expected referenced assembly name from the target manifest."
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Referenced .zrp manifest or .zrm assembly path relative to this manifest."
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[^\\s/\\\\]+$",
+              "description": "Expected referenced assembly version. If omitted, the target assembly version is used."
+            },
+            "minVersionInclusive": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[^\\s/\\\\]+$",
+              "description": "Minimum accepted assembly version for emitted AssemblyRef metadata."
+            },
+            "maxVersionExclusive": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[^\\s/\\\\]+$",
+              "description": "Exclusive maximum accepted assembly version for emitted AssemblyRef metadata."
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "mathLocal": {
+            "assembly": "zr.math",
+            "version": "2.1.0",
+            "path": "deps/math/math.zrp",
+            "minVersionInclusive": "2.0.0",
+            "maxVersionExclusive": "3.0.0"
+          },
+          "mathPacked": {
+            "assembly": "zr.math",
+            "version": "2.1.0",
+            "path": "deps/math/math.zrm"
+          }
+        }
+      ]
+    },
+    "resources": {
+      "type": "object",
+      "description": "Logical resources to include in an emitted .zrm assembly. Keys are safe logical names under resources/ inside the container.",
+      "patternProperties": {
+        "^[^\\s:\\\\]+(?:/[^\\s:\\\\]+)*$": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resource file path relative to this manifest. Stored under the key's logical name and compressed by default."
+            },
+            {
+              "type": "object",
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Resource file path relative to this manifest."
+                },
+                "compress": {
+                  "type": "boolean",
+                  "description": "Whether to deflate this resource in the .zrm container. Defaults to true."
+                },
+                "hash": {
+                  "type": "string",
+                  "description": "Optional caller-provided resource content hash recorded in the .zrm manifest."
+                }
+              },
+              "additionalProperties": true
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "config/default.txt": {
+            "path": "resources/default.txt",
+            "compress": true
+          },
+          "assets/logo.bin": "resources/logo.bin"
         }
       ]
     },

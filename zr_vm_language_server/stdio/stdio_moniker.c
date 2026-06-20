@@ -161,6 +161,7 @@ cJSON *handle_moniker_request(SZrStdioServer *server, const cJSON *params) {
     const char *uriText;
     SZrString *uri;
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     const char *content;
     size_t contentLength;
     size_t offset;
@@ -174,22 +175,25 @@ cJSON *handle_moniker_request(SZrStdioServer *server, const cJSON *params) {
     }
 
     fileVersion = get_file_version_for_uri(server, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
         return cJSON_CreateArray();
     }
 
-    content = fileVersion->content;
-    contentLength = (size_t)fileVersion->contentLength;
+    content = snapshot.content;
+    contentLength = snapshot.contentLength;
     if (!moniker_offset_from_position(content, contentLength, position, &offset)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return cJSON_CreateArray();
     }
     if (offset >= contentLength || !moniker_is_identifier_part(content[offset])) {
         if (offset == 0 || !moniker_is_identifier_part(content[offset - 1])) {
+            ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
             return cJSON_CreateArray();
         }
         offset--;
     }
     if (!moniker_offset_is_in_code(content, contentLength, offset)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return cJSON_CreateArray();
     }
 
@@ -198,6 +202,7 @@ cJSON *handle_moniker_request(SZrStdioServer *server, const cJSON *params) {
         wordStart--;
     }
     if (!moniker_is_identifier_start(content[wordStart])) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
         return cJSON_CreateArray();
     }
 
@@ -208,6 +213,7 @@ cJSON *handle_moniker_request(SZrStdioServer *server, const cJSON *params) {
 
     result = cJSON_CreateArray();
     moniker = moniker_create_for_word(uriText, content + wordStart, wordEnd - wordStart);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
     if (result == NULL || moniker == NULL) {
         cJSON_Delete(result);
         cJSON_Delete(moniker);

@@ -626,6 +626,96 @@ static TZrBool member_name_is_plain_share(SZrString *memberName) {
     return (TZrBool)(text != ZR_NULL && strcmp(text, "share") == 0);
 }
 
+static TZrBool ownership_member_builtin_consumes_local_source(EZrOwnershipBuiltinKind builtinKind) {
+    return (TZrBool)(builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_SHARED ||
+                     builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_LOAN);
+}
+
+static TZrBool ownership_member_builtin_requires_local_source(EZrOwnershipBuiltinKind builtinKind) {
+    return (TZrBool)(builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE ||
+                     builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DETACH);
+}
+
+static TZrUInt32 ownership_member_direct_local_slot(SZrCompilerState *cs, SZrAstNode *propertyNode) {
+    if (cs == ZR_NULL ||
+        propertyNode == ZR_NULL ||
+        propertyNode->type != ZR_AST_IDENTIFIER_LITERAL ||
+        propertyNode->data.identifier.name == ZR_NULL) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+
+    return find_local_var(cs, propertyNode->data.identifier.name);
+}
+
+static TZrBool compile_ownership_member_builtin_call(SZrCompilerState *cs,
+                                                     SZrAstNode *propertyNode,
+                                                     EZrOwnershipBuiltinKind builtinKind,
+                                                     EZrOwnershipQualifier rootOwnershipQualifier,
+                                                     TZrUInt32 currentSlot,
+                                                     TZrUInt32 preferredResultSlot,
+                                                     TZrBool receiverIsRootLocal,
+                                                     SZrFileRange location,
+                                                     TZrUInt32 *outResultSlot) {
+    EZrInstructionCode opcode;
+    TZrUInt32 sourceSlot = currentSlot;
+    TZrUInt32 directLocalSlot;
+    TZrUInt32 resultSlot = preferredResultSlot;
+
+    if (outResultSlot != ZR_NULL) {
+        *outResultSlot = ZR_PARSER_SLOT_NONE;
+    }
+    if (cs == ZR_NULL || cs->hasError || outResultSlot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrParser_OwnershipBuiltinCanApplyToQualifier(builtinKind, rootOwnershipQualifier)) {
+        ZrParser_Compiler_Error(cs, ZrParser_OwnershipMemberCallErrorMessage(builtinKind), location);
+        return ZR_FALSE;
+    }
+
+    directLocalSlot = receiverIsRootLocal
+            ? ownership_member_direct_local_slot(cs, propertyNode)
+            : ZR_PARSER_SLOT_NONE;
+    if (directLocalSlot != ZR_PARSER_SLOT_NONE) {
+        sourceSlot = directLocalSlot;
+    } else if (ownership_member_builtin_requires_local_source(builtinKind)) {
+        ZrParser_Compiler_Error(cs,
+                                builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE
+                                        ? "release() currently requires a local identifier binding"
+                                        : "detach() currently requires a local identifier binding",
+                                location);
+        return ZR_FALSE;
+    }
+
+    if (resultSlot == ZR_PARSER_SLOT_NONE || resultSlot == sourceSlot) {
+        resultSlot = allocate_stack_slot(cs);
+    }
+    opcode = compiler_ownership_builtin_opcode_from_kind(builtinKind);
+    if (opcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
+        ZrParser_Compiler_Error(cs, "Unsupported ownership member call", location);
+        return ZR_FALSE;
+    }
+
+    emit_instruction(cs,
+                     create_instruction_2(opcode,
+                                          (TZrUInt16)resultSlot,
+                                          (TZrUInt16)sourceSlot,
+                                          0));
+    collapse_stack_to_slot(cs, resultSlot);
+
+    if (directLocalSlot != ZR_PARSER_SLOT_NONE &&
+        ownership_member_builtin_consumes_local_source(builtinKind)) {
+        if (!emit_null_reset_to_identifier_binding_local(cs, propertyNode->data.identifier.name, location)) {
+            ZrParser_Compiler_Error(cs, "Failed to reset consumed ownership source binding", location);
+            return ZR_FALSE;
+        }
+        cs->lastExpressionSlot = resultSlot;
+    }
+
+    *outResultSlot = resultSlot;
+    return !cs->hasError;
+}
+
 TZrBool emit_module_plain_share_helper_call(SZrCompilerState *cs,
                                             TZrUInt32 sourceSlot,
                                             TZrUInt32 resultSlot,
@@ -791,6 +881,9 @@ static TZrBool type_is_struct_constructor_member(SZrCompilerState *cs,
 
     if (cs == ZR_NULL || typeName == ZR_NULL || memberInfo == ZR_NULL ||
         !memberInfo->isMetaMethod || memberInfo->metaType != ZR_META_CONSTRUCTOR) {
+        return ZR_FALSE;
+    }
+    if (memberInfo->compiledFunction == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -1109,6 +1202,7 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
                                             SZrAstNodeArray *constructorArgs,
                                             SZrString *typeName,
                                             TZrBool splitStructValueResult,
+                                            TZrBool preferConstructorResult,
                                             TZrUInt32 *outResultSlot,
                                             SZrFileRange location) {
     TZrUInt32 functionSlot;
@@ -1116,6 +1210,7 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
     TZrUInt32 resultSlot = instanceSlot;
     TZrUInt32 argCount = 1;
     TZrBool syncStructReceiver = ZR_FALSE;
+    TZrBool constructorReturnsReceiver = ZR_FALSE;
     const SZrTypeMemberInfo *constructorMemberInfo;
 
     if (outResultSlot != ZR_NULL) {
@@ -1125,14 +1220,22 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
         return ZR_TRUE;
     }
     constructorMemberInfo = find_compiler_type_constructor_member(cs, typeName);
+    constructorReturnsReceiver =
+            constructorMemberInfo != ZR_NULL &&
+            !preferConstructorResult;
 
     {
         SZrTypePrototypeInfo *prototypeInfo = find_compiler_type_prototype(cs, typeName);
         if (prototypeInfo != ZR_NULL) {
-            syncStructReceiver = prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
+            syncStructReceiver =
+                    constructorReturnsReceiver &&
+                    prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
         } else {
             SZrAstNode *typeDecl = find_type_declaration(cs, typeName);
-            syncStructReceiver = typeDecl != ZR_NULL && typeDecl->type == ZR_AST_STRUCT_DECLARATION;
+            syncStructReceiver =
+                    constructorReturnsReceiver &&
+                    typeDecl != ZR_NULL &&
+                    typeDecl->type == ZR_AST_STRUCT_DECLARATION;
         }
     }
 
@@ -1204,6 +1307,11 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
                          create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
                                               (TZrUInt16)resultSlot,
                                               (TZrInt32)receiverSlot));
+    } else {
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                              (TZrUInt16)resultSlot,
+                                              (TZrInt32)(constructorReturnsReceiver ? receiverSlot : functionSlot)));
     }
     collapse_stack_to_slot(cs, resultSlot);
     if (outResultSlot != ZR_NULL) {
@@ -1258,11 +1366,12 @@ TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const TZrCha
     TZrUInt32 destSlot;
     TZrUInt32 resultSlot;
     SZrTypePrototypeInfo *prototypeInfo;
-    SZrAstNode *typeDecl;
+    SZrAstNode *typeDecl = ZR_NULL;
     EZrObjectPrototypeType prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
     TZrBool allowValueConstruction = ZR_FALSE;
     TZrBool allowBoxedConstruction = ZR_FALSE;
     TZrBool splitStructValueResult = ZR_FALSE;
+    TZrBool preferConstructorResult = ZR_FALSE;
     SZrTypeValue typeNameValue;
     TZrUInt32 typeNameConstantIndex;
 
@@ -1346,12 +1455,17 @@ TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const TZrCha
     }
 
     splitStructValueResult = strcmp(op, "$") == 0 && prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
+    preferConstructorResult =
+            prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+            prototypeInfo != ZR_NULL &&
+            prototypeInfo->isNativeRuntime;
     resultSlot = destSlot;
     if (!emit_hidden_constructor_call(cs,
                                       destSlot,
                                       constructorArgs,
                                       typeName,
                                       splitStructValueResult,
+                                      preferConstructorResult,
                                       &resultSlot,
                                       location)) {
         return ZR_PARSER_SLOT_NONE;
@@ -1485,6 +1599,26 @@ static TZrBool note_call_result_stack_slot_type(SZrCompilerState *cs,
     return compiler_register_stack_slot_type_hint(cs, resultSlot, returnType);
 }
 
+static void compiler_ensure_stack_slot_available(SZrCompilerState *cs, TZrUInt32 stackSlot) {
+    TZrSize requiredCount;
+
+    if (cs == ZR_NULL || stackSlot == ZR_PARSER_SLOT_NONE) {
+        return;
+    }
+
+    if (cs->stackSlotCount >= (TZrSize)stackSlot) {
+        return;
+    }
+
+    requiredCount = (TZrSize)stackSlot + 1u;
+    if (cs->stackSlotCount < requiredCount) {
+        cs->stackSlotCount = requiredCount;
+        if (cs->maxStackSlotCount < cs->stackSlotCount) {
+            cs->maxStackSlotCount = cs->stackSlotCount;
+        }
+    }
+}
+
 static TZrBool compile_arguments_against_parameter_types(SZrCompilerState *cs,
                                                          SZrAstNodeArray *argsToCompile,
                                                          const SZrArray *parameterTypes,
@@ -1518,6 +1652,7 @@ static TZrBool compile_arguments_against_parameter_types(SZrCompilerState *cs,
             }
         }
 
+        compiler_ensure_stack_slot_available(cs, firstArgSlot + (TZrUInt32)index);
         argSlot = compile_expression_into_slot(cs, argNode, firstArgSlot + (TZrUInt32)index);
         if (argSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
             return ZR_FALSE;
@@ -1837,6 +1972,7 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
         EZrParameterPassingMode passingMode = member_call_parameter_passing_mode_at(parameterPassingModes, index);
         TZrUInt32 argSlot = firstArgSlot + (TZrUInt32)index;
 
+        compiler_ensure_stack_slot_available(cs, argSlot);
         if (argNode != ZR_NULL) {
             if (requireTaskHandleArgument && index == 0) {
                 SZrInferredType argType;
@@ -2027,6 +2163,7 @@ static TZrBool compile_arguments_against_function_resolved_signature(SZrCompiler
             }
         }
 
+        compiler_ensure_stack_slot_available(cs, firstArgSlot + (TZrUInt32)index);
         argSlot = compile_expression_into_slot(cs, argNode, firstArgSlot + (TZrUInt32)index);
         if (argSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
             return ZR_FALSE;
@@ -2119,6 +2256,45 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             if (!memberExpr->computed && memberExpr->property != ZR_NULL &&
                 memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
                 memberName = memberExpr->property->data.identifier.name;
+            }
+
+            if (!rootIsTypeReference &&
+                rootOwnershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE &&
+                nextIsFunctionCall &&
+                memberName != ZR_NULL) {
+                EZrOwnershipBuiltinKind ownershipMemberKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+
+                if (ZrParser_OwnershipMemberNameToBuiltinKind(memberName, &ownershipMemberKind)) {
+                    TZrUInt32 ownershipResultSlot = ZR_PARSER_SLOT_NONE;
+
+                    if (!function_call_has_no_arguments(members->nodes[i + 1])) {
+                        ZrParser_Compiler_Error(cs, "Ownership member calls do not take arguments", members->nodes[i + 1]->location);
+                        return;
+                    }
+
+                    if (!compile_ownership_member_builtin_call(cs,
+                                                               propertyNode,
+                                                               ownershipMemberKind,
+                                                               rootOwnershipQualifier,
+                                                               currentSlot,
+                                                               preferredDirectMemberCallResultSlot,
+                                                               (TZrBool)(i == memberStartIndex),
+                                                               member->location,
+                                                               &ownershipResultSlot)) {
+                        return;
+                    }
+
+                    currentSlot = ownershipResultSlot;
+                    rootOwnershipQualifier =
+                            ZrParser_OwnershipBuiltinResultQualifier(ownershipMemberKind, rootOwnershipQualifier);
+                    if (ownershipMemberKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE) {
+                        rootTypeName = ZR_NULL;
+                    }
+                    rootIsTypeReference = ZR_FALSE;
+                    superLookupActive = ZR_FALSE;
+                    i++;
+                    continue;
+                }
             }
 
             if (!rootIsTypeReference &&
@@ -2605,6 +2781,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     for (TZrSize j = 0; j < argsToCompile->count; j++) {
                         SZrAstNode *argNode = argsToCompile->nodes[j];
                         if (argNode != ZR_NULL) {
+                            compiler_ensure_stack_slot_available(cs, argBaseSlot + (TZrUInt32)j);
                             TZrUInt32 argSlot =
                                     compile_expression_into_slot(cs, argNode, argBaseSlot + (TZrUInt32)j);
                             if (argSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {

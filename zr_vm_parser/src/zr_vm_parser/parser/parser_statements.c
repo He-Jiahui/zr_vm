@@ -958,6 +958,7 @@ static SZrAstNode *parse_using_statement_body(SZrParserState *ps, SZrFileRange s
         isBlockScoped = ZR_TRUE;
     } else if (using_no_block_pattern_starts_here(ps)) {
         guardKind = ZR_USING_GUARD_PATTERN;
+        consume_token(ps, ZR_TK_VAR);
         pattern = parse_using_binding_pattern(ps);
         if (pattern == ZR_NULL) {
             report_using_binder_invalid(ps, get_current_token_location(ps));
@@ -1066,12 +1067,11 @@ static TZrBool using_no_block_pattern_starts_here(SZrParserState *ps) {
     TZrParserErrorCallback savedErrorCallback;
     TZrParserStructuredErrorCallback savedStructuredErrorCallback;
     TZrPtr savedErrorUserData;
-    SZrAstNode *pattern;
+    SZrAstNode *pattern = ZR_NULL;
     SZrType *guardTypeInfo = ZR_NULL;
     TZrBool result = ZR_FALSE;
 
-    if (ps == ZR_NULL ||
-        (ps->lexer->t.token != ZR_TK_LBRACKET && ps->lexer->t.token != ZR_TK_LBRACE)) {
+    if (ps == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -1087,13 +1087,16 @@ static TZrBool using_no_block_pattern_starts_here(SZrParserState *ps) {
     ps->hasError = ZR_FALSE;
     ps->errorMessage = ZR_NULL;
 
-    pattern = parse_using_binding_pattern(ps);
-    if (pattern != ZR_NULL && using_pattern_has_guard_shape(pattern)) {
-        if (consume_token(ps, ZR_TK_COLON)) {
-            guardTypeInfo = parse_type(ps);
+    consume_token(ps, ZR_TK_VAR);
+    if (ps->lexer->t.token == ZR_TK_LBRACKET || ps->lexer->t.token == ZR_TK_LBRACE) {
+        pattern = parse_using_binding_pattern(ps);
+        if (pattern != ZR_NULL && using_pattern_has_guard_shape(pattern)) {
+            if (consume_token(ps, ZR_TK_COLON)) {
+                guardTypeInfo = parse_type(ps);
+            }
+            result = (TZrBool)((guardTypeInfo != ZR_NULL || ps->lexer->t.token != ZR_TK_COLON) &&
+                               ps->lexer->t.token == ZR_TK_EQUALS);
         }
-        result = (TZrBool)((guardTypeInfo != ZR_NULL || ps->lexer->t.token != ZR_TK_COLON) &&
-                           ps->lexer->t.token == ZR_TK_EQUALS);
     }
 
     if (guardTypeInfo != ZR_NULL) {

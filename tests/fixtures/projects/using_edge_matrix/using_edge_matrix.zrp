@@ -1,0 +1,6 @@
+{
+  "name": "using_edge_matrix",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

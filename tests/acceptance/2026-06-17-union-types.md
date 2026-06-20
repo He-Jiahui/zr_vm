@@ -352,6 +352,153 @@
     - `wsl ctest --test-dir /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug -R '^language_pipeline$' --output-on-failure` still fails in `zr_vm_instruction_execution_test`.
     - Reproduced failure remains outside this slice: object properties expected 14 and got 18, dynamic member string concat expected `checksum=7` and got `checksum=null`, then `execution_dispatch.c:6877` aborts inside `LOGICAL_AND Instruction`.
 
+- Using real-world project fixture and generic payload binding:
+  - Timestamp: 2026-06-19 05:15:07 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Scope:
+    - Added project fixture `tests/fixtures/projects/using_real_world_checkout`.
+    - The fixture combines `%import` guard, default `@Found` struct variant object destructuring with `local: field` aliasing, and generic `Option<int>.Some(8)` tuple destructuring.
+    - `register_union_variant_payload_binding_type()` now receives the resource type name and substitutes closed generic union payload fields, so `Option<T>.Some(value: T)` registers `value` as `int` when destructuring `Option<int>`.
+    - Union declarations are included in the current generic-context type visibility check.
+  - Evidence:
+    - Direct CLI fixture run: `USING_REAL_WORLD_CHECKOUT_PASS 120`.
+    - `zr_vm_union_test`: `67 Tests 0 Failures 0 Ignored OK`.
+    - `ZR_VM_TEST_TIER=using ctest --test-dir build-wsl-gcc -R '^projects$' --output-on-failure`: `1/1` passed.
+  - Residual baseline blocker:
+    - `ZR_VM_TEST_TIER=smoke ctest --test-dir build-wsl-gcc -R '^projects$' --output-on-failure` still fails before reaching the new fixture at existing `import_basic`, reporting `import signature mismatch` while expected and actual hash text are identical.
+
+- LSP union payload symbol/type inference:
+  - Timestamp: 2026-06-19 05:20:00 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Production change:
+    - Added `zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.c/.h` to share using/switch union pattern resolution across LSP symbol collection and typecheck.
+    - No-block `using [value] = option;` registers payload locals in the current LSP scope and type environment.
+    - Block-style `using (var {width, h: height} = shape) { ... }` registers payload locals in the guard body scope without leaking field names such as `height`.
+    - `switch` cases resolved from a known union subject register tuple/struct payload locals in the case scope.
+    - Direct closed generic payload substitutions are reflected in LSP inference, for example `Option<int>.Some(value: T)` and `Result<int,string>.Ok(value: T)` bind payload locals as `int`.
+  - Added regression coverage in `tests/language_server/test_union_pattern_diagnostics.c`:
+    - `Union LSP Infers Generic Variant Constructor Symbol Type`
+    - `Union LSP Registers No-Block Using Tuple Payload`
+    - `Union LSP Registers Checkout Flow Generic Using Payload`
+    - `Union LSP Registers Block Using Struct Mixed Alias Payload`
+    - `Union LSP Registers Switch Unqualified Variant Payloads`
+    - `Union LSP Registers Checkout Result Switch Payload`
+  - RED check:
+    - The first focused LSP run passed the generic constructor and existing diagnostic golden cases, but failed no-block tuple using, struct mixed-alias using, and switch payload locals because `value` / `observed`, `width` / `h` / `area`, and switch payload-derived locals were not inferred as `int`.
+  - GREEN checks:
+    - `wsl.exe -- bash -lc "cd /mnt/e/Git/zr_vm && cmake --build build-wsl-gcc --target zr_vm_language_server_union_pattern_diagnostics_test -j2 && ./build-wsl-gcc/bin/zr_vm_language_server_union_pattern_diagnostics_test"`
+    - Result: all 12 focused union/LSP cases passed, including the 6 payload inference cases and the 6 existing `pattern_*` diagnostic golden cases.
+    - `wsl.exe -- bash -lc "cd /mnt/e/Git/zr_vm && ./build-wsl-gcc/bin/zr_vm_union_test"`
+    - Result: `67 Tests 0 Failures 0 Ignored OK`.
+  - Residual baseline note:
+    - `zr_vm_language_server_semantic_analyzer_test` executable exits successfully in this dirty worktree but its output still contains existing ownership-related assertion failures (`Owned Field Cleanup Metadata`, ownership mismatch/escape cases). This target was not counted as green evidence for the LSP union payload slice.
+
+- Project-level normal and boundary union/using fixtures:
+  - Timestamp: 2026-06-19 18:18:00 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Added project files under `tests/fixtures/projects/using_real_world_checkout`:
+    - `using_union_normal.zrp` / `src/normal.zr` covers the ordinary path: `%import` guard, struct default `@Ready` no-block object destructuring, alias field binding, and a non-generic `PaymentResult.Ok(total)` switch with unqualified payload binding.
+    - `using_union_edge_cases.zrp` / `src/edge_cases.zr` covers boundary behavior: unit variant empty tuple guard, guard miss entering `else`, negative and zero payload arithmetic, no-block struct alias destructuring with outer variable shadow names, direct `Option<int>.Some(0)` generic payload, and an eight-field tuple payload destructuring.
+    - `src/catalog.zr` now also exposes `baseSubtotal()` and `taxAmount()` for the normal checkout fixture.
+  - Runner wiring:
+    - Added `using_union_normal` and `using_union_edge_cases` to `tests/cmake/run_projects_suite.cmake`.
+    - Both cases are in the `using` tier; they are intentionally not added to smoke/core/stress to avoid expanding unrelated baseline suites.
+  - Evidence:
+    - Direct CLI run: `using_real_world_checkout`, `using_union_normal`, and `using_union_edge_cases` output `USING_REAL_WORLD_CHECKOUT_PASS 120`, `USING_UNION_NORMAL_PASS 125`, and `USING_UNION_EDGE_PASS 77`.
+    - `ZR_VM_TEST_TIER=using ctest --test-dir build-wsl-gcc -R '^projects$' --output-on-failure`: `1/1` passed. This tier also included the `using_feature_matrix` and `using_edge_matrix` project fixtures.
+    - `./build-wsl-gcc/bin/zr_vm_union_test`: `67 Tests 0 Failures 0 Ignored OK`.
+  - Failure handled during this slice:
+    - The first `using_union_normal` draft used `Result<int,int>.Ok(total)` in a project-level switch and failed with `GET_MEMBER: receiver must be an object, array, or string` at `switch (payment)`. The fixture was narrowed to a non-generic `PaymentResult` switch so this project-level normal case exercises the stable switch path while generic payload behavior remains covered by no-block using and LSP focused tests.
+
+- Independent using project fixture matrix:
+  - Timestamp: 2026-06-19 18:18:33 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Added standalone project files:
+    - `tests/fixtures/projects/using_feature_matrix/using_feature_matrix.zrp` and `src/main.zr`.
+    - `tests/fixtures/projects/using_edge_matrix/using_edge_matrix.zrp` and `src/main.zr`.
+  - Runner wiring:
+    - Added `using_feature_matrix` and `using_edge_matrix` to `tests/cmake/run_projects_suite.cmake`.
+    - Both are tagged `smoke;core;stress;using`; the focused `using` tier is the acceptance gate for this slice because the broader smoke tier remains subject to unrelated baseline failures.
+  - Regular coverage:
+    - Generic `Option<int>.Some(...)` no-block default tuple destructuring.
+    - Generic `Result<int,string>.Ok(...)` no-block default tuple destructuring.
+    - Default `@Rect` struct destructuring with mixed alias/default fields: `{w: width, height}`.
+    - `switch` case payload binding using unqualified variant names inside a runnable `.zrp` project.
+  - Boundary coverage:
+    - Multiple no-block `using` destructuring statements in one script scope.
+    - Direct constructor destructuring without an intermediate local.
+    - Existing script locals named `first`, `second`, and `third` before a struct-payload destructuring.
+    - Mixed alias/default struct destructuring `{a: first, second, c: third}` proving payload field names and target local names stay distinct.
+  - RED check:
+    - After registering the cases before creating fixture files, `ZR_VM_TEST_TIER=using ctest --test-dir build-wsl-gcc -R '^projects$' --output-on-failure` failed at `using_feature_matrix` with `failed to load project`.
+  - GREEN checks:
+    - `./build-wsl-gcc/bin/zr_vm_cli tests/fixtures/projects/using_feature_matrix/using_feature_matrix.zrp` -> `USING_FEATURE_MATRIX_PASS 276`.
+    - `./build-wsl-gcc/bin/zr_vm_cli tests/fixtures/projects/using_edge_matrix/using_edge_matrix.zrp` -> `USING_EDGE_MATRIX_PASS 190`.
+    - `ZR_VM_TEST_TIER=using ctest --test-dir build-wsl-gcc -R '^projects$' --output-on-failure` -> `100% tests passed, 0 tests failed out of 1`.
+  - Follow-up findings:
+    - A first feature-matrix draft that passed a union struct value through a function parameter before no-block destructuring exposed an existing `MUL_SIGNED requires numeric operands` runtime boundary.
+    - A first edge-matrix draft that destructured a struct-field union at script entry exposed an existing `GET_MEMBER: receiver must be an object, array, or string` runtime boundary.
+    - This slice did not patch production code around those deeper runtime issues; they remain candidates for focused lower-layer regression work.
+
+- No-block using optional `var` destructuring:
+  - Timestamp: 2026-06-19 19:05:57 +08:00.
+  - Build directory: `build/codex-using-var-wsl-gcc-debug`.
+  - Parser behavior:
+    - `using [directGeneric] = Option<int>.Some(76);` remains accepted.
+    - `using var [directGeneric] = Option<int>.Some(76);` is now accepted through the same no-block union pattern guard path.
+    - The lookahead still requires a tuple/object destructuring pattern and a following `=`, so ordinary `using expr;` cleanup syntax is not widened.
+  - Coverage:
+    - Added focused union runtime regressions for `using [directGeneric] = Option<int>.Some(76); return directGeneric;` and `using var [directGeneric] = Option<int>.Some(76); return directGeneric;`.
+    - Updated `using_edge_matrix/src/main.zr` to exercise both no-`var` and `var` forms with `Option<int>.Some(76)`, producing `USING_EDGE_MATRIX_PASS 266`.
+  - Verification:
+    - RED: stale `build-wsl-gcc` CLI rejected `using var [directGenericVar] = Option<int>.Some(76);` with `Expected primary expression (token: 'var')`.
+    - `ninja -C build/codex-using-var-wsl-gcc-debug zr_vm_union_test zr_vm_cli -j 2 -v` completed; existing CLI const-qualifier warnings were unchanged.
+    - `./build/codex-using-var-wsl-gcc-debug/bin/zr_vm_union_test`: `68 Tests 0 Failures 0 Ignored OK`.
+    - `./build/codex-using-var-wsl-gcc-debug/bin/zr_vm_cli tests/fixtures/projects/using_edge_matrix/using_edge_matrix.zrp`: `USING_EDGE_MATRIX_PASS 266`.
+    - `ZR_VM_TEST_TIER=using ctest --test-dir build/codex-using-var-wsl-gcc-debug -R '^projects$' --output-on-failure`: `100% tests passed, 0 tests failed out of 1`.
+
+- VSIX grammar and debug union shape refresh:
+  - Timestamp: 2026-06-20 04:01:44 +08:00.
+  - Build directories:
+    - MSVC focused debug: `build/codex-msvc-union-final-debug`.
+    - WSL focused debug: `build/codex-union-final-wsl-gcc-debug`.
+    - Extension/package assets: `zr_vm_language_server_extension/server/native/win32-x64`.
+  - Final package:
+    - `zr_vm_language_server_extension/zr-vm-language-server-0.0.1-union.vsix`
+    - SHA256: `977DB3F214A6978CEE04D8A0F0E8C9AF61AFC91A36BE58D14BE60CA06D610C0E`
+  - Grammar coverage:
+    - `union` is highlighted as a declaration keyword.
+    - `union Shape` highlights `Shape` as a union declaration type name.
+    - `@Available`, `Circle`, `Rect`, and `.Some`/`.Rect` receive union variant scopes.
+    - Payload declarations such as `radius: int`, `width: int`, and `height: int` receive field declaration scopes.
+  - Debug coverage:
+    - Added `zr_vm_lib_debug/src/zr_vm_lib_debug/debug_union.c`.
+    - Runtime carrier objects and typed inline union frame slots preview as `<union Type.Variant>`.
+    - `variables` expands union values as `variant` plus metadata-named payload fields.
+    - `evaluate` resolves synthetic members such as `circle.variant`, `circle.radius`, `rect.width`, and `rect.height`.
+  - Evidence:
+    - `cd zr_vm_language_server_extension && npm run test:unit`
+    - Result: `29` unit tests passed, including grammar assertions for union declarations, variants, and payload fields.
+    - `cmake --build build/codex-msvc-union-final-debug --config Debug --target zr_vm_debug_variable_child_shape_test --parallel 6`
+    - Result: target build succeeded.
+    - `build/codex-msvc-union-final-debug/bin/zr_vm_debug_variable_child_shape_test.exe test_debug_protocol_expands_union_variant_payloads`
+    - Result: `1 Tests 0 Failures 0 Ignored OK`.
+    - `./build/codex-union-final-wsl-gcc-debug/bin/zr_vm_debug_variable_child_shape_test test_debug_protocol_expands_union_variant_payloads`
+    - Result: `1 Tests 0 Failures 0 Ignored OK`.
+    - `zr_vm_language_server_extension/server/native/win32-x64/zr_vm_cli.exe tests/fixtures/projects/using_real_world_checkout/using_real_world_checkout.zrp`
+    - Result: `USING_REAL_WORLD_CHECKOUT_PASS 120`.
+    - `zr_vm_language_server_extension/server/native/win32-x64/zr_vm_cli.exe tests/fixtures/projects/using_real_world_checkout/using_union_normal.zrp`
+    - Result: `USING_UNION_NORMAL_PASS 125`.
+    - `zr_vm_language_server_extension/server/native/win32-x64/zr_vm_cli.exe tests/fixtures/projects/using_real_world_checkout/using_union_edge_cases.zrp`
+    - Result: `USING_UNION_EDGE_PASS 77`.
+    - `tar -tf zr_vm_language_server_extension/zr-vm-language-server-0.0.1-union.vsix`
+    - Result includes `extension/syntaxes/zr.tmLanguage.json`, `extension/out/web/zr_vm_language_server.wasm`, `extension/server/native/win32-x64/zr_vm_debug.dll`, and `extension/server/native/win32-x64/zr_vm_cli.exe`.
+  - Packaging note:
+    - A transient `build/codex-vsix-native` package candidate reproduced the Windows access violation exit code `-1073741819`; the final VSIX instead uses the verified native assets from `build/codex-msvc-union-final-debug`.
+  - Residual baseline note:
+    - The full MSVC `debug_variable_child_shape` target still fails in `test_debug_evaluate_semantic_summary_uses_closure_captures` before the breakpoint stop. GDB shows `ZrCore_Value_CopyNoProfile`/inline value reset receives an invalid `SZrTypeValue` pointer `0x4`.
+    - The same closure semantic-summary test passes in the WSL debug build. This is recorded as a Windows closure/frame baseline issue, not as the union variable tree acceptance gate.
+
 ## Remaining Work
 
 - Full plugin-specific registry/DLL load+verify, scoped release, and module-level ref→def binding remain planned beyond the current guard helper path.
@@ -360,7 +507,7 @@
 - Block-style `using` and `switch` case explicit move destructuring are implemented for tuple and object/struct payload bindings. Default borrow for `Unique<T>` / `Shared<T>` / `Loan<T>` payload bindings remains implemented for `switch` and `using`.
 - Legacy `using (var Variant(...)=...)` compatibility is now removed from the current `using` surface; remaining `Variant(...)` forms are for `switch` case patterns or negative regression tests.
 - Pattern shape mismatch, unknown-field, arity, and variant mismatch structured diagnostic builder/LSP golden are implemented.
-- No-block `using {..} = value.Variant;` / `using [x] = value.Variant;` remains planned shorthand; the stable implemented surface is still block-style `using (var pattern: Union.Variant = value) { ... }` plus unique `@` default-variant omission.
+- No-block `using [x] = value;`, `using var [x] = value;`, `using [x]: Union.Variant = value;`, and `using {local: field} = value;` are implemented for non-import union resources; no-block `%import` guard lifetime remains intentionally unextended.
 - Using rule refresh:
   - Timestamp: 2026-06-18 04:59:33 +08:00.
   - Build directory: `build-wsl-gcc`.

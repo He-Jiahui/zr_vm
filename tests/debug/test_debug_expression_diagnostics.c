@@ -233,7 +233,7 @@ static void test_debug_semantic_summary_replays_compiled_function_call_reference
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
     ZrDebugAgent agent;
-    TZrChar summary[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar summary[ZR_DEBUG_TEXT_CAPACITY * 2u];
 
     TEST_ASSERT_NOT_NULL(state);
     function = compile_debug_source(state, "debug_function_call_semantic_summary.zr", source);
@@ -390,7 +390,7 @@ static void test_debug_semantic_summary_replays_assignment_write_reference_facts
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
     ZrDebugAgent agent;
-    TZrChar summary[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar summary[ZR_DEBUG_TEXT_CAPACITY * 2u];
 
     TEST_ASSERT_NOT_NULL(state);
     function = compile_debug_source(state, "debug_assignment_semantic_summary.zr", source);

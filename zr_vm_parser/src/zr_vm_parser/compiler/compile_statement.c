@@ -54,6 +54,7 @@ TZrBool try_resolve_union_variant_pattern_annotation(SZrCompilerState *cs,
                                                      SZrAstNode **outVariant);
 void register_union_variant_payload_binding_type(SZrCompilerState *cs,
                                                  SZrAstNode *variant,
+                                                 SZrString *resourceTypeName,
                                                  TZrSize payloadIndex,
                                                  SZrString *bindingName,
                                                  TZrBool moveBinding);
@@ -1955,6 +1956,63 @@ static TZrBool register_plugin_guard_scoped_owner_cleanup(SZrCompilerState *cs,
     return !cs->hasError;
 }
 
+static TZrBool using_loan_member_resource_has_no_args(SZrAstNode *callNode) {
+    return callNode != ZR_NULL &&
+           callNode->type == ZR_AST_FUNCTION_CALL &&
+           (callNode->data.functionCall.args == ZR_NULL ||
+            callNode->data.functionCall.args->count == 0u);
+}
+
+static TZrBool using_loan_member_resource_is_loan_name(SZrAstNode *memberNode) {
+    SZrAstNode *property;
+    TZrNativeString nativeName;
+
+    if (memberNode == ZR_NULL || memberNode->type != ZR_AST_MEMBER_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    property = memberNode->data.memberExpression.property;
+    if (memberNode->data.memberExpression.computed ||
+        property == ZR_NULL ||
+        property->type != ZR_AST_IDENTIFIER_LITERAL ||
+        property->data.identifier.name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nativeName = ZrCore_String_GetNativeString(property->data.identifier.name);
+    return (TZrBool)(nativeName != ZR_NULL && strcmp(nativeName, "loan") == 0);
+}
+
+static TZrUInt32 resolve_using_loan_member_source_slot(SZrCompilerState *cs, SZrAstNode *resource) {
+    SZrPrimaryExpression *primary;
+    SZrString *sourceName;
+    TZrUInt32 sourceSlot;
+
+    if (cs == ZR_NULL || resource == ZR_NULL || resource->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+
+    primary = &resource->data.primaryExpression;
+    if (primary->property == ZR_NULL ||
+        primary->property->type != ZR_AST_IDENTIFIER_LITERAL ||
+        primary->property->data.identifier.name == ZR_NULL ||
+        primary->members == ZR_NULL ||
+        primary->members->count != 2u ||
+        !using_loan_member_resource_is_loan_name(primary->members->nodes[0]) ||
+        !using_loan_member_resource_has_no_args(primary->members->nodes[1])) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+
+    sourceName = primary->property->data.identifier.name;
+    sourceSlot = find_local_var(cs, sourceName);
+    if (sourceSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs,
+                                "Loan using cleanup source owner must be a local binding",
+                                primary->property->location);
+    }
+    return sourceSlot;
+}
+
 static TZrUInt32 resolve_using_loan_source_slot(SZrCompilerState *cs,
                                                 SZrAstNode *resource,
                                                 EZrOwnershipBuiltinKind cleanupBuiltinKind) {
@@ -1964,10 +2022,21 @@ static TZrUInt32 resolve_using_loan_source_slot(SZrCompilerState *cs,
         return ZR_PARSER_SLOT_NONE;
     }
 
-    if (cs == ZR_NULL || resource == ZR_NULL || resource->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+    if (cs == ZR_NULL || resource == ZR_NULL) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+
+    if (resource->type == ZR_AST_PRIMARY_EXPRESSION) {
+        TZrUInt32 memberSourceSlot = resolve_using_loan_member_source_slot(cs, resource);
+        if (memberSourceSlot != ZR_PARSER_SLOT_NONE || cs->hasError) {
+            return memberSourceSlot;
+        }
+    }
+
+    if (resource->type != ZR_AST_CONSTRUCT_EXPRESSION) {
         if (cs != ZR_NULL && resource != ZR_NULL) {
             ZrParser_Compiler_Error(cs,
-                                    "Loan using cleanup requires a direct Loan<T>(localOwner) resource",
+                                    "Loan using cleanup requires a direct Loan<T>(localOwner) or localOwner.loan() resource",
                                     resource->location);
         }
         return ZR_PARSER_SLOT_NONE;
@@ -1979,7 +2048,7 @@ static TZrUInt32 resolve_using_loan_source_slot(SZrCompilerState *cs,
         constructExpr->target->type != ZR_AST_IDENTIFIER_LITERAL ||
         constructExpr->target->data.identifier.name == ZR_NULL) {
         ZrParser_Compiler_Error(cs,
-                                "Loan using cleanup requires a direct Loan<T>(localOwner) resource",
+                                "Loan using cleanup requires a direct Loan<T>(localOwner) or localOwner.loan() resource",
                                 resource->location);
         return ZR_PARSER_SLOT_NONE;
     }
@@ -2105,6 +2174,7 @@ static void compile_using_union_pattern_bindings(SZrCompilerState *cs,
                                                  TZrUInt32 resourceSlot,
                                                  SZrAstNodeArray *bindings,
                                                  SZrAstNode *variant,
+                                                 SZrString *resourceTypeName,
                                                  SZrFileRange location) {
     if (cs == ZR_NULL || bindings == ZR_NULL || cs->hasError) {
         return;
@@ -2184,6 +2254,7 @@ static void compile_using_union_pattern_bindings(SZrCompilerState *cs,
                                               (TZrInt32)bindingValueSlot));
         register_union_variant_payload_binding_type(cs,
                                                     variant,
+                                                    resourceTypeName,
                                                     index,
                                                     bindingNode->data.identifier.name,
                                                     moveBinding);
@@ -2345,6 +2416,7 @@ static TZrBool compile_using_import_variant_guard_binding(SZrCompilerState *cs,
     } else {
         register_union_variant_payload_binding_type(cs,
                                                     variant,
+                                                    ZR_NULL,
                                                     0u,
                                                     bindingNode->data.identifier.name,
                                                     ZR_FALSE);
@@ -2617,8 +2689,8 @@ static void compile_using_pattern_guard_statement(SZrCompilerState *cs, SZrAstNo
         ZrParser_InferredType_Free(cs->state, &resourceType);
         return;
     }
-    ZrParser_InferredType_Free(cs->state, &resourceType);
     if (cs->hasError || compareSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_InferredType_Free(cs->state, &resourceType);
         return;
     }
 
@@ -2638,7 +2710,9 @@ static void compile_using_pattern_guard_statement(SZrCompilerState *cs, SZrAstNo
                                          resourceSlot,
                                          bindings,
                                          patternVariant,
+                                         resourceType.typeName,
                                          stmt->pattern != ZR_NULL ? stmt->pattern->location : node->location);
+    ZrParser_InferredType_Free(cs->state, &resourceType);
     if (cs->hasError) {
         if (hasBlockBody) {
             exit_scope(cs);

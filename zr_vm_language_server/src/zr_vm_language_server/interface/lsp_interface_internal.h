@@ -3,6 +3,7 @@
 
 #include "zr_vm_language_server/lsp_interface.h"
 #include "zr_vm_library/project.h"
+#include "interface/lsp_position_codec.h"
 
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/hash_set.h"
@@ -85,8 +86,18 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(SZrState *state,
                                                              TZrSize cursorOffset,
                                                              SZrLspResolvedMetadataMember *outResolved);
 void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZrDiagnostic *diag);
+void ZrLanguageServer_Lsp_AppendDiagnosticForDocument(SZrState *state,
+                                                      SZrLspContext *context,
+                                                      SZrString *uri,
+                                                      SZrArray *result,
+                                                      SZrDiagnostic *diag);
 SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformation(SZrState *state,
                                                                       SZrSymbol *symbol);
+SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformationForDocument(
+    SZrState *state,
+    SZrLspContext *context,
+    SZrString *uri,
+    SZrSymbol *symbol);
 TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                                                            SZrLspContext *context,
                                                            SZrLspProjectIndex *projectIndex,
@@ -111,6 +122,12 @@ ZR_LANGUAGE_SERVER_API SZrFileVersion *ZrLanguageServer_Lsp_GetDocumentFileVersi
 SZrFilePosition ZrLanguageServer_Lsp_GetDocumentFilePosition(SZrLspContext *context,
                                                              SZrString *uri,
                                                              SZrLspPosition position);
+SZrLspPosition ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(SZrLspContext *context,
+                                                                        SZrString *uri,
+                                                                        SZrFilePosition position);
+SZrLspRange ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(SZrLspContext *context,
+                                                               SZrString *uri,
+                                                               SZrFileRange range);
 
 typedef struct SZrLspProjectFileRecord {
     SZrString *uri;

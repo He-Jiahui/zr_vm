@@ -833,6 +833,66 @@
   - WSL clang CTest passed the same metadata set 4/4.
   - MSVC Debug CTest passed the same metadata set 4/4.
 
+## 2026-06-19 04:19:38 +08:00 - zrp assembly identity and alias references
+
+## Scope
+
+- Implement `.zrp` assembly identity and alias-based references from `docs/plans/using` for the metadata/token path.
+- Affected layers:
+  - `zr_vm_library` project manifest parsing and import resolver.
+  - `zr_vm_parser` module-init import effects and metadata token generation.
+  - `.zro` writer/reader/runtime copy for module effects.
+  - LSP `.zrp` JSON schema and project-import tests.
+
+## Baseline
+
+- RED library behavior: a manifest with `assembly.name` and `references.mathLocal` still produced null/legacy project identity and did not resolve `&mathLocal.ops.sum` to `$mathLocal@2.1.0/ops/sum`.
+- RED metadata behavior: source references generated `ASSEMBLY_REF` with the canonical alias key `$mathLocal@2.1.0/ops/sum` instead of the real assembly identity `zr.math`.
+- Pre-existing repository baseline remains dirty; unrelated files and build directories were already modified before this slice.
+
+## Test Inventory
+
+- Focused library case:
+  - `.zrp` root `assembly.name=app.render`, target `assembly.name=zr.math`, alias `references.mathLocal`, version/range metadata, nested alias import, and source path resolution.
+- Focused parser/project cases:
+  - source `.zrp references` emits canonical static import `$mathLocal@2.1.0/ops/sum`;
+  - `ASSEMBLY_REF` signature uses `zr.math` and requested/min/max versions;
+  - module effect `assemblyName` survives `.zro` IO reader and runtime load;
+  - referenced package can be semantically imported from `.zro` after its `.zr` source is removed.
+- Boundary and compatibility cases:
+  - legacy `dependencies` keep their canonical module key as AssemblyRef identity;
+  - old `.zro` patches read `assemblyName` as null and continue to fall back to `moduleName`;
+  - future patch rejection remains controlled by `ZR_IO_SOURCE_PATCH_CURRENT`.
+
+## Tooling Evidence
+
+- Tool: WSL clang build and Unity tests.
+- Commands:
+  - `wsl cmake --build /mnt/e/Git/zr_vm/build-wsl-clang --target zr_vm_project_import_resolver_test zr_vm_project_import_canonicalization_test zr_vm_metadata_token_model_test zr_vm_gc_test -j 8`
+  - direct execution of all four focused Unity binaries under `/mnt/e/Git/zr_vm/build-wsl-clang/bin/`
+  - `Get-Content -Raw zr_vm_language_server_extension/schemas/zrp.schema.json | ConvertFrom-Json`
+  - `git diff --check` on touched metadata/token/project/schema/docs files
+- Key outputs:
+  - `zr_vm_project_import_resolver_test`: 7 tests, 0 failures.
+  - `zr_vm_project_import_canonicalization_test`: 34 tests, 0 failures.
+  - `zr_vm_metadata_token_model_test`: 21 tests, 0 failures.
+  - `zr_vm_gc_test`: 66 tests, 0 failures.
+  - `zrp.schema.json` parse: OK.
+  - diff hygiene: no whitespace errors; only LF/CRLF normalization warnings.
+
+## Results
+
+- `.zrp` `assembly` and `references` now parse into project/package/ref identity fields while preserving legacy dependency behavior.
+- `ZrLibrary_Project_GetDependencyImportVersionRange()` returns real assembly identity only for alias-based `references`; legacy `dependencies` keep their canonical package key.
+- `SZrFunctionModuleEffect` / `SZrIoFunctionModuleEffect` now carry `assemblyName`; `.zro` patch 33 writes/reads it and runtime load copies it.
+- `compiler_metadata_token.c` collects `assemblyName` in the metadata string heap and uses it for `ASSEMBLY_REF` signatures, while `MEMBER_REF` / `TYPE_REF` continue using the canonical module key for loader lookup.
+- `zrp.schema.json`, `docs/plans/using`, and `docs/module-system/typed-module-metadata.md` were updated with timestamped progress, status, and notes.
+
+## Acceptance Decision
+
+- Accepted for this slice based on focused WSL clang evidence.
+- Remaining risk: broader full-suite baseline is not claimed here because this workspace is already dirty and contains unrelated active changes; the accepted surface is limited to project resolver, project import metadata, and `.zro` module-effect persistence.
+
 ## Acceptance
 
 - Accepted for this slice:
@@ -895,6 +955,7 @@
   - Module ABI hash golden coverage is accepted: `metadata_module_hash_golden` fixes simple exported function and local generic-union module hashes, and the TypeDef layout fingerprint no longer depends on host `ZR_ALIGN_SIZE` for generic/unknown payload fallback alignment.
   - Runtime metadata record query coverage is accepted at the core layer: function-level token/signature records and entry-function module ref table token/signature records are queryable through read-only APIs, with null/zero-token and loose signature-pair rejection covered.
   - Source-loader diagnostic path portability is accepted: required import unavailable diagnostics include stable `/`-separated source/binary attempted paths on MSVC and WSL, while file access still uses platform-native paths.
+  - `.zrp` assembly identity and alias references are accepted for metadata import refs: alias imports keep canonical `$alias@version/path` loader keys while `ASSEMBLY_REF` signatures use the real target assembly name, and module effect `assemblyName` roundtrips through `.zro` patch 33.
 
 - Not yet accepted for full P0:
   - Registered native provider load/verify, required-unavailable diagnostics, project source loader attempted paths, native descriptor plugin load-error passthrough, registry owner refcount, descriptor plugin live-owner safe invalidation, and AOT descriptor field diagnostics are covered.

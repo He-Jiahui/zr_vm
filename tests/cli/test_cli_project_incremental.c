@@ -11,6 +11,8 @@
 #include "runtime/runtime.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/common_state.h"
+#include "zr_vm_library/project.h"
+#include "zr_vm_library/zrm.h"
 
 void setUp(void) {}
 
@@ -1101,6 +1103,74 @@ static void test_cli_incremental_compiles_dependency_modules_into_package_binary
     }
 }
 
+static void test_cli_compile_emit_zrm_packs_reachable_modules_and_resources(void) {
+    static const TZrChar *projectContent =
+            "{\n"
+            "  \"manifestVersion\": 1,\n"
+            "  \"assembly\": { \"name\": \"decorator_import\", \"version\": \"1.2.3\", \"output\": \"dist/decorator_import.zrm\" },\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\",\n"
+            "  \"resources\": { \"config/default.txt\": { \"path\": \"resources/default.txt\", \"compress\": true } }\n"
+            "}\n";
+    static const TZrByte resourceText[] = "resource packed by cli emit-zrm\n";
+    TZrChar projectRoot[ZR_TESTS_PATH_MAX];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar resourcePath[ZR_TESTS_PATH_MAX];
+    SZrCliCommand compileCommand;
+    SZrCliCompileSummary summary;
+    SZrLibrary_ZrmArchive archive;
+    const SZrLibrary_ZrmEntryInfo *resourceEntry;
+    TZrByte *resourceBytes = ZR_NULL;
+    TZrSize resourceByteCount = 0;
+    TZrChar error[ZR_LIBRARY_ZRM_ERROR_BUFFER_LENGTH];
+
+    memset(&compileCommand, 0, sizeof(compileCommand));
+    memset(&summary, 0, sizeof(summary));
+    memset(&archive, 0, sizeof(archive));
+    memset(error, 0, sizeof(error));
+
+    TEST_ASSERT_TRUE(prepare_decorator_import_fixture_named("decorator_import_zrm",
+                                                            projectRoot,
+                                                            sizeof(projectRoot),
+                                                            projectPath,
+                                                            sizeof(projectPath)));
+    snprintf(resourcePath, sizeof(resourcePath), "%s/resources/default.txt", projectRoot);
+    TEST_ASSERT_TRUE(write_text_file(projectPath, projectContent));
+    TEST_ASSERT_TRUE(write_text_file(resourcePath, (const TZrChar *)resourceText));
+
+    init_incremental_compile_command(&compileCommand, projectPath);
+    compileCommand.emitZrm = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrCli_Compiler_CompileProjectWithSummary(&compileCommand, &summary));
+    TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)summary.compiledCount);
+    TEST_ASSERT_TRUE(summary.packedAssembly);
+    normalize_path_text(summary.zrmPath);
+    TEST_ASSERT_TRUE(text_ends_with(summary.zrmPath, "/dist/decorator_import.zrm"));
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(summary.zrmPath));
+
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_Zrm_Open(summary.zrmPath, &archive, error, sizeof(error)), error);
+    TEST_ASSERT_EQUAL_STRING("decorator_import", archive.assemblyName);
+    TEST_ASSERT_EQUAL_STRING("1.2.3", archive.assemblyVersion);
+    TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)archive.moduleCount);
+    TEST_ASSERT_NOT_NULL(ZrLibrary_Zrm_FindModule(&archive, "main"));
+    TEST_ASSERT_NOT_NULL(ZrLibrary_Zrm_FindModule(&archive, "decorated_user"));
+    TEST_ASSERT_NOT_NULL(ZrLibrary_Zrm_FindModule(&archive, "decorators"));
+    TEST_ASSERT_EQUAL_UINT32(1u, (unsigned int)archive.resourceCount);
+    resourceEntry = ZrLibrary_Zrm_FindResource(&archive, "config/default.txt");
+    TEST_ASSERT_NOT_NULL(resourceEntry);
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_Zrm_ReadEntry(&archive,
+                                                     resourceEntry->entryName,
+                                                     &resourceBytes,
+                                                     &resourceByteCount,
+                                                     error,
+                                                     sizeof(error)),
+                             error);
+    TEST_ASSERT_EQUAL_UINT32((unsigned int)(sizeof(resourceText) - 1u), (unsigned int)resourceByteCount);
+    TEST_ASSERT_EQUAL_MEMORY(resourceText, resourceBytes, sizeof(resourceText) - 1u);
+    ZrLibrary_Zrm_FreeBytes(resourceBytes);
+    ZrLibrary_Zrm_Close(&archive);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -1111,6 +1181,7 @@ int main(void) {
     RUN_TEST(test_cli_project_path_resolution_maps_dotted_module_name_to_nested_artifacts);
     RUN_TEST(test_cli_project_path_resolution_maps_dependency_module_to_package_roots);
     RUN_TEST(test_cli_incremental_compiles_dependency_modules_into_package_binary_root);
+    RUN_TEST(test_cli_compile_emit_zrm_packs_reachable_modules_and_resources);
 
     return UNITY_END();
 }

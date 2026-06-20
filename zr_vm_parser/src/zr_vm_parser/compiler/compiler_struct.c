@@ -651,6 +651,7 @@ void compiler_collect_generic_parameter_info(SZrCompilerState *cs,
         genericInfo.requiresStruct = parameter->genericRequiresStruct;
         genericInfo.requiresNew = parameter->genericRequiresNew;
         genericInfo.requiresOwner = parameter->genericRequiresOwner;
+        genericInfo.requiredOwnershipQualifier = parameter->genericRequiredOwnershipQualifier;
         ZrCore_Array_Init(cs->state,
                           &genericInfo.constraintTypeNames,
                           sizeof(SZrString *),

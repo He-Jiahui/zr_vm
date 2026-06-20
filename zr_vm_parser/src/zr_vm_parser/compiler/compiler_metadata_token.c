@@ -317,6 +317,7 @@ static TZrBool metadata_token_string_heap_collect_effect(SZrMetadataStringHeapBu
                                                          const SZrMetadataTokenTargetSignature *targetSignature) {
     if (effect != ZR_NULL) {
         if (!metadata_token_string_heap_add(builder, effect->moduleName) ||
+            !metadata_token_string_heap_add(builder, effect->assemblyName) ||
             !metadata_token_string_heap_add(builder, effect->symbolName) ||
             !metadata_token_string_heap_add(builder, effect->requestedModuleVersion) ||
             !metadata_token_string_heap_add(builder, effect->minModuleVersionInclusive) ||
@@ -587,7 +588,10 @@ static void metadata_token_write_assembly_ref_signature(TZrByte *buffer,
     metadata_token_write_u8(buffer, offset, ZR_METADATA_SIGNATURE_NODE_ASSEMBLY_REF);
     metadata_token_write_string_ref(buffer,
                                     offset,
-                                    effect != ZR_NULL ? effect->moduleName : ZR_NULL,
+                                    effect != ZR_NULL && effect->assemblyName != ZR_NULL ? effect->assemblyName
+                                                                                         : (effect != ZR_NULL
+                                                                                                    ? effect->moduleName
+                                                                                                    : ZR_NULL),
                                     stringHeapEntries,
                                     stringHeapEntryCount);
     metadata_token_write_string_ref(buffer,

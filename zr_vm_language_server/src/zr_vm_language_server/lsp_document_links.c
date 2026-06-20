@@ -529,6 +529,7 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
                                               SZrString *uri,
                                               SZrArray *result) {
     SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
     SZrString *virtualDocumentText = ZR_NULL;
     TZrChar *diskContent = ZR_NULL;
     const TZrChar *content;
@@ -544,7 +545,7 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
     }
 
     fileVersion = lsp_editor_get_file_version(context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+    if (fileVersion == ZR_NULL) {
         if (ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(uri)) {
             if (!ZrLanguageServer_Lsp_GetNativeDeclarationDocument(state, context, uri, &virtualDocumentText) ||
                 virtualDocumentText == ZR_NULL) {
@@ -556,10 +557,19 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
         }
     }
 
-    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
-        content = fileVersion->content;
-        contentLength = fileVersion->contentLength;
+    if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
+        content = snapshot.content;
+        contentLength = snapshot.contentLength;
     } else {
+        if (ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(uri)) {
+            if (!ZrLanguageServer_Lsp_GetNativeDeclarationDocument(state, context, uri, &virtualDocumentText) ||
+                virtualDocumentText == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            content = lsp_document_links_string_text(virtualDocumentText);
+            contentLength = content != ZR_NULL ? strlen(content) : 0;
+            return lsp_document_links_append_virtual_module_links(state, result, uri, content, contentLength);
+        }
         diskContent = lsp_document_links_read_uri_from_disk(state, uri, &contentLength);
         if (diskContent == ZR_NULL) {
             return ZR_FALSE;
@@ -641,5 +651,6 @@ cleanup:
     if (diskContent != ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, diskContent, contentLength + 1);
     }
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return success;
 }

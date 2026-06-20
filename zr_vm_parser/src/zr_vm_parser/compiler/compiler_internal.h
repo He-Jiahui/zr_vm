@@ -209,15 +209,15 @@ void ZrParser_CompileTime_Error(SZrCompilerState *cs, EZrCompileTimeErrorLevel l
 
 void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *msg, SZrFileRange location) ;
 
-TZrInstruction create_instruction_0(EZrInstructionCode opcode, TZrUInt16 operandExtra) ;
+ZR_PARSER_API TZrInstruction create_instruction_0(EZrInstructionCode opcode, TZrUInt16 operandExtra) ;
 
-TZrInstruction create_instruction_1(EZrInstructionCode opcode, TZrUInt16 operandExtra, TZrInt32 operand) ;
+ZR_PARSER_API TZrInstruction create_instruction_1(EZrInstructionCode opcode, TZrUInt16 operandExtra, TZrInt32 operand) ;
 
-TZrInstruction create_instruction_2(EZrInstructionCode opcode, TZrUInt16 operandExtra, TZrUInt16 operand1,
+ZR_PARSER_API TZrInstruction create_instruction_2(EZrInstructionCode opcode, TZrUInt16 operandExtra, TZrUInt16 operand1,
                                     TZrUInt16 operand2) ;
 
-TZrInstruction create_instruction_4(EZrInstructionCode opcode, TZrUInt16 operandExtra, TZrUInt8 op0, TZrUInt8 op1,
-                                           TZrUInt8 op2, TZrUInt8 op3) ;
+ZR_PARSER_API TZrInstruction create_instruction_4(EZrInstructionCode opcode, TZrUInt16 operandExtra, TZrUInt8 op0, TZrUInt8 op1,
+                                    TZrUInt8 op2, TZrUInt8 op3) ;
 
 TZrBool compiler_copy_range_to_raw(SZrCompilerState *cs,
                                           TZrPtr *outMemory,
@@ -643,8 +643,8 @@ TZrBool compiler_build_callable_return_type_metadata(SZrCompilerState *cs,
 TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs);
 ZR_PARSER_API TZrBool compiler_build_function_metadata_tokens(SZrCompilerState *cs, SZrFunction *function);
 
-TZrBool compiler_build_function_semir_metadata(SZrState *state, SZrFunction *function);
-TZrBool compiler_build_function_semir_metadata_shallow(SZrState *state, SZrFunction *function);
+ZR_PARSER_API TZrBool compiler_build_function_semir_metadata(SZrState *state, SZrFunction *function);
+ZR_PARSER_API TZrBool compiler_build_function_semir_metadata_shallow(SZrState *state, SZrFunction *function);
 
 ZR_PARSER_API TZrBool compiler_quicken_execbc_function(SZrState *state, SZrFunction *function);
 ZR_PARSER_API TZrBool compiler_quicken_execbc_function_shallow(SZrState *state, SZrFunction *function);

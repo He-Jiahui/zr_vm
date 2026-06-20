@@ -256,6 +256,8 @@ static TZrBool lsp_inlay_build_label_text(SZrState *state,
 }
 
 static TZrBool lsp_inlay_try_append_symbol_hint(SZrState *state,
+                                                SZrLspContext *context,
+                                                SZrString *uri,
                                                 SZrSemanticAnalyzer *analyzer,
                                                 SZrSymbol *symbol,
                                                 SZrLspRange range,
@@ -282,21 +284,21 @@ static TZrBool lsp_inlay_try_append_symbol_hint(SZrState *state,
                 astNode->data.variableDeclaration.pattern->type != ZR_AST_IDENTIFIER_LITERAL) {
                 return ZR_TRUE;
             }
-            position = ZrLanguageServer_LspPosition_FromFilePosition(symbol->selectionRange.end);
+            position = ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(context, uri, symbol->selectionRange.end);
             break;
 
         case ZR_AST_CLASS_FIELD:
             if (astNode->data.classField.typeInfo != ZR_NULL) {
                 return ZR_TRUE;
             }
-            position = ZrLanguageServer_LspPosition_FromFilePosition(symbol->selectionRange.end);
+            position = ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(context, uri, symbol->selectionRange.end);
             break;
 
         case ZR_AST_STRUCT_FIELD:
             if (astNode->data.structField.typeInfo != ZR_NULL) {
                 return ZR_TRUE;
             }
-            position = ZrLanguageServer_LspPosition_FromFilePosition(symbol->selectionRange.end);
+            position = ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(context, uri, symbol->selectionRange.end);
             break;
 
         case ZR_AST_FUNCTION_DECLARATION:
@@ -304,9 +306,14 @@ static TZrBool lsp_inlay_try_append_symbol_hint(SZrState *state,
                 return ZR_TRUE;
             }
             position = astNode->data.functionDeclaration.body != ZR_NULL
-                           ? ZrLanguageServer_LspPosition_FromFilePosition(
+                           ? ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
+                                 context,
+                                 uri,
                                  astNode->data.functionDeclaration.body->location.start)
-                           : ZrLanguageServer_LspPosition_FromFilePosition(symbol->selectionRange.end);
+                           : ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
+                                 context,
+                                 uri,
+                                 symbol->selectionRange.end);
             break;
 
         case ZR_AST_CLASS_METHOD:
@@ -314,8 +321,14 @@ static TZrBool lsp_inlay_try_append_symbol_hint(SZrState *state,
                 return ZR_TRUE;
             }
             position = astNode->data.classMethod.body != ZR_NULL
-                           ? ZrLanguageServer_LspPosition_FromFilePosition(astNode->data.classMethod.body->location.start)
-                           : ZrLanguageServer_LspPosition_FromFilePosition(symbol->selectionRange.end);
+                           ? ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
+                                 context,
+                                 uri,
+                                 astNode->data.classMethod.body->location.start)
+                           : ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
+                                 context,
+                                 uri,
+                                 symbol->selectionRange.end);
             break;
 
         case ZR_AST_STRUCT_METHOD:
@@ -323,8 +336,14 @@ static TZrBool lsp_inlay_try_append_symbol_hint(SZrState *state,
                 return ZR_TRUE;
             }
             position = astNode->data.structMethod.body != ZR_NULL
-                           ? ZrLanguageServer_LspPosition_FromFilePosition(astNode->data.structMethod.body->location.start)
-                           : ZrLanguageServer_LspPosition_FromFilePosition(symbol->selectionRange.end);
+                           ? ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
+                                 context,
+                                 uri,
+                                 astNode->data.structMethod.body->location.start)
+                           : ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
+                                 context,
+                                 uri,
+                                 symbol->selectionRange.end);
             break;
 
         default:
@@ -380,7 +399,7 @@ TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
                 continue;
             }
 
-            if (!lsp_inlay_try_append_symbol_hint(state, analyzer, *symbolPtr, range, result)) {
+            if (!lsp_inlay_try_append_symbol_hint(state, context, uri, analyzer, *symbolPtr, range, result)) {
                 ZrLanguageServer_Lsp_FreeInlayHints(state, result);
                 return ZR_FALSE;
             }

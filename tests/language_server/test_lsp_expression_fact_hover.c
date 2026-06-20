@@ -166,6 +166,17 @@ static void hover_free(SZrState *state, SZrLspHover *hover) {
     ZrCore_Memory_RawFree(state->global, hover, sizeof(SZrLspHover));
 }
 
+static TZrBool lsp_range_equals(SZrLspRange range,
+                                TZrInt32 startLine,
+                                TZrInt32 startCharacter,
+                                TZrInt32 endLine,
+                                TZrInt32 endCharacter) {
+    return range.start.line == startLine &&
+           range.start.character == startCharacter &&
+           range.end.line == endLine &&
+           range.end.character == endCharacter;
+}
+
 static TZrBool test_lsp_hover_surfaces_expression_fact_kind_and_constant(SZrState *state) {
     const TZrChar *uriText = "file:///expression_fact_hover.zr";
     const TZrChar *content =
@@ -246,6 +257,55 @@ static TZrBool test_lsp_hover_surfaces_expression_fact_kind_and_constant(SZrStat
     hover_free(state, publicHover);
     ZrLanguageServer_Lsp_FreeRichHover(state, richHover);
     ZrLanguageServer_LspLocalSemanticQuery_Clear(&query);
+    ZrLanguageServer_LspContext_Free(state, context);
+    return passed;
+}
+
+static TZrBool test_lsp_hover_range_after_utf8_prefix_uses_utf16_columns(SZrState *state) {
+    const TZrChar *uriText = "file:///expression_fact_utf16_hover.zr";
+    const TZrChar *content =
+        "func calc(): int {\n"
+        "    /* \xCE\xBB */ return 1 + 2;\n"
+        "}\n";
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition plusPosition;
+    SZrLspHover *publicHover = ZR_NULL;
+    const TZrChar *hoverText;
+    TZrBool passed;
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !find_position_for_substring(content, "+", 0, &plusPosition)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        printf("FAIL: unable to prepare UTF-16 expression fact hover fixture\n");
+        return ZR_FALSE;
+    }
+
+    passed = ZrLanguageServer_Lsp_GetHover(state, context, uri, plusPosition, &publicHover) &&
+             publicHover != ZR_NULL &&
+             hover_contains_text(publicHover, "Expression: binary exact") &&
+             hover_contains_text(publicHover, "Constant: 3") &&
+             lsp_range_equals(publicHover->range, 1, 19, 1, 24);
+
+    if (!passed) {
+        hoverText = hover_first_text(publicHover);
+        printf("FAIL: expected UTF-16 hover range 1:19-1:24 after UTF-8 prefix; "
+               "hover=%p range=%d:%d-%d:%d text=%s\n",
+               (void *)publicHover,
+               publicHover != ZR_NULL ? publicHover->range.start.line : -1,
+               publicHover != ZR_NULL ? publicHover->range.start.character : -1,
+               publicHover != ZR_NULL ? publicHover->range.end.line : -1,
+               publicHover != ZR_NULL ? publicHover->range.end.character : -1,
+               hoverText != ZR_NULL ? hoverText : "<null>");
+    }
+
+    hover_free(state, publicHover);
     ZrLanguageServer_LspContext_Free(state, context);
     return passed;
 }
@@ -342,6 +402,7 @@ int main(void) {
     SZrGlobalState *global;
     SZrState *state;
     TZrBool expressionHoverPassed;
+    TZrBool utf16HoverRangePassed;
     TZrBool stringHoverPassed;
 
     memset(&callbacks, 0, sizeof(callbacks));
@@ -359,10 +420,13 @@ int main(void) {
     expressionHoverPassed = test_lsp_hover_surfaces_expression_fact_kind_and_constant(state);
     printf("%s: LSP Hover Surfaces Expression Fact Kind And Constant\n",
            expressionHoverPassed ? "PASS" : "FAIL");
+    utf16HoverRangePassed = test_lsp_hover_range_after_utf8_prefix_uses_utf16_columns(state);
+    printf("%s: LSP Hover Range After UTF-8 Prefix Uses UTF-16 Columns\n",
+           utf16HoverRangePassed ? "PASS" : "FAIL");
     stringHoverPassed = test_lsp_hover_escapes_string_constant_payload(state);
     printf("%s: LSP Hover Escapes String Constant Payload\n",
            stringHoverPassed ? "PASS" : "FAIL");
 
     ZrCore_GlobalState_Free(global);
-    return expressionHoverPassed && stringHoverPassed ? 0 : 1;
+    return expressionHoverPassed && utf16HoverRangePassed && stringHoverPassed ? 0 : 1;
 }

@@ -283,6 +283,7 @@ typedef struct SZrTypeGenericParameterInfo {
     TZrBool requiresStruct;            // struct 约束
     TZrBool requiresNew;               // new() 约束
     TZrBool requiresOwner;             // owner 约束（要求所有权泛型实参）
+    EZrOwnershipQualifier requiredOwnershipQualifier; // unique/shared/weak 精确所有权约束
     SZrArray constraintTypeNames;       // 约束类型名称数组（SZrString*）
 } SZrTypeGenericParameterInfo;
 
@@ -292,6 +293,7 @@ typedef struct SZrTypePrototypeInfo {
     EZrAccessModifier accessModifier;   // 访问修饰符
     TZrUInt32 modifierFlags;            // abstract/final 等类型修饰符
     TZrBool isImportedNative;           // 是否为仅用于编译期解析的导入类型 stub（native/source/binary）
+    TZrBool isNativeRuntime;            // 是否来自 native registry，需要保留 native 构造器返回值
     TZrUInt64 protocolMask;             // 稳定 protocol bit mask
     SZrArray inherits;                  // 继承的类型引用（SZrString* 数组，存储类型名称字符串）
     SZrString *extendsTypeName;         // 单继承目标（如有）
@@ -380,6 +382,8 @@ typedef struct SZrCompileResult {
 
 // 常量引用路径结构
 // 使用状态机编码模式，例如：5(长度), -1, -5, 0, -4, 1 表示 parent->childFunction[0]->prototypes[1]
+#ifndef ZR_CONSTANT_REFERENCE_PATH_DECLARED
+#define ZR_CONSTANT_REFERENCE_PATH_DECLARED
 typedef struct SZrConstantReferencePath {
     TZrUInt32 depth;              // 路径深度（总步骤数）
     TZrUInt32 *steps;             // 路径步骤数组（depth个元素）
@@ -392,6 +396,7 @@ typedef struct SZrConstantReferencePath {
     //   - 正数: childFunctionList[index]  或者prototypes[index]
     EZrValueType type;          // 常量类型记录
 } SZrConstantReferencePath;
+#endif
 
 // 引用常量值类型（用于常量池中存储）
 typedef struct SZrConstantReference {

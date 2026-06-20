@@ -55,6 +55,40 @@ static SZrType *parse_task_inner_type(SZrParserState *ps, TZrBool noGeneric) {
     return noGeneric ? parse_type_no_generic(ps) : parse_type(ps);
 }
 
+static TZrBool current_identifier_is_specific_owner_constraint(SZrParserState *ps,
+                                                               EZrOwnershipQualifier *qualifier) {
+    if (qualifier != ZR_NULL) {
+        *qualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_IDENTIFIER) {
+        return ZR_FALSE;
+    }
+
+    if (current_identifier_equals(ps, "unique")) {
+        if (qualifier != ZR_NULL) {
+            *qualifier = ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+        }
+        return ZR_TRUE;
+    }
+
+    if (current_identifier_equals(ps, "shared")) {
+        if (qualifier != ZR_NULL) {
+            *qualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
+        }
+        return ZR_TRUE;
+    }
+
+    if (current_identifier_equals(ps, "weak")) {
+        if (qualifier != ZR_NULL) {
+            *qualifier = ZR_OWNERSHIP_QUALIFIER_WEAK;
+        }
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
 static SZrType *allocate_empty_type_info(SZrParserState *ps) {
     SZrType *type = ZrCore_Memory_RawMallocWithType(ps->state->global, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
     if (type == ZR_NULL) {
@@ -356,6 +390,7 @@ static SZrAstNode *parse_function_type_parameter(SZrParserState *ps, TZrBool noG
     node->data.parameter.genericRequiresStruct = ZR_FALSE;
     node->data.parameter.genericRequiresNew = ZR_FALSE;
     node->data.parameter.genericRequiresOwner = ZR_FALSE;
+    node->data.parameter.genericRequiredOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     return node;
 }
 
@@ -1053,6 +1088,7 @@ static SZrAstNode *parse_generic_parameter(SZrParserState *ps, TZrBool allowVari
     node->data.parameter.genericRequiresStruct = ZR_FALSE;
     node->data.parameter.genericRequiresNew = ZR_FALSE;
     node->data.parameter.genericRequiresOwner = ZR_FALSE;
+    node->data.parameter.genericRequiredOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     return node;
 }
 
@@ -1139,6 +1175,39 @@ TZrBool parse_optional_where_clauses(SZrParserState *ps, SZrGenericDeclaration *
                     parameter->genericRequiresOwner = ZR_TRUE;
                 }
                 ZrParser_Lexer_Next(ps->lexer);
+            } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
+                EZrOwnershipQualifier requiredQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                if (current_identifier_is_specific_owner_constraint(ps, &requiredQualifier)) {
+                    if (parameter != ZR_NULL) {
+                        if (parameter->genericRequiredOwnershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE &&
+                            parameter->genericRequiredOwnershipQualifier != requiredQualifier) {
+                            report_error(ps, "Conflicting ownership constraints in where clause");
+                        }
+                        parameter->genericRequiresOwner = ZR_TRUE;
+                        parameter->genericRequiredOwnershipQualifier = requiredQualifier;
+                    }
+                    ZrParser_Lexer_Next(ps->lexer);
+                } else {
+                    SZrType *constraintType = parse_type(ps);
+                    SZrAstNode *constraintNode;
+
+                    if (constraintType == ZR_NULL) {
+                        ZrParser_Ast_Free(ps->state, nameNode);
+                        return ZR_FALSE;
+                    }
+
+                    constraintNode = create_type_node_from_type_info(ps, constraintType, get_current_location(ps));
+                    if (constraintNode == ZR_NULL) {
+                        ZrParser_Ast_Free(ps->state, nameNode);
+                        return ZR_FALSE;
+                    }
+
+                    if (parameter != ZR_NULL && ensure_generic_constraint_array(ps, parameter)) {
+                        ZrParser_AstNodeArray_Add(ps->state, parameter->genericTypeConstraints, constraintNode);
+                    } else {
+                        ZrParser_Ast_Free(ps->state, constraintNode);
+                    }
+                }
             } else {
                 SZrType *constraintType = parse_type(ps);
                 SZrAstNode *constraintNode;
@@ -1517,6 +1586,7 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
     node->data.parameter.genericRequiresStruct = ZR_FALSE;
     node->data.parameter.genericRequiresNew = ZR_FALSE;
     node->data.parameter.genericRequiresOwner = ZR_FALSE;
+    node->data.parameter.genericRequiredOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     return node;
 }
 

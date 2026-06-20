@@ -215,6 +215,128 @@ static void module_prototype_apply_protocol_mask(SZrObjectPrototype *prototype, 
     }
 }
 
+#define ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_GETTER 1u
+#define ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_SETTER 2u
+
+static SZrString *module_prototype_public_property_name_from_accessor(SZrState *state,
+                                                                      SZrString *accessorName,
+                                                                      TZrUInt32 accessorRole) {
+    const TZrChar *prefix;
+    const TZrChar *text;
+    TZrSize prefixLength;
+    TZrSize publicNameLength;
+
+    if (state == ZR_NULL || accessorName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_GETTER) {
+        prefix = "__get_";
+    } else if (accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_SETTER) {
+        prefix = "__set_";
+    } else {
+        return ZR_NULL;
+    }
+
+    text = ZrCore_String_GetNativeString(accessorName);
+    if (text == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    prefixLength = strlen(prefix);
+    if (strncmp(text, prefix, prefixLength) != 0 || text[prefixLength] == '\0') {
+        return ZR_NULL;
+    }
+
+    publicNameLength = strlen(text + prefixLength);
+    return ZrCore_String_Create(state, (TZrNativeString)(text + prefixLength), publicNameLength);
+}
+
+static SZrMemberDescriptor *module_prototype_find_own_property_descriptor(SZrObjectPrototype *prototype,
+                                                                          SZrString *propertyName,
+                                                                          TZrBool isStatic) {
+    if (prototype == ZR_NULL || propertyName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 index = 0; index < prototype->memberDescriptorCount; index++) {
+        SZrMemberDescriptor *descriptor = &prototype->memberDescriptors[index];
+        if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY &&
+            descriptor->isStatic == isStatic &&
+            descriptor->name != ZR_NULL &&
+            ZrCore_String_Equal(descriptor->name, propertyName)) {
+            return descriptor;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void module_prototype_add_property_accessor_descriptor(SZrState *state,
+                                                             SZrObjectPrototype *prototype,
+                                                             SZrFunction *entryFunction,
+                                                             SZrString *accessorName,
+                                                             const SZrCompiledMemberInfo *member,
+                                                             SZrFunction *function) {
+    SZrString *propertyName;
+    SZrMemberDescriptor *existing;
+    SZrMemberDescriptor descriptor;
+
+    if (state == ZR_NULL || prototype == ZR_NULL || member == ZR_NULL || function == ZR_NULL ||
+        member->accessorRole == 0u) {
+        return;
+    }
+
+    propertyName = module_prototype_public_property_name_from_accessor(state, accessorName, member->accessorRole);
+    if (propertyName == ZR_NULL) {
+        return;
+    }
+
+    existing = module_prototype_find_own_property_descriptor(prototype,
+                                                            propertyName,
+                                                            member->isStatic ? ZR_TRUE : ZR_FALSE);
+    if (existing != ZR_NULL) {
+        if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_GETTER) {
+            existing->getterFunction = function;
+        } else if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_SETTER) {
+            existing->setterFunction = function;
+            existing->isWritable = ZR_TRUE;
+        }
+        existing->modifierFlags |= member->modifierFlags;
+        existing->contractRole = member->contractRole;
+        existing->propertyIdentity = member->propertyIdentity;
+        existing->accessorRole = 0u;
+        prototype->super.memberVersion++;
+        return;
+    }
+
+    ZrCore_Memory_RawSet(&descriptor, 0, sizeof(descriptor));
+    descriptor.name = propertyName;
+    descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY;
+    descriptor.isStatic = member->isStatic ? ZR_TRUE : ZR_FALSE;
+    descriptor.isWritable = member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_SETTER ? ZR_TRUE : ZR_FALSE;
+    descriptor.contractRole = member->contractRole;
+    descriptor.modifierFlags = member->modifierFlags;
+    descriptor.ownerTypeName =
+            module_prototype_get_string_constant(state, entryFunction, member->ownerTypeNameStringIndex);
+    descriptor.baseDefinitionOwnerTypeName =
+            module_prototype_get_string_constant(state,
+                                                 entryFunction,
+                                                 member->baseDefinitionOwnerTypeNameStringIndex);
+    descriptor.baseDefinitionName = propertyName;
+    descriptor.virtualSlotIndex = member->virtualSlotIndex;
+    descriptor.interfaceContractSlot = member->interfaceContractSlot;
+    descriptor.propertyIdentity = member->propertyIdentity;
+    descriptor.accessorRole = 0u;
+    if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_GETTER) {
+        descriptor.getterFunction = function;
+    } else if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_SETTER) {
+        descriptor.setterFunction = function;
+    }
+
+    (void)ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
+}
+
 static void module_prototype_add_runtime_descriptor(SZrState *state,
                                                     SZrObjectPrototype *prototype,
                                                     SZrFunction *entryFunction,
@@ -245,6 +367,15 @@ static void module_prototype_add_runtime_descriptor(SZrState *state,
     descriptor.interfaceContractSlot = member->interfaceContractSlot;
     descriptor.propertyIdentity = member->propertyIdentity;
     descriptor.accessorRole = member->accessorRole;
+
+    if (member->accessorRole != 0u && function != ZR_NULL) {
+        module_prototype_add_property_accessor_descriptor(state,
+                                                          prototype,
+                                                          entryFunction,
+                                                          memberName,
+                                                          member,
+                                                          function);
+    }
 
     switch (member->memberType) {
         case ZR_AST_CONSTANT_STRUCT_FIELD:

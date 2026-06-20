@@ -491,6 +491,11 @@ register_project_case("container_matrix_banner" "container_matrix/container_matr
 register_project_case("container_matrix_result" "container_matrix/container_matrix.zrp" "635" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("network_loopback" "network_loopback/network_loopback.zrp" "NETWORK_LOOPBACK_PASS ping pong echo" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("network_loopback_binary" "network_loopback/network_loopback.zrp" "NETWORK_LOOPBACK_PASS ping pong echo" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+register_project_case("using_real_world_checkout" "using_real_world_checkout/using_real_world_checkout.zrp" "USING_REAL_WORLD_CHECKOUT_PASS 120" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+register_project_case("using_union_normal" "using_real_world_checkout/using_union_normal.zrp" "USING_UNION_NORMAL_PASS 125" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+register_project_case("using_union_edge_cases" "using_real_world_checkout/using_union_edge_cases.zrp" "USING_UNION_EDGE_PASS 77" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+register_project_case("using_feature_matrix" "using_feature_matrix/using_feature_matrix.zrp" "USING_FEATURE_MATRIX_PASS 276" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+register_project_case("using_edge_matrix" "using_edge_matrix/using_edge_matrix.zrp" "USING_EDGE_MATRIX_PASS 266" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 
 set_project_case_metadata("hello_world" "smoke;core;stress" "")
 set_project_case_metadata("import_basic" "smoke;core;stress" "")
@@ -529,6 +534,11 @@ set_project_case_metadata("container_matrix_banner" "smoke;core;stress" "")
 set_project_case_metadata("container_matrix_result" "smoke;core;stress" "")
 set_project_case_metadata("network_loopback" "core;stress" "")
 set_project_case_metadata("network_loopback_binary" "core;stress" "executed_via=binary")
+set_project_case_metadata("using_real_world_checkout" "smoke;core;stress;using" "")
+set_project_case_metadata("using_union_normal" "using" "")
+set_project_case_metadata("using_union_edge_cases" "using" "")
+set_project_case_metadata("using_feature_matrix" "smoke;core;stress;using" "")
+set_project_case_metadata("using_edge_matrix" "smoke;core;stress;using" "")
 
 set_project_case_execution("network_loopback_binary" "" "--execution-mode;binary;--emit-executed-via")
 

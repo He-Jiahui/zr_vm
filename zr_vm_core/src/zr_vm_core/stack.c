@@ -191,7 +191,7 @@ TZrBool ZrCore_Stack_CheckFullAndGrow(SZrState *state, TZrSize space, TZrNativeS
 
 void ZrCore_Stack_SetRawObjectValue(struct SZrState *state, SZrTypeValueOnStack *destination, SZrRawObject *object) {
     SZrTypeValue *destinationValue = ZrCore_Stack_GetValue(destination);
-    ZrCore_Ownership_ReleaseValue(state, destinationValue);
+    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, destinationValue);
     ZrCore_Value_InitAsRawObject(state, destinationValue, object);
     destinationValue->isGarbageCollectable = ZR_TRUE;
     ZrCore_Gc_ValueStaticAssertIsAlive(state, destinationValue);

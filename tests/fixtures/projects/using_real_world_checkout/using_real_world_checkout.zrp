@@ -1,0 +1,6 @@
+{
+  "name": "using_real_world_checkout",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

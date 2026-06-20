@@ -47,6 +47,13 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspLocalSemanticQuery_BuildHover
     const SZrLspLocalSemanticQueryResult *query,
     SZrLspHover **result);
 
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspLocalSemanticQuery_BuildHoverForDocument(
+    SZrState *state,
+    SZrLspContext *context,
+    SZrString *uri,
+    const SZrLspLocalSemanticQueryResult *query,
+    SZrLspHover **result);
+
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(
     SZrState *state,
     const SZrLspLocalSemanticQueryResult *query,

@@ -384,6 +384,8 @@ static void io_read_function_typed_type_ref(SZrIo *io, SZrIoFunctionTypedTypeRef
     TZrUInt32 ownershipQualifier = 0;
     TZrUInt8 isArray = ZR_FALSE;
     TZrUInt32 elementBaseType = ZR_VALUE_TYPE_OBJECT;
+    TZrUInt32 staticCType = ZR_STATIC_C_TYPE_DYNAMIC;
+    TZrUInt32 staticCTypeId = (TZrUInt32)0xFFFFFFFFu;
 
     if (io == ZR_NULL || typeRef == ZR_NULL) {
         return;
@@ -396,12 +398,19 @@ static void io_read_function_typed_type_ref(SZrIo *io, SZrIoFunctionTypedTypeRef
     typeRef->typeName = io_read_string_with_length(io);
     ZR_IO_READ_NATIVE_TYPE(io, elementBaseType, TZrUInt32);
     typeRef->elementTypeName = io_read_string_with_length(io);
+    if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_SEMIR_STATIC_C_TYPES) {
+        ZR_IO_READ_NATIVE_TYPE(io, staticCType, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, staticCTypeId, TZrUInt32);
+    }
 
     typeRef->baseType = (EZrValueType)baseType;
     typeRef->isNullable = isNullable ? ZR_TRUE : ZR_FALSE;
     typeRef->ownershipQualifier = ownershipQualifier;
     typeRef->isArray = isArray ? ZR_TRUE : ZR_FALSE;
     typeRef->elementBaseType = (EZrValueType)elementBaseType;
+    typeRef->staticCType = (EZrStaticCType)staticCType;
+    typeRef->staticCTypeId =
+            typeRef->staticCType == ZR_STATIC_C_TYPE_STRUCT ? staticCTypeId : (TZrUInt32)0xFFFFFFFFu;
 }
 
 static void io_read_function_typed_local_bindings(SZrIo *io,
@@ -721,6 +730,11 @@ static void io_read_function_module_effects(SZrIo *io,
         ZR_IO_READ_NATIVE_TYPE(io, effect->readiness, TZrUInt8);
         ZR_IO_READ_NATIVE_TYPE(io, effect->reserved0, TZrUInt8);
         effect->moduleName = io_read_string_with_length(io);
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_MODULE_EFFECT_ASSEMBLY_NAME) {
+            effect->assemblyName = io_read_string_with_length(io);
+        } else {
+            effect->assemblyName = ZR_NULL;
+        }
         effect->symbolName = io_read_string_with_length(io);
         ZR_IO_READ_NATIVE_TYPE(io, effect->lineInSourceStart, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, effect->columnInSourceStart, TZrUInt32);

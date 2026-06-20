@@ -660,6 +660,9 @@ SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTypeDescr
 ZR_LIBRARY_API SZrObject *native_metadata_make_module_info(SZrState *state,
                                                            const ZrLibModuleDescriptor *descriptor,
                                                            const ZrLibRegisteredModuleRecord *record);
+TZrBool native_runtime_metadata_attach_module(SZrState *state,
+                                              SZrObjectModule *module,
+                                              const ZrLibModuleDescriptor *descriptor);
 TZrBool native_registry_add_constant(SZrState *state,
                                             SZrObjectModule *module,
                                             const ZrLibConstantDescriptor *descriptor);

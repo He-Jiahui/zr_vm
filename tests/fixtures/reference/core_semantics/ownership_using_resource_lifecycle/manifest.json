@@ -1171,6 +1171,98 @@
           "skip_reason": "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary"
         }
       }
+    },
+    {
+      "id": "ownership-generic-session-lifecycle-pass",
+      "domain": "ownership_using_resource_lifecycle",
+      "feature_group": "generic_ownership_surface",
+      "upstream_language": "rust",
+      "upstream_file": "tests/fixtures/reference/core_semantics/ownership_using_resource_lifecycle/generic_session_lifecycle_pass.zr",
+      "upstream_intent": "Real resource lifecycles combine unique ownership, shared aliases, borrows, loans, weak observers, detach, upgrade, and release in one flow.",
+      "zr_decision": "adapt",
+      "zr_contract": "Ownership generic constructors and member methods compose in executable code without falling back to legacy percent-qualified owner types or percent-prefixed ownership operations.",
+      "layer_targets": [
+        "semantic/compiler",
+        "runtime",
+        "reference_fixture"
+      ],
+      "case_kind": "combination",
+      "expected_outcome": "generic ownership session lifecycle returns the expected runtime mask",
+      "assertions": [
+        "source fixture uses Unique<T>, Shared<T>, Borrow<T>, Loan<T>, and Weak<T>",
+        "source fixture uses share(), weak(), borrow(), loan(), detach(), upgrade(), and release() member methods",
+        "compiler emits the expected ownership opcode family",
+        "using cleanup returns owner.loan() through OWN_RETURN_LOAN",
+        "runtime lifecycle returns mask 63"
+      ],
+      "stress_class": "none",
+      "tiers": [
+        "smoke",
+        "core"
+      ],
+      "execution_modes": [
+        "interp"
+      ],
+      "artifact_targets": [
+        "zri"
+      ],
+      "probe_targets": [
+        "ownership_lifecycle",
+        "runtime_contract",
+        "reference_fixture"
+      ],
+      "oracles": {
+        "source": {
+          "stdout": [],
+          "return": [
+            "generic ownership session lifecycle returns the expected runtime mask"
+          ],
+          "exception": [],
+          "cleanup_trace": []
+        },
+        "artifact": {
+          "must_contain": [
+            "SEMIR",
+            "OWNERSHIP_TABLE"
+          ],
+          "must_not_contain": [
+            "legacy_dynamic_fallback"
+          ],
+          "ordered_fragments": [
+            "SEMIR"
+          ],
+          "regex": []
+        },
+        "parity": {
+          "required_modes": [
+            "interp"
+          ],
+          "optional_modes": [
+            "binary"
+          ],
+          "skip_reason": "compiler integration executes this reference fixture in interp mode; binary parity remains covered by project/runtime suites"
+        },
+        "probe": {
+          "must_contain": [
+            "ownership_lifecycle",
+            "runtime_contract",
+            "reference_fixture"
+          ],
+          "must_not_contain": []
+        }
+      },
+      "backend_requirements": {
+        "require_binary_prepare": false,
+        "executed_via_allowed": [
+          "interp",
+          "binary"
+        ],
+        "binary": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "compiler integration executes this reference fixture in interp mode; binary parity remains covered by project/runtime suites"
+        }
+      }
     }
   ]
 }
