@@ -1,18 +1,58 @@
 #include "backend_aot_c_emitter.h"
+#include "backend_aot_c_scalar_locals.h"
 
 /* backend_aot_c_lowering_generic_conversion.c */
 
-static void backend_aot_c_write_generic_conversion_unsupported(FILE *file) {
+static void backend_aot_write_c_generic_conversion_sync_locals(FILE *file,
+                                                               const SZrAotExecIrFunction *functionIr,
+                                                               TZrUInt32 destinationSlot) {
+    TZrBool syncBoolLocal;
+    TZrBool syncI64Local;
+    TZrBool syncU64Local;
+    TZrBool syncF64Local;
+
     if (file == ZR_NULL) {
         return;
     }
 
-    fprintf(file,
-            "        ZrCore_Debug_RunError(state, \"unsupported AOT generic primitive conversion\");\n"
-            "        ZR_AOT_C_FAIL();\n");
+    syncBoolLocal = backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot);
+    syncI64Local = backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot);
+    syncU64Local = backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot);
+    syncF64Local = backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot);
+    if (syncBoolLocal) {
+        fprintf(file,
+                "        /* zr_aot_convert_generic_sync_bool_local_boundary */\n"
+                "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u));\n",
+                (unsigned)destinationSlot,
+                (unsigned)destinationSlot);
+    }
+    if (syncI64Local) {
+        fprintf(file,
+                "        /* zr_aot_convert_generic_sync_i64_local_boundary */\n"
+                "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u));\n",
+                (unsigned)destinationSlot,
+                (unsigned)destinationSlot);
+    }
+    if (syncU64Local) {
+        fprintf(file,
+                "        /* zr_aot_convert_generic_sync_u64_local_boundary */\n"
+                "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u));\n",
+                (unsigned)destinationSlot,
+                (unsigned)destinationSlot);
+    }
+    if (syncF64Local) {
+        fprintf(file,
+                "        /* zr_aot_convert_generic_sync_f64_local_boundary */\n"
+                "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u));\n",
+                (unsigned)destinationSlot,
+                (unsigned)destinationSlot);
+    }
 }
 
-void backend_aot_write_c_direct_to_bool(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+void backend_aot_write_c_direct_to_bool(FILE *file,
+                                        const SZrAotExecIrFunction *functionIr,
+                                        TZrUInt32 destinationSlot,
+                                        TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {
         return;
     }
@@ -20,40 +60,17 @@ void backend_aot_write_c_direct_to_bool(FILE *file, TZrUInt32 destinationSlot, T
     fprintf(file,
             "    {\n"
             "        /* zr_aot_convert_generic_to_bool */\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_destination == ZR_NULL || zr_aot_source == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        if (ZR_VALUE_IS_TYPE_NULL(zr_aot_source->type)) {\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination, nativeBool, ZR_FALSE, ZR_VALUE_TYPE_BOOL);\n"
-            "        } else if (ZR_VALUE_IS_TYPE_BOOL(zr_aot_source->type)) {\n"
-            "            *zr_aot_destination = *zr_aot_source;\n"
-            "        } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)) {\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeBool,\n"
-            "                              zr_aot_source->value.nativeObject.nativeInt64 != 0,\n"
-            "                              ZR_VALUE_TYPE_BOOL);\n"
-            "        } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)) {\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeBool,\n"
-            "                              zr_aot_source->value.nativeObject.nativeUInt64 != 0,\n"
-            "                              ZR_VALUE_TYPE_BOOL);\n"
-            "        } else if (ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type)) {\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeBool,\n"
-            "                              zr_aot_source->value.nativeObject.nativeDouble != 0.0,\n"
-            "                              ZR_VALUE_TYPE_BOOL);\n"
-            "        } else {\n",
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ConvertGenericToBool(state, &frame, %u, %u));\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot);
-    backend_aot_c_write_generic_conversion_unsupported(file);
-    fprintf(file,
-            "        }\n"
-            "    }\n");
+    backend_aot_write_c_generic_conversion_sync_locals(file, functionIr, destinationSlot);
+    fprintf(file, "    }\n");
 }
 
-void backend_aot_write_c_direct_to_int(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+void backend_aot_write_c_direct_to_int(FILE *file,
+                                       const SZrAotExecIrFunction *functionIr,
+                                       TZrUInt32 destinationSlot,
+                                       TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {
         return;
     }
@@ -61,38 +78,17 @@ void backend_aot_write_c_direct_to_int(FILE *file, TZrUInt32 destinationSlot, TZ
     fprintf(file,
             "    {\n"
             "        /* zr_aot_convert_generic_to_int */\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_destination == ZR_NULL || zr_aot_source == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        if (ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)) {\n"
-            "            *zr_aot_destination = *zr_aot_source;\n"
-            "        } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)) {\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeInt64,\n"
-            "                              (TZrInt64)zr_aot_source->value.nativeObject.nativeUInt64,\n"
-            "                              ZR_VALUE_TYPE_INT64);\n"
-            "        } else if (ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type)) {\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeInt64,\n"
-            "                              (TZrInt64)zr_aot_source->value.nativeObject.nativeDouble,\n"
-            "                              ZR_VALUE_TYPE_INT64);\n"
-            "        } else if (ZR_VALUE_IS_TYPE_BOOL(zr_aot_source->type)) {\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeInt64,\n"
-            "                              zr_aot_source->value.nativeObject.nativeBool ? 1 : 0,\n"
-            "                              ZR_VALUE_TYPE_INT64);\n"
-            "        } else {\n",
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ConvertGenericToInt(state, &frame, %u, %u));\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot);
-    backend_aot_c_write_generic_conversion_unsupported(file);
-    fprintf(file,
-            "        }\n"
-            "    }\n");
+    backend_aot_write_c_generic_conversion_sync_locals(file, functionIr, destinationSlot);
+    fprintf(file, "    }\n");
 }
 
-void backend_aot_write_c_direct_to_uint(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+void backend_aot_write_c_direct_to_uint(FILE *file,
+                                        const SZrAotExecIrFunction *functionIr,
+                                        TZrUInt32 destinationSlot,
+                                        TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {
         return;
     }
@@ -100,38 +96,17 @@ void backend_aot_write_c_direct_to_uint(FILE *file, TZrUInt32 destinationSlot, T
     fprintf(file,
             "    {\n"
             "        /* zr_aot_convert_generic_to_uint */\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_destination == ZR_NULL || zr_aot_source == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)) {\n"
-            "            *zr_aot_destination = *zr_aot_source;\n"
-            "        } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)) {\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeUInt64,\n"
-            "                              (TZrUInt64)zr_aot_source->value.nativeObject.nativeInt64,\n"
-            "                              ZR_VALUE_TYPE_UINT64);\n"
-            "        } else if (ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type)) {\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeUInt64,\n"
-            "                              (TZrUInt64)zr_aot_source->value.nativeObject.nativeDouble,\n"
-            "                              ZR_VALUE_TYPE_UINT64);\n"
-            "        } else if (ZR_VALUE_IS_TYPE_BOOL(zr_aot_source->type)) {\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeUInt64,\n"
-            "                              zr_aot_source->value.nativeObject.nativeBool ? (TZrUInt64)1u : (TZrUInt64)0u,\n"
-            "                              ZR_VALUE_TYPE_UINT64);\n"
-            "        } else {\n",
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ConvertGenericToUInt(state, &frame, %u, %u));\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot);
-    backend_aot_c_write_generic_conversion_unsupported(file);
-    fprintf(file,
-            "        }\n"
-            "    }\n");
+    backend_aot_write_c_generic_conversion_sync_locals(file, functionIr, destinationSlot);
+    fprintf(file, "    }\n");
 }
 
-void backend_aot_write_c_direct_to_float(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+void backend_aot_write_c_direct_to_float(FILE *file,
+                                         const SZrAotExecIrFunction *functionIr,
+                                         TZrUInt32 destinationSlot,
+                                         TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {
         return;
     }
@@ -139,33 +114,9 @@ void backend_aot_write_c_direct_to_float(FILE *file, TZrUInt32 destinationSlot, 
     fprintf(file,
             "    {\n"
             "        /* zr_aot_convert_generic_to_float */\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_destination == ZR_NULL || zr_aot_source == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        if (ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type)) {\n"
-            "            *zr_aot_destination = *zr_aot_source;\n"
-            "        } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)) {\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeDouble,\n"
-            "                              (TZrFloat64)zr_aot_source->value.nativeObject.nativeInt64,\n"
-            "                              ZR_VALUE_TYPE_DOUBLE);\n"
-            "        } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)) {\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeDouble,\n"
-            "                              (TZrFloat64)zr_aot_source->value.nativeObject.nativeUInt64,\n"
-            "                              ZR_VALUE_TYPE_DOUBLE);\n"
-            "        } else if (ZR_VALUE_IS_TYPE_BOOL(zr_aot_source->type)) {\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeDouble,\n"
-            "                              zr_aot_source->value.nativeObject.nativeBool ? (TZrFloat64)1.0 : (TZrFloat64)0.0,\n"
-            "                              ZR_VALUE_TYPE_DOUBLE);\n"
-            "        } else {\n",
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ConvertGenericToFloat(state, &frame, %u, %u));\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot);
-    backend_aot_c_write_generic_conversion_unsupported(file);
-    fprintf(file,
-            "        }\n"
-            "    }\n");
+    backend_aot_write_c_generic_conversion_sync_locals(file, functionIr, destinationSlot);
+    fprintf(file, "    }\n");
 }

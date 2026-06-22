@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "unity.h"
 
 #include "tests/harness/runtime_support.h"
@@ -31,6 +33,7 @@ static void init_plain_call_info(SZrCallInfo *callInfo,
     TEST_ASSERT_NOT_NULL(functionBase);
     TEST_ASSERT_NOT_NULL(functionTop);
 
+    memset(callInfo, 0, sizeof(*callInfo));
     callInfo->functionBase.valuePointer = functionBase;
     callInfo->functionTop.valuePointer = functionTop;
     callInfo->callStatus = ZR_CALL_STATUS_NONE;

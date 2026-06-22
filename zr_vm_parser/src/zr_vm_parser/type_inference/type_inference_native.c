@@ -6,6 +6,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
+#include "type_inference_constant_eval.h"
 #include "zr_vm_parser/ast.h"
 
 #include "zr_vm_core/array.h"
@@ -2727,6 +2728,115 @@ static TZrBool type_inference_member_name_is_plain_share(SZrString *memberName) 
     return zr_string_equals_cstr(memberName, "share");
 }
 
+static TZrBool type_inference_array_index_type_is_known_non_integer(
+        const SZrInferredType *indexType) {
+    if (indexType == ZR_NULL ||
+        ZR_VALUE_IS_TYPE_INT(indexType->baseType) ||
+        indexType->baseType == ZR_VALUE_TYPE_UNKNOWN) {
+        return ZR_FALSE;
+    }
+
+    if (indexType->baseType == ZR_VALUE_TYPE_OBJECT &&
+        indexType->typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static void type_inference_record_array_index_bounds_if_proven(SZrCompilerState *cs,
+                                                               SZrAstNode *memberNode,
+                                                               SZrAstNode *indexNode,
+                                                               const SZrInferredType *elementType,
+                                                               const SZrInferredType *arrayType) {
+    SZrInferredType indexType;
+    TZrBool hasFixedSize;
+    TZrBool hasUpperBound;
+    TZrBool hasUpperBoundInt64;
+    TZrSize upperBoundSize;
+    TZrInt64 indexValue;
+
+    if (cs == ZR_NULL || memberNode == ZR_NULL || indexNode == ZR_NULL ||
+        elementType == ZR_NULL || arrayType == ZR_NULL) {
+        return;
+    }
+
+    hasFixedSize = ZR_FALSE;
+    upperBoundSize = 0;
+    if (arrayType->hasArraySizeConstraint) {
+        if (arrayType->arrayFixedSize > 0) {
+            hasFixedSize = ZR_TRUE;
+            upperBoundSize = arrayType->arrayFixedSize;
+        } else if (arrayType->arrayMinSize > 0 &&
+                   arrayType->arrayMinSize == arrayType->arrayMaxSize) {
+            hasFixedSize = ZR_TRUE;
+            upperBoundSize = arrayType->arrayMinSize;
+        } else if (arrayType->arrayMaxSize > 0) {
+            upperBoundSize = arrayType->arrayMaxSize;
+        }
+    }
+    hasUpperBound = upperBoundSize > 0;
+    hasUpperBoundInt64 = hasUpperBound && upperBoundSize <= (TZrSize)ZR_TYPE_RANGE_INT64_MAX;
+    if (type_inference_node_integer_value(indexNode, &indexValue)) {
+        if (indexValue < 0 ||
+            (hasUpperBound && (TZrUInt64)indexValue >= (TZrUInt64)upperBoundSize)) {
+            type_inference_record_array_index_bounds_diagnostic_fact(
+                    cs,
+                    memberNode,
+                    elementType,
+                    indexValue,
+                    upperBoundSize,
+                    hasFixedSize);
+        }
+        return;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &indexType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_ExpressionType_Infer(cs, indexNode, &indexType)) {
+        if (type_inference_array_index_type_is_known_non_integer(&indexType)) {
+            type_inference_record_array_index_type_mismatch_diagnostic_fact(
+                    cs,
+                    memberNode,
+                    elementType,
+                    &indexType);
+        } else if (indexType.hasRangeConstraint) {
+            if (indexType.maxValue < 0 ||
+                (hasUpperBoundInt64 &&
+                 indexType.minValue >= (TZrInt64)upperBoundSize)) {
+                type_inference_record_array_index_range_bounds_diagnostic_fact(
+                        cs,
+                        memberNode,
+                        elementType,
+                        indexType.minValue,
+                        indexType.maxValue,
+                        upperBoundSize,
+                        hasFixedSize);
+            } else if (hasUpperBoundInt64 &&
+                       (indexType.minValue < 0 ||
+                        indexType.maxValue >= (TZrInt64)upperBoundSize)) {
+                type_inference_record_array_index_possible_range_bounds_diagnostic_fact(
+                        cs,
+                        memberNode,
+                        elementType,
+                        indexType.minValue,
+                        indexType.maxValue,
+                        upperBoundSize,
+                        hasFixedSize);
+            } else if (indexType.minValue < 0) {
+                type_inference_record_array_index_possible_range_bounds_diagnostic_fact(
+                        cs,
+                        memberNode,
+                        elementType,
+                        indexType.minValue,
+                        indexType.maxValue,
+                        0,
+                        ZR_FALSE);
+            }
+        }
+    }
+    ZrParser_InferredType_Free(cs->state, &indexType);
+}
+
 TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                                         const SZrInferredType *baseType,
                                         SZrAstNodeArray *members,
@@ -2773,6 +2883,13 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                             ZrParser_InferredType_Copy(cs->state, &nextType, elementType);
                         }
                     }
+
+                    type_inference_record_array_index_bounds_if_proven(
+                            cs,
+                            memberNode,
+                            memberExpr->property,
+                            &nextType,
+                            &currentType);
 
                     ZrParser_InferredType_Free(cs->state, &currentType);
                     ZrParser_InferredType_Init(cs->state, &currentType, ZR_VALUE_TYPE_OBJECT);

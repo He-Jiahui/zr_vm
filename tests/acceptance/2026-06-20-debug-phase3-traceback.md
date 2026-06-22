@@ -52,16 +52,24 @@
 ## Current Limits
 
 - Phase 3 functional DoD is complete.
-- Milestone A still needs the full `tests/` matrix across the three planned build directories plus extension desktop smoke before starting Phase 4, per `docs/plans/debug/07-testing-and-acceptance.md` §7.5.
-- The first Milestone A attempt exposed non-Phase-3 infrastructure/build issues:
+- Milestone A `tests/` matrix and extension desktop smoke are complete as of 2026-06-21 22:43:43 +08:00, satisfying `docs/plans/debug/07-testing-and-acceptance.md` §7.5 for the Phase 4 entry gate.
+- The first Milestone A attempt exposed non-Phase-3 infrastructure/build issues, now resolved for Windows/MSVC:
   - `build-msvc` initially failed before CTest on unresolved internal helper symbols; that build blocker was fixed by exporting the internal helpers used by existing tests.
   - `build-wsl-gcc` and `build-wsl-clang` root build directories time out in CMake dependency scanning before focused P3 tests can run there; stale residual processes from those attempts were cleaned up.
-- Windows/MSVC now builds fully, but full CTest is still not green. The initial full run was 11/66 fail in non-debug suites (`core_runtime`, `language_pipeline`, `containers`, `language_server`, `language_server_stdio_inline_value_semantic_smoke`, `cli_repl_expression_assignment_context_smoke`, `projects`, `escape_pipeline`, `cli_repl_e2e`, `metadata_module_hash_golden`, `system_fs`).
-- `core_runtime` was then investigated and fixed: interpreter meta access now matches the AOT hidden accessor contract for `META_GET`/`META_SET`. Focused WSL/GCC and Windows/MSVC `zr_vm_instructions_test` runs pass, and Windows/MSVC `core_runtime` passes. Full CTest has not yet been rerun after that focused fix.
-- Windows/MSVC debug suites did pass in the full run, including `cli_debug_e2e`, `debug_traceback`, `debug_agent`, `debug_agent_protocol`, `debug_expression_diagnostics`, and `debug_variable_child_shape`.
+- Windows/MSVC Milestone A full matrix is green as of 2026-06-21: full Debug build passed and `ctest --test-dir build-msvc -C Debug --output-on-failure --timeout 480` finished 66/66 PASS.
+- WSL/GCC Milestone A matrix is green as of 2026-06-21: focused gate 7/7 PASS and full `ctest --test-dir build-wsl-gcc --output-on-failure --timeout 600` finished 66/66 PASS.
+- WSL/Clang Milestone A matrix is green as of 2026-06-21: focused gate 7/7 PASS and full `ctest --test-dir build-wsl-clang --output-on-failure --timeout 600` finished 66/66 PASS.
+- VS Code extension validation is green as of 2026-06-21: `compile` PASS, `test:unit` 29/29 PASS, and `test:e2e:desktop:debug` returned exit 0.
 - CLI unhandled-error exit status was not changed by this phase; this slice only standardizes the diagnostic text.
+
+## 2026-06-21 Milestone A Retest
+
+- Fixed the debug-hook traceback regression by keeping hook stack reservation within VM frame storage, refreshing the interpreter's cached frame base after hooks/relocation, and recomputing frame-layout generic call return destinations after call-window preparation.
+- Fixed the Windows full-CTest `core_runtime` regression by keeping generic `ZrCore_Function_PostCall` on the historical stack-top contract while leaving previous-frame-storage preservation in the hot single-result/frame-layout fast paths.
+- Evidence: Windows/MSVC focused `debug_traceback|debug_agent` 2/2 PASS; Windows/MSVC prior-failure + debug subset 10/10 PASS; Windows/MSVC full CTest 66/66 PASS; WSL/GCC focused gate 7/7 PASS and full CTest 66/66 PASS; WSL/Clang focused gate 7/7 PASS and full CTest 66/66 PASS; extension compile PASS, unit 29/29 PASS, desktop debug smoke exit 0.
+- Remaining gate: none for Milestone A. Phase 4 was not started in this acceptance slice and should begin from `docs/plans/debug/04-script-debug-library.md`.
 
 ## Acceptance Decision
 
 - Accepted for Phase 3 functional DoD: API, script/native stack rendering, folding, truncation, exception `stack` capture, CLI output, and DAP exception detail are implemented and validated.
-- Milestone A closeout remains blocked on the full cross-build test matrix and extension desktop smoke; Phase 4 has not started under the strict §7.5 gate.
+- Milestone A closeout accepted: the full cross-build test matrix and extension desktop debug smoke are complete. Phase 4 has not started in this slice; it is now unblocked under the strict §7.5 gate.

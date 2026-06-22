@@ -6,6 +6,7 @@
 #define ZR_VM_CORE_CALL_INFO_H
 #include "zr_vm_core/stack.h"
 struct SZrState;
+struct SZrFunction;
 
 enum EZrCallStatus {
     ZR_CALL_STATUS_NONE = 0,
@@ -69,6 +70,7 @@ struct ZR_STRUCT_ALIGN SZrCallInfo {
     TZrStackPointer functionTop;
 
     EZrCallStatus callStatus;
+    struct SZrFunction *metadataFunction;
 
     struct SZrCallInfo *previous;
     struct SZrCallInfo *next;

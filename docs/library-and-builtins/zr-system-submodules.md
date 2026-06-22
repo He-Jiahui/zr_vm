@@ -223,7 +223,7 @@ region 统计只汇总当前仍有 live object 的 active region，而不是 reg
 - `createdMilliseconds`
 - `accessedMilliseconds`
 
-`fileInfo` 字段和 `refresh()` 返回值都保存这个 struct 的快照副本，而不是懒引用宿主查询结果。
+`fileInfo` 字段保存这个 `SystemFileInfo` surface type 的最新快照副本，而不是懒引用宿主查询结果。`refresh()` 也会刷新同一份宿主快照，但 native method ABI 返回的是普通对象视图，见下文 `FileSystemEntry`。
 
 ### FileSystemEntry
 
@@ -239,9 +239,9 @@ region 统计只汇总当前仍有 live object 的 active region，而不是 reg
 公开方法只有两个：
 
 - `exists(): bool`
-- `refresh(): SystemFileInfo`
+- `refresh(): object`
 
-构造函数和 `refresh()` 都会立即做一次宿主文件系统查询。`exists()` 也会先刷新快照，再返回 `fileInfo.exists`。
+构造函数和 `refresh()` 都会立即做一次宿主文件系统查询。`refresh()` 会更新 `fileInfo` 字段，并返回同一轮查询构造出的对象视图；脚本侧需要稳定类型字段时应继续通过 `fileInfo` 读取。`exists()` 也会先刷新快照，再返回 `fileInfo.exists`。
 
 ### File
 
@@ -453,7 +453,7 @@ acceptFd(stream); // 编译期报错
 - 根模块仍然只导出 6 个叶子模块，不应把 `IOException` 或 `FileStream` 再次平铺到 `zr.system`。
 - `parent` 基于 `fullPath` 计算，而不是保留相对路径词法语义；因此 `new fs.File("a.txt").parent` 会直接得到归一化后的所属目录对象。
 - 目录对象也允许拥有扩展名，因为 `name` / `extension` 是按最终路径段抽取，不区分文件还是目录。
-- `refresh()` 返回的是当前 `fileInfo` 快照值，不是懒句柄或 view。
+- `refresh()` 返回的是当前查询构造出的普通对象视图，不是懒句柄；`fileInfo` 字段仍保存对应的 `SystemFileInfo` 快照。
 - `FileStream` 的关闭状态必须参与 lowering 诊断；关闭后不得再把它当成有效 `i32` handle 传出。
 - 兼容函数 API 仍然存在，但新的推荐上层写法是 `File` / `Folder` / `FileStream`，而不是字符串路径 + 裸 `Ptr`。
 

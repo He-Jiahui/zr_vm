@@ -14,7 +14,8 @@ typedef enum EZrDebugStopReason {
     ZR_DEBUG_STOP_REASON_PAUSE = 3,
     ZR_DEBUG_STOP_REASON_STEP = 4,
     ZR_DEBUG_STOP_REASON_EXCEPTION = 5,
-    ZR_DEBUG_STOP_REASON_TERMINATED = 6
+    ZR_DEBUG_STOP_REASON_TERMINATED = 6,
+    ZR_DEBUG_STOP_REASON_DATA_BREAKPOINT = 7
 } EZrDebugStopReason;
 
 typedef enum EZrDebugScopeKind {
@@ -60,16 +61,20 @@ typedef struct ZrDebugBreakpointSpec {
 typedef struct ZrDebugStopEvent {
     EZrDebugStopReason reason;
     EZrDebugExceptionFilter exception_filter;
+    TZrUInt32 thread_id;
     TZrUInt32 line;
     TZrUInt32 instruction_index;
     TZrUInt64 state_id;
     TZrChar module_name[ZR_DEBUG_TEXT_CAPACITY];
     TZrChar source_file[ZR_DEBUG_TEXT_CAPACITY];
     TZrChar function_name[ZR_DEBUG_NAME_CAPACITY];
+    TZrChar data_id[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar data_description[ZR_DEBUG_TEXT_CAPACITY];
     TZrChar exception_stack[ZR_DEBUG_EXCEPTION_STACK_CAPACITY];
 } ZrDebugStopEvent;
 
 typedef struct ZrDebugFrameSnapshot {
+    TZrUInt32 thread_id;
     TZrUInt32 frame_id;
     TZrUInt32 line;
     TZrUInt32 instruction_index;
@@ -88,6 +93,7 @@ typedef struct ZrDebugFrameSnapshot {
 } ZrDebugFrameSnapshot;
 
 typedef struct ZrDebugScopeSnapshot {
+    TZrUInt32 thread_id;
     TZrUInt32 scope_id;
     TZrUInt32 frame_id;
     EZrDebugScopeKind kind;

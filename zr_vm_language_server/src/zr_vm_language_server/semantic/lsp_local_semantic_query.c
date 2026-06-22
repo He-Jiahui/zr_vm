@@ -1,7 +1,7 @@
 #include "semantic/lsp_local_semantic_query.h"
 
 #include "interface/lsp_interface_internal.h"
-#include "semantic/lsp_local_semantic_expression_text.h"
+#include "semantic/lsp_local_semantic_hover_text.h"
 #include "semantic/semantic_analyzer_internal.h"
 
 #include "zr_vm_language_server/incremental_parser.h"
@@ -9,7 +9,8 @@
 
 #include <stdarg.h>
 #include <stdio.h>
-#include <string.h>
+
+#define ZR_LSP_LOCAL_QUERY_VISIBLE_RANGE_LINE_WIDTH ((TZrSize)100000)
 
 static TZrBool local_query_append_format(TZrChar *buffer,
                                          TZrSize bufferSize,
@@ -34,356 +35,6 @@ static TZrBool local_query_append_format(TZrChar *buffer,
 
     *used += (TZrSize)written;
     return ZR_TRUE;
-}
-
-static const TZrChar *local_query_string_text(SZrString *value) {
-    if (value == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    return value->shortStringLength < ZR_VM_LONG_STRING_FLAG
-               ? ZrCore_String_GetNativeStringShort(value)
-               : ZrCore_String_GetNativeString(value);
-}
-
-static SZrString *local_query_append_markdown_section(SZrState *state,
-                                                      SZrString *base,
-                                                      SZrString *appendix) {
-    const TZrChar *baseText;
-    const TZrChar *appendixText;
-    TZrSize baseLength;
-    TZrSize appendixLength;
-    TZrChar buffer[ZR_LSP_MARKDOWN_BUFFER_SIZE];
-    TZrSize used = 0;
-
-    if (state == ZR_NULL || base == ZR_NULL || appendix == ZR_NULL) {
-        return base;
-    }
-
-    baseText = local_query_string_text(base);
-    appendixText = local_query_string_text(appendix);
-    baseLength = ZrCore_String_GetByteLength(base);
-    appendixLength = ZrCore_String_GetByteLength(appendix);
-    if (baseText == ZR_NULL || appendixText == ZR_NULL || appendixLength == 0) {
-        return base;
-    }
-
-    if (strstr(baseText, appendixText) != ZR_NULL) {
-        return base;
-    }
-
-    if (baseLength + appendixLength + 3 >= sizeof(buffer)) {
-        return base;
-    }
-
-    memcpy(buffer + used, baseText, baseLength);
-    used += baseLength;
-    memcpy(buffer + used, "\n\n", 2);
-    used += 2;
-    memcpy(buffer + used, appendixText, appendixLength);
-    used += appendixLength;
-    buffer[used] = '\0';
-    return ZrCore_String_Create(state, buffer, used);
-}
-
-static TZrBool local_query_is_float_numeric_fact(const SZrSemanticNumericFact *fact) {
-    return fact != ZR_NULL &&
-           (fact->sourceType == ZR_VALUE_TYPE_FLOAT ||
-            fact->sourceType == ZR_VALUE_TYPE_DOUBLE ||
-            fact->targetType == ZR_VALUE_TYPE_FLOAT ||
-            fact->targetType == ZR_VALUE_TYPE_DOUBLE);
-}
-
-static TZrBool local_query_append_numeric_hover(TZrChar *buffer,
-                                                TZrSize bufferSize,
-                                                TZrSize *used,
-                                                const SZrSemanticNumericFact *fact) {
-    if (fact == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    if (fact->hasRange) {
-        if (local_query_is_float_numeric_fact(fact)) {
-            if (!local_query_append_format(buffer,
-                                           bufferSize,
-                                           used,
-                                           "\n\nNumeric range: %.17g..%.17g",
-                                           fact->minDoubleValue,
-                                           fact->maxDoubleValue)) {
-                return ZR_FALSE;
-            }
-        } else if (!local_query_append_format(buffer,
-                                              bufferSize,
-                                              used,
-                                              "\n\nNumeric range: %lld..%lld",
-                                              (long long)fact->minValue,
-                                              (long long)fact->maxValue)) {
-            return ZR_FALSE;
-        }
-    }
-
-    if (fact->hasUnsignedRange &&
-        !local_query_append_format(buffer,
-                                   bufferSize,
-                                   used,
-                                   "\n\nUnsigned range: %llu..%llu",
-                                   (unsigned long long)fact->minUnsignedValue,
-                                   (unsigned long long)fact->maxUnsignedValue)) {
-        return ZR_FALSE;
-    }
-
-    if (fact->mayOverflow &&
-        !local_query_append_format(buffer, bufferSize, used, "\n\nNumeric warning: may overflow")) {
-        return ZR_FALSE;
-    }
-
-    return ZR_TRUE;
-}
-
-static TZrBool local_query_append_logical_hover(TZrChar *buffer,
-                                                TZrSize bufferSize,
-                                                TZrSize *used,
-                                                const SZrSemanticLogicalFact *fact) {
-    if (fact == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    if (fact->hasKnownValue &&
-        !local_query_append_format(buffer,
-                                   bufferSize,
-                                   used,
-                                   "\n\nLogical value: %s",
-                                   fact->knownValue ? "true" : "false")) {
-        return ZR_FALSE;
-    }
-
-    if (fact->kind == ZR_SEMANTIC_LOGICAL_FACT_SHORT_CIRCUIT &&
-        !local_query_append_format(buffer,
-                                   bufferSize,
-                                   used,
-                                   "\n\nLogical flow: short-circuits right operand")) {
-        return ZR_FALSE;
-    }
-
-    return ZR_TRUE;
-}
-
-static TZrBool local_query_append_reachability_hover(TZrChar *buffer,
-                                                     TZrSize bufferSize,
-                                                     TZrSize *used,
-                                                     const SZrSemanticReachabilityFact *fact) {
-    const TZrChar *causeText = ZR_NULL;
-
-    if (fact == ZR_NULL || fact->state != ZR_SEMANTIC_REACHABILITY_UNREACHABLE) {
-        return ZR_TRUE;
-    }
-
-    switch (fact->cause) {
-        case ZR_SEMANTIC_REACHABILITY_AFTER_RETURN:
-            causeText = "after return";
-            break;
-        case ZR_SEMANTIC_REACHABILITY_AFTER_THROW:
-            causeText = "after throw";
-            break;
-        case ZR_SEMANTIC_REACHABILITY_AFTER_BREAK:
-            causeText = "after break";
-            break;
-        case ZR_SEMANTIC_REACHABILITY_AFTER_CONTINUE:
-            causeText = "after continue";
-            break;
-        case ZR_SEMANTIC_REACHABILITY_CONDITION_FALSE:
-            causeText = "because the condition is false";
-            break;
-        case ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH:
-            causeText = "because a constant branch excludes it";
-            break;
-        case ZR_SEMANTIC_REACHABILITY_SHORT_CIRCUIT:
-            causeText = "because short-circuit logic skips it";
-            break;
-        case ZR_SEMANTIC_REACHABILITY_AFTER_EXHAUSTIVE_BRANCH:
-            causeText = "after exhaustive branch";
-            break;
-        case ZR_SEMANTIC_REACHABILITY_AFTER_NON_FALLTHROUGH_LOOP:
-            causeText = "after non-fallthrough loop";
-            break;
-        case ZR_SEMANTIC_REACHABILITY_CAUSE_UNKNOWN:
-        default:
-            causeText = ZR_NULL;
-            break;
-    }
-
-    if (causeText != ZR_NULL) {
-        return local_query_append_format(buffer,
-                                         bufferSize,
-                                         used,
-                                         "\n\nReachability: unreachable %s",
-                                         causeText);
-    }
-
-    return local_query_append_format(buffer, bufferSize, used, "\n\nReachability: unreachable");
-}
-
-static const TZrChar *local_query_reference_kind_text(EZrSemanticReferenceKind kind) {
-    switch (kind) {
-        case ZR_SEMANTIC_REFERENCE_DECLARATION:
-            return "declaration";
-        case ZR_SEMANTIC_REFERENCE_READ:
-            return "read";
-        case ZR_SEMANTIC_REFERENCE_WRITE:
-            return "write";
-        case ZR_SEMANTIC_REFERENCE_CALL:
-            return "call";
-        case ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS:
-            return "member access";
-        case ZR_SEMANTIC_REFERENCE_MEMBER_WRITE:
-            return "member write";
-        case ZR_SEMANTIC_REFERENCE_UNKNOWN:
-        default:
-            return "unknown";
-    }
-}
-
-static TZrBool local_query_append_reference_hover(TZrChar *buffer,
-                                                  TZrSize bufferSize,
-                                                  TZrSize *used,
-                                                  const SZrSemanticReferenceFact *fact) {
-    const TZrChar *symbolName;
-
-    if (fact == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    if (!local_query_append_format(buffer,
-                                   bufferSize,
-                                   used,
-                                   "\n\nReference: %s",
-                                   local_query_reference_kind_text(fact->kind))) {
-        return ZR_FALSE;
-    }
-
-    symbolName = local_query_string_text(fact->name);
-    if (symbolName != ZR_NULL &&
-        symbolName[0] != '\0' &&
-        !local_query_append_format(buffer, bufferSize, used, "\n\nSymbol: %s", symbolName)) {
-        return ZR_FALSE;
-    }
-
-    if (fact->isResolved &&
-        fact->declarationRange.start.offset != fact->declarationRange.end.offset &&
-        !local_query_append_format(buffer,
-                                   bufferSize,
-                                   used,
-                                   "\n\nDeclared at: %d:%d",
-                                   (int)fact->declarationRange.start.line,
-                                   (int)fact->declarationRange.start.column)) {
-        return ZR_FALSE;
-    }
-
-    return ZR_TRUE;
-}
-
-static TZrBool local_query_append_ownership_hover(TZrChar *buffer,
-                                                  TZrSize bufferSize,
-                                                  TZrSize *used,
-                                                  const SZrSemanticOwnershipFact *fact) {
-    const TZrChar *message;
-
-    if (fact == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    message = local_query_string_text(fact->diagnosticMessage);
-    if (fact->isViolation && message != ZR_NULL && message[0] != '\0') {
-        return local_query_append_format(buffer,
-                                         bufferSize,
-                                         used,
-                                         "\n\nOwnership: violation - %s",
-                                         message);
-    }
-
-    if (fact->isViolation) {
-        return local_query_append_format(buffer, bufferSize, used, "\n\nOwnership: violation");
-    }
-
-    return ZR_TRUE;
-}
-
-static TZrBool local_query_append_expression_payload_hover(TZrChar *buffer,
-                                                           TZrSize bufferSize,
-                                                           TZrSize *used,
-                                                           const SZrSemanticExpressionFact *fact) {
-    const TZrChar *callName;
-    const TZrChar *memberName;
-
-    if (fact == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    if (fact->hasCallInfo) {
-        callName = local_query_string_text(fact->callTargetName);
-        if (!local_query_append_format(buffer,
-                                       bufferSize,
-                                       used,
-                                       "\n\nCall: %s args=%llu",
-                                       callName != ZR_NULL && callName[0] != '\0' ? callName : "unknown",
-                                       (unsigned long long)fact->argumentCount)) {
-            return ZR_FALSE;
-        }
-    }
-
-    if (fact->hasMemberInfo) {
-        memberName = local_query_string_text(fact->memberName);
-        if (!local_query_append_format(buffer,
-                                       bufferSize,
-                                       used,
-                                       "\n\nMember: %s",
-                                       memberName != ZR_NULL && memberName[0] != '\0'
-                                           ? memberName
-                                           : (fact->memberIsComputed ? "computed" : "unknown"))) {
-            return ZR_FALSE;
-        }
-    }
-
-    return ZR_TRUE;
-}
-
-static SZrString *local_query_build_fact_markdown(SZrState *state,
-                                                  const SZrLspLocalSemanticQueryResult *query) {
-    TZrChar markdown[ZR_LSP_MARKDOWN_BUFFER_SIZE];
-    TZrSize used = 0;
-
-    if (state == ZR_NULL ||
-        query == ZR_NULL ||
-        query->status != ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT) {
-        return ZR_NULL;
-    }
-
-    markdown[0] = '\0';
-    if (!ZrLanguageServer_LspLocalSemanticExpressionText_AppendHover(markdown,
-                                                                     sizeof(markdown),
-                                                                     &used,
-                                                                     query->expressionFact) ||
-        !local_query_append_numeric_hover(markdown, sizeof(markdown), &used, query->numericFact) ||
-        !local_query_append_logical_hover(markdown, sizeof(markdown), &used, query->logicalFact) ||
-        !local_query_append_reachability_hover(markdown,
-                                               sizeof(markdown),
-                                               &used,
-                                               query->reachabilityFact) ||
-        !local_query_append_reference_hover(markdown, sizeof(markdown), &used, query->referenceFact) ||
-        !local_query_append_ownership_hover(markdown, sizeof(markdown), &used, query->ownershipFact) ||
-        !local_query_append_expression_payload_hover(markdown, sizeof(markdown), &used, query->expressionFact)) {
-        return ZR_NULL;
-    }
-
-    while (used > 0 && (markdown[0] == '\n' || markdown[0] == '\r')) {
-        memmove(markdown, markdown + 1, used);
-        used--;
-    }
-    if (used == 0) {
-        return ZR_NULL;
-    }
-
-    return ZrCore_String_Create(state, markdown, used);
 }
 
 static SZrFileRange local_query_hover_range(const SZrLspLocalSemanticQueryResult *query) {
@@ -435,6 +86,24 @@ static TZrBool local_query_range_contains_position(SZrFileRange range, SZrFileRa
     }
 
     return queryOffset >= startOffset && queryOffset <= endOffset;
+}
+
+static TZrSize local_query_range_width(SZrFileRange range) {
+    if (range.end.offset >= range.start.offset) {
+        return range.end.offset - range.start.offset;
+    }
+
+    if (range.end.line == range.start.line &&
+        range.end.column >= range.start.column) {
+        return (TZrSize)(range.end.column - range.start.column);
+    }
+
+    if (range.end.line > range.start.line) {
+        return (TZrSize)(range.end.line - range.start.line) * ZR_LSP_LOCAL_QUERY_VISIBLE_RANGE_LINE_WIDTH +
+               (range.end.column >= 0 ? (TZrSize)range.end.column : 0);
+    }
+
+    return 0;
 }
 
 static SZrDiagnostic *local_query_find_parser_diagnostic_at(SZrFileVersion *fileVersion,
@@ -634,15 +303,45 @@ static const SZrSemanticExpressionFact *local_query_find_expression_fact(SZrSema
 
 static const SZrSemanticNumericFact *local_query_find_numeric_fact(
     SZrSemanticAnalyzer *analyzer,
+    SZrFileRange queryRange,
     const SZrSemanticExpressionFact *expressionFact) {
+    const SZrSemanticNumericFact *best = ZR_NULL;
+    TZrSize bestWidth = 0;
+
     if (analyzer == ZR_NULL ||
-        analyzer->semanticContext == ZR_NULL ||
-        expressionFact == ZR_NULL ||
-        expressionFact->node == ZR_NULL) {
+        analyzer->semanticContext == ZR_NULL) {
         return ZR_NULL;
     }
 
-    return ZrParser_SemanticFacts_FindNumericByNode(analyzer->semanticContext, expressionFact->node);
+    if (expressionFact != ZR_NULL && expressionFact->node != ZR_NULL) {
+        best = ZrParser_SemanticFacts_FindNumericByNode(analyzer->semanticContext, expressionFact->node);
+        if (best != ZR_NULL) {
+            return best;
+        }
+    }
+
+    if (!analyzer->semanticContext->numericFacts.isValid) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < analyzer->semanticContext->numericFacts.length; index++) {
+        const SZrSemanticNumericFact *fact =
+            (const SZrSemanticNumericFact *)ZrCore_Array_Get(&analyzer->semanticContext->numericFacts, index);
+        TZrSize width;
+
+        if (fact == ZR_NULL ||
+            !local_query_range_contains_position(fact->range, queryRange)) {
+            continue;
+        }
+
+        width = local_query_range_width(fact->range);
+        if (best == ZR_NULL || width <= bestWidth) {
+            best = fact;
+            bestWidth = width;
+        }
+    }
+
+    return best;
 }
 
 static const SZrSemanticLogicalFact *local_query_find_logical_fact(
@@ -710,7 +409,7 @@ static void local_query_collect_facts(SZrSemanticAnalyzer *analyzer,
         ZrParser_SemanticFacts_FindReferenceAtPosition(analyzer->semanticContext, result->queryRange);
     result->expressionFact =
         local_query_find_expression_fact(analyzer, result->queryRange, result->referenceFact);
-    result->numericFact = local_query_find_numeric_fact(analyzer, result->expressionFact);
+    result->numericFact = local_query_find_numeric_fact(analyzer, result->queryRange, result->expressionFact);
     result->reachabilityFact =
         ZrParser_SemanticFacts_FindReachabilityAtPosition(analyzer->semanticContext, result->queryRange);
     result->logicalFact =
@@ -941,19 +640,10 @@ static TZrBool local_query_build_hover_with_document(
         return ZR_FALSE;
     }
 
-    if (!ZrLanguageServer_LspLocalSemanticExpressionText_AppendHover(markdown,
-                                                                     sizeof(markdown),
-                                                                     &used,
-                                                                     query->expressionFact) ||
-        !local_query_append_numeric_hover(markdown, sizeof(markdown), &used, query->numericFact) ||
-        !local_query_append_logical_hover(markdown, sizeof(markdown), &used, query->logicalFact) ||
-        !local_query_append_reachability_hover(markdown,
-                                               sizeof(markdown),
-                                               &used,
-                                               query->reachabilityFact) ||
-        !local_query_append_reference_hover(markdown, sizeof(markdown), &used, query->referenceFact) ||
-        !local_query_append_ownership_hover(markdown, sizeof(markdown), &used, query->ownershipFact) ||
-        !local_query_append_expression_payload_hover(markdown, sizeof(markdown), &used, query->expressionFact)) {
+    if (!ZrLanguageServer_LspLocalSemanticHoverText_AppendFacts(markdown,
+                                                                sizeof(markdown),
+                                                                &used,
+                                                                query)) {
         return ZR_FALSE;
     }
 
@@ -1005,7 +695,7 @@ void ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(
         return;
     }
 
-    appendix = local_query_build_fact_markdown(state, query);
+    appendix = ZrLanguageServer_LspLocalSemanticHoverText_BuildFactMarkdown(state, query);
     if (appendix == ZR_NULL) {
         return;
     }
@@ -1023,7 +713,7 @@ void ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(
         return;
     }
 
-    merged = local_query_append_markdown_section(state, *firstContent, appendix);
+    merged = ZrLanguageServer_LspLocalSemanticHoverText_AppendMarkdownSection(state, *firstContent, appendix);
     if (merged != ZR_NULL) {
         *firstContent = merged;
     }

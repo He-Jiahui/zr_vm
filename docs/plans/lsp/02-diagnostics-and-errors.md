@@ -2,10 +2,14 @@
 doc_type: plan-detail
 related_code:
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_diagnostics.c
   - zr_vm_parser/include/zr_vm_parser/location.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
 ---
 
 # 02 · 诊断与错误表达强化
@@ -117,3 +121,11 @@ typedef struct SZrDiagnosticDescriptor {
 5. 本地化消息表（英文先行，留中文槽）。
 
 测试：扩 `tests/language_server/test_union_pattern_diagnostics.c`、`test_ownership_diagnostics.c`，断言 related/fix/code 字段；新增类型不匹配与未初始化用例。
+
+---
+
+## 状态与产出记录
+
+| 阶段 | 状态 | 完成时间 | 完成项目 | 验证 |
+| --- | --- | --- | --- | --- |
+| 阶段 2 / Definite Assignment Declaration Related Information | 已完成 | 2026-06-22 21:36 +08:00 | 先落地 relatedInformation 的最小可用链路：`SZrStructuredDiagnostic` 拥有 relatedInformation 数组和 add/free 支持，definite-assignment read diagnostics 附加 declarationRange，LSP structured diagnostic 转换保留 related 信息并发布到现有诊断结果。当前只覆盖未初始化/可能未初始化 read 的声明关联位置；fix-it、descriptorId、诊断码注册表、类型不匹配具体化、所有权 related 仍在后续。 | RED：parser/LSP relatedInformation 断言先失败，LSP branch fixture 初始无 query diagnostic；GREEN：WSL gcc、WSL clang、Windows MSVC focused 目标通过：`zr_vm_semantic_query_test` 14 PASS、`zr_vm_language_server_semantic_query_diagnostics_test` 11 PASS、`zr_vm_language_server_local_semantic_query_test` 19 PASS、`zr_vm_numeric_branch_assignment_dataflow_test` 1 PASS、`zr_vm_language_server_numeric_branch_semantic_query_test` 17 PASS。compiler semantic query diagnostics 本轮因 typed metadata export 阶段 invalid `exportedVar->name` segfault 未作为 GREEN 证据；不声明全仓库 GREEN。 |

@@ -1,0 +1,13 @@
+#ifndef ZR_VM_PARSER_BACKEND_AOT_C_TYPED_U64_THUNK_SHAPES_H
+#define ZR_VM_PARSER_BACKEND_AOT_C_TYPED_U64_THUNK_SHAPES_H
+
+#include "backend_aot_internal.h"
+
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_add_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_multiply_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_subtract_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_bitwise_and_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_bitwise_or_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_bitwise_xor_return(const SZrFunction *function);
+
+#endif

@@ -488,9 +488,8 @@ static void test_cfg_connects_while_break_to_loop_join(void) {
     TEST_ASSERT_NOT_NULL(whileBlock);
     TEST_ASSERT_NOT_NULL(breakBlock);
     TEST_ASSERT_TRUE(breakBlock->isTerminator);
-    TEST_ASSERT_EQUAL_UINT32(2, whileBlock->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(1, whileBlock->successorCount);
     TEST_ASSERT_EQUAL_UINT32(1, breakBlock->successorCount);
-    TEST_ASSERT_EQUAL_UINT32(whileBlock->successors[1], breakBlock->successors[0]);
 
     breakTarget = (const SZrParserCfgBlock *)ZrCore_Array_Get(&cfg.blocks, breakBlock->successors[0]);
     TEST_ASSERT_NOT_NULL(breakTarget);
@@ -550,9 +549,40 @@ static void test_cfg_connects_for_break_to_loop_join(void) {
     TEST_ASSERT_NOT_NULL(forBlock);
     TEST_ASSERT_NOT_NULL(breakBlock);
     TEST_ASSERT_TRUE(breakBlock->isTerminator);
-    TEST_ASSERT_EQUAL_UINT32(2, forBlock->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(1, forBlock->successorCount);
     TEST_ASSERT_EQUAL_UINT32(1, breakBlock->successorCount);
-    TEST_ASSERT_EQUAL_UINT32(forBlock->successors[1], breakBlock->successors[0]);
+
+    breakTarget = (const SZrParserCfgBlock *)ZrCore_Array_Get(&cfg.blocks, breakBlock->successors[0]);
+    TEST_ASSERT_NOT_NULL(breakTarget);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_BLOCK_JOIN, breakTarget->kind);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+}
+
+static void test_cfg_connects_unconditional_for_break_to_loop_join(void) {
+    SZrParserCfg cfg;
+    SZrAstNode *breakStmt = test_node(ZR_AST_BREAK_CONTINUE_STATEMENT, 18, 24);
+    SZrAstNode *body = block_with_statement(breakStmt, 14, 28);
+    SZrAstNode *forNode = for_statement(ZR_NULL, body);
+    SZrAstNode *script = script_with_statement(forNode);
+    const SZrParserCfgBlock *forBlock;
+    const SZrParserCfgBlock *breakBlock;
+    const SZrParserCfgBlock *breakTarget;
+
+    breakStmt->data.breakContinueStatement.isBreak = ZR_TRUE;
+
+    ZrParser_Cfg_Init(g_state, &cfg);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+
+    forBlock = find_block_for_statement(&cfg, forNode);
+    breakBlock = find_block_for_statement(&cfg, breakStmt);
+    TEST_ASSERT_NOT_NULL(forBlock);
+    TEST_ASSERT_NOT_NULL(breakBlock);
+    TEST_ASSERT_TRUE(breakBlock->isTerminator);
+    TEST_ASSERT_EQUAL_UINT32(1, forBlock->successorCount);
+    TEST_ASSERT_EQUAL_UINT32(1, breakBlock->successorCount);
 
     breakTarget = (const SZrParserCfgBlock *)ZrCore_Array_Get(&cfg.blocks, breakBlock->successors[0]);
     TEST_ASSERT_NOT_NULL(breakTarget);
@@ -1145,6 +1175,7 @@ int main(void) {
     RUN_TEST(test_cfg_connects_while_break_to_loop_join);
     RUN_TEST(test_cfg_connects_while_continue_to_loop_header);
     RUN_TEST(test_cfg_connects_for_break_to_loop_join);
+    RUN_TEST(test_cfg_connects_unconditional_for_break_to_loop_join);
     RUN_TEST(test_cfg_connects_for_continue_to_step);
     RUN_TEST(test_cfg_connects_foreach_break_to_loop_join);
     RUN_TEST(test_cfg_connects_foreach_continue_to_loop_header);

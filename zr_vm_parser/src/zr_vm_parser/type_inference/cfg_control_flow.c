@@ -1,108 +1,5 @@
 #include "cfg_internal.h"
 
-typedef enum EZrParserCfgConstantKind {
-    ZR_PARSER_CFG_CONSTANT_UNKNOWN = 0,
-    ZR_PARSER_CFG_CONSTANT_BOOL,
-    ZR_PARSER_CFG_CONSTANT_INTEGER,
-    ZR_PARSER_CFG_CONSTANT_STRING,
-    ZR_PARSER_CFG_CONSTANT_CHAR,
-    ZR_PARSER_CFG_CONSTANT_FLOAT,
-} EZrParserCfgConstantKind;
-
-typedef struct SZrParserCfgConstant {
-    EZrParserCfgConstantKind kind;
-    TZrBool boolValue;
-    TZrInt64 integerValue;
-    SZrString *stringValue;
-    TZrChar charValue;
-    TZrDouble floatValue;
-} SZrParserCfgConstant;
-
-static TZrBool cfg_node_constant(SZrAstNode *node, SZrParserCfgConstant *outValue) {
-    TZrBool boolValue = ZR_FALSE;
-
-    if (outValue == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    outValue->kind = ZR_PARSER_CFG_CONSTANT_UNKNOWN;
-    outValue->boolValue = ZR_FALSE;
-    outValue->integerValue = 0;
-    outValue->stringValue = ZR_NULL;
-    outValue->charValue = '\0';
-    outValue->floatValue = 0.0;
-    if (node == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (cfg_node_bool_constant(node, &boolValue)) {
-        outValue->kind = ZR_PARSER_CFG_CONSTANT_BOOL;
-        outValue->boolValue = boolValue;
-        return ZR_TRUE;
-    }
-
-    switch (node->type) {
-        case ZR_AST_INTEGER_LITERAL:
-            outValue->kind = ZR_PARSER_CFG_CONSTANT_INTEGER;
-            outValue->integerValue = node->data.integerLiteral.value;
-            return ZR_TRUE;
-        case ZR_AST_STRING_LITERAL:
-            if (node->data.stringLiteral.hasError ||
-                node->data.stringLiteral.value == ZR_NULL) {
-                return ZR_FALSE;
-            }
-            outValue->kind = ZR_PARSER_CFG_CONSTANT_STRING;
-            outValue->stringValue = node->data.stringLiteral.value;
-            return ZR_TRUE;
-        case ZR_AST_CHAR_LITERAL:
-            if (node->data.charLiteral.hasError) {
-                return ZR_FALSE;
-            }
-            outValue->kind = ZR_PARSER_CFG_CONSTANT_CHAR;
-            outValue->charValue = node->data.charLiteral.value;
-            return ZR_TRUE;
-        case ZR_AST_FLOAT_LITERAL:
-            outValue->kind = ZR_PARSER_CFG_CONSTANT_FLOAT;
-            outValue->floatValue = node->data.floatLiteral.value;
-            return ZR_TRUE;
-        default:
-            return ZR_FALSE;
-    }
-}
-
-static TZrBool cfg_constants_can_compare(const SZrParserCfgConstant *left,
-                                         const SZrParserCfgConstant *right) {
-    if (left == ZR_NULL || right == ZR_NULL ||
-        left->kind == ZR_PARSER_CFG_CONSTANT_UNKNOWN ||
-        right->kind == ZR_PARSER_CFG_CONSTANT_UNKNOWN) {
-        return ZR_FALSE;
-    }
-
-    return (TZrBool)(left->kind == right->kind);
-}
-
-static TZrBool cfg_constants_equal(const SZrParserCfgConstant *left,
-                                   const SZrParserCfgConstant *right) {
-    if (!cfg_constants_can_compare(left, right)) {
-        return ZR_FALSE;
-    }
-
-    switch (left->kind) {
-        case ZR_PARSER_CFG_CONSTANT_BOOL:
-            return (TZrBool)(left->boolValue == right->boolValue);
-        case ZR_PARSER_CFG_CONSTANT_INTEGER:
-            return (TZrBool)(left->integerValue == right->integerValue);
-        case ZR_PARSER_CFG_CONSTANT_STRING:
-            return ZrCore_String_Equal(left->stringValue, right->stringValue);
-        case ZR_PARSER_CFG_CONSTANT_CHAR:
-            return (TZrBool)(left->charValue == right->charValue);
-        case ZR_PARSER_CFG_CONSTANT_FLOAT:
-            return (TZrBool)(left->floatValue == right->floatValue);
-        default:
-            return ZR_FALSE;
-    }
-}
-
 static TZrBool cfg_statement_enters_finally_on_abrupt_completion(SZrAstNode *statement) {
     if (statement == ZR_NULL) {
         return ZR_FALSE;
@@ -116,11 +13,28 @@ static TZrBool cfg_statement_enters_finally_on_abrupt_completion(SZrAstNode *sta
 static TZrBool cfg_connect_abrupt_completions_to_finally(SZrParserCfg *cfg,
                                                          TZrSize startIndex,
                                                          TZrSize endIndex,
-                                                         TZrUInt32 finallyEntryBlockId) {
+                                                         TZrUInt32 functionExitFinallyEntryBlockId,
+                                                         TZrUInt32 breakFinallyEntryBlockId,
+                                                         TZrUInt32 continueFinallyEntryBlockId,
+                                                         TZrBool *outHasFunctionExit,
+                                                         TZrBool *outHasBreak,
+                                                         TZrBool *outHasContinue) {
     TZrSize index;
 
+    if (outHasFunctionExit != ZR_NULL) {
+        *outHasFunctionExit = ZR_FALSE;
+    }
+    if (outHasBreak != ZR_NULL) {
+        *outHasBreak = ZR_FALSE;
+    }
+    if (outHasContinue != ZR_NULL) {
+        *outHasContinue = ZR_FALSE;
+    }
+
     if (cfg == ZR_NULL || !cfg->blocks.isValid ||
-        finallyEntryBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+        functionExitFinallyEntryBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        breakFinallyEntryBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        continueFinallyEntryBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
         return ZR_FALSE;
     }
 
@@ -133,8 +47,189 @@ static TZrBool cfg_connect_abrupt_completions_to_finally(SZrParserCfg *cfg,
 
         if (block != ZR_NULL &&
             block->isTerminator &&
-            cfg_statement_enters_finally_on_abrupt_completion(block->statement) &&
-            !cfg_add_edge(cfg, block->id, finallyEntryBlockId)) {
+            cfg_statement_enters_finally_on_abrupt_completion(block->statement)) {
+            TZrUInt32 finallyEntryBlockId = functionExitFinallyEntryBlockId;
+
+            if (block->statement->type == ZR_AST_BREAK_CONTINUE_STATEMENT) {
+                if (block->statement->data.breakContinueStatement.isBreak) {
+                    finallyEntryBlockId = breakFinallyEntryBlockId;
+                    if (outHasBreak != ZR_NULL) {
+                        *outHasBreak = ZR_TRUE;
+                    }
+                } else {
+                    finallyEntryBlockId = continueFinallyEntryBlockId;
+                    if (outHasContinue != ZR_NULL) {
+                        *outHasContinue = ZR_TRUE;
+                    }
+                }
+            } else if (outHasFunctionExit != ZR_NULL) {
+                *outHasFunctionExit = ZR_TRUE;
+            }
+            if (finallyEntryBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+                return ZR_FALSE;
+            }
+            if (!cfg_add_edge(cfg, block->id, finallyEntryBlockId)) {
+                return ZR_FALSE;
+            }
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool cfg_build_finally_path(SZrState *state,
+                                      SZrParserCfg *cfg,
+                                      SZrAstNode *finallyBlock,
+                                      TZrUInt32 entryBlockId,
+                                      TZrUInt32 targetBlockId,
+                                      EZrSemanticReachabilityCause pendingCause,
+                                      SZrAstNode *pendingCauseNode,
+                                      const SZrParserCfgLoopTargets *loopTargets) {
+    TZrUInt32 finallyLastBlockId;
+
+    if (state == ZR_NULL || cfg == ZR_NULL || finallyBlock == ZR_NULL ||
+        entryBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+        return ZR_FALSE;
+    }
+
+    if (!cfg_build_statement_body(state,
+                                  cfg,
+                                  finallyBlock,
+                                  entryBlockId,
+                                  pendingCause,
+                                  pendingCauseNode,
+                                  loopTargets,
+                                  &finallyLastBlockId)) {
+        return ZR_FALSE;
+    }
+
+    if (targetBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+        finallyLastBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+        !cfg_connect_fallthrough(cfg, finallyLastBlockId, targetBlockId)) {
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool cfg_add_join_block(SZrState *state,
+                                  SZrParserCfg *cfg,
+                                  TZrUInt32 *outBlockId) {
+    if (outBlockId == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outBlockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, ZR_NULL);
+    return (TZrBool)(*outBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID);
+}
+
+static TZrBool cfg_add_finally_abrupt_entries(SZrState *state,
+                                              SZrParserCfg *cfg,
+                                              TZrUInt32 *outFunctionExitEntryBlockId,
+                                              TZrUInt32 *outBreakEntryBlockId,
+                                              TZrUInt32 *outContinueEntryBlockId) {
+    if (!cfg_add_join_block(state, cfg, outFunctionExitEntryBlockId)) {
+        return ZR_FALSE;
+    }
+    if (!cfg_add_join_block(state, cfg, outBreakEntryBlockId)) {
+        return ZR_FALSE;
+    }
+    if (!cfg_add_join_block(state, cfg, outContinueEntryBlockId)) {
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool cfg_build_finally_paths(SZrState *state,
+                                       SZrParserCfg *cfg,
+                                       SZrAstNode *finallyBlock,
+                                       TZrUInt32 normalEntryBlockId,
+                                       TZrUInt32 functionExitEntryBlockId,
+                                       TZrUInt32 breakEntryBlockId,
+                                       TZrUInt32 continueEntryBlockId,
+                                       TZrUInt32 finalJoinBlockId,
+                                       TZrBool hasNormalCompletion,
+                                       TZrBool hasFunctionExitCompletion,
+                                       TZrBool hasBreakCompletion,
+                                       TZrBool hasContinueCompletion,
+                                       EZrSemanticReachabilityCause pendingCause,
+                                       SZrAstNode *pendingCauseNode,
+                                       const SZrParserCfgLoopTargets *loopTargets) {
+    if (hasNormalCompletion &&
+        !cfg_build_finally_path(state,
+                                cfg,
+                                finallyBlock,
+                                normalEntryBlockId,
+                                finalJoinBlockId,
+                                pendingCause,
+                                pendingCauseNode,
+                                loopTargets)) {
+        return ZR_FALSE;
+    }
+    if (hasFunctionExitCompletion &&
+        !cfg_build_finally_path(state,
+                                cfg,
+                                finallyBlock,
+                                functionExitEntryBlockId,
+                                ZR_PARSER_CFG_INVALID_BLOCK_ID,
+                                pendingCause,
+                                pendingCauseNode,
+                                loopTargets)) {
+        return ZR_FALSE;
+    }
+    if (hasBreakCompletion &&
+        loopTargets != ZR_NULL &&
+        loopTargets->breakTargetBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+        !cfg_build_finally_path(state,
+                                cfg,
+                                finallyBlock,
+                                breakEntryBlockId,
+                                loopTargets->breakTargetBlockId,
+                                pendingCause,
+                                pendingCauseNode,
+                                loopTargets)) {
+        return ZR_FALSE;
+    }
+    if (hasContinueCompletion &&
+        loopTargets != ZR_NULL &&
+        loopTargets->continueTargetBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+        !cfg_build_finally_path(state,
+                                cfg,
+                                finallyBlock,
+                                continueEntryBlockId,
+                                loopTargets->continueTargetBlockId,
+                                pendingCause,
+                                pendingCauseNode,
+                                loopTargets)) {
+        return ZR_FALSE;
+    }
+
+    if (hasBreakCompletion &&
+        (loopTargets == ZR_NULL ||
+         loopTargets->breakTargetBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID)) {
+        if (!cfg_build_finally_path(state,
+                                    cfg,
+                                    finallyBlock,
+                                    breakEntryBlockId,
+                                    ZR_PARSER_CFG_INVALID_BLOCK_ID,
+                                    pendingCause,
+                                    pendingCauseNode,
+                                    loopTargets)) {
+            return ZR_FALSE;
+        }
+    }
+    if (hasContinueCompletion &&
+        (loopTargets == ZR_NULL ||
+         loopTargets->continueTargetBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID)) {
+        if (!cfg_build_finally_path(state,
+                                    cfg,
+                                    finallyBlock,
+                                    continueEntryBlockId,
+                                    ZR_PARSER_CFG_INVALID_BLOCK_ID,
+                                    pendingCause,
+                                    pendingCauseNode,
+                                    loopTargets)) {
             return ZR_FALSE;
         }
     }
@@ -149,7 +244,6 @@ TZrBool cfg_build_switch_statement(SZrState *state,
                                    EZrSemanticReachabilityCause pendingCause,
                                    SZrAstNode *pendingCauseNode,
                                    const SZrParserCfgLoopTargets *loopTargets) {
-    SZrParserCfgBlock *previousBlock;
     SZrParserCfgBlock *switchBlock;
     SZrAstNodeArray *cases;
     TZrUInt32 switchBlockId;
@@ -165,7 +259,6 @@ TZrBool cfg_build_switch_statement(SZrState *state,
         return ZR_FALSE;
     }
 
-    previousBlock = cfg_get_block(cfg, *inOutPreviousBlockId);
     switchBlockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, statement);
     switchBlock = cfg_get_block(cfg, switchBlockId);
     if (switchBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID || switchBlock == ZR_NULL) {
@@ -176,10 +269,8 @@ TZrBool cfg_build_switch_statement(SZrState *state,
         switchBlock->unreachableCause = pendingCause;
         switchBlock->unreachableCauseNode = pendingCauseNode;
     }
-    if (previousBlock != ZR_NULL && !previousBlock->isTerminator) {
-        if (!cfg_add_edge(cfg, previousBlock->id, switchBlockId)) {
-            return ZR_FALSE;
-        }
+    if (!cfg_connect_fallthrough(cfg, *inOutPreviousBlockId, switchBlockId)) {
+        return ZR_FALSE;
     }
 
     joinBlockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, ZR_NULL);
@@ -321,25 +412,45 @@ TZrBool cfg_build_try_statement(SZrState *state,
                                 EZrSemanticReachabilityCause pendingCause,
                                 SZrAstNode *pendingCauseNode,
                                 const SZrParserCfgLoopTargets *loopTargets) {
-    SZrParserCfgBlock *previousBlock;
     SZrParserCfgBlock *tryBlock;
     SZrAstNodeArray *catchClauses;
     TZrUInt32 finalJoinBlockId;
     TZrUInt32 tryBlockId;
     TZrUInt32 bodyLastBlockId;
     TZrUInt32 joinBlockId;
-    TZrUInt32 finallyLastBlockId;
+    TZrUInt32 functionExitFinallyEntryBlockId;
+    TZrUInt32 breakFinallyEntryBlockId;
+    TZrUInt32 continueFinallyEntryBlockId;
+    TZrUInt32 currentCatchDispatchBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     TZrSize abruptExitStartIndex;
     TZrSize abruptExitEndIndex;
     TZrBool hasNormalFinallyCompletion = ZR_FALSE;
+    TZrBool hasFunctionExitIntoFinally = ZR_FALSE;
+    TZrBool hasBreakIntoFinally = ZR_FALSE;
+    TZrBool hasContinueIntoFinally = ZR_FALSE;
+    SZrParserCfgLoopTargets protectedLoopTargets;
+    const SZrParserCfgLoopTargets *bodyLoopTargets = loopTargets;
     TZrSize catchIndex;
+    TZrBool protectedBodyMayEnterCatch;
+    TZrBool catchAllAlreadyMatched = ZR_FALSE;
+    TZrUInt32 protectedBodyKnownThrowKindMask = 0u;
+    TZrUInt32 remainingKnownThrowKindMask = 0u;
+    TZrBool protectedBodyHasUnknownThrowSource = ZR_FALSE;
+    TZrBool protectedBodyHasOnlyKnownThrowKinds = ZR_FALSE;
 
     if (state == ZR_NULL || cfg == ZR_NULL || statement == ZR_NULL ||
         inOutPreviousBlockId == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    previousBlock = cfg_get_block(cfg, *inOutPreviousBlockId);
+    if (statement->data.tryCatchFinallyStatement.finallyBlock != ZR_NULL &&
+        loopTargets != ZR_NULL) {
+        protectedLoopTargets = *loopTargets;
+        protectedLoopTargets.breakTargetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+        protectedLoopTargets.continueTargetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+        bodyLoopTargets = &protectedLoopTargets;
+    }
+
     tryBlockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, statement);
     tryBlock = cfg_get_block(cfg, tryBlockId);
     if (tryBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID || tryBlock == ZR_NULL) {
@@ -350,10 +461,8 @@ TZrBool cfg_build_try_statement(SZrState *state,
         tryBlock->unreachableCause = pendingCause;
         tryBlock->unreachableCauseNode = pendingCauseNode;
     }
-    if (previousBlock != ZR_NULL && !previousBlock->isTerminator) {
-        if (!cfg_add_edge(cfg, previousBlock->id, tryBlockId)) {
-            return ZR_FALSE;
-        }
+    if (!cfg_connect_fallthrough(cfg, *inOutPreviousBlockId, tryBlockId)) {
+        return ZR_FALSE;
     }
 
     abruptExitStartIndex = cfg->blocks.length;
@@ -363,7 +472,7 @@ TZrBool cfg_build_try_statement(SZrState *state,
                                   tryBlockId,
                                   pendingCause,
                                   pendingCauseNode,
-                                  loopTargets,
+                                  bodyLoopTargets,
                                   &bodyLastBlockId)) {
         return ZR_FALSE;
     }
@@ -378,27 +487,139 @@ TZrBool cfg_build_try_statement(SZrState *state,
     }
 
     catchClauses = statement->data.tryCatchFinallyStatement.catchClauses;
+    protectedBodyMayEnterCatch =
+            cfg_node_may_enter_catch(statement->data.tryCatchFinallyStatement.block);
+    if (!cfg_try_body_throw_profile(
+            statement->data.tryCatchFinallyStatement.block,
+            &protectedBodyKnownThrowKindMask,
+            &protectedBodyHasUnknownThrowSource)) {
+        protectedBodyKnownThrowKindMask = 0u;
+        protectedBodyHasUnknownThrowSource = ZR_TRUE;
+    }
+    protectedBodyHasOnlyKnownThrowKinds =
+            (TZrBool)(protectedBodyKnownThrowKindMask != 0u &&
+                      !protectedBodyHasUnknownThrowSource);
+    remainingKnownThrowKindMask = protectedBodyKnownThrowKindMask;
+    if (protectedBodyMayEnterCatch &&
+        catchClauses != ZR_NULL &&
+        catchClauses->count > 0) {
+        currentCatchDispatchBlockId =
+                cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, ZR_NULL);
+        if (currentCatchDispatchBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+            !cfg_add_edge(cfg, tryBlockId, currentCatchDispatchBlockId)) {
+            return ZR_FALSE;
+        }
+    }
     if (catchClauses != ZR_NULL) {
         for (catchIndex = 0; catchIndex < catchClauses->count; catchIndex++) {
             SZrAstNode *catchNode = catchClauses->nodes[catchIndex];
+            TZrUInt32 catchDispatchBlockId = currentCatchDispatchBlockId;
+            TZrBool catchCanEnter;
+            TZrBool catchMayContinueToLater = ZR_FALSE;
+            EZrParserCfgCatchMatch catchMatch = ZR_PARSER_CFG_CATCH_MATCH_UNKNOWN;
+            TZrBool catchMatchIsPrecise = ZR_FALSE;
+            TZrUInt32 catchMatchedKnownMask = 0u;
+            TZrBool catchRejectedByKnownThrowTypes = ZR_FALSE;
+            TZrBool catchSuppressedByEarlierCatch = ZR_FALSE;
+            EZrSemanticReachabilityCause catchCause;
+            SZrAstNode *catchCauseNode;
+            TZrUInt32 catchPredecessorBlockId;
             TZrUInt32 catchLastBlockId;
 
             if (catchNode == ZR_NULL || catchNode->type != ZR_AST_CATCH_CLAUSE) {
                 continue;
             }
+            if (protectedBodyHasOnlyKnownThrowKinds) {
+                if (!cfg_catch_clause_match_known_throw_kinds(
+                        catchNode,
+                        remainingKnownThrowKindMask,
+                        &catchMatchIsPrecise,
+                        &catchMatchedKnownMask)) {
+                    catchMatchIsPrecise = ZR_FALSE;
+                    catchMatchedKnownMask = 0u;
+                }
+                if (catchMatchIsPrecise) {
+                    catchMatch = catchMatchedKnownMask != 0u
+                                         ? ZR_PARSER_CFG_CATCH_MATCH_YES
+                                         : ZR_PARSER_CFG_CATCH_MATCH_NO;
+                }
+            }
+            catchCanEnter = (TZrBool)(protectedBodyMayEnterCatch &&
+                                      !catchAllAlreadyMatched &&
+                                      catchDispatchBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID);
+            if (catchCanEnter && protectedBodyHasOnlyKnownThrowKinds) {
+                if (remainingKnownThrowKindMask == 0u) {
+                    catchSuppressedByEarlierCatch = ZR_TRUE;
+                    catchCanEnter = ZR_FALSE;
+                } else if (catchMatchIsPrecise &&
+                           catchMatch == ZR_PARSER_CFG_CATCH_MATCH_NO) {
+                    catchRejectedByKnownThrowTypes = ZR_TRUE;
+                    catchCanEnter = ZR_FALSE;
+                }
+            } else if (catchCanEnter && catchMatch == ZR_PARSER_CFG_CATCH_MATCH_NO) {
+                catchRejectedByKnownThrowTypes = ZR_TRUE;
+                catchCanEnter = ZR_FALSE;
+            }
+            catchCause = pendingCause;
+            catchCauseNode = pendingCauseNode;
+            if (!catchCanEnter && protectedBodyMayEnterCatch &&
+                (catchAllAlreadyMatched || catchSuppressedByEarlierCatch ||
+                 catchRejectedByKnownThrowTypes) &&
+                catchCause == ZR_SEMANTIC_REACHABILITY_CAUSE_UNKNOWN) {
+                catchCause = ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH;
+                catchCauseNode = catchNode;
+            }
+            catchPredecessorBlockId = catchCanEnter
+                                              ? catchDispatchBlockId
+                                              : ZR_PARSER_CFG_INVALID_BLOCK_ID;
             if (!cfg_build_statement_body(state,
                                           cfg,
                                           catchNode->data.catchClause.block,
-                                          tryBlockId,
-                                          pendingCause,
-                                          pendingCauseNode,
-                                          loopTargets,
+                                          catchPredecessorBlockId,
+                                          catchCause,
+                                          catchCauseNode,
+                                          bodyLoopTargets,
                                           &catchLastBlockId)) {
                 return ZR_FALSE;
             }
-            if (catchLastBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+            if (catchCanEnter &&
+                catchLastBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
                 !cfg_connect_fallthrough(cfg, catchLastBlockId, joinBlockId)) {
                 return ZR_FALSE;
+            }
+            if (catchCanEnter &&
+                protectedBodyHasOnlyKnownThrowKinds &&
+                catchMatchIsPrecise) {
+                remainingKnownThrowKindMask &= ~catchMatchedKnownMask;
+                if (remainingKnownThrowKindMask == 0u) {
+                    catchAllAlreadyMatched = ZR_TRUE;
+                }
+            } else if (catchCanEnter &&
+                       (cfg_catch_clause_is_catch_all(catchNode) ||
+                        catchMatch == ZR_PARSER_CFG_CATCH_MATCH_YES)) {
+                catchAllAlreadyMatched = ZR_TRUE;
+            }
+
+            if (protectedBodyMayEnterCatch &&
+                catchDispatchBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+                if (protectedBodyHasOnlyKnownThrowKinds) {
+                    catchMayContinueToLater =
+                            (TZrBool)(remainingKnownThrowKindMask != 0u);
+                } else {
+                    catchMayContinueToLater = (TZrBool)!catchAllAlreadyMatched;
+                }
+            }
+            if (catchMayContinueToLater &&
+                catchIndex + 1 < catchClauses->count) {
+                TZrUInt32 nextCatchDispatchBlockId =
+                        cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, ZR_NULL);
+                if (nextCatchDispatchBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+                    !cfg_add_edge(cfg, catchDispatchBlockId, nextCatchDispatchBlockId)) {
+                    return ZR_FALSE;
+                }
+                currentCatchDispatchBlockId = nextCatchDispatchBlockId;
+            } else {
+                currentCatchDispatchBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
             }
         }
     }
@@ -411,29 +632,43 @@ TZrBool cfg_build_try_statement(SZrState *state,
         hasNormalFinallyCompletion =
                 (TZrBool)(joinBlock != ZR_NULL && joinBlock->predecessorCount > 0);
 
-        if (!cfg_connect_abrupt_completions_to_finally(cfg,
-                                                       abruptExitStartIndex,
-                                                       abruptExitEndIndex,
-                                                       joinBlockId)) {
-            return ZR_FALSE;
-        }
-        if (!cfg_build_statement_body(state,
-                                      cfg,
-                                      statement->data.tryCatchFinallyStatement.finallyBlock,
-                                      joinBlockId,
-                                      pendingCause,
-                                      pendingCauseNode,
-                                      loopTargets,
-                                      &finallyLastBlockId)) {
+        if (!cfg_add_finally_abrupt_entries(state,
+                                            cfg,
+                                            &functionExitFinallyEntryBlockId,
+                                            &breakFinallyEntryBlockId,
+                                            &continueFinallyEntryBlockId)) {
             return ZR_FALSE;
         }
         finalJoinBlockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, ZR_NULL);
         if (finalJoinBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
             return ZR_FALSE;
         }
-        if (hasNormalFinallyCompletion &&
-            finallyLastBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
-            !cfg_connect_fallthrough(cfg, finallyLastBlockId, finalJoinBlockId)) {
+        if (!cfg_connect_abrupt_completions_to_finally(cfg,
+                                                       abruptExitStartIndex,
+                                                       abruptExitEndIndex,
+                                                       functionExitFinallyEntryBlockId,
+                                                       breakFinallyEntryBlockId,
+                                                       continueFinallyEntryBlockId,
+                                                       &hasFunctionExitIntoFinally,
+                                                       &hasBreakIntoFinally,
+                                                       &hasContinueIntoFinally)) {
+            return ZR_FALSE;
+        }
+        if (!cfg_build_finally_paths(state,
+                                     cfg,
+                                     statement->data.tryCatchFinallyStatement.finallyBlock,
+                                     joinBlockId,
+                                     functionExitFinallyEntryBlockId,
+                                     breakFinallyEntryBlockId,
+                                     continueFinallyEntryBlockId,
+                                     finalJoinBlockId,
+                                     hasNormalFinallyCompletion,
+                                     hasFunctionExitIntoFinally,
+                                     hasBreakIntoFinally,
+                                     hasContinueIntoFinally,
+                                     pendingCause,
+                                     pendingCauseNode,
+                                     loopTargets)) {
             return ZR_FALSE;
         }
         *inOutPreviousBlockId = finalJoinBlockId;

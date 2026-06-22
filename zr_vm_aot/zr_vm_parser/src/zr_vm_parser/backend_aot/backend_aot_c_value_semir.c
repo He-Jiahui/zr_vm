@@ -24,6 +24,31 @@ static const SZrAotExecIrFrameSlotLayout *backend_aot_c_find_frame_slot_layout(
     return ZR_NULL;
 }
 
+static TZrUInt32 backend_aot_c_value_semir_register_frame_bytes(const SZrAotExecIrFrameLayout *frameLayout) {
+    TZrUInt32 layoutIndex;
+    TZrUInt32 registerFrameBytes = 0u;
+
+    if (frameLayout == ZR_NULL || frameLayout->slotLayouts == ZR_NULL) {
+        return 0u;
+    }
+
+    for (layoutIndex = 0u; layoutIndex < frameLayout->slotLayoutCount; layoutIndex++) {
+        const SZrAotExecIrFrameSlotLayout *layout = &frameLayout->slotLayouts[layoutIndex];
+        TZrUInt32 slotEnd;
+
+        if (layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
+            layout->typeLayoutId != ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE &&
+            layout->byteSize > 0u) {
+            slotEnd = layout->byteOffset + layout->byteSize;
+            if (slotEnd > registerFrameBytes) {
+                registerFrameBytes = slotEnd;
+            }
+        }
+    }
+
+    return registerFrameBytes;
+}
+
 static void backend_aot_write_c_value_slot_layout(FILE *file,
                                                   const char *label,
                                                   const SZrAotExecIrFrameSlotLayout *layout) {
@@ -138,14 +163,16 @@ void backend_aot_write_c_value_semir_for_function(FILE *file,
                                                   const SZrAotExecIrFunction *functionIr,
                                                   const SZrAotExecIrFrameLayout *frameLayout) {
     TZrUInt32 instructionIndex;
+    TZrUInt32 valueFrameBytes;
 
     if (file == ZR_NULL || module == ZR_NULL || functionIr == ZR_NULL || frameLayout == ZR_NULL) {
         return;
     }
 
+    valueFrameBytes = backend_aot_c_value_semir_register_frame_bytes(frameLayout);
     fprintf(file,
             "    /* value SemIR lowering frameByteSize=%u frameByteAlign=%u slotLayouts=%u */\n",
-            (unsigned)frameLayout->frameByteSize,
+            (unsigned)valueFrameBytes,
             (unsigned)frameLayout->frameByteAlign,
             (unsigned)frameLayout->slotLayoutCount);
 

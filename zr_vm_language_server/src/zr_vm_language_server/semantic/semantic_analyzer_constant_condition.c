@@ -1,5 +1,7 @@
 #include "semantic/semantic_analyzer_internal.h"
 
+#include "zr_vm_parser/semantic_facts.h"
+
 static TZrBool constant_condition_sources_match(SZrString *left, SZrString *right) {
     const TZrChar *leftText;
     const TZrChar *rightText;
@@ -89,6 +91,34 @@ static TZrBool constant_condition_boolean_literal(SZrAstNode *node, TZrBool *out
     return ZR_TRUE;
 }
 
+static TZrBool constant_condition_try_logical_fact(SZrSemanticAnalyzer *analyzer,
+                                                   SZrAstNode *node,
+                                                   TZrBool *outValue,
+                                                   SZrAstNode **outEvidenceNode) {
+    const SZrSemanticLogicalFact *fact;
+
+    if (analyzer == ZR_NULL ||
+        analyzer->semanticContext == ZR_NULL ||
+        node == ZR_NULL ||
+        outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fact = ZrParser_SemanticFacts_FindLogicalByNode(analyzer->semanticContext, node);
+    if (fact == ZR_NULL ||
+        !fact->hasKnownValue ||
+        (fact->kind != ZR_SEMANTIC_LOGICAL_FACT_ALWAYS_TRUE &&
+         fact->kind != ZR_SEMANTIC_LOGICAL_FACT_ALWAYS_FALSE)) {
+        return ZR_FALSE;
+    }
+
+    *outValue = fact->knownValue ? ZR_TRUE : ZR_FALSE;
+    if (outEvidenceNode != ZR_NULL) {
+        *outEvidenceNode = fact->relatedNode != ZR_NULL ? fact->relatedNode : fact->node;
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool constant_condition_try_variable_initializer(SZrSemanticAnalyzer *analyzer,
                                                            SZrAstNode *node,
                                                            TZrBool *outValue,
@@ -147,6 +177,10 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_TryEvaluateConstantBooleanCondition(
         if (outEvidenceNode != ZR_NULL) {
             *outEvidenceNode = node;
         }
+        return ZR_TRUE;
+    }
+
+    if (constant_condition_try_logical_fact(analyzer, node, outValue, outEvidenceNode)) {
         return ZR_TRUE;
     }
 

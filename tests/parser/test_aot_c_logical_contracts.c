@@ -100,43 +100,59 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
-static void test_aot_c_source_lowers_generic_truthiness_to_direct_c(void) {
+static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_logical_not(FILE *file",
+            "const SZrAotExecIrFunction *functionIr",
             "backend_aot_write_c_direct_jump_if(FILE *file",
     };
     static const char *const moduleNeedles[] = {
             "backend_aot_c_lowering_generic_logical.c",
-            "backend_aot_c_write_generic_truthiness_unsupported",
-            "backend_aot_c_write_primitive_truthiness",
+            "backend_aot_c_write_bool_local_sync",
             "backend_aot_write_c_direct_logical_not(",
             "backend_aot_write_c_direct_jump_if(",
             "zr_aot_generic_logical_not",
             "zr_aot_generic_jump_if",
             "TZrBool zr_aot_truthy = ZR_FALSE;",
-            "ZR_VALUE_IS_TYPE_NULL(zr_aot_source->type)",
-            "ZR_VALUE_IS_TYPE_BOOL(zr_aot_source->type)",
-            "ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)",
-            "ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)",
-            "ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type)",
-            "zr_aot_source->value.nativeObject.nativeBool != 0u",
-            "zr_aot_source->value.nativeObject.nativeInt64 != 0",
-            "zr_aot_source->value.nativeObject.nativeUInt64 != 0",
-            "zr_aot_source->value.nativeObject.nativeDouble != 0.0",
-            "ZR_VALUE_FAST_SET(zr_aot_destination, nativeBool, !zr_aot_truthy, ZR_VALUE_TYPE_BOOL)",
+            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(state, &frame, %u, %u)",
+            "ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(state, &frame, %u, &zr_aot_truthy)",
+            "backend_aot_c_write_bool_local_sync_from_slot(file, functionIr, destinationSlot);",
+            "zr_aot_generic_logical_sync_bool_local_boundary",
+            "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u)",
             "if (!zr_aot_truthy) {",
+    };
+    static const char *const runtimeHeaderNeedles[] = {
+            "ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_SyncBoolLocal(struct SZrState *state,",
+    };
+    static const char *const runtimeSourceNeedles[] = {
+            "aot_runtime_generic_logical_values(",
+            "ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(SZrState *state,",
+            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(SZrState *state,",
             "unsupported AOT generic primitive truthiness",
-            "ZR_AOT_C_FAIL();",
+            "ZR_VALUE_FAST_SET(destinationValue, nativeBool, !truthy, ZR_VALUE_TYPE_BOOL);",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):",
-            "backend_aot_write_c_direct_logical_not(file, destinationSlot, operandA1);",
+            "backend_aot_write_c_direct_logical_not(file, functionIr, destinationSlot, operandA1);",
             "case ZR_INSTRUCTION_ENUM(JUMP_IF):",
             "backend_aot_write_c_direct_jump_if(file,",
             "entry->flatIndex",
             "destinationSlot",
     };
     static const char *const forbiddenModuleNeedles[] = {
+            "backend_aot_c_write_generic_truthiness_unsupported",
+            "backend_aot_c_write_primitive_truthiness",
+            "ZrCore_Debug_RunError(state, \"unsupported AOT generic primitive truthiness\")",
+            "ZR_VALUE_IS_TYPE_NULL(zr_aot_source->type)",
+            "ZR_VALUE_IS_TYPE_BOOL(zr_aot_source->type)",
+            "ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)",
+            "ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)",
+            "ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type)",
+            "ZR_VALUE_FAST_SET(zr_aot_destination, nativeBool, !zr_aot_truthy, ZR_VALUE_TYPE_BOOL)",
+            "const SZrTypeValue *zr_aot_bool_sync = ZrCore_Stack_GetValue(frame.slotBase + %u);",
+            "zr_aot_bool_sync->value.nativeObject.nativeBool",
             "ZrLibrary_AotRuntime_LogicalNot",
             "ZrLibrary_AotRuntime_IsTruthy",
     };
@@ -154,14 +170,21 @@ static void test_aot_c_source_lowers_generic_truthiness_to_direct_c(void) {
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *controlText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c");
+    char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
+    char *runtimeSourceText = read_repo_text_file_owned(
+            "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_values.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(moduleText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
     TEST_ASSERT_NOT_NULL(controlText);
+    TEST_ASSERT_NOT_NULL(runtimeHeaderText);
+    TEST_ASSERT_NOT_NULL(runtimeSourceText);
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
     assert_text_contains_all(moduleText, moduleNeedles, ARRAY_COUNT(moduleNeedles));
+    assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
+    assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
     assert_text_contains_none(moduleText, forbiddenModuleNeedles, ARRAY_COUNT(forbiddenModuleNeedles));
     assert_text_contains_none(functionBodyText, forbiddenFunctionBodyNeedles, ARRAY_COUNT(forbiddenFunctionBodyNeedles));
@@ -171,44 +194,57 @@ static void test_aot_c_source_lowers_generic_truthiness_to_direct_c(void) {
     free(moduleText);
     free(functionBodyText);
     free(controlText);
+    free(runtimeHeaderText);
+    free(runtimeSourceText);
 }
 
-static void test_aot_c_source_lowers_generic_primitive_equality_to_direct_c(void) {
+static void test_aot_c_source_lowers_generic_primitive_equality_to_boundary_helpers(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_logical_equal(FILE *file",
+            "const SZrAotExecIrFunction *functionIr",
             "backend_aot_write_c_direct_logical_not_equal(FILE *file",
     };
     static const char *const moduleNeedles[] = {
             "backend_aot_c_lowering_generic_logical.c",
-            "backend_aot_c_write_generic_equality_unsupported",
-            "backend_aot_c_write_primitive_equality",
             "backend_aot_write_c_direct_logical_equal(",
             "backend_aot_write_c_direct_logical_not_equal(",
             "zr_aot_generic_logical_equal",
             "zr_aot_generic_logical_not_equal",
-            "TZrBool zr_aot_equal = ZR_FALSE;",
-            "zr_aot_left->type != zr_aot_right->type",
-            "ZR_VALUE_IS_TYPE_NULL(zr_aot_left->type)",
-            "ZR_VALUE_IS_TYPE_BOOL(zr_aot_left->type)",
-            "ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_left->type)",
-            "ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_left->type)",
-            "ZR_VALUE_IS_TYPE_FLOAT(zr_aot_left->type)",
-            "zr_aot_left->value.nativeObject.nativeBool != 0u",
-            "zr_aot_right->value.nativeObject.nativeBool != 0u",
-            "zr_aot_left->value.nativeObject.nativeInt64 == zr_aot_right->value.nativeObject.nativeInt64",
-            "zr_aot_left->value.nativeObject.nativeUInt64 == zr_aot_right->value.nativeObject.nativeUInt64",
-            "zr_aot_left->value.nativeObject.nativeDouble == zr_aot_right->value.nativeObject.nativeDouble",
-            "ZR_VALUE_FAST_SET(zr_aot_destination, nativeBool, zr_aot_equal, ZR_VALUE_TYPE_BOOL)",
-            "ZR_VALUE_FAST_SET(zr_aot_destination, nativeBool, !zr_aot_equal, ZR_VALUE_TYPE_BOOL)",
+            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual(state, &frame, %u, %u, %u)",
+            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(state, &frame, %u, %u, %u)",
+            "backend_aot_c_write_bool_local_sync_from_slot(file, functionIr, destinationSlot);",
+            "zr_aot_generic_logical_sync_bool_local_boundary",
+            "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u)",
+    };
+    static const char *const runtimeHeaderNeedles[] = {
+            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_SyncBoolLocal(struct SZrState *state,",
+    };
+    static const char *const runtimeSourceNeedles[] = {
+            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual(SZrState *state,",
+            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(SZrState *state,",
+            "aot_runtime_generic_primitive_equal(",
             "unsupported AOT generic primitive equality",
+            "ZR_VALUE_FAST_SET(destinationValue, nativeBool, equal, ZR_VALUE_TYPE_BOOL);",
+            "ZR_VALUE_FAST_SET(destinationValue, nativeBool, !equal, ZR_VALUE_TYPE_BOOL);",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):",
-            "backend_aot_write_c_direct_logical_equal(file, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_logical_equal(file, functionIr, destinationSlot, operandA1, operandB1);",
             "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):",
-            "backend_aot_write_c_direct_logical_not_equal(file, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_logical_not_equal(file, functionIr, destinationSlot, operandA1, operandB1);",
     };
     static const char *const forbiddenModuleNeedles[] = {
+            "backend_aot_c_write_generic_equality_unsupported",
+            "backend_aot_c_write_primitive_equality",
+            "ZrCore_Debug_RunError(state, \"unsupported AOT generic primitive equality\")",
+            "ZR_VALUE_IS_TYPE_NULL(zr_aot_left->type)",
+            "ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_left->type)",
+            "ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_left->type)",
+            "ZR_VALUE_IS_TYPE_FLOAT(zr_aot_left->type)",
+            "const SZrTypeValue *zr_aot_bool_sync = ZrCore_Stack_GetValue(frame.slotBase + %u);",
+            "zr_aot_bool_sync->value.nativeObject.nativeBool",
             "ZrLibrary_AotRuntime_LogicalEqual",
             "ZrCore_Value_Equal",
     };
@@ -229,14 +265,21 @@ static void test_aot_c_source_lowers_generic_primitive_equality_to_direct_c(void
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+    char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
+    char *runtimeSourceText = read_repo_text_file_owned(
+            "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_values.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(moduleText);
     TEST_ASSERT_NOT_NULL(valuesText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
+    TEST_ASSERT_NOT_NULL(runtimeHeaderText);
+    TEST_ASSERT_NOT_NULL(runtimeSourceText);
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
     assert_text_contains_all(moduleText, moduleNeedles, ARRAY_COUNT(moduleNeedles));
+    assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
+    assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
     assert_text_contains_none(moduleText, forbiddenModuleNeedles, ARRAY_COUNT(forbiddenModuleNeedles));
     assert_text_contains_none(valuesText, forbiddenValuesNeedles, ARRAY_COUNT(forbiddenValuesNeedles));
@@ -246,32 +289,48 @@ static void test_aot_c_source_lowers_generic_primitive_equality_to_direct_c(void
     free(moduleText);
     free(valuesText);
     free(functionBodyText);
+    free(runtimeHeaderText);
+    free(runtimeSourceText);
 }
 
 static void test_aot_c_source_lowers_bool_logical_and_or_to_direct_c(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_logical_and(FILE *file",
+            "const SZrAotExecIrFunction *functionIr",
             "backend_aot_write_c_direct_logical_or(FILE *file",
     };
     static const char *const moduleNeedles[] = {
             "backend_aot_c_lowering_generic_logical.c",
             "backend_aot_c_write_bool_binary_logical",
+            "backend_aot_c_write_bool_binary_scalar_local",
             "backend_aot_write_c_direct_logical_and(",
             "backend_aot_write_c_direct_logical_or(",
             "zr_aot_bool_logical_and",
             "zr_aot_bool_logical_or",
+            "zr_aot_bool_binary_scalar_local",
+            "backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(functionIr, destinationSlot, execInstructionIndex)",
+            "backend_aot_c_scalar_locals_bool_written_before(functionIr, leftSlot, execInstructionIndex)",
+            "backend_aot_c_scalar_locals_bool_written_before(functionIr, rightSlot, execInstructionIndex)",
+            "zr_aot_b%u = (TZrBool)((zr_aot_b%u %s zr_aot_b%u) != 0u);",
             "ZR_VALUE_IS_TYPE_BOOL(zr_aot_left->type)",
             "ZR_VALUE_IS_TYPE_BOOL(zr_aot_right->type)",
             "zr_aot_left_bool && zr_aot_right_bool",
             "zr_aot_left_bool || zr_aot_right_bool",
             "unsupported AOT bool logical binary",
             "ZR_VALUE_FAST_SET(zr_aot_destination, nativeBool, zr_aot_result, ZR_VALUE_TYPE_BOOL)",
+            "backend_aot_c_write_bool_local_sync(file, functionIr, destinationSlot, \"zr_aot_result\")",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(LOGICAL_AND):",
-            "backend_aot_write_c_direct_logical_and(file, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_logical_and(file, functionIr, destinationSlot, operandA1, operandB1, instructionIndex);",
             "case ZR_INSTRUCTION_ENUM(LOGICAL_OR):",
-            "backend_aot_write_c_direct_logical_or(file, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_logical_or(file, functionIr, destinationSlot, operandA1, operandB1, instructionIndex);",
+    };
+    static const char *const scalarLocalNeedles[] = {
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_AND):",
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_OR):",
+            "declaredSlotKinds[destinationSlot] & ZR_AOT_SCALAR_LOCAL_KIND_BOOL",
+            "backend_aot_c_scalar_locals_record_slot(slotKinds,",
     };
     static const char *const forbiddenModuleNeedles[] = {
             "ZrLibrary_AotRuntime_LogicalAnd",
@@ -287,26 +346,31 @@ static void test_aot_c_source_lowers_bool_logical_and_or_to_direct_c(void) {
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_logical.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+    char *scalarLocalsText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(moduleText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
+    TEST_ASSERT_NOT_NULL(scalarLocalsText);
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
     assert_text_contains_all(moduleText, moduleNeedles, ARRAY_COUNT(moduleNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
+    assert_text_contains_all(scalarLocalsText, scalarLocalNeedles, ARRAY_COUNT(scalarLocalNeedles));
     assert_text_contains_none(moduleText, forbiddenModuleNeedles, ARRAY_COUNT(forbiddenModuleNeedles));
     assert_text_contains_none(functionBodyText, forbiddenFunctionBodyNeedles, ARRAY_COUNT(forbiddenFunctionBodyNeedles));
 
     free(headerText);
     free(moduleText);
     free(functionBodyText);
+    free(scalarLocalsText);
 }
 
 static void test_aot_c_source_lowers_string_equality_to_direct_c(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_logical_equal_string(FILE *file",
-            "const SZrAotExecIrFrameLayout *frameLayout",
+            "const SZrAotExecIrFunction *functionIr",
             "backend_aot_write_c_direct_logical_not_equal_string(FILE *file",
     };
     static const char *const emitterNeedles[] = {
@@ -315,14 +379,17 @@ static void test_aot_c_source_lowers_string_equality_to_direct_c(void) {
     };
     static const char *const moduleNeedles[] = {
             "backend_aot_c_lowering_generic_logical.c",
-            "backend_aot_c_generic_logical_find_frame_slot_layout(",
             "backend_aot_c_write_string_logical_operand(",
-            "((const TZrByte *)frame.slotBase + %u)",
+            "ZrCore_Stack_GetValue(frame.slotBase + %u)",
             "backend_aot_c_write_string_equality",
+            "backend_aot_c_write_string_bool_scalar_local",
             "backend_aot_write_c_direct_logical_equal_string(",
             "backend_aot_write_c_direct_logical_not_equal_string(",
             "zr_aot_string_logical_equal",
             "zr_aot_string_logical_not_equal",
+            "zr_aot_string_logical_bool_scalar_local",
+            "backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(functionIr, destinationSlot, execInstructionIndex)",
+            "zr_aot_b%u = (TZrBool)(%s != 0u);",
             "ZR_VALUE_IS_TYPE_STRING(zr_aot_left->type)",
             "ZR_VALUE_IS_TYPE_STRING(zr_aot_right->type)",
             "ZR_CAST_STRING(state, zr_aot_left->value.object)",
@@ -332,18 +399,28 @@ static void test_aot_c_source_lowers_string_equality_to_direct_c(void) {
             "unsupported AOT string equality",
             "ZR_VALUE_FAST_SET(zr_aot_destination, nativeBool, zr_aot_equal, ZR_VALUE_TYPE_BOOL)",
             "ZR_VALUE_FAST_SET(zr_aot_destination, nativeBool, !zr_aot_equal, ZR_VALUE_TYPE_BOOL)",
+            "backend_aot_c_write_bool_local_sync(file, functionIr, destinationSlot, \"zr_aot_equal\")",
+            "backend_aot_c_write_bool_local_sync(file, functionIr, destinationSlot, \"!zr_aot_equal\")",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_STRING):",
             "backend_aot_write_c_direct_logical_equal_string(file,",
-            "? &functionIr->frameLayout",
+            "functionIr,",
             "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_STRING):",
             "backend_aot_write_c_direct_logical_not_equal_string(file,",
+            "instructionIndex);",
+    };
+    static const char *const scalarLocalNeedles[] = {
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_STRING):",
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_STRING):",
+            "declaredSlotKinds[destinationSlot] & ZR_AOT_SCALAR_LOCAL_KIND_BOOL",
+            "backend_aot_c_scalar_locals_record_slot(slotKinds,",
     };
     static const char *const forbiddenModuleNeedles[] = {
             "ZrLibrary_AotRuntime_LogicalEqualString",
             "ZrLibrary_AotRuntime_LogicalNotEqualString",
             "ZrCore_String_Equal",
+            "((const TZrByte *)frame.slotBase + %u)",
     };
     static const char *const forbiddenFunctionBodyNeedles[] = {
             "ZrLibrary_AotRuntime_LogicalEqualString(state, &frame",
@@ -357,16 +434,20 @@ static void test_aot_c_source_lowers_string_equality_to_direct_c(void) {
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_logical.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+    char *scalarLocalsText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(emitterText);
     TEST_ASSERT_NOT_NULL(moduleText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
+    TEST_ASSERT_NOT_NULL(scalarLocalsText);
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
     assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
     assert_text_contains_all(moduleText, moduleNeedles, ARRAY_COUNT(moduleNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
+    assert_text_contains_all(scalarLocalsText, scalarLocalNeedles, ARRAY_COUNT(scalarLocalNeedles));
     assert_text_contains_none(moduleText, forbiddenModuleNeedles, ARRAY_COUNT(forbiddenModuleNeedles));
     assert_text_contains_none(functionBodyText, forbiddenFunctionBodyNeedles, ARRAY_COUNT(forbiddenFunctionBodyNeedles));
 
@@ -374,6 +455,7 @@ static void test_aot_c_source_lowers_string_equality_to_direct_c(void) {
     free(emitterText);
     free(moduleText);
     free(functionBodyText);
+    free(scalarLocalsText);
 }
 
 void setUp(void) {}
@@ -382,8 +464,8 @@ void tearDown(void) {}
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_aot_c_source_lowers_generic_truthiness_to_direct_c);
-    RUN_TEST(test_aot_c_source_lowers_generic_primitive_equality_to_direct_c);
+    RUN_TEST(test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers);
+    RUN_TEST(test_aot_c_source_lowers_generic_primitive_equality_to_boundary_helpers);
     RUN_TEST(test_aot_c_source_lowers_bool_logical_and_or_to_direct_c);
     RUN_TEST(test_aot_c_source_lowers_string_equality_to_direct_c);
     return UNITY_END();

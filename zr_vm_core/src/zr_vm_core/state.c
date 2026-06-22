@@ -213,6 +213,7 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
     state->stackBase.valuePointer->value.type = ZR_VALUE_TYPE_NULL;
     callInfo->functionBase.valuePointer = state->stackBase.valuePointer;
     callInfo->callStatus = ZR_CALL_STATUS_NATIVE_CALL;
+    callInfo->metadataFunction = ZR_NULL;
     if (status == ZR_THREAD_STATUS_YIELD) {
         status = ZR_THREAD_STATUS_FINE;
     }

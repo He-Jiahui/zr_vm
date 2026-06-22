@@ -205,6 +205,7 @@ void zr_debug_agent_fill_stop_event(ZrDebugAgent *agent,
     agent->stopStateId++;
     agent->lastStopEvent.reason = reason;
     agent->lastStopEvent.exception_filter = exceptionFilter;
+    agent->lastStopEvent.thread_id = zr_debug_agent_effective_thread_id(agent, agent->currentThreadId);
     agent->lastStopEvent.line = sourceLine;
     agent->lastStopEvent.instruction_index = instructionIndex;
     agent->lastStopEvent.state_id = agent->stopStateId;
@@ -237,9 +238,16 @@ static void zr_debug_agent_emit_stopped(ZrDebugAgent *agent) {
     cJSON_AddStringToObject(params, "moduleName", agent->lastStopEvent.module_name);
     cJSON_AddStringToObject(params, "sourceFile", agent->lastStopEvent.source_file);
     cJSON_AddStringToObject(params, "functionName", agent->lastStopEvent.function_name);
+    cJSON_AddNumberToObject(params, "threadId", agent->lastStopEvent.thread_id);
     cJSON_AddNumberToObject(params, "line", agent->lastStopEvent.line);
     cJSON_AddNumberToObject(params, "instructionIndex", agent->lastStopEvent.instruction_index);
     cJSON_AddNumberToObject(params, "stateId", (double)agent->lastStopEvent.state_id);
+    if (agent->lastStopEvent.data_id[0] != '\0') {
+        cJSON_AddStringToObject(params, "dataId", agent->lastStopEvent.data_id);
+    }
+    if (agent->lastStopEvent.data_description[0] != '\0') {
+        cJSON_AddStringToObject(params, "description", agent->lastStopEvent.data_description);
+    }
     if (agent->lastStopEvent.exception_stack[0] != '\0') {
         cJSON_AddStringToObject(params, "exceptionStack", agent->lastStopEvent.exception_stack);
     }
@@ -276,6 +284,7 @@ static void zr_debug_agent_emit_continued(ZrDebugAgent *agent) {
     }
 
     cJSON_AddNumberToObject(params, "stateId", (double)agent->stopStateId);
+    cJSON_AddNumberToObject(params, "threadId", zr_debug_agent_effective_thread_id(agent, 0));
     zr_debug_agent_send_event(agent, "continued", params);
 }
 
@@ -364,6 +373,8 @@ static TZrBool zr_debug_agent_process_initialize(ZrDebugAgent *agent, const cJSO
     cJSON_AddBoolToObject(capabilities, "supportsSetExceptionBreakpoints", 1);
     cJSON_AddBoolToObject(capabilities, "supportsEvaluate", 1);
     cJSON_AddBoolToObject(capabilities, "supportsPause", 1);
+    cJSON_AddBoolToObject(capabilities, "supportsThreads", 1);
+    cJSON_AddBoolToObject(capabilities, "supportsDataBreakpoints", 1);
     cJSON_AddItemToObject(result, "capabilities", capabilities);
     zr_debug_agent_send_response(agent, requestId, result);
     agent->waitForClientPending = ZR_FALSE;
@@ -634,8 +645,8 @@ static TZrBool zr_debug_agent_process_set_function_breakpoints(ZrDebugAgent *age
 }
 
 static void zr_debug_agent_process_set_exception_breakpoints(ZrDebugAgent *agent,
-                                                             const cJSON *requestId,
-                                                             const cJSON *params) {
+                                                            const cJSON *requestId,
+                                                            const cJSON *params) {
     const cJSON *caughtItem;
     const cJSON *uncaughtItem;
     TZrBool caught = ZR_FALSE;
@@ -672,14 +683,204 @@ static void zr_debug_agent_process_set_exception_breakpoints(ZrDebugAgent *agent
     zr_debug_agent_send_response(agent, requestId, cJSON_CreateObject());
 }
 
-static cJSON *zr_debug_agent_make_stack_trace_result(ZrDebugAgent *agent) {
+static TZrUInt32 zr_debug_agent_thread_id_from_params(ZrDebugAgent *agent, const cJSON *params);
+
+static void zr_debug_agent_process_data_breakpoint_info(ZrDebugAgent *agent,
+                                                        const cJSON *requestId,
+                                                        const cJSON *params) {
+    const cJSON *variablesReferenceItem =
+            params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "variablesReference") : ZR_NULL;
+    const cJSON *scopeIdItem =
+            params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "scopeId") : ZR_NULL;
+    const cJSON *nameItem = params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "name") : ZR_NULL;
+    TZrUInt32 threadId = zr_debug_agent_thread_id_from_params(agent, params);
+    TZrUInt32 variablesReference = 0;
+    TZrChar dataId[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar description[ZR_DEBUG_TEXT_CAPACITY];
+    cJSON *result;
+    cJSON *accessTypes;
+    TZrBool supported;
+
+    if (cJSON_IsNumber(variablesReferenceItem)) {
+        variablesReference = (TZrUInt32)variablesReferenceItem->valuedouble;
+    } else if (cJSON_IsNumber(scopeIdItem)) {
+        variablesReference = (TZrUInt32)scopeIdItem->valuedouble;
+    }
+    if (variablesReference == 0 || !cJSON_IsString(nameItem)) {
+        zr_debug_agent_send_error(agent, requestId, -32602, "dataBreakpointInfo requires variablesReference and name");
+        return;
+    }
+
+    dataId[0] = '\0';
+    description[0] = '\0';
+    supported = zr_debug_agent_data_breakpoint_info(agent,
+                                                    threadId,
+                                                    variablesReference,
+                                                    nameItem->valuestring,
+                                                    dataId,
+                                                    sizeof(dataId),
+                                                    description,
+                                                    sizeof(description));
+
+    result = cJSON_CreateObject();
+    accessTypes = cJSON_CreateArray();
+    if (result == ZR_NULL || accessTypes == ZR_NULL) {
+        if (result != ZR_NULL) {
+            cJSON_Delete(result);
+        }
+        if (accessTypes != ZR_NULL) {
+            cJSON_Delete(accessTypes);
+        }
+        zr_debug_agent_send_error(agent, requestId, -32002, "failed to allocate dataBreakpointInfo result");
+        return;
+    }
+
+    cJSON_AddStringToObject(result, "dataId", supported ? dataId : "");
+    cJSON_AddStringToObject(result,
+                            "description",
+                            supported ? description : "only local variables, arguments, and upvalues are supported");
+    cJSON_AddBoolToObject(result, "canPersist", supported ? 1 : 0);
+    if (supported) {
+        cJSON_AddItemToArray(accessTypes, cJSON_CreateString("write"));
+    }
+    cJSON_AddItemToObject(result, "accessTypes", accessTypes);
+    zr_debug_agent_send_response(agent, requestId, result);
+}
+
+static void zr_debug_agent_process_set_data_breakpoints(ZrDebugAgent *agent,
+                                                        const cJSON *requestId,
+                                                        const cJSON *params) {
+    const cJSON *breakpointsItem =
+            params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "breakpoints") : ZR_NULL;
+    cJSON *result;
+    cJSON *results;
+    int index;
+
+    if (!cJSON_IsArray(breakpointsItem)) {
+        zr_debug_agent_send_error(agent, requestId, -32602, "setDataBreakpoints requires breakpoints");
+        return;
+    }
+
+    result = cJSON_CreateObject();
+    results = cJSON_CreateArray();
+    if (result == ZR_NULL || results == ZR_NULL) {
+        if (result != ZR_NULL) {
+            cJSON_Delete(result);
+        }
+        if (results != ZR_NULL) {
+            cJSON_Delete(results);
+        }
+        zr_debug_agent_send_error(agent, requestId, -32002, "failed to allocate setDataBreakpoints result");
+        return;
+    }
+
+    zr_debug_agent_clear_data_breakpoints(agent);
+    for (index = 0; index < cJSON_GetArraySize(breakpointsItem); index++) {
+        const cJSON *breakpointItem = cJSON_GetArrayItem((cJSON *)breakpointsItem, index);
+        const cJSON *dataIdItem = breakpointItem != ZR_NULL
+                                          ? cJSON_GetObjectItemCaseSensitive((cJSON *)breakpointItem, "dataId")
+                                          : ZR_NULL;
+        const cJSON *accessTypeItem = breakpointItem != ZR_NULL
+                                              ? cJSON_GetObjectItemCaseSensitive((cJSON *)breakpointItem, "accessType")
+                                              : ZR_NULL;
+        const TZrChar *dataId = cJSON_IsString(dataIdItem) ? dataIdItem->valuestring : "";
+        const TZrChar *accessType = cJSON_IsString(accessTypeItem) ? accessTypeItem->valuestring : "write";
+        TZrChar description[ZR_DEBUG_TEXT_CAPACITY];
+        cJSON *breakpointResult = cJSON_CreateObject();
+        TZrBool verified;
+
+        if (breakpointResult == ZR_NULL) {
+            continue;
+        }
+
+        description[0] = '\0';
+        verified = zr_debug_agent_add_data_breakpoint(agent, dataId, accessType, description, sizeof(description));
+        cJSON_AddBoolToObject(breakpointResult, "verified", verified ? 1 : 0);
+        cJSON_AddStringToObject(breakpointResult, "id", dataId);
+        if (verified) {
+            cJSON_AddStringToObject(breakpointResult, "description", description);
+        } else {
+            cJSON_AddStringToObject(breakpointResult,
+                                    "message",
+                                    "unsupported data breakpoint target or access type");
+        }
+        cJSON_AddItemToArray(results, breakpointResult);
+    }
+
+    cJSON_AddItemToObject(result, "breakpoints", results);
+    zr_debug_agent_send_response(agent, requestId, result);
+}
+
+static TZrUInt32 zr_debug_agent_thread_id_from_params(ZrDebugAgent *agent, const cJSON *params) {
+    const cJSON *threadIdItem =
+            params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "threadId") : ZR_NULL;
+
+    if (cJSON_IsNumber(threadIdItem) && threadIdItem->valuedouble > 0) {
+        return (TZrUInt32)threadIdItem->valuedouble;
+    }
+
+    return zr_debug_agent_effective_thread_id(agent, 0);
+}
+
+static cJSON *zr_debug_agent_make_threads_result(ZrDebugAgent *agent) {
+    cJSON *result;
+    cJSON *threadsArray;
+    TZrSize index;
+    TZrUInt32 currentThreadId;
+
+    if (agent == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    result = cJSON_CreateObject();
+    threadsArray = cJSON_CreateArray();
+    if (result == ZR_NULL || threadsArray == ZR_NULL) {
+        if (result != ZR_NULL) {
+            cJSON_Delete(result);
+        }
+        if (threadsArray != ZR_NULL) {
+            cJSON_Delete(threadsArray);
+        }
+        return ZR_NULL;
+    }
+
+    currentThreadId = zr_debug_agent_effective_thread_id(agent, 0);
+    for (index = 0; index < agent->threadCount; index++) {
+        cJSON *threadObject = cJSON_CreateObject();
+        if (threadObject == ZR_NULL) {
+            continue;
+        }
+
+        cJSON_AddNumberToObject(threadObject, "id", agent->threads[index].thread_id);
+        cJSON_AddNumberToObject(threadObject, "threadId", agent->threads[index].thread_id);
+        cJSON_AddStringToObject(threadObject,
+                                "name",
+                                agent->threads[index].name[0] != '\0' ? agent->threads[index].name : "thread");
+        cJSON_AddBoolToObject(threadObject, "current", agent->threads[index].thread_id == currentThreadId ? 1 : 0);
+        cJSON_AddItemToArray(threadsArray, threadObject);
+    }
+
+    cJSON_AddItemToObject(result, "threads", threadsArray);
+    return result;
+}
+
+static cJSON *zr_debug_agent_make_stack_trace_result(ZrDebugAgent *agent, TZrUInt32 threadId) {
     ZrDebugFrameSnapshot *frames = ZR_NULL;
     TZrSize count = 0;
     cJSON *result = ZR_NULL;
     cJSON *framesArray = ZR_NULL;
+    SZrState *previousState = ZR_NULL;
+    TZrUInt32 previousThreadId = 0;
+    TZrUInt32 resolvedThreadId = 0;
     TZrSize index;
 
+    if (zr_debug_agent_begin_thread_access(agent, threadId, &resolvedThreadId, &previousState, &previousThreadId) ==
+        ZR_NULL) {
+        return ZR_NULL;
+    }
+
     if (!ZrDebug_ReadStack(agent, &frames, &count)) {
+        zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
         return ZR_NULL;
     }
 
@@ -693,6 +894,7 @@ static cJSON *zr_debug_agent_make_stack_trace_result(ZrDebugAgent *agent) {
             cJSON_Delete(framesArray);
         }
         ZrDebug_Free(frames);
+        zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
         return ZR_NULL;
     }
 
@@ -703,6 +905,7 @@ static cJSON *zr_debug_agent_make_stack_trace_result(ZrDebugAgent *agent) {
             continue;
         }
 
+        cJSON_AddNumberToObject(frameObject, "threadId", resolvedThreadId);
         cJSON_AddNumberToObject(frameObject, "frameId", frames[index].frame_id);
         cJSON_AddStringToObject(frameObject, "moduleName", frames[index].module_name);
         cJSON_AddStringToObject(frameObject, "functionName", frames[index].function_name);
@@ -772,30 +975,44 @@ static cJSON *zr_debug_agent_make_stack_trace_result(ZrDebugAgent *agent) {
         cJSON_AddItemToArray(framesArray, frameObject);
     }
 
+    cJSON_AddNumberToObject(result, "threadId", resolvedThreadId);
     cJSON_AddItemToObject(result, "frames", framesArray);
     ZrDebug_Free(frames);
+    zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
     return result;
 }
 
 static cJSON *zr_debug_agent_make_evaluate_result(ZrDebugAgent *agent,
+                                                  TZrUInt32 threadId,
                                                   TZrUInt32 frameId,
                                                   const TZrChar *expression,
                                                   TZrChar *errorBuffer,
                                                   TZrSize errorBufferSize) {
     ZrDebugEvaluateResult evaluateResult;
     cJSON *result;
+    SZrState *previousState = ZR_NULL;
+    TZrUInt32 previousThreadId = 0;
+    TZrUInt32 resolvedThreadId = 0;
 
     memset(&evaluateResult, 0, sizeof(evaluateResult));
+    if (zr_debug_agent_begin_thread_access(agent, threadId, &resolvedThreadId, &previousState, &previousThreadId) ==
+        ZR_NULL) {
+        zr_debug_copy_text(errorBuffer, errorBufferSize, "unknown threadId");
+        return ZR_NULL;
+    }
     if (!ZrDebug_Evaluate(agent, frameId, expression, &evaluateResult, errorBuffer, errorBufferSize)) {
+        zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
         return ZR_NULL;
     }
 
     result = cJSON_CreateObject();
     if (result == ZR_NULL) {
+        zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
         zr_debug_copy_text(errorBuffer, errorBufferSize, "failed to allocate evaluate result");
         return ZR_NULL;
     }
 
+    cJSON_AddNumberToObject(result, "threadId", resolvedThreadId);
     cJSON_AddStringToObject(result, "type", evaluateResult.type_name);
     cJSON_AddStringToObject(result, "value", evaluateResult.value_text);
     cJSON_AddStringToObject(result, "semanticSummary", evaluateResult.semantic_summary);
@@ -803,17 +1020,26 @@ static cJSON *zr_debug_agent_make_evaluate_result(ZrDebugAgent *agent,
     cJSON_AddNumberToObject(result, "variablesReference", evaluateResult.variables_reference);
     cJSON_AddNumberToObject(result, "namedVariables", (double)evaluateResult.named_variables);
     cJSON_AddNumberToObject(result, "indexedVariables", (double)evaluateResult.indexed_variables);
+    zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
     return result;
 }
 
-static cJSON *zr_debug_agent_make_scopes_result(ZrDebugAgent *agent, TZrUInt32 frameId) {
+static cJSON *zr_debug_agent_make_scopes_result(ZrDebugAgent *agent, TZrUInt32 threadId, TZrUInt32 frameId) {
     ZrDebugScopeSnapshot *scopes = ZR_NULL;
     TZrSize count = 0;
     cJSON *result = ZR_NULL;
     cJSON *scopesArray = ZR_NULL;
+    SZrState *previousState = ZR_NULL;
+    TZrUInt32 previousThreadId = 0;
+    TZrUInt32 resolvedThreadId = 0;
     TZrSize index;
 
+    if (zr_debug_agent_begin_thread_access(agent, threadId, &resolvedThreadId, &previousState, &previousThreadId) ==
+        ZR_NULL) {
+        return ZR_NULL;
+    }
     if (!ZrDebug_ReadScopes(agent, frameId, &scopes, &count)) {
+        zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
         return ZR_NULL;
     }
 
@@ -827,6 +1053,7 @@ static cJSON *zr_debug_agent_make_scopes_result(ZrDebugAgent *agent, TZrUInt32 f
             cJSON_Delete(scopesArray);
         }
         ZrDebug_Free(scopes);
+        zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
         return ZR_NULL;
     }
 
@@ -836,18 +1063,23 @@ static cJSON *zr_debug_agent_make_scopes_result(ZrDebugAgent *agent, TZrUInt32 f
             continue;
         }
 
+        cJSON_AddNumberToObject(scopeObject, "threadId", resolvedThreadId);
         cJSON_AddNumberToObject(scopeObject, "scopeId", scopes[index].scope_id);
+        cJSON_AddNumberToObject(scopeObject, "variablesReference", scopes[index].scope_id);
         cJSON_AddNumberToObject(scopeObject, "frameId", scopes[index].frame_id);
         cJSON_AddStringToObject(scopeObject, "name", scopes[index].name);
         cJSON_AddItemToArray(scopesArray, scopeObject);
     }
 
+    cJSON_AddNumberToObject(result, "threadId", resolvedThreadId);
     cJSON_AddItemToObject(result, "scopes", scopesArray);
     ZrDebug_Free(scopes);
+    zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
     return result;
 }
 
 static cJSON *zr_debug_agent_make_variables_result(ZrDebugAgent *agent,
+                                                   TZrUInt32 threadId,
                                                    TZrUInt32 scopeId,
                                                    TZrSize start,
                                                    TZrSize countLimit) {
@@ -857,8 +1089,15 @@ static cJSON *zr_debug_agent_make_variables_result(ZrDebugAgent *agent,
     TZrSize indexedVariables = 0;
     cJSON *result = ZR_NULL;
     cJSON *valuesArray = ZR_NULL;
+    SZrState *previousState = ZR_NULL;
+    TZrUInt32 previousThreadId = 0;
+    TZrUInt32 resolvedThreadId = 0;
     TZrSize index;
 
+    if (zr_debug_agent_begin_thread_access(agent, threadId, &resolvedThreadId, &previousState, &previousThreadId) ==
+        ZR_NULL) {
+        return ZR_NULL;
+    }
     if (!ZrDebug_ReadVariables(agent,
                                scopeId,
                                start,
@@ -867,6 +1106,7 @@ static cJSON *zr_debug_agent_make_variables_result(ZrDebugAgent *agent,
                                &valueCount,
                                &namedVariables,
                                &indexedVariables)) {
+        zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
         return ZR_NULL;
     }
 
@@ -880,6 +1120,7 @@ static cJSON *zr_debug_agent_make_variables_result(ZrDebugAgent *agent,
             cJSON_Delete(valuesArray);
         }
         ZrDebug_Free(values);
+        zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
         return ZR_NULL;
     }
 
@@ -900,15 +1141,28 @@ static cJSON *zr_debug_agent_make_variables_result(ZrDebugAgent *agent,
         cJSON_AddItemToArray(valuesArray, valueObject);
     }
 
+    cJSON_AddNumberToObject(result, "threadId", resolvedThreadId);
     cJSON_AddItemToObject(result, "variables", valuesArray);
     cJSON_AddNumberToObject(result, "namedVariables", (double)namedVariables);
     cJSON_AddNumberToObject(result, "indexedVariables", (double)indexedVariables);
     ZrDebug_Free(values);
+    zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
     return result;
 }
 
-static void zr_debug_agent_process_stack_trace(ZrDebugAgent *agent, const cJSON *requestId) {
-    cJSON *result = zr_debug_agent_make_stack_trace_result(agent);
+static void zr_debug_agent_process_threads(ZrDebugAgent *agent, const cJSON *requestId) {
+    cJSON *result = zr_debug_agent_make_threads_result(agent);
+    if (result == ZR_NULL) {
+        zr_debug_agent_send_error(agent, requestId, -32002, "failed to read threads");
+        return;
+    }
+
+    zr_debug_agent_send_response(agent, requestId, result);
+}
+
+static void zr_debug_agent_process_stack_trace(ZrDebugAgent *agent, const cJSON *requestId, const cJSON *params) {
+    TZrUInt32 threadId = zr_debug_agent_thread_id_from_params(agent, params);
+    cJSON *result = zr_debug_agent_make_stack_trace_result(agent, threadId);
     if (result == ZR_NULL) {
         zr_debug_agent_send_error(agent, requestId, -32002, "failed to read stack");
         return;
@@ -919,6 +1173,7 @@ static void zr_debug_agent_process_stack_trace(ZrDebugAgent *agent, const cJSON 
 
 static void zr_debug_agent_process_scopes(ZrDebugAgent *agent, const cJSON *requestId, const cJSON *params) {
     cJSON *frameIdItem = params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "frameId") : ZR_NULL;
+    TZrUInt32 threadId = zr_debug_agent_thread_id_from_params(agent, params);
     cJSON *result;
 
     if (!cJSON_IsNumber(frameIdItem)) {
@@ -926,7 +1181,7 @@ static void zr_debug_agent_process_scopes(ZrDebugAgent *agent, const cJSON *requ
         return;
     }
 
-    result = zr_debug_agent_make_scopes_result(agent, (TZrUInt32)frameIdItem->valuedouble);
+    result = zr_debug_agent_make_scopes_result(agent, threadId, (TZrUInt32)frameIdItem->valuedouble);
     if (result == ZR_NULL) {
         zr_debug_agent_send_error(agent, requestId, -32002, "failed to read scopes");
         return;
@@ -939,6 +1194,7 @@ static void zr_debug_agent_process_variables(ZrDebugAgent *agent, const cJSON *r
     cJSON *scopeIdItem = params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "scopeId") : ZR_NULL;
     cJSON *startItem = params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "start") : ZR_NULL;
     cJSON *countItem = params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "count") : ZR_NULL;
+    TZrUInt32 threadId = zr_debug_agent_thread_id_from_params(agent, params);
     TZrSize start = cJSON_IsNumber(startItem) && startItem->valuedouble > 0 ? (TZrSize)startItem->valuedouble : 0;
     TZrSize countLimit = cJSON_IsNumber(countItem) && countItem->valuedouble > 0 ? (TZrSize)countItem->valuedouble : 0;
     cJSON *result;
@@ -949,6 +1205,7 @@ static void zr_debug_agent_process_variables(ZrDebugAgent *agent, const cJSON *r
     }
 
     result = zr_debug_agent_make_variables_result(agent,
+                                                  threadId,
                                                   (TZrUInt32)scopeIdItem->valuedouble,
                                                   start,
                                                   countLimit);
@@ -963,6 +1220,7 @@ static void zr_debug_agent_process_variables(ZrDebugAgent *agent, const cJSON *r
 static void zr_debug_agent_process_evaluate(ZrDebugAgent *agent, const cJSON *requestId, const cJSON *params) {
     cJSON *expressionItem = params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "expression") : ZR_NULL;
     cJSON *frameIdItem = params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "frameId") : ZR_NULL;
+    TZrUInt32 threadId = zr_debug_agent_thread_id_from_params(agent, params);
     TZrUInt32 frameId = cJSON_IsNumber(frameIdItem) ? (TZrUInt32)frameIdItem->valuedouble : 1u;
     TZrChar errorBuffer[256];
     cJSON *result;
@@ -974,6 +1232,7 @@ static void zr_debug_agent_process_evaluate(ZrDebugAgent *agent, const cJSON *re
     }
 
     result = zr_debug_agent_make_evaluate_result(agent,
+                                                 threadId,
                                                  frameId,
                                                  expressionItem->valuestring,
                                                  errorBuffer,
@@ -1033,14 +1292,20 @@ static TZrBool zr_debug_agent_process_message(ZrDebugAgent *agent, const TZrChar
         zr_debug_agent_process_set_function_breakpoints(agent, idItem, paramsItem);
     } else if (strcmp(method, "setExceptionBreakpoints") == 0) {
         zr_debug_agent_process_set_exception_breakpoints(agent, idItem, paramsItem);
+    } else if (strcmp(method, "dataBreakpointInfo") == 0) {
+        zr_debug_agent_process_data_breakpoint_info(agent, idItem, paramsItem);
+    } else if (strcmp(method, "setDataBreakpoints") == 0) {
+        zr_debug_agent_process_set_data_breakpoints(agent, idItem, paramsItem);
     } else if (strcmp(method, "continue") == 0) {
         zr_debug_agent_process_continue(agent, idItem);
     } else if (strcmp(method, "pause") == 0) {
         zr_debug_agent_process_pause(agent, idItem);
     } else if (strcmp(method, "next") == 0 || strcmp(method, "stepIn") == 0 || strcmp(method, "stepOut") == 0) {
         zr_debug_agent_process_step(agent, idItem, method);
+    } else if (strcmp(method, "threads") == 0) {
+        zr_debug_agent_process_threads(agent, idItem);
     } else if (strcmp(method, "stackTrace") == 0) {
-        zr_debug_agent_process_stack_trace(agent, idItem);
+        zr_debug_agent_process_stack_trace(agent, idItem, paramsItem);
     } else if (strcmp(method, "scopes") == 0) {
         zr_debug_agent_process_scopes(agent, idItem, paramsItem);
     } else if (strcmp(method, "variables") == 0) {

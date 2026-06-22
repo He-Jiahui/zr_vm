@@ -185,28 +185,35 @@ static void test_aot_c_source_makes_create_closure_explicit_boundary(void) {
     free(functionBodyText);
 }
 
-static void test_aot_c_source_lowers_get_sub_function_to_direct_native_closure(void) {
+static void test_aot_c_source_lowers_get_sub_function_to_native_closure_boundary_helper(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_get_sub_function(",
             "backend_aot_write_c_unsupported_get_sub_function_materialization(",
     };
     static const char *const valueLoweringNeedles[] = {
             "backend_aot_write_c_direct_get_sub_function(",
-            "zr_aot_value_exec_get_sub_function_native_closure",
-            "SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);",
-            "SZrFunction *zr_aot_metadata_function = %u < frame.function->childFunctionLength",
-            "? &frame.function->childFunctionList[%u]",
-            "ZrCore_Ownership_ReleaseValue(state, zr_aot_destination);",
-            "SZrClosureNative *zr_aot_closure = ZrCore_ClosureNative_New(state, 0);",
-            "zr_aot_closure->nativeFunction = zr_aot_fn_%u;",
-            "zr_aot_closure->aotShimFunction = zr_aot_metadata_function;",
-            "ZrCore_Value_InitAsRawObject(state, zr_aot_destination, ZR_CAST_RAW_OBJECT_AS_SUPER(zr_aot_closure));",
-            "zr_aot_destination->type = ZR_VALUE_TYPE_CLOSURE;",
-            "zr_aot_destination->isNative = ZR_TRUE;",
+            "zr_aot_value_get_sub_function_native_closure_boundary",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetSubFunctionNativeClosure(state,",
+            "zr_aot_fn_%u));",
             "backend_aot_write_c_unsupported_get_sub_function_materialization(",
             "zr_aot_value_unsupported_get_sub_function_materialization",
             "const TZrUInt32 zr_aot_capture_count = %u;",
             "unsupported AOT GET_SUB_FUNCTION materialization",
+    };
+    static const char *const runtimeHeaderNeedles[] = {
+            "ZrLibrary_AotRuntime_GetSubFunctionNativeClosure(struct SZrState *state,",
+            "FZrAotEntryThunk nativeThunk);",
+    };
+    static const char *const runtimeSourceNeedles[] = {
+            "ZrLibrary_AotRuntime_GetSubFunctionNativeClosure(SZrState *state,",
+            "FZrAotEntryThunk nativeThunk)",
+            "childFunctionIndex >= ownerFunction->childFunctionLength",
+            "metadataFunction = &ownerFunction->childFunctionList[childFunctionIndex];",
+            "closure = ZrCore_ClosureNative_New(state, 0);",
+            "closure->nativeFunction = (FZrNativeFunction)nativeThunk;",
+            "closure->aotShimFunction = metadataFunction;",
+            "ZrCore_Value_InitAsRawObject(state, destinationValue, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));",
+            "destinationValue->isNative = ZR_TRUE;",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):",
@@ -216,8 +223,8 @@ static void test_aot_c_source_lowers_get_sub_function_to_direct_native_closure(v
             "backend_aot_write_c_direct_get_sub_function(file,",
             "backend_aot_write_c_unsupported_get_sub_function_materialization(file,",
     };
-    static const char *const forbiddenFunctionBodyNeedles[] = {
-            "ZrLibrary_AotRuntime_GetSubFunction",
+    static const char *const forbiddenValueLoweringNeedles[] = {
+            "zr_aot_value_exec_get_sub_function_native_closure",
     };
     char *headerText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
@@ -225,43 +232,54 @@ static void test_aot_c_source_lowers_get_sub_function_to_direct_native_closure(v
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+    char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(valueLoweringText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
+    TEST_ASSERT_NOT_NULL(runtimeHeaderText);
+    TEST_ASSERT_NOT_NULL(runtimeSourceText);
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
     assert_text_contains_all(valueLoweringText, valueLoweringNeedles, ARRAY_COUNT(valueLoweringNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
-    assert_text_contains_none(functionBodyText, forbiddenFunctionBodyNeedles, ARRAY_COUNT(forbiddenFunctionBodyNeedles));
+    assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
+    assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
+    assert_text_contains_none(valueLoweringText, forbiddenValueLoweringNeedles, ARRAY_COUNT(forbiddenValueLoweringNeedles));
 
     free(headerText);
     free(valueLoweringText);
     free(functionBodyText);
+    free(runtimeHeaderText);
+    free(runtimeSourceText);
 }
 
-static void test_aot_c_source_lowers_closure_value_access_to_direct_core_copy(void) {
+static void test_aot_c_source_lowers_closure_value_access_to_runtime_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_get_closure_value(",
             "backend_aot_write_c_set_closure_value(",
     };
+    static const char *const runtimeHeaderNeedles[] = {
+            "ZrLibrary_AotRuntime_GetClosureValue(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_SetClosureValue(struct SZrState *state,",
+            "TZrUInt32 closureIndex);",
+    };
+    static const char *const runtimeSourceNeedles[] = {
+            "TZrBool ZrLibrary_AotRuntime_GetClosureValue(SZrState *state,",
+            "TZrBool ZrLibrary_AotRuntime_SetClosureValue(SZrState *state,",
+            "aot_runtime_resolve_current_closure_capture(state, frame, closureIndex",
+            "ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(destinationPointer), closureValue);",
+            "ZrCore_Value_Copy(state, targetValue, sourceValue);",
+            "ZrCore_Value_Barrier(state, barrierObject, sourceValue);",
+    };
     static const char *const valueLoweringNeedles[] = {
             "backend_aot_write_c_get_closure_value(",
             "zr_aot_value_exec_get_closure_value",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetClosureValue(state, &frame, %u, %u));",
             "backend_aot_write_c_set_closure_value(",
             "zr_aot_value_exec_set_closure_value",
-            "const TZrUInt32 zr_aot_closure_index = %u;",
-            "ZrCore_Stack_GetValue(frame.slotBase - 1)",
-            "ZrCore_Stack_GetValue(frame.slotBase + %u)",
-            "ZR_VALUE_TYPE_CLOSURE",
-            "ZR_CAST_NATIVE_CLOSURE(state, zr_aot_current_closure_value->value.object)",
-            "ZrCore_ClosureNative_GetCaptureValue(zr_aot_native_closure,",
-            "zr_aot_closure_index);",
-            "ZR_CAST_VM_CLOSURE(state, zr_aot_current_closure_value->value.object)",
-            "ZrCore_ClosureValue_GetValue(zr_aot_vm_closure_value)",
-            "ZrCore_Value_Copy(state, zr_aot_destination, zr_aot_closure_value);",
-            "ZrCore_Value_Copy(state, zr_aot_closure_value, zr_aot_source);",
-            "ZrCore_Value_Barrier(state, zr_aot_barrier_object, zr_aot_source);",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetClosureValue(state, &frame, %u, %u));",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(GET_CLOSURE):",
@@ -274,26 +292,48 @@ static void test_aot_c_source_lowers_closure_value_access_to_direct_core_copy(vo
             "backend_aot_write_c_set_closure_value(file, destinationSlot, operandA1);",
     };
     static const char *const forbiddenValueLoweringNeedles[] = {
-            "ZrLibrary_AotRuntime_GetClosureValue",
-            "ZrLibrary_AotRuntime_SetClosureValue",
+            "const SZrTypeValue *zr_aot_current_closure_value = ZR_NULL;",
+            "ZrCore_Stack_GetValue(frame.slotBase - 1)",
+            "ZR_CAST_NATIVE_CLOSURE(state, zr_aot_current_closure_value->value.object)",
+            "ZrCore_ClosureNative_GetCaptureValue(zr_aot_native_closure,",
+            "ZR_CAST_VM_CLOSURE(state, zr_aot_current_closure_value->value.object)",
+            "ZrCore_ClosureValue_GetValue(zr_aot_vm_closure_value)",
+            "ZrCore_Value_Copy(state, zr_aot_destination, zr_aot_closure_value);",
+            "ZrCore_Value_Copy(state, zr_aot_closure_value, zr_aot_source);",
+            "ZrCore_Value_Barrier(state, zr_aot_barrier_object, zr_aot_source);",
+    };
+    static const char *const forbiddenFunctionBodyNeedles[] = {
+            "ZrLibrary_AotRuntime_GetClosureValue(state, &frame",
+            "ZrLibrary_AotRuntime_SetClosureValue(state, &frame",
     };
     char *headerText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+    char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
     char *valueLoweringText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
+    TEST_ASSERT_NOT_NULL(runtimeHeaderText);
+    TEST_ASSERT_NOT_NULL(runtimeSourceText);
     TEST_ASSERT_NOT_NULL(valueLoweringText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
+    assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
+    assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
     assert_text_contains_all(valueLoweringText, valueLoweringNeedles, ARRAY_COUNT(valueLoweringNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
     assert_text_contains_none(valueLoweringText, forbiddenValueLoweringNeedles, ARRAY_COUNT(forbiddenValueLoweringNeedles));
+    assert_text_contains_none(functionBodyText,
+                              forbiddenFunctionBodyNeedles,
+                              ARRAY_COUNT(forbiddenFunctionBodyNeedles));
 
     free(headerText);
+    free(runtimeHeaderText);
+    free(runtimeSourceText);
     free(valueLoweringText);
     free(functionBodyText);
 }
@@ -306,7 +346,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_source_makes_unresolved_callable_constant_explicit_boundary);
     RUN_TEST(test_aot_c_source_makes_create_closure_explicit_boundary);
-    RUN_TEST(test_aot_c_source_lowers_get_sub_function_to_direct_native_closure);
-    RUN_TEST(test_aot_c_source_lowers_closure_value_access_to_direct_core_copy);
+    RUN_TEST(test_aot_c_source_lowers_get_sub_function_to_native_closure_boundary_helper);
+    RUN_TEST(test_aot_c_source_lowers_closure_value_access_to_runtime_boundary);
     return UNITY_END();
 }

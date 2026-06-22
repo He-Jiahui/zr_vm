@@ -147,7 +147,8 @@ static void backend_aot_write_c_scalar_to_i64(FILE *file,
                                               const SZrAotExecIrFunction *functionIr,
                                               EZrInstructionCode opcode,
                                               TZrUInt32 destinationSlot,
-                                              TZrUInt32 sourceSlot) {
+                                              TZrUInt32 sourceSlot,
+                                              TZrUInt32 execInstructionIndex) {
     TZrBool useF64Source =
             opcode == ZR_INSTRUCTION_ENUM(TO_INT_FLOAT) &&
             backend_aot_c_scalar_locals_has_f64_slot(functionIr, sourceSlot);
@@ -155,6 +156,52 @@ static void backend_aot_write_c_scalar_to_i64(FILE *file,
             opcode == ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED) &&
             backend_aot_c_scalar_locals_has_u64_slot(functionIr, sourceSlot);
     TZrBool useI64Destination = backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot);
+    TZrBool useWrittenF64Source =
+            useF64Source &&
+            backend_aot_c_scalar_locals_f64_written_before(functionIr, sourceSlot, execInstructionIndex);
+    TZrBool useWrittenU64Source =
+            useU64Source &&
+            backend_aot_c_scalar_locals_u64_written_before(functionIr, sourceSlot, execInstructionIndex);
+    TZrBool useWrittenScalarSource =
+            (TZrBool)((opcode == ZR_INSTRUCTION_ENUM(TO_INT_FLOAT) && useWrittenF64Source) ||
+                      (opcode == ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED) && useWrittenU64Source));
+    TZrBool canSkipValueSlot =
+            (TZrBool)(useI64Destination &&
+                      useWrittenScalarSource &&
+                      backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(
+                              functionIr, destinationSlot, execInstructionIndex));
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_to_i64 opcode=%u dstSlot=%u srcSlot=%u */\n",
+                (unsigned)opcode,
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot);
+        if (opcode == ZR_INSTRUCTION_ENUM(TO_INT_FLOAT)) {
+            fprintf(file,
+                    "        zr_aot_s%u = (TZrInt64)zr_aot_f%u;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)sourceSlot);
+        } else {
+            fprintf(file,
+                    "        {\n"
+                    "            TZrUInt64 zr_aot_limit = (TZrUInt64)ZR_TYPE_RANGE_INT64_MAX + (TZrUInt64)1u;\n"
+                    "            if (zr_aot_u%u >= zr_aot_limit) {\n"
+                    "                zr_aot_s%u = ZR_TYPE_RANGE_INT64_MIN + (TZrInt64)(zr_aot_u%u - zr_aot_limit);\n"
+                    "            } else {\n"
+                    "                zr_aot_s%u = (TZrInt64)zr_aot_u%u;\n"
+                    "            }\n"
+                    "        }\n",
+                    (unsigned)sourceSlot,
+                    (unsigned)destinationSlot,
+                    (unsigned)sourceSlot,
+                    (unsigned)destinationSlot,
+                    (unsigned)sourceSlot);
+        }
+        fprintf(file, "    }\n");
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -166,26 +213,30 @@ static void backend_aot_write_c_scalar_to_i64(FILE *file,
             "            %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        zr_aot_source = &frame.slotBase[%u].value;\n",
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
             (unsigned)opcode,
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
-            (unsigned)destinationSlot,
-            (unsigned)sourceSlot);
+            (unsigned)destinationSlot);
 
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(TO_INT_FLOAT):
-            fprintf(file,
-                    "        if (!ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type)) {\n"
-                    "            ZR_AOT_C_FAIL();\n"
-                    "        }\n");
-            if (useF64Source) {
+            if (!useWrittenF64Source) {
                 fprintf(file,
-                        "        zr_aot_f%u = zr_aot_source->value.nativeObject.nativeDouble;\n",
+                        "        zr_aot_source = &frame.slotBase[%u].value;\n"
+                        "        if (!ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type)) {\n"
+                        "            ZR_AOT_C_FAIL();\n"
+                        "        }\n",
                         (unsigned)sourceSlot);
+            }
+            if (useF64Source) {
+                if (!useWrittenF64Source) {
+                    fprintf(file,
+                            "        zr_aot_f%u = zr_aot_source->value.nativeObject.nativeDouble;\n",
+                            (unsigned)sourceSlot);
+                }
                 if (useI64Destination) {
                     fprintf(file,
                             "        zr_aot_s%u = (TZrInt64)zr_aot_f%u;\n"
@@ -204,17 +255,24 @@ static void backend_aot_write_c_scalar_to_i64(FILE *file,
             }
             break;
         case ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED):
-            fprintf(file,
-                    "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)) {\n"
-                    "            ZR_AOT_C_FAIL();\n"
-                    "        }\n");
-            if (useU64Source) {
+            if (!useWrittenU64Source) {
                 fprintf(file,
-                        "        zr_aot_u%u = zr_aot_source->value.nativeObject.nativeUInt64;\n"
+                        "        zr_aot_source = &frame.slotBase[%u].value;\n"
+                        "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)) {\n"
+                        "            ZR_AOT_C_FAIL();\n"
+                        "        }\n",
+                        (unsigned)sourceSlot);
+            }
+            if (useU64Source) {
+                if (!useWrittenU64Source) {
+                    fprintf(file,
+                            "        zr_aot_u%u = zr_aot_source->value.nativeObject.nativeUInt64;\n",
+                            (unsigned)sourceSlot);
+                }
+                fprintf(file,
                         "        {\n"
                         "            TZrUInt64 zr_aot_limit = (TZrUInt64)ZR_TYPE_RANGE_INT64_MAX + (TZrUInt64)1u;\n"
                         "            if (zr_aot_u%u >= zr_aot_limit) {\n",
-                        (unsigned)sourceSlot,
                         (unsigned)sourceSlot);
                 if (useI64Destination) {
                     fprintf(file,
@@ -256,6 +314,7 @@ static void backend_aot_write_c_scalar_to_i64(FILE *file,
         case ZR_INSTRUCTION_ENUM(TO_INT):
         default:
             fprintf(file,
+                    "        zr_aot_source = &frame.slotBase[%u].value;\n"
                     "        if (ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)) {\n"
                     "            zr_aot_s_result = zr_aot_source->value.nativeObject.nativeInt64;\n"
                     "        } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)) {\n"
@@ -273,10 +332,16 @@ static void backend_aot_write_c_scalar_to_i64(FILE *file,
                     "        } else {\n"
                     "            ZrCore_Debug_RunError(state, \"unsupported AOT int conversion\");\n"
                     "            ZR_AOT_C_FAIL();\n"
-                    "        }\n");
+                    "        }\n",
+                    (unsigned)sourceSlot);
             break;
     }
 
+    if (useI64Destination) {
+        fprintf(file,
+                "        zr_aot_s%u = zr_aot_s_result;\n",
+                (unsigned)destinationSlot);
+    }
     backend_aot_c_scalar_conversion_write_plain_i64_result(file, "zr_aot_s_result");
     fprintf(file, "    }\n");
 }
@@ -285,17 +350,85 @@ static void backend_aot_write_c_scalar_to_u64(FILE *file,
                                               const SZrAotExecIrFunction *functionIr,
                                               EZrInstructionCode opcode,
                                               TZrUInt32 destinationSlot,
-                                              TZrUInt32 sourceSlot) {
+                                              TZrUInt32 sourceSlot,
+                                              TZrUInt32 execInstructionIndex) {
     TZrBool useU64Source =
             opcode == ZR_INSTRUCTION_ENUM(TO_UINT) &&
             backend_aot_c_scalar_locals_has_u64_slot(functionIr, sourceSlot);
     TZrBool useI64Source =
-            opcode == ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED) &&
+            (opcode == ZR_INSTRUCTION_ENUM(TO_UINT) || opcode == ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED)) &&
             backend_aot_c_scalar_locals_has_i64_slot(functionIr, sourceSlot);
     TZrBool useF64Source =
             opcode == ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT) &&
             backend_aot_c_scalar_locals_has_f64_slot(functionIr, sourceSlot);
     TZrBool useU64Destination = backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot);
+    TZrBool useWrittenI64Source =
+            useI64Source &&
+            backend_aot_c_scalar_locals_i64_written_before(functionIr, sourceSlot, execInstructionIndex);
+    TZrBool useWrittenU64Source =
+            useU64Source &&
+            backend_aot_c_scalar_locals_u64_written_before(functionIr, sourceSlot, execInstructionIndex);
+    TZrBool useWrittenF64Source =
+            useF64Source &&
+            backend_aot_c_scalar_locals_f64_written_before(functionIr, sourceSlot, execInstructionIndex);
+    TZrBool useWrittenScalarSource =
+            (TZrBool)((opcode == ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED) && useWrittenI64Source) ||
+                      (opcode == ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT) && useWrittenF64Source));
+    TZrBool canSkipValueSlot =
+            (TZrBool)(useU64Destination &&
+                      useWrittenScalarSource &&
+                      backend_aot_c_scalar_locals_u64_result_can_skip_value_slot(
+                              functionIr, destinationSlot, execInstructionIndex));
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_to_u64 opcode=%u dstSlot=%u srcSlot=%u */\n",
+                (unsigned)opcode,
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot);
+        if (opcode == ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED)) {
+            fprintf(file,
+                    "        zr_aot_u%u = (TZrUInt64)zr_aot_s%u;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)sourceSlot);
+        } else {
+            fprintf(file,
+                    "        zr_aot_u%u = (TZrUInt64)zr_aot_f%u;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)sourceSlot);
+        }
+        fprintf(file, "    }\n");
+        return;
+    }
+
+    if (opcode == ZR_INSTRUCTION_ENUM(TO_UINT) && useWrittenI64Source && useU64Destination) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_to_u64 opcode=%u dstSlot=%u srcSlot=%u */\n"
+                "        zr_aot_u%u = (TZrUInt64)zr_aot_s%u;\n"
+                "    }\n",
+                (unsigned)opcode,
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot,
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot);
+        return;
+    }
+
+    if (opcode == ZR_INSTRUCTION_ENUM(TO_UINT) && useWrittenU64Source && useU64Destination) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_to_u64 opcode=%u dstSlot=%u srcSlot=%u */\n"
+                "        zr_aot_u%u = zr_aot_u%u;\n"
+                "    }\n",
+                (unsigned)opcode,
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot,
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot);
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -307,26 +440,30 @@ static void backend_aot_write_c_scalar_to_u64(FILE *file,
             "            %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        zr_aot_source = &frame.slotBase[%u].value;\n",
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
             (unsigned)opcode,
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
-            (unsigned)destinationSlot,
-            (unsigned)sourceSlot);
+            (unsigned)destinationSlot);
 
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED):
-            fprintf(file,
-                    "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)) {\n"
-                    "            ZR_AOT_C_FAIL();\n"
-                    "        }\n");
-            if (useI64Source) {
+            if (!useWrittenI64Source) {
                 fprintf(file,
-                        "        zr_aot_s%u = zr_aot_source->value.nativeObject.nativeInt64;\n",
+                        "        zr_aot_source = &frame.slotBase[%u].value;\n"
+                        "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)) {\n"
+                        "            ZR_AOT_C_FAIL();\n"
+                        "        }\n",
                         (unsigned)sourceSlot);
+            }
+            if (useI64Source) {
+                if (!useWrittenI64Source) {
+                    fprintf(file,
+                            "        zr_aot_s%u = zr_aot_source->value.nativeObject.nativeInt64;\n",
+                            (unsigned)sourceSlot);
+                }
                 if (useU64Destination) {
                     fprintf(file,
                             "        zr_aot_u%u = (TZrUInt64)zr_aot_s%u;\n"
@@ -345,14 +482,20 @@ static void backend_aot_write_c_scalar_to_u64(FILE *file,
             }
             break;
         case ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT):
-            fprintf(file,
-                    "        if (!ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type)) {\n"
-                    "            ZR_AOT_C_FAIL();\n"
-                    "        }\n");
-            if (useF64Source) {
+            if (!useWrittenF64Source) {
                 fprintf(file,
-                        "        zr_aot_f%u = zr_aot_source->value.nativeObject.nativeDouble;\n",
+                        "        zr_aot_source = &frame.slotBase[%u].value;\n"
+                        "        if (!ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type)) {\n"
+                        "            ZR_AOT_C_FAIL();\n"
+                        "        }\n",
                         (unsigned)sourceSlot);
+            }
+            if (useF64Source) {
+                if (!useWrittenF64Source) {
+                    fprintf(file,
+                            "        zr_aot_f%u = zr_aot_source->value.nativeObject.nativeDouble;\n",
+                            (unsigned)sourceSlot);
+                }
                 if (useU64Destination) {
                     fprintf(file,
                             "        zr_aot_u%u = (TZrUInt64)zr_aot_f%u;\n"
@@ -373,7 +516,9 @@ static void backend_aot_write_c_scalar_to_u64(FILE *file,
         case ZR_INSTRUCTION_ENUM(TO_UINT):
         default:
             fprintf(file,
-                    "        if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)) {\n");
+                    "        zr_aot_source = &frame.slotBase[%u].value;\n"
+                    "        if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)) {\n",
+                    (unsigned)sourceSlot);
             if (useU64Source) {
                 fprintf(file,
                         "            zr_aot_u%u = zr_aot_source->value.nativeObject.nativeUInt64;\n",
@@ -408,6 +553,11 @@ static void backend_aot_write_c_scalar_to_u64(FILE *file,
             break;
     }
 
+    if (useU64Destination) {
+        fprintf(file,
+                "        zr_aot_u%u = zr_aot_u_result;\n",
+                (unsigned)destinationSlot);
+    }
     backend_aot_c_scalar_conversion_write_plain_u64_result(file, "zr_aot_u_result");
     fprintf(file, "    }\n");
 }
@@ -416,7 +566,8 @@ static void backend_aot_write_c_scalar_to_f64(FILE *file,
                                               const SZrAotExecIrFunction *functionIr,
                                               EZrInstructionCode opcode,
                                               TZrUInt32 destinationSlot,
-                                              TZrUInt32 sourceSlot) {
+                                              TZrUInt32 sourceSlot,
+                                              TZrUInt32 execInstructionIndex) {
     TZrBool useI64Source =
             (opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT) || opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED)) &&
             backend_aot_c_scalar_locals_has_i64_slot(functionIr, sourceSlot);
@@ -424,6 +575,42 @@ static void backend_aot_write_c_scalar_to_f64(FILE *file,
             (opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT) || opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED)) &&
             backend_aot_c_scalar_locals_has_u64_slot(functionIr, sourceSlot);
     TZrBool useF64Destination = backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot);
+    TZrBool useWrittenI64Source =
+            useI64Source &&
+            backend_aot_c_scalar_locals_i64_written_before(functionIr, sourceSlot, execInstructionIndex);
+    TZrBool useWrittenU64Source =
+            useU64Source &&
+            backend_aot_c_scalar_locals_u64_written_before(functionIr, sourceSlot, execInstructionIndex);
+    TZrBool useWrittenScalarSource =
+            (TZrBool)((opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED) && useWrittenI64Source) ||
+                      (opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED) && useWrittenU64Source));
+    TZrBool canSkipValueSlot =
+            (TZrBool)(useF64Destination &&
+                      useWrittenScalarSource &&
+                      backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
+                              functionIr, destinationSlot, execInstructionIndex));
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_to_f64 opcode=%u dstSlot=%u srcSlot=%u */\n",
+                (unsigned)opcode,
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot);
+        if (opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED)) {
+            fprintf(file,
+                    "        zr_aot_f%u = (TZrFloat64)zr_aot_s%u;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)sourceSlot);
+        } else {
+            fprintf(file,
+                    "        zr_aot_f%u = (TZrFloat64)zr_aot_u%u;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)sourceSlot);
+        }
+        fprintf(file, "    }\n");
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -435,26 +622,30 @@ static void backend_aot_write_c_scalar_to_f64(FILE *file,
             "            %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        zr_aot_source = &frame.slotBase[%u].value;\n",
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
             (unsigned)opcode,
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
-            (unsigned)destinationSlot,
-            (unsigned)sourceSlot);
+            (unsigned)destinationSlot);
 
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED):
-            fprintf(file,
-                    "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)) {\n"
-                    "            ZR_AOT_C_FAIL();\n"
-                    "        }\n");
-            if (useI64Source) {
+            if (!useWrittenI64Source) {
                 fprintf(file,
-                        "        zr_aot_s%u = zr_aot_source->value.nativeObject.nativeInt64;\n",
+                        "        zr_aot_source = &frame.slotBase[%u].value;\n"
+                        "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)) {\n"
+                        "            ZR_AOT_C_FAIL();\n"
+                        "        }\n",
                         (unsigned)sourceSlot);
+            }
+            if (useI64Source) {
+                if (!useWrittenI64Source) {
+                    fprintf(file,
+                            "        zr_aot_s%u = zr_aot_source->value.nativeObject.nativeInt64;\n",
+                            (unsigned)sourceSlot);
+                }
                 if (useF64Destination) {
                     fprintf(file,
                             "        zr_aot_f%u = (TZrFloat64)zr_aot_s%u;\n"
@@ -473,14 +664,20 @@ static void backend_aot_write_c_scalar_to_f64(FILE *file,
             }
             break;
         case ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED):
-            fprintf(file,
-                    "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)) {\n"
-                    "            ZR_AOT_C_FAIL();\n"
-                    "        }\n");
-            if (useU64Source) {
+            if (!useWrittenU64Source) {
                 fprintf(file,
-                        "        zr_aot_u%u = zr_aot_source->value.nativeObject.nativeUInt64;\n",
+                        "        zr_aot_source = &frame.slotBase[%u].value;\n"
+                        "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type)) {\n"
+                        "            ZR_AOT_C_FAIL();\n"
+                        "        }\n",
                         (unsigned)sourceSlot);
+            }
+            if (useU64Source) {
+                if (!useWrittenU64Source) {
+                    fprintf(file,
+                            "        zr_aot_u%u = zr_aot_source->value.nativeObject.nativeUInt64;\n",
+                            (unsigned)sourceSlot);
+                }
                 if (useF64Destination) {
                     fprintf(file,
                             "        zr_aot_f%u = (TZrFloat64)zr_aot_u%u;\n"
@@ -501,9 +698,11 @@ static void backend_aot_write_c_scalar_to_f64(FILE *file,
         case ZR_INSTRUCTION_ENUM(TO_FLOAT):
         default:
             fprintf(file,
+                    "        zr_aot_source = &frame.slotBase[%u].value;\n"
                     "        if (ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type)) {\n"
                     "            zr_aot_f_result = zr_aot_source->value.nativeObject.nativeDouble;\n"
-                    "        } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)) {\n");
+                    "        } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type)) {\n",
+                    (unsigned)sourceSlot);
             if (useI64Source) {
                 fprintf(file,
                         "            zr_aot_s%u = zr_aot_source->value.nativeObject.nativeInt64;\n"
@@ -536,13 +735,19 @@ static void backend_aot_write_c_scalar_to_f64(FILE *file,
             break;
     }
 
+    if (useF64Destination) {
+        fprintf(file,
+                "        zr_aot_f%u = zr_aot_f_result;\n",
+                (unsigned)destinationSlot);
+    }
     backend_aot_c_scalar_conversion_write_plain_f64_result(file, "zr_aot_f_result");
     fprintf(file, "    }\n");
 }
 
 TZrBool backend_aot_try_write_c_scalar_conversion(FILE *file,
                                                   const SZrAotExecIrFunction *functionIr,
-                                                  const TZrInstruction *execInstruction) {
+                                                  const TZrInstruction *execInstruction,
+                                                  TZrUInt32 execInstructionIndex) {
     TZrUInt32 destinationSlot;
     TZrUInt32 sourceSlot;
     EZrInstructionCode opcode;
@@ -552,17 +757,17 @@ TZrBool backend_aot_try_write_c_scalar_conversion(FILE *file,
     }
 
     if (backend_aot_c_scalar_conversion_decode_to_i64(execInstruction, &destinationSlot, &sourceSlot, &opcode)) {
-        backend_aot_write_c_scalar_to_i64(file, functionIr, opcode, destinationSlot, sourceSlot);
+        backend_aot_write_c_scalar_to_i64(file, functionIr, opcode, destinationSlot, sourceSlot, execInstructionIndex);
         return ZR_TRUE;
     }
 
     if (backend_aot_c_scalar_conversion_decode_to_u64(execInstruction, &destinationSlot, &sourceSlot, &opcode)) {
-        backend_aot_write_c_scalar_to_u64(file, functionIr, opcode, destinationSlot, sourceSlot);
+        backend_aot_write_c_scalar_to_u64(file, functionIr, opcode, destinationSlot, sourceSlot, execInstructionIndex);
         return ZR_TRUE;
     }
 
     if (backend_aot_c_scalar_conversion_decode_to_f64(execInstruction, &destinationSlot, &sourceSlot, &opcode)) {
-        backend_aot_write_c_scalar_to_f64(file, functionIr, opcode, destinationSlot, sourceSlot);
+        backend_aot_write_c_scalar_to_f64(file, functionIr, opcode, destinationSlot, sourceSlot, execInstructionIndex);
         return ZR_TRUE;
     }
 

@@ -45,6 +45,10 @@ static void zr_cli_command_init(SZrCliCommand *command) {
     command->programArgs = ZR_NULL;
     command->programArgCount = 0;
     command->debugAddress = ZR_NULL;
+    command->profileOutputPath = ZR_NULL;
+    command->coverageOutputPath = ZR_NULL;
+    command->dumpBytecodeOutputPath = ZR_NULL;
+    command->heapSummaryOutputPath = ZR_NULL;
     command->runAfterCompile = ZR_FALSE;
     command->interactiveAfterRun = ZR_FALSE;
     command->emitIntermediate = ZR_FALSE;
@@ -54,6 +58,10 @@ static void zr_cli_command_init(SZrCliCommand *command) {
     command->debugEnabled = ZR_FALSE;
     command->debugWait = ZR_FALSE;
     command->debugPrintEndpoint = ZR_FALSE;
+    command->profileEnabled = ZR_FALSE;
+    command->coverageEnabled = ZR_FALSE;
+    command->dumpBytecodeEnabled = ZR_FALSE;
+    command->heapSummaryEnabled = ZR_FALSE;
 }
 
 static TZrBool zr_cli_command_parse_execution_mode(const TZrChar *text, EZrCliExecutionMode *outMode) {
@@ -140,6 +148,10 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  --debug-address <addr>           Bind the debugger agent to the given host:port.\n"
             "  --debug-wait                     Wait for the debugger client before running user code.\n"
             "  --debug-print-endpoint           Print the resolved debugger endpoint after startup.\n"
+            "  --profile[=out]                  Collect deterministic and sampling profiling data.\n"
+            "  --coverage[=out]                 Collect executable line coverage data.\n"
+            "  --dump-bytecode <out>            Write bytecode disassembly for the loaded entry function.\n"
+            "  --heap-summary[=out]             Print or write heap and GC summary after a successful run.\n"
             "  --intermediate                   Also emit .zri files next to .zro outputs.\n"
             "  --emit-zrm                       Pack reachable .zro outputs and resources into a .zrm assembly.\n"
             "  --incremental                    Use manifest-based incremental compilation.\n"
@@ -204,6 +216,10 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  --debug-address <addr>           Bind the debugger agent to the given host:port.\n"
              "  --debug-wait                     Wait for the debugger client before running user code.\n"
              "  --debug-print-endpoint           Print the resolved debugger endpoint after startup.\n"
+             "  --profile[=out]                  Collect deterministic and sampling profiling data.\n"
+             "  --coverage[=out]                 Collect executable line coverage data.\n"
+             "  --dump-bytecode <out>            Write bytecode disassembly for the loaded entry function.\n"
+             "  --heap-summary[=out]             Print or write heap and GC summary after a successful run.\n"
              "  --intermediate                   Also emit .zri files next to .zro outputs.\n"
              "  --emit-zrm                       Pack reachable .zro outputs and resources into a .zrm assembly.\n"
              "  --incremental                    Use manifest-based incremental compilation.\n"
@@ -438,6 +454,64 @@ TZrBool ZrCli_Command_Parse(int argc,
             continue;
         }
 
+        if (strcmp(argument, "--profile") == 0) {
+            outCommand->profileEnabled = ZR_TRUE;
+            outCommand->profileOutputPath = ZR_NULL;
+            continue;
+        }
+
+        if (strncmp(argument, "--profile=", 10u) == 0) {
+            if (argument[10] == '\0') {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Missing output path after --profile=");
+                return ZR_FALSE;
+            }
+            outCommand->profileEnabled = ZR_TRUE;
+            outCommand->profileOutputPath = argument + 10;
+            continue;
+        }
+
+        if (strcmp(argument, "--coverage") == 0) {
+            outCommand->coverageEnabled = ZR_TRUE;
+            outCommand->coverageOutputPath = ZR_NULL;
+            continue;
+        }
+
+        if (strncmp(argument, "--coverage=", 11u) == 0) {
+            if (argument[11] == '\0') {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Missing output path after --coverage=");
+                return ZR_FALSE;
+            }
+            outCommand->coverageEnabled = ZR_TRUE;
+            outCommand->coverageOutputPath = argument + 11;
+            continue;
+        }
+
+        if (strcmp(argument, "--dump-bytecode") == 0) {
+            if (index + 1 >= argc || argv[index + 1][0] == '-') {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Missing output path after --dump-bytecode");
+                return ZR_FALSE;
+            }
+            outCommand->dumpBytecodeEnabled = ZR_TRUE;
+            outCommand->dumpBytecodeOutputPath = argv[++index];
+            continue;
+        }
+
+        if (strcmp(argument, "--heap-summary") == 0) {
+            outCommand->heapSummaryEnabled = ZR_TRUE;
+            outCommand->heapSummaryOutputPath = ZR_NULL;
+            continue;
+        }
+
+        if (strncmp(argument, "--heap-summary=", 15u) == 0) {
+            if (argument[15] == '\0') {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Missing output path after --heap-summary=");
+                return ZR_FALSE;
+            }
+            outCommand->heapSummaryEnabled = ZR_TRUE;
+            outCommand->heapSummaryOutputPath = argument + 15;
+            continue;
+        }
+
         if (strcmp(argument, "--execution-mode") == 0) {
             if (index + 1 >= argc) {
                 zr_cli_write_error(errorBuffer, errorBufferSize, "Missing execution mode after --execution-mode");
@@ -481,6 +555,21 @@ TZrBool ZrCli_Command_Parse(int argc,
         return ZR_FALSE;
     }
 
+    if (outCommand->profileEnabled && outCommand->debugEnabled) {
+        zr_cli_write_error(errorBuffer, errorBufferSize, "--profile cannot be combined with --debug");
+        return ZR_FALSE;
+    }
+
+    if (outCommand->coverageEnabled && outCommand->debugEnabled) {
+        zr_cli_write_error(errorBuffer, errorBufferSize, "--coverage cannot be combined with --debug");
+        return ZR_FALSE;
+    }
+
+    if (outCommand->coverageEnabled && outCommand->profileEnabled) {
+        zr_cli_write_error(errorBuffer, errorBufferSize, "--coverage cannot be combined with --profile");
+        return ZR_FALSE;
+    }
+
     if (!compileSeen &&
         (outCommand->emitIntermediate || outCommand->emitZrm ||
          outCommand->incremental || outCommand->runAfterCompile)) {
@@ -495,6 +584,8 @@ TZrBool ZrCli_Command_Parse(int argc,
             outCommand->incremental || outCommand->runAfterCompile ||
             outCommand->emitExecutedVia ||
             outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
+            outCommand->profileEnabled || outCommand->coverageEnabled || outCommand->dumpBytecodeEnabled ||
+            outCommand->heapSummaryEnabled ||
             outCommand->debugAddress != ZR_NULL || outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP ||
             outCommand->moduleName != ZR_NULL || outCommand->programArgCount > 0) {
             zr_cli_write_error(errorBuffer, errorBufferSize, "--help cannot be combined with other options");
@@ -510,6 +601,8 @@ TZrBool ZrCli_Command_Parse(int argc,
             outCommand->incremental || outCommand->runAfterCompile ||
             outCommand->emitExecutedVia ||
             outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
+            outCommand->profileEnabled || outCommand->coverageEnabled || outCommand->dumpBytecodeEnabled ||
+            outCommand->heapSummaryEnabled ||
             outCommand->debugAddress != ZR_NULL || outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP ||
             outCommand->moduleName != ZR_NULL || outCommand->programArgCount > 0) {
             zr_cli_write_error(errorBuffer, errorBufferSize, "--version cannot be combined with other options");
@@ -540,6 +633,8 @@ TZrBool ZrCli_Command_Parse(int argc,
          outCommand->incremental || outCommand->runAfterCompile ||
          outCommand->emitExecutedVia ||
          outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
+         outCommand->profileEnabled || outCommand->coverageEnabled || outCommand->dumpBytecodeEnabled ||
+         outCommand->heapSummaryEnabled ||
          outCommand->debugAddress != ZR_NULL || outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP ||
          outCommand->moduleName != ZR_NULL || compileSeen || explicitProjectSeen)) {
         zr_cli_write_error(errorBuffer,
@@ -550,19 +645,23 @@ TZrBool ZrCli_Command_Parse(int argc,
 
     if (compileSeen && !outCommand->runAfterCompile &&
         (outCommand->emitExecutedVia || outCommand->debugEnabled ||
+         outCommand->profileEnabled || outCommand->coverageEnabled || outCommand->dumpBytecodeEnabled ||
+         outCommand->heapSummaryEnabled ||
          outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP || outCommand->programArgCount > 0)) {
         zr_cli_write_error(errorBuffer,
                            errorBufferSize,
-                           "--execution-mode, --emit-executed-via, --debug, and user program arguments require an active run path");
+                           "--execution-mode, --emit-executed-via, --debug, --profile, --coverage, --dump-bytecode, --heap-summary, and user program arguments require an active run path");
         return ZR_FALSE;
     }
 
     if (primaryMode == ZR_CLI_PRIMARY_MODE_NONE &&
         (outCommand->emitExecutedVia || outCommand->debugEnabled ||
+         outCommand->profileEnabled || outCommand->coverageEnabled || outCommand->dumpBytecodeEnabled ||
+         outCommand->heapSummaryEnabled ||
          outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP || outCommand->programArgCount > 0)) {
         zr_cli_write_error(errorBuffer,
                            errorBufferSize,
-                           "--execution-mode, --emit-executed-via, --debug, and user program arguments require a project run path");
+                           "--execution-mode, --emit-executed-via, --debug, --profile, --coverage, --dump-bytecode, --heap-summary, and user program arguments require a project run path");
         return ZR_FALSE;
     }
 

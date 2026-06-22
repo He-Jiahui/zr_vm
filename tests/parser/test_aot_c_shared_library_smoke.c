@@ -262,21 +262,21 @@ static void test_aot_c_generated_source_compiles_and_exports_module_descriptor(v
 
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_publish_exports_direct */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Module_AddPubExport(state, frame.module"));
-    TEST_ASSERT_NOT_NULL(
-            strstr(generatedCText, "ZrCore_Value_Copy(state, &zr_aot_published_value, zr_aot_export_value);"));
-    TEST_ASSERT_NOT_NULL(
-            strstr(generatedCText, "SZrClosureNative *zr_aot_export_closure = ZrCore_ClosureNative_New(state, 0);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_ClosureNative_GetCaptureOwners(zr_aot_export_closure);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Closure_FindOrCreateValue(state, frame.slotBase + zr_aot_closure_variable->index);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_ClosureNative_GetCaptureValue(zr_aot_source_native_closure,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZR_CAST_VM_CLOSURE(state, zr_aot_export_value->value.object);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "unsupported AOT module export closure capture materialization"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_direct_return */"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PublishModuleExports(state, &frame)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_publish_exports_boundary */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PublishModuleExports(state, &frame)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_return"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_publish_exports_direct */"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Module_AddPubExport(state, frame.module"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Value_Copy(state, &zr_aot_published_value, zr_aot_export_value);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "SZrClosureNative *zr_aot_export_closure = ZrCore_ClosureNative_New(state, 0);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Closure_FindOrCreateValue(state, frame.slotBase + zr_aot_closure_variable->index);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT module export closure capture materialization"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MaterializeModuleExportValue"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Return"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "TZrStackValuePointer zr_aot_result_slot;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_result_value;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_caller_result_value;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "execution_discard_exception_handlers_for_callinfo(state, zr_aot_call_info);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Function_TryCopyInlineConstructorReceiverBack(state, zr_aot_call_info);"));
     free(generatedCText);
 
     snprintf(command,
@@ -320,6 +320,10 @@ static void test_aot_c_generated_source_compiles_and_exports_module_descriptor(v
     TEST_ASSERT_NOT_NULL(module->functionThunks);
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32(1u, module->functionThunkCount);
     TEST_ASSERT_NOT_NULL(module->entryThunk);
+    TEST_ASSERT_NOT_NULL(module->methodInfos);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(1u, module->methodInfoCount);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[0]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[0]->signature);
 
     dlclose(library);
     ZrCore_Function_Free(state, function);
@@ -837,12 +841,19 @@ static void test_aot_c_generated_shared_library_executes_numeric_arithmetic_dire
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, " * "));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, " / "));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, " % "));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncSignedIntLocal(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_static_i64_no_arg_direct_call"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_stack_copy_sync_i64_local_boundary"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Add(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Sub(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Mul(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Div(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Mod(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Neg(state, &frame"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=1 srcSlot=2"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "const SZrTypeValue *zr_aot_direct_call_result = ZrCore_Stack_GetValue(frame.slotBase +"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_direct_stack_copy_sync_destination"));
     free(generatedCText);
 
     snprintf(command,
@@ -984,13 +995,17 @@ static void test_aot_c_generated_shared_library_executes_generic_primitive_conve
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_convert_generic_to_bool"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_convert_generic_to_int"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_convert_generic_to_uint"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_convert_generic_to_float"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_exec_to_i64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_exec_to_u64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_exec_to_f64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_ConvertGenericToBool(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_ToBool(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_ToInt(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_ToUInt(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_ToFloat(state, &frame"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT generic primitive conversion"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_IS_TYPE_NULL(zr_aot_source->type)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "*zr_aot_destination = *zr_aot_source;"));
     free(generatedCText);
 
     snprintf(command,
@@ -1075,10 +1090,10 @@ static void test_aot_c_generated_shared_library_compiles_unsupported_instruction
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_unsupported_instruction"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "unsupported AOT instruction"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Debug_RunError(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZR_AOT_C_FAIL();"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_ReportUnsupportedInstruction"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "const TZrUInt32 zr_aot_instruction_index"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "const TZrUInt32 zr_aot_opcode"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Debug_RunError(state, \"unsupported AOT instruction\");"));
     free(generatedCText);
 
     snprintf(command,
@@ -1106,7 +1121,7 @@ static void test_aot_c_generated_shared_library_compiles_unsupported_instruction
 #endif
 }
 
-static void test_aot_c_generated_shared_library_compiles_pending_control_direct_blocks(void) {
+static void test_aot_c_generated_shared_library_compiles_pending_control_helper_blocks(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C pending-control shared-library smoke currently validates the Unix toolchain path");
 #else
@@ -1147,12 +1162,27 @@ static void test_aot_c_generated_shared_library_compiles_pending_control_direct_
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_pending_return"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_pending_break"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_pending_continue"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "execution_set_pending_control(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "execution_resume_pending_via_outer_finally(state, &zr_aot_call_info)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "execution_jump_to_instruction_offset(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SetPendingReturn"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SetPendingBreak"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SetPendingContinue"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrLibrary_AotRuntime_SetPendingReturn(state, &frame, 0, 3, &zr_aot_next_instruction)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrLibrary_AotRuntime_SetPendingBreak(state, &frame, 3, &zr_aot_next_instruction)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrLibrary_AotRuntime_SetPendingContinue(state, &frame, 3, &zr_aot_next_instruction)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_direct_return */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_Return(state, &frame, 0, ZR_FALSE));"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_next_instruction != ZR_AOT_RUNTIME_RESUME_FALLTHROUGH)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "goto zr_aot_fn_0_dispatch;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "TZrStackValuePointer zr_aot_result_slot;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_result_value;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_caller_result_value;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "execution_discard_exception_handlers_for_callinfo(state, zr_aot_call_info);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Function_TryCopyInlineConstructorReceiverBack(state, zr_aot_call_info);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_pending_value = ZR_NULL;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "execution_set_pending_control(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "execution_resume_pending_via_outer_finally(state, &zr_aot_call_info)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "execution_jump_to_instruction_offset(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "state->pendingControl.targetInstructionOffset"));
     free(generatedCText);
 
     snprintf(command,
@@ -1189,6 +1219,6 @@ int main(void) {
     RUN_TEST(test_aot_c_generated_shared_library_executes_numeric_arithmetic_direct_expressions);
     RUN_TEST(test_aot_c_generated_shared_library_executes_generic_primitive_conversions);
     RUN_TEST(test_aot_c_generated_shared_library_compiles_unsupported_instruction_boundary);
-    RUN_TEST(test_aot_c_generated_shared_library_compiles_pending_control_direct_blocks);
+    RUN_TEST(test_aot_c_generated_shared_library_compiles_pending_control_helper_blocks);
     return UNITY_END();
 }

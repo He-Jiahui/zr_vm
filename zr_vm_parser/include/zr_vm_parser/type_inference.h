@@ -19,6 +19,11 @@ typedef struct SZrResolvedCallSignature {
     SZrArray parameterPassingModes;   // EZrParameterPassingMode
 } SZrResolvedCallSignature;
 
+typedef struct SZrTypeInferenceBranchScope {
+    SZrTypeEnvironment *savedEnv;
+    TZrBool isActive;
+} SZrTypeInferenceBranchScope;
+
 // 类型推断函数
 
 // 从AST节点推断类型（主入口函数）
@@ -56,6 +61,37 @@ ZR_PARSER_API TZrBool ZrParser_AssignmentType_Infer(SZrCompilerState *cs, SZrAst
 
 // 从primary expression推断类型（包括函数调用）
 ZR_PARSER_API TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result);
+
+// 为 true 分支创建数值区间收窄作用域。当前支持 identifier 与整数常量的比较条件。
+ZR_PARSER_API TZrBool ZrParser_TypeInference_PushTrueBranchNumericRangeScope(
+        SZrCompilerState *cs,
+        SZrAstNode *condition,
+        SZrTypeInferenceBranchScope *scope);
+
+// 为 false 分支创建数值区间收窄作用域。当前支持 identifier 与整数常量的比较条件。
+ZR_PARSER_API TZrBool ZrParser_TypeInference_PushFalseBranchNumericRangeScope(
+        SZrCompilerState *cs,
+        SZrAstNode *condition,
+        SZrTypeInferenceBranchScope *scope);
+
+ZR_PARSER_API void ZrParser_TypeInference_PopBranchScope(SZrCompilerState *cs,
+                                                          SZrTypeInferenceBranchScope *scope);
+
+ZR_PARSER_API TZrBool ZrParser_TypeInference_TryApplyInitializerNumericRange(
+        SZrState *state,
+        SZrInferredType *bindingType,
+        const SZrInferredType *initializerType);
+
+// 在 simple if/else、单侧 then/else、嵌套 simple if/else、同一 target 顺序 simple 数值赋值，
+// 或同一分支块内 simple 多 target 数值赋值时，将可达路径范围汇合回当前类型环境。
+ZR_PARSER_API TZrBool ZrParser_TypeInference_TryJoinIfElseNumericAssignments(
+        SZrCompilerState *cs,
+        SZrAstNode *ifNode);
+
+// 对未知条件 while 中的单个 simple 数值赋值，按零次或多次执行汇合 pre-loop 与 loop-body 范围。
+ZR_PARSER_API TZrBool ZrParser_TypeInference_TryJoinWhileNumericAssignments(
+        SZrCompilerState *cs,
+        SZrAstNode *whileNode);
 
 // 类型检查函数
 

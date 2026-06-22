@@ -273,12 +273,66 @@ static TZrBool cfg_compare_char_values(TZrChar leftValue,
     return ZR_FALSE;
 }
 
+static TZrBool cfg_compare_constant_values(
+        const SZrParserCfgConstant *leftValue,
+        const TZrChar *op,
+        const SZrParserCfgConstant *rightValue,
+        TZrBool *outValue) {
+    if (leftValue == ZR_NULL ||
+        rightValue == ZR_NULL ||
+        op == ZR_NULL ||
+        outValue == ZR_NULL ||
+        !cfg_constants_can_compare(leftValue, rightValue)) {
+        return ZR_FALSE;
+    }
+    if (cfg_compare_equal_value(cfg_constants_equal(leftValue, rightValue),
+                                op,
+                                outValue)) {
+        return ZR_TRUE;
+    }
+    if (leftValue->kind != rightValue->kind) {
+        return ZR_FALSE;
+    }
+
+    switch (leftValue->kind) {
+        case ZR_PARSER_CFG_CONSTANT_INTEGER:
+            return cfg_compare_integer_values(leftValue->integerValue,
+                                              op,
+                                              rightValue->integerValue,
+                                              outValue);
+        case ZR_PARSER_CFG_CONSTANT_FLOAT:
+            return cfg_compare_float_values(leftValue->floatValue,
+                                            op,
+                                            rightValue->floatValue,
+                                            outValue);
+        case ZR_PARSER_CFG_CONSTANT_CHAR:
+            return cfg_compare_char_values(leftValue->charValue,
+                                           op,
+                                           rightValue->charValue,
+                                           outValue);
+        default:
+            return ZR_FALSE;
+    }
+}
+
 static TZrBool cfg_binary_comparison_bool_constant(SZrAstNode *leftNode,
                                                    const TZrChar *op,
                                                    SZrAstNode *rightNode,
                                                    TZrBool *outValue) {
+    SZrParserCfgConstant leftConstant;
+    SZrParserCfgConstant rightConstant;
+
     if (leftNode == ZR_NULL || rightNode == ZR_NULL || op == ZR_NULL || outValue == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (cfg_node_constant(leftNode, &leftConstant) &&
+        cfg_node_constant(rightNode, &rightConstant) &&
+        cfg_compare_constant_values(&leftConstant,
+                                    op,
+                                    &rightConstant,
+                                    outValue)) {
+        return ZR_TRUE;
     }
 
     if (leftNode->type == ZR_AST_INTEGER_LITERAL && rightNode->type == ZR_AST_INTEGER_LITERAL) {
@@ -457,7 +511,6 @@ static TZrBool cfg_build_if_statement(SZrState *state,
                                       EZrSemanticReachabilityCause pendingCause,
                                       SZrAstNode *pendingCauseNode,
                                       const SZrParserCfgLoopTargets *loopTargets) {
-    SZrParserCfgBlock *previousBlock;
     SZrParserCfgBlock *ifBlock;
     TZrUInt32 ifBlockId;
     TZrUInt32 joinBlockId;
@@ -475,7 +528,6 @@ static TZrBool cfg_build_if_statement(SZrState *state,
         return ZR_FALSE;
     }
 
-    previousBlock = cfg_get_block(cfg, *inOutPreviousBlockId);
     ifBlockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, statement);
     ifBlock = cfg_get_block(cfg, ifBlockId);
     if (ifBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID || ifBlock == ZR_NULL) {
@@ -486,10 +538,8 @@ static TZrBool cfg_build_if_statement(SZrState *state,
         ifBlock->unreachableCause = pendingCause;
         ifBlock->unreachableCauseNode = pendingCauseNode;
     }
-    if (previousBlock != ZR_NULL && !previousBlock->isTerminator) {
-        if (!cfg_add_edge(cfg, previousBlock->id, ifBlockId)) {
-            return ZR_FALSE;
-        }
+    if (!cfg_connect_fallthrough(cfg, *inOutPreviousBlockId, ifBlockId)) {
+        return ZR_FALSE;
     }
 
     hasConstantCondition = cfg_node_bool_constant(statement->data.ifExpression.condition, &conditionValue);
@@ -571,7 +621,6 @@ static TZrBool cfg_build_statement_list(SZrState *state,
 
     for (index = 0; index < statements->count; index++) {
         SZrAstNode *statement = statements->nodes[index];
-        SZrParserCfgBlock *previousBlock = cfg_get_block(cfg, *inOutPreviousBlockId);
         TZrUInt32 blockId;
         SZrParserCfgBlock *block;
         EZrSemanticReachabilityCause terminatorCause;
@@ -662,10 +711,8 @@ static TZrBool cfg_build_statement_list(SZrState *state,
             block->unreachableCauseNode = pendingCauseNode;
         }
 
-        if (previousBlock != ZR_NULL && !previousBlock->isTerminator) {
-            if (!cfg_add_edge(cfg, previousBlock->id, blockId)) {
-                return ZR_FALSE;
-            }
+        if (!cfg_connect_fallthrough(cfg, *inOutPreviousBlockId, blockId)) {
+            return ZR_FALSE;
         }
 
         if (cfg_statement_is_terminator(statement, &terminatorCause)) {

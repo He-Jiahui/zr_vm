@@ -100,52 +100,67 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
-static void test_aot_c_source_lowers_generic_numeric_mod_float_fallback_to_direct_c(void) {
-    static const char *const emitterNeedles[] = {
-            "#include <math.h>\\n",
-    };
+static void test_aot_c_source_lowers_generic_numeric_mod_float_fallback_to_boundary_helper(void) {
     static const char *const moduleNeedles[] = {
             "backend_aot_write_c_direct_mod(",
-            "zr_aot_arith_exec_generic_numeric_binary",
+            "const SZrAotExecIrFunction *functionIr,",
+            "zr_aot_arith_exec_generic_numeric_binary_boundary",
+            "ZrLibrary_AotRuntime_GenericNumericMod",
+            "backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot)",
+            "backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot)",
+            "backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot)",
+            "zr_aot_generic_numeric_sync_i64_local_boundary",
+            "ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u)",
+            "zr_aot_generic_numeric_sync_u64_local_boundary",
+            "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u)",
+            "zr_aot_generic_numeric_sync_f64_local_boundary",
+            "ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u)",
+    };
+    static const char *const runtimeHeaderNeedles[] = {
+            "ZrLibrary_AotRuntime_GenericNumericMod(struct SZrState *state,",
+    };
+    static const char *const runtimeValuesNeedles[] = {
+            "#include <math.h>",
+            "ZrLibrary_AotRuntime_GenericNumericMod(SZrState *state,",
+            "modulo by zero",
+            "fmod(leftFloat, rightFloat)",
+    };
+    static const char *const functionBodyNeedles[] = {
+            "case ZR_INSTRUCTION_ENUM(MOD):",
+            "backend_aot_write_c_direct_mod(file, functionIr, destinationSlot, operandA1, operandB1);",
+    };
+    static const char *const forbiddenModuleNeedles[] = {
+            "backend_aot_c_write_generic_numeric_zero_guard",
             "ZR_VALUE_IS_TYPE_FLOAT(zr_aot_left->type) || ZR_VALUE_IS_TYPE_FLOAT(zr_aot_right->type)",
             "TZrFloat64 zr_aot_left_float;",
             "TZrFloat64 zr_aot_right_float;",
-            "backend_aot_c_write_generic_numeric_zero_guard(file, \"zr_aot_right_float\", zeroGuardMessage);",
-            "\"modulo by zero\"",
             "fmod(zr_aot_left_float, zr_aot_right_float)",
             "ZR_VALUE_TYPE_DOUBLE",
             "zr_aot_left_int % zr_aot_right_int",
             "zr_aot_left_uint % zr_aot_right_uint",
     };
-    static const char *const functionBodyNeedles[] = {
-            "case ZR_INSTRUCTION_ENUM(MOD):",
-            "backend_aot_write_c_direct_mod(file, destinationSlot, operandA1, operandB1);",
-    };
-    static const char *const forbiddenModuleNeedles[] = {
-            "ZrLibrary_AotRuntime_Mod",
-    };
-    static const char *const forbiddenFunctionBodyNeedles[] = {
-            "ZrLibrary_AotRuntime_Mod(state, &frame",
-    };
-    char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *moduleText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_numeric_arithmetic.c");
+    char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
+    char *runtimeValuesText = read_repo_text_file_owned(
+            "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_values.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
-    TEST_ASSERT_NOT_NULL(emitterText);
     TEST_ASSERT_NOT_NULL(moduleText);
+    TEST_ASSERT_NOT_NULL(runtimeHeaderText);
+    TEST_ASSERT_NOT_NULL(runtimeValuesText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
 
-    assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
     assert_text_contains_all(moduleText, moduleNeedles, ARRAY_COUNT(moduleNeedles));
+    assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
+    assert_text_contains_all(runtimeValuesText, runtimeValuesNeedles, ARRAY_COUNT(runtimeValuesNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
     assert_text_contains_none(moduleText, forbiddenModuleNeedles, ARRAY_COUNT(forbiddenModuleNeedles));
-    assert_text_contains_none(functionBodyText, forbiddenFunctionBodyNeedles, ARRAY_COUNT(forbiddenFunctionBodyNeedles));
 
-    free(emitterText);
     free(moduleText);
+    free(runtimeHeaderText);
+    free(runtimeValuesText);
     free(functionBodyText);
 }
 
@@ -155,6 +170,6 @@ void tearDown(void) {}
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_aot_c_source_lowers_generic_numeric_mod_float_fallback_to_direct_c);
+    RUN_TEST(test_aot_c_source_lowers_generic_numeric_mod_float_fallback_to_boundary_helper);
     return UNITY_END();
 }

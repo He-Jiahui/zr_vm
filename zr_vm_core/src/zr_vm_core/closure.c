@@ -633,6 +633,9 @@ SZrFunction *ZrCore_Closure_GetMetadataFunctionFromCallInfo(struct SZrState *sta
     if (state == ZR_NULL || callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
         return ZR_NULL;
     }
+    if (callInfo->metadataFunction != ZR_NULL) {
+        return callInfo->metadataFunction;
+    }
 
     return ZrCore_Closure_GetMetadataFunctionFromValue(state,
                                                        ZrCore_Stack_GetValueNoProfile(

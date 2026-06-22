@@ -68,3 +68,9 @@ Phase 6 profiling。
 - 脚本 hook 性能：行/指令 hook 调脚本函数开销大，文档需标注「仅调试/测试用」。
 - 把内核裸指针（callInfo/closure）泄漏给脚本是危险的——脚本侧只暴露**层级整数**与
   **函数值**，绝不暴露 activation 句柄本身。
+
+## 4.7 状态与产出记录
+
+| 时间 | 状态 | 完成项目 | 验证 | 后续 |
+|------|------|----------|------|------|
+| 2026-06-21 23:35:14 +08:00 | 完成 | 新增脚本层 `debug` native module，宿主可选择受信或沙箱注册；首批 API 覆盖 `traceback/getinfo/getlocal/setlocal/getupvalue/setupvalue/upvalueid/sethook/gethook`；`what` 字符串、hook mask/count、脚本 hook trampoline、`__hook` root 与 sandbox 写 API 拒绝均已实现；新增 `tests/library/test_debug_library.c` 和 `docs/library-and-builtins/zr-debug-module.md` | WSL/GCC：`zr_vm_debug_library_test` 构建通过，`debug_library` CTest PASS，`debug_metadata|debug_trace|debug_traceback|debug_library` 4/4 PASS。WSL/Clang：同范围构建与 focused CTest 4/4 PASS；仅余无关 `zr_vm_library/project/project.c` const qualifier warning | Phase 5 的 DAP step 边界、多 task、截断治理与 data breakpoint 未开始；Milestone B 的全量矩阵按计划在 Phase 5 后执行 |

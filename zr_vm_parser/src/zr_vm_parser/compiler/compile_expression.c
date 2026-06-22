@@ -3,6 +3,7 @@
 //
 
 #include "compile_expression_internal.h"
+#include "type_inference_semantic_facts.h"
 
 static TZrBool note_inline_struct_field_result_slot(SZrCompilerState *cs,
                                                     TZrUInt32 stackSlot,
@@ -71,6 +72,45 @@ static TZrBool compile_type_cast_is_bool(EZrValueType type) {
 
 static TZrBool compile_type_cast_is_string(EZrValueType type) {
     return (TZrBool)ZR_VALUE_IS_TYPE_STRING(type);
+}
+
+static TZrBool compile_assignment_capture_identifier_binding(SZrCompilerState *cs,
+                                                             SZrAstNode *left,
+                                                             SZrInferredType *outType,
+                                                             SZrTypeBinding *outBinding) {
+    const SZrTypeBinding *binding;
+
+    if (cs == ZR_NULL ||
+        left == ZR_NULL ||
+        left->type != ZR_AST_IDENTIFIER_LITERAL ||
+        left->data.identifier.name == ZR_NULL ||
+        cs->typeEnv == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    binding = ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv,
+                                                           left->data.identifier.name);
+    if (binding == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (outType != ZR_NULL) {
+        ZrParser_InferredType_Copy(cs->state, outType, &binding->type);
+    }
+    if (outBinding != ZR_NULL) {
+        *outBinding = *binding;
+    }
+    return ZR_TRUE;
+}
+
+static void compile_assignment_record_identifier_write_fact(SZrCompilerState *cs,
+                                                            SZrAstNode *left,
+                                                            TZrBool hasBinding,
+                                                            const SZrTypeBinding *binding) {
+    if (cs == ZR_NULL || cs->hasError || !hasBinding || binding == ZR_NULL) {
+        return;
+    }
+    type_inference_record_identifier_write_reference_fact(cs, left, binding);
 }
 
 static void compile_type_cast_emit_conversion(SZrCompilerState *cs,
@@ -730,8 +770,21 @@ static TZrBool emit_assignment_inline_struct_writebacks(
     return ZR_TRUE;
 }
 
+static TZrUInt32 compile_assignment_safe_member_key_target_slot(const SZrCompilerState *cs,
+                                                                TZrUInt32 preferredSlot,
+                                                                TZrUInt32 preservedSlot) {
+    if (cs == ZR_NULL ||
+        preservedSlot == ZR_PARSER_SLOT_NONE ||
+        preferredSlot > preservedSlot) {
+        return preferredSlot;
+    }
+
+    return (TZrUInt32)cs->stackSlotCount;
+}
+
 static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                                                        SZrPrimaryExpression *primary,
+                                                       TZrUInt32 preservedSlot,
                                                        TZrUInt32 *outObjectSlot,
                                                        SZrString **ioRootTypeName,
                                                        TZrBool *ioRootIsTypeReference,
@@ -949,7 +1002,9 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                                             memberNode->location);
                     return ZR_FALSE;
                 }
-                TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, currentSlot + 1);
+                TZrUInt32 keyTargetSlot =
+                        compile_assignment_safe_member_key_target_slot(cs, currentSlot + 1, preservedSlot);
+                TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, keyTargetSlot);
                 if (keySlot == ZR_PARSER_SLOT_NONE) {
                     return ZR_FALSE;
                 }
@@ -1004,8 +1059,10 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
 // 编译赋值表达式
 static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node) {
     EZrInstructionCode assignmentConversionOpcode = ZR_INSTRUCTION_ENUM(ENUM_MAX);
+    SZrTypeBinding identifierWriteBinding;
     SZrInferredType leftType;
     SZrInferredType rightType;
+    TZrBool hasIdentifierWriteBinding = ZR_FALSE;
     TZrBool useDirectInlineRightSlot = ZR_FALSE;
     TZrUInt32 directInlineRightSlot = ZR_PARSER_SLOT_NONE;
 
@@ -1021,24 +1078,34 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
     const TZrChar *op = node->data.assignmentExpression.op.op;
     SZrAstNode *left = node->data.assignmentExpression.left;
     SZrAstNode *right = node->data.assignmentExpression.right;
+    memset(&identifierWriteBinding, 0, sizeof(identifierWriteBinding));
 
     ZrParser_InferredType_Init(cs->state, &leftType, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Init(cs->state, &rightType, ZR_VALUE_TYPE_OBJECT);
-    if (strcmp(op, "=") == 0 &&
-        ZrParser_ExpressionType_Infer(cs, left, &leftType) &&
-        ZrParser_ExpressionType_Infer(cs, right, &rightType)) {
-        if (!ZrParser_AssignmentCompatibility_Check(cs, &leftType, &rightType, node->location)) {
-            ZrParser_InferredType_Free(cs->state, &leftType);
-            ZrParser_InferredType_Free(cs->state, &rightType);
-            return;
+    if (strcmp(op, "=") == 0) {
+        TZrBool hasLeftType =
+                compile_assignment_capture_identifier_binding(cs,
+                                                              left,
+                                                              &leftType,
+                                                              &identifierWriteBinding);
+        if (hasLeftType) {
+            hasIdentifierWriteBinding = ZR_TRUE;
         }
-        assignmentConversionOpcode = ZrParser_InferredType_GetConversionOpcode(&rightType, &leftType);
-        if (assignmentConversionOpcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
-            useDirectInlineRightSlot =
-                    compile_expression_try_get_inline_union_identifier_slot_for_type(cs,
-                                                                                     right,
-                                                                                     &leftType,
-                                                                                     &directInlineRightSlot);
+        if ((hasLeftType || ZrParser_ExpressionType_Infer(cs, left, &leftType)) &&
+            ZrParser_ExpressionType_Infer(cs, right, &rightType)) {
+            if (!ZrParser_AssignmentCompatibility_Check(cs, &leftType, &rightType, node->location)) {
+                ZrParser_InferredType_Free(cs->state, &leftType);
+                ZrParser_InferredType_Free(cs->state, &rightType);
+                return;
+            }
+            assignmentConversionOpcode = ZrParser_InferredType_GetConversionOpcode(&rightType, &leftType);
+            if (assignmentConversionOpcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
+                useDirectInlineRightSlot =
+                        compile_expression_try_get_inline_union_identifier_slot_for_type(cs,
+                                                                                         right,
+                                                                                         &leftType,
+                                                                                         &directInlineRightSlot);
+            }
         }
     }
     ZrParser_InferredType_Free(cs->state, &leftType);
@@ -1091,6 +1158,14 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
             ZrParser_Compiler_Error(cs, errorMsg, node->location);
             return;
         }
+
+        if (!hasIdentifierWriteBinding) {
+            hasIdentifierWriteBinding =
+                    compile_assignment_capture_identifier_binding(cs,
+                                                                  left,
+                                                                  ZR_NULL,
+                                                                  &identifierWriteBinding);
+        }
         
         TZrUInt32 localVarIndex = find_local_var(cs, name);
         
@@ -1100,6 +1175,10 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                 TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)localVarIndex, (TZrInt32)rightSlot);
                 emit_instruction(cs, inst);
                 update_identifier_assignment_type_environment(cs, name, right);
+                compile_assignment_record_identifier_write_fact(cs,
+                                                                left,
+                                                                hasIdentifierWriteBinding,
+                                                                &identifierWriteBinding);
             } else {
                 // 复合赋值：先读取左值，执行运算，再赋值
                 TZrUInt32 leftSlot = allocate_stack_slot(cs);
@@ -1120,6 +1199,10 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                 // 赋值
                 TZrInstruction setInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)localVarIndex, (TZrInt32)resultSlot);
                 emit_instruction(cs, setInst);
+                compile_assignment_record_identifier_write_fact(cs,
+                                                                left,
+                                                                hasIdentifierWriteBinding,
+                                                                &identifierWriteBinding);
             }
         } else {
             // 查找闭包变量
@@ -1142,6 +1225,10 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                         emit_instruction(cs, setClosureInst);
                     }
                     update_identifier_assignment_type_environment(cs, name, right);
+                    compile_assignment_record_identifier_write_fact(cs,
+                                                                    left,
+                                                                    hasIdentifierWriteBinding,
+                                                                    &identifierWriteBinding);
                 } else {
                     // 复合赋值：先读取，执行运算，再写入
                     TZrUInt32 leftSlot = allocate_stack_slot(cs);
@@ -1169,6 +1256,10 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                         TZrInstruction setClosureInst2 = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_CLOSURE), (TZrUInt16)resultSlot, (TZrUInt16)closureVarIndex, 0);
                         emit_instruction(cs, setClosureInst2);
                     }
+                    compile_assignment_record_identifier_write_fact(cs,
+                                                                    left,
+                                                                    hasIdentifierWriteBinding,
+                                                                    &identifierWriteBinding);
                     
                     // 释放临时栈槽
                     ZrParser_Compiler_TrimStackBy(cs, 2); // leftSlot 和 resultSlot
@@ -1200,6 +1291,10 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                 
                 TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER), (TZrUInt16)resultSlot, (TZrUInt16)globalSlot, (TZrUInt16)memberId);
                 emit_instruction(cs, setTableInst);
+                compile_assignment_record_identifier_write_fact(cs,
+                                                                left,
+                                                                hasIdentifierWriteBinding,
+                                                                &identifierWriteBinding);
                 
                 // 释放临时栈槽
                 ZrParser_Compiler_TrimStackBy(cs, 2); // leftSlot, globalSlot (resultSlot 会被保留)
@@ -1207,6 +1302,10 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                 TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER), (TZrUInt16)rightSlot, (TZrUInt16)globalSlot, (TZrUInt16)memberId);
                 emit_instruction(cs, setTableInst);
                 update_identifier_assignment_type_environment(cs, name, right);
+                compile_assignment_record_identifier_write_fact(cs,
+                                                                left,
+                                                                hasIdentifierWriteBinding,
+                                                                &identifierWriteBinding);
                 
                 // 释放临时栈槽
                 ZrParser_Compiler_TrimStackBy(cs, 1); // globalSlot
@@ -1236,6 +1335,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
 
                         if (!compile_assignment_target_member_prefix(cs,
                                                                      primary,
+                                                                     rightSlot,
                                                                      &objSlot,
                                                                      &rootTypeName,
                                                                      &rootIsTypeReference,
@@ -1424,7 +1524,9 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                         ZrParser_Compiler_TrimStackBy(cs, 2); // leftValueSlot 和 resultSlot
                                     }
                                 } else {
-                                    TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, objSlot + 1);
+                                    TZrUInt32 keyTargetSlot =
+                                            compile_assignment_safe_member_key_target_slot(cs, objSlot + 1, rightSlot);
+                                    TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, keyTargetSlot);
                                     if (keySlot == ZR_PARSER_SLOT_NONE) {
                                         return;
                                     }
@@ -1464,7 +1566,9 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                     ZrParser_Compiler_TrimStackBy(cs, 1); // keySlot
                                 }
                             } else {
-                                TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, objSlot + 1);
+                                TZrUInt32 keyTargetSlot =
+                                        compile_assignment_safe_member_key_target_slot(cs, objSlot + 1, rightSlot);
+                                TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, keyTargetSlot);
                                 if (keySlot == ZR_PARSER_SLOT_NONE) {
                                     return;
                                 }

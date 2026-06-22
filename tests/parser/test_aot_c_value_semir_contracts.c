@@ -230,16 +230,22 @@ static void test_aot_c_value_semir_typed_call_return_lives_in_focused_module(voi
             "zr_aot_value_return_typed",
             "zr_aot_value_exec_call_typed",
             "zr_aot_value_exec_return_typed",
+            "ZrLibrary_AotRuntime_CallInlineStruct(state,",
+            "zr_aot_fn_%u",
+            "ZrCore_Function_TryCopyInlineFrameReturnValue(state,",
+            "ZrLibrary_AotRuntime_ReturnInlineStruct(state,",
+            "&zr_aot_skip_drop_slot",
+    };
+    static const char *const callSourceForbiddenNeedles[] = {
+            "SZrCallInfo *zr_aot_call_info = frame.callInfo;",
+            "SZrCallInfo *zr_aot_call_info;",
             "SZrFunction *zr_aot_metadata_function;",
             "SZrTypeValue *zr_aot_callable_value;",
             "ZrCore_Function_GetCallInfoFrameStorageTop(state, frame.callInfo);",
             "ZrCore_Function_CheckStackAndGc(state, 1u + %u, zr_aot_call_base);",
             "ZrCore_Closure_GetMetadataFunctionFromValue(state, zr_aot_callable_value);",
-            "ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(zr_aot_call_base), zr_aot_callable_value);",
             "ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource(",
             "ZrCore_Function_PostCall(state, zr_aot_call_info, 1);",
-            "ZrCore_Function_TryCopyInlineFrameReturnValue(state,",
-            "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function",
             "state->stackTop.valuePointer = zr_aot_return_source + 1;",
             "zr_aot_skip_drop_slot = %u;",
     };
@@ -269,6 +275,7 @@ static void test_aot_c_value_semir_typed_call_return_lives_in_focused_module(voi
 
     assert_text_contains_all(callHeaderText, callHeaderNeedles, ARRAY_COUNT(callHeaderNeedles));
     assert_text_contains_all(callSourceText, callSourceNeedles, ARRAY_COUNT(callSourceNeedles));
+    assert_text_contains_none(callSourceText, callSourceForbiddenNeedles, ARRAY_COUNT(callSourceForbiddenNeedles));
     assert_text_contains_all(orchestratorText, orchestratorNeedles, ARRAY_COUNT(orchestratorNeedles));
     assert_text_contains_none(orchestratorText,
                               orchestratorForbiddenNeedles,

@@ -3510,6 +3510,43 @@ static void test_compiler_lambda_expression(void) {
     TEST_DIVIDER();
 }
 
+static void test_for_loop_variable_initializer_statement(void) {
+    SZrTestTimer timer;
+    const char* testSummary = "For Loop Variable Initializer Statement";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState* state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    const char* source = "for (var i = 0; i < 3; i = i + 1) { i; }";
+    SZrString* sourceName = ZrCore_String_Create(state, "test_for_var_header.zr", 22);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+    if (ast == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse traditional for loop with var initializer");
+        destroy_test_state(state);
+        return;
+    }
+
+    SZrAstNode *forNode = get_script_statement(ast, 0);
+    TEST_ASSERT_NOT_NULL(forNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FOR_LOOP, forNode->type);
+    TEST_ASSERT_NOT_NULL(forNode->data.forLoop.init);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, forNode->data.forLoop.init->type);
+    TEST_ASSERT_NOT_NULL(forNode->data.forLoop.cond);
+    TEST_ASSERT_NOT_NULL(forNode->data.forLoop.step);
+    TEST_ASSERT_NOT_NULL(forNode->data.forLoop.block);
+
+    ZrParser_Ast_Free(state, ast);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 static void test_compiler_parenthesized_lambda_iife(void) {
     SZrTestTimer timer;
     const char* testSummary = "Compiler Parenthesized Lambda IIFE";
@@ -3993,6 +4030,7 @@ int main(void) {
     // 语句测试
     RUN_TEST(test_if_statement);
     RUN_TEST(test_return_statement);
+    RUN_TEST(test_for_loop_variable_initializer_statement);
     
     TEST_MODULE_DIVIDER();
     printf("Complete Script Tests\n");

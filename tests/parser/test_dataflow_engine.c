@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "dataflow.h"
+#include "dataflow_definite_assignment.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
@@ -15,6 +16,12 @@ typedef struct SDataflowVisitLog {
     SZrAstNode *nodes[8];
     TZrSize count;
 } SDataflowVisitLog;
+
+typedef struct SDefiniteAssignmentHarness {
+    SZrAstNode *assignmentStatement;
+    TZrSize symbolCount;
+    TZrSize symbolIndex;
+} SDefiniteAssignmentHarness;
 
 static SZrState *g_state;
 
@@ -66,6 +73,34 @@ static SZrAstNode *script_with_statements(SZrAstNode *first, SZrAstNode *second)
     return script;
 }
 
+static SZrAstNode *script_with_statement(SZrAstNode *statement) {
+    SZrAstNode *script = test_node(ZR_AST_SCRIPT, 0, 64);
+
+    script->data.script.statements = ZrParser_AstNodeArray_New(g_state, 1);
+    TEST_ASSERT_NOT_NULL(script->data.script.statements);
+    ZrParser_AstNodeArray_Add(g_state, script->data.script.statements, statement);
+    return script;
+}
+
+static SZrAstNode *block_with_statement(SZrAstNode *statement, TZrSize startOffset, TZrSize endOffset) {
+    SZrAstNode *block = test_node(ZR_AST_BLOCK, startOffset, endOffset);
+
+    block->data.block.body = ZrParser_AstNodeArray_New(g_state, 1);
+    TEST_ASSERT_NOT_NULL(block->data.block.body);
+    ZrParser_AstNodeArray_Add(g_state, block->data.block.body, statement);
+    return block;
+}
+
+static SZrAstNode *if_statement(SZrAstNode *condition, SZrAstNode *thenBlock, SZrAstNode *elseBlock) {
+    SZrAstNode *ifNode = test_node(ZR_AST_IF_EXPRESSION, 0, 64);
+
+    ifNode->data.ifExpression.condition = condition;
+    ifNode->data.ifExpression.thenExpr = thenBlock;
+    ifNode->data.ifExpression.elseExpr = elseBlock;
+    ifNode->data.ifExpression.isStatement = ZR_TRUE;
+    return ifNode;
+}
+
 static void dataflow_init_zero(void *state, void *userData) {
     ZR_UNUSED_PARAMETER(userData);
     *((TZrUInt32 *)state) = 0;
@@ -87,6 +122,35 @@ static void dataflow_record_statement(SZrAstNode *statement, void *state, void *
     *((TZrUInt32 *)state) |= 1U;
     TEST_ASSERT_TRUE(log->count < 8);
     log->nodes[log->count++] = statement;
+}
+
+static void definite_assignment_init_uninit(void *state, void *userData) {
+    SDefiniteAssignmentHarness *harness = (SDefiniteAssignmentHarness *)userData;
+
+    ZrParser_DefiniteAssignment_InitState(
+        state,
+        harness->symbolCount,
+        ZR_PARSER_DEFINITE_ASSIGNMENT_UNINIT);
+}
+
+static TZrBool definite_assignment_join(void *dst, const void *src, void *userData) {
+    SDefiniteAssignmentHarness *harness = (SDefiniteAssignmentHarness *)userData;
+
+    return ZrParser_DefiniteAssignment_Join(dst, src, harness->symbolCount);
+}
+
+static void definite_assignment_transfer_assignment(SZrAstNode *statement,
+                                                    void *state,
+                                                    void *userData) {
+    SDefiniteAssignmentHarness *harness = (SDefiniteAssignmentHarness *)userData;
+
+    if (statement == harness->assignmentStatement) {
+        ZrParser_DefiniteAssignment_Set(
+            state,
+            harness->symbolCount,
+            harness->symbolIndex,
+            ZR_PARSER_DEFINITE_ASSIGNMENT_INIT);
+    }
 }
 
 static void test_forward_dataflow_skips_unreachable_statement_after_return(void) {
@@ -165,9 +229,92 @@ static void test_backward_dataflow_reaches_return_through_exit_edge(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+static void test_definite_assignment_single_assignment_reaches_exit_as_init(void) {
+    SZrParserCfg cfg;
+    SZrParserDataflowResult result;
+    SZrParserDataflowAnalysis analysis;
+    SDefiniteAssignmentHarness harness;
+    SZrAstNode *assignmentStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 0, 12);
+    SZrAstNode *script = script_with_statement(assignmentStmt);
+    const SZrParserDataflowBlockState *exitState;
+
+    memset(&harness, 0, sizeof(harness));
+    harness.assignmentStatement = assignmentStmt;
+    harness.symbolCount = 1;
+    harness.symbolIndex = 0;
+    ZrParser_Cfg_Init(g_state, &cfg);
+    ZrParser_DataflowResult_Init(&result);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+
+    analysis.direction = ZR_PARSER_DATAFLOW_FORWARD;
+    analysis.stateSize = ZrParser_DefiniteAssignment_StateSize(harness.symbolCount);
+    analysis.initEntry = definite_assignment_init_uninit;
+    analysis.join = definite_assignment_join;
+    analysis.transferStatement = definite_assignment_transfer_assignment;
+    analysis.userData = &harness;
+
+    TEST_ASSERT_TRUE(ZrParser_Dataflow_Run(g_state, &cfg, &analysis, &result));
+
+    exitState = ZrParser_Dataflow_GetBlockState(&result, cfg.exitBlockId);
+    TEST_ASSERT_NOT_NULL(exitState);
+    TEST_ASSERT_TRUE(exitState->isReachable);
+    TEST_ASSERT_EQUAL_INT(
+        ZR_PARSER_DEFINITE_ASSIGNMENT_INIT,
+        ZrParser_DefiniteAssignment_Get(exitState->inState, harness.symbolCount, harness.symbolIndex));
+
+    ZrParser_DataflowResult_Free(g_state, &result);
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+}
+
+static void test_definite_assignment_join_marks_one_branch_assignment_as_maybe_init(void) {
+    SZrParserCfg cfg;
+    SZrParserDataflowResult result;
+    SZrParserDataflowAnalysis analysis;
+    SDefiniteAssignmentHarness harness;
+    SZrAstNode *condition = test_node(ZR_AST_IDENTIFIER_LITERAL, 4, 8);
+    SZrAstNode *assignmentStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 16, 24);
+    SZrAstNode *thenBlock = block_with_statement(assignmentStmt, 12, 28);
+    SZrAstNode *ifNode = if_statement(condition, thenBlock, ZR_NULL);
+    SZrAstNode *script = script_with_statement(ifNode);
+    const SZrParserDataflowBlockState *exitState;
+
+    memset(&harness, 0, sizeof(harness));
+    harness.assignmentStatement = assignmentStmt;
+    harness.symbolCount = 1;
+    harness.symbolIndex = 0;
+    ZrParser_Cfg_Init(g_state, &cfg);
+    ZrParser_DataflowResult_Init(&result);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+
+    analysis.direction = ZR_PARSER_DATAFLOW_FORWARD;
+    analysis.stateSize = ZrParser_DefiniteAssignment_StateSize(harness.symbolCount);
+    analysis.initEntry = definite_assignment_init_uninit;
+    analysis.join = definite_assignment_join;
+    analysis.transferStatement = definite_assignment_transfer_assignment;
+    analysis.userData = &harness;
+
+    TEST_ASSERT_TRUE(ZrParser_Dataflow_Run(g_state, &cfg, &analysis, &result));
+
+    exitState = ZrParser_Dataflow_GetBlockState(&result, cfg.exitBlockId);
+    TEST_ASSERT_NOT_NULL(exitState);
+    TEST_ASSERT_TRUE(exitState->isReachable);
+    TEST_ASSERT_EQUAL_INT(
+        ZR_PARSER_DEFINITE_ASSIGNMENT_MAYBE_INIT,
+        ZrParser_DefiniteAssignment_Get(exitState->inState, harness.symbolCount, harness.symbolIndex));
+
+    ZrParser_DataflowResult_Free(g_state, &result);
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_forward_dataflow_skips_unreachable_statement_after_return);
     RUN_TEST(test_backward_dataflow_reaches_return_through_exit_edge);
+    RUN_TEST(test_definite_assignment_single_assignment_reaches_exit_as_init);
+    RUN_TEST(test_definite_assignment_join_marks_one_branch_assignment_as_maybe_init);
     return UNITY_END();
 }

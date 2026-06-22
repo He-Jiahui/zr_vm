@@ -199,8 +199,8 @@ static void metadata_type_def_select_payload_field_layout(SZrCompilerState *cs,
     TZrUInt32 fieldAlign = ZR_METADATA_TYPE_DEF_LAYOUT_MAX_SCALAR_ALIGN;
 
     if (metadata_type_def_payload_uses_value_slot(unionDeclaration, typeInfo, ownershipQualifier)) {
-        fieldSize = (TZrUInt32)sizeof(SZrTypeValue);
-        fieldAlign = metadata_type_def_canonical_align_for_size(fieldSize);
+        fieldSize = ZR_METADATA_TYPE_DEF_LAYOUT_REFERENCE_SIZE;
+        fieldAlign = ZR_METADATA_TYPE_DEF_LAYOUT_MAX_SCALAR_ALIGN;
     } else if (typeInfo != ZR_NULL) {
         TZrUInt32 prototypeAlign = 0;
 

@@ -1,5 +1,8 @@
 ---
 related_code:
+  - zr_vm_lib_debug/include/zr_vm_lib_debug/module.h
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/module.c
+  - zr_vm_lib_debug/CMakeLists.txt
   - zr_vm_core/include/zr_vm_core/task_runtime.h
   - zr_vm_lib_thread/include/zr_vm_lib_thread/module.h
   - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c
@@ -12,6 +15,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
 implementation_files:
+  - zr_vm_lib_debug/include/zr_vm_lib_debug/module.h
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/module.c
+  - zr_vm_lib_debug/CMakeLists.txt
   - zr_vm_core/include/zr_vm_core/task_runtime.h
   - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c
   - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_internal.h
@@ -22,8 +28,14 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
 plan_sources:
+  - user: 2026-06-21 按 docs/plans/debug 优化 debug 调试能力
+  - docs/plans/debug/04-script-debug-library.md
   - user: 2026-04-05 Task / Coroutine / Thread 并发模型重构计划
 tests:
+  - tests/library/test_debug_library.c
+  - tests/debug/test_debug_traceback.c
+  - tests/debug/test_debug_hook_core.c
+  - tests/debug/test_debug_introspection.c
   - tests/module/test_module_system.c
   - tests/parser/test_type_inference.c
   - tests/task/test_task_runtime.c
@@ -42,6 +54,9 @@ doc_type: category-index
 - `../parser-and-semantics/ffi-extern-declarations.md`
   - source-level `%extern` 声明如何 lower 到 `zr.ffi.loadLibrary(...)` / `getSymbol(...)`
   - extern signature descriptor、layout descriptor 和 callback delegate 的消费规则
+- `zr-debug-module.md`
+  - `debug` native module 的受信/沙箱注册入口，以及 `traceback/getinfo/local/upvalue/hook` 首批脚本 API
+  - 写能力默认由宿主 opt-in，沙箱描述符拒绝 `setlocal/setupvalue/sethook`
 - `zr-task-runtime.md`
   - `zr.task` builtin 已切到 `TaskRunner<T>` / `Task<T>` / `IScheduler` / `defaultScheduler`
   - `%async` / `%await` 现在对接 builtin hidden helper，而不是旧 `spawn/await` 公开 helper
@@ -63,4 +78,5 @@ doc_type: category-index
 2. 再看 `zr-coroutine-runtime.md`，了解 isolate 内建协程调度器和手动 pump 路径。
 3. 接着看 `zr-thread-runtime.md`，了解 worker isolate、`Send/Sync` contract、shared control cell 和 mutex/guard 约束。
 4. 然后看 `../parser-and-semantics/ffi-extern-declarations.md`，了解 source-level FFI 如何接入 `zr.ffi`。
-5. 最后看 `zr-system-submodules.md`，了解本仓库当前的 `zr.system` 结构、叶子 API 和元信息约束。
+5. 再看 `zr-system-submodules.md`，了解本仓库当前的 `zr.system` 结构、叶子 API 和元信息约束。
+6. 调试脚本或宿主嵌入 debug 库时，看 `zr-debug-module.md`。

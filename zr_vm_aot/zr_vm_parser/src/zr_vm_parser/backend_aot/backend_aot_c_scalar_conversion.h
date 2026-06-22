@@ -7,6 +7,7 @@
 
 TZrBool backend_aot_try_write_c_scalar_conversion(FILE *file,
                                                   const SZrAotExecIrFunction *functionIr,
-                                                  const TZrInstruction *execInstruction);
+                                                  const TZrInstruction *execInstruction,
+                                                  TZrUInt32 execInstructionIndex);
 
 #endif

@@ -7,6 +7,7 @@
 
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/type_system.h"
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/state.h"
@@ -112,6 +113,7 @@ typedef struct SZrSemanticContext {
     SZrArray overloadSets;      // SZrSemanticOverloadSetRecord
     SZrArray cleanupPlan;       // SZrDeterministicCleanupStep
     SZrArray templateSegments;  // SZrTemplateSegment
+    SZrArray queryDiagnostics;  // SZrStructuredDiagnostic
     SZrArray expressionFacts;   // SZrSemanticExpressionFact
     SZrArray referenceFacts;    // SZrSemanticReferenceFact
     SZrArray numericFacts;      // SZrSemanticNumericFact

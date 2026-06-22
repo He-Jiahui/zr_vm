@@ -1,4 +1,5 @@
 #include "zr_vm_parser/semantic.h"
+#include "zr_vm_parser/diagnostic_builder.h"
 
 #include "zr_vm_core/memory.h"
 
@@ -23,7 +24,29 @@ static void semantic_context_init_arrays(SZrSemanticContext *context) {
                 &context->templateSegments,
                 sizeof(SZrTemplateSegment),
                 ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(context->state,
+                &context->queryDiagnostics,
+                sizeof(SZrStructuredDiagnostic),
+                ZR_PARSER_INITIAL_CAPACITY_SMALL);
     ZrParser_SemanticFacts_Init(context);
+}
+
+static void semantic_context_reset_query_diagnostics(SZrSemanticContext *context) {
+    TZrSize i;
+
+    if (context == ZR_NULL || !context->queryDiagnostics.isValid) {
+        return;
+    }
+
+    for (i = 0; i < context->queryDiagnostics.length; i++) {
+        SZrStructuredDiagnostic *diagnostic =
+            (SZrStructuredDiagnostic *)ZrCore_Array_Get(&context->queryDiagnostics, i);
+        if (diagnostic != ZR_NULL) {
+            ZrParser_StructuredDiagnostic_Free(context->state, diagnostic);
+        }
+    }
+
+    context->queryDiagnostics.length = 0;
 }
 
 SZrSemanticContext *ZrParser_SemanticContext_New(SZrState *state) {
@@ -76,6 +99,8 @@ void ZrParser_SemanticContext_Free(SZrSemanticContext *context) {
     }
     ZrCore_Array_Free(context->state, &context->cleanupPlan);
     ZrCore_Array_Free(context->state, &context->templateSegments);
+    semantic_context_reset_query_diagnostics(context);
+    ZrCore_Array_Free(context->state, &context->queryDiagnostics);
     ZrParser_SemanticFacts_Free(context);
     ZrCore_Memory_RawFree(context->state->global, context, sizeof(SZrSemanticContext));
 }
@@ -110,6 +135,7 @@ void ZrParser_SemanticContext_Reset(SZrSemanticContext *context) {
     context->overloadSets.length = 0;
     context->cleanupPlan.length = 0;
     context->templateSegments.length = 0;
+    semantic_context_reset_query_diagnostics(context);
     ZrParser_SemanticFacts_Reset(context);
 }
 

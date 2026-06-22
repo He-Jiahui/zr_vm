@@ -310,6 +310,189 @@ static TZrBool test_lsp_hover_range_after_utf8_prefix_uses_utf16_columns(SZrStat
     return passed;
 }
 
+static TZrBool test_lsp_hover_surfaces_segmented_numeric_range(SZrState *state) {
+    const TZrChar *uriText = "file:///expression_fact_segment_range_hover.zr";
+    const TZrChar *content =
+        "func calc(seed: u8): int {\n"
+        "    if (seed < 10 || seed > 20) {\n"
+        "        return seed + 1;\n"
+        "    }\n"
+        "    return seed + 20;\n"
+        "}\n";
+    const TZrChar *expectedHover = "Numeric range: 1..256 (segments 1..10, 22..256)";
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition plusPosition;
+    SZrLspLocalSemanticQueryResult query;
+    SZrLspHover *localHover = ZR_NULL;
+    SZrLspHover *publicHover = ZR_NULL;
+    SZrLspRichHover *richHover = ZR_NULL;
+    const TZrChar *localHoverText;
+    const TZrChar *publicHoverText;
+    TZrBool passed;
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !find_position_for_substring(content, "+", 0, &plusPosition)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        printf("FAIL: unable to prepare segmented numeric range hover fixture\n");
+        return ZR_FALSE;
+    }
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    passed = ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state,
+                                                                 context,
+                                                                 uri,
+                                                                 plusPosition,
+                                                                 &query) &&
+             query.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT &&
+             query.expressionFact != ZR_NULL &&
+             query.expressionFact->kind == ZR_SEMANTIC_EXPRESSION_FACT_BINARY &&
+             query.numericFact != ZR_NULL &&
+             query.numericFact->hasRange &&
+             query.numericFact->minValue == 1 &&
+             query.numericFact->maxValue == 256 &&
+             query.numericFact->rangeSegmentCount == 2 &&
+             query.numericFact->rangeSegments[0].minValue == 1 &&
+             query.numericFact->rangeSegments[0].maxValue == 10 &&
+             query.numericFact->rangeSegments[1].minValue == 22 &&
+             query.numericFact->rangeSegments[1].maxValue == 256 &&
+             ZrLanguageServer_LspLocalSemanticQuery_BuildHover(state, &query, &localHover) &&
+             localHover != ZR_NULL &&
+             hover_contains_text(localHover, expectedHover) &&
+             ZrLanguageServer_Lsp_GetHover(state, context, uri, plusPosition, &publicHover) &&
+             publicHover != ZR_NULL &&
+             hover_contains_text(publicHover, expectedHover) &&
+             ZrLanguageServer_Lsp_GetRichHover(state, context, uri, plusPosition, &richHover) &&
+             richHover != ZR_NULL &&
+             rich_hover_section_contains_text(richHover,
+                                              "numericRange",
+                                              "1..256 (segments 1..10, 22..256)");
+
+    if (!passed) {
+        localHoverText = hover_first_text(localHover);
+        publicHoverText = hover_first_text(publicHover);
+        printf("FAIL: expected LSP hover to surface segmented numeric range; "
+               "status=%d expr=%p numeric=%p hasRange=%d min=%lld max=%lld segments=%llu "
+               "first=%lld..%lld second=%lld..%lld localHover=%p localText=%s "
+               "publicHover=%p publicText=%s richHover=%p\n",
+               (int)query.status,
+               (void *)query.expressionFact,
+               (void *)query.numericFact,
+               query.numericFact != ZR_NULL ? (int)query.numericFact->hasRange : -1,
+               query.numericFact != ZR_NULL ? (long long)query.numericFact->minValue : 0LL,
+               query.numericFact != ZR_NULL ? (long long)query.numericFact->maxValue : 0LL,
+               query.numericFact != ZR_NULL ? (unsigned long long)query.numericFact->rangeSegmentCount : 0ULL,
+               query.numericFact != ZR_NULL ? (long long)query.numericFact->rangeSegments[0].minValue : 0LL,
+               query.numericFact != ZR_NULL ? (long long)query.numericFact->rangeSegments[0].maxValue : 0LL,
+               query.numericFact != ZR_NULL ? (long long)query.numericFact->rangeSegments[1].minValue : 0LL,
+               query.numericFact != ZR_NULL ? (long long)query.numericFact->rangeSegments[1].maxValue : 0LL,
+               (void *)localHover,
+               localHoverText != ZR_NULL ? localHoverText : "<null>",
+               (void *)publicHover,
+               publicHoverText != ZR_NULL ? publicHoverText : "<null>",
+               (void *)richHover);
+    }
+
+    hover_free(state, localHover);
+    hover_free(state, publicHover);
+    ZrLanguageServer_Lsp_FreeRichHover(state, richHover);
+    ZrLanguageServer_LspLocalSemanticQuery_Clear(&query);
+    ZrLanguageServer_LspContext_Free(state, context);
+    return passed;
+}
+
+static TZrBool test_lsp_hover_compacts_large_segmented_numeric_range(SZrState *state) {
+    const TZrChar *uriText = "file:///expression_fact_large_segment_range_hover.zr";
+    const TZrChar *content =
+        "func calc(seed: u8): int {\n"
+        "    if (seed == 1 || seed == 3 || seed == 5 || seed == 7 || seed == 9 || seed == 11) {\n"
+        "        return seed + 1;\n"
+        "    }\n"
+        "    return seed + 20;\n"
+        "}\n";
+    const TZrChar *expectedHover =
+        "Numeric range: 2..12 (segments 2..2, 4..4, 6..6, 8..8, ... +2 more)";
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition plusPosition;
+    SZrLspLocalSemanticQueryResult query;
+    SZrLspHover *localHover = ZR_NULL;
+    SZrLspHover *publicHover = ZR_NULL;
+    SZrLspRichHover *richHover = ZR_NULL;
+    const TZrChar *localHoverText;
+    const TZrChar *publicHoverText;
+    TZrBool passed;
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !find_position_for_substring(content, "+", 0, &plusPosition)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        printf("FAIL: unable to prepare compact segmented numeric range hover fixture\n");
+        return ZR_FALSE;
+    }
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    passed = ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state,
+                                                                 context,
+                                                                 uri,
+                                                                 plusPosition,
+                                                                 &query) &&
+             query.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT &&
+             query.numericFact != ZR_NULL &&
+             query.numericFact->hasRange &&
+             query.numericFact->minValue == 2 &&
+             query.numericFact->maxValue == 12 &&
+             query.numericFact->rangeSegmentCount == 6 &&
+             ZrLanguageServer_LspLocalSemanticQuery_BuildHover(state, &query, &localHover) &&
+             localHover != ZR_NULL &&
+             hover_contains_text(localHover, expectedHover) &&
+             ZrLanguageServer_Lsp_GetHover(state, context, uri, plusPosition, &publicHover) &&
+             publicHover != ZR_NULL &&
+             hover_contains_text(publicHover, expectedHover) &&
+             ZrLanguageServer_Lsp_GetRichHover(state, context, uri, plusPosition, &richHover) &&
+             richHover != ZR_NULL &&
+             rich_hover_section_contains_text(richHover,
+                                              "numericRange",
+                                              "2..12 (segments 2..2, 4..4, 6..6, 8..8, ... +2 more)");
+
+    if (!passed) {
+        localHoverText = hover_first_text(localHover);
+        publicHoverText = hover_first_text(publicHover);
+        printf("FAIL: expected LSP hover to compact large segmented numeric range; "
+               "status=%d numeric=%p hasRange=%d min=%lld max=%lld segments=%llu "
+               "localHover=%p localText=%s publicHover=%p publicText=%s richHover=%p\n",
+               (int)query.status,
+               (void *)query.numericFact,
+               query.numericFact != ZR_NULL ? (int)query.numericFact->hasRange : -1,
+               query.numericFact != ZR_NULL ? (long long)query.numericFact->minValue : 0LL,
+               query.numericFact != ZR_NULL ? (long long)query.numericFact->maxValue : 0LL,
+               query.numericFact != ZR_NULL ? (unsigned long long)query.numericFact->rangeSegmentCount : 0ULL,
+               (void *)localHover,
+               localHoverText != ZR_NULL ? localHoverText : "<null>",
+               (void *)publicHover,
+               publicHoverText != ZR_NULL ? publicHoverText : "<null>",
+               (void *)richHover);
+    }
+
+    hover_free(state, localHover);
+    hover_free(state, publicHover);
+    ZrLanguageServer_Lsp_FreeRichHover(state, richHover);
+    ZrLanguageServer_LspLocalSemanticQuery_Clear(&query);
+    ZrLanguageServer_LspContext_Free(state, context);
+    return passed;
+}
+
 static TZrBool test_lsp_hover_escapes_string_constant_payload(SZrState *state) {
     const TZrChar *uriText = "file:///expression_fact_string_hover.zr";
     const TZrChar *content =
@@ -403,6 +586,8 @@ int main(void) {
     SZrState *state;
     TZrBool expressionHoverPassed;
     TZrBool utf16HoverRangePassed;
+    TZrBool segmentedNumericRangeHoverPassed;
+    TZrBool compactSegmentedNumericRangeHoverPassed;
     TZrBool stringHoverPassed;
 
     memset(&callbacks, 0, sizeof(callbacks));
@@ -423,10 +608,23 @@ int main(void) {
     utf16HoverRangePassed = test_lsp_hover_range_after_utf8_prefix_uses_utf16_columns(state);
     printf("%s: LSP Hover Range After UTF-8 Prefix Uses UTF-16 Columns\n",
            utf16HoverRangePassed ? "PASS" : "FAIL");
+    segmentedNumericRangeHoverPassed = test_lsp_hover_surfaces_segmented_numeric_range(state);
+    printf("%s: LSP Hover Surfaces Segmented Numeric Range\n",
+           segmentedNumericRangeHoverPassed ? "PASS" : "FAIL");
+    compactSegmentedNumericRangeHoverPassed =
+        test_lsp_hover_compacts_large_segmented_numeric_range(state);
+    printf("%s: LSP Hover Compacts Large Segmented Numeric Range\n",
+           compactSegmentedNumericRangeHoverPassed ? "PASS" : "FAIL");
     stringHoverPassed = test_lsp_hover_escapes_string_constant_payload(state);
     printf("%s: LSP Hover Escapes String Constant Payload\n",
            stringHoverPassed ? "PASS" : "FAIL");
 
     ZrCore_GlobalState_Free(global);
-    return expressionHoverPassed && utf16HoverRangePassed && stringHoverPassed ? 0 : 1;
+    return expressionHoverPassed &&
+                   utf16HoverRangePassed &&
+                   segmentedNumericRangeHoverPassed &&
+                   compactSegmentedNumericRangeHoverPassed &&
+                   stringHoverPassed
+               ? 0
+               : 1;
 }

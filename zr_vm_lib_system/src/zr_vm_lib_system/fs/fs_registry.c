@@ -108,7 +108,7 @@ static const ZrLibFieldDescriptor g_stream_fields[] = {
 static const ZrLibMethodDescriptor g_entry_methods[] = {
         ZR_LIB_METHOD_DESCRIPTOR_INIT("exists", 0, 0, ZrSystem_Fs_Entry_Exists, "bool",
                                       "Refresh and return whether the wrapped path exists.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("refresh", 0, 0, ZrSystem_Fs_Entry_Refresh, "SystemFileInfo",
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("refresh", 0, 0, ZrSystem_Fs_Entry_Refresh, "object",
                                       "Refresh the fileInfo snapshot and return it.", ZR_FALSE, ZR_NULL, 0),
 };
 

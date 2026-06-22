@@ -10,6 +10,22 @@ static TZrBool backend_aot_c_frame_cleanup_layout_needs_drop(
                      layout->byteSize > 0u);
 }
 
+TZrBool backend_aot_c_frame_cleanup_would_emit(const SZrAotExecIrFrameLayout *frameLayout) {
+    TZrUInt32 layoutIndex;
+
+    if (frameLayout == ZR_NULL || frameLayout->slotLayouts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (layoutIndex = 0u; layoutIndex < frameLayout->slotLayoutCount; layoutIndex++) {
+        if (backend_aot_c_frame_cleanup_layout_needs_drop(&frameLayout->slotLayouts[layoutIndex])) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 void backend_aot_write_c_frame_cleanup(FILE *file, const SZrAotExecIrFrameLayout *frameLayout) {
     TZrUInt32 reverseIndex;
 

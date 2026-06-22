@@ -336,6 +336,9 @@ void ZrParser_InferredType_Init(SZrState *state, SZrInferredType *type, EZrValue
     type->minValue = 0;
     type->maxValue = 0;
     type->hasRangeConstraint = ZR_FALSE;
+    type->rangeSegmentCount = 0;
+    memset(type->rangeSegments, 0, sizeof(type->rangeSegments));
+    ZrCore_Array_Construct(&type->rangeExtraSegments);
     type->knownBoolValue = ZR_FALSE;
     type->hasKnownBoolValue = ZR_FALSE;
     
@@ -362,6 +365,9 @@ void ZrParser_InferredType_InitFull(SZrState *state, SZrInferredType *type, EZrV
     type->minValue = 0;
     type->maxValue = 0;
     type->hasRangeConstraint = ZR_FALSE;
+    type->rangeSegmentCount = 0;
+    memset(type->rangeSegments, 0, sizeof(type->rangeSegments));
+    ZrCore_Array_Construct(&type->rangeExtraSegments);
     type->knownBoolValue = ZR_FALSE;
     type->hasKnownBoolValue = ZR_FALSE;
     
@@ -389,6 +395,10 @@ void ZrParser_InferredType_Free(SZrState *state, SZrInferredType *type) {
         }
         ZrCore_Array_Free(state, &type->elementTypes);
     }
+    ZrParser_NumericRangeSegments_Free(state,
+                                       &type->rangeSegmentCount,
+                                       type->rangeSegments,
+                                       &type->rangeExtraSegments);
     
     // typeName由GC管理，不需要手动释放
     type->typeName = ZR_NULL;
@@ -426,6 +436,8 @@ void ZrParser_InferredType_Copy(SZrState *state, SZrInferredType *dest, const SZ
     dest->minValue = src->minValue;
     dest->maxValue = src->maxValue;
     dest->hasRangeConstraint = src->hasRangeConstraint;
+    ZrCore_Array_Construct(&dest->rangeExtraSegments);
+    ZrParser_InferredType_CopyRangeSegments(state, dest, src);
     dest->knownBoolValue = src->knownBoolValue;
     dest->hasKnownBoolValue = src->hasKnownBoolValue;
     
@@ -1185,6 +1197,8 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
             declarationFact.node = declarationNode;
             declarationFact.range = declarationRange;
             declarationFact.declarationRange = declarationRange;
+            declarationFact.definitionRange = declarationRange;
+            declarationFact.hasDefinitionRange = ZR_TRUE;
             declarationFact.kind = ZR_SEMANTIC_REFERENCE_DECLARATION;
             declarationFact.symbolId = symbolId;
             declarationFact.typeId = typeId;
@@ -1376,6 +1390,8 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *state,
             declarationFact.node = declarationNode;
             declarationFact.range = declarationRange;
             declarationFact.declarationRange = declarationRange;
+            declarationFact.definitionRange = declarationRange;
+            declarationFact.hasDefinitionRange = ZR_TRUE;
             declarationFact.kind = ZR_SEMANTIC_REFERENCE_DECLARATION;
             declarationFact.symbolId = symbolId;
             declarationFact.typeId = typeId;

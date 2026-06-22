@@ -167,30 +167,28 @@ static void test_aot_c_generated_shared_library_compiles_direct_try_end_try_lowe
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_try_direct"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "execution_push_exception_handler(state, zr_aot_call_info, 0)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Try(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "execution_push_exception_handler(state, zr_aot_call_info, 0)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_throw_direct"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Exception_NormalizeThrownValue(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "execution_unwind_exception_to_handler(state, &zr_aot_call_info)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Exception_Throw(state, state->currentExceptionStatus);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Throw(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_next_instruction != ZR_AOT_RUNTIME_RESUME_FALLTHROUGH)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Exception_NormalizeThrownValue(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_end_try_direct"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "execution_find_handler_state(state, zr_aot_call_info, 0)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "execution_pop_exception_handler(state, handlerState);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_EndTry(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_catch_direct"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Value_Copy(state, zr_aot_destination, &state->currentException);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Exception_ClearCurrent(state);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Value_ResetAsNull(zr_aot_destination);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "execution_clear_pending_control(state);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Catch(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Value_Copy(state, zr_aot_destination, &state->currentException);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Exception_ClearCurrent(state);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Value_ResetAsNull(zr_aot_destination);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_end_finally_direct"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "switch (state->pendingControl.kind)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case ZR_VM_PENDING_CONTROL_EXCEPTION:"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case ZR_VM_PENDING_CONTROL_RETURN:"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "execution_resume_pending_via_outer_finally(state, &zr_aot_call_info)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Value_Copy(state, &targetSlot->value, &state->pendingControl.value);"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Try"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_EndTry"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Throw"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Catch"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_EndFinally"));
+    TEST_ASSERT_NOT_NULL(
+            strstr(generatedCText, "ZrLibrary_AotRuntime_EndFinally(state, &frame, 0, &zr_aot_next_instruction)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "switch (state->pendingControl.kind)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "SZrCallInfo *resumeCallInfo;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "SZrVmExceptionHandlerState *handlerState;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "TZrStackValuePointer targetSlot;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Value_Copy(state, &targetSlot->value, &state->pendingControl.value);"));
     free(generatedCText);
 
     snprintf(command,

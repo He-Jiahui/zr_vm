@@ -1,5 +1,6 @@
 #include "unity.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #include "harness/runtime_support.h"
@@ -118,14 +119,21 @@ static SZrAstNode *identifier_node(const TZrChar *name, TZrSize startOffset, TZr
     return identifier;
 }
 
+static SZrAstNode *unary_expression(const TZrChar *op,
+                                    SZrAstNode *argument,
+                                    TZrSize startOffset,
+                                    TZrSize endOffset) {
+    SZrAstNode *expression = test_node(ZR_AST_UNARY_EXPRESSION, startOffset, endOffset);
+
+    expression->data.unaryExpression.op.op = op;
+    expression->data.unaryExpression.argument = argument;
+    return expression;
+}
+
 static SZrAstNode *unary_not_expression(SZrAstNode *argument,
                                         TZrSize startOffset,
                                         TZrSize endOffset) {
-    SZrAstNode *expression = test_node(ZR_AST_UNARY_EXPRESSION, startOffset, endOffset);
-
-    expression->data.unaryExpression.op.op = "!";
-    expression->data.unaryExpression.argument = argument;
-    return expression;
+    return unary_expression("!", argument, startOffset, endOffset);
 }
 
 static SZrAstNode *logical_expression(SZrAstNode *left,
@@ -534,6 +542,409 @@ static void test_cfg_folds_float_relational_false_if_condition(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_cfg_folds_mixed_kind_equality_false_if_condition(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrParserCfg cfg;
+    SZrAstNode *left = integer_literal(1, 4, 5);
+    SZrAstNode *right = string_literal("1", 9, 12);
+    SZrAstNode *condition = binary_expression(left, "==", right, 4, 12);
+    SZrAstNode *thenStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 20, 28);
+    SZrAstNode *elseStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 44, 52);
+    SZrAstNode *thenBlock = block_with_statement(thenStmt, 16, 32);
+    SZrAstNode *elseBlock = block_with_statement(elseStmt, 40, 56);
+    SZrAstNode *ifNode = if_statement(condition, thenBlock, elseBlock);
+    SZrAstNode *script = script_with_statement(ifNode);
+    const SZrSemanticReachabilityFact *thenFact;
+    const SZrSemanticReachabilityFact *elseFact;
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrParser_Cfg_Init(g_state, &cfg);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
+
+    thenFact = reachability_fact_at(context, thenStmt);
+    elseFact = reachability_fact_at(context, elseStmt);
+    TEST_ASSERT_NOT_NULL(thenFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, thenFact->state);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH, thenFact->cause);
+    TEST_ASSERT_EQUAL_PTR(condition, thenFact->causeNode);
+    TEST_ASSERT_NULL(elseFact);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_cfg_folds_integer_addition_equality_true_if_condition(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrParserCfg cfg;
+    SZrAstNode *sum = binary_expression(integer_literal(1, 5, 6),
+                                        "+",
+                                        integer_literal(1, 9, 10),
+                                        5,
+                                        10);
+    SZrAstNode *right = integer_literal(2, 15, 16);
+    SZrAstNode *condition = binary_expression(sum, "==", right, 4, 17);
+    SZrAstNode *thenStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 25, 33);
+    SZrAstNode *elseStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 49, 57);
+    SZrAstNode *thenBlock = block_with_statement(thenStmt, 21, 37);
+    SZrAstNode *elseBlock = block_with_statement(elseStmt, 45, 61);
+    SZrAstNode *ifNode = if_statement(condition, thenBlock, elseBlock);
+    SZrAstNode *script = script_with_statement(ifNode);
+    const SZrSemanticReachabilityFact *thenFact;
+    const SZrSemanticReachabilityFact *elseFact;
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrParser_Cfg_Init(g_state, &cfg);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
+
+    thenFact = reachability_fact_at(context, thenStmt);
+    elseFact = reachability_fact_at(context, elseStmt);
+    TEST_ASSERT_NULL(thenFact);
+    TEST_ASSERT_NOT_NULL(elseFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, elseFact->state);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH, elseFact->cause);
+    TEST_ASSERT_EQUAL_PTR(condition, elseFact->causeNode);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_cfg_folds_integer_subtraction_equality_true_if_condition(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrParserCfg cfg;
+    SZrAstNode *difference = binary_expression(integer_literal(3, 5, 6),
+                                               "-",
+                                               integer_literal(1, 9, 10),
+                                               5,
+                                               10);
+    SZrAstNode *right = integer_literal(2, 15, 16);
+    SZrAstNode *condition = binary_expression(difference, "==", right, 4, 17);
+    SZrAstNode *thenStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 25, 33);
+    SZrAstNode *elseStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 49, 57);
+    SZrAstNode *thenBlock = block_with_statement(thenStmt, 21, 37);
+    SZrAstNode *elseBlock = block_with_statement(elseStmt, 45, 61);
+    SZrAstNode *ifNode = if_statement(condition, thenBlock, elseBlock);
+    SZrAstNode *script = script_with_statement(ifNode);
+    const SZrSemanticReachabilityFact *thenFact;
+    const SZrSemanticReachabilityFact *elseFact;
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrParser_Cfg_Init(g_state, &cfg);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
+
+    thenFact = reachability_fact_at(context, thenStmt);
+    elseFact = reachability_fact_at(context, elseStmt);
+    TEST_ASSERT_NULL(thenFact);
+    TEST_ASSERT_NOT_NULL(elseFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, elseFact->state);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH, elseFact->cause);
+    TEST_ASSERT_EQUAL_PTR(condition, elseFact->causeNode);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_cfg_folds_integer_multiplication_equality_true_if_condition(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrParserCfg cfg;
+    SZrAstNode *product = binary_expression(integer_literal(2, 5, 6),
+                                            "*",
+                                            integer_literal(3, 9, 10),
+                                            5,
+                                            10);
+    SZrAstNode *right = integer_literal(6, 15, 16);
+    SZrAstNode *condition = binary_expression(product, "==", right, 4, 17);
+    SZrAstNode *thenStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 25, 33);
+    SZrAstNode *elseStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 49, 57);
+    SZrAstNode *thenBlock = block_with_statement(thenStmt, 21, 37);
+    SZrAstNode *elseBlock = block_with_statement(elseStmt, 45, 61);
+    SZrAstNode *ifNode = if_statement(condition, thenBlock, elseBlock);
+    SZrAstNode *script = script_with_statement(ifNode);
+    const SZrSemanticReachabilityFact *thenFact;
+    const SZrSemanticReachabilityFact *elseFact;
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrParser_Cfg_Init(g_state, &cfg);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
+
+    thenFact = reachability_fact_at(context, thenStmt);
+    elseFact = reachability_fact_at(context, elseStmt);
+    TEST_ASSERT_NULL(thenFact);
+    TEST_ASSERT_NOT_NULL(elseFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, elseFact->state);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH, elseFact->cause);
+    TEST_ASSERT_EQUAL_PTR(condition, elseFact->causeNode);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_cfg_folds_integer_division_equality_true_if_condition(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrParserCfg cfg;
+    SZrAstNode *quotient = binary_expression(integer_literal(9, 5, 6),
+                                             "/",
+                                             integer_literal(3, 9, 10),
+                                             5,
+                                             10);
+    SZrAstNode *right = integer_literal(3, 15, 16);
+    SZrAstNode *condition = binary_expression(quotient, "==", right, 4, 17);
+    SZrAstNode *thenStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 25, 33);
+    SZrAstNode *elseStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 49, 57);
+    SZrAstNode *thenBlock = block_with_statement(thenStmt, 21, 37);
+    SZrAstNode *elseBlock = block_with_statement(elseStmt, 45, 61);
+    SZrAstNode *ifNode = if_statement(condition, thenBlock, elseBlock);
+    SZrAstNode *script = script_with_statement(ifNode);
+    const SZrSemanticReachabilityFact *thenFact;
+    const SZrSemanticReachabilityFact *elseFact;
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrParser_Cfg_Init(g_state, &cfg);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
+
+    thenFact = reachability_fact_at(context, thenStmt);
+    elseFact = reachability_fact_at(context, elseStmt);
+    TEST_ASSERT_NULL(thenFact);
+    TEST_ASSERT_NOT_NULL(elseFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, elseFact->state);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH, elseFact->cause);
+    TEST_ASSERT_EQUAL_PTR(condition, elseFact->causeNode);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_cfg_folds_integer_modulo_equality_true_if_condition(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrParserCfg cfg;
+    SZrAstNode *remainder = binary_expression(integer_literal(10, 5, 7),
+                                              "%",
+                                              integer_literal(4, 10, 11),
+                                              5,
+                                              11);
+    SZrAstNode *right = integer_literal(2, 16, 17);
+    SZrAstNode *condition = binary_expression(remainder, "==", right, 4, 18);
+    SZrAstNode *thenStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 26, 34);
+    SZrAstNode *elseStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 50, 58);
+    SZrAstNode *thenBlock = block_with_statement(thenStmt, 22, 38);
+    SZrAstNode *elseBlock = block_with_statement(elseStmt, 46, 62);
+    SZrAstNode *ifNode = if_statement(condition, thenBlock, elseBlock);
+    SZrAstNode *script = script_with_statement(ifNode);
+    const SZrSemanticReachabilityFact *thenFact;
+    const SZrSemanticReachabilityFact *elseFact;
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrParser_Cfg_Init(g_state, &cfg);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
+
+    thenFact = reachability_fact_at(context, thenStmt);
+    elseFact = reachability_fact_at(context, elseStmt);
+    TEST_ASSERT_NULL(thenFact);
+    TEST_ASSERT_NOT_NULL(elseFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, elseFact->state);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH, elseFact->cause);
+    TEST_ASSERT_EQUAL_PTR(condition, elseFact->causeNode);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_cfg_folds_folded_integer_relational_true_if_condition(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrParserCfg cfg;
+    SZrAstNode *sum = binary_expression(integer_literal(1, 5, 6),
+                                        "+",
+                                        integer_literal(2, 9, 10),
+                                        5,
+                                        10);
+    SZrAstNode *right = integer_literal(2, 14, 15);
+    SZrAstNode *condition = binary_expression(sum, ">", right, 4, 16);
+    SZrAstNode *thenStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 24, 32);
+    SZrAstNode *elseStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 48, 56);
+    SZrAstNode *thenBlock = block_with_statement(thenStmt, 20, 36);
+    SZrAstNode *elseBlock = block_with_statement(elseStmt, 44, 60);
+    SZrAstNode *ifNode = if_statement(condition, thenBlock, elseBlock);
+    SZrAstNode *script = script_with_statement(ifNode);
+    const SZrSemanticReachabilityFact *thenFact;
+    const SZrSemanticReachabilityFact *elseFact;
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrParser_Cfg_Init(g_state, &cfg);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
+
+    thenFact = reachability_fact_at(context, thenStmt);
+    elseFact = reachability_fact_at(context, elseStmt);
+    TEST_ASSERT_NULL(thenFact);
+    TEST_ASSERT_NOT_NULL(elseFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, elseFact->state);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH, elseFact->cause);
+    TEST_ASSERT_EQUAL_PTR(condition, elseFact->causeNode);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_cfg_folds_integer_unary_minus_equality_true_if_condition(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrParserCfg cfg;
+    SZrAstNode *left = unary_expression("-",
+                                        integer_literal(3, 6, 7),
+                                        5,
+                                        7);
+    SZrAstNode *right = integer_literal(-3, 12, 14);
+    SZrAstNode *condition = binary_expression(left, "==", right, 4, 15);
+    SZrAstNode *thenStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 23, 31);
+    SZrAstNode *elseStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 47, 55);
+    SZrAstNode *thenBlock = block_with_statement(thenStmt, 19, 35);
+    SZrAstNode *elseBlock = block_with_statement(elseStmt, 43, 59);
+    SZrAstNode *ifNode = if_statement(condition, thenBlock, elseBlock);
+    SZrAstNode *script = script_with_statement(ifNode);
+    const SZrSemanticReachabilityFact *thenFact;
+    const SZrSemanticReachabilityFact *elseFact;
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrParser_Cfg_Init(g_state, &cfg);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
+
+    thenFact = reachability_fact_at(context, thenStmt);
+    elseFact = reachability_fact_at(context, elseStmt);
+    TEST_ASSERT_NULL(thenFact);
+    TEST_ASSERT_NOT_NULL(elseFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, elseFact->state);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH, elseFact->cause);
+    TEST_ASSERT_EQUAL_PTR(condition, elseFact->causeNode);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_cfg_folds_integer_unary_plus_equality_true_if_condition(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrParserCfg cfg;
+    SZrAstNode *left = unary_expression("+",
+                                        integer_literal(3, 6, 7),
+                                        5,
+                                        7);
+    SZrAstNode *right = integer_literal(3, 12, 13);
+    SZrAstNode *condition = binary_expression(left, "==", right, 4, 14);
+    SZrAstNode *thenStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 22, 30);
+    SZrAstNode *elseStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 46, 54);
+    SZrAstNode *thenBlock = block_with_statement(thenStmt, 18, 34);
+    SZrAstNode *elseBlock = block_with_statement(elseStmt, 42, 58);
+    SZrAstNode *ifNode = if_statement(condition, thenBlock, elseBlock);
+    SZrAstNode *script = script_with_statement(ifNode);
+    const SZrSemanticReachabilityFact *thenFact;
+    const SZrSemanticReachabilityFact *elseFact;
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrParser_Cfg_Init(g_state, &cfg);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
+
+    thenFact = reachability_fact_at(context, thenStmt);
+    elseFact = reachability_fact_at(context, elseStmt);
+    TEST_ASSERT_NULL(thenFact);
+    TEST_ASSERT_NOT_NULL(elseFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, elseFact->state);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH, elseFact->cause);
+    TEST_ASSERT_EQUAL_PTR(condition, elseFact->causeNode);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_cfg_folds_integer_bitwise_not_equality_true_if_condition(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrParserCfg cfg;
+    SZrAstNode *left = unary_expression("~",
+                                        integer_literal(0, 6, 7),
+                                        5,
+                                        7);
+    SZrAstNode *right = integer_literal(-1, 12, 14);
+    SZrAstNode *condition = binary_expression(left, "==", right, 4, 15);
+    SZrAstNode *thenStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 23, 31);
+    SZrAstNode *elseStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 47, 55);
+    SZrAstNode *thenBlock = block_with_statement(thenStmt, 19, 35);
+    SZrAstNode *elseBlock = block_with_statement(elseStmt, 43, 59);
+    SZrAstNode *ifNode = if_statement(condition, thenBlock, elseBlock);
+    SZrAstNode *script = script_with_statement(ifNode);
+    const SZrSemanticReachabilityFact *thenFact;
+    const SZrSemanticReachabilityFact *elseFact;
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrParser_Cfg_Init(g_state, &cfg);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
+
+    thenFact = reachability_fact_at(context, thenStmt);
+    elseFact = reachability_fact_at(context, elseStmt);
+    TEST_ASSERT_NULL(thenFact);
+    TEST_ASSERT_NOT_NULL(elseFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, elseFact->state);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH, elseFact->cause);
+    TEST_ASSERT_EQUAL_PTR(condition, elseFact->causeNode);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_cfg_keeps_overflowed_integer_unary_minus_condition_unknown(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrParserCfg cfg;
+    SZrAstNode *left = unary_expression("-",
+                                        integer_literal(INT64_MIN, 6, 15),
+                                        5,
+                                        15);
+    SZrAstNode *right = integer_literal(INT64_MIN, 20, 29);
+    SZrAstNode *condition = binary_expression(left, "==", right, 4, 30);
+    SZrAstNode *thenStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 38, 46);
+    SZrAstNode *elseStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 62, 70);
+    SZrAstNode *thenBlock = block_with_statement(thenStmt, 34, 50);
+    SZrAstNode *elseBlock = block_with_statement(elseStmt, 58, 74);
+    SZrAstNode *ifNode = if_statement(condition, thenBlock, elseBlock);
+    SZrAstNode *script = script_with_statement(ifNode);
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrParser_Cfg_Init(g_state, &cfg);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
+
+    TEST_ASSERT_NULL(reachability_fact_at(context, thenStmt));
+    TEST_ASSERT_NULL(reachability_fact_at(context, elseStmt));
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_SemanticContext_Free(context);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cfg_folds_unary_not_false_if_condition);
@@ -547,5 +958,16 @@ int main(void) {
     RUN_TEST(test_cfg_folds_string_equality_false_if_condition);
     RUN_TEST(test_cfg_folds_char_inequality_false_while_condition);
     RUN_TEST(test_cfg_folds_float_relational_false_if_condition);
+    RUN_TEST(test_cfg_folds_mixed_kind_equality_false_if_condition);
+    RUN_TEST(test_cfg_folds_integer_addition_equality_true_if_condition);
+    RUN_TEST(test_cfg_folds_integer_subtraction_equality_true_if_condition);
+    RUN_TEST(test_cfg_folds_integer_multiplication_equality_true_if_condition);
+    RUN_TEST(test_cfg_folds_integer_division_equality_true_if_condition);
+    RUN_TEST(test_cfg_folds_integer_modulo_equality_true_if_condition);
+    RUN_TEST(test_cfg_folds_folded_integer_relational_true_if_condition);
+    RUN_TEST(test_cfg_folds_integer_unary_plus_equality_true_if_condition);
+    RUN_TEST(test_cfg_folds_integer_unary_minus_equality_true_if_condition);
+    RUN_TEST(test_cfg_folds_integer_bitwise_not_equality_true_if_condition);
+    RUN_TEST(test_cfg_keeps_overflowed_integer_unary_minus_condition_unknown);
     return UNITY_END();
 }

@@ -1,4 +1,5 @@
 #include "interface/lsp_interface_internal.h"
+#include "semantic/lsp_numeric_range_text.h"
 #include "semantic/semantic_analyzer_internal.h"
 
 #include <stdarg.h>
@@ -115,14 +116,6 @@ static TZrBool lsp_inlay_append_hint(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrBool lsp_inlay_is_float_numeric_fact(const SZrSemanticNumericFact *fact) {
-    return fact != ZR_NULL &&
-           (fact->sourceType == ZR_VALUE_TYPE_FLOAT ||
-            fact->sourceType == ZR_VALUE_TYPE_DOUBLE ||
-            fact->targetType == ZR_VALUE_TYPE_FLOAT ||
-            fact->targetType == ZR_VALUE_TYPE_DOUBLE);
-}
-
 static TZrBool lsp_inlay_append_numeric_fact_detail(TZrChar *buffer,
                                                     TZrSize bufferSize,
                                                     TZrSize *used,
@@ -132,21 +125,13 @@ static TZrBool lsp_inlay_append_numeric_fact_detail(TZrChar *buffer,
     }
 
     if (fact->hasRange) {
-        if (lsp_inlay_is_float_numeric_fact(fact)) {
-            if (!lsp_inlay_append_format(buffer,
-                                         bufferSize,
-                                         used,
-                                         ", range %.17g..%.17g",
-                                         fact->minDoubleValue,
-                                         fact->maxDoubleValue)) {
-                return ZR_FALSE;
-            }
-        } else if (!lsp_inlay_append_format(buffer,
-                                            bufferSize,
-                                            used,
-                                            ", range %lld..%lld",
-                                            (long long)fact->minValue,
-                                            (long long)fact->maxValue)) {
+        if (!lsp_inlay_append_format(buffer, bufferSize, used, ", ") ||
+            !ZrLanguageServer_LspNumericRangeText_AppendRange(
+                buffer,
+                bufferSize,
+                used,
+                fact,
+                ZR_TRUE)) {
             return ZR_FALSE;
         }
     }

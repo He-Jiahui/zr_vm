@@ -114,30 +114,16 @@ static void test_aot_c_source_lowers_exception_control_to_direct_core_calls(void
     };
     static const char *const controlNeedles[] = {
             "/* zr_aot_try_direct */",
-            "execution_push_exception_handler(state, zr_aot_call_info, %u)",
+            "ZrLibrary_AotRuntime_Try(state, &frame, %u)",
             "/* zr_aot_end_try_direct */",
-            "execution_find_handler_state(state, zr_aot_call_info, %u)",
-            "handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY;",
-            "execution_pop_exception_handler(state, handlerState);",
+            "ZrLibrary_AotRuntime_EndTry(state, &frame, %u)",
             "/* zr_aot_throw_direct */",
-            "ZrCore_Exception_NormalizeThrownValue(state,",
-            "execution_unwind_exception_to_handler(state, &zr_aot_call_info)",
-            "ZrCore_Exception_Throw(state, state->currentExceptionStatus);",
+            "ZrLibrary_AotRuntime_Throw(state, &frame, %u, &zr_aot_next_instruction)",
+            "if (zr_aot_next_instruction != ZR_AOT_RUNTIME_RESUME_FALLTHROUGH)",
             "/* zr_aot_catch_direct */",
-            "ZrCore_Value_Copy(state, zr_aot_destination, &state->currentException);",
-            "ZrCore_Exception_ClearCurrent(state);",
-            "ZrCore_Value_ResetAsNull(zr_aot_destination);",
+            "ZrLibrary_AotRuntime_Catch(state, &frame, %u)",
             "/* zr_aot_end_finally_direct */",
-            "switch (state->pendingControl.kind)",
-            "case ZR_VM_PENDING_CONTROL_EXCEPTION:",
-            "case ZR_VM_PENDING_CONTROL_RETURN:",
-            "case ZR_VM_PENDING_CONTROL_BREAK:",
-            "case ZR_VM_PENDING_CONTROL_CONTINUE:",
-            "ZrCore_Value_Copy(state, &targetSlot->value, &state->pendingControl.value);",
-            "execution_resume_pending_via_outer_finally(state, &zr_aot_call_info)",
-            "execution_jump_to_instruction_offset(state,",
-            "ZrCore_Exception_NormalizeStatus(state, ZR_THREAD_STATUS_EXCEPTION_ERROR)",
-            "execution_clear_pending_control(state);",
+            "ZrLibrary_AotRuntime_EndFinally(state, &frame, %u, &zr_aot_next_instruction)",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(TRY):",
@@ -152,12 +138,39 @@ static void test_aot_c_source_lowers_exception_control_to_direct_core_calls(void
             "backend_aot_write_c_end_finally(file, entry->flatIndex, destinationSlot);",
     };
     static const char *const forbiddenNeedles[] = {
-            "ZrLibrary_AotRuntime_Try(state, &frame",
-            "ZrLibrary_AotRuntime_EndTry(state, &frame",
-            "ZrLibrary_AotRuntime_Throw",
-            "ZrLibrary_AotRuntime_Catch(state, &frame",
-            "ZrLibrary_AotRuntime_EndFinally",
             "backend_aot_write_c_control_transfer_call",
+            "execution_push_exception_handler(state, zr_aot_call_info",
+            "generated AOT TRY failed to push exception handler",
+            "generated AOT END_TRY has invalid handler index",
+            "handlerInfo = &frame.function->exceptionHandlerList[%u];",
+            "handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY;",
+            "SZrCallInfo *resumeCallInfo;",
+            "SZrVmExceptionHandlerState *handlerState;",
+            "TZrStackValuePointer targetSlot;",
+            "switch (state->pendingControl.kind)",
+            "generated AOT END_FINALLY is missing call frame",
+            "ZrCore_Value_Copy(state, &targetSlot->value, &state->pendingControl.value);",
+            "ZrCore_Exception_NormalizeStatus(state, ZR_THREAD_STATUS_EXCEPTION_ERROR)",
+            "SZrTypeValue *zr_aot_destination;",
+            "generated AOT CATCH has invalid destination slot",
+            "ZrCore_Value_Copy(state, zr_aot_destination, &state->currentException);",
+            "ZrCore_Exception_ClearCurrent(state);",
+            "ZrCore_Value_ResetAsNull(zr_aot_destination);",
+            "SZrTypeValue *zr_aot_source_value;",
+            "SZrTypeValue zr_aot_payload;",
+            "ZrCore_Exception_NormalizeThrownValue(state,",
+            "generated AOT THROW has invalid payload slot",
+            "generated AOT THROW has missing payload value",
+            "generated AOT THROW failed to normalize exception",
+    };
+    static const char *const runtimeNeedles[] = {
+            "TZrBool ZrLibrary_AotRuntime_Throw(SZrState *state,",
+            "TZrBool ZrLibrary_AotRuntime_EndFinally(SZrState *state,",
+            "if (!execution_unwind_exception_to_handler(state, &resumeCallInfo))",
+            "ZrCore_Exception_Throw(state, state->currentExceptionStatus);",
+    };
+    static const char *const runtimeForbiddenNeedles[] = {
+            "return aot_runtime_resume_exception_in_current_frame(state, frame, outResumeInstructionIndex);",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
@@ -165,20 +178,25 @@ static void test_aot_c_source_lowers_exception_control_to_direct_core_calls(void
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+    char *runtimeText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(controlText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
+    TEST_ASSERT_NOT_NULL(runtimeText);
 
     assert_text_contains_all(emitterHeaderText, emitterHeaderNeedles, ARRAY_COUNT(emitterHeaderNeedles));
     assert_text_contains_all(controlText, controlNeedles, ARRAY_COUNT(controlNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
+    assert_text_contains_all(runtimeText, runtimeNeedles, ARRAY_COUNT(runtimeNeedles));
     assert_text_contains_none(controlText, forbiddenNeedles, ARRAY_COUNT(forbiddenNeedles));
     assert_text_contains_none(functionBodyText, forbiddenNeedles, ARRAY_COUNT(forbiddenNeedles));
+    assert_text_contains_none(runtimeText, runtimeForbiddenNeedles, ARRAY_COUNT(runtimeForbiddenNeedles));
 
     free(emitterHeaderText);
     free(controlText);
     free(functionBodyText);
+    free(runtimeText);
 }
 
 int main(void) {

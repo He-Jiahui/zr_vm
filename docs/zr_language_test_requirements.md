@@ -327,7 +327,7 @@ for (var item in values) {
   - `META_GET` / `META_SET` 必须直接调用 hidden accessor runtime path，而不是先退回普通成员取值再走 helper call
   - `SUPER_META_GET_CACHED` / `SUPER_META_SET_CACHED` 必须通过 `CALLSITE_CACHE_TABLE` 命中，并在 receiver prototype 改变时重新 guard 不能错用旧 accessor
   - static property accessor site 必须允许进一步 quicken 成 `SUPER_META_GET_STATIC_CACHED` / `SUPER_META_SET_STATIC_CACHED`
-  - static hidden accessor invocation 不能额外注入 receiver
+  - static hidden accessor invocation 不能额外注入 receiver；对象 descriptor 的直接 getter/setter 路径也必须传空 receiver
   - 禁止仅靠 `getIterator` / `moveNext` / `current` 字段名字满足 `foreach`
 - compiler + runtime integration: `tests/parser/test_instruction_execution.c`
   - binary import roundtrip 后仍保留 `GET_MEMBER` metadata

@@ -18,19 +18,49 @@ void ZrParser_StructuredDiagnostic_Init(SZrStructuredDiagnostic *diagnostic) {
 
     memset(diagnostic, 0, sizeof(*diagnostic));
     diagnostic->severity = ZR_STRUCTURED_DIAGNOSTIC_ERROR;
+    ZrCore_Array_Construct(&diagnostic->relatedInformation);
 }
 
 void ZrParser_StructuredDiagnostic_Free(SZrState *state, SZrStructuredDiagnostic *diagnostic) {
-    ZR_UNUSED_PARAMETER(state);
-
     if (diagnostic == ZR_NULL) {
         return;
     }
 
+    if (state != ZR_NULL && diagnostic->relatedInformation.isValid) {
+        ZrCore_Array_Free(state, &diagnostic->relatedInformation);
+    }
     diagnostic->code = ZR_NULL;
     diagnostic->message = ZR_NULL;
     diagnostic->cause = ZR_NULL;
     diagnostic->suggestion = ZR_NULL;
+}
+
+TZrBool ZrParser_StructuredDiagnostic_AddRelatedInformation(SZrState *state,
+                                                            SZrStructuredDiagnostic *diagnostic,
+                                                            SZrFileRange location,
+                                                            const TZrChar *message) {
+    SZrStructuredDiagnosticRelatedInformation related;
+
+    if (state == ZR_NULL || diagnostic == ZR_NULL || message == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!diagnostic->relatedInformation.isValid) {
+        ZrCore_Array_Init(state,
+                          &diagnostic->relatedInformation,
+                          sizeof(SZrStructuredDiagnosticRelatedInformation),
+                          ZR_PARSER_INITIAL_CAPACITY_TINY);
+    }
+
+    memset(&related, 0, sizeof(related));
+    related.location = location;
+    related.message = structured_diagnostic_create_string(state, message);
+    if (related.message == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Push(state, &diagnostic->relatedInformation, &related);
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DiagnosticBuilder_Build(SZrState *state,

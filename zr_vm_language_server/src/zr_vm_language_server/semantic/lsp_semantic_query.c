@@ -1,4 +1,5 @@
 #include "semantic/lsp_semantic_query.h"
+#include "semantic/lsp_semantic_definition_query.h"
 #include "semantic/lsp_semantic_import_chain.h"
 #include "project/lsp_project_internal.h"
 
@@ -3090,6 +3091,13 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDefinitio
     }
 
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL) {
+        if (ZrLanguageServer_LspSemanticDefinitionQuery_AppendReachingDefinition(state,
+                                                                                 context,
+                                                                                 query,
+                                                                                 result)) {
+            return ZR_TRUE;
+        }
+
         return query->symbol != ZR_NULL &&
                semantic_query_append_location(state,
                                               context,

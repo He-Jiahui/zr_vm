@@ -305,8 +305,17 @@ static TZrBool dataflow_process_forward(SZrState *state,
 
             wasReachable = successorState->isReachable;
             successorState->isReachable = ZR_TRUE;
-            changed = analysis->join(successorState->inState, blockState->outState, analysis->userData);
-            if (!wasReachable || changed) {
+            if (!wasReachable) {
+                ZrCore_Memory_RawCopy(successorState->inState,
+                                      blockState->outState,
+                                      analysis->stateSize);
+                changed = ZR_TRUE;
+            } else {
+                changed = analysis->join(successorState->inState,
+                                         blockState->outState,
+                                         analysis->userData);
+            }
+            if (changed) {
                 if (!dataflow_enqueue(queue, queued, blockCount, &tail, &count, successorId)) {
                     dataflow_free_queue(state, queue, queued, blockCount);
                     dataflow_free_reachability(state, entryReachable, blockCount);
@@ -420,8 +429,17 @@ static TZrBool dataflow_process_backward(SZrState *state,
             }
             wasReachable = predecessorState->isReachable;
             predecessorState->isReachable = ZR_TRUE;
-            changed = analysis->join(predecessorState->outState, blockState->inState, analysis->userData);
-            if (!wasReachable || changed) {
+            if (!wasReachable) {
+                ZrCore_Memory_RawCopy(predecessorState->outState,
+                                      blockState->inState,
+                                      analysis->stateSize);
+                changed = ZR_TRUE;
+            } else {
+                changed = analysis->join(predecessorState->outState,
+                                         blockState->inState,
+                                         analysis->userData);
+            }
+            if (changed) {
                 if (!dataflow_enqueue(queue,
                                       queued,
                                       blockCount,

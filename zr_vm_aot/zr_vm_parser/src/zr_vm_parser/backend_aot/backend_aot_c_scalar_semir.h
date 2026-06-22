@@ -10,5 +10,10 @@ TZrBool backend_aot_try_write_c_scalar_semir_for_exec_instruction(FILE *file,
                                                                   const SZrAotExecIrFunction *functionIr,
                                                                   const TZrInstruction *execInstruction,
                                                                   TZrUInt32 execInstructionIndex);
+TZrBool backend_aot_c_scalar_semir_can_write_frame_free_for_exec_instruction(
+        const SZrAotExecIrModule *module,
+        const SZrAotExecIrFunction *functionIr,
+        const TZrInstruction *execInstruction,
+        TZrUInt32 execInstructionIndex);
 
 #endif

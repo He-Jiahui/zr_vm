@@ -1530,16 +1530,24 @@ static TZrUInt32 primary_member_chain_direct_local_slot(SZrCompilerState *cs, SZ
 }
 
 static TZrBool stage_pending_receiver_binding(SZrCompilerState *cs,
-                                              TZrUInt32 receiverSourceSlot,
-                                              TZrUInt32 *outReceiverSlot) {
+                                               TZrUInt32 receiverSourceSlot,
+                                               TZrUInt32 receiverTargetSlot,
+                                               TZrUInt32 *outReceiverSlot) {
     TZrUInt32 receiverSlot;
 
     if (cs == ZR_NULL || outReceiverSlot == ZR_NULL || cs->hasError ||
-        receiverSourceSlot == ZR_PARSER_SLOT_NONE) {
+        receiverSourceSlot == ZR_PARSER_SLOT_NONE ||
+        receiverTargetSlot == ZR_PARSER_SLOT_NONE) {
         return ZR_FALSE;
     }
 
-    receiverSlot = allocate_stack_slot(cs);
+    receiverSlot = receiverTargetSlot;
+    if (cs->stackSlotCount <= (TZrSize)receiverSlot) {
+        cs->stackSlotCount = (TZrSize)receiverSlot + 1u;
+        if (cs->maxStackSlotCount < cs->stackSlotCount) {
+            cs->maxStackSlotCount = cs->stackSlotCount;
+        }
+    }
     emit_instruction(cs,
                      create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
                                           (TZrUInt16)receiverSlot,
@@ -1606,7 +1614,7 @@ static void compiler_ensure_stack_slot_available(SZrCompilerState *cs, TZrUInt32
         return;
     }
 
-    if (cs->stackSlotCount >= (TZrSize)stackSlot) {
+    if (cs->stackSlotCount > (TZrSize)stackSlot) {
         return;
     }
 
@@ -2446,6 +2454,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                             if (pendingReceiverRequiresBinding &&
                                 !stage_pending_receiver_binding(cs,
                                                                pendingReceiverSourceSlot,
+                                                               currentSlot + 1u,
                                                                &pendingReceiverSlot)) {
                                 return;
                             }
@@ -2463,7 +2472,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                typeMember->memberType == ZR_AST_CLASS_FIELD));
                             TZrBool canEmitMemberSlot = (TZrBool)(declaredFieldMatch || typeMemberIsField);
                             TZrBool memberEntryBoundAtCompileTime = ZR_FALSE;
-                            TZrBool canUseDirectKnownVmMemberCall =
+                            TZrBool canUseDirectKnownMemberCall =
                                     ZR_FALSE;
                             if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
                                 ZrParser_Compiler_Error(cs,
@@ -2478,17 +2487,17 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                     memberId < cs->currentFunction->memberEntryLength &&
                                     cs->currentFunction->memberEntries[memberId].entryKind ==
                                             ZR_FUNCTION_MEMBER_ENTRY_KIND_BOUND_DESCRIPTOR;
-                            canUseDirectKnownVmMemberCall =
+                            canUseDirectKnownMemberCall =
                                     nextIsFunctionCall &&
                                     !cs->isInTailCallContext &&
                                     pendingReceiverRequiresBinding &&
                                     !memberUsesSuperLookup &&
                                     memberEntryBoundAtCompileTime &&
                                     typeMember != ZR_NULL &&
-                                    typeMember->compiledFunction != ZR_NULL &&
-                                    typeMember->compiledFunction->closureValueLength == 0;
+                                    (typeMember->compiledFunction == ZR_NULL ||
+                                     typeMember->compiledFunction->closureValueLength == 0);
 
-                            if (canUseDirectKnownVmMemberCall) {
+                            if (canUseDirectKnownMemberCall) {
                                 if (preferredDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE &&
                                     pendingReceiverWritebackSlot == ZR_PARSER_SLOT_NONE &&
                                     pendingReceiverSourceSlot == currentSlot &&
@@ -2498,6 +2507,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 } else if (pendingReceiverRequiresBinding &&
                                            !stage_pending_receiver_binding(cs,
                                                                           pendingReceiverSourceSlot,
+                                                                          currentSlot + 1u,
                                                                           &pendingReceiverSlot)) {
                                     return;
                                 }
@@ -2525,6 +2535,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 if (pendingReceiverRequiresBinding &&
                                     !stage_pending_receiver_binding(cs,
                                                                    pendingReceiverSourceSlot,
+                                                                   currentSlot + 1u,
                                                                    &pendingReceiverSlot)) {
                                     return;
                                 }
@@ -2545,6 +2556,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 if (pendingReceiverRequiresBinding &&
                                     !stage_pending_receiver_binding(cs,
                                                                    pendingReceiverSourceSlot,
+                                                                   currentSlot + 1u,
                                                                    &pendingReceiverSlot)) {
                                     return;
                                 }
@@ -2565,6 +2577,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         if (pendingReceiverRequiresBinding &&
                             !stage_pending_receiver_binding(cs,
                                                            pendingReceiverSourceSlot,
+                                                           currentSlot + 1u,
                                                            &pendingReceiverSlot)) {
                             return;
                         }

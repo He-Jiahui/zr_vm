@@ -300,17 +300,23 @@ static void reflection_set_field_value(SZrState *state,
         return;
     }
 
+    if (!reflection_pin_raw_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &objectPinned) ||
+        !reflection_pin_value_object(state, value, &valuePinned)) {
+        reflection_unpin_value_object(state->global, value, valuePinned);
+        reflection_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
+        return;
+    }
+
     fieldString = reflection_make_string(state, fieldName);
     if (fieldString == ZR_NULL) {
+        reflection_unpin_value_object(state->global, value, valuePinned);
+        reflection_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
         return;
     }
 
     reflection_init_string_key(state, &key, fieldString);
-    if (!reflection_pin_raw_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &objectPinned) ||
-        !reflection_pin_raw_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString), &keyPinned) ||
-        !reflection_pin_value_object(state, value, &valuePinned)) {
+    if (!reflection_pin_raw_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString), &keyPinned)) {
         reflection_unpin_value_object(state->global, value, valuePinned);
-        reflection_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString), keyPinned);
         reflection_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
         return;
     }

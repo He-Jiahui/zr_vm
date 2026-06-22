@@ -6,6 +6,8 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
   - zr_vm_lib_debug/CMakeLists.txt
   - zr_vm_lib_debug/include/zr_vm_debug/debug.h
+  - zr_vm_lib_debug/include/zr_vm_lib_debug/profile.h
+  - zr_vm_lib_debug/include/zr_vm_lib_debug/coverage.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_child_shape.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_eval.c
@@ -17,6 +19,8 @@ related_code:
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_facts.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_snapshot.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_union.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/profile.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c
   - zr_vm_lib_network/CMakeLists.txt
   - zr_vm_lib_network/include/zr_vm_network/network.h
   - zr_vm_lib_network/src/zr_vm_lib_network/network/network.c
@@ -26,6 +30,8 @@ related_code:
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/include/zr_vm_core/type_layout.h
   - zr_vm_core/src/zr_vm_core/debug.c
+  - zr_vm_core/src/zr_vm_core/debug_heap.c
+  - zr_vm_core/src/zr_vm_core/profile.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_parser/include/zr_vm_parser/writer.h
   - zr_vm_parser/src/zr_vm_parser/writer.c
@@ -35,6 +41,8 @@ implementation_files:
   - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
   - zr_vm_lib_debug/CMakeLists.txt
   - zr_vm_lib_debug/include/zr_vm_debug/debug.h
+  - zr_vm_lib_debug/include/zr_vm_lib_debug/profile.h
+  - zr_vm_lib_debug/include/zr_vm_lib_debug/coverage.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_child_shape.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_eval.c
@@ -46,10 +54,13 @@ implementation_files:
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_facts.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_snapshot.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_union.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/profile.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c
   - zr_vm_lib_network/CMakeLists.txt
   - zr_vm_lib_network/include/zr_vm_network/network.h
   - zr_vm_lib_network/src/zr_vm_lib_network/network/network.c
   - zr_vm_core/src/zr_vm_core/debug.c
+  - zr_vm_core/src/zr_vm_core/debug_heap.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
 plan_sources:
   - user: 2026-04-05 实现 ZR Debugger V1 Architecture，主路线为 launch-under-debug，先支持 interp + binary
@@ -64,6 +75,15 @@ plan_sources:
 tests:
   - tests/debug/test_debug_metadata.c
   - tests/debug/test_debug_hook_core.c
+  - tests/debug/test_debug_snapshot_contracts.c
+  - tests/debug/test_debug_step_edges.c
+  - tests/debug/test_debug_truncation.c
+  - tests/debug/test_debug_threads.c
+  - tests/debug/test_debug_data_breakpoint.c
+  - tests/profile/test_profile_deterministic.c
+  - tests/profile/test_coverage.c
+  - tests/debug/test_disassemble.c
+  - tests/debug/test_heap_summary.c
   - tests/debug/test_debug_trace.c
   - tests/debug/test_debug_expression_diagnostics.c
   - tests/debug/test_debug_variable_child_shape.c
@@ -73,6 +93,15 @@ tests:
   - tests/cli/test_cli_debug_e2e.c
   - tests/cli/test_cli_import_basic_fixture.c
   - tests/acceptance/2026-06-20-debug-phase1-core-hooks.md
+  - tests/acceptance/2026-06-22-debug-phase5-dap-snapshot.md
+  - tests/acceptance/2026-06-22-debug-phase5-step-edges.md
+  - tests/acceptance/2026-06-22-debug-phase5-truncation.md
+  - tests/acceptance/2026-06-22-debug-phase5-threads.md
+  - tests/acceptance/2026-06-22-debug-phase5-data-breakpoint.md
+  - tests/acceptance/2026-06-22-debug-phase6-profile.md
+  - tests/acceptance/2026-06-22-debug-phase6-coverage.md
+  - tests/acceptance/2026-06-22-debug-phase6-disassembly.md
+  - tests/acceptance/2026-06-22-debug-phase6-heap-summary.md
   - tests/CMakeLists.txt
 doc_type: module-detail
 ---
@@ -87,8 +116,9 @@ doc_type: module-detail
 
 - 支持 `interp` 和 `binary` 两条 VM 执行路径。
 - CLI 暴露 `--debug`、`--debug-address`、`--debug-wait`、`--debug-print-endpoint`。
+- CLI 也暴露测量类工具开关 `--profile[=out]`、`--coverage[=out]`、`--dump-bytecode <out>` 与 `--heap-summary[=out]`，默认关闭或按需输出。
 - 调试协议固定为 `zrdbg/1`，消息形状是 JSON-RPC 风格。
-- 支持断点、pause、`stepIn`、`stepOver`、`stepOut`、stack/scopes/variables、uncaught exception stop、terminated event。
+- 支持断点、data breakpoint/watchpoint、pause、`stepIn`、`stepOver`、`stepOut`、`threads`、stack/scopes/variables、uncaught exception stop、terminated event。
 - 主仓只承诺 `interp` / `binary`；历史 AOT 调试需求已随 `zr_vm_aot/` 分离出主链路。
 
 ## Module Split
@@ -101,6 +131,7 @@ doc_type: module-detail
 - breakpoint 表和 source line 解析
 - safepoint pause loop
 - step controller
+- thread registry and per-thread state routing
 - stack / scopes / variables 只读快照
 - safe evaluate 表达式解析、只读求值和诊断归因
 - 成功 `evaluate` 结果的 parser semantic fact 摘要桥接
@@ -127,7 +158,7 @@ doc_type: module-detail
 
 内核 hook 路径现在也有公开的 `ZrCore_Debug_SetHook` / `GetHook` / `GetHookMask` / `GetHookCount`。`LINE` 与 `COUNT` 在 `TraceExecution` 中独立处理：LINE 仍按函数+源码行去重，COUNT 则在每条被 trace 的 instruction 上递减，归零后触发 `ZR_DEBUG_HOOK_EVENT_COUNT` 并重置周期；`count=0` 会禁用 COUNT 位。instruction trap 只对 LINE/COUNT 传播到当前 VM callInfo 链，CALL/RETURN-only hook 继续走函数调用/返回路径，不额外强制每条指令进入慢路径。
 
-同一层还提供 `SZrDebugActivation`、`ZrCore_Debug_GetStack(level, ...)` 和 `ZrCore_Debug_GetInfo(..., type, ...)`。调用方先按层级取得 activation，再用 `EZrDebugInfoType` 位掩码选择 source、line、name、closure、tail-call、return-transfer 或 push-function 字段；旧 `ZrCore_DebugInfo_Get` 保留为 level 0 兼容包装。
+同一层还提供 `SZrDebugActivation`、`ZrCore_Debug_GetStack(level, ...)` 和 `ZrCore_Debug_GetInfo(..., type, ...)`。调用方先按层级取得 activation，再用 `EZrDebugInfoType` 位掩码选择 source、line、name、closure、tail-call、return-transfer 或 push-function 字段；旧 `ZrCore_DebugInfo_Get` 保留为 level 0 兼容包装。DAP snapshot 现在也走这条内核自省路径：stackTrace 使用 `GetStack`/`GetInfo`，locals/arguments 使用 `GetLocal`，closure preview 使用 `GetUpvalue`，避免调试代理继续复制 raw callInfo、frame slot 和 upvalue value 遍历逻辑。
 
 错误诊断复用同一组栈自省 API。`ZrCore_Debug_Traceback(...)` 会通过 `GetStack`/`GetInfo` 生成截断安全的文本回溯；异常规范化在 unwind 前把它保存为 `stack` 字段，CLI 未捕获错误输出优先打印该文本，debug agent 异常停止事件转发为 `exceptionStack`，VS Code DAP adapter 再通过 `exceptionInfo` 与 stderr output 暴露给客户端。
 
@@ -137,9 +168,10 @@ observer 的 stop reason 优先级固定为：
 2. user pause
 3. entry stop / wait-for-client
 4. breakpoint
-5. step
+5. data breakpoint / watchpoint
+6. step
 
-step 语义按“源码位置推进”而不是“同一行内任意下一条 instruction”判停，所以 `stepOver` 不会在同一源码行内来回抖动。
+step 语义按“源码位置推进”而不是“同一行内任意下一条 instruction”判停，所以 `stepOver` 不会在同一源码行内来回抖动。step controller 会记录发起 step 时的 call frame 身份：`stepOver` 会跨过更深的子调用，也会把同深度但不同逻辑帧的 tail-call callee 当作被跨过的调用处理，而不是因为帧深度相同就停进 callee；递归同一源码行上的子调用如果命中原断点，也会在 step-over 完成前被推迟。`stepIn` 遇到没有可见源码行的 native 函数时自然表现为 step-over；`stepOut` 在异常 unwind 期间如果目标帧消失，会等到父帧下一个可见停靠点，而不是永久等待原帧恢复。
 
 ## Breakpoint Mapping
 
@@ -173,6 +205,79 @@ runtime 读取 `.zro` 时会把这些信息恢复到 `SZrFunction`：
 
 这意味着 `binary` 路径下断点仍然按源码文件和行号工作，而且 `zrvm` 现在也可以把 `.zro` 里的 line+column/range 映射一并挂回运行时 function，作为后续 debug link / source map 式能力的正式基础，而不是退化成“只有 instruction line number”。
 
+## Data Breakpoints / Watchpoints
+
+`initialize` 会报告 `supportsDataBreakpoints`。客户端可先展开 scope，再对 Locals 或 Closures 中的变量调用 `dataBreakpointInfo`；调试代理会为局部变量和 upvalue 生成稳定 `dataId`，随后 `setDataBreakpoints` 安装 watch 列表。`write` 和 `readWrite` 访问类型当前都按“值变化即停”处理；未给访问类型时默认为 `write`。
+
+这是软件 watchpoint：agent 只在存在 watch 时进入检查路径，并在 LINE/COUNT hook safepoint 上逐个比对被 watch 槽位的当前值和上一份快照。命中后 stopped event 使用 `reason=dataBreakpoint`，同时携带 `dataId`、`description` 和 `threadId`；agent 会更新该 watch 的上一份快照，避免同一值变化在后续 safepoint 立即重复触发。
+
+当前初版只支持局部变量与 upvalue。对象字段、数组元素和其它 child value 会返回不可持久化的 `dataBreakpointInfo`，后续需要更稳定的对象字段 identity 后再扩展。该实现成本随 watch 数线性增长，调试文档和计划验收都按这个边界记录。
+
+## Profiling
+
+`zr_vm_lib_debug` 提供独立 profiler，不把测量状态塞进 `zr_vm_core`。profiler 通过公开的 CALL/RETURN hook 记录每个函数的调用次数、返回次数、累计耗时和 self time；同时可通过 COUNT hook 每 N 条指令采样当前函数+源码行，聚合成热点桶。内核只继续提供 hook 事件和栈/函数身份。
+
+CLI 的 `--profile` 在正常 project run 上启用 profiler，运行成功后输出文本报告；`--profile=<out>` 写入指定文件，不带路径时写到 stdout。报告头为：
+
+```text
+ZR_PROFILE deterministic
+calls returns total_ns self_ns function source
+```
+
+当采样桶非空时，report 会追加：
+
+```text
+ZR_PROFILE samples period=1 total=<N>
+samples line function source
+```
+
+`--profile` 与 `--debug` 当前互斥，因为 debug agent 已经占用 trace observer / hook 组合，两个实时控制面同时开启会让停靠语义和 hook 生命周期变得不确定。profiling 默认关闭；开启后会在 CALL/RETURN 和 COUNT hook 路径进入测量代码，允许显著变慢。
+
+## Coverage
+
+`zr_vm_core` 提供 `ZrCore_Debug_GetActiveLines(function, outLines, cap)`，从函数的 `executionLocationInfoList` 枚举可执行源行，作为 coverage denominator。`zr_vm_lib_debug` 的 coverage recorder 在执行前注册 entry function tree，先写入所有 executable line，再通过 LINE hook 把实际命中的 `(function,line)` 标记为 executed。
+
+CLI 的 `--coverage` 在正常 project run 上启用 coverage，运行成功后输出文本报告；`--coverage=<out>` 写入指定文件，不带路径时写到 stdout。报告头为：
+
+```text
+ZR_COVERAGE lines
+source line executable executed function
+```
+
+普通 interp project 在 coverage 模式下会显式加载 entry function，而不是走隐藏 entry 的 library shortcut，这样 coverage 能在执行前注册函数树并区分“可执行但未覆盖”和“不可执行”。`--coverage` 与 `--debug`、`--profile` 当前互斥，因为三者都需要拥有或组合 debug hook/control-plane 生命周期。coverage 默认关闭；开启后会在 LINE hook 路径进入测量代码，允许显著变慢。
+
+## Disassembly
+
+`zr_vm_core` 提供 `ZrCore_Debug_DisassembleFunction(state, function, FILE*)`，用于开发期和教学场景检查 codegen 输出。反汇编从 `SZrFunction::instructionsList` 逐条打印 instruction，opcode name 复用 `ZrCore_Profile_InstructionName` 的统一 opcode 表，源码行通过函数 line table 解析。
+
+输出格式固定为文本：
+
+```text
+ZR_DISASSEMBLY function <name> source <source> instructions <N>
+offset opcode operands
+0000 <OPCODE> u8=... u16=... i32=... raw=0x... ; line <N>
+```
+
+CLI 的 `--dump-bytecode <out>` 在 project run 路径上启用这条能力。runtime 会在加载 entry function 后、执行用户代码前写入反汇编文件，然后继续原本的 interp/binary/debug 执行路径。这样 dump 本身不改变程序结果，也能在运行失败前保留 entry bytecode。该开关要求显式输出路径；compile-only、REPL、inline、help 和 version 路径都会被解析层拒绝。
+
+## Heap Summary
+
+`zr_vm_core` 提供 `ZrCore_Debug_HeapSummary(state, FILE*)`，用于退出时生成轻量内存快照。实现拆分在 `debug_heap.c`，避免继续扩大核心调试主文件。该摘要只读取现有 GC/object 元数据，不做完整对象图遍历或引用路径分析。
+
+输出格式固定为文本：
+
+```text
+ZR_HEAP_SUMMARY objects total=<N> bytes=<N> managed=<N> debt=<N>
+type string count <N> bytes <N>
+type object count <N> bytes <N>
+prototypes tracked <N>
+gc regions total=<N> young=<N> old=<N> major_free=<N> ...
+gc bytes young=<N> old=<N> major_free=<N> major_limit=<N>
+gc collections minor=<N> major=<N> emergency=<N> promoted=<N> collected=<N>
+```
+
+CLI 的 `--heap-summary` 在成功 project run 后把摘要写到 stdout；`--heap-summary=<out>` 写入指定文件。该开关不占用 debug hook，因此可独立于 profiling/coverage 的 hook 生命周期；compile-only、REPL、inline、help 和 version 路径都会被解析层拒绝。
+
 ## CLI Contract
 
 ### Supported commands
@@ -181,6 +286,15 @@ runtime 读取 `.zro` 时会把这些信息恢复到 `SZrFunction`：
 - `zr_vm_cli <project.zrp> --debug --debug-address 127.0.0.1:4711`
 - `zr_vm_cli <project.zrp> --debug --debug-wait --debug-print-endpoint`
 - `zr_vm_cli --compile <project.zrp> --run --debug --execution-mode binary`
+- `zr_vm_cli <project.zrp> --profile`
+- `zr_vm_cli <project.zrp> --profile=profile.txt`
+- `zr_vm_cli <project.zrp> --coverage`
+- `zr_vm_cli <project.zrp> --coverage=coverage.txt`
+- `zr_vm_cli <project.zrp> --dump-bytecode bytecode.txt`
+- `zr_vm_cli --compile <project.zrp> --run --dump-bytecode bytecode.txt`
+- `zr_vm_cli <project.zrp> --heap-summary`
+- `zr_vm_cli <project.zrp> --heap-summary=heap.txt`
+- `zr_vm_cli --compile <project.zrp> --run --heap-summary=heap.txt`
 
 ### Runtime behavior
 
@@ -192,6 +306,25 @@ runtime 读取 `.zro` 时会把这些信息恢复到 `SZrFunction`：
   - 等待客户端连接并初始化后再继续
 - `--debug-print-endpoint`
   - 打印实际绑定的 loopback endpoint，尤其适合 `port=0` 自动分配场景
+- `--profile[=out]`
+  - 在非 debug 运行路径启用确定性 profiling
+  - 同时启用 COUNT hook 采样并在 report 中追加热点桶
+  - `out` 缺省时写 stdout；使用 `--profile=<out>` 时写入该文件
+  - 与 `--debug`、`--compile` only、`--no-run`、`--help`、`--version` 互斥
+- `--coverage[=out]`
+  - 在非 debug/profile 运行路径启用 line coverage
+  - 执行前注册 entry function tree 的 activelines denominator，执行中通过 LINE hook 标记 executed lines
+  - `out` 缺省时写 stdout；使用 `--coverage=<out>` 时写入该文件
+  - 与 `--debug`、`--profile`、`--compile` only、`--no-run`、`--help`、`--version` 互斥
+- `--dump-bytecode <out>`
+  - 在 entry function 加载后、执行前写出反汇编文本
+  - 支持 interp、binary、debug project run，以及 `--compile ... --run`
+  - 需要显式输出路径；与 compile-only、REPL、inline、help、version 路径互斥
+- `--heap-summary[=out]`
+  - 在 project run 成功结束后输出轻量 heap/GC 摘要
+  - `out` 缺省时写 stdout；使用 `--heap-summary=<out>` 时写入该文件
+  - 支持 interp、binary、debug project run，以及 `--compile ... --run`
+  - 不占用 hook；与 compile-only、REPL、inline、help、version 路径互斥
 
 CLI 在 `interp` 和 `binary` 调试路径里都绕过了旧的“直接一把跑完”快捷入口，统一改成：
 
@@ -214,6 +347,9 @@ v1 请求集：
 - `next`
 - `stepIn`
 - `stepOut`
+- `threads`
+- `dataBreakpointInfo`
+- `setDataBreakpoints`
 - `stackTrace`
 - `scopes`
 - `variables`
@@ -264,6 +400,13 @@ v1 事件集：
 
 ## Snapshot Model
 
+调试代理维护一个 `SZrState -> threadId` 注册表。主执行体稳定映射为 `threadId=1` / `main`，
+`threads` 请求返回当前已注册执行体；`stopped` 与 `continued` 事件带 `threadId`。
+`stackTrace`、`scopes`、`variables` 与 `evaluate` 都接受可选 `threadId`，缺省使用最近一次
+stop 所属 thread。读取时代理只在请求期间把快照上下文切到目标 state，读完立即恢复。
+当前 task runtime 仍复用主 `SZrState`，所以本阶段完成的是 DAP 线程枚举和按 thread 快照路由
+MVP；跨 task 同步 step 与 task runtime 侧额外 state 注册留后续。
+
 variables 目前是只读快照，不支持变量写回或带副作用求值。scope 划分固定为：
 
 - `Locals`
@@ -276,6 +419,10 @@ variables 目前是只读快照，不支持变量写回或带副作用求值。s
 - `loadedModules`
 
 `variables` 响应中的每个 value preview 和 `evaluate` 响应都会带 `namedVariables` / `indexedVariables`。这两个字段是协议边界的子形状提示，方便 VS Code/DAP adapter 在不先展开 handle 的情况下判断 named/indexed children。普通 object 的 `namedVariables` 与实际展开计数一致：可见字段加上 `$prototype` 等 synthetic entry，隐藏 `__zr_` 字段不计入；直接 array/index window 使用 `indexedVariables`。
+
+所有固定缓冲文本预览都会显式标记截断：超长普通文本保留前缀并追加 `...[+N]`，路径/源码名优先保留尾部并在前缀放置同样的省略计数。长字符串 value/evaluate preview 不放大 `ZR_DEBUG_TEXT_CAPACITY`；当完整字符串达到预览缓冲上限时，preview 保留带标记的短文本，同时返回 `variablesReference` 和按 64-byte 分块计算的 `indexedVariables`。客户端随后用 `variables(start,count)` 惰性读取完整字符串片段，片段名形如 `[64..128)`，片段自身不再带截断标记。
+
+帧内变量读取的实际 name/value 来源是核心 debug API，而不是 DAP 代理直接读 callInfo 和 value slot。`debug_snapshot.c` 仍会读取函数本地元数据来维持 `Arguments` / `Locals` 分组、活跃区间和 inline union preview，但最终的局部变量名和值由 `ZrCore_Debug_GetLocal` 提供；闭包变量预览由 `ZrCore_Debug_GetUpvalue` 提供。这样 Phase 2 的局部变量/upvalue 语义修复会自动覆盖 DAP、evaluate 和变量树。
 
 同一层现在也输出 `semanticSummary`。变量和 value preview 上的内容仍是 runtime snapshot 的短摘要，供 adapter 在变量树、watch、evaluate 面板中直接展示：布尔值显示为 `logical true/false`，整数显示为 `integer <value>`，浮点显示为 `number <value>`，可展开引用显示为 `expandable <type>, named N, indexed M`，带 ownership metadata 的值会追加 `ownership <kind>`。成功的 `evaluate` 结果会在这个 runtime 摘要后追加 parser/type-inference 能在同一个表达式源码上证明的事实，例如 `evaluate("1 + 2")` 会报告 `integer 3, expression binary exact, constant 3, range 3..3, unsigned range 3..3`，`evaluate("true || false")` 会报告 runtime `logical true` 以及 parser-owned `short-circuits` / `unreachable because short-circuit skips evaluation`，`evaluate("true ? 1 : 2")` 会报告被常量条件跳过的 branch reachability，字符串 literal 常量会被转义成一行摘要，避免 quote、backslash、换行、tab 或其它控制字节破坏 adapter 展示。已存在的 parser-owned reference facts 也会进入这条摘要；例如 `evaluate("zr[1]")` 的 parser fact pass 会追加 `reference member access`，而 runtime `referenceSummary` 仍保留实际读取来源 `global zr, index access`。assignment 语义摘要现在也会保留直接 write facts：`globalSeed = 3` 追加 `reference write globalSeed`，`seed.value = 3` 与 `seed[index] = 4` 追加 `reference member write ...`，避免 write/member-write 被同节点 read/access fact 遮蔽。当 evaluate 运行在暂停帧上时，Debug 会先把可见 frame slots 以 runtime value type 注册进临时 parser type environment；同一个 replay 也注册稳定 Debug globals，所以 `evaluate("inside + 1")` 的 `semanticSummary` 能追加 parser-owned `reference read inside`，`evaluate("zr")` 能追加 parser-owned `reference read zr`。当 Debug agent 带有编译入口函数时，semantic-summary fact bridge 还会注册入口函数的 top-level callable metadata；直接语义摘要查询 `pick(1 + 2)` 可追加 parser-owned `call pick args=1`、`reference call pick` 和实参的 `constant 3` / `range 3..3` / `unsigned range 3..3`，`seed[index]` 这类成员表达式摘要可追加 parser-owned `member index`、`reference member access index` 和索引 token 的 `reference read index`，但 safe evaluator 仍按只读策略拒绝实际函数调用或写入。Debug 只消费共享 semantic fact layer，不在 safe evaluator 中重新实现表达式类型、常量折叠、数值范围、unsigned range payload、分支语义推断、引用分类、调用/成员 payload 推断或字符串常量转义策略。
 
@@ -309,10 +456,31 @@ Inline union frame slots are materialized to an ignored temporary carrier object
 当前实现对应的回归面：
 
 - `tests/cli/test_cli_args.c`
-  - debug flags 解析、依赖关系和 run-path 约束
+  - debug/profile/coverage/dump-bytecode/heap-summary flags 解析、依赖关系和 run-path 约束
 - `tests/cli/test_cli_import_basic_fixture.c`
   - 复制 `tests/fixtures/projects/import_basic` 到临时目录后重编译，断言 `compiled=2 skipped=0 removed=0`
   - binary run 输出 `hello from import`，防止 exported callable import 签名再次阻塞 debug launch 基线
+  - 在启用 debug/profile 支持的测试构建里运行 `--profile=<out>` 等价路径，断言生成 `ZR_PROFILE deterministic` report
+  - 同一 report 断言包含 `ZR_PROFILE samples` 与 `samples line function source`
+  - 在启用 debug/coverage 支持的测试构建里运行 `--coverage=<out>` 等价路径，断言生成 `ZR_COVERAGE lines` report
+  - 运行 `--dump-bytecode <out>` 等价路径，断言生成 `ZR_DISASSEMBLY function` report，且包含 opcode name 和 `; line` 注释
+  - 运行 `--heap-summary=<out>` 等价路径，断言生成 `ZR_HEAP_SUMMARY objects` report，且保留原程序输出
+- `tests/debug/test_disassemble.c`
+  - `ZrCore_Debug_DisassembleFunction` 输出 `ZR_DISASSEMBLY function` header 和 `offset opcode operands` 列头
+  - 反汇编行数等于 `function->instructionsLength`
+  - 输出包含 `FUNCTION_RETURN` opcode name 和源码 `; line N` 注释
+- `tests/debug/test_heap_summary.c`
+  - `ZrCore_Debug_HeapSummary` 输出 `ZR_HEAP_SUMMARY objects` header
+  - 摘要包含 string/object/thread 等 type bucket
+  - 摘要包含 GC region 和 collection counters
+- `tests/profile/test_profile_deterministic.c`
+  - 已知脚本调用 `mid` 两次、`leaf` 四次，断言 deterministic profiler 的 call/return 计数精确
+  - 验证 total time 不小于 self time，并在 `Stop` 后恢复原 hook mask
+  - COUNT hook 采样模式以 period=1 运行循环脚本，断言采样桶记录到 `leaf` 函数源码行
+- `tests/profile/test_coverage.c`
+  - `ZrCore_Debug_GetActiveLines` 从分支函数提取唯一可执行行，包含 taken 和 untaken return line
+  - coverage recorder 注册函数树后运行部分分支脚本，断言 taken return line `executed=true`，untaken return line `executable=true` 且 `executed=false`
+  - `Stop` 后恢复原 hook mask
 - `tests/cli/test_cli_debug_e2e.c`
   - launch-under-debug 在 `import_basic` fixture 上命中入口断点，不因 import signature mismatch 先停到 exception
   - 未捕获错误输出包含统一 traceback 文本，覆盖 `leaf`/`middle`/`root` 多帧源码栈
@@ -320,6 +488,31 @@ Inline union frame slots are materialized to an ignored temporary carrier object
   - `ZrCore_Debug_Traceback` 覆盖多帧脚本栈、native/script/native 混合帧、深栈折叠、小 buffer NUL 截断，以及异常对象 `stack` 文本字段
 - `tests/debug/test_debug_trace.c`
   - interpreter trace hook、line event 和 debug info 获取
+- `tests/debug/test_debug_snapshot_contracts.c`
+  - source contract 覆盖 DAP stack snapshot 必须包含 `ZrCore_Debug_GetStack` / `ZrCore_Debug_GetInfo`，并禁止在 stack 查找路径回退到 raw `callInfoList` 遍历
+  - source contract 覆盖 DAP variables snapshot 必须包含 `ZrCore_Debug_GetLocal` / `ZrCore_Debug_GetUpvalue`，并禁止 locals/arguments 主路径直接用 raw frame slot 或 closure value pointer 替代核心自省 API
+- `tests/debug/test_debug_step_edges.c`
+  - tail-call `stepOver` 不停进 tail-called callee，而是在调用方下一个可见位置停靠
+  - native call `stepIn` 表现为 step-over，停在 native 返回后的脚本行
+  - exception unwind 中的 `stepOut` 不永久等待被弹出的目标帧，回到父帧可见位置
+  - recursive same-line `stepOver` 不被子调用里同一断点抢先停下
+- `tests/debug/test_debug_truncation.c`
+  - 超长普通文本预览包含 `...[+N]` 省略标记
+  - 超长路径预览保留文件名尾部
+  - tiny buffer 仍保证 NUL 终止
+  - 长字符串 value preview 标记截断
+  - 长字符串 runtime value/evaluate preview 暴露 `variablesReference`，并通过 `variables(start,count)` 分页读取 64-byte 字符串片段
+- `tests/debug/test_debug_threads.c`
+  - `initialize` 返回 `supportsThreads`
+  - `threads` 请求枚举主执行体并稳定返回 `threadId=1` / `main`
+  - `stopped` event 标注触发 stop 的 `threadId`
+  - `stackTrace`、`scopes`、`variables` 携带 `threadId` 时路由到对应 state，并在 result/frame/scope 层返回 `threadId`
+- `tests/debug/test_debug_data_breakpoint.c`
+  - `initialize` 返回 `supportsDataBreakpoints`
+  - Locals scope 同时返回 DAP `variablesReference` 别名，可用于 `dataBreakpointInfo`
+  - `dataBreakpointInfo` 为局部变量和 upvalue 返回稳定 `dataId`
+  - `setDataBreakpoints` 安装局部变量/upvalue watch
+  - 值变化时 stopped event 使用 `reason=dataBreakpoint`，并携带 `dataId`、`description`、`threadId`
 - `tests/debug/test_debug_hook_core.c`
   - COUNT hook 以 `count=1` 覆盖每条已 trace instruction，触发数与 `function->instructionsLength` 一致
   - `ZrCore_Debug_SetHook(NULL,0,0)` 禁用 hook，并验证 hook/mask/count 清零

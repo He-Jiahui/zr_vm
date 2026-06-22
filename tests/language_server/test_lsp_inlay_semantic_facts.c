@@ -302,6 +302,168 @@ static void test_completion_detail_uses_initializer_numeric_fact(SZrState *state
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_surfaces_segmented_numeric_range_in_inlay_completion_and_signature(SZrState *state) {
+    const TZrChar *summary = "LSP Surfaces Segmented Numeric Range In Inlay Completion And Signature";
+    const TZrChar *expectedRange =
+        "range 2..12 (segments 2..2, 4..4, 6..6, 8..8, ... +2 more)";
+    const TZrChar *symbolUriText = "file:///segmented_numeric_fact_symbol_surfaces.zr";
+    const TZrChar *symbolContent =
+        "func pick(value: int): int {\n"
+        "    return value;\n"
+        "}\n"
+        "func calc(seed: u8): int {\n"
+        "    if (seed == 1 || seed == 3 || seed == 5 || seed == 7 || seed == 9 || seed == 11) {\n"
+        "        var segmented = seed + 1;\n"
+        "        seg\n"
+        "        return pick(segmented);\n"
+        "    }\n"
+        "    return 0;\n"
+        "}\n";
+    const TZrChar *signatureUriText = "file:///segmented_numeric_fact_signature_surface.zr";
+    const TZrChar *signatureContent =
+        "func pick(value: int): int {\n"
+        "    return value;\n"
+        "}\n"
+        "func calc(seed: u8): int {\n"
+        "    if (seed == 1 || seed == 3 || seed == 5 || seed == 7 || seed == 9 || seed == 11) {\n"
+        "        return pick(seed + 1);\n"
+        "    }\n"
+        "    return 0;\n"
+        "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspRange range;
+    SZrLspPosition completionPosition;
+    SZrArray hints;
+    SZrArray completions;
+    SZrLspCompletionItem *segmentedItem;
+    SZrLspInlayHint **firstHintPtr;
+    const TZrChar *firstHintLabel;
+    const TZrChar *detailText;
+    SZrLspContext *signatureContext;
+    SZrString *signatureUri;
+    SZrLspPosition signaturePosition;
+    SZrLspSignatureHelp *signatureHelp = ZR_NULL;
+    const TZrChar *signatureDoc;
+    TZrChar reason[1536];
+
+    TEST_START(summary);
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)symbolUriText, strlen(symbolUriText));
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state,
+                                             context,
+                                             uri,
+                                             symbolContent,
+                                             strlen(symbolContent),
+                                             1) ||
+        !find_position_for_substring(symbolContent, "        seg\n", 0, 11, &completionPosition)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare segmented numeric symbol fixture");
+        return;
+    }
+
+    range.start.line = 0;
+    range.start.character = 0;
+    range.end.line = 12;
+    range.end.character = 0;
+    ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 4);
+    if (!ZrLanguageServer_Lsp_GetInlayHints(state, context, uri, range, &hints) ||
+        !inlay_hint_array_contains_label_fragments(&hints, ": int", expectedRange)) {
+        firstHintPtr = hints.length > 0 ? (SZrLspInlayHint **)ZrCore_Array_Get(&hints, 0) : ZR_NULL;
+        firstHintLabel = firstHintPtr != ZR_NULL && *firstHintPtr != ZR_NULL && (*firstHintPtr)->label != ZR_NULL
+                             ? test_string_ptr((*firstHintPtr)->label)
+                             : ZR_NULL;
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected inlay hint to include segmented numeric range; hintCount=%llu firstLabel=%s",
+                 (unsigned long long)hints.length,
+                 firstHintLabel != ZR_NULL ? firstHintLabel : "<null>");
+        ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+    ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, completionPosition, &completions)) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Completion request failed for segmented numeric fixture");
+        return;
+    }
+    segmentedItem = completion_item_find_by_label(&completions, "segmented");
+    detailText = segmentedItem != ZR_NULL && segmentedItem->detail != ZR_NULL
+                     ? test_string_ptr(segmentedItem->detail)
+                     : ZR_NULL;
+    if (segmentedItem == ZR_NULL ||
+        detailText == ZR_NULL ||
+        strstr(detailText, expectedRange) == ZR_NULL) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected completion detail to include segmented numeric range; item=%p detail=%s count=%llu",
+                 (void *)segmentedItem,
+                 detailText != ZR_NULL ? detailText : "<null>",
+                 (unsigned long long)completions.length);
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+
+    signatureContext = ZrLanguageServer_LspContext_New(state);
+    signatureUri = ZrCore_String_Create(state, (TZrNativeString)signatureUriText, strlen(signatureUriText));
+    if (signatureContext == ZR_NULL ||
+        signatureUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state,
+                                             signatureContext,
+                                             signatureUri,
+                                             signatureContent,
+                                             strlen(signatureContent),
+                                             1) ||
+        !find_position_for_substring(signatureContent, "seed + 1", 0, 2, &signaturePosition)) {
+        if (signatureContext != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, signatureContext);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare segmented numeric signature fixture");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(state,
+                                               signatureContext,
+                                               signatureUri,
+                                               signaturePosition,
+                                               &signatureHelp)) {
+        ZrLanguageServer_LspContext_Free(state, signatureContext);
+        TEST_FAIL(timer, summary, "Signature help request failed for segmented numeric fixture");
+        return;
+    }
+
+    signatureDoc = signature_parameter_documentation(signatureHelp, 0);
+    if (signatureDoc == ZR_NULL || strstr(signatureDoc, expectedRange) == ZR_NULL) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected signature documentation to include segmented numeric range; doc=%s",
+                 signatureDoc != ZR_NULL ? signatureDoc : "<null>");
+        ZrLanguageServer_LspSignatureHelp_Free(state, signatureHelp);
+        ZrLanguageServer_LspContext_Free(state, signatureContext);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_LspSignatureHelp_Free(state, signatureHelp);
+    ZrLanguageServer_LspContext_Free(state, signatureContext);
+    TEST_PASS(timer, summary);
+}
+
 static void test_completion_detail_uses_initializer_expression_fact(SZrState *state) {
     const TZrChar *summary = "LSP Completion Detail Uses Initializer Expression Fact";
     SZrTestTimer timer;
@@ -734,6 +896,7 @@ int main(void) {
 
     test_inlay_hint_uses_initializer_numeric_fact(state);
     test_completion_detail_uses_initializer_numeric_fact(state);
+    test_lsp_surfaces_segmented_numeric_range_in_inlay_completion_and_signature(state);
     test_completion_detail_uses_initializer_expression_fact(state);
     test_completion_detail_escapes_initializer_string_expression_fact(state);
     test_completion_detail_uses_initializer_logical_fact(state);

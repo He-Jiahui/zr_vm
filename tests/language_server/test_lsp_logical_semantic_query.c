@@ -264,6 +264,73 @@ static void test_local_expression_query_returns_composed_comparison_logical_fact
     TEST_PASS(timer, summary);
 }
 
+static void test_local_expression_query_returns_interval_comparison_logical_fact(SZrState *state) {
+    const TZrChar *summary = "LSP Local Expression Query Returns Interval Comparison Logical Fact";
+    const TZrChar *uriText = "file:///local_interval_comparison_logical_fact.zr";
+    const TZrChar *content =
+        "func logic(seed: u8): bool {\n"
+        "    return seed < 300;\n"
+        "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition position;
+    SZrLspLocalSemanticQueryResult query;
+    TZrChar reason[768];
+
+    TEST_START(summary);
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "<", 0, 0, &position)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare interval comparison logical query fixture");
+        return;
+    }
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, position, &query)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "ExpressionAt returned false");
+        return;
+    }
+
+    if (query.status != ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT ||
+        query.expressionFact == ZR_NULL ||
+        query.expressionFact->kind != ZR_SEMANTIC_EXPRESSION_FACT_BINARY ||
+        query.expressionFact->inferredType.baseType != ZR_VALUE_TYPE_BOOL ||
+        query.logicalFact == ZR_NULL ||
+        query.logicalFact->kind != ZR_SEMANTIC_LOGICAL_FACT_ALWAYS_TRUE ||
+        !query.logicalFact->hasKnownValue ||
+        !query.logicalFact->knownValue) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected interval comparison true logical fact; status=%d query=(%lld,%d,%d) expr=%p exprKind=%d exprType=%d logical=%p logicalKind=%d hasKnown=%d known=%d",
+                 (int)query.status,
+                 (long long)query.queryRange.start.offset,
+                 (int)query.queryRange.start.line,
+                 (int)query.queryRange.start.column,
+                 (void *)query.expressionFact,
+                 query.expressionFact != ZR_NULL ? (int)query.expressionFact->kind : -1,
+                 query.expressionFact != ZR_NULL ? (int)query.expressionFact->inferredType.baseType : -1,
+                 (void *)query.logicalFact,
+                 query.logicalFact != ZR_NULL ? (int)query.logicalFact->kind : -1,
+                 query.logicalFact != ZR_NULL ? (int)query.logicalFact->hasKnownValue : -1,
+                 query.logicalFact != ZR_NULL ? (int)query.logicalFact->knownValue : -1);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -290,6 +357,8 @@ int main(void) {
     test_local_expression_query_returns_constant_comparison_logical_fact(state);
     TEST_DIVIDER();
     test_local_expression_query_returns_composed_comparison_logical_fact(state);
+    TEST_DIVIDER();
+    test_local_expression_query_returns_interval_comparison_logical_fact(state);
     TEST_DIVIDER();
 
     ZrCore_GlobalState_Free(global);

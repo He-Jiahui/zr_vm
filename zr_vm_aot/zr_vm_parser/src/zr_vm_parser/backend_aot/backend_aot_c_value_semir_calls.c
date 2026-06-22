@@ -101,72 +101,10 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
         return ZR_FALSE;
     }
     argumentCount = instruction->operand1;
-
-    fprintf(file,
-            "    /* zr_aot_value_exec_call_typed dstSlot=%u calleeSlot=%u argCount=%u callee=%u */\n"
-            "    {\n"
-            "        const SZrTypeLayout *zr_aot_return_layout =\n"
-            "                ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function, %u, state);\n"
-            "        TZrStackValuePointer zr_aot_call_base;\n"
-            "        TZrStackValuePointer zr_aot_destination_pointer;\n"
-            "        SZrCallInfo *zr_aot_call_info;\n"
-            "        SZrFunction *zr_aot_metadata_function;\n"
-            "        SZrTypeValue *zr_aot_callable_value;\n"
-            "        TZrUInt32 zr_aot_call_window_index;\n"
-            "        if (state == ZR_NULL || frame.function == ZR_NULL || frame.slotBase == ZR_NULL ||\n"
-            "            frame.callInfo == ZR_NULL || frame.callInfo != state->callInfoList ||\n"
-            "            %u >= frame.generatedFrameSlotCount || %u >= frame.generatedFrameSlotCount ||\n"
-            "            %u > frame.generatedFrameSlotCount - %u - 1u ||\n"
-            "            zr_aot_return_layout == ZR_NULL ||\n"
-            "            zr_aot_return_layout->kind != ZR_TYPE_LAYOUT_KIND_STRUCT ||\n"
-            "            zr_aot_return_layout->byteSize != %u) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        zr_aot_call_base = ZrCore_Function_GetCallInfoFrameStorageTop(state, frame.callInfo);\n"
-            "        if (zr_aot_call_base == ZR_NULL) {\n"
-            "            ZrCore_Debug_RunError(state, \"generated AOT typed call failed\");\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        zr_aot_call_base = ZrCore_Function_CheckStackAndGc(state, 1u + %u, zr_aot_call_base);\n"
-            "        if (zr_aot_call_base == ZR_NULL || state->threadStatus != ZR_THREAD_STATUS_FINE ||\n"
-            "            state->callInfoList == ZR_NULL || state->callInfoList->functionBase.valuePointer == ZR_NULL ||\n"
-            "            state->callInfoList->functionTop.valuePointer == ZR_NULL) {\n"
-            "            ZrCore_Debug_RunError(state, \"generated AOT typed call failed\");\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        frame.callInfo = state->callInfoList;\n"
-            "        frame.slotBase = state->callInfoList->functionBase.valuePointer + 1;\n"
-            "        for (zr_aot_call_window_index = 0u; zr_aot_call_window_index < 1u + %u; zr_aot_call_window_index++) {\n"
-            "            ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(zr_aot_call_base + zr_aot_call_window_index));\n"
-            "        }\n"
-            "        state->stackTop.valuePointer = zr_aot_call_base + 1 + %u;\n"
-            "        if (state->callInfoList->functionTop.valuePointer == ZR_NULL ||\n"
-            "            state->callInfoList->functionTop.valuePointer < state->stackTop.valuePointer) {\n"
-            "            state->callInfoList->functionTop.valuePointer = state->stackTop.valuePointer;\n"
-            "        }\n"
-            "        zr_aot_callable_value = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        zr_aot_destination_pointer = (TZrStackValuePointer)((TZrByte *)frame.slotBase + %u);\n"
-            "        zr_aot_metadata_function = ZrCore_Closure_GetMetadataFunctionFromValue(state, zr_aot_callable_value);\n"
-            "        if (zr_aot_callable_value == ZR_NULL || zr_aot_metadata_function == ZR_NULL) {\n"
-            "            ZrCore_Debug_RunError(state, \"generated AOT typed call failed\");\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(zr_aot_call_base), zr_aot_callable_value);\n",
-            (unsigned)instruction->destinationSlot,
-            (unsigned)instruction->operand0,
-            (unsigned)argumentCount,
-            (unsigned)calleeFunctionIndex,
-            (unsigned)destinationLayout->typeLayoutId,
-            (unsigned)instruction->destinationSlot,
-            (unsigned)instruction->operand0,
-            (unsigned)argumentCount,
-            (unsigned)instruction->operand0,
-            (unsigned)destinationLayout->byteSize,
-            (unsigned)argumentCount,
-            (unsigned)argumentCount,
-            (unsigned)argumentCount,
-            (unsigned)instruction->operand0,
-            (unsigned)destinationLayout->byteOffset);
+    if (instruction->operand0 >= frameLayout->generatedFrameSlotCount ||
+        argumentCount > frameLayout->generatedFrameSlotCount - instruction->operand0 - 1u) {
+        return ZR_FALSE;
+    }
     for (argumentIndex = 0u; argumentIndex < argumentCount; argumentIndex++) {
         const TZrUInt32 sourceSlot = instruction->operand0 + 1u + argumentIndex;
         const SZrAotExecIrFrameSlotLayout *sourceLayout =
@@ -177,49 +115,34 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
             sourceLayout->byteSize < (TZrUInt32)sizeof(SZrTypeValue)) {
             return ZR_FALSE;
         }
-
-        fprintf(file,
-                "        ZrCore_Value_Copy(state,\n"
-                "                          ZrCore_Stack_GetValue(zr_aot_call_base + 1u + %u),\n"
-                "                          (const SZrTypeValue *)((const TZrByte *)frame.slotBase + %u));\n",
-                (unsigned)argumentIndex,
-                (unsigned)sourceLayout->byteOffset);
     }
+
     fprintf(file,
-            "        zr_aot_call_info = ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource(\n"
-            "                state,\n"
-            "                zr_aot_call_base,\n"
-            "                zr_aot_metadata_function,\n"
-            "                %u,\n"
-            "                1,\n"
-            "                zr_aot_destination_pointer,\n"
-            "                frame.slotBase,\n"
-            "                %u);\n"
-            "        if (zr_aot_call_info == ZR_NULL || state->callInfoList != zr_aot_call_info) {\n"
-            "            ZrCore_Debug_RunError(state, \"generated AOT typed call failed\");\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
+            "    /* zr_aot_value_exec_call_typed dstSlot=%u calleeSlot=%u argCount=%u callee=%u */\n"
+            "    {\n"
             "        /* PostCall routes the callee inline source through ZrCore_Function_TryCopyInlineFrameReturnValue(state, ...). */\n"
-            "        ZR_AOT_C_GUARD(zr_aot_fn_%u(state));\n"
-            "        ZrCore_Function_PostCall(state, zr_aot_call_info, 1);\n"
-            "        if (state->threadStatus != ZR_THREAD_STATUS_FINE || state->callInfoList == ZR_NULL ||\n"
-            "            state->callInfoList->functionBase.valuePointer == ZR_NULL ||\n"
-            "            state->callInfoList->functionTop.valuePointer == ZR_NULL) {\n"
-            "            ZrCore_Debug_RunError(state, \"generated AOT typed call failed\");\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        frame.callInfo = state->callInfoList;\n"
-            "        frame.slotBase = state->callInfoList->functionBase.valuePointer + 1;\n"
-            "        zr_aot_call_base = ZrCore_Function_GetCallInfoFrameStorageTop(state, frame.callInfo);\n"
-            "        if (zr_aot_call_base == ZR_NULL) {\n"
-            "            ZrCore_Debug_RunError(state, \"generated AOT typed call failed\");\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        frame.callInfo->functionTop.valuePointer = zr_aot_call_base;\n"
-            "        state->stackTop.valuePointer = zr_aot_call_base;\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallInlineStruct(state,\n"
+            "                                                               &frame,\n"
+            "                                                               %u,\n"
+            "                                                               %u,\n"
+            "                                                               %u,\n"
+            "                                                               %u,\n"
+            "                                                               %u,\n"
+            "                                                               %u,\n"
+            "                                                               %u,\n"
+            "                                                               zr_aot_fn_%u));\n"
             "    }\n",
+            (unsigned)instruction->destinationSlot,
+            (unsigned)instruction->operand0,
             (unsigned)argumentCount,
-            (unsigned)(instruction->operand0 + 1u),
+            (unsigned)calleeFunctionIndex,
+            (unsigned)instruction->destinationSlot,
+            (unsigned)instruction->operand0,
+            (unsigned)argumentCount,
+            (unsigned)calleeFunctionIndex,
+            (unsigned)destinationLayout->typeLayoutId,
+            (unsigned)destinationLayout->byteOffset,
+            (unsigned)destinationLayout->byteSize,
             (unsigned)calleeFunctionIndex);
     return ZR_TRUE;
 }
@@ -243,33 +166,23 @@ TZrBool backend_aot_try_write_c_value_semir_return_typed_exec(
     fprintf(file,
             "    /* zr_aot_value_exec_return_typed sourceSlot=%u source.offset=%u source.size=%u source.typeLayoutId=%u */\n"
             "    {\n"
-            "        const SZrTypeLayout *zr_aot_return_layout =\n"
-            "                ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function, %u, state);\n"
-            "        SZrCallInfo *zr_aot_call_info = frame.callInfo;\n"
-            "        TZrStackValuePointer zr_aot_return_source =\n"
-            "                (TZrStackValuePointer)((TZrByte *)frame.slotBase + %u);\n"
-            "        if (zr_aot_return_layout == ZR_NULL ||\n"
-            "            zr_aot_return_layout->kind != ZR_TYPE_LAYOUT_KIND_STRUCT ||\n"
-            "            zr_aot_return_layout->byteSize != %u ||\n"
-            "            zr_aot_call_info == ZR_NULL ||\n"
-            "            zr_aot_call_info->functionBase.valuePointer == ZR_NULL ||\n"
-            "            zr_aot_return_source == ZR_NULL ||\n"
-            "            (zr_aot_call_info->functionTop.valuePointer != ZR_NULL &&\n"
-            "             zr_aot_return_source >= zr_aot_call_info->functionTop.valuePointer)) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
             "        /* PostCall routes this inline source through ZrCore_Function_TryCopyInlineFrameReturnValue(state, ...). */\n"
-            "        state->stackTop.valuePointer = zr_aot_return_source + 1;\n"
-            "        zr_aot_skip_drop_slot = %u;\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ReturnInlineStruct(state,\n"
+            "                                                                 &frame,\n"
+            "                                                                 %u,\n"
+            "                                                                 %u,\n"
+            "                                                                 %u,\n"
+            "                                                                 %u,\n"
+            "                                                                 &zr_aot_skip_drop_slot));\n"
             "        ZR_AOT_C_RETURN(1);\n"
             "    }\n",
             (unsigned)instruction->operand0,
             (unsigned)sourceLayout->byteOffset,
             (unsigned)sourceLayout->byteSize,
             (unsigned)sourceLayout->typeLayoutId,
+            (unsigned)instruction->operand0,
             (unsigned)sourceLayout->typeLayoutId,
             (unsigned)sourceLayout->byteOffset,
-            (unsigned)sourceLayout->byteSize,
-            (unsigned)instruction->operand0);
+            (unsigned)sourceLayout->byteSize);
     return ZR_TRUE;
 }

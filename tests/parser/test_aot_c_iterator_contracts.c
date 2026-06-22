@@ -100,13 +100,23 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
-static void test_aot_c_source_lowers_iterator_ops_to_direct_core_calls(void) {
-    static const char *const objectHeaderNeedles[] = {
-            "ZrCore_Object_IterInit(",
-            "ZrCore_Object_IterMoveNext(",
-            "ZrCore_Object_IterCurrent(",
-            "ZrCore_Object_TryIterMoveNextCachedArrayFast(",
-            "ZrCore_Object_TryIterCurrentCachedMemberFastStackResult(",
+static void test_aot_c_source_lowers_iterator_ops_to_boundary_helpers(void) {
+    static const char *const runtimeHeaderNeedles[] = {
+            "ZrLibrary_AotRuntime_IterInit(",
+            "ZrLibrary_AotRuntime_IterMoveNext(",
+            "ZrLibrary_AotRuntime_IterCurrent(",
+            "ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(",
+    };
+    static const char *const runtimeSourceNeedles[] = {
+            "ZrLibrary_AotRuntime_IterInit(",
+            "ZrCore_Object_IterInit(state,",
+            "ZrLibrary_AotRuntime_IterMoveNext(",
+            "ZrCore_Object_IterMoveNext(state,",
+            "ZrLibrary_AotRuntime_IterCurrent(",
+            "ZrCore_Object_IterCurrent(state,",
+            "ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(",
+            "ZR_VALUE_IS_TYPE_BOOL(destinationValue->type)",
+            "*outJumpIfFalse = !destinationValue->value.nativeObject.nativeBool",
     };
     static const char *const emitterHeaderNeedles[] = {
             "backend_aot_write_c_direct_iter_init(FILE *file,",
@@ -123,14 +133,13 @@ static void test_aot_c_source_lowers_iterator_ops_to_direct_core_calls(void) {
             "zr_aot_value_exec_iter_move_next",
             "zr_aot_value_exec_iter_current",
             "zr_aot_value_exec_iter_move_next_jump_if_false",
-            "ZrCore_Object_IterInit(state, &zr_aot_stable_iterable, zr_aot_destination)",
-            "ZrCore_Object_TryIterMoveNextCachedArrayFast(state, zr_aot_iterator, zr_aot_destination)",
-            "ZrCore_Object_IterMoveNext(state, &zr_aot_stable_iterator, zr_aot_destination)",
-            "ZrCore_Object_TryIterCurrentCachedMemberFastStackResult(state, zr_aot_iterator, zr_aot_destination)",
-            "ZrCore_Object_IterCurrent(state, &zr_aot_stable_iterator, zr_aot_destination)",
-            "unsupported AOT iterator core path",
-            "unsupported AOT iterator branch result",
-            "ZR_AOT_C_FAIL();",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_IterInit(state, &frame, %u, %u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_IterMoveNext(state, &frame, %u, %u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_IterCurrent(state, &frame, %u, %u));",
+            "TZrBool zr_aot_branch_taken = ZR_FALSE;",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(state, &frame, %u, %u, &zr_aot_branch_taken));",
+            "if (zr_aot_branch_taken) {",
+            "goto zr_aot_fn_%u_ins_%u;",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(ITER_INIT):",
@@ -144,13 +153,31 @@ static void test_aot_c_source_lowers_iterator_ops_to_direct_core_calls(void) {
             "case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):",
             "backend_aot_write_c_direct_iter_move_next_jump_if_false(",
     };
-    static const char *const forbiddenNeedles[] = {
+    static const char *const forbiddenLoweringNeedles[] = {
+            "backend_aot_c_write_iterator_unsupported(",
+            "backend_aot_c_write_iterator_slot_header(",
+            "SZrTypeValue *zr_aot_",
+            "SZrTypeValue zr_aot_stable_",
+            "ZrCore_Stack_GetValue(frame.slotBase",
+            "frame.slotBase + %u",
+            "ZrCore_Object_TryIterMoveNextCachedArrayFast(",
+            "ZrCore_Object_TryIterCurrentCachedMemberFastStackResult(",
+            "ZrCore_Object_IterInit(",
+            "ZrCore_Object_IterMoveNext(",
+            "ZrCore_Object_IterCurrent(",
+            "unsupported AOT iterator core path",
+            "unsupported AOT iterator branch result",
+            "ZR_AOT_C_FAIL();",
+    };
+    static const char *const forbiddenFunctionBodyNeedles[] = {
             "ZrLibrary_AotRuntime_IterInit",
             "ZrLibrary_AotRuntime_IterMoveNext",
             "ZrLibrary_AotRuntime_IterCurrent",
+            "ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse",
             "ZrLibrary_AotRuntime_IsTruthy",
     };
-    char *objectHeaderText = read_repo_text_file_owned("zr_vm_core/include/zr_vm_core/object.h");
+    char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
     char *emitterHeaderText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *loweringText = read_repo_text_file_owned(
@@ -158,18 +185,22 @@ static void test_aot_c_source_lowers_iterator_ops_to_direct_core_calls(void) {
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
-    TEST_ASSERT_NOT_NULL(objectHeaderText);
+    TEST_ASSERT_NOT_NULL(runtimeHeaderText);
+    TEST_ASSERT_NOT_NULL(runtimeSourceText);
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(loweringText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
 
-    assert_text_contains_all(objectHeaderText, objectHeaderNeedles, ARRAY_COUNT(objectHeaderNeedles));
+    assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
+    assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
     assert_text_contains_all(emitterHeaderText, emitterHeaderNeedles, ARRAY_COUNT(emitterHeaderNeedles));
     assert_text_contains_all(loweringText, loweringNeedles, ARRAY_COUNT(loweringNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
-    assert_text_contains_none(functionBodyText, forbiddenNeedles, ARRAY_COUNT(forbiddenNeedles));
+    assert_text_contains_none(loweringText, forbiddenLoweringNeedles, ARRAY_COUNT(forbiddenLoweringNeedles));
+    assert_text_contains_none(functionBodyText, forbiddenFunctionBodyNeedles, ARRAY_COUNT(forbiddenFunctionBodyNeedles));
 
-    free(objectHeaderText);
+    free(runtimeHeaderText);
+    free(runtimeSourceText);
     free(emitterHeaderText);
     free(loweringText);
     free(functionBodyText);
@@ -181,6 +212,6 @@ void tearDown(void) {}
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_aot_c_source_lowers_iterator_ops_to_direct_core_calls);
+    RUN_TEST(test_aot_c_source_lowers_iterator_ops_to_boundary_helpers);
     return UNITY_END();
 }

@@ -120,7 +120,7 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
 }
 
-static void test_aot_c_generated_shared_library_executes_generic_truthiness_direct_expressions(void) {
+static void test_aot_c_generated_shared_library_executes_generic_truthiness_boundary_helpers(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C generic truthiness shared-library smoke currently validates the Unix dlopen toolchain path");
 #else
@@ -222,8 +222,14 @@ static void test_aot_c_generated_shared_library_executes_generic_truthiness_dire
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_jump_if"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrBool zr_aot_truthy = ZR_FALSE;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(state, &frame"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_LogicalNot(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_IsTruthy(state, &frame"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_IS_TYPE_NULL(zr_aot_source->type)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT generic primitive truthiness"));
     free(generatedCText);
 
     snprintf(command,
@@ -269,7 +275,7 @@ static void test_aot_c_generated_shared_library_executes_generic_truthiness_dire
 #endif
 }
 
-static void test_aot_c_generated_shared_library_executes_generic_primitive_equality_direct_expressions(void) {
+static void test_aot_c_generated_shared_library_executes_generic_primitive_equality_boundary_helpers(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C generic primitive equality shared-library smoke currently validates the Unix dlopen toolchain path");
 #else
@@ -371,11 +377,18 @@ static void test_aot_c_generated_shared_library_executes_generic_primitive_equal
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_equal"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not_equal"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrBool zr_aot_equal = ZR_FALSE;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "zr_aot_left->value.nativeObject.nativeInt64 == zr_aot_right->value.nativeObject.nativeInt64"));
+                                "ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual(state, &frame"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(state, &frame"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_sync_bool_local_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_LogicalEqual(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Value_Equal("));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_bool_sync"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "zr_aot_left->value.nativeObject.nativeInt64 == zr_aot_right->value.nativeObject.nativeInt64"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT generic primitive equality"));
     free(generatedCText);
 
     snprintf(command,
@@ -434,6 +447,14 @@ static void test_aot_c_generated_shared_library_executes_bool_short_circuit_logi
             "};\n"
             "var both = yes() && yes();\n"
             "var either = no() || yes();\n"
+            "var same: bool = both == either;\n"
+            "var different: bool = both != no();\n"
+            "if (!same) {\n"
+            "    return 84;\n"
+            "}\n"
+            "if (!different) {\n"
+            "    return 85;\n"
+            "}\n"
             "if (!both) {\n"
             "    return 81;\n"
             "}\n"
@@ -523,7 +544,10 @@ static void test_aot_c_generated_shared_library_executes_bool_short_circuit_logi
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     /* Source &&/|| lowers to short-circuit branches before LOGICAL_AND/OR opcode lowering. */
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_jump_if_bool_false"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_bool_not_exec"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_bool_not_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_bool_compare_scalar_local"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_bool_not_exec"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_bool_compare_exec"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_LogicalAnd(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_LogicalOr(state, &frame"));
     free(generatedCText);
@@ -726,8 +750,8 @@ static void test_aot_c_generated_shared_library_executes_string_equality_direct_
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_aot_c_generated_shared_library_executes_generic_truthiness_direct_expressions);
-    RUN_TEST(test_aot_c_generated_shared_library_executes_generic_primitive_equality_direct_expressions);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_generic_truthiness_boundary_helpers);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_generic_primitive_equality_boundary_helpers);
     RUN_TEST(test_aot_c_generated_shared_library_executes_bool_short_circuit_logical_expressions);
     RUN_TEST(test_aot_c_generated_shared_library_executes_string_equality_direct_expressions);
     return UNITY_END();

@@ -4,129 +4,94 @@
 
 #include "zr_vm_core/closure.h"
 
-static void backend_aot_write_c_direct_ownership_core_call(FILE *file,
-                                                           const char *operationExpression,
-                                                           TZrUInt32 destinationSlot,
-                                                           TZrUInt32 sourceSlot) {
-    if (file == ZR_NULL || operationExpression == ZR_NULL) {
+static void backend_aot_write_c_direct_ownership_helper_call(FILE *file,
+                                                             const char *helperName,
+                                                             TZrUInt32 destinationSlot,
+                                                             TZrUInt32 sourceSlot) {
+    if (file == ZR_NULL || helperName == ZR_NULL) {
         return;
     }
 
     fprintf(file,
-            "    do {\n"
-            "        /* zr_aot_value_exec_ownership_core */\n"
-            "        SZrTypeValue *zr_aot_destination = ZR_NULL;\n"
-            "        SZrTypeValue *zr_aot_source = ZR_NULL;\n"
-            "        if (state == ZR_NULL || frame.function == ZR_NULL || frame.slotBase == ZR_NULL ||\n"
-            "            %u >= frame.generatedFrameSlotCount || %u >= frame.generatedFrameSlotCount) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_destination == ZR_NULL || zr_aot_source == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        if (!%s) {\n"
-            "            ZrCore_Value_ResetAsNull(zr_aot_destination);\n"
-            "        }\n"
-            "    } while (0);\n",
+            "    {\n"
+            "        /* zr_aot_value_exec_ownership_helper */\n"
+            "        ZR_AOT_C_GUARD(%s(state, &frame, %u, %u));\n"
+            "    }\n",
+            helperName,
             (unsigned)destinationSlot,
-            (unsigned)sourceSlot,
-            (unsigned)destinationSlot,
-            (unsigned)sourceSlot,
-            operationExpression);
+            (unsigned)sourceSlot);
 }
 
 void backend_aot_write_c_direct_own_unique(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
-    backend_aot_write_c_direct_ownership_core_call(
+    backend_aot_write_c_direct_ownership_helper_call(
             file,
-            "ZrCore_Ownership_UniqueValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrLibrary_AotRuntime_OwnUnique",
             destinationSlot,
             sourceSlot);
 }
 
 void backend_aot_write_c_direct_own_borrow(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
-    backend_aot_write_c_direct_ownership_core_call(
+    backend_aot_write_c_direct_ownership_helper_call(
             file,
-            "ZrCore_Ownership_BorrowValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrLibrary_AotRuntime_OwnBorrow",
             destinationSlot,
             sourceSlot);
 }
 
 void backend_aot_write_c_direct_own_loan(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
-    backend_aot_write_c_direct_ownership_core_call(
+    backend_aot_write_c_direct_ownership_helper_call(
             file,
-            "ZrCore_Ownership_LoanValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrLibrary_AotRuntime_OwnLoan",
             destinationSlot,
             sourceSlot);
 }
 
 void backend_aot_write_c_direct_own_return_loan(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
-    backend_aot_write_c_direct_ownership_core_call(
+    backend_aot_write_c_direct_ownership_helper_call(
             file,
-            "ZrCore_Ownership_ReturnLoanValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrLibrary_AotRuntime_OwnReturnLoan",
             destinationSlot,
             sourceSlot);
 }
 
 void backend_aot_write_c_direct_own_share(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
-    backend_aot_write_c_direct_ownership_core_call(
+    backend_aot_write_c_direct_ownership_helper_call(
             file,
-            "ZrCore_Ownership_ShareValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrLibrary_AotRuntime_OwnShare",
             destinationSlot,
             sourceSlot);
 }
 
 void backend_aot_write_c_direct_own_weak(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
-    backend_aot_write_c_direct_ownership_core_call(
+    backend_aot_write_c_direct_ownership_helper_call(
             file,
-            "ZrCore_Ownership_WeakValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrLibrary_AotRuntime_OwnWeak",
             destinationSlot,
             sourceSlot);
 }
 
 void backend_aot_write_c_direct_own_detach(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
-    backend_aot_write_c_direct_ownership_core_call(
+    backend_aot_write_c_direct_ownership_helper_call(
             file,
-            "ZrCore_Ownership_DetachValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrLibrary_AotRuntime_OwnDetach",
             destinationSlot,
             sourceSlot);
 }
 
 void backend_aot_write_c_direct_own_upgrade(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
-    backend_aot_write_c_direct_ownership_core_call(
+    backend_aot_write_c_direct_ownership_helper_call(
             file,
-            "ZrCore_Ownership_UpgradeValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrLibrary_AotRuntime_OwnUpgrade",
             destinationSlot,
             sourceSlot);
 }
 
 void backend_aot_write_c_direct_own_release(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    do {\n"
-            "        /* zr_aot_value_exec_ownership_release */\n"
-            "        SZrTypeValue *zr_aot_destination = ZR_NULL;\n"
-            "        SZrTypeValue *zr_aot_source = ZR_NULL;\n"
-            "        if (state == ZR_NULL || frame.function == ZR_NULL || frame.slotBase == ZR_NULL ||\n"
-            "            %u >= frame.generatedFrameSlotCount || %u >= frame.generatedFrameSlotCount) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_destination == ZR_NULL || zr_aot_source == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        ZrCore_Ownership_ReleaseValue(state, zr_aot_source);\n"
-            "        ZrCore_Value_ResetAsNull(zr_aot_destination);\n"
-            "    } while (0);\n",
-            (unsigned)destinationSlot,
-            (unsigned)sourceSlot,
-            (unsigned)destinationSlot,
-            (unsigned)sourceSlot);
+    backend_aot_write_c_direct_ownership_helper_call(
+            file,
+            "ZrLibrary_AotRuntime_OwnRelease",
+            destinationSlot,
+            sourceSlot);
 }
 
 void backend_aot_write_c_unsupported_meta_value_access(FILE *file,
@@ -142,22 +107,19 @@ void backend_aot_write_c_unsupported_meta_value_access(FILE *file,
 
     safeOpcodeName = opcodeName != ZR_NULL ? opcodeName : "META_VALUE_ACCESS";
     fprintf(file,
-            "    do {\n"
+            "    {\n"
             "        /* zr_aot_value_unsupported_meta_value_access */\n"
-            "        const char *zr_aot_opcode_name = \"%s\";\n"
-            "        SZrTypeValue *zr_aot_primary = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        SZrTypeValue *zr_aot_secondary = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const TZrUInt32 zr_aot_member_or_cache_index = %u;\n"
-            "        (void)zr_aot_primary;\n"
-            "        (void)zr_aot_secondary;\n"
-            "        (void)zr_aot_member_or_cache_index;\n"
-            "        ZrCore_Debug_RunError(state, \"unsupported AOT meta value access: %%s\", zr_aot_opcode_name);\n"
-            "        ZR_AOT_C_FAIL();\n"
-            "    } while (0);\n",
-            safeOpcodeName,
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,\n"
+            "                                                                           &frame,\n"
+            "                                                                           %u,\n"
+            "                                                                           %u,\n"
+            "                                                                           %u,\n"
+            "                                                                           \"%s\"));\n"
+            "    }\n",
             (unsigned)primarySlot,
             (unsigned)secondarySlot,
-            (unsigned)memberOrCacheIndex);
+            (unsigned)memberOrCacheIndex,
+            safeOpcodeName);
 }
 
 void backend_aot_write_c_unsupported_dynamic_value_access(FILE *file,
@@ -173,22 +135,19 @@ void backend_aot_write_c_unsupported_dynamic_value_access(FILE *file,
 
     safeOpcodeName = opcodeName != ZR_NULL ? opcodeName : "DYNAMIC_VALUE_ACCESS";
     fprintf(file,
-            "    do {\n"
+            "    {\n"
             "        /* zr_aot_value_unsupported_dynamic_value_access */\n"
-            "        const char *zr_aot_opcode_name = \"%s\";\n"
-            "        SZrTypeValue *zr_aot_primary = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        SZrTypeValue *zr_aot_secondary = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const TZrUInt32 zr_aot_operand_index = %u;\n"
-            "        (void)zr_aot_primary;\n"
-            "        (void)zr_aot_secondary;\n"
-            "        (void)zr_aot_operand_index;\n"
-            "        ZrCore_Debug_RunError(state, \"unsupported AOT dynamic value access: %%s\", zr_aot_opcode_name);\n"
-            "        ZR_AOT_C_FAIL();\n"
-            "    } while (0);\n",
-            safeOpcodeName,
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_UnsupportedDynamicValueAccess(state,\n"
+            "                                                                              &frame,\n"
+            "                                                                              %u,\n"
+            "                                                                              %u,\n"
+            "                                                                              %u,\n"
+            "                                                                              \"%s\"));\n"
+            "    }\n",
             (unsigned)primarySlot,
             (unsigned)secondarySlot,
-            (unsigned)operandIndex);
+            (unsigned)operandIndex,
+            safeOpcodeName);
 }
 
 void backend_aot_write_c_direct_to_string(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
@@ -197,42 +156,12 @@ void backend_aot_write_c_direct_to_string(FILE *file, TZrUInt32 destinationSlot,
     }
 
     fprintf(file,
-            "    {\n"
+            "    do {\n"
             "        /* zr_aot_value_exec_to_string */\n"
-            "        SZrTypeValue *zr_aot_destination = ZR_NULL;\n"
-            "        SZrTypeValue *zr_aot_source = ZR_NULL;\n"
-            "        SZrString *zr_aot_result_string = ZR_NULL;\n"
-            "        SZrCallInfo *zr_aot_call_info = ZR_NULL;\n"
-            "        if (state == ZR_NULL || frame.slotBase == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_source == ZR_NULL || zr_aot_destination == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        zr_aot_result_string = ZrCore_Value_ConvertToString(state, zr_aot_source);\n"
-            "        zr_aot_call_info = frame.callInfo != ZR_NULL ? frame.callInfo : state->callInfoList;\n"
-            "        if (zr_aot_call_info != ZR_NULL && zr_aot_call_info->functionBase.valuePointer != ZR_NULL) {\n"
-            "            frame.callInfo = zr_aot_call_info;\n"
-            "            frame.slotBase = zr_aot_call_info->functionBase.valuePointer + 1;\n"
-            "            state->callInfoList = zr_aot_call_info;\n"
-            "            state->stackTop.valuePointer = zr_aot_call_info->functionTop.valuePointer;\n"
-            "        }\n"
-            "        zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_destination == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        if (zr_aot_result_string != ZR_NULL) {\n"
-            "            ZrCore_Value_InitAsRawObject(state, zr_aot_destination, ZR_CAST_RAW_OBJECT_AS_SUPER(zr_aot_result_string));\n"
-            "            zr_aot_destination->type = ZR_VALUE_TYPE_STRING;\n"
-            "        } else {\n"
-            "            ZrCore_Value_ResetAsNull(zr_aot_destination);\n"
-            "        }\n"
-            "    }\n",
-            (unsigned)sourceSlot,
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ToString(state, &frame, %u, %u));\n"
+            "    } while (0);\n",
             (unsigned)destinationSlot,
-            (unsigned)destinationSlot);
+            (unsigned)sourceSlot);
 }
 
 const SZrTypeValue *backend_aot_c_get_constant_value(const SZrFunction *function, TZrInt32 constantIndex) {
@@ -367,11 +296,69 @@ static void backend_aot_c_write_direct_primitive_constant_local_mirror(
 void backend_aot_write_c_direct_primitive_constant(FILE *file,
                                                    const SZrAotExecIrFunction *functionIr,
                                                    TZrUInt32 destinationSlot,
+                                                   TZrUInt32 execInstructionIndex,
                                                    const SZrTypeValue *constantValue) {
     char dataExpression[128];
+    TZrBool wroteScalarLocal = ZR_FALSE;
 
     if (file == ZR_NULL || constantValue == ZR_NULL) {
         return;
+    }
+
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type) &&
+        backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot)) {
+        snprintf(dataExpression,
+                 sizeof(dataExpression),
+                 "(TZrInt64)%lld",
+                 (long long)constantValue->value.nativeObject.nativeInt64);
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_constant_i64_local */\n"
+                "        zr_aot_s%u = %s;\n"
+                "    }\n",
+                (unsigned)destinationSlot,
+                dataExpression);
+        wroteScalarLocal = ZR_TRUE;
+        if (backend_aot_c_scalar_locals_i64_constant_can_skip_value_slot(
+                    functionIr, destinationSlot, execInstructionIndex)) {
+            return;
+        }
+    } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type) &&
+               backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot)) {
+        snprintf(dataExpression,
+                 sizeof(dataExpression),
+                 "(TZrUInt64)%lld",
+                 (long long)constantValue->value.nativeObject.nativeInt64);
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_constant_u64_from_i64_local */\n"
+                "        zr_aot_u%u = %s;\n"
+                "    }\n",
+                (unsigned)destinationSlot,
+                dataExpression);
+        wroteScalarLocal = ZR_TRUE;
+        if (backend_aot_c_scalar_locals_u64_constant_can_skip_value_slot(
+                    functionIr, destinationSlot, execInstructionIndex)) {
+            return;
+        }
+    } else if (ZR_VALUE_IS_TYPE_FLOAT(constantValue->type) &&
+               backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot)) {
+        snprintf(dataExpression,
+                 sizeof(dataExpression),
+                 "(TZrFloat64)%.17g",
+                 constantValue->value.nativeObject.nativeDouble);
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_constant_f64_local */\n"
+                "        zr_aot_f%u = %s;\n"
+                "    }\n",
+                (unsigned)destinationSlot,
+                dataExpression);
+        wroteScalarLocal = ZR_TRUE;
+        if (backend_aot_c_scalar_locals_f64_constant_can_skip_value_slot(
+                    functionIr, destinationSlot, execInstructionIndex)) {
+            return;
+        }
     }
 
     fprintf(file,
@@ -398,16 +385,20 @@ void backend_aot_write_c_direct_primitive_constant(FILE *file,
                 file, functionIr, destinationSlot, constantValue, boolExpression);
     } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type)) {
         backend_aot_c_write_direct_plain_value_replace_guard(file);
-        snprintf(dataExpression,
-                 sizeof(dataExpression),
-                 "(TZrInt64)%lld",
-                 (long long)constantValue->value.nativeObject.nativeInt64);
+        if (!wroteScalarLocal) {
+            snprintf(dataExpression,
+                     sizeof(dataExpression),
+                     "(TZrInt64)%lld",
+                     (long long)constantValue->value.nativeObject.nativeInt64);
+        }
         backend_aot_c_write_direct_plain_value_scalar_assign(file,
                                                              "nativeInt64",
                                                              dataExpression,
                                                              backend_aot_c_value_type_literal(constantValue->type));
-        backend_aot_c_write_direct_primitive_constant_local_mirror(
-                file, functionIr, destinationSlot, constantValue, dataExpression);
+        if (!wroteScalarLocal) {
+            backend_aot_c_write_direct_primitive_constant_local_mirror(
+                    file, functionIr, destinationSlot, constantValue, dataExpression);
+        }
     } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(constantValue->type)) {
         backend_aot_c_write_direct_plain_value_replace_guard(file);
         snprintf(dataExpression,
@@ -422,16 +413,20 @@ void backend_aot_write_c_direct_primitive_constant(FILE *file,
                 file, functionIr, destinationSlot, constantValue, dataExpression);
     } else if (ZR_VALUE_IS_TYPE_FLOAT(constantValue->type)) {
         backend_aot_c_write_direct_plain_value_replace_guard(file);
-        snprintf(dataExpression,
-                 sizeof(dataExpression),
-                 "(TZrFloat64)%.17g",
-                 constantValue->value.nativeObject.nativeDouble);
+        if (!wroteScalarLocal) {
+            snprintf(dataExpression,
+                     sizeof(dataExpression),
+                     "(TZrFloat64)%.17g",
+                     constantValue->value.nativeObject.nativeDouble);
+        }
         backend_aot_c_write_direct_plain_value_scalar_assign(file,
                                                              "nativeDouble",
                                                              dataExpression,
                                                              backend_aot_c_value_type_literal(constantValue->type));
-        backend_aot_c_write_direct_primitive_constant_local_mirror(
-                file, functionIr, destinationSlot, constantValue, dataExpression);
+        if (!wroteScalarLocal) {
+            backend_aot_c_write_direct_primitive_constant_local_mirror(
+                    file, functionIr, destinationSlot, constantValue, dataExpression);
+        }
     } else {
         fprintf(file,
                 "        ZrCore_Debug_RunError(state, \"unsupported primitive AOT constant\");\n"
@@ -542,29 +537,17 @@ void backend_aot_write_c_direct_get_sub_function(FILE *file,
 
     fprintf(file,
             "    {\n"
-            "        /* zr_aot_value_exec_get_sub_function_native_closure */\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        SZrFunction *zr_aot_metadata_function = %u < frame.function->childFunctionLength\n"
-            "                                             ? &frame.function->childFunctionList[%u]\n"
-            "                                             : ZR_NULL;\n"
-            "        if (zr_aot_destination == ZR_NULL || zr_aot_metadata_function == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        ZrCore_Ownership_ReleaseValue(state, zr_aot_destination);\n"
-            "        SZrClosureNative *zr_aot_closure = ZrCore_ClosureNative_New(state, 0);\n"
-            "        if (zr_aot_closure == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        zr_aot_closure->nativeFunction = zr_aot_fn_%u;\n"
-            "        zr_aot_closure->aotShimFunction = zr_aot_metadata_function;\n"
-            "        ZrCore_Value_InitAsRawObject(state, zr_aot_destination, ZR_CAST_RAW_OBJECT_AS_SUPER(zr_aot_closure));\n"
-            "        zr_aot_destination->type = ZR_VALUE_TYPE_CLOSURE;\n"
-            "        zr_aot_destination->isGarbageCollectable = ZR_TRUE;\n"
-            "        zr_aot_destination->isNative = ZR_TRUE;\n"
+            "        /* zr_aot_value_get_sub_function_native_closure_boundary */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetSubFunctionNativeClosure(state,\n"
+            "                                                                        &frame,\n"
+            "                                                                        %u,\n"
+            "                                                                        %u,\n"
+            "                                                                        %u,\n"
+            "                                                                        zr_aot_fn_%u));\n"
             "    }\n",
             (unsigned)destinationSlot,
             (unsigned)childFunctionIndex,
-            (unsigned)childFunctionIndex,
+            (unsigned)callableFlatIndex,
             (unsigned)callableFlatIndex);
 }
 
@@ -661,65 +644,73 @@ void backend_aot_write_c_unsupported_create_closure_materialization(FILE *file,
             (unsigned)destinationSlot);
 }
 
-void backend_aot_write_c_direct_stack_copy(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+static void backend_aot_write_c_direct_stack_copy_scalar_local_sync(
+        FILE *file,
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 destinationSlot) {
+    TZrBool syncBool;
+    TZrBool syncI64;
+    TZrBool syncU64;
+    TZrBool syncF64;
+
+    if (file == ZR_NULL || functionIr == ZR_NULL) {
+        return;
+    }
+
+    syncBool = backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot);
+    syncI64 = backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot);
+    syncU64 = backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot);
+    syncF64 = backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot);
+    if (!syncBool && !syncI64 && !syncU64 && !syncF64) {
+        return;
+    }
+
+    if (syncBool) {
+        fprintf(file,
+                "        /* zr_aot_direct_stack_copy_sync_bool_local_boundary */\n"
+                "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u));\n",
+                (unsigned)destinationSlot,
+                (unsigned)destinationSlot);
+    }
+    if (syncI64) {
+        fprintf(file,
+                "        /* zr_aot_direct_stack_copy_sync_i64_local_boundary */\n"
+                "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u));\n",
+                (unsigned)destinationSlot,
+                (unsigned)destinationSlot);
+    }
+    if (syncU64) {
+        fprintf(file,
+                "        /* zr_aot_direct_stack_copy_sync_u64_local_boundary */\n"
+                "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u));\n",
+                (unsigned)destinationSlot,
+                (unsigned)destinationSlot);
+    }
+    if (syncF64) {
+        fprintf(file,
+                "        /* zr_aot_direct_stack_copy_sync_f64_local_boundary */\n"
+                "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u));\n",
+                (unsigned)destinationSlot,
+                (unsigned)destinationSlot);
+    }
+}
+
+void backend_aot_write_c_direct_stack_copy(FILE *file,
+                                           const SZrAotExecIrFunction *functionIr,
+                                           TZrUInt32 destinationSlot,
+                                           TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {
         return;
     }
 
     fprintf(file,
             "    do {\n"
-            "        /* zr_aot_direct_stack_copy */\n"
-            "        const SZrFunctionFrameSlotLayout *zr_aot_destination_layout =\n"
-            "                ZrCore_Function_FindFrameSlotLayout(frame.function, %u);\n"
-            "        const SZrFunctionFrameSlotLayout *zr_aot_source_layout =\n"
-            "                ZrCore_Function_FindFrameSlotLayout(frame.function, %u);\n"
-            "        const SZrTypeValue *zr_aot_dense_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_source = zr_aot_dense_source;\n"
-            "        SZrTypeValue *zr_aot_dense_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        SZrStackFramePlace zr_aot_source_place;\n"
-            "        SZrStackFramePlace zr_aot_destination_place;\n"
-            "        if (frame.function == ZR_NULL || frame.slotBase == ZR_NULL ||\n"
-            "            zr_aot_dense_source == ZR_NULL || zr_aot_dense_destination == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        if (zr_aot_source_layout != ZR_NULL &&\n"
-            "            zr_aot_source_layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&\n"
-            "            zr_aot_source_layout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue)) {\n"
-            "            if (!ZrCore_Function_MakeFrameSlotPlace(\n"
-            "                    state, frame.function, frame.slotBase, %u, &zr_aot_source_place)) {\n"
-            "                ZR_AOT_C_FAIL();\n"
-            "            }\n"
-            "            zr_aot_source = (const SZrTypeValue *)zr_aot_source_place.address;\n"
-            "            if (ZR_VALUE_IS_TYPE_NULL(zr_aot_source->type) &&\n"
-            "                !ZR_VALUE_IS_TYPE_NULL(zr_aot_dense_source->type)) {\n"
-            "                zr_aot_source = zr_aot_dense_source;\n"
-            "            }\n"
-            "        }\n"
-            "        if (zr_aot_destination_layout != ZR_NULL &&\n"
-            "            zr_aot_destination_layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {\n"
-            "            ZR_AOT_C_GUARD(ZrCore_Function_CopyObjectValueToFrameSlotInline(\n"
-            "                    state, frame.function, frame.slotBase, %u, zr_aot_source));\n"
-            "        } else if (zr_aot_destination_layout != ZR_NULL &&\n"
-            "                   zr_aot_destination_layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&\n"
-            "                   zr_aot_destination_layout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue)) {\n"
-            "            if (!ZrCore_Function_MakeFrameSlotPlace(\n"
-            "                    state, frame.function, frame.slotBase, %u, &zr_aot_destination_place)) {\n"
-            "                ZR_AOT_C_FAIL();\n"
-            "            }\n"
-            "            ZrCore_Value_Copy(state, (SZrTypeValue *)zr_aot_destination_place.address, zr_aot_source);\n"
-            "            ZrCore_Value_Copy(state, zr_aot_dense_destination, zr_aot_source);\n"
-            "        } else {\n"
-            "            ZrCore_Value_AssignMaterializedStackValue(\n"
-            "                    state, zr_aot_dense_destination, (SZrTypeValue *)zr_aot_source);\n"
-            "        }\n"
-            "    } while (0);\n",
+            "        /* zr_aot_value_exec_copy_stack */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CopyStack(state, &frame, %u, %u));\n",
             (unsigned)destinationSlot,
-            (unsigned)sourceSlot,
-            (unsigned)sourceSlot,
-            (unsigned)destinationSlot,
-            (unsigned)sourceSlot,
-            (unsigned)destinationSlot,
-            (unsigned)destinationSlot);
+            (unsigned)sourceSlot);
+    backend_aot_write_c_direct_stack_copy_scalar_local_sync(file, functionIr, destinationSlot);
+    fprintf(file, "    } while (0);\n");
 }
 
 void backend_aot_write_c_get_closure_value(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 closureIndex) {
@@ -728,52 +719,12 @@ void backend_aot_write_c_get_closure_value(FILE *file, TZrUInt32 destinationSlot
     }
 
     fprintf(file,
-            "    {\n"
+            "    do {\n"
             "        /* zr_aot_value_exec_get_closure_value */\n"
-            "        const TZrUInt32 zr_aot_closure_index = %u;\n"
-            "        const SZrTypeValue *zr_aot_current_closure_value = ZR_NULL;\n"
-            "        SZrTypeValue *zr_aot_destination = ZR_NULL;\n"
-            "        SZrTypeValue *zr_aot_closure_value = ZR_NULL;\n"
-            "        if (state == ZR_NULL || frame.slotBase == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        zr_aot_current_closure_value = ZrCore_Stack_GetValue(frame.slotBase - 1);\n"
-            "        zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_destination == ZR_NULL || zr_aot_current_closure_value == ZR_NULL ||\n"
-            "            zr_aot_current_closure_value->type != ZR_VALUE_TYPE_CLOSURE ||\n"
-            "            zr_aot_current_closure_value->value.object == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        if (zr_aot_current_closure_value->isNative) {\n"
-            "            SZrClosureNative *zr_aot_native_closure =\n"
-            "                    ZR_CAST_NATIVE_CLOSURE(state, zr_aot_current_closure_value->value.object);\n"
-            "            if (zr_aot_native_closure == ZR_NULL ||\n"
-            "                zr_aot_closure_index >= zr_aot_native_closure->closureValueCount) {\n"
-            "                ZR_AOT_C_FAIL();\n"
-            "            }\n"
-            "            zr_aot_closure_value = ZrCore_ClosureNative_GetCaptureValue(zr_aot_native_closure,\n"
-            "                                                                        zr_aot_closure_index);\n"
-            "        } else {\n"
-            "            SZrClosure *zr_aot_vm_closure =\n"
-            "                    ZR_CAST_VM_CLOSURE(state, zr_aot_current_closure_value->value.object);\n"
-            "            SZrClosureValue *zr_aot_vm_closure_value = ZR_NULL;\n"
-            "            if (zr_aot_vm_closure == ZR_NULL ||\n"
-            "                zr_aot_closure_index >= zr_aot_vm_closure->closureValueCount) {\n"
-            "                ZR_AOT_C_FAIL();\n"
-            "            }\n"
-            "            zr_aot_vm_closure_value = zr_aot_vm_closure->closureValuesExtend[zr_aot_closure_index];\n"
-            "            if (zr_aot_vm_closure_value == ZR_NULL) {\n"
-            "                ZR_AOT_C_FAIL();\n"
-            "            }\n"
-            "            zr_aot_closure_value = ZrCore_ClosureValue_GetValue(zr_aot_vm_closure_value);\n"
-            "        }\n"
-            "        if (zr_aot_closure_value == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        ZrCore_Value_Copy(state, zr_aot_destination, zr_aot_closure_value);\n"
-            "    }\n",
-            (unsigned)closureIndex,
-            (unsigned)destinationSlot);
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetClosureValue(state, &frame, %u, %u));\n"
+            "    } while (0);\n",
+            (unsigned)destinationSlot,
+            (unsigned)closureIndex);
 }
 
 void backend_aot_write_c_set_closure_value(FILE *file, TZrUInt32 sourceSlot, TZrUInt32 closureIndex) {
@@ -782,62 +733,12 @@ void backend_aot_write_c_set_closure_value(FILE *file, TZrUInt32 sourceSlot, TZr
     }
 
     fprintf(file,
-            "    {\n"
+            "    do {\n"
             "        /* zr_aot_value_exec_set_closure_value */\n"
-            "        const TZrUInt32 zr_aot_closure_index = %u;\n"
-            "        const SZrTypeValue *zr_aot_current_closure_value = ZR_NULL;\n"
-            "        SZrTypeValue *zr_aot_source = ZR_NULL;\n"
-            "        SZrTypeValue *zr_aot_closure_value = ZR_NULL;\n"
-            "        SZrRawObject *zr_aot_barrier_object = ZR_NULL;\n"
-            "        if (state == ZR_NULL || frame.slotBase == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        zr_aot_current_closure_value = ZrCore_Stack_GetValue(frame.slotBase - 1);\n"
-            "        zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_source == ZR_NULL || zr_aot_current_closure_value == ZR_NULL ||\n"
-            "            zr_aot_current_closure_value->type != ZR_VALUE_TYPE_CLOSURE ||\n"
-            "            zr_aot_current_closure_value->value.object == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        if (zr_aot_current_closure_value->isNative) {\n"
-            "            SZrClosureNative *zr_aot_native_closure =\n"
-            "                    ZR_CAST_NATIVE_CLOSURE(state, zr_aot_current_closure_value->value.object);\n"
-            "            if (zr_aot_native_closure == ZR_NULL ||\n"
-            "                zr_aot_closure_index >= zr_aot_native_closure->closureValueCount) {\n"
-            "                ZR_AOT_C_FAIL();\n"
-            "            }\n"
-            "            zr_aot_closure_value = ZrCore_ClosureNative_GetCaptureValue(zr_aot_native_closure,\n"
-            "                                                                        zr_aot_closure_index);\n"
-            "            zr_aot_barrier_object = ZrCore_ClosureNative_GetCaptureOwner(zr_aot_native_closure,\n"
-            "                                                                        zr_aot_closure_index);\n"
-            "            if (zr_aot_barrier_object == ZR_NULL) {\n"
-            "                zr_aot_barrier_object = ZR_CAST_RAW_OBJECT_AS_SUPER(zr_aot_native_closure);\n"
-            "            }\n"
-            "        } else {\n"
-            "            SZrClosure *zr_aot_vm_closure =\n"
-            "                    ZR_CAST_VM_CLOSURE(state, zr_aot_current_closure_value->value.object);\n"
-            "            SZrClosureValue *zr_aot_vm_closure_value = ZR_NULL;\n"
-            "            if (zr_aot_vm_closure == ZR_NULL ||\n"
-            "                zr_aot_closure_index >= zr_aot_vm_closure->closureValueCount) {\n"
-            "                ZR_AOT_C_FAIL();\n"
-            "            }\n"
-            "            zr_aot_vm_closure_value = zr_aot_vm_closure->closureValuesExtend[zr_aot_closure_index];\n"
-            "            if (zr_aot_vm_closure_value == ZR_NULL) {\n"
-            "                ZR_AOT_C_FAIL();\n"
-            "            }\n"
-            "            zr_aot_closure_value = ZrCore_ClosureValue_GetValue(zr_aot_vm_closure_value);\n"
-            "            zr_aot_barrier_object = ZR_CAST_RAW_OBJECT_AS_SUPER(zr_aot_vm_closure_value);\n"
-            "        }\n"
-            "        if (zr_aot_closure_value == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        ZrCore_Value_Copy(state, zr_aot_closure_value, zr_aot_source);\n"
-            "        if (zr_aot_barrier_object != ZR_NULL) {\n"
-            "            ZrCore_Value_Barrier(state, zr_aot_barrier_object, zr_aot_source);\n"
-            "        }\n"
-            "    }\n",
-            (unsigned)closureIndex,
-            (unsigned)sourceSlot);
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetClosureValue(state, &frame, %u, %u));\n"
+            "    } while (0);\n",
+            (unsigned)sourceSlot,
+            (unsigned)closureIndex);
 }
 
 void backend_aot_write_c_direct_reset_stack_null(FILE *file, TZrUInt32 destinationSlot) {
@@ -848,14 +749,18 @@ void backend_aot_write_c_direct_reset_stack_null(FILE *file, TZrUInt32 destinati
     fprintf(file,
             "    do {\n"
             "        /* zr_aot_value_exec_reset_stack_null */\n"
-            "        SZrTypeValue *zr_aot_destination = ZR_NULL;\n"
-            "        if (frame.slotBase == ZR_NULL || %u >= frame.generatedFrameSlotCount) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        ZrCore_Value_ResetAsNull(zr_aot_destination);\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ResetStackNull(state, &frame, %u));\n"
             "    } while (0);\n",
-            (unsigned)destinationSlot,
+            (unsigned)destinationSlot);
+}
+
+void backend_aot_write_c_reset_stack_null_scalar_local_skip(FILE *file, TZrUInt32 destinationSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    /* zr_aot_reset_stack_null_scalar_local_skip slot=%u */\n",
             (unsigned)destinationSlot);
 }
 
@@ -867,19 +772,21 @@ void backend_aot_write_c_direct_reset_stack_null2(FILE *file, TZrUInt32 firstSlo
     fprintf(file,
             "    do {\n"
             "        /* zr_aot_value_exec_reset_stack_null2 */\n"
-            "        SZrTypeValue *zr_aot_first = ZR_NULL;\n"
-            "        SZrTypeValue *zr_aot_second = ZR_NULL;\n"
-            "        if (frame.slotBase == ZR_NULL || %u >= frame.generatedFrameSlotCount ||\n"
-            "            %u >= frame.generatedFrameSlotCount) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        zr_aot_first = &frame.slotBase[%u].value;\n"
-            "        zr_aot_second = &frame.slotBase[%u].value;\n"
-            "        ZrCore_Value_ResetAsNull(zr_aot_first);\n"
-            "        ZrCore_Value_ResetAsNull(zr_aot_second);\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ResetStackNull2(state, &frame, %u, %u));\n"
             "    } while (0);\n",
             (unsigned)firstSlot,
-            (unsigned)secondSlot,
+            (unsigned)secondSlot);
+}
+
+void backend_aot_write_c_reset_stack_null2_scalar_local_skip(FILE *file,
+                                                             TZrUInt32 firstSlot,
+                                                             TZrUInt32 secondSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    /* zr_aot_reset_stack_null2_scalar_local_skip slots=%u,%u */\n",
             (unsigned)firstSlot,
             (unsigned)secondSlot);
 }
@@ -890,22 +797,10 @@ void backend_aot_write_c_direct_get_global(FILE *file, TZrUInt32 destinationSlot
     }
 
     fprintf(file,
-            "    {\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_global_object =\n"
-            "                (state != ZR_NULL && state->global != ZR_NULL &&\n"
-            "                 state->global->zrObject.type == ZR_VALUE_TYPE_OBJECT)\n"
-            "                        ? &state->global->zrObject\n"
-            "                        : ZR_NULL;\n"
-            "        if (zr_aot_destination == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        if (zr_aot_global_object != ZR_NULL) {\n"
-            "            ZrCore_Value_Copy(state, zr_aot_destination, &state->global->zrObject);\n"
-            "        } else {\n"
-            "            ZrCore_Value_ResetAsNull(zr_aot_destination);\n"
-            "        }\n"
-            "    }\n",
+            "    do {\n"
+            "        /* zr_aot_value_exec_get_global */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetGlobal(state, &frame, %u));\n"
+            "    } while (0);\n",
             (unsigned)destinationSlot);
 }
 
@@ -915,22 +810,10 @@ void backend_aot_write_c_direct_create_object(FILE *file, TZrUInt32 destinationS
     }
 
     fprintf(file,
-            "    {\n"
-            "        SZrObject *zr_aot_object = ZrCore_Object_New(state, ZR_NULL);\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_destination == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        ZrCore_Ownership_ReleaseValue(state, zr_aot_destination);\n"
-            "        if (zr_aot_object != ZR_NULL) {\n"
-            "            ZrCore_Object_Init(state, zr_aot_object);\n"
-            "            ZrCore_Value_InitAsRawObject(state,\n"
-            "                                         zr_aot_destination,\n"
-            "                                         ZR_CAST_RAW_OBJECT_AS_SUPER(zr_aot_object));\n"
-            "        } else {\n"
-            "            ZrCore_Value_ResetAsNull(zr_aot_destination);\n"
-            "        }\n"
-            "    }\n",
+            "    do {\n"
+            "        /* zr_aot_value_exec_create_object */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CreateObject(state, &frame, %u));\n"
+            "    } while (0);\n",
             (unsigned)destinationSlot);
 }
 
@@ -940,25 +823,10 @@ void backend_aot_write_c_direct_create_array(FILE *file, TZrUInt32 destinationSl
     }
 
     fprintf(file,
-            "    {\n"
-            "        SZrObject *zr_aot_array = ZrCore_Object_NewCustomized(state,\n"
-            "                                                             sizeof(SZrObject),\n"
-            "                                                             ZR_OBJECT_INTERNAL_TYPE_ARRAY);\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_destination == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        ZrCore_Ownership_ReleaseValue(state, zr_aot_destination);\n"
-            "        if (zr_aot_array != ZR_NULL) {\n"
-            "            ZrCore_Object_Init(state, zr_aot_array);\n"
-            "            ZrCore_Value_InitAsRawObject(state,\n"
-            "                                         zr_aot_destination,\n"
-            "                                         ZR_CAST_RAW_OBJECT_AS_SUPER(zr_aot_array));\n"
-            "            zr_aot_destination->type = ZR_VALUE_TYPE_ARRAY;\n"
-            "        } else {\n"
-            "            ZrCore_Value_ResetAsNull(zr_aot_destination);\n"
-            "        }\n"
-            "    }\n",
+            "    do {\n"
+            "        /* zr_aot_value_exec_create_array */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CreateArray(state, &frame, %u));\n"
+            "    } while (0);\n",
             (unsigned)destinationSlot);
 }
 
@@ -968,15 +836,10 @@ void backend_aot_write_c_direct_typeof(FILE *file, TZrUInt32 destinationSlot, TZ
     }
 
     fprintf(file,
-            "    {\n"
+            "    do {\n"
             "        /* zr_aot_value_exec_typeof */\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (zr_aot_destination == ZR_NULL ||\n"
-            "            !ZrCore_Reflection_TypeOfValue(state, zr_aot_source, zr_aot_destination)) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "    }\n",
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_TypeOf(state, &frame, %u, %u));\n"
+            "    } while (0);\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot);
 }
@@ -990,25 +853,12 @@ void backend_aot_write_c_direct_to_object(FILE *file,
     }
 
     fprintf(file,
-            "    {\n"
+            "    do {\n"
             "        /* zr_aot_value_exec_to_object */\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_type_name = %u < frame.function->constantValueLength\n"
-            "                                             ? &frame.function->constantValueList[%u]\n"
-            "                                             : ZR_NULL;\n"
-            "        if (zr_aot_destination == ZR_NULL || zr_aot_source == ZR_NULL || zr_aot_type_name == ZR_NULL ||\n"
-            "            !ZrCore_Execution_ToObject(state,\n"
-            "                                      frame.callInfo,\n"
-            "                                      zr_aot_destination,\n"
-            "                                      zr_aot_source,\n"
-            "                                      zr_aot_type_name)) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "    }\n",
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ToObject(state, &frame, %u, %u, %u));\n"
+            "    } while (0);\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
-            (unsigned)typeNameConstantIndex,
             (unsigned)typeNameConstantIndex);
 }
 
@@ -1021,24 +871,11 @@ void backend_aot_write_c_direct_to_struct(FILE *file,
     }
 
     fprintf(file,
-            "    {\n"
+            "    do {\n"
             "        /* zr_aot_value_exec_to_struct */\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_type_name = %u < frame.function->constantValueLength\n"
-            "                                             ? &frame.function->constantValueList[%u]\n"
-            "                                             : ZR_NULL;\n"
-            "        if (zr_aot_destination == ZR_NULL || zr_aot_source == ZR_NULL || zr_aot_type_name == ZR_NULL ||\n"
-            "            !ZrCore_Execution_ToStruct(state,\n"
-            "                                      frame.callInfo,\n"
-            "                                      zr_aot_destination,\n"
-            "                                      zr_aot_source,\n"
-            "                                      zr_aot_type_name)) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "    }\n",
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ToStruct(state, &frame, %u, %u, %u));\n"
+            "    } while (0);\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
-            (unsigned)typeNameConstantIndex,
             (unsigned)typeNameConstantIndex);
 }

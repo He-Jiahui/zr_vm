@@ -670,11 +670,11 @@ void ZrCore_GlobalState_Free(SZrGlobalState *global) {
         ZrCore_Array_Free(global->mainThreadState, &global->importCompileInfoStack);
     }
 
-    ZrCore_StringTable_Free(global, global->stringTable);
-    global->stringTable = ZR_NULL;
-
     ZrCore_GarbageCollector_Free(global, global->garbageCollector);
     global->garbageCollector = ZR_NULL;
+
+    ZrCore_StringTable_Free(global, global->stringTable);
+    global->stringTable = ZR_NULL;
 
     ZrCore_Profile_GlobalShutdown(global);
 

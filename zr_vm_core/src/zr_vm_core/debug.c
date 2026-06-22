@@ -16,10 +16,12 @@
 #include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/exception.h"
+#include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/ownership.h"
+#include "zr_vm_core/profile.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
@@ -330,6 +332,105 @@ TZrUInt32 ZrCore_Debug_GetHookMask(struct SZrState *state) {
 
 TZrUInt32 ZrCore_Debug_GetHookCount(struct SZrState *state) {
     return state != ZR_NULL ? state->baseDebugHookCount : 0u;
+}
+
+static TZrBool debug_active_line_seen_before(const SZrFunction *function, TZrUInt32 limit, TZrUInt32 line) {
+    TZrUInt32 index;
+
+    for (index = 0u; index < limit; index++) {
+        if (function->executionLocationInfoList[index].lineInSource == line) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void debug_active_line_insert_sorted(TZrUInt32 *lines, TZrSize *lineCount, TZrSize capacity, TZrUInt32 line) {
+    TZrSize position;
+
+    if (lines == ZR_NULL || lineCount == ZR_NULL || *lineCount >= capacity) {
+        return;
+    }
+
+    position = *lineCount;
+    while (position > 0u && lines[position - 1u] > line) {
+        lines[position] = lines[position - 1u];
+        position--;
+    }
+    lines[position] = line;
+    (*lineCount)++;
+}
+
+TZrSize ZrCore_Debug_GetActiveLines(const struct SZrFunction *function,
+                                    TZrUInt32 *outLines,
+                                    TZrSize lineCapacity) {
+    TZrUInt32 index;
+    TZrSize uniqueCount = 0u;
+    TZrSize writtenCount = 0u;
+
+    if (function == ZR_NULL || function->executionLocationInfoList == ZR_NULL) {
+        return 0u;
+    }
+
+    for (index = 0u; index < function->executionLocationInfoLength; index++) {
+        TZrUInt32 line = function->executionLocationInfoList[index].lineInSource;
+        if (line == 0u || debug_active_line_seen_before(function, index, line)) {
+            continue;
+        }
+
+        uniqueCount++;
+        debug_active_line_insert_sorted(outLines, &writtenCount, lineCapacity, line);
+    }
+
+    return uniqueCount;
+}
+
+void ZrCore_Debug_DisassembleFunction(struct SZrState *state,
+                                      const struct SZrFunction *function,
+                                      FILE *output) {
+    TZrNativeString name;
+    TZrNativeString source;
+    TZrUInt32 offset;
+
+    ZR_UNUSED_PARAMETER(state);
+
+    if (function == ZR_NULL || output == ZR_NULL) {
+        return;
+    }
+
+    name = debug_get_string_native(function->functionName, ZR_NULL);
+    source = debug_get_string_native(function->sourceCodeList, ZR_NULL);
+    fprintf(output,
+            "ZR_DISASSEMBLY function %s source %s instructions %u\n",
+            name != ZR_NULL ? name : "<entry>",
+            source != ZR_NULL ? source : "<unknown>",
+            (unsigned)function->instructionsLength);
+    fprintf(output, "offset opcode operands\n");
+    if (function->instructionsList == ZR_NULL) {
+        return;
+    }
+
+    for (offset = 0u; offset < function->instructionsLength; offset++) {
+        const TZrInstruction *instruction = &function->instructionsList[offset];
+        TZrUInt32 line = ZrCore_Exception_FindSourceLine((SZrFunction *)function, offset);
+        const TZrChar *opcodeName =
+                ZrCore_Profile_InstructionName((EZrInstructionCode)instruction->instruction.operationCode);
+
+        fprintf(output,
+                "%04u %-32s u8=%u,%u,%u,%u u16=%u,%u i32=%d raw=0x%016llx ; line %u\n",
+                (unsigned)offset,
+                opcodeName != ZR_NULL ? opcodeName : "unknown",
+                (unsigned)instruction->instruction.operand.operand0[0],
+                (unsigned)instruction->instruction.operand.operand0[1],
+                (unsigned)instruction->instruction.operand.operand0[2],
+                (unsigned)instruction->instruction.operand.operand0[3],
+                (unsigned)instruction->instruction.operand.operand1[0],
+                (unsigned)instruction->instruction.operand.operand1[1],
+                (int)instruction->instruction.operand.operand2[0],
+                (unsigned long long)instruction->value,
+                (unsigned)line);
+    }
 }
 
 TZrNativeString ZrCore_Debug_GetLocal(struct SZrState *state,
@@ -684,7 +785,7 @@ void ZrCore_Debug_Hook(struct SZrState *state, EZrDebugHookEvent event, TZrUInt3
             callInfo->yieldContext.transferCount = transferCount;
         }
         if (ZR_CALL_INFO_IS_VM(callInfo) && state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
-            state->stackTop.valuePointer = state->stackTop.valuePointer + ZR_STACK_NATIVE_CALL_RESERVED_MIN;
+            state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
         }
         state->allowDebugHook = ZR_FALSE;
         callInfo->callStatus |= mask;
@@ -941,7 +1042,7 @@ ZR_CORE_API void ZrCore_Debug_PrintPrototypesFromData(struct SZrState *state, st
     }
 
     // 检查prototypeData是否有效
-    if (entryFunction->prototypeData == ZR_NULL || entryFunction->prototypeDataLength == 0 || 
+    if (entryFunction->prototypeData == ZR_NULL || entryFunction->prototypeDataLength == 0 ||
         entryFunction->prototypeCount == 0) {
         fprintf(output, "// No prototype data found\n");
         return;
@@ -1250,7 +1351,7 @@ ZR_CORE_API void ZrCore_Debug_PrintPrototypesFromData(struct SZrState *state, st
                             }
                         }
                     }
-                    
+
                     // 输出所有可用信息
                     fprintf(output, "      // Unknown member type, showing all fields:\n");
                     if (fieldTypeNameStringIndex > 0) {
@@ -1272,7 +1373,7 @@ ZR_CORE_API void ZrCore_Debug_PrintPrototypesFromData(struct SZrState *state, st
 
         fprintf(output, "  ]\n");
         fprintf(output, "}\n\n");
-        
+
         // 移动到下一个prototype
         currentPos += currentPrototypeSize;
         remainingDataSize -= currentPrototypeSize;

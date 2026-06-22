@@ -17,6 +17,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/type_layout.h"
 #include "zr_vm_core/value.h"
@@ -25,6 +26,8 @@ typedef struct SZrCompilerState SZrCompilerState;
 
 #define ZR_DEBUG_WAIT_INFINITE ((TZrUInt32) 0xFFFFFFFFu)
 #define ZR_DEBUG_PROTOCOL_NAME "zrdbg/1"
+#define ZR_DEBUG_MAIN_THREAD_ID ((TZrUInt32)1u)
+#define ZR_DEBUG_VARIABLE_HANDLE_BASE ((TZrUInt32)1000u)
 #define ZR_DEBUG_INSTANCE_SYNTHETIC_FIELD_COUNT ((TZrSize)1u)
 
 static ZR_FORCE_INLINE void zr_debug_memory_barrier(void) {
@@ -95,7 +98,8 @@ typedef enum EZrDebugVariableHandleKind {
     ZR_DEBUG_VARIABLE_HANDLE_KIND_PROTOTYPE_VIEW = 4,
     ZR_DEBUG_VARIABLE_HANDLE_KIND_EXCEPTION = 5,
     ZR_DEBUG_VARIABLE_HANDLE_KIND_INDEX_WINDOW = 6,
-    ZR_DEBUG_VARIABLE_HANDLE_KIND_INLINE_UNION = 7
+    ZR_DEBUG_VARIABLE_HANDLE_KIND_INLINE_UNION = 7,
+    ZR_DEBUG_VARIABLE_HANDLE_KIND_STRING_CHUNKS = 8
 } EZrDebugVariableHandleKind;
 
 typedef struct ZrDebugUnionView {
@@ -124,6 +128,34 @@ typedef struct ZrDebugVariableHandle {
     SZrObjectPrototype *prototype;
 } ZrDebugVariableHandle;
 
+typedef enum EZrDebugDataBreakpointKind {
+    ZR_DEBUG_DATA_BREAKPOINT_KIND_NONE = 0,
+    ZR_DEBUG_DATA_BREAKPOINT_KIND_LOCAL = 1,
+    ZR_DEBUG_DATA_BREAKPOINT_KIND_UPVALUE = 2
+} EZrDebugDataBreakpointKind;
+
+typedef struct ZrDebugDataBreakpoint {
+    EZrDebugDataBreakpointKind kind;
+    EZrDebugScopeKind scope_kind;
+    TZrUInt32 thread_id;
+    TZrUInt32 frame_id;
+    TZrUInt32 stack_slot;
+    TZrInt32 value_index;
+    TZrBool verified;
+    TZrBool has_last_value;
+    SZrTypeValue last_value;
+    TZrChar name[ZR_DEBUG_NAME_CAPACITY];
+    TZrChar data_id[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar description[ZR_DEBUG_TEXT_CAPACITY];
+} ZrDebugDataBreakpoint;
+
+typedef struct ZrDebugThreadEntry {
+    TZrUInt32 thread_id;
+    TZrUInt32 previous_debug_hook_signal;
+    SZrState *state;
+    TZrChar name[ZR_DEBUG_NAME_CAPACITY];
+} ZrDebugThreadEntry;
+
 struct ZrDebugAgent {
     SZrState *state;
     SZrFunction *entryFunction;
@@ -142,6 +174,7 @@ struct ZrDebugAgent {
     TZrBool clientDisconnectContinue;
     EZrDebugRunMode runMode;
     TZrUInt32 stepDepth;
+    SZrCallInfo *stepCallInfo;
     SZrFunction *resumeFunction;
     TZrUInt32 resumeInstruction;
     TZrUInt64 stopStateId;
@@ -150,16 +183,23 @@ struct ZrDebugAgent {
     TZrSize breakpointCount;
     TZrSize lineBreakpointCount;
     TZrSize functionBreakpointCount;
+    ZrDebugDataBreakpoint *dataBreakpoints;
+    TZrSize dataBreakpointCount;
+    TZrSize dataBreakpointCapacity;
     ZrDebugVariableHandle *variableHandles;
     TZrSize variableHandleCount;
     TZrSize variableHandleCapacity;
     TZrUInt32 nextVariableHandleId;
-    TZrUInt32 previousDebugHookSignal;
+    ZrDebugThreadEntry *threads;
+    TZrSize threadCount;
+    TZrSize threadCapacity;
+    TZrUInt32 nextThreadId;
+    TZrUInt32 currentThreadId;
     TZrChar moduleName[ZR_DEBUG_TEXT_CAPACITY];
     TZrChar endpoint[ZR_NETWORK_ENDPOINT_TEXT_CAPACITY];
 };
 
-void zr_debug_copy_text(TZrChar *buffer, TZrSize bufferSize, const TZrChar *text);
+ZR_DEBUG_API void zr_debug_copy_text(TZrChar *buffer, TZrSize bufferSize, const TZrChar *text);
 const TZrChar *zr_debug_string_native(SZrString *value);
 const TZrChar *zr_debug_function_name(SZrFunction *function);
 const TZrChar *zr_debug_function_source(SZrFunction *function);
@@ -259,10 +299,10 @@ TZrBool zr_debug_identifier_reference_summary(ZrDebugAgent *agent,
                                               const TZrChar *name,
                                               TZrChar *buffer,
                                               TZrSize bufferSize);
-void zr_debug_format_value_text_safe(SZrState *state,
-                                     const SZrTypeValue *value,
-                                     TZrChar *buffer,
-                                     TZrSize bufferSize);
+ZR_DEBUG_API void zr_debug_format_value_text_safe(SZrState *state,
+                                                  const SZrTypeValue *value,
+                                                  TZrChar *buffer,
+                                                  TZrSize bufferSize);
 TZrBool zr_debug_resolve_identifier_value(ZrDebugAgent *agent,
                                           TZrUInt32 frameId,
                                           const TZrChar *name,
@@ -302,6 +342,35 @@ void zr_debug_agent_emit_output(ZrDebugAgent *agent, const TZrChar *category, co
 TZrUInt32 zr_debug_call_info_line(ZrDebugAgent *agent, SZrCallInfo *callInfo, SZrFunction *function,
                                   TZrBool isTopFrame);
 void zr_debug_variable_handles_clear(ZrDebugAgent *agent);
+ZrDebugThreadEntry *zr_debug_agent_find_thread_by_id(ZrDebugAgent *agent, TZrUInt32 threadId);
+ZrDebugThreadEntry *zr_debug_agent_find_thread_by_state(ZrDebugAgent *agent, SZrState *state);
+TZrUInt32 zr_debug_agent_thread_id_for_state(ZrDebugAgent *agent, SZrState *state);
+TZrUInt32 zr_debug_agent_effective_thread_id(ZrDebugAgent *agent, TZrUInt32 requestedThreadId);
+TZrBool zr_debug_agent_register_thread_state(ZrDebugAgent *agent,
+                                             SZrState *state,
+                                             const TZrChar *name,
+                                             TZrUInt32 *outThreadId);
+SZrState *zr_debug_agent_begin_thread_access(ZrDebugAgent *agent,
+                                             TZrUInt32 requestedThreadId,
+                                             TZrUInt32 *outResolvedThreadId,
+                                             SZrState **outPreviousState,
+                                             TZrUInt32 *outPreviousThreadId);
+void zr_debug_agent_end_thread_access(ZrDebugAgent *agent, SZrState *previousState, TZrUInt32 previousThreadId);
+TZrBool zr_debug_agent_data_breakpoint_info(ZrDebugAgent *agent,
+                                            TZrUInt32 requestedThreadId,
+                                            TZrUInt32 variablesReference,
+                                            const TZrChar *name,
+                                            TZrChar *outDataId,
+                                            TZrSize outDataIdSize,
+                                            TZrChar *outDescription,
+                                            TZrSize outDescriptionSize);
+void zr_debug_agent_clear_data_breakpoints(ZrDebugAgent *agent);
+TZrBool zr_debug_agent_add_data_breakpoint(ZrDebugAgent *agent,
+                                           const TZrChar *dataId,
+                                           const TZrChar *accessType,
+                                           TZrChar *outDescription,
+                                           TZrSize outDescriptionSize);
+ZrDebugDataBreakpoint *zr_debug_agent_check_data_breakpoints(ZrDebugAgent *agent);
 TZrBool zr_debug_evaluate_expression(ZrDebugAgent *agent,
                                      TZrUInt32 frameId,
                                      const TZrChar *expression,

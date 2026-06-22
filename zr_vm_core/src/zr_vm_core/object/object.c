@@ -2111,7 +2111,7 @@ TZrBool ZrCore_Object_GetMemberWithKeyUnchecked(struct SZrState *state,
             descriptor->getterFunction != ZR_NULL) {
             return ZrCore_Object_CallFunctionWithReceiver(state,
                                                           descriptor->getterFunction,
-                                                          receiver,
+                                                          descriptor->isStatic ? ZR_NULL : receiver,
                                                           ZR_NULL,
                                                           0,
                                                           result);
@@ -2424,7 +2424,7 @@ static TZrBool object_get_member_cached_descriptor_unchecked_core(struct SZrStat
     if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY && descriptor->getterFunction != ZR_NULL) {
         return ZrCore_Object_CallFunctionWithReceiver(state,
                                                       descriptor->getterFunction,
-                                                      receiver,
+                                                      descriptor->isStatic ? ZR_NULL : receiver,
                                                       ZR_NULL,
                                                       0,
                                                       result);
@@ -2525,7 +2525,7 @@ static TZrBool object_set_member_with_key_unchecked_core(struct SZrState *state,
             ZrCore_Value_ResetAsNull(&ignoredResult);
             return ZrCore_Object_CallFunctionWithReceiver(state,
                                                           descriptor->setterFunction,
-                                                          receiver,
+                                                          descriptor->isStatic ? ZR_NULL : receiver,
                                                           value,
                                                           1,
                                                           &ignoredResult);
@@ -2638,7 +2638,7 @@ static TZrBool object_set_member_cached_descriptor_unchecked_core(struct SZrStat
         ZrCore_Value_ResetAsNull(&ignoredResult);
         return ZrCore_Object_CallFunctionWithReceiver(state,
                                                       descriptor->setterFunction,
-                                                      receiver,
+                                                      descriptor->isStatic ? ZR_NULL : receiver,
                                                       value,
                                                       1,
                                                       &ignoredResult);

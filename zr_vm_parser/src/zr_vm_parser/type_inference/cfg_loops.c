@@ -6,7 +6,6 @@ TZrBool cfg_build_while_statement(SZrState *state,
                                   TZrUInt32 *inOutPreviousBlockId,
                                   EZrSemanticReachabilityCause pendingCause,
                                   SZrAstNode *pendingCauseNode) {
-    SZrParserCfgBlock *previousBlock;
     SZrParserCfgBlock *whileBlock;
     TZrUInt32 whileBlockId;
     TZrUInt32 bodyPreviousBlockId;
@@ -15,6 +14,7 @@ TZrBool cfg_build_while_statement(SZrState *state,
     TZrBool conditionValue = ZR_FALSE;
     TZrBool hasConstantCondition;
     TZrBool includeBody;
+    TZrBool canExitWithoutIteration;
     EZrSemanticReachabilityCause bodyCause;
     SZrAstNode *bodyCauseNode;
     SZrParserCfgLoopTargets whileLoopTargets;
@@ -24,7 +24,6 @@ TZrBool cfg_build_while_statement(SZrState *state,
         return ZR_FALSE;
     }
 
-    previousBlock = cfg_get_block(cfg, *inOutPreviousBlockId);
     whileBlockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, statement);
     whileBlock = cfg_get_block(cfg, whileBlockId);
     if (whileBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID || whileBlock == ZR_NULL) {
@@ -35,14 +34,13 @@ TZrBool cfg_build_while_statement(SZrState *state,
         whileBlock->unreachableCause = pendingCause;
         whileBlock->unreachableCauseNode = pendingCauseNode;
     }
-    if (previousBlock != ZR_NULL && !previousBlock->isTerminator) {
-        if (!cfg_add_edge(cfg, previousBlock->id, whileBlockId)) {
-            return ZR_FALSE;
-        }
+    if (!cfg_connect_fallthrough(cfg, *inOutPreviousBlockId, whileBlockId)) {
+        return ZR_FALSE;
     }
 
     hasConstantCondition = cfg_node_bool_constant(statement->data.whileLoop.cond, &conditionValue);
     includeBody = !hasConstantCondition || conditionValue;
+    canExitWithoutIteration = !hasConstantCondition || !conditionValue;
     bodyPreviousBlockId = includeBody ? whileBlockId : ZR_PARSER_CFG_INVALID_BLOCK_ID;
     bodyCause = pendingCause != ZR_SEMANTIC_REACHABILITY_CAUSE_UNKNOWN
                     ? pendingCause
@@ -69,7 +67,7 @@ TZrBool cfg_build_while_statement(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (!cfg_add_edge(cfg, whileBlockId, joinBlockId)) {
+    if (canExitWithoutIteration && !cfg_add_edge(cfg, whileBlockId, joinBlockId)) {
         return ZR_FALSE;
     }
 
@@ -89,7 +87,6 @@ TZrBool cfg_build_for_statement(SZrState *state,
                                 TZrUInt32 *inOutPreviousBlockId,
                                 EZrSemanticReachabilityCause pendingCause,
                                 SZrAstNode *pendingCauseNode) {
-    SZrParserCfgBlock *previousBlock;
     SZrParserCfgBlock *forBlock;
     TZrUInt32 loopPredecessorBlockId;
     TZrUInt32 forBlockId;
@@ -102,6 +99,7 @@ TZrBool cfg_build_for_statement(SZrState *state,
     TZrBool conditionValue = ZR_FALSE;
     TZrBool hasConstantCondition;
     TZrBool includeBody;
+    TZrBool canExitWithoutIteration;
     EZrSemanticReachabilityCause bodyCause;
     SZrAstNode *bodyCauseNode;
     SZrParserCfgLoopTargets forLoopTargets;
@@ -124,7 +122,6 @@ TZrBool cfg_build_for_statement(SZrState *state,
         return ZR_FALSE;
     }
 
-    previousBlock = cfg_get_block(cfg, loopPredecessorBlockId);
     forBlockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, statement);
     forBlock = cfg_get_block(cfg, forBlockId);
     if (forBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID || forBlock == ZR_NULL) {
@@ -135,14 +132,14 @@ TZrBool cfg_build_for_statement(SZrState *state,
         forBlock->unreachableCause = pendingCause;
         forBlock->unreachableCauseNode = pendingCauseNode;
     }
-    if (previousBlock != ZR_NULL && !previousBlock->isTerminator) {
-        if (!cfg_add_edge(cfg, previousBlock->id, forBlockId)) {
-            return ZR_FALSE;
-        }
+    if (!cfg_connect_fallthrough(cfg, loopPredecessorBlockId, forBlockId)) {
+        return ZR_FALSE;
     }
 
     hasConstantCondition = cfg_node_bool_constant(statement->data.forLoop.cond, &conditionValue);
     includeBody = !hasConstantCondition || conditionValue;
+    canExitWithoutIteration = statement->data.forLoop.cond != ZR_NULL &&
+                              (!hasConstantCondition || !conditionValue);
     bodyPreviousBlockId = includeBody ? forBlockId : ZR_PARSER_CFG_INVALID_BLOCK_ID;
     bodyCause = pendingCause != ZR_SEMANTIC_REACHABILITY_CAUSE_UNKNOWN
                     ? pendingCause
@@ -209,7 +206,7 @@ TZrBool cfg_build_for_statement(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (!cfg_add_edge(cfg, forBlockId, joinBlockId)) {
+    if (canExitWithoutIteration && !cfg_add_edge(cfg, forBlockId, joinBlockId)) {
         return ZR_FALSE;
     }
 
@@ -223,7 +220,6 @@ TZrBool cfg_build_foreach_statement(SZrState *state,
                                     TZrUInt32 *inOutPreviousBlockId,
                                     EZrSemanticReachabilityCause pendingCause,
                                     SZrAstNode *pendingCauseNode) {
-    SZrParserCfgBlock *previousBlock;
     SZrParserCfgBlock *foreachBlock;
     TZrUInt32 foreachBlockId;
     TZrUInt32 bodyLastBlockId;
@@ -235,7 +231,6 @@ TZrBool cfg_build_foreach_statement(SZrState *state,
         return ZR_FALSE;
     }
 
-    previousBlock = cfg_get_block(cfg, *inOutPreviousBlockId);
     foreachBlockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, statement);
     foreachBlock = cfg_get_block(cfg, foreachBlockId);
     if (foreachBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID || foreachBlock == ZR_NULL) {
@@ -246,10 +241,8 @@ TZrBool cfg_build_foreach_statement(SZrState *state,
         foreachBlock->unreachableCause = pendingCause;
         foreachBlock->unreachableCauseNode = pendingCauseNode;
     }
-    if (previousBlock != ZR_NULL && !previousBlock->isTerminator) {
-        if (!cfg_add_edge(cfg, previousBlock->id, foreachBlockId)) {
-            return ZR_FALSE;
-        }
+    if (!cfg_connect_fallthrough(cfg, *inOutPreviousBlockId, foreachBlockId)) {
+        return ZR_FALSE;
     }
 
     joinBlockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, ZR_NULL);

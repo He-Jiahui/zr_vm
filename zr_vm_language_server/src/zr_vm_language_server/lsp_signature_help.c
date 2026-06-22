@@ -1614,6 +1614,7 @@ static TZrBool signature_substitute_receiver_generic_type(SZrState *state,
     result->minValue = sourceType->minValue;
     result->maxValue = sourceType->maxValue;
     result->hasRangeConstraint = sourceType->hasRangeConstraint;
+    ZrParser_InferredType_CopyRangeSegments(state, result, sourceType);
     result->arrayFixedSize = sourceType->arrayFixedSize;
     result->arrayMinSize = sourceType->arrayMinSize;
     result->arrayMaxSize = sourceType->arrayMaxSize;

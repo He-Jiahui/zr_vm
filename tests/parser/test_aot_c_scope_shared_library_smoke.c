@@ -106,7 +106,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
 }
 #endif
 
-static void test_aot_c_generated_shared_library_compiles_direct_scope_core_lowering(void) {
+static void test_aot_c_generated_shared_library_compiles_scope_boundary_helper_lowering(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C scope shared-library smoke currently validates the Unix toolchain path");
 #else
@@ -145,18 +145,17 @@ static void test_aot_c_generated_shared_library_compiles_direct_scope_core_lower
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "#include \"zr_vm_core/closure.h\""));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "#include \"zr_vm_core/call_info.h\""));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "#include \"zr_vm_library/aot_runtime.h\""));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scope_mark_to_be_closed"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scope_close_scope"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Closure_ToBeClosedValueClosureNew(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Closure_CloseStackValue(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "ZrCore_Closure_CloseRegisteredValues(state, 1, ZR_THREAD_STATUS_INVALID, ZR_FALSE)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Stack_SavePointerAsOffset(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Stack_LoadOffsetToPointer(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MarkToBeClosed"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CloseScope"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MarkToBeClosed(state, &frame, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CloseScope(state, &frame, 1)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Closure_ToBeClosedValueClosureNew(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Closure_CloseStackValue(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrCore_Closure_CloseRegisteredValues(state, 1, ZR_THREAD_STATUS_INVALID, ZR_FALSE)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Stack_SavePointerAsOffset(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Stack_LoadOffsetToPointer(state,"));
     free(generatedCText);
 
     snprintf(command,
@@ -186,6 +185,6 @@ static void test_aot_c_generated_shared_library_compiles_direct_scope_core_lower
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_aot_c_generated_shared_library_compiles_direct_scope_core_lowering);
+    RUN_TEST(test_aot_c_generated_shared_library_compiles_scope_boundary_helper_lowering);
     return UNITY_END();
 }

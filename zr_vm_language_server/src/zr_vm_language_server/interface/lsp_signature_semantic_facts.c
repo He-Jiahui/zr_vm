@@ -1,4 +1,5 @@
 #include "interface/lsp_interface_internal.h"
+#include "semantic/lsp_numeric_range_text.h"
 #include "semantic/semantic_analyzer_internal.h"
 
 #include "zr_vm_parser/semantic_facts.h"
@@ -27,14 +28,6 @@ static void signature_fact_get_string_view(SZrString *value,
         *text = ZrCore_String_GetNativeString(value);
         *length = value->longStringLength;
     }
-}
-
-static TZrBool signature_fact_is_float_numeric_fact(const SZrSemanticNumericFact *fact) {
-    return fact != ZR_NULL &&
-           (fact->sourceType == ZR_VALUE_TYPE_FLOAT ||
-            fact->sourceType == ZR_VALUE_TYPE_DOUBLE ||
-            fact->targetType == ZR_VALUE_TYPE_FLOAT ||
-            fact->targetType == ZR_VALUE_TYPE_DOUBLE);
 }
 
 static TZrBool signature_fact_append_format(TZrChar *buffer,
@@ -276,21 +269,12 @@ static TZrBool signature_fact_append_numeric_detail(TZrChar *buffer,
         if (!signature_fact_append_separator(buffer, bufferSize, used)) {
             return ZR_FALSE;
         }
-        if (signature_fact_is_float_numeric_fact(fact)) {
-            if (!signature_fact_append_format(buffer,
-                                              bufferSize,
-                                              used,
-                                              "range %.17g..%.17g",
-                                              fact->minDoubleValue,
-                                              fact->maxDoubleValue)) {
-                return ZR_FALSE;
-            }
-        } else if (!signature_fact_append_format(buffer,
-                                                 bufferSize,
-                                                 used,
-                                                 "range %lld..%lld",
-                                                 (long long)fact->minValue,
-                                                 (long long)fact->maxValue)) {
+        if (!ZrLanguageServer_LspNumericRangeText_AppendRange(
+                buffer,
+                bufferSize,
+                used,
+                fact,
+                ZR_TRUE)) {
             return ZR_FALSE;
         }
     }

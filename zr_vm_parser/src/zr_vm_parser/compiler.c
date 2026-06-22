@@ -672,6 +672,9 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             ZrParser_Compiler_Error(cs, "Failed to build typed metadata for compiled script", node->location);
             return;
         }
+        if (!cs->hasError) {
+            (void)ZrParser_Compiler_PublishSemanticQueryDiagnostics(cs);
+        }
 
         exit_scope(cs);
     }

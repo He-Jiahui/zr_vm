@@ -7,6 +7,7 @@
 
 #include "project/project.h"
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/debug.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
@@ -24,7 +25,9 @@
 #include "zr_vm_parser/compiler.h"
 
 #if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
+#include "zr_vm_lib_debug/coverage.h"
 #include "zr_vm_lib_debug/debug.h"
+#include "zr_vm_lib_debug/profile.h"
 #endif
 
 typedef struct ZrCliExecuteRequest {
@@ -59,6 +62,225 @@ static void zr_cli_runtime_trace(const TZrChar *format, ...) {
     fprintf(stderr, "\n");
     fflush(stderr);
     va_end(arguments);
+}
+
+#if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
+#define ZR_CLI_PROFILE_SAMPLE_PERIOD 1u
+
+static void zr_cli_runtime_stop_profile(ZrDebugProfile *profile, TZrBool *profileStarted) {
+    if (profile != ZR_NULL && profileStarted != ZR_NULL && *profileStarted) {
+        ZrDebug_Profile_Stop(profile);
+        ZrDebug_Profile_Destroy(profile);
+        *profileStarted = ZR_FALSE;
+    }
+}
+
+static void zr_cli_runtime_stop_coverage(ZrDebugCoverage *coverage, TZrBool *coverageStarted) {
+    if (coverage != ZR_NULL && coverageStarted != ZR_NULL && *coverageStarted) {
+        ZrDebug_Coverage_Stop(coverage);
+        ZrDebug_Coverage_Destroy(coverage);
+        *coverageStarted = ZR_FALSE;
+    }
+}
+
+static TZrBool zr_cli_runtime_start_coverage(SZrState *state,
+                                             const SZrCliCommand *command,
+                                             ZrDebugCoverage *coverage,
+                                             TZrBool *coverageStarted,
+                                             SZrFunction *entryFunction) {
+    if (command == ZR_NULL || !command->coverageEnabled) {
+        return ZR_TRUE;
+    }
+    if (state == ZR_NULL || coverage == ZR_NULL || coverageStarted == ZR_NULL || entryFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (*coverageStarted) {
+        return ZR_TRUE;
+    }
+
+    if (!ZrDebug_Coverage_RegisterFunctionTree(coverage, entryFunction) ||
+        !ZrDebug_Coverage_Start(coverage, state)) {
+        ZrCore_Log_Error(state, "failed to start coverage\n");
+        ZrDebug_Coverage_Destroy(coverage);
+        return ZR_FALSE;
+    }
+
+    *coverageStarted = ZR_TRUE;
+    return ZR_TRUE;
+}
+
+static TZrBool zr_cli_runtime_write_profile_report(SZrState *state,
+                                                   const SZrCliCommand *command,
+                                                   const ZrDebugProfile *profile) {
+    FILE *output = stdout;
+    TZrBool closeOutput = ZR_FALSE;
+    TZrSize index;
+
+    if (command == ZR_NULL || profile == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (command->profileOutputPath != ZR_NULL && command->profileOutputPath[0] != '\0') {
+        output = fopen(command->profileOutputPath, "w");
+        if (output == ZR_NULL) {
+            ZrCore_Log_Error(state, "failed to open profile output: %s\n", command->profileOutputPath);
+            return ZR_FALSE;
+        }
+        closeOutput = ZR_TRUE;
+    }
+
+    fprintf(output, "ZR_PROFILE deterministic\n");
+    fprintf(output, "calls returns total_ns self_ns function source\n");
+    for (index = 0u; index < ZrDebug_Profile_GetEntryCount(profile); index++) {
+        const ZrDebugProfileEntry *entry = ZrDebug_Profile_GetEntry(profile, index);
+        if (entry == ZR_NULL) {
+            continue;
+        }
+        fprintf(output,
+                "%llu %llu %llu %llu %s %s\n",
+                (unsigned long long)entry->call_count,
+                (unsigned long long)entry->return_count,
+                (unsigned long long)entry->total_time_ns,
+                (unsigned long long)entry->self_time_ns,
+                entry->name,
+                entry->source);
+    }
+
+    if (ZrDebug_Profile_GetSampleCount(profile) > 0u) {
+        fprintf(output,
+                "ZR_PROFILE samples period=%u total=%llu\n",
+                (unsigned)ZR_CLI_PROFILE_SAMPLE_PERIOD,
+                (unsigned long long)ZrDebug_Profile_GetTotalSampleCount(profile));
+        fprintf(output, "samples line function source\n");
+        for (index = 0u; index < ZrDebug_Profile_GetSampleCount(profile); index++) {
+            const ZrDebugProfileSample *sample = ZrDebug_Profile_GetSample(profile, index);
+            if (sample == ZR_NULL) {
+                continue;
+            }
+            fprintf(output,
+                    "%llu %llu %s %s\n",
+                    (unsigned long long)sample->sample_count,
+                    (unsigned long long)sample->line,
+                    sample->name,
+                    sample->source);
+        }
+    }
+
+    if (closeOutput) {
+        fclose(output);
+    } else {
+        fflush(output);
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool zr_cli_runtime_write_coverage_report(SZrState *state,
+                                                    const SZrCliCommand *command,
+                                                    const ZrDebugCoverage *coverage) {
+    FILE *output = stdout;
+    TZrBool closeOutput = ZR_FALSE;
+    TZrSize index;
+
+    if (command == ZR_NULL || coverage == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (command->coverageOutputPath != ZR_NULL && command->coverageOutputPath[0] != '\0') {
+        output = fopen(command->coverageOutputPath, "w");
+        if (output == ZR_NULL) {
+            ZrCore_Log_Error(state, "failed to open coverage output: %s\n", command->coverageOutputPath);
+            return ZR_FALSE;
+        }
+        closeOutput = ZR_TRUE;
+    }
+
+    fprintf(output, "ZR_COVERAGE lines\n");
+    fprintf(output, "source line executable executed function\n");
+    for (index = 0u; index < ZrDebug_Coverage_GetLineCount(coverage); index++) {
+        const ZrDebugCoverageLine *line = ZrDebug_Coverage_GetLine(coverage, index);
+        if (line == ZR_NULL) {
+            continue;
+        }
+        fprintf(output,
+                "%s %u %u %u %s\n",
+                line->source[0] != '\0' ? line->source : "<unknown>",
+                (unsigned)line->line,
+                line->executable ? 1u : 0u,
+                line->executed ? 1u : 0u,
+                line->name);
+    }
+
+    if (closeOutput) {
+        fclose(output);
+    } else {
+        fflush(output);
+    }
+    return ZR_TRUE;
+}
+#else
+#define zr_cli_runtime_stop_profile(profile, profileStarted) ((void)0)
+#define zr_cli_runtime_stop_coverage(coverage, coverageStarted) ((void)0)
+#define zr_cli_runtime_start_coverage(state, command, coverage, coverageStarted, entryFunction) ZR_TRUE
+#endif
+
+static TZrBool zr_cli_runtime_dump_bytecode(SZrState *state,
+                                            const SZrCliCommand *command,
+                                            SZrFunction *entryFunction) {
+    FILE *output;
+
+    if (command == ZR_NULL || !command->dumpBytecodeEnabled) {
+        return ZR_TRUE;
+    }
+    if (entryFunction == ZR_NULL ||
+        command->dumpBytecodeOutputPath == ZR_NULL ||
+        command->dumpBytecodeOutputPath[0] == '\0') {
+        ZrCore_Log_Error(state, "dump bytecode requires an output path and loaded entry function\n");
+        return ZR_FALSE;
+    }
+
+    output = fopen(command->dumpBytecodeOutputPath, "w");
+    if (output == ZR_NULL) {
+        ZrCore_Log_Error(state, "failed to open bytecode dump output: %s\n", command->dumpBytecodeOutputPath);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Debug_DisassembleFunction(state, entryFunction, output);
+    fclose(output);
+    return ZR_TRUE;
+}
+
+static TZrBool zr_cli_runtime_write_heap_summary_report(SZrState *state,
+                                                        const SZrCliCommand *command,
+                                                        TZrBool writeStdout,
+                                                        TZrBool writeFile) {
+    FILE *output;
+
+    if (command == ZR_NULL || !command->heapSummaryEnabled) {
+        return ZR_TRUE;
+    }
+
+    if (command->heapSummaryOutputPath != ZR_NULL && command->heapSummaryOutputPath[0] != '\0') {
+        if (!writeFile) {
+            return ZR_TRUE;
+        }
+
+        output = fopen(command->heapSummaryOutputPath, "w");
+        if (output == ZR_NULL) {
+            ZrCore_Log_Error(state, "failed to open heap summary output: %s\n", command->heapSummaryOutputPath);
+            return ZR_FALSE;
+        }
+        ZrCore_Debug_HeapSummary(state, output);
+        fclose(output);
+        return ZR_TRUE;
+    }
+
+    if (!writeStdout) {
+        return ZR_TRUE;
+    }
+
+    ZrCore_Debug_HeapSummary(state, stdout);
+    fflush(stdout);
+    return ZR_TRUE;
 }
 
 static void zr_cli_runtime_execute_body(SZrState *state, TZrPtr arguments) {
@@ -671,6 +893,12 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
     TZrChar loadedEntryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrBool success = ZR_FALSE;
     const TZrChar *executedVia = ZR_NULL;
+#if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
+    ZrDebugProfile profile;
+    TZrBool profileStarted = ZR_FALSE;
+    ZrDebugCoverage coverage;
+    TZrBool coverageStarted = ZR_FALSE;
+#endif
 
     if (prepared == ZR_NULL || prepared->global == ZR_NULL || command == ZR_NULL || outCapture == ZR_NULL) {
         ZrCore_Log_Error(ZR_NULL, "prepared project runtime is incomplete\n");
@@ -685,12 +913,42 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
     state = global->mainThreadState;
 
 #if !defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
-    if (command->debugEnabled) {
-        ZrCore_Log_Error(state, "debug agent support is not built into this CLI\n");
+    if (command->debugEnabled || command->profileEnabled || command->coverageEnabled) {
+        ZrCore_Log_Error(state, "debug/profile/coverage support is not built into this CLI\n");
         ZrCli_Runtime_PreparedProject_Free(prepared);
         return ZR_FALSE;
     }
 #else
+    if (command->debugEnabled && command->profileEnabled) {
+        ZrCore_Log_Error(state, "--profile cannot be combined with --debug\n");
+        ZrCli_Runtime_PreparedProject_Free(prepared);
+        return ZR_FALSE;
+    }
+
+    if (command->debugEnabled && command->coverageEnabled) {
+        ZrCore_Log_Error(state, "--coverage cannot be combined with --debug\n");
+        ZrCli_Runtime_PreparedProject_Free(prepared);
+        return ZR_FALSE;
+    }
+
+    if (command->profileEnabled && command->coverageEnabled) {
+        ZrCore_Log_Error(state, "--coverage cannot be combined with --profile\n");
+        ZrCli_Runtime_PreparedProject_Free(prepared);
+        return ZR_FALSE;
+    }
+
+    ZrDebug_Profile_Init(&profile);
+    ZrDebug_Coverage_Init(&coverage);
+    if (command->profileEnabled) {
+        if (!ZrDebug_Profile_StartWithSampling(&profile, state, ZR_CLI_PROFILE_SAMPLE_PERIOD)) {
+            ZrCore_Log_Error(state, "failed to start profiler\n");
+            ZrDebug_Coverage_Destroy(&coverage);
+            ZrCli_Runtime_PreparedProject_Free(prepared);
+            return ZR_FALSE;
+        }
+        profileStarted = ZR_TRUE;
+    }
+
     if (command->debugEnabled) {
         ZrDebugAgentConfig debugConfig;
         ZrDebugAgent *debugAgent = ZR_NULL;
@@ -709,6 +967,8 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
                                                 loadedEntryPath,
                                                 sizeof(loadedEntryPath))) {
             ZrCore_Log_Error(state, "failed to load project entry: %s\n", effectiveEntryModule);
+            zr_cli_runtime_stop_profile(&profile, &profileStarted);
+            zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
             ZrCli_Runtime_PreparedProject_Free(prepared);
             return ZR_FALSE;
         }
@@ -716,6 +976,15 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
 
         ignoredFunction = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
         zr_cli_runtime_prepare_entry_module(state, entryFunction, loadedEntryPath);
+        if (!zr_cli_runtime_dump_bytecode(state, command, entryFunction)) {
+            if (ignoredFunction) {
+                ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
+            }
+            zr_cli_runtime_stop_profile(&profile, &profileStarted);
+            zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
+            ZrCli_Runtime_PreparedProject_Free(prepared);
+            return ZR_FALSE;
+        }
 
         memset(&debugConfig, 0, sizeof(debugConfig));
         debugConfig.address = command->debugAddress;
@@ -735,6 +1004,8 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
             if (ignoredFunction) {
                 ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
             }
+            zr_cli_runtime_stop_profile(&profile, &profileStarted);
+            zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
             ZrCli_Runtime_PreparedProject_Free(prepared);
             return ZR_FALSE;
         }
@@ -753,6 +1024,8 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
 
         if (!success) {
             zr_cli_runtime_handle_failure(state, state->threadStatus);
+            zr_cli_runtime_stop_profile(&profile, &profileStarted);
+            zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
             ZrCli_Runtime_PreparedProject_Free(prepared);
             return ZR_FALSE;
         }
@@ -760,7 +1033,9 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
 #endif
     switch (command->executionMode) {
         case ZR_CLI_EXECUTION_MODE_INTERP: {
-            if (command->mode == ZR_CLI_MODE_RUN_PROJECT_MODULE) {
+            if (command->mode == ZR_CLI_MODE_RUN_PROJECT_MODULE ||
+                command->coverageEnabled ||
+                command->dumpBytecodeEnabled) {
                 if (!zr_cli_runtime_load_entry_function(state,
                                                         project,
                                                         effectiveEntryModule,
@@ -769,11 +1044,25 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
                                                         loadedEntryPath,
                                                         sizeof(loadedEntryPath))) {
                     ZrCore_Log_Error(state, "failed to load project entry: %s\n", effectiveEntryModule);
+                    zr_cli_runtime_stop_profile(&profile, &profileStarted);
+                    zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
                     ZrCli_Runtime_PreparedProject_Free(prepared);
                     return ZR_FALSE;
                 }
 
                 zr_cli_runtime_trace("interp module entry loaded '%s'", loadedEntryPath);
+                if (!zr_cli_runtime_dump_bytecode(state, command, entryFunction)) {
+                    zr_cli_runtime_stop_profile(&profile, &profileStarted);
+                    zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
+                    ZrCli_Runtime_PreparedProject_Free(prepared);
+                    return ZR_FALSE;
+                }
+                if (!zr_cli_runtime_start_coverage(state, command, &coverage, &coverageStarted, entryFunction)) {
+                    zr_cli_runtime_stop_profile(&profile, &profileStarted);
+                    zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
+                    ZrCli_Runtime_PreparedProject_Free(prepared);
+                    return ZR_FALSE;
+                }
                 success = zr_cli_runtime_prepare_and_execute_entry(state, entryFunction, loadedEntryPath, &result);
             } else {
                 zr_cli_runtime_trace("run project via library");
@@ -787,23 +1076,72 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
             if (!zr_cli_runtime_load_entry_function(state, project, effectiveEntryModule, ZR_TRUE, &entryFunction, loadedEntryPath,
                                                     sizeof(loadedEntryPath))) {
                 ZrCore_Log_Error(state, "failed to load project entry: %s\n", effectiveEntryModule);
+                zr_cli_runtime_stop_profile(&profile, &profileStarted);
+                zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
                 ZrCli_Runtime_PreparedProject_Free(prepared);
                 return ZR_FALSE;
             }
 
             zr_cli_runtime_trace("binary entry loaded '%s'", loadedEntryPath);
+            if (!zr_cli_runtime_dump_bytecode(state, command, entryFunction)) {
+                zr_cli_runtime_stop_profile(&profile, &profileStarted);
+                zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
+                ZrCli_Runtime_PreparedProject_Free(prepared);
+                return ZR_FALSE;
+            }
+            if (!zr_cli_runtime_start_coverage(state, command, &coverage, &coverageStarted, entryFunction)) {
+                zr_cli_runtime_stop_profile(&profile, &profileStarted);
+                zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
+                ZrCli_Runtime_PreparedProject_Free(prepared);
+                return ZR_FALSE;
+            }
             success = zr_cli_runtime_prepare_and_execute_entry(state, entryFunction, loadedEntryPath, &result);
             executedVia = "binary";
             break;
 
         default:
             ZrCore_Log_Error(state, "unknown execution mode: %d\n", (int)command->executionMode);
+            zr_cli_runtime_stop_profile(&profile, &profileStarted);
+            zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
             ZrCli_Runtime_PreparedProject_Free(prepared);
             return ZR_FALSE;
     }
 
     if (!success) {
         zr_cli_runtime_handle_failure(state, state->threadStatus);
+        zr_cli_runtime_stop_profile(&profile, &profileStarted);
+        zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
+        ZrCli_Runtime_PreparedProject_Free(prepared);
+        return ZR_FALSE;
+    }
+
+#if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
+    if (profileStarted) {
+        ZrDebug_Profile_Stop(&profile);
+        profileStarted = ZR_FALSE;
+        if (!zr_cli_runtime_write_profile_report(state, command, &profile)) {
+            ZrDebug_Profile_Destroy(&profile);
+            ZrDebug_Coverage_Destroy(&coverage);
+            ZrCli_Runtime_PreparedProject_Free(prepared);
+            return ZR_FALSE;
+        }
+        ZrDebug_Profile_Destroy(&profile);
+    }
+    if (coverageStarted) {
+        ZrDebug_Coverage_Stop(&coverage);
+        coverageStarted = ZR_FALSE;
+        if (!zr_cli_runtime_write_coverage_report(state, command, &coverage)) {
+            ZrDebug_Coverage_Destroy(&coverage);
+            ZrCli_Runtime_PreparedProject_Free(prepared);
+            return ZR_FALSE;
+        }
+        ZrDebug_Coverage_Destroy(&coverage);
+    } else {
+        ZrDebug_Coverage_Destroy(&coverage);
+    }
+#endif
+
+    if (!zr_cli_runtime_write_heap_summary_report(state, command, ZR_FALSE, ZR_TRUE)) {
         ZrCli_Runtime_PreparedProject_Free(prepared);
         return ZR_FALSE;
     }
@@ -918,6 +1256,10 @@ int ZrCli_Runtime_RunProject(const SZrCliCommand *command) {
                                      capture.executedVia[0] != '\0'
                                              ? capture.executedVia
                                              : zr_cli_runtime_mode_name(command->executionMode));
+    if (!zr_cli_runtime_write_heap_summary_report(state, command, ZR_TRUE, ZR_FALSE)) {
+        ZrCli_Runtime_RunCapture_Free(&capture);
+        return 1;
+    }
     ZrCli_Runtime_RunCapture_Free(&capture);
     return 0;
 }

@@ -123,6 +123,85 @@ static void semantic_record_logical_fact(SZrSemanticAnalyzer *analyzer,
     ZrParser_SemanticFacts_AppendLogical(analyzer->semanticContext, &fact);
 }
 
+static TZrBool semantic_has_constant_branch_reachability_fact(SZrSemanticAnalyzer *analyzer,
+                                                              SZrAstNode *node) {
+    TZrSize index;
+
+    if (analyzer == ZR_NULL ||
+        analyzer->semanticContext == ZR_NULL ||
+        node == ZR_NULL ||
+        !analyzer->semanticContext->reachabilityFacts.isValid) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < analyzer->semanticContext->reachabilityFacts.length; index++) {
+        const SZrSemanticReachabilityFact *fact =
+                (const SZrSemanticReachabilityFact *)ZrCore_Array_Get(
+                        &analyzer->semanticContext->reachabilityFacts,
+                        index);
+        if (fact != ZR_NULL &&
+            fact->node == node &&
+            fact->cause == ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void semantic_record_constant_if_condition_facts(SZrState *state,
+                                                        SZrSemanticAnalyzer *analyzer,
+                                                        SZrAstNode *node) {
+    TZrBool conditionValue = ZR_FALSE;
+    SZrAstNode *conditionEvidence = ZR_NULL;
+    SZrAstNode *condition;
+    SZrAstNode *unreachableBranch;
+
+    if (state == ZR_NULL ||
+        analyzer == ZR_NULL ||
+        node == ZR_NULL ||
+        node->type != ZR_AST_IF_EXPRESSION) {
+        return;
+    }
+
+    condition = node->data.ifExpression.condition;
+    if (!ZrLanguageServer_SemanticAnalyzer_TryEvaluateConstantBooleanCondition(
+                analyzer,
+                condition,
+                &conditionValue,
+                &conditionEvidence)) {
+        return;
+    }
+
+    unreachableBranch = conditionValue
+                        ? node->data.ifExpression.elseExpr
+                        : node->data.ifExpression.thenExpr;
+    if (semantic_has_constant_branch_reachability_fact(analyzer, unreachableBranch)) {
+        return;
+    }
+
+    semantic_record_logical_fact(analyzer,
+                                 condition,
+                                 conditionValue
+                                ? ZR_SEMANTIC_LOGICAL_FACT_ALWAYS_TRUE
+                                : ZR_SEMANTIC_LOGICAL_FACT_ALWAYS_FALSE,
+                                 ZR_TRUE,
+                                 conditionValue,
+                                 conditionEvidence != ZR_NULL ? conditionEvidence : unreachableBranch);
+    if (unreachableBranch != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
+                                                        analyzer,
+                                                        ZR_DIAGNOSTIC_WARNING,
+                                                        unreachableBranch->location,
+                                                        "Branch is statically unreachable",
+                                                        "unreachable_branch");
+        semantic_record_reachability_fact(analyzer,
+                                          unreachableBranch,
+                                          ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH,
+                                          condition);
+    }
+}
+
 typedef struct SZrSemanticTypecheckContextSnapshot {
     SZrTypePrototypeInfo *typePrototype;
     SZrAstNode *typeNode;
@@ -197,6 +276,16 @@ static void semantic_typecheck_register_variable_binding(SZrState *state,
                                                                           ZR_NULL));
             ZrParser_InferredType_Free(state, &bindingType);
             return;
+        }
+        if (valueNode != ZR_NULL) {
+            SZrInferredType initializerType;
+            ZrParser_InferredType_Init(state, &initializerType, ZR_VALUE_TYPE_OBJECT);
+            if (semantic_infer_node_type(state, analyzer, valueNode, &initializerType)) {
+                (void)ZrParser_TypeInference_TryApplyInitializerNumericRange(state,
+                                                                             &bindingType,
+                                                                             &initializerType);
+            }
+            ZrParser_InferredType_Free(state, &initializerType);
         }
     } else if (valueNode != ZR_NULL) {
         if (!semantic_infer_node_type(state, analyzer, valueNode, &bindingType)) {
@@ -2355,37 +2444,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         }
 
         case ZR_AST_IF_EXPRESSION: {
-            TZrBool conditionValue = ZR_FALSE;
-            SZrAstNode *conditionEvidence = ZR_NULL;
-            if (ZrLanguageServer_SemanticAnalyzer_TryEvaluateConstantBooleanCondition(
-                        analyzer,
-                        node->data.ifExpression.condition,
-                        &conditionValue,
-                        &conditionEvidence)) {
-                SZrAstNode *unreachableBranch = conditionValue
-                                                ? node->data.ifExpression.elseExpr
-                                                : node->data.ifExpression.thenExpr;
-                semantic_record_logical_fact(analyzer,
-                                             node->data.ifExpression.condition,
-                                             conditionValue
-                                            ? ZR_SEMANTIC_LOGICAL_FACT_ALWAYS_TRUE
-                                            : ZR_SEMANTIC_LOGICAL_FACT_ALWAYS_FALSE,
-                                             ZR_TRUE,
-                                             conditionValue,
-                                             conditionEvidence != ZR_NULL ? conditionEvidence : unreachableBranch);
-                if (unreachableBranch != ZR_NULL) {
-                    ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
-                                                                    analyzer,
-                                                                    ZR_DIAGNOSTIC_WARNING,
-                                                                    unreachableBranch->location,
-                                                                    "Branch is statically unreachable",
-                                                                    "unreachable_branch");
-                    semantic_record_reachability_fact(analyzer,
-                                                      unreachableBranch,
-                                                      ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH,
-                                                      node->data.ifExpression.condition);
-                }
-            }
+            semantic_record_constant_if_condition_facts(state, analyzer, node);
             break;
         }
 
@@ -2727,9 +2786,27 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         
         case ZR_AST_IF_EXPRESSION: {
             SZrIfExpression *ifExpr = &node->data.ifExpression;
+            SZrTypeInferenceBranchScope branchScope;
+            SZrInferredType conditionType;
+
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, ifExpr->condition);
+            ZrParser_InferredType_Init(state, &conditionType, ZR_VALUE_TYPE_OBJECT);
+            (void)semantic_infer_node_type(state, analyzer, ifExpr->condition, &conditionType);
+            ZrParser_InferredType_Free(state, &conditionType);
+            semantic_record_constant_if_condition_facts(state, analyzer, node);
+
+            (void)ZrParser_TypeInference_PushTrueBranchNumericRangeScope(analyzer->compilerState,
+                                                                          ifExpr->condition,
+                                                                          &branchScope);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, ifExpr->thenExpr);
+            ZrParser_TypeInference_PopBranchScope(analyzer->compilerState, &branchScope);
+
+            (void)ZrParser_TypeInference_PushFalseBranchNumericRangeScope(analyzer->compilerState,
+                                                                          ifExpr->condition,
+                                                                          &branchScope);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, ifExpr->elseExpr);
+            ZrParser_TypeInference_PopBranchScope(analyzer->compilerState, &branchScope);
+            (void)ZrParser_TypeInference_TryJoinIfElseNumericAssignments(analyzer->compilerState, node);
             break;
         }
 
@@ -2746,6 +2823,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                                                                whileLoop->cond,
                                                                                whileLoop->block);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, whileLoop->block);
+            (void)ZrParser_TypeInference_TryJoinWhileNumericAssignments(analyzer->compilerState, node);
             break;
         }
         

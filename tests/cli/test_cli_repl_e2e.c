@@ -384,6 +384,41 @@ static int cli_process_read_available(ZrCliReplE2eProcess *process) {
 #endif
 }
 
+static int cli_process_output_contains(const ZrCliReplE2eProcess *process, const char *needle) {
+    const char *output;
+    char *normalizedOutput;
+    size_t inputIndex;
+    size_t outputIndex;
+    int found;
+
+    if (process == NULL || needle == NULL) {
+        return 0;
+    }
+
+    output = cli_process_output(process);
+    if (strstr(output, needle) != NULL) {
+        return 1;
+    }
+
+    normalizedOutput = (char *)malloc(strlen(output) + 1);
+    if (normalizedOutput == NULL) {
+        return 0;
+    }
+
+    outputIndex = 0;
+    for (inputIndex = 0; output[inputIndex] != '\0'; ++inputIndex) {
+        if (output[inputIndex] == '\r' && output[inputIndex + 1] == '\n') {
+            continue;
+        }
+        normalizedOutput[outputIndex++] = output[inputIndex];
+    }
+    normalizedOutput[outputIndex] = '\0';
+
+    found = strstr(normalizedOutput, needle) != NULL;
+    free(normalizedOutput);
+    return found;
+}
+
 static int cli_process_wait_for_substring(ZrCliReplE2eProcess *process, const char *needle, unsigned int timeoutMs) {
     unsigned long long deadline;
 
@@ -396,7 +431,7 @@ static int cli_process_wait_for_substring(ZrCliReplE2eProcess *process, const ch
         if (!cli_process_update_exit_status(process) || !cli_process_read_available(process)) {
             return 0;
         }
-        if (strstr(cli_process_output(process), needle) != NULL) {
+        if (cli_process_output_contains(process, needle)) {
             return 1;
         }
         if (process->hasExited) {
@@ -408,7 +443,7 @@ static int cli_process_wait_for_substring(ZrCliReplE2eProcess *process, const ch
     if (!cli_process_update_exit_status(process) || !cli_process_read_available(process)) {
         return 0;
     }
-    return strstr(cli_process_output(process), needle) != NULL ? 1 : 0;
+    return cli_process_output_contains(process, needle);
 }
 
 static int cli_process_wait_for_exit(ZrCliReplE2eProcess *process, unsigned int timeoutMs) {

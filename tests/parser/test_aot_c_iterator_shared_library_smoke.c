@@ -126,7 +126,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
 }
 #endif
 
-static void test_aot_c_generated_shared_library_compiles_direct_iterator_core_lowering(void) {
+static void test_aot_c_generated_shared_library_compiles_iterator_boundary_helper_lowering(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C iterator shared-library smoke currently validates the Unix toolchain path");
 #else
@@ -165,20 +165,25 @@ static void test_aot_c_generated_shared_library_compiles_direct_iterator_core_lo
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "#include \"zr_vm_core/object.h\""));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "#include \"zr_vm_library/aot_runtime.h\""));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_iter_init"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_iter_move_next"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_iter_current"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_iter_move_next_jump_if_false"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Object_IterInit(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Object_TryIterMoveNextCachedArrayFast(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Object_IterMoveNext(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Object_TryIterCurrentCachedMemberFastStackResult(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Object_IterCurrent(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_IterInit"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_IterMoveNext"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_IterCurrent"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_IterInit(state, &frame, 2, 0)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_IterMoveNext(state, &frame, 3, 2)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_IterCurrent(state, &frame, 4, 2)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrLibrary_AotRuntime_IterMoveNextJumpIfFalse(state, &frame, 3, 2, &zr_aot_branch_taken)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "goto zr_aot_fn_0_ins_5;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_IterInit(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_TryIterMoveNextCachedArrayFast(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_IterMoveNext(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_TryIterCurrentCachedMemberFastStackResult(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_IterCurrent(state,"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_IsTruthy"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT iterator core path"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT iterator branch result"));
     free(generatedCText);
 
     snprintf(command,
@@ -208,6 +213,6 @@ static void test_aot_c_generated_shared_library_compiles_direct_iterator_core_lo
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_aot_c_generated_shared_library_compiles_direct_iterator_core_lowering);
+    RUN_TEST(test_aot_c_generated_shared_library_compiles_iterator_boundary_helper_lowering);
     return UNITY_END();
 }

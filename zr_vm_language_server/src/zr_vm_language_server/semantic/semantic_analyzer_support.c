@@ -89,6 +89,8 @@ void ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForRange(SZrState *
         fact.node = symbol->astNode;
         fact.range = range;
         fact.declarationRange = range;
+        fact.definitionRange = range;
+        fact.hasDefinitionRange = ZR_TRUE;
         fact.kind = ZR_SEMANTIC_REFERENCE_DECLARATION;
         fact.symbolId = symbol->semanticId;
         fact.typeId = symbol->semanticTypeId;

@@ -572,6 +572,8 @@ static TZrBool semantic_type_prototypes_build_inferred_type(SZrSemanticAnalyzer 
     SZrState *state;
     SZrSemanticPrototypeContextSnapshot snapshot;
     SZrString *renderedTypeName;
+    EZrOwnershipQualifier ownershipQualifier;
+    const SZrType *innerTypeNode;
 
     if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || typeNode == ZR_NULL || outType == ZR_NULL) {
         return ZR_FALSE;
@@ -579,6 +581,20 @@ static TZrBool semantic_type_prototypes_build_inferred_type(SZrSemanticAnalyzer 
 
     state = analyzer->compilerState->state;
     semantic_type_prototypes_push_context(analyzer, ownerTypeNode, functionNode, &snapshot);
+    if (ZrParser_AstType_TryUnwrapOwnershipGeneric(typeNode, &ownershipQualifier, &innerTypeNode)) {
+        if (!semantic_type_prototypes_build_inferred_type(analyzer,
+                                                          ownerTypeNode,
+                                                          functionNode,
+                                                          innerTypeNode,
+                                                          outType)) {
+            semantic_type_prototypes_pop_context(analyzer, &snapshot);
+            return ZR_FALSE;
+        }
+        outType->ownershipQualifier = ownershipQualifier;
+        semantic_type_prototypes_pop_context(analyzer, &snapshot);
+        return ZR_TRUE;
+    }
+
     renderedTypeName = semantic_type_prototypes_render_type(analyzer, typeNode);
     if (renderedTypeName == ZR_NULL) {
         semantic_type_prototypes_pop_context(analyzer, &snapshot);

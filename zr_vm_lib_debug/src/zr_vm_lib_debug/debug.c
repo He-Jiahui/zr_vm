@@ -2,7 +2,40 @@
 
 #include <ctype.h>
 
+static TZrDebugSignal zr_debug_agent_trace_observer(SZrState *state,
+                                                    SZrFunction *function,
+                                                    const TZrInstruction *programCounter,
+                                                    TZrUInt32 instructionOffset,
+                                                    TZrUInt32 sourceLine,
+                                                    TZrPtr userData);
+
+static TZrBool zr_debug_text_looks_like_path(const TZrChar *text) {
+    return (TZrBool)(text != ZR_NULL && (strchr(text, '/') != ZR_NULL || strchr(text, '\\') != ZR_NULL));
+}
+
+static TZrSize zr_debug_format_truncation_marker(TZrChar *buffer, TZrSize bufferSize, TZrSize omittedCount) {
+    int written;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return 0;
+    }
+
+    written = snprintf(buffer, bufferSize, "...[+%llu]", (unsigned long long)omittedCount);
+    if (written < 0 || (TZrSize)written >= bufferSize) {
+        buffer[0] = '\0';
+        return 0;
+    }
+
+    return (TZrSize)written;
+}
+
 void zr_debug_copy_text(TZrChar *buffer, TZrSize bufferSize, const TZrChar *text) {
+    TZrSize textLength;
+    TZrChar marker[32];
+    TZrSize markerLength;
+    TZrSize visibleLength;
+    TZrSize omittedCount;
+
     if (buffer == ZR_NULL || bufferSize == 0) {
         return;
     }
@@ -11,8 +44,43 @@ void zr_debug_copy_text(TZrChar *buffer, TZrSize bufferSize, const TZrChar *text
         return;
     }
 
-    snprintf(buffer, bufferSize, "%s", text);
-    buffer[bufferSize - 1] = '\0';
+    textLength = strlen(text);
+    if (textLength < bufferSize) {
+        memcpy(buffer, text, textLength + 1u);
+        return;
+    }
+
+    markerLength = zr_debug_format_truncation_marker(marker, sizeof(marker), 1u);
+    if (markerLength == 0 || markerLength + 1u >= bufferSize) {
+        memcpy(buffer, text, bufferSize - 1u);
+        buffer[bufferSize - 1u] = '\0';
+        return;
+    }
+
+    visibleLength = bufferSize - markerLength - 1u;
+    omittedCount = textLength - visibleLength;
+    markerLength = zr_debug_format_truncation_marker(marker, sizeof(marker), omittedCount);
+    while (markerLength > 0 && markerLength + visibleLength + 1u > bufferSize && visibleLength > 0) {
+        visibleLength--;
+        omittedCount = textLength - visibleLength;
+        markerLength = zr_debug_format_truncation_marker(marker, sizeof(marker), omittedCount);
+    }
+
+    if (markerLength == 0 || markerLength + visibleLength + 1u > bufferSize) {
+        memcpy(buffer, text, bufferSize - 1u);
+        buffer[bufferSize - 1u] = '\0';
+        return;
+    }
+
+    if (zr_debug_text_looks_like_path(text)) {
+        memcpy(buffer, marker, markerLength);
+        memcpy(buffer + markerLength, text + textLength - visibleLength, visibleLength);
+        buffer[markerLength + visibleLength] = '\0';
+    } else {
+        memcpy(buffer, text, visibleLength);
+        memcpy(buffer + visibleLength, marker, markerLength);
+        buffer[visibleLength + markerLength] = '\0';
+    }
 }
 
 const TZrChar *zr_debug_string_native(SZrString *value) {
@@ -72,6 +140,8 @@ const TZrChar *zr_debug_stop_reason_name(EZrDebugStopReason reason) {
             return "exception";
         case ZR_DEBUG_STOP_REASON_TERMINATED:
             return "terminated";
+        case ZR_DEBUG_STOP_REASON_DATA_BREAKPOINT:
+            return "dataBreakpoint";
         case ZR_DEBUG_STOP_REASON_NONE:
         default:
             return "none";
@@ -151,6 +221,689 @@ const TZrChar *zr_debug_value_type_name(EZrValueType type) {
 
 TZrUInt32 zr_debug_scope_id(TZrUInt32 frameId, EZrDebugScopeKind kind) {
     return frameId * 10u + (TZrUInt32)kind;
+}
+
+ZrDebugThreadEntry *zr_debug_agent_find_thread_by_id(ZrDebugAgent *agent, TZrUInt32 threadId) {
+    TZrSize index;
+
+    if (agent == ZR_NULL || threadId == 0) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < agent->threadCount; index++) {
+        if (agent->threads[index].thread_id == threadId) {
+            return &agent->threads[index];
+        }
+    }
+
+    return ZR_NULL;
+}
+
+ZrDebugThreadEntry *zr_debug_agent_find_thread_by_state(ZrDebugAgent *agent, SZrState *state) {
+    TZrSize index;
+
+    if (agent == ZR_NULL || state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < agent->threadCount; index++) {
+        if (agent->threads[index].state == state) {
+            return &agent->threads[index];
+        }
+    }
+
+    return ZR_NULL;
+}
+
+TZrUInt32 zr_debug_agent_thread_id_for_state(ZrDebugAgent *agent, SZrState *state) {
+    ZrDebugThreadEntry *entry = zr_debug_agent_find_thread_by_state(agent, state);
+    return entry != ZR_NULL ? entry->thread_id : 0u;
+}
+
+TZrUInt32 zr_debug_agent_effective_thread_id(ZrDebugAgent *agent, TZrUInt32 requestedThreadId) {
+    if (requestedThreadId != 0) {
+        return requestedThreadId;
+    }
+    if (agent == ZR_NULL) {
+        return ZR_DEBUG_MAIN_THREAD_ID;
+    }
+    if (agent->lastStopEvent.thread_id != 0) {
+        return agent->lastStopEvent.thread_id;
+    }
+    if (agent->currentThreadId != 0) {
+        return agent->currentThreadId;
+    }
+    return ZR_DEBUG_MAIN_THREAD_ID;
+}
+
+TZrBool zr_debug_agent_register_thread_state(ZrDebugAgent *agent,
+                                             SZrState *state,
+                                             const TZrChar *name,
+                                             TZrUInt32 *outThreadId) {
+    ZrDebugThreadEntry *entry;
+    ZrDebugThreadEntry *expandedThreads;
+    TZrSize newCapacity;
+
+    if (outThreadId != ZR_NULL) {
+        *outThreadId = 0;
+    }
+    if (agent == ZR_NULL || state == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    entry = zr_debug_agent_find_thread_by_state(agent, state);
+    if (entry != ZR_NULL) {
+        if (outThreadId != ZR_NULL) {
+            *outThreadId = entry->thread_id;
+        }
+        return ZR_TRUE;
+    }
+
+    if (agent->threadCount >= agent->threadCapacity) {
+        newCapacity = agent->threadCapacity > 0 ? agent->threadCapacity * 2u : 4u;
+        expandedThreads = (ZrDebugThreadEntry *)realloc(agent->threads, sizeof(*expandedThreads) * newCapacity);
+        if (expandedThreads == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        agent->threads = expandedThreads;
+        agent->threadCapacity = newCapacity;
+    }
+
+    entry = &agent->threads[agent->threadCount++];
+    memset(entry, 0, sizeof(*entry));
+    if (agent->nextThreadId == 0) {
+        agent->nextThreadId = ZR_DEBUG_MAIN_THREAD_ID;
+    }
+    entry->thread_id = agent->nextThreadId++;
+    entry->state = state;
+    entry->previous_debug_hook_signal = state->debugHookSignal;
+    if (name != ZR_NULL && name[0] != '\0') {
+        zr_debug_copy_text(entry->name, sizeof(entry->name), name);
+    } else if (entry->thread_id == ZR_DEBUG_MAIN_THREAD_ID) {
+        zr_debug_copy_text(entry->name, sizeof(entry->name), "main");
+    } else {
+        snprintf(entry->name, sizeof(entry->name), "thread %u", entry->thread_id);
+    }
+
+    state->debugHookSignal |= ZR_DEBUG_HOOK_MASK_LINE;
+    ZrCore_Debug_SetTraceObserver(state, zr_debug_agent_trace_observer, agent);
+    if (agent->currentThreadId == 0) {
+        agent->currentThreadId = entry->thread_id;
+        agent->state = state;
+    }
+    if (outThreadId != ZR_NULL) {
+        *outThreadId = entry->thread_id;
+    }
+    return ZR_TRUE;
+}
+
+SZrState *zr_debug_agent_begin_thread_access(ZrDebugAgent *agent,
+                                             TZrUInt32 requestedThreadId,
+                                             TZrUInt32 *outResolvedThreadId,
+                                             SZrState **outPreviousState,
+                                             TZrUInt32 *outPreviousThreadId) {
+    TZrUInt32 threadId;
+    ZrDebugThreadEntry *entry;
+
+    if (outResolvedThreadId != ZR_NULL) {
+        *outResolvedThreadId = 0;
+    }
+    if (outPreviousState != ZR_NULL) {
+        *outPreviousState = agent != ZR_NULL ? agent->state : ZR_NULL;
+    }
+    if (outPreviousThreadId != ZR_NULL) {
+        *outPreviousThreadId = agent != ZR_NULL ? agent->currentThreadId : 0u;
+    }
+    if (agent == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    threadId = zr_debug_agent_effective_thread_id(agent, requestedThreadId);
+    entry = zr_debug_agent_find_thread_by_id(agent, threadId);
+    if (entry == ZR_NULL || entry->state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    agent->state = entry->state;
+    agent->currentThreadId = entry->thread_id;
+    if (outResolvedThreadId != ZR_NULL) {
+        *outResolvedThreadId = entry->thread_id;
+    }
+    return entry->state;
+}
+
+void zr_debug_agent_end_thread_access(ZrDebugAgent *agent, SZrState *previousState, TZrUInt32 previousThreadId) {
+    if (agent == ZR_NULL) {
+        return;
+    }
+
+    agent->state = previousState;
+    agent->currentThreadId = previousThreadId;
+}
+
+static void zr_debug_data_breakpoint_copy_value_snapshot(SZrTypeValue *destination, const SZrTypeValue *source) {
+    if (destination == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Value_ResetAsNull(destination);
+    if (source == ZR_NULL) {
+        return;
+    }
+
+    *destination = *source;
+    if (!destination->isGarbageCollectable ||
+        ZR_VALUE_IS_TYPE_NULL(destination->type) ||
+        destination->value.object == ZR_NULL) {
+        destination->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+        destination->ownershipControl = ZR_NULL;
+        destination->ownershipWeakRef = ZR_NULL;
+    } else if (destination->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE) {
+        destination->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_BORROWED;
+        destination->ownershipWeakRef = ZR_NULL;
+    }
+}
+
+static TZrBool zr_debug_data_breakpoint_decode_scope_id(TZrUInt32 variablesReference,
+                                                        TZrUInt32 *outFrameId,
+                                                        EZrDebugScopeKind *outScopeKind) {
+    TZrUInt32 frameId;
+    EZrDebugScopeKind scopeKind;
+
+    if (outFrameId != ZR_NULL) {
+        *outFrameId = 0;
+    }
+    if (outScopeKind != ZR_NULL) {
+        *outScopeKind = ZR_DEBUG_SCOPE_KIND_GLOBALS;
+    }
+    if (variablesReference == 0 || variablesReference >= ZR_DEBUG_VARIABLE_HANDLE_BASE) {
+        return ZR_FALSE;
+    }
+
+    frameId = variablesReference / 10u;
+    scopeKind = (EZrDebugScopeKind)(variablesReference % 10u);
+    if (frameId == 0) {
+        return ZR_FALSE;
+    }
+
+    switch (scopeKind) {
+        case ZR_DEBUG_SCOPE_KIND_ARGUMENTS:
+        case ZR_DEBUG_SCOPE_KIND_LOCALS:
+        case ZR_DEBUG_SCOPE_KIND_CLOSURES:
+            if (outFrameId != ZR_NULL) {
+                *outFrameId = frameId;
+            }
+            if (outScopeKind != ZR_NULL) {
+                *outScopeKind = scopeKind;
+            }
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool zr_debug_data_breakpoint_local_scope_accepts_slot(EZrDebugScopeKind scopeKind,
+                                                                 const SZrFunction *function,
+                                                                 TZrUInt32 stackSlot) {
+    if (function == ZR_NULL || stackSlot >= function->stackSize) {
+        return ZR_FALSE;
+    }
+
+    if (scopeKind == ZR_DEBUG_SCOPE_KIND_ARGUMENTS) {
+        return (TZrBool)(stackSlot < function->parameterCount);
+    }
+    if (scopeKind == ZR_DEBUG_SCOPE_KIND_LOCALS) {
+        return (TZrBool)(stackSlot >= function->parameterCount);
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrClosure *zr_debug_data_breakpoint_try_get_vm_closure_from_value(const SZrTypeValue *value) {
+    SZrRawObject *rawObject;
+
+    if (value == ZR_NULL ||
+        value->type != ZR_VALUE_TYPE_CLOSURE ||
+        value->isNative ||
+        value->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    rawObject = value->value.object;
+    if (rawObject->type != ZR_RAW_OBJECT_TYPE_CLOSURE || rawObject->isNative) {
+        return ZR_NULL;
+    }
+
+    return ZR_CAST(SZrClosure *, rawObject);
+}
+
+static TZrBool zr_debug_data_breakpoint_resolve_local(ZrDebugAgent *agent,
+                                                      TZrUInt32 frameId,
+                                                      EZrDebugScopeKind scopeKind,
+                                                      const TZrChar *name,
+                                                      TZrInt32 *outLocalIndex,
+                                                      TZrUInt32 *outStackSlot,
+                                                      SZrTypeValue *outValue) {
+    SZrDebugActivation activation;
+    SZrFunction *function;
+    SZrCallInfo *callInfo;
+    TZrUInt32 pc;
+    TZrUInt32 localMetadataIndex;
+    TZrInt32 activeLocalIndex = 0;
+
+    if (outLocalIndex != ZR_NULL) {
+        *outLocalIndex = 0;
+    }
+    if (outStackSlot != ZR_NULL) {
+        *outStackSlot = 0;
+    }
+    if (outValue != ZR_NULL) {
+        ZrCore_Value_ResetAsNull(outValue);
+    }
+    if (agent == ZR_NULL ||
+        agent->state == ZR_NULL ||
+        frameId == 0 ||
+        name == ZR_NULL ||
+        name[0] == '\0' ||
+        (scopeKind != ZR_DEBUG_SCOPE_KIND_ARGUMENTS && scopeKind != ZR_DEBUG_SCOPE_KIND_LOCALS)) {
+        return ZR_FALSE;
+    }
+
+    memset(&activation, 0, sizeof(activation));
+    if (!ZrCore_Debug_GetStack(agent->state, frameId - 1u, &activation)) {
+        return ZR_FALSE;
+    }
+
+    function = activation.function;
+    callInfo = activation.callInfo;
+    if (function == ZR_NULL || callInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    pc = zr_debug_instruction_offset(callInfo, function);
+    for (localMetadataIndex = 0u;
+         localMetadataIndex < function->localVariableLength &&
+         function->localVariableList[localMetadataIndex].offsetActivate <= pc;
+         localMetadataIndex++) {
+        const SZrFunctionLocalVariable *local = &function->localVariableList[localMetadataIndex];
+        TZrNativeString localName;
+        SZrTypeValue localValue;
+
+        if (pc < local->offsetActivate || pc >= local->offsetDead || local->name == ZR_NULL) {
+            continue;
+        }
+
+        activeLocalIndex++;
+        if (!zr_debug_data_breakpoint_local_scope_accepts_slot(scopeKind, function, local->stackSlot)) {
+            continue;
+        }
+
+        ZrCore_Value_ResetAsNull(&localValue);
+        localName = ZrCore_Debug_GetLocal(agent->state, &activation, activeLocalIndex, &localValue);
+        if (localName == ZR_NULL || strcmp(localName, name) != 0) {
+            continue;
+        }
+
+        if (outLocalIndex != ZR_NULL) {
+            *outLocalIndex = activeLocalIndex;
+        }
+        if (outStackSlot != ZR_NULL) {
+            *outStackSlot = local->stackSlot;
+        }
+        if (outValue != ZR_NULL) {
+            zr_debug_data_breakpoint_copy_value_snapshot(outValue, &localValue);
+        }
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool zr_debug_data_breakpoint_resolve_upvalue(ZrDebugAgent *agent,
+                                                        TZrUInt32 frameId,
+                                                        const TZrChar *name,
+                                                        TZrInt32 *outUpvalueIndex,
+                                                        SZrTypeValue *outValue) {
+    SZrDebugActivation activation;
+    SZrFunction *function;
+    SZrCallInfo *callInfo;
+    SZrTypeValue *closureValue;
+    SZrClosure *closure;
+    TZrUInt32 upvalueIndex;
+
+    if (outUpvalueIndex != ZR_NULL) {
+        *outUpvalueIndex = 0;
+    }
+    if (outValue != ZR_NULL) {
+        ZrCore_Value_ResetAsNull(outValue);
+    }
+    if (agent == ZR_NULL || agent->state == ZR_NULL || frameId == 0 || name == ZR_NULL || name[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    memset(&activation, 0, sizeof(activation));
+    if (!ZrCore_Debug_GetStack(agent->state, frameId - 1u, &activation)) {
+        return ZR_FALSE;
+    }
+
+    function = activation.function;
+    callInfo = activation.callInfo;
+    if (function == ZR_NULL || callInfo == ZR_NULL || function->closureValueLength == 0) {
+        return ZR_FALSE;
+    }
+
+    closureValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
+    closure = zr_debug_data_breakpoint_try_get_vm_closure_from_value(closureValue);
+    if (closure == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (upvalueIndex = 0; upvalueIndex < function->closureValueLength; upvalueIndex++) {
+        SZrTypeValue upvalue;
+        TZrNativeString upvalueName;
+
+        ZrCore_Value_ResetAsNull(&upvalue);
+        upvalueName = ZrCore_Debug_GetUpvalue(agent->state, closure, (TZrInt32)upvalueIndex + 1, &upvalue);
+        if (upvalueName == ZR_NULL || strcmp(upvalueName, name) != 0) {
+            continue;
+        }
+        if (ZrCore_Debug_GetUpvalueId(agent->state, closure, (TZrInt32)upvalueIndex + 1) == ZR_NULL) {
+            continue;
+        }
+
+        if (outUpvalueIndex != ZR_NULL) {
+            *outUpvalueIndex = (TZrInt32)upvalueIndex + 1;
+        }
+        if (outValue != ZR_NULL) {
+            zr_debug_data_breakpoint_copy_value_snapshot(outValue, &upvalue);
+        }
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool zr_debug_data_breakpoint_parse_id(const TZrChar *dataId, ZrDebugDataBreakpoint *outBreakpoint) {
+    unsigned int threadId = 0;
+    unsigned int frameId = 0;
+    unsigned int scopeKind = 0;
+    int valueIndex = 0;
+    TZrChar name[ZR_DEBUG_NAME_CAPACITY];
+
+    if (outBreakpoint != ZR_NULL) {
+        memset(outBreakpoint, 0, sizeof(*outBreakpoint));
+    }
+    if (dataId == ZR_NULL || dataId[0] == '\0' || outBreakpoint == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    name[0] = '\0';
+    if (sscanf(dataId, "local:%u:%u:%u:%d:%127s", &threadId, &frameId, &scopeKind, &valueIndex, name) == 5 &&
+        threadId > 0 &&
+        frameId > 0 &&
+        valueIndex > 0 &&
+        (scopeKind == (unsigned int)ZR_DEBUG_SCOPE_KIND_ARGUMENTS ||
+         scopeKind == (unsigned int)ZR_DEBUG_SCOPE_KIND_LOCALS) &&
+        name[0] != '\0') {
+        outBreakpoint->kind = ZR_DEBUG_DATA_BREAKPOINT_KIND_LOCAL;
+        outBreakpoint->thread_id = (TZrUInt32)threadId;
+        outBreakpoint->frame_id = (TZrUInt32)frameId;
+        outBreakpoint->scope_kind = (EZrDebugScopeKind)scopeKind;
+        outBreakpoint->value_index = (TZrInt32)valueIndex;
+        zr_debug_copy_text(outBreakpoint->name, sizeof(outBreakpoint->name), name);
+        zr_debug_copy_text(outBreakpoint->data_id, sizeof(outBreakpoint->data_id), dataId);
+        return ZR_TRUE;
+    }
+
+    name[0] = '\0';
+    if (sscanf(dataId, "upvalue:%u:%u:%d:%127s", &threadId, &frameId, &valueIndex, name) == 4 &&
+        threadId > 0 &&
+        frameId > 0 &&
+        valueIndex > 0 &&
+        name[0] != '\0') {
+        outBreakpoint->kind = ZR_DEBUG_DATA_BREAKPOINT_KIND_UPVALUE;
+        outBreakpoint->thread_id = (TZrUInt32)threadId;
+        outBreakpoint->frame_id = (TZrUInt32)frameId;
+        outBreakpoint->scope_kind = ZR_DEBUG_SCOPE_KIND_CLOSURES;
+        outBreakpoint->value_index = (TZrInt32)valueIndex;
+        zr_debug_copy_text(outBreakpoint->name, sizeof(outBreakpoint->name), name);
+        zr_debug_copy_text(outBreakpoint->data_id, sizeof(outBreakpoint->data_id), dataId);
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+TZrBool zr_debug_agent_data_breakpoint_info(ZrDebugAgent *agent,
+                                            TZrUInt32 requestedThreadId,
+                                            TZrUInt32 variablesReference,
+                                            const TZrChar *name,
+                                            TZrChar *outDataId,
+                                            TZrSize outDataIdSize,
+                                            TZrChar *outDescription,
+                                            TZrSize outDescriptionSize) {
+    TZrUInt32 frameId = 0;
+    EZrDebugScopeKind scopeKind = ZR_DEBUG_SCOPE_KIND_GLOBALS;
+    SZrState *previousState = ZR_NULL;
+    TZrUInt32 previousThreadId = 0;
+    TZrUInt32 resolvedThreadId = 0;
+    TZrBool ok = ZR_FALSE;
+
+    zr_debug_copy_text(outDataId, outDataIdSize, "");
+    zr_debug_copy_text(outDescription, outDescriptionSize, "");
+    if (!zr_debug_data_breakpoint_decode_scope_id(variablesReference, &frameId, &scopeKind) ||
+        name == ZR_NULL ||
+        name[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    if (zr_debug_agent_begin_thread_access(agent,
+                                           requestedThreadId,
+                                           &resolvedThreadId,
+                                           &previousState,
+                                           &previousThreadId) == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (scopeKind == ZR_DEBUG_SCOPE_KIND_ARGUMENTS || scopeKind == ZR_DEBUG_SCOPE_KIND_LOCALS) {
+        TZrInt32 localIndex = 0;
+        TZrUInt32 stackSlot = 0;
+        if (zr_debug_data_breakpoint_resolve_local(agent, frameId, scopeKind, name, &localIndex, &stackSlot, ZR_NULL)) {
+            snprintf(outDataId,
+                     outDataIdSize,
+                     "local:%u:%u:%u:%d:%s",
+                     (unsigned int)resolvedThreadId,
+                     (unsigned int)frameId,
+                     (unsigned int)scopeKind,
+                     (int)localIndex,
+                     name);
+            if (outDataId != ZR_NULL && outDataIdSize > 0) {
+                outDataId[outDataIdSize - 1u] = '\0';
+            }
+            snprintf(outDescription,
+                     outDescriptionSize,
+                     "%s %s",
+                     scopeKind == ZR_DEBUG_SCOPE_KIND_ARGUMENTS ? "argument" : "local",
+                     name);
+            if (outDescription != ZR_NULL && outDescriptionSize > 0) {
+                outDescription[outDescriptionSize - 1u] = '\0';
+            }
+            ZR_UNUSED_PARAMETER(stackSlot);
+            ok = ZR_TRUE;
+        }
+    } else if (scopeKind == ZR_DEBUG_SCOPE_KIND_CLOSURES) {
+        TZrInt32 upvalueIndex = 0;
+        if (zr_debug_data_breakpoint_resolve_upvalue(agent, frameId, name, &upvalueIndex, ZR_NULL)) {
+            snprintf(outDataId,
+                     outDataIdSize,
+                     "upvalue:%u:%u:%d:%s",
+                     (unsigned int)resolvedThreadId,
+                     (unsigned int)frameId,
+                     (int)upvalueIndex,
+                     name);
+            if (outDataId != ZR_NULL && outDataIdSize > 0) {
+                outDataId[outDataIdSize - 1u] = '\0';
+            }
+            snprintf(outDescription, outDescriptionSize, "upvalue %s", name);
+            if (outDescription != ZR_NULL && outDescriptionSize > 0) {
+                outDescription[outDescriptionSize - 1u] = '\0';
+            }
+            ok = ZR_TRUE;
+        }
+    }
+
+    zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
+    return ok;
+}
+
+void zr_debug_agent_clear_data_breakpoints(ZrDebugAgent *agent) {
+    if (agent == ZR_NULL) {
+        return;
+    }
+
+    if (agent->dataBreakpoints != ZR_NULL) {
+        free(agent->dataBreakpoints);
+    }
+    agent->dataBreakpoints = ZR_NULL;
+    agent->dataBreakpointCount = 0;
+    agent->dataBreakpointCapacity = 0;
+}
+
+TZrBool zr_debug_agent_add_data_breakpoint(ZrDebugAgent *agent,
+                                           const TZrChar *dataId,
+                                           const TZrChar *accessType,
+                                           TZrChar *outDescription,
+                                           TZrSize outDescriptionSize) {
+    ZrDebugDataBreakpoint parsed;
+    ZrDebugDataBreakpoint *expandedBreakpoints;
+    ZrDebugDataBreakpoint *entry;
+    SZrTypeValue currentValue;
+    SZrState *previousState = ZR_NULL;
+    TZrUInt32 previousThreadId = 0;
+    TZrUInt32 resolvedThreadId = 0;
+    TZrBool resolved = ZR_FALSE;
+
+    zr_debug_copy_text(outDescription, outDescriptionSize, "");
+    if (agent == ZR_NULL ||
+        !zr_debug_data_breakpoint_parse_id(dataId, &parsed) ||
+        (accessType != ZR_NULL &&
+         accessType[0] != '\0' &&
+         strcmp(accessType, "write") != 0 &&
+         strcmp(accessType, "readWrite") != 0)) {
+        return ZR_FALSE;
+    }
+
+    if (zr_debug_agent_begin_thread_access(agent,
+                                           parsed.thread_id,
+                                           &resolvedThreadId,
+                                           &previousState,
+                                           &previousThreadId) == ZR_NULL ||
+        resolvedThreadId != parsed.thread_id) {
+        zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_ResetAsNull(&currentValue);
+    if (parsed.kind == ZR_DEBUG_DATA_BREAKPOINT_KIND_LOCAL) {
+        resolved = zr_debug_data_breakpoint_resolve_local(agent,
+                                                          parsed.frame_id,
+                                                          parsed.scope_kind,
+                                                          parsed.name,
+                                                          &parsed.value_index,
+                                                          &parsed.stack_slot,
+                                                          &currentValue);
+        snprintf(parsed.description,
+                 sizeof(parsed.description),
+                 "%s %s",
+                 parsed.scope_kind == ZR_DEBUG_SCOPE_KIND_ARGUMENTS ? "argument" : "local",
+                 parsed.name);
+        parsed.description[sizeof(parsed.description) - 1u] = '\0';
+    } else if (parsed.kind == ZR_DEBUG_DATA_BREAKPOINT_KIND_UPVALUE) {
+        resolved = zr_debug_data_breakpoint_resolve_upvalue(agent,
+                                                            parsed.frame_id,
+                                                            parsed.name,
+                                                            &parsed.value_index,
+                                                            &currentValue);
+        snprintf(parsed.description, sizeof(parsed.description), "upvalue %s", parsed.name);
+        parsed.description[sizeof(parsed.description) - 1u] = '\0';
+    }
+
+    zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
+    if (!resolved) {
+        return ZR_FALSE;
+    }
+
+    if (agent->dataBreakpointCount >= agent->dataBreakpointCapacity) {
+        TZrSize newCapacity = agent->dataBreakpointCapacity > 0 ? agent->dataBreakpointCapacity * 2u : 4u;
+        expandedBreakpoints = (ZrDebugDataBreakpoint *)realloc(agent->dataBreakpoints,
+                                                               sizeof(*expandedBreakpoints) * newCapacity);
+        if (expandedBreakpoints == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        agent->dataBreakpoints = expandedBreakpoints;
+        agent->dataBreakpointCapacity = newCapacity;
+    }
+
+    entry = &agent->dataBreakpoints[agent->dataBreakpointCount++];
+    *entry = parsed;
+    entry->verified = ZR_TRUE;
+    entry->has_last_value = ZR_TRUE;
+    ZrCore_Value_ResetAsNull(&entry->last_value);
+    zr_debug_data_breakpoint_copy_value_snapshot(&entry->last_value, &currentValue);
+    zr_debug_copy_text(outDescription, outDescriptionSize, entry->description);
+    return ZR_TRUE;
+}
+
+ZrDebugDataBreakpoint *zr_debug_agent_check_data_breakpoints(ZrDebugAgent *agent) {
+    TZrSize index;
+
+    if (agent == ZR_NULL || agent->state == ZR_NULL || agent->dataBreakpointCount == 0) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < agent->dataBreakpointCount; index++) {
+        ZrDebugDataBreakpoint *breakpoint = &agent->dataBreakpoints[index];
+        SZrTypeValue currentValue;
+        TZrBool resolved = ZR_FALSE;
+
+        if (!breakpoint->verified ||
+            breakpoint->thread_id != zr_debug_agent_effective_thread_id(agent, agent->currentThreadId)) {
+            continue;
+        }
+
+        ZrCore_Value_ResetAsNull(&currentValue);
+        if (breakpoint->kind == ZR_DEBUG_DATA_BREAKPOINT_KIND_LOCAL) {
+            resolved = zr_debug_data_breakpoint_resolve_local(agent,
+                                                              breakpoint->frame_id,
+                                                              breakpoint->scope_kind,
+                                                              breakpoint->name,
+                                                              ZR_NULL,
+                                                              ZR_NULL,
+                                                              &currentValue);
+        } else if (breakpoint->kind == ZR_DEBUG_DATA_BREAKPOINT_KIND_UPVALUE) {
+            resolved = zr_debug_data_breakpoint_resolve_upvalue(agent,
+                                                                breakpoint->frame_id,
+                                                                breakpoint->name,
+                                                                ZR_NULL,
+                                                                &currentValue);
+        }
+        if (!resolved) {
+            continue;
+        }
+
+        if (!breakpoint->has_last_value) {
+            zr_debug_data_breakpoint_copy_value_snapshot(&breakpoint->last_value, &currentValue);
+            breakpoint->has_last_value = ZR_TRUE;
+            continue;
+        }
+
+        if (!ZrCore_Value_CompareDirectly(agent->state, &breakpoint->last_value, &currentValue)) {
+            zr_debug_data_breakpoint_copy_value_snapshot(&breakpoint->last_value, &currentValue);
+            return breakpoint;
+        }
+    }
+
+    return ZR_NULL;
 }
 
 static void zr_debug_normalize_path_for_compare(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
@@ -739,16 +1492,24 @@ static TZrBool zr_debug_agent_should_stop_for_breakpoint(ZrDebugAgent *agent,
 
 static TZrBool zr_debug_agent_should_stop_for_step(ZrDebugAgent *agent,
                                                    SZrFunction *function,
+                                                   const TZrInstruction *programCounter,
                                                    TZrUInt32 instructionIndex,
                                                    TZrUInt32 sourceLine) {
     TZrUInt32 currentDepth;
+    SZrCallInfo *currentCallInfo;
     TZrBool advancedPosition;
+    TZrBool tailCalleeAtStepDepth;
 
     if (agent == ZR_NULL) {
         return ZR_FALSE;
     }
 
     currentDepth = zr_debug_frame_depth(agent->state);
+    currentCallInfo = agent->state != ZR_NULL ? agent->state->callInfoList : ZR_NULL;
+    tailCalleeAtStepDepth =
+            (TZrBool)(currentDepth == agent->stepDepth &&
+                      currentCallInfo != ZR_NULL &&
+                      (currentCallInfo != agent->stepCallInfo || function != agent->resumeFunction));
     advancedPosition =
             (TZrBool)(function != agent->resumeFunction ||
                       sourceLine != agent->lastStopEvent.line ||
@@ -758,9 +1519,18 @@ static TZrBool zr_debug_agent_should_stop_for_step(ZrDebugAgent *agent,
             return advancedPosition;
 
         case ZR_DEBUG_RUN_MODE_STEP_OVER:
+            if (currentDepth > agent->stepDepth || tailCalleeAtStepDepth) {
+                return ZR_FALSE;
+            }
             return (TZrBool)(advancedPosition && currentDepth <= agent->stepDepth);
 
         case ZR_DEBUG_RUN_MODE_STEP_OUT:
+            if (agent->state != ZR_NULL &&
+                agent->state->hasCurrentException &&
+                (programCounter == ZR_NULL ||
+                 programCounter->instruction.operationCode != ZR_INSTRUCTION_ENUM(CATCH))) {
+                return ZR_FALSE;
+            }
             return (TZrBool)(currentDepth < agent->stepDepth);
 
         case ZR_DEBUG_RUN_MODE_RUNNING:
@@ -768,6 +1538,25 @@ static TZrBool zr_debug_agent_should_stop_for_step(ZrDebugAgent *agent,
         default:
             return ZR_FALSE;
     }
+}
+
+static TZrBool zr_debug_agent_should_defer_breakpoint_for_step(ZrDebugAgent *agent, SZrFunction *function) {
+    TZrUInt32 currentDepth;
+    SZrCallInfo *currentCallInfo;
+
+    if (agent == ZR_NULL || agent->state == ZR_NULL || agent->runMode != ZR_DEBUG_RUN_MODE_STEP_OVER) {
+        return ZR_FALSE;
+    }
+
+    currentDepth = zr_debug_frame_depth(agent->state);
+    if (currentDepth > agent->stepDepth) {
+        return ZR_TRUE;
+    }
+
+    currentCallInfo = agent->state->callInfoList;
+    return (TZrBool)(currentDepth == agent->stepDepth &&
+                     currentCallInfo != ZR_NULL &&
+                     (currentCallInfo != agent->stepCallInfo || function != agent->resumeFunction));
 }
 
 static TZrBool zr_debug_agent_should_stop_for_caught_exception(ZrDebugAgent *agent, const TZrInstruction *programCounter) {
@@ -788,12 +1577,19 @@ static TZrDebugSignal zr_debug_agent_trace_observer(SZrState *state,
     ZrDebugAgent *agent = (ZrDebugAgent *)userData;
     EZrDebugStopReason reason = ZR_DEBUG_STOP_REASON_NONE;
     EZrDebugExceptionFilter exceptionFilter = ZR_DEBUG_EXCEPTION_FILTER_NONE;
+    ZrDebugDataBreakpoint *dataBreakpoint = ZR_NULL;
+    TZrUInt32 threadId;
 
-    ZR_UNUSED_PARAMETER(state);
-
-    if (agent == ZR_NULL || function == ZR_NULL) {
+    if (agent == ZR_NULL || state == ZR_NULL || function == ZR_NULL) {
         return ZR_DEBUG_SIGNAL_NONE;
     }
+
+    threadId = zr_debug_agent_thread_id_for_state(agent, state);
+    if (threadId == 0 && !zr_debug_agent_register_thread_state(agent, state, ZR_NULL, &threadId)) {
+        return ZR_DEBUG_SIGNAL_NONE;
+    }
+    agent->state = state;
+    agent->currentThreadId = threadId;
 
     zr_debug_agent_poll_messages(agent, 0, ZR_NULL);
     zr_debug_agent_try_resolve_pending_breakpoints_for_function(agent, function);
@@ -815,9 +1611,12 @@ static TZrDebugSignal zr_debug_agent_trace_observer(SZrState *state,
         }
         reason = ZR_DEBUG_STOP_REASON_ENTRY;
         agent->startStopPending = ZR_FALSE;
-    } else if (zr_debug_agent_should_stop_for_breakpoint(agent, function, instructionOffset, sourceLine)) {
+    } else if (!zr_debug_agent_should_defer_breakpoint_for_step(agent, function) &&
+               zr_debug_agent_should_stop_for_breakpoint(agent, function, instructionOffset, sourceLine)) {
         reason = ZR_DEBUG_STOP_REASON_BREAKPOINT;
-    } else if (zr_debug_agent_should_stop_for_step(agent, function, instructionOffset, sourceLine)) {
+    } else if ((dataBreakpoint = zr_debug_agent_check_data_breakpoints(agent)) != ZR_NULL) {
+        reason = ZR_DEBUG_STOP_REASON_DATA_BREAKPOINT;
+    } else if (zr_debug_agent_should_stop_for_step(agent, function, programCounter, instructionOffset, sourceLine)) {
         reason = ZR_DEBUG_STOP_REASON_STEP;
     }
 
@@ -826,6 +1625,14 @@ static TZrDebugSignal zr_debug_agent_trace_observer(SZrState *state,
     }
 
     zr_debug_agent_fill_stop_event(agent, reason, exceptionFilter, function, instructionOffset, sourceLine);
+    if (dataBreakpoint != ZR_NULL) {
+        zr_debug_copy_text(agent->lastStopEvent.data_id,
+                           sizeof(agent->lastStopEvent.data_id),
+                           dataBreakpoint->data_id);
+        zr_debug_copy_text(agent->lastStopEvent.data_description,
+                           sizeof(agent->lastStopEvent.data_description),
+                           dataBreakpoint->description);
+    }
     zr_debug_agent_pause_loop(agent);
     return ZR_DEBUG_SIGNAL_NONE;
 }
@@ -879,22 +1686,30 @@ TZrBool ZrDebug_AgentStart(SZrState *state,
     agent->startStopPending = (TZrBool)(effectiveConfig.suspend_on_start || effectiveConfig.wait_for_client);
     agent->exceptionBreakOnCaught = ZR_FALSE;
     agent->exceptionBreakOnUncaught = effectiveConfig.stop_on_uncaught_exception;
-    agent->previousDebugHookSignal = state->debugHookSignal;
+    agent->nextThreadId = ZR_DEBUG_MAIN_THREAD_ID;
     zr_debug_copy_text(agent->moduleName, sizeof(agent->moduleName), moduleName != ZR_NULL ? moduleName : "");
-    state->debugHookSignal |= ZR_DEBUG_HOOK_MASK_LINE;
-    ZrCore_Debug_SetTraceObserver(state, zr_debug_agent_trace_observer, agent);
+    if (!zr_debug_agent_register_thread_state(agent, state, "main", ZR_NULL)) {
+        zr_debug_copy_text(errorBuffer, errorBufferSize, "failed to register main debug thread");
+        ZrDebug_AgentStop(agent);
+        return ZR_FALSE;
+    }
     *outAgent = agent;
     return ZR_TRUE;
 }
 
 void ZrDebug_AgentStop(ZrDebugAgent *agent) {
+    TZrSize index;
+
     if (agent == ZR_NULL) {
         return;
     }
 
-    if (agent->state != ZR_NULL && agent->state->debugTraceUserData == agent) {
-        ZrCore_Debug_SetTraceObserver(agent->state, ZR_NULL, ZR_NULL);
-        agent->state->debugHookSignal = agent->previousDebugHookSignal;
+    for (index = 0; index < agent->threadCount; index++) {
+        SZrState *threadState = agent->threads[index].state;
+        if (threadState != ZR_NULL && threadState->debugTraceUserData == agent) {
+            ZrCore_Debug_SetTraceObserver(threadState, ZR_NULL, ZR_NULL);
+            threadState->debugHookSignal = agent->threads[index].previous_debug_hook_signal;
+        }
     }
 
     zr_debug_agent_close_client(agent);
@@ -903,7 +1718,12 @@ void ZrDebug_AgentStop(ZrDebugAgent *agent) {
         free(agent->breakpoints);
         agent->breakpoints = ZR_NULL;
     }
+    zr_debug_agent_clear_data_breakpoints(agent);
     zr_debug_variable_handles_clear(agent);
+    if (agent->threads != ZR_NULL) {
+        free(agent->threads);
+        agent->threads = ZR_NULL;
+    }
     free(agent);
 }
 
@@ -1070,6 +1890,7 @@ static void zr_debug_begin_step(ZrDebugAgent *agent, EZrDebugRunMode runMode) {
 
     callInfo = agent->state->callInfoList;
     function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(agent->state, callInfo);
+    agent->stepCallInfo = callInfo;
     agent->resumeFunction = function;
     agent->resumeInstruction = zr_debug_instruction_offset(callInfo, function);
     agent->stepDepth = zr_debug_frame_depth(agent->state);

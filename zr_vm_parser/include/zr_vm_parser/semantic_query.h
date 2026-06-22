@@ -41,6 +41,11 @@ ZR_PARSER_API const SZrSemanticReferenceFact *ZrParser_SemanticQuery_DefinitionO
         const SZrSemanticContext *context,
         SZrFileRange position,
         const SZrParserSemanticQueryScope *scope);
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_DefinitionsOf(
+        const SZrSemanticContext *context,
+        SZrFileRange position,
+        const SZrParserSemanticQueryScope *scope,
+        SZrArray *outDefinitions);
 ZR_PARSER_API TZrBool ZrParser_SemanticQuery_ReferencesOf(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId,

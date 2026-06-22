@@ -870,6 +870,46 @@ static const TZrChar *semantic_ast_ownership_prefix(EZrOwnershipQualifier owners
     }
 }
 
+static TZrBool semantic_ast_type_unwrap_ownership_display(SZrType *typeInfo,
+                                                          EZrOwnershipQualifier *qualifier,
+                                                          SZrType **innerTypeInfo) {
+    SZrGenericType *genericType;
+    SZrAstNode *argumentNode;
+    EZrOwnershipQualifier ownershipQualifier;
+
+    if (qualifier != ZR_NULL) {
+        *qualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+    if (innerTypeInfo != ZR_NULL) {
+        *innerTypeInfo = ZR_NULL;
+    }
+
+    if (typeInfo == ZR_NULL ||
+        typeInfo->name == ZR_NULL ||
+        typeInfo->name->type != ZR_AST_GENERIC_TYPE ||
+        qualifier == ZR_NULL ||
+        innerTypeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    genericType = &typeInfo->name->data.genericType;
+    if (genericType->name == ZR_NULL ||
+        !ZrParser_OwnershipGenericNameToQualifier(genericType->name->name, &ownershipQualifier) ||
+        genericType->params == ZR_NULL ||
+        genericType->params->count != 1) {
+        return ZR_FALSE;
+    }
+
+    argumentNode = genericType->params->nodes[0];
+    if (argumentNode == ZR_NULL || argumentNode->type != ZR_AST_TYPE) {
+        return ZR_FALSE;
+    }
+
+    *qualifier = ownershipQualifier;
+    *innerTypeInfo = &argumentNode->data.type;
+    return ZR_TRUE;
+}
+
 static TZrBool semantic_append_ast_generic_argument_decl(SZrAstNode *node,
                                                          TZrChar *buffer,
                                                          TZrSize bufferSize,
@@ -919,12 +959,39 @@ static TZrBool semantic_append_ast_type_decl(SZrType *typeInfo,
                                              TZrSize *offset) {
     TZrSize nextOffset;
     const TZrChar *ownershipPrefix;
+    EZrOwnershipQualifier wrappedOwnershipQualifier;
+    SZrType *innerTypeInfo;
 
     if (typeInfo == ZR_NULL || typeInfo->name == ZR_NULL || buffer == ZR_NULL || offset == ZR_NULL) {
         return ZR_FALSE;
     }
 
     nextOffset = *offset;
+    if (semantic_ast_type_unwrap_ownership_display(typeInfo, &wrappedOwnershipQualifier, &innerTypeInfo)) {
+        ownershipPrefix = semantic_ast_ownership_prefix(
+                typeInfo->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE
+                    ? typeInfo->ownershipQualifier
+                    : wrappedOwnershipQualifier);
+        if (ownershipPrefix[0] != '\0') {
+            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "%s", ownershipPrefix);
+        }
+        if (!semantic_append_ast_type_decl(innerTypeInfo, buffer, bufferSize, &nextOffset)) {
+            return ZR_FALSE;
+        }
+        if (typeInfo->subType != ZR_NULL) {
+            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ".");
+            if (!semantic_append_ast_type_decl(typeInfo->subType, buffer, bufferSize, &nextOffset)) {
+                return ZR_FALSE;
+            }
+        }
+        for (TZrInt32 dimension = 0; dimension < typeInfo->dimensions; dimension++) {
+            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "[]");
+        }
+
+        *offset = nextOffset;
+        return ZR_TRUE;
+    }
+
     ownershipPrefix = semantic_ast_ownership_prefix(typeInfo->ownershipQualifier);
     if (ownershipPrefix[0] != '\0') {
         nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "%s", ownershipPrefix);
@@ -2206,6 +2273,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_Analyze(SZrState *state,
     if (analyzer->compilerState != ZR_NULL) {
         ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, ast);
     }
+
+    ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(state, analyzer);
     
     // 更新缓存
     if (analyzer->enableCache && analyzer->cache != ZR_NULL) {
@@ -2602,6 +2671,7 @@ SZrDiagnostic *ZrLanguageServer_Diagnostic_FromStructured(
     const TZrChar *messageText;
     const TZrChar *codeText = ZR_NULL;
     SZrDiagnostic *diagnostic;
+    TZrSize i;
 
     if (state == ZR_NULL || structured == ZR_NULL || structured->message == ZR_NULL) {
         return ZR_NULL;
@@ -2637,6 +2707,27 @@ SZrDiagnostic *ZrLanguageServer_Diagnostic_FromStructured(
         if (diagnostic->suggestion == ZR_NULL) {
             ZrLanguageServer_Diagnostic_Free(state, diagnostic);
             return ZR_NULL;
+        }
+    }
+    if (structured->relatedInformation.isValid) {
+        for (i = 0; i < structured->relatedInformation.length; i++) {
+            const SZrStructuredDiagnosticRelatedInformation *related =
+                (const SZrStructuredDiagnosticRelatedInformation *)ZrCore_Array_Get(
+                        (SZrArray *)&structured->relatedInformation,
+                        i);
+            const TZrChar *relatedMessage =
+                related != ZR_NULL && related->message != ZR_NULL
+                    ? ZrCore_String_GetNativeString(related->message)
+                    : ZR_NULL;
+            if (relatedMessage == ZR_NULL ||
+                !ZrLanguageServer_Diagnostic_AddRelatedInformation(
+                        state,
+                        diagnostic,
+                        related->location,
+                        relatedMessage)) {
+                ZrLanguageServer_Diagnostic_Free(state, diagnostic);
+                return ZR_NULL;
+            }
         }
     }
 

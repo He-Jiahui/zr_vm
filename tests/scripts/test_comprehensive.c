@@ -93,14 +93,18 @@ static TZrBool run_test_case(const TZrChar *testName, const TZrChar *fileName) {
     SZrTestResult *result = parse_and_compile(state, source, readSize, filePath);
 
     if (result == ZR_NULL || !result->success) {
+        TZrChar errorMessage[512];
+        snprintf(errorMessage,
+                 sizeof(errorMessage),
+                 "%s",
+                 result != ZR_NULL && result->errorMessage != ZR_NULL ? result->errorMessage
+                                                                       : "Failed to parse and compile");
         free(source);
-        destroy_test_state(state);
         if (result != ZR_NULL) {
-            TEST_FAIL_CUSTOM(timer, testName, result->errorMessage ? result->errorMessage : "Unknown error");
             free_test_result(result);
-        } else {
-            TEST_FAIL_CUSTOM(timer, testName, "Failed to parse and compile");
         }
+        destroy_test_state(state);
+        TEST_FAIL_CUSTOM(timer, testName, errorMessage);
         return ZR_FALSE;
     }
 

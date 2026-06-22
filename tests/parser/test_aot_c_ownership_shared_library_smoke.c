@@ -71,19 +71,20 @@ static SZrFunction *create_ownership_function(SZrState *state) {
 
     function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
             state->global,
-            sizeof(TZrInstruction) * 9u,
+            sizeof(TZrInstruction) * 10u,
             ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     TEST_ASSERT_NOT_NULL(function->instructionsList);
     function->instructionsList[0] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_UNIQUE), 1u, 0u);
     function->instructionsList[1] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_BORROW), 2u, 1u);
     function->instructionsList[2] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_LOAN), 3u, 1u);
-    function->instructionsList[3] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_SHARE), 4u, 1u);
-    function->instructionsList[4] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_WEAK), 5u, 1u);
-    function->instructionsList[5] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_DETACH), 6u, 1u);
-    function->instructionsList[6] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_UPGRADE), 7u, 5u);
-    function->instructionsList[7] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_RELEASE), 8u, 7u);
-    function->instructionsList[8] = create_return_instruction(1u, 8u);
-    function->instructionsLength = 9u;
+    function->instructionsList[3] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN), 1u, 3u);
+    function->instructionsList[4] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_SHARE), 4u, 1u);
+    function->instructionsList[5] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_WEAK), 5u, 1u);
+    function->instructionsList[6] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_DETACH), 6u, 1u);
+    function->instructionsList[7] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_UPGRADE), 7u, 5u);
+    function->instructionsList[8] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_RELEASE), 8u, 7u);
+    function->instructionsList[9] = create_return_instruction(1u, 8u);
+    function->instructionsLength = 10u;
 
     function->stackSize = 9u;
     function->parameterCount = 1u;
@@ -155,14 +156,28 @@ static void test_aot_c_generated_shared_library_compiles_direct_ownership_loweri
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "#include \"zr_vm_core/ownership.h\""));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_ownership_core"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Ownership_UniqueValue(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Ownership_UpgradeValue(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_ownership_release"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Ownership_ReleaseValue(state, zr_aot_source);"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnUnique(state, &frame"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnRelease(state, &frame"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_ownership_helper"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnUnique(state, &frame, 1, 0)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnBorrow(state, &frame, 2, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnLoan(state, &frame, 3, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnReturnLoan(state, &frame, 1, 3)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnShare(state, &frame, 4, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnWeak(state, &frame, 5, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnDetach(state, &frame, 6, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnUpgrade(state, &frame, 7, 5)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnRelease(state, &frame, 8, 7)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_value_exec_ownership_core"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_value_exec_ownership_release"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Ownership_UniqueValue(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Ownership_BorrowValue(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Ownership_LoanValue(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrCore_Ownership_ReturnLoanValue(state, zr_aot_destination, zr_aot_source)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Ownership_ShareValue(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Ownership_WeakValue(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Ownership_DetachValue(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Ownership_UpgradeValue(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Ownership_ReleaseValue(state, zr_aot_source);"));
     free(generatedCText);
 
     snprintf(command,

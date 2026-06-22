@@ -55,6 +55,14 @@ typedef enum EZrSemanticValueKind {
     ZR_SEMANTIC_VALUE_KIND_STRING
 } EZrSemanticValueKind;
 
+typedef enum EZrSemanticDiagnosticSeverity {
+    ZR_SEMANTIC_DIAGNOSTIC_SEVERITY_DEFAULT = 0,
+    ZR_SEMANTIC_DIAGNOSTIC_SEVERITY_ERROR,
+    ZR_SEMANTIC_DIAGNOSTIC_SEVERITY_WARNING,
+    ZR_SEMANTIC_DIAGNOSTIC_SEVERITY_INFO,
+    ZR_SEMANTIC_DIAGNOSTIC_SEVERITY_HINT
+} EZrSemanticDiagnosticSeverity;
+
 typedef enum EZrSemanticReferenceKind {
     ZR_SEMANTIC_REFERENCE_UNKNOWN = 0,
     ZR_SEMANTIC_REFERENCE_DECLARATION,
@@ -64,6 +72,13 @@ typedef enum EZrSemanticReferenceKind {
     ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS,
     ZR_SEMANTIC_REFERENCE_MEMBER_WRITE
 } EZrSemanticReferenceKind;
+
+typedef enum EZrSemanticDefiniteAssignmentState {
+    ZR_SEMANTIC_DEFINITE_ASSIGNMENT_UNKNOWN = 0,
+    ZR_SEMANTIC_DEFINITE_ASSIGNMENT_UNINIT,
+    ZR_SEMANTIC_DEFINITE_ASSIGNMENT_INIT,
+    ZR_SEMANTIC_DEFINITE_ASSIGNMENT_MAYBE_INIT
+} EZrSemanticDefiniteAssignmentState;
 
 typedef enum EZrSemanticNumericFactKind {
     ZR_SEMANTIC_NUMERIC_FACT_UNKNOWN = 0,
@@ -139,16 +154,23 @@ typedef struct SZrSemanticExpressionFact {
     SZrFileRange memberRange;
     TZrBool memberIsComputed;
     SZrString *diagnosticMessage;
+    SZrString *diagnosticCode;
+    EZrSemanticDiagnosticSeverity diagnosticSeverity;
 } SZrSemanticExpressionFact;
 
 typedef struct SZrSemanticReferenceFact {
     SZrAstNode *node;
     SZrFileRange range;
     SZrFileRange declarationRange;
+    SZrFileRange definitionRange;
+    SZrArray definitionRanges;
+    TZrBool hasDefinitionRange;
     EZrSemanticReferenceKind kind;
     TZrSymbolId symbolId;
     TZrTypeId typeId;
     SZrString *name;
+    EZrSemanticDefiniteAssignmentState definiteAssignmentState;
+    TZrBool hasDefiniteAssignmentState;
     TZrBool isResolved;
 } SZrSemanticReferenceFact;
 
@@ -162,6 +184,9 @@ typedef struct SZrSemanticNumericFact {
     TZrBool hasRange;
     TZrInt64 minValue;
     TZrInt64 maxValue;
+    TZrSize rangeSegmentCount;
+    SZrNumericRangeSegment rangeSegments[ZR_PARSER_NUMERIC_RANGE_SEGMENT_CAPACITY];
+    SZrArray rangeExtraSegments;
     TZrBool hasUnsignedRange;
     TZrUInt64 minUnsignedValue;
     TZrUInt64 maxUnsignedValue;
@@ -209,8 +234,21 @@ ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendExpression(SZrSemanticContext
                                                               const SZrSemanticExpressionFact *fact);
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendReference(SZrSemanticContext *context,
                                                              const SZrSemanticReferenceFact *fact);
+ZR_PARSER_API TZrBool ZrParser_SemanticFacts_ResolveLinearReachingDefinitions(
+        SZrSemanticContext *context);
+ZR_PARSER_API TZrBool ZrParser_SemanticFacts_ResolveControlFlowReachingDefinitions(
+        SZrSemanticContext *context,
+        SZrAstNode *root);
+ZR_PARSER_API TZrBool ZrParser_SemanticFacts_ResolveLinearDefiniteAssignments(
+        SZrSemanticContext *context);
+ZR_PARSER_API TZrBool ZrParser_SemanticFacts_ResolveControlFlowDefiniteAssignments(
+        SZrSemanticContext *context,
+        SZrAstNode *root);
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendNumeric(SZrSemanticContext *context,
                                                            const SZrSemanticNumericFact *fact);
+ZR_PARSER_API const SZrNumericRangeSegment *ZrParser_SemanticNumericFact_RangeSegmentAt(
+        const SZrSemanticNumericFact *fact,
+        TZrSize index);
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendReachability(SZrSemanticContext *context,
                                                                 const SZrSemanticReachabilityFact *fact);
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendLogical(SZrSemanticContext *context,

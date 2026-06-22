@@ -133,11 +133,93 @@ static void test_assignment_identifier_records_write_reference_fact(void) {
                              writeFact->declarationRange.end.offset);
     TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, writeFact->symbolId);
     TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, writeFact->typeId);
+    TEST_ASSERT_TRUE(writeFact->hasDefiniteAssignmentState);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_DEFINITE_ASSIGNMENT_INIT,
+                          writeFact->definiteAssignmentState);
 
     TEST_ASSERT_NOT_NULL(declarationFact);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_DECLARATION, declarationFact->kind);
     TEST_ASSERT_EQUAL_UINT32(writeFact->symbolId, declarationFact->symbolId);
     TEST_ASSERT_EQUAL_UINT32(writeFact->typeId, declarationFact->typeId);
+
+    ZrParser_InferredType_Free(g_state, &result);
+    ZrParser_InferredType_Free(g_state, &seedType);
+    ZrParser_Ast_Free(g_state, ast);
+    destroy_compiler_state(cs);
+}
+
+static void test_reference_facts_resolve_linear_reaching_definition_to_latest_write(void) {
+    SZrCompilerState *cs = create_compiler_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *declaration;
+    SZrAstNode *declarationPattern;
+    SZrAstNode *assignmentExpr;
+    SZrAstNode *assignmentTarget;
+    SZrAstNode *readExpr;
+    SZrInferredType seedType;
+    SZrInferredType result;
+    const SZrSemanticReferenceFact *readFact;
+    const char *source =
+            "var seed = 1;\n"
+            "seed = 3;\n"
+            "seed;";
+
+    sourceName = ZrCore_String_Create(g_state,
+                                      "reference_fact_reaching_definitions_test.zr",
+                                      strlen("reference_fact_reaching_definitions_test.zr"));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    declaration = script_statement_at(ast, 0);
+    assignmentExpr = expression_statement_expression_at(ast, 1);
+    readExpr = expression_statement_expression_at(ast, 2);
+
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, declaration->type);
+    declarationPattern = declaration->data.variableDeclaration.pattern;
+    TEST_ASSERT_NOT_NULL(declarationPattern);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, declarationPattern->type);
+
+    TEST_ASSERT_NOT_NULL(assignmentExpr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_ASSIGNMENT_EXPRESSION, assignmentExpr->type);
+    assignmentTarget = assignmentExpr->data.assignmentExpression.left;
+    TEST_ASSERT_NOT_NULL(assignmentTarget);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, assignmentTarget->type);
+
+    TEST_ASSERT_NOT_NULL(readExpr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, readExpr->type);
+
+    ZrParser_InferredType_Init(g_state, &seedType, ZR_VALUE_TYPE_INT64);
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterVariableEx(
+            g_state,
+            cs->typeEnv,
+            declarationPattern->data.identifier.name,
+            &seedType,
+            declarationPattern,
+            declarationPattern->location));
+
+    ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, assignmentExpr, &result));
+    ZrParser_InferredType_Free(g_state, &result);
+
+    ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, readExpr, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_ResolveLinearReachingDefinitions(cs->semanticContext));
+
+    readFact = ZrParser_SemanticFacts_FindReferenceAtPosition(cs->semanticContext, readExpr->location);
+    TEST_ASSERT_NOT_NULL(readFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_READ, readFact->kind);
+    TEST_ASSERT_TRUE(readFact->isResolved);
+    TEST_ASSERT_TRUE(readFact->hasDefinitionRange);
+    TEST_ASSERT_EQUAL_UINT64(assignmentTarget->location.start.offset,
+                             readFact->definitionRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(assignmentTarget->location.end.offset,
+                             readFact->definitionRange.end.offset);
+    TEST_ASSERT_EQUAL_UINT64(declarationPattern->location.start.offset,
+                             readFact->declarationRange.start.offset);
+    TEST_ASSERT_NOT_EQUAL(readFact->declarationRange.start.offset,
+                          readFact->definitionRange.start.offset);
 
     ZrParser_InferredType_Free(g_state, &result);
     ZrParser_InferredType_Free(g_state, &seedType);
@@ -544,6 +626,7 @@ static void test_resolved_function_call_records_call_reference_fact(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_assignment_identifier_records_write_reference_fact);
+    RUN_TEST(test_reference_facts_resolve_linear_reaching_definition_to_latest_write);
     RUN_TEST(test_member_access_records_member_reference_fact);
     RUN_TEST(test_computed_member_access_records_member_reference_without_hiding_index_read);
     RUN_TEST(test_assignment_member_targets_record_member_write_reference_facts);

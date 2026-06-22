@@ -30,6 +30,10 @@ typedef struct SZrCliCommand {
     const TZrChar *const *programArgs;
     TZrSize programArgCount;
     const TZrChar *debugAddress;
+    const TZrChar *profileOutputPath;
+    const TZrChar *coverageOutputPath;
+    const TZrChar *dumpBytecodeOutputPath;
+    const TZrChar *heapSummaryOutputPath;
     TZrBool runAfterCompile;
     TZrBool interactiveAfterRun;
     TZrBool emitIntermediate;
@@ -39,6 +43,10 @@ typedef struct SZrCliCommand {
     TZrBool debugEnabled;
     TZrBool debugWait;
     TZrBool debugPrintEndpoint;
+    TZrBool profileEnabled;
+    TZrBool coverageEnabled;
+    TZrBool dumpBytecodeEnabled;
+    TZrBool heapSummaryEnabled;
 } SZrCliCommand;
 
 TZrBool ZrCli_Command_Parse(int argc,

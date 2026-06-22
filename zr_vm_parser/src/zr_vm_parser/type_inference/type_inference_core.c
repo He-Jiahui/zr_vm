@@ -2282,6 +2282,7 @@ static TZrBool substitute_parameter_type(SZrCompilerState *cs,
     outType->minValue = sourceType->minValue;
     outType->maxValue = sourceType->maxValue;
     outType->hasRangeConstraint = sourceType->hasRangeConstraint;
+    ZrParser_InferredType_CopyRangeSegments(cs->state, outType, sourceType);
     outType->arrayFixedSize = sourceType->arrayFixedSize;
     outType->arrayMinSize = sourceType->arrayMinSize;
     outType->arrayMaxSize = sourceType->arrayMaxSize;
@@ -4284,6 +4285,8 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
             result->minValue = 0;
             result->maxValue = 0;
             result->hasRangeConstraint = ZR_FALSE;
+            ZrCore_Array_Construct(&result->rangeExtraSegments);
+            ZrParser_InferredType_ResetRangeSegments(result);
             result->arrayFixedSize = 0;
             result->arrayMinSize = 0;
             result->arrayMaxSize = 0;

@@ -1848,9 +1848,9 @@ static void test_compile_time_imported_decorator_member_chain(void) {
         TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
-        state->global->sourceLoader = ZR_NULL;
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 28, testSummary));
 
+        state->global->sourceLoader = ZR_NULL;
         ZrParser_CompileResult_Free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -1922,9 +1922,9 @@ static void test_compile_time_imported_decorator_deep_member_chain(void) {
         TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
-        state->global->sourceLoader = ZR_NULL;
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 33, testSummary));
 
+        state->global->sourceLoader = ZR_NULL;
         ZrParser_CompileResult_Free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -2004,9 +2004,9 @@ static void test_compile_time_binary_imported_decorator_deep_member_chain(void) 
         TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
-        state->global->sourceLoader = ZR_NULL;
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 41, testSummary));
 
+        state->global->sourceLoader = ZR_NULL;
         ZrParser_CompileResult_Free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);

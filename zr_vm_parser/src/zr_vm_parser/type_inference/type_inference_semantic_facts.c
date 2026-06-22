@@ -1,59 +1,16 @@
 #include "type_inference_semantic_facts.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "type_inference_constant_eval.h"
+#include "type_inference_numeric_range.h"
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/type_inference.h"
 
 static TZrBool type_inference_value_type_is_unsigned(EZrValueType baseType) {
     return ZR_VALUE_IS_TYPE_UNSIGNED_INT(baseType);
-}
-
-static TZrBool type_inference_numeric_type_has_signed_range(EZrValueType baseType,
-                                                            TZrInt64 *outMinValue,
-                                                            TZrInt64 *outMaxValue) {
-    if (outMinValue == ZR_NULL || outMaxValue == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    switch (baseType) {
-        case ZR_VALUE_TYPE_INT8:
-            *outMinValue = ZR_TYPE_RANGE_INT8_MIN;
-            *outMaxValue = ZR_TYPE_RANGE_INT8_MAX;
-            return ZR_TRUE;
-        case ZR_VALUE_TYPE_INT16:
-            *outMinValue = ZR_TYPE_RANGE_INT16_MIN;
-            *outMaxValue = ZR_TYPE_RANGE_INT16_MAX;
-            return ZR_TRUE;
-        case ZR_VALUE_TYPE_INT32:
-            *outMinValue = ZR_TYPE_RANGE_INT32_MIN;
-            *outMaxValue = ZR_TYPE_RANGE_INT32_MAX;
-            return ZR_TRUE;
-        case ZR_VALUE_TYPE_INT64:
-            *outMinValue = ZR_TYPE_RANGE_INT64_MIN;
-            *outMaxValue = ZR_TYPE_RANGE_INT64_MAX;
-            return ZR_TRUE;
-        case ZR_VALUE_TYPE_UINT8:
-            *outMinValue = 0;
-            *outMaxValue = ZR_TYPE_RANGE_UINT8_MAX;
-            return ZR_TRUE;
-        case ZR_VALUE_TYPE_UINT16:
-            *outMinValue = 0;
-            *outMaxValue = ZR_TYPE_RANGE_UINT16_MAX;
-            return ZR_TRUE;
-        case ZR_VALUE_TYPE_UINT32:
-            *outMinValue = 0;
-            *outMaxValue = ZR_TYPE_RANGE_UINT32_MAX;
-            return ZR_TRUE;
-        case ZR_VALUE_TYPE_UINT64:
-            *outMinValue = 0;
-            *outMaxValue = ZR_TYPE_RANGE_UINT64_MAX;
-            return ZR_TRUE;
-        default:
-            return ZR_FALSE;
-    }
 }
 
 static TZrBool type_inference_numeric_type_unsigned_max(EZrValueType baseType,
@@ -80,111 +37,11 @@ static TZrBool type_inference_numeric_type_unsigned_max(EZrValueType baseType,
     }
 }
 
-static TZrBool type_inference_int64_add(TZrInt64 left, TZrInt64 right, TZrInt64 *outValue) {
-    if (outValue == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if ((right > 0 && left > ZR_TYPE_RANGE_INT64_MAX - right) ||
-        (right < 0 && left < ZR_TYPE_RANGE_INT64_MIN - right)) {
-        return ZR_FALSE;
-    }
-
-    *outValue = left + right;
-    return ZR_TRUE;
-}
-
-static TZrBool type_inference_int64_sub(TZrInt64 left, TZrInt64 right, TZrInt64 *outValue) {
-    if (outValue == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if ((right > 0 && left < ZR_TYPE_RANGE_INT64_MIN + right) ||
-        (right < 0 && left > ZR_TYPE_RANGE_INT64_MAX + right)) {
-        return ZR_FALSE;
-    }
-
-    *outValue = left - right;
-    return ZR_TRUE;
-}
-
-static TZrBool type_inference_int64_mul(TZrInt64 left, TZrInt64 right, TZrInt64 *outValue) {
-    long double product;
-
-    if (outValue == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    product = (long double)left * (long double)right;
-    if (product < (long double)ZR_TYPE_RANGE_INT64_MIN ||
-        product > (long double)ZR_TYPE_RANGE_INT64_MAX) {
-        return ZR_FALSE;
-    }
-
-    *outValue = (TZrInt64)product;
-    return ZR_TRUE;
-}
-
-static TZrBool type_inference_int64_mul_range(TZrInt64 leftMin,
-                                              TZrInt64 leftMax,
-                                              TZrInt64 rightMin,
-                                              TZrInt64 rightMax,
-                                              TZrInt64 *outMinValue,
-                                              TZrInt64 *outMaxValue) {
-    TZrInt64 products[4];
-    TZrSize index;
-
-    if (outMinValue == ZR_NULL || outMaxValue == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (!type_inference_int64_mul(leftMin, rightMin, &products[0]) ||
-        !type_inference_int64_mul(leftMin, rightMax, &products[1]) ||
-        !type_inference_int64_mul(leftMax, rightMin, &products[2]) ||
-        !type_inference_int64_mul(leftMax, rightMax, &products[3])) {
-        return ZR_FALSE;
-    }
-
-    *outMinValue = products[0];
-    *outMaxValue = products[0];
-    for (index = 1; index < 4; index++) {
-        if (products[index] < *outMinValue) {
-            *outMinValue = products[index];
-        }
-        if (products[index] > *outMaxValue) {
-            *outMaxValue = products[index];
-        }
-    }
-
-    return ZR_TRUE;
-}
-
 static TZrBool type_inference_node_integer_binary_result(const TZrChar *op,
                                                          TZrInt64 left,
                                                          TZrInt64 right,
                                                          TZrInt64 *outValue) {
-    if (op == ZR_NULL || outValue == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (strcmp(op, "+") == 0) {
-        return type_inference_int64_add(left, right, outValue);
-    }
-    if (strcmp(op, "-") == 0) {
-        return type_inference_int64_sub(left, right, outValue);
-    }
-    if (strcmp(op, "*") == 0) {
-        return type_inference_int64_mul(left, right, outValue);
-    }
-    if (strcmp(op, "/") == 0 && right != 0) {
-        if (left == ZR_TYPE_RANGE_INT64_MIN && right == -1) {
-            return ZR_FALSE;
-        }
-        *outValue = left / right;
-        return ZR_TRUE;
-    }
-
-    return ZR_FALSE;
+    return type_inference_numeric_range_checked_int64_binary_result(op, left, right, outValue);
 }
 
 static EZrSemanticExpressionFactKind type_inference_expression_fact_kind(SZrAstNode *node) {
@@ -501,10 +358,14 @@ void type_inference_record_identifier_write_reference_fact(SZrCompilerState *cs,
     fact.node = node;
     fact.range = node->location;
     fact.declarationRange = binding->hasDeclarationRange ? binding->declarationRange : node->location;
+    fact.definitionRange = node->location;
+    fact.hasDefinitionRange = ZR_TRUE;
     fact.kind = ZR_SEMANTIC_REFERENCE_WRITE;
     fact.symbolId = binding->symbolId;
     fact.typeId = binding->typeId;
     fact.name = binding->name;
+    fact.definiteAssignmentState = ZR_SEMANTIC_DEFINITE_ASSIGNMENT_INIT;
+    fact.hasDefiniteAssignmentState = ZR_TRUE;
     fact.isResolved = ZR_TRUE;
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
@@ -573,6 +434,9 @@ static void type_inference_numeric_fact_set_range(SZrSemanticNumericFact *fact,
     fact->hasRange = ZR_TRUE;
     fact->minValue = minValue;
     fact->maxValue = maxValue;
+    ZrParser_NumericRangeSegments_Reset(&fact->rangeSegmentCount,
+                                        fact->rangeSegments,
+                                        &fact->rangeExtraSegments);
     fact->exactness = ZR_SEMANTIC_FACT_EXACT;
     if (minValue >= 0 && maxValue >= 0) {
         fact->hasUnsignedRange = ZR_TRUE;
@@ -669,6 +533,13 @@ void type_inference_record_numeric_fact(SZrCompilerState *cs,
 
         if (type->hasRangeConstraint) {
             type_inference_numeric_fact_set_range(&fact, type->minValue, type->maxValue);
+            ZrParser_NumericRangeSegments_Copy(cs->state,
+                                               &fact.rangeSegmentCount,
+                                               fact.rangeSegments,
+                                               &fact.rangeExtraSegments,
+                                               type->rangeSegmentCount,
+                                               type->rangeSegments,
+                                               &type->rangeExtraSegments);
         } else {
             TZrInt64 literalValue;
 
@@ -708,6 +579,10 @@ void type_inference_record_numeric_fact(SZrCompilerState *cs,
     }
 
     ZrParser_SemanticFacts_AppendNumeric(cs->semanticContext, &fact);
+    ZrParser_NumericRangeSegments_Free(cs->state,
+                                       &fact.rangeSegmentCount,
+                                       fact.rangeSegments,
+                                       &fact.rangeExtraSegments);
 }
 
 static void type_inference_record_logical_short_circuit_fact(SZrCompilerState *cs,
@@ -848,6 +723,41 @@ static void type_inference_record_unary_logical_fact(SZrCompilerState *cs,
     ZrParser_SemanticFacts_AppendLogical(cs->semanticContext, &fact);
 }
 
+TZrBool type_inference_logical_fact_known_bool_value(SZrCompilerState *cs,
+                                                     SZrAstNode *node,
+                                                     TZrBool *outValue,
+                                                     SZrAstNode **outEvidenceNode) {
+    const SZrSemanticLogicalFact *fact;
+
+    if (outValue != ZR_NULL) {
+        *outValue = ZR_FALSE;
+    }
+    if (outEvidenceNode != ZR_NULL) {
+        *outEvidenceNode = ZR_NULL;
+    }
+
+    if (cs == ZR_NULL ||
+        cs->semanticContext == ZR_NULL ||
+        node == ZR_NULL ||
+        outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fact = ZrParser_SemanticFacts_FindLogicalByNode(cs->semanticContext, node);
+    if (fact == ZR_NULL ||
+        !fact->hasKnownValue ||
+        (fact->kind != ZR_SEMANTIC_LOGICAL_FACT_ALWAYS_TRUE &&
+         fact->kind != ZR_SEMANTIC_LOGICAL_FACT_ALWAYS_FALSE)) {
+        return ZR_FALSE;
+    }
+
+    *outValue = fact->knownValue ? ZR_TRUE : ZR_FALSE;
+    if (outEvidenceNode != ZR_NULL) {
+        *outEvidenceNode = fact->relatedNode != ZR_NULL ? fact->relatedNode : fact->node;
+    }
+    return ZR_TRUE;
+}
+
 void type_inference_record_expression_and_numeric_facts(SZrCompilerState *cs,
                                                         SZrAstNode *node,
                                                         const SZrInferredType *type,
@@ -855,6 +765,7 @@ void type_inference_record_expression_and_numeric_facts(SZrCompilerState *cs,
     type_inference_record_expression_fact(cs, node, type);
     type_inference_record_numeric_fact(cs, node, type, numericKind);
     type_inference_record_constant_comparison_logical_fact(cs, node);
+    type_inference_record_interval_comparison_logical_fact(cs, node);
     type_inference_record_logical_expression_constant_fact(cs, node);
     type_inference_record_unary_logical_fact(cs, node);
     type_inference_record_logical_short_circuit_fact(cs, node);
@@ -912,91 +823,13 @@ void type_inference_apply_literal_numeric_range(SZrAstNode *node,
         type->minValue = literalValue;
         type->maxValue = literalValue;
         type->hasRangeConstraint = ZR_TRUE;
+        ZrParser_InferredType_ResetRangeSegments(type);
         return;
     }
 
     if (node->type == ZR_AST_FLOAT_LITERAL) {
         type->hasRangeConstraint = ZR_FALSE;
-    }
-}
-
-void type_inference_apply_primitive_numeric_range(SZrInferredType *type) {
-    if (type == ZR_NULL || !ZR_VALUE_IS_TYPE_NUMBER(type->baseType)) {
-        return;
-    }
-
-    if (type_inference_numeric_type_has_signed_range(type->baseType, &type->minValue, &type->maxValue)) {
-        type->hasRangeConstraint = ZR_TRUE;
-    }
-}
-
-void type_inference_apply_binary_numeric_range(const TZrChar *op,
-                                               const SZrInferredType *leftType,
-                                               const SZrInferredType *rightType,
-                                               SZrInferredType *result) {
-    TZrInt64 minValue;
-    TZrInt64 maxValue;
-
-    if (op == ZR_NULL ||
-        leftType == ZR_NULL ||
-        rightType == ZR_NULL ||
-        result == ZR_NULL ||
-        !ZR_VALUE_IS_TYPE_NUMBER(result->baseType) ||
-        !leftType->hasRangeConstraint ||
-        !rightType->hasRangeConstraint) {
-        return;
-    }
-
-    if (strcmp(op, "+") == 0) {
-        if (!type_inference_int64_add(leftType->minValue, rightType->minValue, &minValue) ||
-            !type_inference_int64_add(leftType->maxValue, rightType->maxValue, &maxValue)) {
-            result->hasRangeConstraint = ZR_FALSE;
-            return;
-        }
-        result->minValue = minValue;
-        result->maxValue = maxValue;
-        result->hasRangeConstraint = ZR_TRUE;
-    } else if (strcmp(op, "-") == 0) {
-        if (!type_inference_int64_sub(leftType->minValue, rightType->maxValue, &minValue) ||
-            !type_inference_int64_sub(leftType->maxValue, rightType->minValue, &maxValue)) {
-            result->hasRangeConstraint = ZR_FALSE;
-            return;
-        }
-        result->minValue = minValue;
-        result->maxValue = maxValue;
-        result->hasRangeConstraint = ZR_TRUE;
-    } else if (strcmp(op, "*") == 0) {
-        if (!type_inference_int64_mul_range(leftType->minValue,
-                                            leftType->maxValue,
-                                            rightType->minValue,
-                                            rightType->maxValue,
-                                            &minValue,
-                                            &maxValue)) {
-            result->hasRangeConstraint = ZR_FALSE;
-            return;
-        }
-        result->minValue = minValue;
-        result->maxValue = maxValue;
-        result->hasRangeConstraint = ZR_TRUE;
-    }
-}
-
-void type_inference_apply_unary_numeric_range(const TZrChar *op,
-                                              const SZrInferredType *operandType,
-                                              SZrInferredType *result) {
-    if (op == ZR_NULL || operandType == ZR_NULL || result == ZR_NULL || !operandType->hasRangeConstraint) {
-        return;
-    }
-
-    if (strcmp(op, "+") == 0) {
-        result->minValue = operandType->minValue;
-        result->maxValue = operandType->maxValue;
-        result->hasRangeConstraint = ZR_TRUE;
-    } else if (strcmp(op, "-") == 0 &&
-               operandType->minValue == operandType->maxValue) {
-        result->minValue = -operandType->minValue;
-        result->maxValue = result->minValue;
-        result->hasRangeConstraint = ZR_TRUE;
+        ZrParser_InferredType_ResetRangeSegments(type);
     }
 }
 

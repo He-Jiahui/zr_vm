@@ -135,6 +135,29 @@ static void backend_aot_write_c_scalar_i64_bit_not(FILE *file,
                                                    TZrUInt32 sourceSlot) {
     TZrBool useScalarSource = backend_aot_c_scalar_locals_has_i64_slot(functionIr, sourceSlot);
     TZrBool useScalarDestination = backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot);
+    TZrBool sourceLocalWrittenBefore =
+            useScalarSource &&
+            backend_aot_c_scalar_locals_i64_written_before(
+                    functionIr, sourceSlot, semIrInstruction->execInstructionIndex);
+    TZrBool canSkipValueSlot =
+            (TZrBool)(useScalarDestination &&
+                      sourceLocalWrittenBefore &&
+                      backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(
+                              functionIr, destinationSlot, semIrInstruction->execInstructionIndex));
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_i64_bit_not semirOpcode=%u dstSlot=%u sourceSlot=%u */\n"
+                "        zr_aot_s%u = ~zr_aot_s%u;\n"
+                "    }\n",
+                (unsigned)semIrInstruction->semIrOpcode,
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot,
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot);
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -145,22 +168,27 @@ static void backend_aot_write_c_scalar_i64_bit_not(FILE *file,
             "            %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n",
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
             (unsigned)semIrInstruction->semIrOpcode,
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
-            (unsigned)destinationSlot,
-            (unsigned)sourceSlot);
-    if (useScalarSource) {
+            (unsigned)destinationSlot);
+    if (!sourceLocalWrittenBefore) {
         fprintf(file,
-                "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
-                (unsigned)sourceSlot,
+                "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)) {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n",
                 (unsigned)sourceSlot);
+    }
+    if (useScalarSource) {
+        if (!sourceLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
+                    (unsigned)sourceSlot,
+                    (unsigned)sourceSlot);
+        }
         if (useScalarDestination) {
             fprintf(file,
                     "        zr_aot_s%u = ~zr_aot_s%u;\n"
@@ -194,6 +222,29 @@ static void backend_aot_write_c_scalar_u64_bit_not(FILE *file,
                                                    TZrUInt32 sourceSlot) {
     TZrBool useScalarSource = backend_aot_c_scalar_locals_has_u64_slot(functionIr, sourceSlot);
     TZrBool useScalarDestination = backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot);
+    TZrBool sourceLocalWrittenBefore =
+            useScalarSource &&
+            backend_aot_c_scalar_locals_u64_written_before(
+                    functionIr, sourceSlot, semIrInstruction->execInstructionIndex);
+    TZrBool canSkipValueSlot =
+            (TZrBool)(useScalarDestination &&
+                      sourceLocalWrittenBefore &&
+                      backend_aot_c_scalar_locals_u64_result_can_skip_value_slot(
+                              functionIr, destinationSlot, semIrInstruction->execInstructionIndex));
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_u64_bit_not semirOpcode=%u dstSlot=%u sourceSlot=%u */\n"
+                "        zr_aot_u%u = ~zr_aot_u%u;\n"
+                "    }\n",
+                (unsigned)semIrInstruction->semIrOpcode,
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot,
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot);
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -204,22 +255,27 @@ static void backend_aot_write_c_scalar_u64_bit_not(FILE *file,
             "            %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n",
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
             (unsigned)semIrInstruction->semIrOpcode,
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
-            (unsigned)destinationSlot,
-            (unsigned)sourceSlot);
-    if (useScalarSource) {
+            (unsigned)destinationSlot);
+    if (!sourceLocalWrittenBefore) {
         fprintf(file,
-                "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n",
-                (unsigned)sourceSlot,
+                "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)) {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n",
                 (unsigned)sourceSlot);
+    }
+    if (useScalarSource) {
+        if (!sourceLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n",
+                    (unsigned)sourceSlot,
+                    (unsigned)sourceSlot);
+        }
         if (useScalarDestination) {
             fprintf(file,
                     "        zr_aot_u%u = ~zr_aot_u%u;\n"
@@ -258,6 +314,39 @@ static void backend_aot_write_c_scalar_i64_bitwise(FILE *file,
             useScalarDestination &&
             backend_aot_c_scalar_locals_has_i64_slot(functionIr, leftSlot) &&
             backend_aot_c_scalar_locals_has_i64_slot(functionIr, rightSlot);
+    TZrBool leftLocalWrittenBefore = ZR_FALSE;
+    TZrBool rightLocalWrittenBefore = ZR_FALSE;
+    TZrBool useWrittenScalarSources = ZR_FALSE;
+    TZrBool canSkipValueSlot = ZR_FALSE;
+
+    if (useScalarLocals) {
+        leftLocalWrittenBefore =
+                backend_aot_c_scalar_locals_i64_written_before(functionIr, leftSlot, semIrInstruction->execInstructionIndex);
+        rightLocalWrittenBefore =
+                backend_aot_c_scalar_locals_i64_written_before(functionIr, rightSlot, semIrInstruction->execInstructionIndex);
+        useWrittenScalarSources = (TZrBool)(leftLocalWrittenBefore && rightLocalWrittenBefore);
+        canSkipValueSlot =
+                (TZrBool)(useWrittenScalarSources &&
+                          backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(
+                                  functionIr, destinationSlot, semIrInstruction->execInstructionIndex));
+    }
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_i64_bitwise semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n"
+                "        zr_aot_s%u = zr_aot_s%u %s zr_aot_s%u;\n"
+                "    }\n",
+                (unsigned)semIrInstruction->semIrOpcode,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                (unsigned)rightSlot,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                operatorText,
+                (unsigned)rightSlot);
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -269,11 +358,7 @@ static void backend_aot_write_c_scalar_i64_bitwise(FILE *file,
             "            %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type) ||\n"
-            "            !ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n",
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
             (unsigned)semIrInstruction->semIrOpcode,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
@@ -281,19 +366,43 @@ static void backend_aot_write_c_scalar_i64_bitwise(FILE *file,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
             (unsigned)rightSlot,
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot);
-    if (useScalarLocals) {
+            (unsigned)destinationSlot);
+    if (!useWrittenScalarSources) {
+        fprintf(file, "        if (");
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)",
+                    (unsigned)leftSlot);
+        }
+        if (!rightLocalWrittenBefore) {
+            if (!leftLocalWrittenBefore) {
+                fprintf(file, " ||\n            ");
+            }
+            fprintf(file,
+                    "!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)",
+                    (unsigned)rightSlot);
+        }
         fprintf(file,
-                "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n"
-                "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n"
+                ") {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n");
+    }
+    if (useScalarLocals) {
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
+                    (unsigned)leftSlot,
+                    (unsigned)leftSlot);
+        }
+        if (!rightLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
+                    (unsigned)rightSlot,
+                    (unsigned)rightSlot);
+        }
+        fprintf(file,
                 "        zr_aot_s%u = zr_aot_s%u %s zr_aot_s%u;\n"
                 "        zr_aot_s_result = zr_aot_s%u;\n",
-                (unsigned)leftSlot,
-                (unsigned)leftSlot,
-                (unsigned)rightSlot,
-                (unsigned)rightSlot,
                 (unsigned)destinationSlot,
                 (unsigned)leftSlot,
                 operatorText,
@@ -329,6 +438,39 @@ static void backend_aot_write_c_scalar_u64_bitwise(FILE *file,
             useScalarDestination &&
             backend_aot_c_scalar_locals_has_u64_slot(functionIr, leftSlot) &&
             backend_aot_c_scalar_locals_has_u64_slot(functionIr, rightSlot);
+    TZrBool leftLocalWrittenBefore = ZR_FALSE;
+    TZrBool rightLocalWrittenBefore = ZR_FALSE;
+    TZrBool useWrittenScalarSources = ZR_FALSE;
+    TZrBool canSkipValueSlot = ZR_FALSE;
+
+    if (useScalarLocals) {
+        leftLocalWrittenBefore =
+                backend_aot_c_scalar_locals_u64_written_before(functionIr, leftSlot, semIrInstruction->execInstructionIndex);
+        rightLocalWrittenBefore =
+                backend_aot_c_scalar_locals_u64_written_before(functionIr, rightSlot, semIrInstruction->execInstructionIndex);
+        useWrittenScalarSources = (TZrBool)(leftLocalWrittenBefore && rightLocalWrittenBefore);
+        canSkipValueSlot =
+                (TZrBool)(useWrittenScalarSources &&
+                          backend_aot_c_scalar_locals_u64_result_can_skip_value_slot(
+                                  functionIr, destinationSlot, semIrInstruction->execInstructionIndex));
+    }
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_u64_bitwise semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n"
+                "        zr_aot_u%u = zr_aot_u%u %s zr_aot_u%u;\n"
+                "    }\n",
+                (unsigned)semIrInstruction->semIrOpcode,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                (unsigned)rightSlot,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                operatorText,
+                (unsigned)rightSlot);
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -340,11 +482,7 @@ static void backend_aot_write_c_scalar_u64_bitwise(FILE *file,
             "            %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type) ||\n"
-            "            !ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n",
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
             (unsigned)semIrInstruction->semIrOpcode,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
@@ -352,19 +490,43 @@ static void backend_aot_write_c_scalar_u64_bitwise(FILE *file,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
             (unsigned)rightSlot,
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot);
-    if (useScalarLocals) {
+            (unsigned)destinationSlot);
+    if (!useWrittenScalarSources) {
+        fprintf(file, "        if (");
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)",
+                    (unsigned)leftSlot);
+        }
+        if (!rightLocalWrittenBefore) {
+            if (!leftLocalWrittenBefore) {
+                fprintf(file, " ||\n            ");
+            }
+            fprintf(file,
+                    "!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)",
+                    (unsigned)rightSlot);
+        }
         fprintf(file,
-                "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n"
-                "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n"
+                ") {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n");
+    }
+    if (useScalarLocals) {
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n",
+                    (unsigned)leftSlot,
+                    (unsigned)leftSlot);
+        }
+        if (!rightLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n",
+                    (unsigned)rightSlot,
+                    (unsigned)rightSlot);
+        }
+        fprintf(file,
                 "        zr_aot_u%u = zr_aot_u%u %s zr_aot_u%u;\n"
                 "        zr_aot_u_result = zr_aot_u%u;\n",
-                (unsigned)leftSlot,
-                (unsigned)leftSlot,
-                (unsigned)rightSlot,
-                (unsigned)rightSlot,
                 (unsigned)destinationSlot,
                 (unsigned)leftSlot,
                 operatorText,
@@ -399,6 +561,54 @@ static void backend_aot_write_c_scalar_i64_shift(FILE *file,
             backend_aot_c_scalar_locals_has_i64_slot(functionIr, rightSlot);
     TZrBool useScalarDestination =
             backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot);
+    TZrBool leftLocalWrittenBefore = ZR_FALSE;
+    TZrBool rightLocalWrittenBefore = ZR_FALSE;
+    TZrBool useWrittenScalarSources = ZR_FALSE;
+    TZrBool canSkipValueSlot = ZR_FALSE;
+
+    if (useScalarOperands) {
+        leftLocalWrittenBefore =
+                backend_aot_c_scalar_locals_i64_written_before(functionIr, leftSlot, semIrInstruction->execInstructionIndex);
+        rightLocalWrittenBefore =
+                backend_aot_c_scalar_locals_i64_written_before(functionIr, rightSlot, semIrInstruction->execInstructionIndex);
+        useWrittenScalarSources = (TZrBool)(leftLocalWrittenBefore && rightLocalWrittenBefore);
+        canSkipValueSlot =
+                (TZrBool)(useScalarDestination &&
+                          useWrittenScalarSources &&
+                          backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(
+                                  functionIr, destinationSlot, semIrInstruction->execInstructionIndex));
+    }
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_i64_shift semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n"
+                "        if (ZR_UNLIKELY(zr_aot_s%u < 0 || zr_aot_s%u >= 64)) {\n"
+                "            ZrCore_Debug_RunError(state, \"generated AOT scalar shift count out of range\");\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n",
+                (unsigned)semIrInstruction->semIrOpcode,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                (unsigned)rightSlot,
+                (unsigned)rightSlot,
+                (unsigned)rightSlot);
+        if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_SHL) {
+            fprintf(file,
+                    "        zr_aot_s%u = (TZrInt64)((TZrUInt64)zr_aot_s%u << zr_aot_s%u);\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)leftSlot,
+                    (unsigned)rightSlot);
+        } else {
+            fprintf(file,
+                    "        zr_aot_s%u = zr_aot_s%u >> zr_aot_s%u;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)leftSlot,
+                    (unsigned)rightSlot);
+        }
+        fprintf(file, "    }\n");
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -410,11 +620,7 @@ static void backend_aot_write_c_scalar_i64_shift(FILE *file,
             "            %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type) ||\n"
-            "            !ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n",
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
             (unsigned)semIrInstruction->semIrOpcode,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
@@ -422,21 +628,45 @@ static void backend_aot_write_c_scalar_i64_shift(FILE *file,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
             (unsigned)rightSlot,
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot);
-    if (useScalarOperands) {
+            (unsigned)destinationSlot);
+    if (!useWrittenScalarSources) {
+        fprintf(file, "        if (");
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)",
+                    (unsigned)leftSlot);
+        }
+        if (!rightLocalWrittenBefore) {
+            if (!leftLocalWrittenBefore) {
+                fprintf(file, " ||\n            ");
+            }
+            fprintf(file,
+                    "!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)",
+                    (unsigned)rightSlot);
+        }
         fprintf(file,
-                "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n"
-                "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n"
+                ") {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n");
+    }
+    if (useScalarOperands) {
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
+                    (unsigned)leftSlot,
+                    (unsigned)leftSlot);
+        }
+        if (!rightLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
+                    (unsigned)rightSlot,
+                    (unsigned)rightSlot);
+        }
+        fprintf(file,
                 "        if (ZR_UNLIKELY(zr_aot_s%u < 0 || zr_aot_s%u >= 64)) {\n"
                 "            ZrCore_Debug_RunError(state, \"generated AOT scalar shift count out of range\");\n"
                 "            ZR_AOT_C_FAIL();\n"
                 "        }\n",
-                (unsigned)leftSlot,
-                (unsigned)leftSlot,
-                (unsigned)rightSlot,
-                (unsigned)rightSlot,
                 (unsigned)rightSlot,
                 (unsigned)rightSlot);
         if (useScalarDestination) {
@@ -503,6 +733,54 @@ static void backend_aot_write_c_scalar_u64_shift(FILE *file,
             backend_aot_c_scalar_locals_has_i64_slot(functionIr, rightSlot);
     TZrBool useScalarDestination =
             backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot);
+    TZrBool leftLocalWrittenBefore = ZR_FALSE;
+    TZrBool rightLocalWrittenBefore = ZR_FALSE;
+    TZrBool useWrittenScalarSources = ZR_FALSE;
+    TZrBool canSkipValueSlot = ZR_FALSE;
+
+    if (useScalarOperands) {
+        leftLocalWrittenBefore =
+                backend_aot_c_scalar_locals_u64_written_before(functionIr, leftSlot, semIrInstruction->execInstructionIndex);
+        rightLocalWrittenBefore =
+                backend_aot_c_scalar_locals_i64_written_before(functionIr, rightSlot, semIrInstruction->execInstructionIndex);
+        useWrittenScalarSources = (TZrBool)(leftLocalWrittenBefore && rightLocalWrittenBefore);
+        canSkipValueSlot =
+                (TZrBool)(useScalarDestination &&
+                          useWrittenScalarSources &&
+                          backend_aot_c_scalar_locals_u64_result_can_skip_value_slot(
+                                  functionIr, destinationSlot, semIrInstruction->execInstructionIndex));
+    }
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_u64_shift semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n"
+                "        if (ZR_UNLIKELY(zr_aot_s%u < 0 || zr_aot_s%u >= 64)) {\n"
+                "            ZrCore_Debug_RunError(state, \"generated AOT scalar shift count out of range\");\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n",
+                (unsigned)semIrInstruction->semIrOpcode,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                (unsigned)rightSlot,
+                (unsigned)rightSlot,
+                (unsigned)rightSlot);
+        if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_SHL) {
+            fprintf(file,
+                    "        zr_aot_u%u = zr_aot_u%u << zr_aot_s%u;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)leftSlot,
+                    (unsigned)rightSlot);
+        } else {
+            fprintf(file,
+                    "        zr_aot_u%u = zr_aot_u%u >> zr_aot_s%u;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)leftSlot,
+                    (unsigned)rightSlot);
+        }
+        fprintf(file, "    }\n");
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -514,11 +792,7 @@ static void backend_aot_write_c_scalar_u64_shift(FILE *file,
             "            %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type) ||\n"
-            "            !ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n",
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
             (unsigned)semIrInstruction->semIrOpcode,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
@@ -526,21 +800,45 @@ static void backend_aot_write_c_scalar_u64_shift(FILE *file,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
             (unsigned)rightSlot,
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot);
-    if (useScalarOperands) {
+            (unsigned)destinationSlot);
+    if (!useWrittenScalarSources) {
+        fprintf(file, "        if (");
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)",
+                    (unsigned)leftSlot);
+        }
+        if (!rightLocalWrittenBefore) {
+            if (!leftLocalWrittenBefore) {
+                fprintf(file, " ||\n            ");
+            }
+            fprintf(file,
+                    "!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)",
+                    (unsigned)rightSlot);
+        }
         fprintf(file,
-                "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n"
-                "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n"
+                ") {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n");
+    }
+    if (useScalarOperands) {
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n",
+                    (unsigned)leftSlot,
+                    (unsigned)leftSlot);
+        }
+        if (!rightLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
+                    (unsigned)rightSlot,
+                    (unsigned)rightSlot);
+        }
+        fprintf(file,
                 "        if (ZR_UNLIKELY(zr_aot_s%u < 0 || zr_aot_s%u >= 64)) {\n"
                 "            ZrCore_Debug_RunError(state, \"generated AOT scalar shift count out of range\");\n"
                 "            ZR_AOT_C_FAIL();\n"
                 "        }\n",
-                (unsigned)leftSlot,
-                (unsigned)leftSlot,
-                (unsigned)rightSlot,
-                (unsigned)rightSlot,
                 (unsigned)rightSlot,
                 (unsigned)rightSlot);
         if (useScalarDestination) {

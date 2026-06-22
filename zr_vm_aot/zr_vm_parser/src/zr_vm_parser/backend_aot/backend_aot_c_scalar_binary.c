@@ -352,6 +352,68 @@ static void backend_aot_write_c_scalar_i64_binary(FILE *file,
             useScalarDestination &&
             backend_aot_c_scalar_locals_has_i64_slot(functionIr, leftSlot) &&
             (hasRightLiteral || backend_aot_c_scalar_locals_has_i64_slot(functionIr, rightSlot));
+    TZrBool leftLocalWrittenBefore = ZR_FALSE;
+    TZrBool rightLocalWrittenBefore = ZR_FALSE;
+    TZrBool useWrittenScalarSources = ZR_FALSE;
+    TZrBool canSkipValueSlot = ZR_FALSE;
+
+    if (useScalarLocals) {
+        leftLocalWrittenBefore =
+                backend_aot_c_scalar_locals_i64_written_before(functionIr, leftSlot, semIrInstruction->execInstructionIndex);
+        rightLocalWrittenBefore =
+                hasRightLiteral ||
+                backend_aot_c_scalar_locals_i64_written_before(functionIr, rightSlot, semIrInstruction->execInstructionIndex);
+        useWrittenScalarSources = (TZrBool)(leftLocalWrittenBefore && rightLocalWrittenBefore);
+        canSkipValueSlot =
+                (TZrBool)(useWrittenScalarSources &&
+                          backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(
+                                  functionIr, destinationSlot, semIrInstruction->execInstructionIndex));
+    }
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_i64_binary semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n",
+                (unsigned)semIrInstruction->semIrOpcode,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                hasRightLiteral ? 0u : (unsigned)rightSlot);
+        if (hasRightLiteral) {
+            if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_DIV ||
+                semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_MOD) {
+                fprintf(file,
+                        "        if ((TZrInt64)%lld == 0) {\n"
+                        "            ZrCore_Debug_RunError(state, \"generated AOT integer divide by zero\");\n"
+                        "            ZR_AOT_C_FAIL();\n"
+                        "        }\n",
+                        (long long)rightLiteral);
+            }
+            fprintf(file,
+                    "        zr_aot_s%u = zr_aot_s%u %s (TZrInt64)%lld;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)leftSlot,
+                    operatorText,
+                    (long long)rightLiteral);
+        } else {
+            if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_DIV ||
+                semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_MOD) {
+                fprintf(file,
+                        "        if (zr_aot_s%u == 0) {\n"
+                        "            ZrCore_Debug_RunError(state, \"generated AOT integer divide by zero\");\n"
+                        "            ZR_AOT_C_FAIL();\n"
+                        "        }\n",
+                        (unsigned)rightSlot);
+            }
+            fprintf(file,
+                    "        zr_aot_s%u = zr_aot_s%u %s zr_aot_s%u;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)leftSlot,
+                    operatorText,
+                    (unsigned)rightSlot);
+        }
+        fprintf(file, "    }\n");
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -373,25 +435,30 @@ static void backend_aot_write_c_scalar_i64_binary(FILE *file,
             ") {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot);
-    if (!hasRightLiteral) {
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
+            (unsigned)destinationSlot);
+    if (!useWrittenScalarSources) {
         fprintf(file,
-                " ||\n"
-                "            !ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)",
-                (unsigned)rightSlot);
-    }
-    fprintf(file,
-            ") {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n");
-    if (useScalarLocals) {
-        fprintf(file,
-                "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
-                (unsigned)leftSlot,
+                "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)",
                 (unsigned)leftSlot);
+        if (!hasRightLiteral) {
+            fprintf(file,
+                    " ||\n"
+                    "            !ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)",
+                    (unsigned)rightSlot);
+        }
+        fprintf(file,
+                ") {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n");
+    }
+    if (useScalarLocals) {
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
+                    (unsigned)leftSlot,
+                    (unsigned)leftSlot);
+        }
         if (hasRightLiteral) {
             if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_DIV ||
                 semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_MOD) {
@@ -409,10 +476,12 @@ static void backend_aot_write_c_scalar_i64_binary(FILE *file,
                     operatorText,
                     (long long)rightLiteral);
         } else {
-            fprintf(file,
-                    "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
-                    (unsigned)rightSlot,
-                    (unsigned)rightSlot);
+            if (!rightLocalWrittenBefore) {
+                fprintf(file,
+                        "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
+                        (unsigned)rightSlot,
+                        (unsigned)rightSlot);
+            }
             if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_DIV ||
                 semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_MOD) {
                 fprintf(file,
@@ -478,6 +547,68 @@ static void backend_aot_write_c_scalar_u64_binary(FILE *file,
             useScalarDestination &&
             backend_aot_c_scalar_locals_has_u64_slot(functionIr, leftSlot) &&
             (hasRightLiteral || backend_aot_c_scalar_locals_has_u64_slot(functionIr, rightSlot));
+    TZrBool leftLocalWrittenBefore = ZR_FALSE;
+    TZrBool rightLocalWrittenBefore = ZR_FALSE;
+    TZrBool useWrittenScalarSources = ZR_FALSE;
+    TZrBool canSkipValueSlot = ZR_FALSE;
+
+    if (useScalarLocals) {
+        leftLocalWrittenBefore =
+                backend_aot_c_scalar_locals_u64_written_before(functionIr, leftSlot, semIrInstruction->execInstructionIndex);
+        rightLocalWrittenBefore =
+                hasRightLiteral ||
+                backend_aot_c_scalar_locals_u64_written_before(functionIr, rightSlot, semIrInstruction->execInstructionIndex);
+        useWrittenScalarSources = (TZrBool)(leftLocalWrittenBefore && rightLocalWrittenBefore);
+        canSkipValueSlot =
+                (TZrBool)(useWrittenScalarSources &&
+                          backend_aot_c_scalar_locals_u64_result_can_skip_value_slot(
+                                  functionIr, destinationSlot, semIrInstruction->execInstructionIndex));
+    }
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_u64_binary semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n",
+                (unsigned)semIrInstruction->semIrOpcode,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                hasRightLiteral ? 0u : (unsigned)rightSlot);
+        if (hasRightLiteral) {
+            if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_DIV ||
+                semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_MOD) {
+                fprintf(file,
+                        "        if ((TZrUInt64)%llu == 0u) {\n"
+                        "            ZrCore_Debug_RunError(state, \"generated AOT unsigned integer divide by zero\");\n"
+                        "            ZR_AOT_C_FAIL();\n"
+                        "        }\n",
+                        (unsigned long long)rightLiteral);
+            }
+            fprintf(file,
+                    "        zr_aot_u%u = zr_aot_u%u %s (TZrUInt64)%llu;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)leftSlot,
+                    operatorText,
+                    (unsigned long long)rightLiteral);
+        } else {
+            if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_DIV ||
+                semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_MOD) {
+                fprintf(file,
+                        "        if (zr_aot_u%u == 0u) {\n"
+                        "            ZrCore_Debug_RunError(state, \"generated AOT unsigned integer divide by zero\");\n"
+                        "            ZR_AOT_C_FAIL();\n"
+                        "        }\n",
+                        (unsigned)rightSlot);
+            }
+            fprintf(file,
+                    "        zr_aot_u%u = zr_aot_u%u %s zr_aot_u%u;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)leftSlot,
+                    operatorText,
+                    (unsigned)rightSlot);
+        }
+        fprintf(file, "    }\n");
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -499,25 +630,45 @@ static void backend_aot_write_c_scalar_u64_binary(FILE *file,
             ") {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot);
-    if (!hasRightLiteral) {
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
+            (unsigned)destinationSlot);
+    if (!useScalarLocals) {
         fprintf(file,
-                " ||\n"
-                "            !ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)",
-                (unsigned)rightSlot);
-    }
-    fprintf(file,
-            ") {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n");
-    if (useScalarLocals) {
-        fprintf(file,
-                "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n",
-                (unsigned)leftSlot,
+                "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)",
                 (unsigned)leftSlot);
+        if (!hasRightLiteral) {
+            fprintf(file,
+                    " ||\n"
+                    "            !ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)",
+                    (unsigned)rightSlot);
+        }
+        fprintf(file,
+                ") {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n");
+    } else {
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)) {\n"
+                    "            ZR_AOT_C_FAIL();\n"
+                    "        }\n",
+                    (unsigned)leftSlot);
+        }
+        if (!rightLocalWrittenBefore) {
+            fprintf(file,
+                    "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)) {\n"
+                    "            ZR_AOT_C_FAIL();\n"
+                    "        }\n",
+                    (unsigned)rightSlot);
+        }
+    }
+    if (useScalarLocals) {
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n",
+                    (unsigned)leftSlot,
+                    (unsigned)leftSlot);
+        }
         if (hasRightLiteral) {
             if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_DIV ||
                 semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_MOD) {
@@ -535,10 +686,12 @@ static void backend_aot_write_c_scalar_u64_binary(FILE *file,
                     operatorText,
                     (unsigned long long)rightLiteral);
         } else {
-            fprintf(file,
-                    "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n",
-                    (unsigned)rightSlot,
-                    (unsigned)rightSlot);
+            if (!rightLocalWrittenBefore) {
+                fprintf(file,
+                        "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n",
+                        (unsigned)rightSlot,
+                        (unsigned)rightSlot);
+            }
             if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_DIV ||
                 semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_MOD) {
                 fprintf(file,
@@ -602,6 +755,57 @@ static void backend_aot_write_c_scalar_f64_binary(FILE *file,
             useScalarDestination &&
             backend_aot_c_scalar_locals_has_f64_slot(functionIr, leftSlot) &&
             backend_aot_c_scalar_locals_has_f64_slot(functionIr, rightSlot);
+    TZrBool leftLocalWrittenBefore = ZR_FALSE;
+    TZrBool rightLocalWrittenBefore = ZR_FALSE;
+    TZrBool useWrittenScalarSources = ZR_FALSE;
+    TZrBool canSkipValueSlot = ZR_FALSE;
+
+    if (useScalarLocals) {
+        leftLocalWrittenBefore =
+                backend_aot_c_scalar_locals_f64_written_before(functionIr, leftSlot, semIrInstruction->execInstructionIndex);
+        rightLocalWrittenBefore =
+                backend_aot_c_scalar_locals_f64_written_before(functionIr, rightSlot, semIrInstruction->execInstructionIndex);
+        useWrittenScalarSources = (TZrBool)(leftLocalWrittenBefore && rightLocalWrittenBefore);
+        canSkipValueSlot =
+                (TZrBool)(useWrittenScalarSources &&
+                          backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
+                                  functionIr, destinationSlot, semIrInstruction->execInstructionIndex));
+    }
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_f64_binary semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n",
+                (unsigned)semIrInstruction->semIrOpcode,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                (unsigned)rightSlot);
+        if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_DIV ||
+            semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_MOD) {
+            fprintf(file,
+                    "        if (zr_aot_f%u == 0.0) {\n"
+                    "            ZrCore_Debug_RunError(state, \"generated AOT float divide by zero\");\n"
+                    "            ZR_AOT_C_FAIL();\n"
+                    "        }\n",
+                    (unsigned)rightSlot);
+        }
+        if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_MOD) {
+            fprintf(file,
+                    "        zr_aot_f%u = fmod(zr_aot_f%u, zr_aot_f%u);\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)leftSlot,
+                    (unsigned)rightSlot);
+        } else {
+            fprintf(file,
+                    "        zr_aot_f%u = zr_aot_f%u %s zr_aot_f%u;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)leftSlot,
+                    operatorText,
+                    (unsigned)rightSlot);
+        }
+        fprintf(file, "    }\n");
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -613,11 +817,7 @@ static void backend_aot_write_c_scalar_f64_binary(FILE *file,
             "            %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        if (!ZR_VALUE_IS_TYPE_FLOAT(frame.slotBase[%u].value.type) ||\n"
-            "            !ZR_VALUE_IS_TYPE_FLOAT(frame.slotBase[%u].value.type)) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n",
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
             (unsigned)semIrInstruction->semIrOpcode,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
@@ -625,17 +825,44 @@ static void backend_aot_write_c_scalar_f64_binary(FILE *file,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
             (unsigned)rightSlot,
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot);
-    if (useScalarLocals) {
+            (unsigned)destinationSlot);
+    if (!useScalarLocals) {
         fprintf(file,
-                "        zr_aot_f%u = frame.slotBase[%u].value.value.nativeObject.nativeDouble;\n"
-                "        zr_aot_f%u = frame.slotBase[%u].value.value.nativeObject.nativeDouble;\n",
+                "        if (!ZR_VALUE_IS_TYPE_FLOAT(frame.slotBase[%u].value.type) ||\n"
+                "            !ZR_VALUE_IS_TYPE_FLOAT(frame.slotBase[%u].value.type)) {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n",
                 (unsigned)leftSlot,
-                (unsigned)leftSlot,
-                (unsigned)rightSlot,
                 (unsigned)rightSlot);
+    } else {
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "        if (!ZR_VALUE_IS_TYPE_FLOAT(frame.slotBase[%u].value.type)) {\n"
+                    "            ZR_AOT_C_FAIL();\n"
+                    "        }\n",
+                    (unsigned)leftSlot);
+        }
+        if (!rightLocalWrittenBefore) {
+            fprintf(file,
+                    "        if (!ZR_VALUE_IS_TYPE_FLOAT(frame.slotBase[%u].value.type)) {\n"
+                    "            ZR_AOT_C_FAIL();\n"
+                    "        }\n",
+                    (unsigned)rightSlot);
+        }
+    }
+    if (useScalarLocals) {
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_f%u = frame.slotBase[%u].value.value.nativeObject.nativeDouble;\n",
+                    (unsigned)leftSlot,
+                    (unsigned)leftSlot);
+        }
+        if (!rightLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_f%u = frame.slotBase[%u].value.value.nativeObject.nativeDouble;\n",
+                    (unsigned)rightSlot,
+                    (unsigned)rightSlot);
+        }
         if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_DIV ||
             semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_MOD) {
             fprintf(file,

@@ -121,8 +121,8 @@ static void test_aot_c_generated_shared_library_compiles_typed_float_mod(void) {
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "#include <math.h>"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_arith_exec_float_mod"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "fmod(zr_aot_left_scalar, zr_aot_right_scalar)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_exec_f64_binary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "fmod("));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_ModFloat(state, &frame"));
     free(generatedCText);
 

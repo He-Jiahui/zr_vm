@@ -132,7 +132,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
 }
 #endif
 
-static void test_aot_c_generated_shared_library_compiles_generic_numeric_mod_float_fallback(void) {
+static void test_aot_c_generated_shared_library_compiles_generic_numeric_mod_float_boundary_helper(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C generic numeric modulo shared-library smoke currently validates the Unix toolchain path");
 #else
@@ -171,11 +171,12 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_mod_flo
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "#include <math.h>"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_arith_exec_generic_numeric_binary"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "fmod(zr_aot_left_float, zr_aot_right_float)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Debug_RunError(state, \"modulo by zero\")"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Mod(state, &frame"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_arith_exec_generic_numeric_binary_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericNumericMod(state, &frame, 2, 0, 1)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_arith_exec_generic_numeric_binary */"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "fmod(zr_aot_left_float, zr_aot_right_float)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Debug_RunError(state, \"modulo by zero\")"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_IS_TYPE_FLOAT(zr_aot_left->type)"));
     free(generatedCText);
 
     snprintf(command,
@@ -205,6 +206,6 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_mod_flo
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_aot_c_generated_shared_library_compiles_generic_numeric_mod_float_fallback);
+    RUN_TEST(test_aot_c_generated_shared_library_compiles_generic_numeric_mod_float_boundary_helper);
     return UNITY_END();
 }

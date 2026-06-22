@@ -362,6 +362,91 @@ static void test_local_expression_query_propagates_expression_statement_numeric_
     TEST_PASS(timer, summary);
 }
 
+static void test_local_expression_query_propagates_object_computed_key_numeric_range_fact(SZrState *state) {
+    const TZrChar *summary = "LSP Local Expression Query Propagates Object Computed Key Numeric Range Fact";
+    const TZrChar *uriText = "file:///local_object_computed_key_numeric_range_fact.zr";
+    const TZrChar *content =
+        "func calc(): void {\n"
+        "    {[1 + 2]: 4};\n"
+        "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition position;
+    SZrLspLocalSemanticQueryResult query;
+    TZrChar reason[1024];
+
+    TEST_START(summary);
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "+", 0, 0, &position)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare local object computed-key numeric range query fixture");
+        return;
+    }
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, position, &query)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "ExpressionAt returned false");
+        return;
+    }
+
+    if (query.status != ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT ||
+        query.expressionFact == ZR_NULL ||
+        query.numericFact == ZR_NULL ||
+        query.numericFact->kind != ZR_SEMANTIC_NUMERIC_FACT_PROMOTION ||
+        !query.numericFact->hasRange ||
+        query.numericFact->minValue != 3 ||
+        query.numericFact->maxValue != 3 ||
+        query.numericFact->mayOverflow) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected computed-key exact range; status=%d query=(%lld,%d,%d) expr=%p exprNode=%d exprRange=(%lld,%d,%d)-(%lld,%d,%d) numeric=%p numericNode=%d numericKind=%d numericRange=(%lld,%d,%d)-(%lld,%d,%d) hasRange=%d min=%lld max=%lld mayOverflow=%d",
+                 (int)query.status,
+                 (long long)query.queryRange.start.offset,
+                 (int)query.queryRange.start.line,
+                 (int)query.queryRange.start.column,
+                 (void *)query.expressionFact,
+                 query.expressionFact != ZR_NULL && query.expressionFact->node != ZR_NULL
+                     ? (int)query.expressionFact->node->type
+                     : -1,
+                 query.expressionFact != ZR_NULL ? (long long)query.expressionFact->range.start.offset : -1,
+                 query.expressionFact != ZR_NULL ? (int)query.expressionFact->range.start.line : -1,
+                 query.expressionFact != ZR_NULL ? (int)query.expressionFact->range.start.column : -1,
+                 query.expressionFact != ZR_NULL ? (long long)query.expressionFact->range.end.offset : -1,
+                 query.expressionFact != ZR_NULL ? (int)query.expressionFact->range.end.line : -1,
+                 query.expressionFact != ZR_NULL ? (int)query.expressionFact->range.end.column : -1,
+                 (void *)query.numericFact,
+                 query.numericFact != ZR_NULL && query.numericFact->node != ZR_NULL
+                     ? (int)query.numericFact->node->type
+                     : -1,
+                 query.numericFact != ZR_NULL ? (int)query.numericFact->kind : -1,
+                 query.numericFact != ZR_NULL ? (long long)query.numericFact->range.start.offset : -1,
+                 query.numericFact != ZR_NULL ? (int)query.numericFact->range.start.line : -1,
+                 query.numericFact != ZR_NULL ? (int)query.numericFact->range.start.column : -1,
+                 query.numericFact != ZR_NULL ? (long long)query.numericFact->range.end.offset : -1,
+                 query.numericFact != ZR_NULL ? (int)query.numericFact->range.end.line : -1,
+                 query.numericFact != ZR_NULL ? (int)query.numericFact->range.end.column : -1,
+                 query.numericFact != ZR_NULL ? (int)query.numericFact->hasRange : -1,
+                 query.numericFact != ZR_NULL ? (long long)query.numericFact->minValue : -1,
+                 query.numericFact != ZR_NULL ? (long long)query.numericFact->maxValue : -1,
+                 query.numericFact != ZR_NULL ? (int)query.numericFact->mayOverflow : -1);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 static void test_local_expression_query_propagates_integer_interval_range_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Propagates Integer Interval Range Fact";
     const TZrChar *uriText = "file:///local_integer_interval_range_fact.zr";
@@ -1574,6 +1659,8 @@ int main(void) {
     test_local_expression_query_propagates_variable_numeric_range_fact(state);
     TEST_DIVIDER();
     test_local_expression_query_propagates_expression_statement_numeric_range_fact(state);
+    TEST_DIVIDER();
+    test_local_expression_query_propagates_object_computed_key_numeric_range_fact(state);
     TEST_DIVIDER();
     test_local_expression_query_propagates_integer_interval_range_fact(state);
     TEST_DIVIDER();

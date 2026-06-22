@@ -100,7 +100,7 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
-static void test_aot_c_source_lowers_ownership_to_direct_core_calls(void) {
+static void test_aot_c_source_lowers_ownership_to_boundary_helpers(void) {
     static const char *const headerNeedles[] = {
             "void backend_aot_write_c_direct_own_unique(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);",
             "void backend_aot_write_c_direct_own_borrow(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);",
@@ -115,23 +115,51 @@ static void test_aot_c_source_lowers_ownership_to_direct_core_calls(void) {
     static const char *const emitterNeedles[] = {
             "#include \\\"zr_vm_core/ownership.h\\\"\\n",
     };
+    static const char *const runtimeHeaderNeedles[] = {
+            "ZrLibrary_AotRuntime_OwnUnique(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_OwnBorrow(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_OwnLoan(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_OwnReturnLoan(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_OwnShare(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_OwnWeak(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_OwnDetach(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_OwnUpgrade(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_OwnRelease(struct SZrState *state,",
+    };
+    static const char *const runtimeSourceNeedles[] = {
+            "TZrBool ZrLibrary_AotRuntime_OwnUnique(SZrState *state,",
+            "return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_UniqueValue);",
+            "TZrBool ZrLibrary_AotRuntime_OwnBorrow(SZrState *state,",
+            "return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_BorrowValue);",
+            "TZrBool ZrLibrary_AotRuntime_OwnLoan(SZrState *state,",
+            "return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_LoanValue);",
+            "TZrBool ZrLibrary_AotRuntime_OwnReturnLoan(SZrState *state,",
+            "return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_ReturnLoanValue);",
+            "TZrBool ZrLibrary_AotRuntime_OwnShare(SZrState *state,",
+            "return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_ShareValue);",
+            "TZrBool ZrLibrary_AotRuntime_OwnWeak(SZrState *state,",
+            "return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_WeakValue);",
+            "TZrBool ZrLibrary_AotRuntime_OwnDetach(SZrState *state,",
+            "return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_DetachValue);",
+            "TZrBool ZrLibrary_AotRuntime_OwnUpgrade(SZrState *state,",
+            "return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_UpgradeValue);",
+            "TZrBool ZrLibrary_AotRuntime_OwnRelease(SZrState *state,",
+            "ZrCore_Ownership_ReleaseValue(state, sourceValue);",
+            "ZrCore_Value_ResetAsNull(destinationValue);",
+    };
     static const char *const valueLoweringNeedles[] = {
-            "backend_aot_write_c_direct_ownership_core_call(",
-            "zr_aot_value_exec_ownership_core",
-            "zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);",
-            "zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + %u);",
-            "ZrCore_Ownership_UniqueValue(state, zr_aot_destination, zr_aot_source)",
-            "ZrCore_Ownership_BorrowValue(state, zr_aot_destination, zr_aot_source)",
-            "ZrCore_Ownership_LoanValue(state, zr_aot_destination, zr_aot_source)",
-            "ZrCore_Ownership_ReturnLoanValue(state, zr_aot_destination, zr_aot_source)",
-            "ZrCore_Ownership_ShareValue(state, zr_aot_destination, zr_aot_source)",
-            "ZrCore_Ownership_WeakValue(state, zr_aot_destination, zr_aot_source)",
-            "ZrCore_Ownership_DetachValue(state, zr_aot_destination, zr_aot_source)",
-            "ZrCore_Ownership_UpgradeValue(state, zr_aot_destination, zr_aot_source)",
-            "zr_aot_value_exec_ownership_release",
-            "ZrCore_Ownership_ReleaseValue(state, zr_aot_source);",
-            "ZrCore_Value_ResetAsNull(zr_aot_destination);",
-            "ZR_AOT_C_FAIL();",
+            "backend_aot_write_c_direct_ownership_helper_call(",
+            "zr_aot_value_exec_ownership_helper",
+            "ZR_AOT_C_GUARD(%s(state, &frame, %u, %u));",
+            "\"ZrLibrary_AotRuntime_OwnUnique\"",
+            "\"ZrLibrary_AotRuntime_OwnBorrow\"",
+            "\"ZrLibrary_AotRuntime_OwnLoan\"",
+            "\"ZrLibrary_AotRuntime_OwnReturnLoan\"",
+            "\"ZrLibrary_AotRuntime_OwnShare\"",
+            "\"ZrLibrary_AotRuntime_OwnWeak\"",
+            "\"ZrLibrary_AotRuntime_OwnDetach\"",
+            "\"ZrLibrary_AotRuntime_OwnUpgrade\"",
+            "\"ZrLibrary_AotRuntime_OwnRelease\"",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(OWN_UNIQUE):",
@@ -154,15 +182,18 @@ static void test_aot_c_source_lowers_ownership_to_direct_core_calls(void) {
             "backend_aot_write_c_direct_own_release(file, destinationSlot, operandA1);",
     };
     static const char *const forbiddenValueLoweringNeedles[] = {
-            "backend_aot_write_c_direct_ownership_call(",
-            "ZrLibrary_AotRuntime_OwnUnique",
-            "ZrLibrary_AotRuntime_OwnBorrow",
-            "ZrLibrary_AotRuntime_OwnLoan",
-            "ZrLibrary_AotRuntime_OwnShare",
-            "ZrLibrary_AotRuntime_OwnWeak",
-            "ZrLibrary_AotRuntime_OwnDetach",
-            "ZrLibrary_AotRuntime_OwnUpgrade",
-            "ZrLibrary_AotRuntime_OwnRelease",
+            "backend_aot_write_c_direct_ownership_core_call(",
+            "zr_aot_value_exec_ownership_core",
+            "ZrCore_Ownership_UniqueValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrCore_Ownership_BorrowValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrCore_Ownership_LoanValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrCore_Ownership_ReturnLoanValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrCore_Ownership_ShareValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrCore_Ownership_WeakValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrCore_Ownership_DetachValue(state, zr_aot_destination, zr_aot_source)",
+            "ZrCore_Ownership_UpgradeValue(state, zr_aot_destination, zr_aot_source)",
+            "zr_aot_value_exec_ownership_release",
+            "ZrCore_Ownership_ReleaseValue(state, zr_aot_source);",
     };
     static const char *const forbiddenFunctionBodyNeedles[] = {
             "ZrLibrary_AotRuntime_Own",
@@ -171,6 +202,8 @@ static void test_aot_c_source_lowers_ownership_to_direct_core_calls(void) {
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *emitterText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+    char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
     char *valueLoweringText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
@@ -178,11 +211,15 @@ static void test_aot_c_source_lowers_ownership_to_direct_core_calls(void) {
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(emitterText);
+    TEST_ASSERT_NOT_NULL(runtimeHeaderText);
+    TEST_ASSERT_NOT_NULL(runtimeSourceText);
     TEST_ASSERT_NOT_NULL(valueLoweringText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
     assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
+    assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
+    assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
     assert_text_contains_all(valueLoweringText, valueLoweringNeedles, ARRAY_COUNT(valueLoweringNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
     assert_text_contains_none(valueLoweringText, forbiddenValueLoweringNeedles, ARRAY_COUNT(forbiddenValueLoweringNeedles));
@@ -192,6 +229,8 @@ static void test_aot_c_source_lowers_ownership_to_direct_core_calls(void) {
 
     free(headerText);
     free(emitterText);
+    free(runtimeHeaderText);
+    free(runtimeSourceText);
     free(valueLoweringText);
     free(functionBodyText);
 }
@@ -202,6 +241,6 @@ void tearDown(void) {}
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_aot_c_source_lowers_ownership_to_direct_core_calls);
+    RUN_TEST(test_aot_c_source_lowers_ownership_to_boundary_helpers);
     return UNITY_END();
 }

@@ -1,4 +1,5 @@
 #include "backend_aot_c_emitter.h"
+#include "backend_aot_c_scalar_locals.h"
 
 static TZrBool backend_aot_c_format_signed_integer_literal(char *buffer,
                                                            TZrSize bufferSize,
@@ -291,9 +292,12 @@ static void backend_aot_write_c_direct_float_binary(FILE *file,
 }
 
 static void backend_aot_write_c_direct_signed_unary(FILE *file,
+                                                    const SZrAotExecIrFunction *functionIr,
                                                     const char *expressionText,
                                                     TZrUInt32 destinationSlot,
                                                     TZrUInt32 sourceSlot) {
+    TZrBool useScalarDestination = backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot);
+
     if (file == ZR_NULL || expressionText == ZR_NULL) {
         return;
     }
@@ -314,17 +318,27 @@ static void backend_aot_write_c_direct_signed_unary(FILE *file,
             "        ZR_VALUE_FAST_SET(zr_aot_destination,\n"
             "                          nativeInt64,\n"
             "                          %s,\n"
-            "                          zr_aot_source->type);\n"
-            "    }\n",
+            "                          zr_aot_source->type);\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
             expressionText);
+    if (useScalarDestination) {
+        fprintf(file,
+                "        zr_aot_s%u = %s;\n",
+                (unsigned)destinationSlot,
+                expressionText);
+    }
+    fprintf(file,
+            "    }\n");
 }
 
 static void backend_aot_write_c_direct_float_unary(FILE *file,
+                                                   const SZrAotExecIrFunction *functionIr,
                                                    const char *expressionText,
                                                    TZrUInt32 destinationSlot,
                                                    TZrUInt32 sourceSlot) {
+    TZrBool useScalarDestination = backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot);
+
     if (file == ZR_NULL || expressionText == ZR_NULL) {
         return;
     }
@@ -345,11 +359,18 @@ static void backend_aot_write_c_direct_float_unary(FILE *file,
             "        ZR_VALUE_FAST_SET(zr_aot_destination,\n"
             "                          nativeDouble,\n"
             "                          %s,\n"
-            "                          zr_aot_source->type);\n"
-            "    }\n",
+            "                          zr_aot_source->type);\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
             expressionText);
+    if (useScalarDestination) {
+        fprintf(file,
+                "        zr_aot_f%u = %s;\n",
+                (unsigned)destinationSlot,
+                expressionText);
+    }
+    fprintf(file,
+            "    }\n");
 }
 
 static void backend_aot_write_c_direct_signed_comparison(FILE *file,
@@ -836,12 +857,26 @@ void backend_aot_write_c_direct_div_float(FILE *file,
                                             ZR_TRUE);
 }
 
-void backend_aot_write_c_direct_neg_signed(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
-    backend_aot_write_c_direct_signed_unary(file, "-zr_aot_source_scalar", destinationSlot, sourceSlot);
+void backend_aot_write_c_direct_neg_signed(FILE *file,
+                                           const SZrAotExecIrFunction *functionIr,
+                                           TZrUInt32 destinationSlot,
+                                           TZrUInt32 sourceSlot) {
+    backend_aot_write_c_direct_signed_unary(file,
+                                            functionIr,
+                                            "-zr_aot_source_scalar",
+                                            destinationSlot,
+                                            sourceSlot);
 }
 
-void backend_aot_write_c_direct_neg_float(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
-    backend_aot_write_c_direct_float_unary(file, "-zr_aot_source_scalar", destinationSlot, sourceSlot);
+void backend_aot_write_c_direct_neg_float(FILE *file,
+                                          const SZrAotExecIrFunction *functionIr,
+                                          TZrUInt32 destinationSlot,
+                                          TZrUInt32 sourceSlot) {
+    backend_aot_write_c_direct_float_unary(file,
+                                           functionIr,
+                                           "-zr_aot_source_scalar",
+                                           destinationSlot,
+                                           sourceSlot);
 }
 
 void backend_aot_write_c_direct_logical_equal_signed(FILE *file,

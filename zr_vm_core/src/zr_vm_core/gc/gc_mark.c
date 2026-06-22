@@ -65,7 +65,7 @@ static TZrSize garbage_collector_mark_string_table_major_roots(SZrStringTable *s
         SZrString *current = stringTable->shortStringListHead;
 
 #if defined(ZR_DEBUG)
-        TZrSize remaining = stringTable->stringHashSet.elementCount + 1u;
+        TZrSize remaining = stringTable->stringHashSet.capacity + 1u;
 #endif
         while (current != ZR_NULL) {
 #if defined(ZR_DEBUG)

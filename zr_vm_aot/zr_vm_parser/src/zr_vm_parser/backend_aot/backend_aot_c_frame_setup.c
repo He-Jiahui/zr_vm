@@ -1,25 +1,60 @@
 #include "backend_aot_c_frame_setup.h"
 
+static TZrUInt32 backend_aot_c_frame_setup_register_frame_bytes(
+        const SZrAotExecIrFrameLayout *frameLayout) {
+    TZrUInt32 layoutIndex;
+    TZrUInt32 registerFrameBytes = 0u;
+
+    if (frameLayout == ZR_NULL || frameLayout->slotLayouts == ZR_NULL) {
+        return 0u;
+    }
+
+    for (layoutIndex = 0u; layoutIndex < frameLayout->slotLayoutCount; layoutIndex++) {
+        const SZrAotExecIrFrameSlotLayout *layout = &frameLayout->slotLayouts[layoutIndex];
+        TZrUInt32 slotEnd;
+
+        if (layout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+            layout->typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE ||
+            layout->byteSize == 0u) {
+            continue;
+        }
+
+        slotEnd = layout->byteOffset + layout->byteSize;
+        if (slotEnd > registerFrameBytes) {
+            registerFrameBytes = slotEnd;
+        }
+    }
+
+    return registerFrameBytes;
+}
+
 void backend_aot_write_c_frame_setup(FILE *file,
                                      const SZrAotExecIrFrameLayout *frameLayout,
-                                     TZrUInt32 functionIndex) {
-    TZrUInt32 frameByteSize = frameLayout != ZR_NULL ? frameLayout->frameByteSize : 0u;
+                                     TZrUInt32 functionIndex,
+                                     TZrBool includeExportContext,
+                                     TZrBool includeFrameDescriptor) {
+    TZrUInt32 frameByteSize = backend_aot_c_frame_setup_register_frame_bytes(frameLayout);
+    TZrBool includeStackFrameSetup = (TZrBool)(includeFrameDescriptor || frameByteSize > 0u);
 
     if (file == ZR_NULL) {
         return;
     }
 
+    if (!includeStackFrameSetup) {
+        return;
+    }
+
     fprintf(file,
             "    /* zr_aot_generated_frame_setup */\n"
+            "    SZrCallInfo *zr_aot_call_info = state->callInfoList;\n");
+
+    fprintf(file,
             "    ZrAotGeneratedModuleContext zr_aot_context;\n"
-            "    SZrCallInfo *zr_aot_call_info = state->callInfoList;\n"
             "    TZrStackValuePointer zr_aot_function_base;\n"
             "    TZrStackValuePointer zr_aot_slot_base;\n"
             "    TZrStackValuePointer zr_aot_frame_top;\n"
             "    TZrSize zr_aot_argument_count;\n"
             "    TZrSize zr_aot_frame_slot_count;\n"
-            "    TZrSize zr_aot_frame_byte_size;\n"
-            "    TZrSize zr_aot_frame_byte_slot_count = 0;\n"
             "    SZrFunctionStackAnchor zr_aot_base_anchor;\n"
             "    SZrFunctionStackAnchor zr_aot_return_anchor;\n"
             "    TZrBool zr_aot_has_return_anchor = ZR_FALSE;\n"
@@ -34,15 +69,21 @@ void backend_aot_write_c_frame_setup(FILE *file,
             "        ZrCore_Function_StackAnchorInit(state, zr_aot_call_info->returnDestination, &zr_aot_return_anchor);\n"
             "        zr_aot_has_return_anchor = ZR_TRUE;\n"
             "    }\n"
-            "    zr_aot_frame_slot_count = (TZrSize)zr_aot_context.generatedFrameSlotCount;\n"
-            "    zr_aot_frame_byte_size = (TZrSize)%u;\n"
-            "    if (zr_aot_frame_byte_size > 0u) {\n"
-            "        zr_aot_frame_byte_slot_count =\n"
-            "                (zr_aot_frame_byte_size + sizeof(SZrTypeValue) - 1u) / sizeof(SZrTypeValue);\n"
-            "        if (zr_aot_frame_slot_count < zr_aot_frame_byte_slot_count) {\n"
-            "            zr_aot_frame_slot_count = zr_aot_frame_byte_slot_count;\n"
-            "        }\n"
-            "    }\n"
+            "    zr_aot_frame_slot_count = (TZrSize)zr_aot_context.generatedFrameSlotCount;\n",
+            (unsigned)functionIndex);
+
+    if (frameByteSize > 0u) {
+        fprintf(file,
+                "    TZrSize zr_aot_frame_byte_size = (TZrSize)%uu;\n"
+                "    TZrSize zr_aot_frame_byte_slot_count =\n"
+                "            (zr_aot_frame_byte_size + sizeof(SZrTypeValue) - 1u) / sizeof(SZrTypeValue);\n"
+                "    if (zr_aot_frame_slot_count < zr_aot_frame_byte_slot_count) {\n"
+                "        zr_aot_frame_slot_count = zr_aot_frame_byte_slot_count;\n"
+                "    }\n",
+                (unsigned)frameByteSize);
+    }
+
+    fprintf(file,
             "    ZrCore_Function_CheckStackAndGc(state, zr_aot_frame_slot_count, zr_aot_function_base + 1);\n"
             "    zr_aot_function_base = ZrCore_Function_StackAnchorRestore(state, &zr_aot_base_anchor);\n"
             "    zr_aot_call_info->functionBase.valuePointer = zr_aot_function_base;\n"
@@ -68,34 +109,22 @@ void backend_aot_write_c_frame_setup(FILE *file,
             "    }\n"
             "    if (state->stackTop.valuePointer < zr_aot_frame_top) {\n"
             "        state->stackTop.valuePointer = zr_aot_frame_top;\n"
-            "    }\n"
-            "    frame.recordHandle = zr_aot_context.recordHandle;\n"
-            "    frame.function = zr_aot_context.metadataFunction;\n"
-            "    frame.callInfo = zr_aot_call_info;\n"
-            "    frame.slotBase = zr_aot_slot_base;\n"
-            "    frame.module = zr_aot_context.module;\n"
-            "    frame.moduleExecuted = zr_aot_context.moduleExecuted;\n"
-            "    frame.functionTable = zr_aot_context.functionTable;\n"
-            "    frame.functionCount = zr_aot_context.functionCount;\n"
-            "    frame.functionThunks = zr_aot_context.functionThunks;\n"
-            "    frame.functionThunkCount = zr_aot_context.functionThunkCount;\n"
-            "    frame.functionIndex = zr_aot_context.resolvedFunctionIndex;\n"
-            "    frame.currentInstructionIndex = 0;\n"
-            "    frame.lastObservedInstructionIndex = UINT32_MAX;\n"
-            "    frame.lastObservedLine = ZR_RUNTIME_DEBUG_HOOK_LINE_NONE;\n"
-            "    frame.observationMask = state->hasAotObservationPolicyOverride\n"
-            "            ? state->aotObservationMask\n"
-            "            : (ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW |\n"
-            "               ZR_AOT_GENERATED_STEP_FLAG_CONTROL_FLOW |\n"
-            "               ZR_AOT_GENERATED_STEP_FLAG_CALL |\n"
-            "               ZR_AOT_GENERATED_STEP_FLAG_RETURN);\n"
-            "    frame.publishAllInstructions = state->hasAotObservationPolicyOverride\n"
-            "            ? state->aotPublishAllInstructions\n"
-            "            : ZR_FALSE;\n"
-            "    if ((state->debugHookSignal & ZR_DEBUG_HOOK_MASK_LINE) != 0u) {\n"
-            "        frame.publishAllInstructions = ZR_TRUE;\n"
-            "    }\n"
-            "    frame.generatedFrameSlotCount = zr_aot_context.generatedFrameSlotCount;\n",
-            (unsigned)functionIndex,
-            (unsigned)frameByteSize);
+            "    }\n");
+
+    if (includeFrameDescriptor) {
+        fprintf(file,
+                "    frame.function = zr_aot_context.metadataFunction;\n"
+                "    frame.callInfo = zr_aot_call_info;\n"
+                "    frame.slotBase = zr_aot_slot_base;\n"
+                "    frame.generatedFrameSlotCount = zr_aot_context.generatedFrameSlotCount;\n");
+        if (includeExportContext) {
+            fprintf(file,
+                    "    frame.module = zr_aot_context.module;\n"
+                    "    frame.moduleExecuted = zr_aot_context.moduleExecuted;\n"
+                    "    frame.functionTable = zr_aot_context.functionTable;\n"
+                    "    frame.functionCount = zr_aot_context.functionCount;\n"
+                    "    frame.functionThunks = zr_aot_context.functionThunks;\n"
+                    "    frame.functionThunkCount = zr_aot_context.functionThunkCount;\n");
+        }
+    }
 }

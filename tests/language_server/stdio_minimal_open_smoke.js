@@ -1,4 +1,4 @@
-const { spawnSync } = require('node:child_process');
+const { spawnSync } = require('child_process');
 
 function assert(condition, message) {
     if (!condition) {

@@ -25,6 +25,7 @@ static ZR_FORCE_INLINE void function_init_vm_call_info_exact_args_steady_state_i
     callInfo->previous = previous;
     callInfo->expectedReturnCount = resultCount;
     callInfo->callStatus = ZR_CALL_STATUS_NONE;
+    callInfo->metadataFunction = ZR_NULL;
     callInfo->context.context.programCounter = programCounter;
     callInfo->context.context.trap = ZR_DEBUG_SIGNAL_NONE;
     callInfo->context.context.variableArgumentCount = 0u;
@@ -107,6 +108,7 @@ static ZR_FORCE_INLINE SZrCallInfo *function_try_pre_call_prepared_resolved_vm_e
                                                               resultCount,
                                                               returnDestination,
                                                               function->instructionsList);
+    callInfo->metadataFunction = function;
     state->callInfoList = callInfo;
     ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
     return callInfo;

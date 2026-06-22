@@ -1516,6 +1516,9 @@ static TZrBool ct_apply_function_decorator_patch(SZrCompilerState *cs,
             function->decoratorMetadataValue.value.object == ZR_NULL) {
             function->decoratorMetadataValue = *metadataValue;
             function->hasDecoratorMetadata = ZR_TRUE;
+            ZrCore_Value_Barrier(cs->state,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(function),
+                                 &function->decoratorMetadataValue);
         } else if (!ct_merge_object_fields(cs->state,
                                            ZR_CAST_OBJECT(cs->state, function->decoratorMetadataValue.value.object),
                                            ZR_CAST_OBJECT(cs->state, metadataValue->value.object))) {

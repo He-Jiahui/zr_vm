@@ -98,7 +98,7 @@ static SZrFunction *create_typed_power_function(SZrState *state) {
     function->instructionsList[9] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 9u, 0);
     function->instructionsList[10] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 10u, 1);
     function->instructionsList[11] = create_instruction_2(ZR_INSTRUCTION_ENUM(POW), 11u, 9u, 10u);
-    function->instructionsList[12] = create_return_instruction(1u, 8u);
+    function->instructionsList[12] = create_return_instruction(1u, 11u);
     function->instructionsLength = 13u;
 
     function->constantValueList = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(
@@ -187,12 +187,25 @@ static void test_aot_c_generated_shared_library_compiles_typed_power(void) {
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_arith_exec_signed_power"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_arith_exec_unsigned_power"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_arith_exec_float_power"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_power"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Value_GetMeta(state, zr_aot_left, ZR_META_POW)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Value_ResetAsNull(zr_aot_destination)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "unsupported AOT generic power meta dispatch"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_arith_exec_signed_power_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_arith_exec_unsigned_power_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_arith_exec_float_power_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_power_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericPower(state, &frame, 11, 9, 10)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_power_result *= zr_aot_power_base"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "pow(zr_aot_left_scalar, zr_aot_right_scalar)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = (TZrInt64)zr_aot_power_result;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_u5 = zr_aot_power_result;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_f8 = pow(zr_aot_f6, zr_aot_f7);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "pow(zr_aot_left_scalar, zr_aot_right_scalar)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_left_scalar;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "TZrUInt64 zr_aot_left_scalar;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "TZrFloat64 zr_aot_left_scalar;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 2);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 5);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 8);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Value_GetMeta(state, zr_aot_left, ZR_META_POW)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Value_ResetAsNull(zr_aot_destination)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Debug_RunError(state, \"unsupported AOT generic power meta dispatch\")"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Pow(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PowSigned(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PowUnsigned(state, &frame"));

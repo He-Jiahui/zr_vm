@@ -226,6 +226,51 @@ static void backend_aot_write_c_scalar_i64_compare(FILE *file,
             useScalarDestination &&
             backend_aot_c_scalar_locals_has_i64_slot(functionIr, leftSlot) &&
             (hasRightLiteral || backend_aot_c_scalar_locals_has_i64_slot(functionIr, rightSlot));
+    TZrBool leftLocalWrittenBefore = ZR_FALSE;
+    TZrBool rightLocalWrittenBefore = ZR_FALSE;
+    TZrBool useWrittenScalarSources = ZR_FALSE;
+    TZrBool canSkipValueSlot = ZR_FALSE;
+
+    if (useScalarLocals) {
+        leftLocalWrittenBefore =
+                backend_aot_c_scalar_locals_i64_written_before(functionIr, leftSlot, semIrInstruction->execInstructionIndex);
+        rightLocalWrittenBefore =
+                hasRightLiteral ||
+                backend_aot_c_scalar_locals_i64_written_before(functionIr, rightSlot, semIrInstruction->execInstructionIndex);
+        useWrittenScalarSources = (TZrBool)(leftLocalWrittenBefore && rightLocalWrittenBefore);
+        canSkipValueSlot =
+                (TZrBool)(useScalarDestination &&
+                          useWrittenScalarSources &&
+                          backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
+                                  functionIr, destinationSlot, semIrInstruction->execInstructionIndex));
+    }
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_i64_compare semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n",
+                (unsigned)semIrInstruction->semIrOpcode,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                hasRightLiteral ? 0u : (unsigned)rightSlot);
+        if (hasRightLiteral) {
+            fprintf(file,
+                    "        zr_aot_b%u = (TZrBool)(zr_aot_s%u %s (TZrInt64)%lld);\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)leftSlot,
+                    operatorText,
+                    (long long)rightLiteral);
+        } else {
+            fprintf(file,
+                    "        zr_aot_b%u = (TZrBool)(zr_aot_s%u %s zr_aot_s%u);\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)leftSlot,
+                    operatorText,
+                    (unsigned)rightSlot);
+        }
+        fprintf(file, "    }\n");
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -247,25 +292,36 @@ static void backend_aot_write_c_scalar_i64_compare(FILE *file,
             ") {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot);
-    if (!hasRightLiteral) {
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
+            (unsigned)destinationSlot);
+    if (!useWrittenScalarSources) {
+        TZrBool wroteSourceCheck = ZR_FALSE;
+
+        fprintf(file, "        if (");
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)",
+                    (unsigned)leftSlot);
+            wroteSourceCheck = ZR_TRUE;
+        }
+        if (!hasRightLiteral && !rightLocalWrittenBefore) {
+            fprintf(file,
+                    "%s!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)",
+                    wroteSourceCheck ? " ||\n            " : "",
+                    (unsigned)rightSlot);
+        }
         fprintf(file,
-                " ||\n"
-                "            !ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[%u].value.type)",
-                (unsigned)rightSlot);
+                ") {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n");
     }
-    fprintf(file,
-            ") {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n");
     if (useScalarLocals) {
-        fprintf(file,
-                "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
-                (unsigned)leftSlot,
-                (unsigned)leftSlot);
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
+                    (unsigned)leftSlot,
+                    (unsigned)leftSlot);
+        }
         if (hasRightLiteral) {
             fprintf(file,
                     "        zr_aot_b%u = (TZrBool)(zr_aot_s%u %s (TZrInt64)%lld);\n",
@@ -274,11 +330,14 @@ static void backend_aot_write_c_scalar_i64_compare(FILE *file,
                     operatorText,
                     (long long)rightLiteral);
         } else {
+            if (!rightLocalWrittenBefore) {
+                fprintf(file,
+                        "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
+                        (unsigned)rightSlot,
+                        (unsigned)rightSlot);
+            }
             fprintf(file,
-                    "        zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n"
                     "        zr_aot_b%u = (TZrBool)(zr_aot_s%u %s zr_aot_s%u);\n",
-                    (unsigned)rightSlot,
-                    (unsigned)rightSlot,
                     (unsigned)destinationSlot,
                     (unsigned)leftSlot,
                     operatorText,
@@ -317,11 +376,46 @@ static void backend_aot_write_c_scalar_u64_compare(FILE *file,
                                                    const char *operatorText,
                                                    TZrUInt32 destinationSlot,
                                                    TZrUInt32 leftSlot,
-                                                   TZrUInt32 rightSlot) {
+                                                   TZrUInt32 rightSlot,
+                                                   TZrUInt32 execInstructionIndex) {
     TZrBool useScalarOperands =
             backend_aot_c_scalar_locals_has_u64_slot(functionIr, leftSlot) &&
             backend_aot_c_scalar_locals_has_u64_slot(functionIr, rightSlot);
     TZrBool useScalarDestination = backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot);
+    TZrBool leftLocalWrittenBefore = ZR_FALSE;
+    TZrBool rightLocalWrittenBefore = ZR_FALSE;
+    TZrBool useWrittenScalarSources = ZR_FALSE;
+    TZrBool canSkipValueSlot = ZR_FALSE;
+
+    if (useScalarOperands) {
+        leftLocalWrittenBefore =
+                backend_aot_c_scalar_locals_u64_written_before(functionIr, leftSlot, execInstructionIndex);
+        rightLocalWrittenBefore =
+                backend_aot_c_scalar_locals_u64_written_before(functionIr, rightSlot, execInstructionIndex);
+        useWrittenScalarSources = (TZrBool)(leftLocalWrittenBefore && rightLocalWrittenBefore);
+        canSkipValueSlot =
+                (TZrBool)(useScalarDestination &&
+                          useWrittenScalarSources &&
+                          backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
+                                  functionIr, destinationSlot, execInstructionIndex));
+    }
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_u64_compare semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n"
+                "        zr_aot_b%u = (TZrBool)(zr_aot_u%u %s zr_aot_u%u);\n"
+                "    }\n",
+                (unsigned)semIrInstruction->semIrOpcode,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                (unsigned)rightSlot,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                operatorText,
+                (unsigned)rightSlot);
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -333,11 +427,7 @@ static void backend_aot_write_c_scalar_u64_compare(FILE *file,
             "            %u >= frame.generatedFrameSlotCount) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
-            "        zr_aot_destination = &frame.slotBase[%u].value;\n"
-            "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type) ||\n"
-            "            !ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n",
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
             (unsigned)semIrInstruction->semIrOpcode,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
@@ -345,17 +435,42 @@ static void backend_aot_write_c_scalar_u64_compare(FILE *file,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
             (unsigned)rightSlot,
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot);
-    if (useScalarOperands) {
+            (unsigned)destinationSlot);
+    if (!leftLocalWrittenBefore || !rightLocalWrittenBefore) {
+        TZrBool wroteSourceCheck = ZR_FALSE;
+        fprintf(file, "        if (");
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)",
+                    (unsigned)leftSlot);
+            wroteSourceCheck = ZR_TRUE;
+        }
+        if (!rightLocalWrittenBefore) {
+            if (wroteSourceCheck) {
+                fprintf(file, " ||\n            ");
+            }
+            fprintf(file,
+                    "!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[%u].value.type)",
+                    (unsigned)rightSlot);
+        }
         fprintf(file,
-                "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n"
-                "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n",
-                (unsigned)leftSlot,
-                (unsigned)leftSlot,
-                (unsigned)rightSlot,
-                (unsigned)rightSlot);
+                ") {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n");
+    }
+    if (useScalarOperands) {
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n",
+                    (unsigned)leftSlot,
+                    (unsigned)leftSlot);
+        }
+        if (!rightLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n",
+                    (unsigned)rightSlot,
+                    (unsigned)rightSlot);
+        }
         if (useScalarDestination) {
             fprintf(file,
                     "        zr_aot_b%u = (TZrBool)(zr_aot_u%u %s zr_aot_u%u);\n"
@@ -390,6 +505,31 @@ static void backend_aot_write_c_scalar_u64_compare(FILE *file,
     fprintf(file, "    }\n");
 }
 
+static TZrBool backend_aot_c_scalar_semir_file_contains_frame_reference(FILE *file) {
+    static const char needle[] = "frame.";
+    TZrSize matchedLength = 0u;
+    int character;
+
+    if (file == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    rewind(file);
+    while ((character = fgetc(file)) != EOF) {
+        if ((char)character == needle[matchedLength]) {
+            matchedLength++;
+            if (matchedLength == (TZrSize)(sizeof(needle) - 1u)) {
+                return ZR_TRUE;
+            }
+            continue;
+        }
+
+        matchedLength = ((char)character == needle[0]) ? 1u : 0u;
+    }
+
+    return ferror(file) ? ZR_TRUE : ZR_FALSE;
+}
+
 TZrBool backend_aot_try_write_c_scalar_semir_for_exec_instruction(FILE *file,
                                                                   const SZrAotExecIrModule *module,
                                                                   const SZrAotExecIrFunction *functionIr,
@@ -410,7 +550,7 @@ TZrBool backend_aot_try_write_c_scalar_semir_for_exec_instruction(FILE *file,
         return ZR_FALSE;
     }
 
-    if (backend_aot_try_write_c_scalar_conversion(file, functionIr, execInstruction)) {
+    if (backend_aot_try_write_c_scalar_conversion(file, functionIr, execInstruction, execInstructionIndex)) {
         return ZR_TRUE;
     }
 
@@ -439,7 +579,8 @@ TZrBool backend_aot_try_write_c_scalar_semir_for_exec_instruction(FILE *file,
                                                unsignedCompareOperatorText,
                                                destinationSlot,
                                                leftSlot,
-                                               rightSlot);
+                                               rightSlot,
+                                               execInstructionIndex);
         return ZR_TRUE;
     }
 
@@ -467,4 +608,30 @@ TZrBool backend_aot_try_write_c_scalar_semir_for_exec_instruction(FILE *file,
     }
 
     return ZR_FALSE;
+}
+
+TZrBool backend_aot_c_scalar_semir_can_write_frame_free_for_exec_instruction(
+        const SZrAotExecIrModule *module,
+        const SZrAotExecIrFunction *functionIr,
+        const TZrInstruction *execInstruction,
+        TZrUInt32 execInstructionIndex) {
+    FILE *scratchFile;
+    TZrBool wroteInstruction;
+    TZrBool containsFrameReference;
+
+    scratchFile = tmpfile();
+    if (scratchFile == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    wroteInstruction = backend_aot_try_write_c_scalar_semir_for_exec_instruction(
+            scratchFile, module, functionIr, execInstruction, execInstructionIndex);
+    if (!wroteInstruction || fflush(scratchFile) != 0) {
+        fclose(scratchFile);
+        return ZR_FALSE;
+    }
+
+    containsFrameReference = backend_aot_c_scalar_semir_file_contains_frame_reference(scratchFile);
+    fclose(scratchFile);
+    return (TZrBool)!containsFrameReference;
 }

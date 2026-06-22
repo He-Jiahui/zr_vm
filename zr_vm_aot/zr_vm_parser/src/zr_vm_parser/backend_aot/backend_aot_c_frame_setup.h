@@ -8,6 +8,8 @@
 
 void backend_aot_write_c_frame_setup(FILE *file,
                                      const SZrAotExecIrFrameLayout *frameLayout,
-                                     TZrUInt32 functionIndex);
+                                     TZrUInt32 functionIndex,
+                                     TZrBool includeExportContext,
+                                     TZrBool includeFrameDescriptor);
 
 #endif

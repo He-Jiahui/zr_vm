@@ -1,4 +1,9 @@
+#include "backend_aot_c_emitter.h"
 #include "backend_aot_c_function_body.h"
+#include "backend_aot_c_typed_bool_thunks.h"
+#include "backend_aot_c_typed_f64_thunks.h"
+#include "backend_aot_c_typed_i64_thunks.h"
+#include "backend_aot_c_typed_u64_thunks.h"
 #include "backend_aot_c_type_layouts.h"
 #include "backend_aot_internal.h"
 
@@ -112,6 +117,173 @@ static void backend_aot_write_c_function_table(FILE *file, const SZrAotFunctionT
     fprintf(file, "};\n");
 }
 
+static void backend_aot_write_c_signature_type(FILE *file,
+                                               const SZrFunctionTypedTypeRef *typeRef) {
+    TZrUInt32 baseType = 0u;
+    TZrUInt32 staticCType = 0u;
+    TZrUInt32 staticCTypeId = 0u;
+    TZrUInt32 ownershipQualifier = 0u;
+    TZrUInt32 elementBaseType = 0u;
+    TZrUInt32 isNullable = 0u;
+    TZrUInt32 isArray = 0u;
+
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    if (typeRef != ZR_NULL) {
+        baseType = (TZrUInt32)typeRef->baseType;
+        staticCType = (TZrUInt32)typeRef->staticCType;
+        staticCTypeId = typeRef->staticCTypeId;
+        ownershipQualifier = typeRef->ownershipQualifier;
+        elementBaseType = (TZrUInt32)typeRef->elementBaseType;
+        isNullable = typeRef->isNullable ? 1u : 0u;
+        isArray = typeRef->isArray ? 1u : 0u;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        .baseType = (TZrUInt16)%uu,\n"
+            "        .staticCType = (TZrUInt16)%uu,\n"
+            "        .staticCTypeId = %uu,\n"
+            "        .ownershipQualifier = %uu,\n"
+            "        .elementBaseType = (TZrUInt16)%uu,\n"
+            "        .isNullable = (TZrUInt8)%uu,\n"
+            "        .isArray = (TZrUInt8)%uu,\n"
+            "    },\n",
+            (unsigned)baseType,
+            (unsigned)staticCType,
+            (unsigned)staticCTypeId,
+            (unsigned)ownershipQualifier,
+            (unsigned)elementBaseType,
+            (unsigned)isNullable,
+            (unsigned)isArray);
+}
+
+static const SZrFunctionTypedTypeRef *backend_aot_c_signature_parameter_type(
+        const SZrFunction *function,
+        TZrUInt32 parameterIndex) {
+    if (function == ZR_NULL ||
+        function->parameterMetadata == ZR_NULL ||
+        parameterIndex >= function->parameterMetadataCount) {
+        return ZR_NULL;
+    }
+
+    return &function->parameterMetadata[parameterIndex].type;
+}
+
+static void backend_aot_write_c_signature(FILE *file,
+                                          TZrUInt32 functionIndex,
+                                          const SZrFunction *function) {
+    TZrUInt32 parameterCount;
+    TZrUInt32 parameterIndex;
+    TZrBool hasReturnValue;
+    const SZrFunctionTypedTypeRef *returnType;
+
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    parameterCount = function != ZR_NULL ? (TZrUInt32)function->parameterCount : 0u;
+    hasReturnValue = (TZrBool)(function != ZR_NULL && function->hasCallableReturnType);
+    returnType = hasReturnValue ? &function->callableReturnType : ZR_NULL;
+
+    fprintf(file, "static const SZrAotSignatureType zr_aot_signature_%u_types[] = {\n",
+            (unsigned)functionIndex);
+    backend_aot_write_c_signature_type(file, returnType);
+    for (parameterIndex = 0u; parameterIndex < parameterCount; parameterIndex++) {
+        backend_aot_write_c_signature_type(file,
+                                           backend_aot_c_signature_parameter_type(function, parameterIndex));
+    }
+    fprintf(file, "};\n");
+    fprintf(file, "static const SZrAotSignature zr_aot_signature_%u = {\n", (unsigned)functionIndex);
+    fprintf(file, "    .parameterCount = %uu,\n", (unsigned)parameterCount);
+    if (hasReturnValue) {
+        fprintf(file, "    .returnType = &zr_aot_signature_%u_types[0],\n", (unsigned)functionIndex);
+    } else {
+        fprintf(file, "    .returnType = ZR_NULL,\n");
+    }
+    if (parameterCount > 0u) {
+        fprintf(file, "    .parameterTypes = &zr_aot_signature_%u_types[1],\n", (unsigned)functionIndex);
+    } else {
+        fprintf(file, "    .parameterTypes = ZR_NULL,\n");
+    }
+    fprintf(file, "    .hasReturnValue = (TZrUInt8)%uu,\n", hasReturnValue ? 1u : 0u);
+    fprintf(file,
+            "    .hasVarArgs = (TZrUInt8)%uu,\n",
+            function != ZR_NULL && function->hasVariableArguments ? 1u : 0u);
+    fprintf(file, "};\n");
+}
+
+static TZrUInt32 backend_aot_c_method_info_register_frame_bytes(const SZrAotExecIrFunction *functionIr) {
+    TZrUInt32 layoutIndex;
+    TZrUInt32 registerFrameBytes = 0u;
+
+    if (functionIr == ZR_NULL ||
+        functionIr->frameLayout.slotLayouts == ZR_NULL) {
+        return 0u;
+    }
+
+    for (layoutIndex = 0u; layoutIndex < functionIr->frameLayout.slotLayoutCount; layoutIndex++) {
+        const SZrAotExecIrFrameSlotLayout *layout = &functionIr->frameLayout.slotLayouts[layoutIndex];
+        TZrUInt32 slotEnd;
+
+        if (layout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+            layout->typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE ||
+            layout->byteSize == 0u) {
+            continue;
+        }
+
+        slotEnd = layout->byteOffset + layout->byteSize;
+        if (slotEnd > registerFrameBytes) {
+            registerFrameBytes = slotEnd;
+        }
+    }
+
+    return registerFrameBytes;
+}
+
+static void backend_aot_write_c_method_infos(FILE *file,
+                                             const SZrAotFunctionTable *table,
+                                             const SZrAotExecIrModule *module) {
+    TZrUInt32 index;
+
+    if (file == ZR_NULL || table == ZR_NULL || table->entries == ZR_NULL || module == ZR_NULL) {
+        return;
+    }
+
+    for (index = 0; index < table->count; index++) {
+        const SZrAotFunctionEntry *entry = &table->entries[index];
+        const SZrAotExecIrFunction *functionIr =
+                backend_aot_exec_ir_find_function(module, entry->flatIndex);
+        TZrUInt32 registerFrameBytes = backend_aot_c_method_info_register_frame_bytes(functionIr);
+
+        backend_aot_write_c_signature(file, entry->flatIndex, entry->function);
+        fprintf(file, "static const SZrAotMethodInfo zr_aot_method_info_%u = {\n", (unsigned)entry->flatIndex);
+        fprintf(file, "    .functionIndex = %uu,\n", (unsigned)entry->flatIndex);
+        fprintf(file, "    .metadataFunction = ZR_NULL,\n");
+        fprintf(file, "    .registerFrameBytes = %uu,\n", (unsigned)registerFrameBytes);
+        fprintf(file, "    .gcRootMap = ZR_NULL,\n");
+        fprintf(file, "    .signature = &zr_aot_signature_%u,\n", (unsigned)entry->flatIndex);
+        fprintf(file, "    .observationPolicy = 0u,\n");
+        fprintf(file, "};\n");
+    }
+}
+
+static void backend_aot_write_c_method_info_table(FILE *file, const SZrAotFunctionTable *table) {
+    TZrUInt32 index;
+
+    if (file == ZR_NULL || table == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file, "static const SZrAotMethodInfo *const zr_aot_method_infos[] = {\n");
+    for (index = 0u; index < table->count; index++) {
+        fprintf(file, "    &zr_aot_method_info_%u,\n", (unsigned)index);
+    }
+    fprintf(file, "};\n");
+}
+
 static void backend_aot_write_c_guard_macro(FILE *file) {
     if (file == ZR_NULL) {
         return;
@@ -127,10 +299,8 @@ static void backend_aot_write_c_guard_macro(FILE *file) {
             "    do {                                                                              \\\n"
             "        ZrCore_Debug_RunError(state,                                                   \\\n"
             "                              \"generated AOT function failed: functionIndex=%%u instructionIndex=%%u\", \\\n"
-            "                              (unsigned)frame.functionIndex,                          \\\n"
-            "                              frame.currentInstructionIndex == ZR_AOT_RUNTIME_RESUME_FALLTHROUGH \\\n"
-            "                                      ? UINT32_MAX                                    \\\n"
-            "                                      : (unsigned)frame.currentInstructionIndex);      \\\n"
+            "                              (unsigned)zr_aot_function_index,                       \\\n"
+            "                              UINT32_MAX);                                           \\\n"
             "        ZR_AOT_C_RETURN(0);                                                           \\\n"
             "    } while (0)\n"
             "#define ZR_AOT_C_GUARD(expr)            \\\n"
@@ -247,7 +417,21 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file, "\n");
     backend_aot_write_c_function_forward_decls(file, &functionTable);
     fprintf(file, "\n");
+    backend_aot_write_c_typed_bool_thunk_forward_decls(file, &functionTable);
+    backend_aot_write_c_typed_f64_thunk_forward_decls(file, &functionTable);
+    backend_aot_write_c_typed_i64_thunk_forward_decls(file, &functionTable);
+    backend_aot_write_c_typed_u64_thunk_forward_decls(file, &functionTable);
+    fprintf(file, "\n");
+    backend_aot_write_c_method_infos(file, &functionTable, &module);
+    fprintf(file, "\n");
+    backend_aot_write_c_method_info_table(file, &functionTable);
+    fprintf(file, "\n");
     backend_aot_write_c_function_table(file, &functionTable);
+    fprintf(file, "\n");
+    backend_aot_write_c_typed_bool_thunks(file, &functionTable);
+    backend_aot_write_c_typed_f64_thunks(file, &functionTable);
+    backend_aot_write_c_typed_i64_thunks(file, &functionTable);
+    backend_aot_write_c_typed_u64_thunks(file, &functionTable);
     fprintf(file, "\n");
     for (TZrUInt32 functionIndex = 0; functionIndex < functionTable.count; functionIndex++) {
         backend_aot_write_c_function_body(file, state, &functionTable, &module, &functionTable.entries[functionIndex]);
@@ -274,6 +458,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     } else {
         fprintf(file, "    ZR_NULL,\n");
     }
+    fprintf(file, "    zr_aot_method_infos,\n");
+    fprintf(file, "    %u,\n", (unsigned)functionTable.count);
     fprintf(file, "};\n");
     fprintf(file, "\n");
     fprintf(file, "ZR_VM_AOT_EXPORT const ZrAotCompiledModule *ZrVm_GetAotCompiledModule(void) {\n");

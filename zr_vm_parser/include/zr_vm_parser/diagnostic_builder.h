@@ -3,6 +3,7 @@
 
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/location.h"
+#include "zr_vm_core/array.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 
@@ -13,6 +14,11 @@ typedef enum EZrStructuredDiagnosticSeverity {
     ZR_STRUCTURED_DIAGNOSTIC_HINT
 } EZrStructuredDiagnosticSeverity;
 
+typedef struct SZrStructuredDiagnosticRelatedInformation {
+    SZrFileRange location;
+    SZrString *message;
+} SZrStructuredDiagnosticRelatedInformation;
+
 typedef struct SZrStructuredDiagnostic {
     EZrStructuredDiagnosticSeverity severity;
     SZrFileRange location;
@@ -20,10 +26,15 @@ typedef struct SZrStructuredDiagnostic {
     SZrString *message;
     SZrString *cause;
     SZrString *suggestion;
+    SZrArray relatedInformation;
 } SZrStructuredDiagnostic;
 
 ZR_PARSER_API void ZrParser_StructuredDiagnostic_Init(SZrStructuredDiagnostic *diagnostic);
 ZR_PARSER_API void ZrParser_StructuredDiagnostic_Free(SZrState *state, SZrStructuredDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_StructuredDiagnostic_AddRelatedInformation(SZrState *state,
+                                                                          SZrStructuredDiagnostic *diagnostic,
+                                                                          SZrFileRange location,
+                                                                          const TZrChar *message);
 
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_Build(SZrState *state,
                                                        SZrStructuredDiagnostic *out,

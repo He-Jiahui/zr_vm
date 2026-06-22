@@ -136,4 +136,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
                                                                 SZrSemanticAnalyzer *analyzer,
                                                                 SZrAstNode *node);
 
+void ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(SZrState *state,
+                                                                      SZrSemanticAnalyzer *analyzer);
+
 #endif

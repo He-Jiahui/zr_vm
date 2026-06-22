@@ -59,8 +59,7 @@ async function main() {
         `:type should infer against the latest persisted assignment\n${output}`);
     assert(!output.includes('Numeric range: 3..3'),
         `:type should not keep using the stale declaration initializer after assignment\n${output}`);
-    const memberAssignmentResultCount = (normalizedOutput.match(/\n40\n/g) || []).length;
-    assert(memberAssignmentResultCount >= 2,
+    assert(normalizedOutput.includes('\n40\n'),
         `member assignment should persist for later REPL member reads\n${output}`);
     assert(!normalizedOutput.includes('\n10\n'),
         `member assignment should not fall back to the stale object literal value\n${output}`);

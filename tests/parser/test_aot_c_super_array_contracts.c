@@ -100,14 +100,27 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
-static void test_aot_c_source_lowers_super_array_int_ops_to_direct_core_calls(void) {
-    static const char *const objectHeaderNeedles[] = {
-            "ZrCore_Object_SuperArrayTryGetIntFast(",
-            "ZrCore_Object_SuperArrayTrySetIntFast(",
-            "ZrCore_Object_SuperArrayAddIntAssumeFast(",
-            "ZrCore_Object_SuperArrayAddIntDiscardResultAssumeFast(",
-            "ZrCore_Object_SuperArrayAddInt4ConstAssumeFast(",
-            "ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(",
+static void test_aot_c_source_lowers_super_array_int_ops_to_boundary_helpers(void) {
+    static const char *const runtimeHeaderNeedles[] = {
+            "ZrLibrary_AotRuntime_SuperArrayGetInt(",
+            "ZrLibrary_AotRuntime_SuperArraySetInt(",
+            "ZrLibrary_AotRuntime_SuperArrayAddInt(",
+            "ZrLibrary_AotRuntime_SuperArrayAddInt4(",
+            "ZrLibrary_AotRuntime_SuperArrayAddInt4Const(",
+            "ZrLibrary_AotRuntime_SuperArrayFillInt4Const(",
+    };
+    static const char *const runtimeSourceNeedles[] = {
+            "ZrLibrary_AotRuntime_SuperArrayGetInt(",
+            "ZrCore_Object_SuperArrayGetInt(state,",
+            "ZrLibrary_AotRuntime_SuperArraySetInt(",
+            "ZrCore_Object_SuperArraySetInt(state,",
+            "ZrLibrary_AotRuntime_SuperArrayAddInt(",
+            "destinationSlot == ZR_INSTRUCTION_USE_RET_FLAG",
+            "ZrCore_Object_SuperArrayAddInt(state,",
+            "ZrLibrary_AotRuntime_SuperArrayAddInt4(",
+            "ZrLibrary_AotRuntime_SuperArrayAddInt4Const(",
+            "ZrLibrary_AotRuntime_SuperArrayFillInt4Const(",
+            "ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(state,",
     };
     static const char *const emitterHeaderNeedles[] = {
             "backend_aot_write_c_direct_super_array_get_int(FILE *file,",
@@ -116,9 +129,6 @@ static void test_aot_c_source_lowers_super_array_int_ops_to_direct_core_calls(vo
             "backend_aot_write_c_direct_super_array_add_int4(FILE *file,",
             "backend_aot_write_c_direct_super_array_add_int4_const(FILE *file,",
             "backend_aot_write_c_direct_super_array_fill_int4_const(FILE *file,",
-    };
-    static const char *const emitterNeedles[] = {
-            "#include \\\"zr_vm_core/object.h\\\"\\n",
     };
     static const char *const loweringNeedles[] = {
             "backend_aot_write_c_direct_super_array_get_int(",
@@ -132,14 +142,12 @@ static void test_aot_c_source_lowers_super_array_int_ops_to_direct_core_calls(vo
             "zr_aot_value_exec_super_array_add_int",
             "zr_aot_value_exec_super_array_add_int4",
             "zr_aot_value_exec_super_array_fill_int4_const",
-            "ZrCore_Object_SuperArrayTryGetIntFast(state, zr_aot_receiver, zr_aot_key, zr_aot_destination, &zr_aot_applicable)",
-            "ZrCore_Object_SuperArrayTrySetIntFast(state, zr_aot_receiver, zr_aot_key, zr_aot_source, &zr_aot_applicable)",
-            "ZrCore_Object_SuperArrayAddIntAssumeFast(state, zr_aot_receiver, zr_aot_source, zr_aot_destination)",
-            "ZrCore_Object_SuperArrayAddIntDiscardResultAssumeFast(state, zr_aot_receiver, zr_aot_source)",
-            "ZrCore_Object_SuperArrayAddInt4ConstAssumeFast(state, zr_aot_receiver_base,",
-            "ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(state, zr_aot_receiver_base,",
-            "unsupported AOT super-array integer fast path",
-            "ZR_AOT_C_FAIL();",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArrayGetInt(state, &frame, %u, %u, %u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArraySetInt(state, &frame, %u, %u, %u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArrayAddInt(state, &frame, %u, %u, %u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArrayAddInt4(state, &frame, %u, %u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArrayAddInt4Const(state, &frame, %u, %u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArrayFillInt4Const(state, &frame, %u, %u, %u));",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):",
@@ -157,15 +165,21 @@ static void test_aot_c_source_lowers_super_array_int_ops_to_direct_core_calls(vo
             "backend_aot_write_c_direct_super_array_fill_int4_const(file, entry->function, operandA1, operandB1, destinationSlot);",
     };
     static const char *const forbiddenLoweringNeedles[] = {
-            "ZrLibrary_AotRuntime_SuperArrayGetInt",
-            "ZrLibrary_AotRuntime_SuperArraySetInt",
-            "ZrLibrary_AotRuntime_SuperArrayAddInt",
-            "ZrLibrary_AotRuntime_SuperArrayAddInt4",
-            "ZrLibrary_AotRuntime_SuperArrayAddInt4Const",
-            "ZrLibrary_AotRuntime_SuperArrayFillInt4Const",
-            "ZrCore_Object_SuperArrayGetInt(state,",
-            "ZrCore_Object_SuperArraySetInt(state,",
-            "ZrCore_Object_SuperArrayAddInt(state,",
+            "backend_aot_c_write_super_array_unsupported(",
+            "backend_aot_c_get_signed_int_constant(",
+            "backend_aot_c_write_super_array_invalid_constant(",
+            "unsupported AOT super-array integer fast path",
+            "SZrTypeValue *zr_aot_",
+            "TZrStackValuePointer zr_aot_receiver_base",
+            "ZrCore_Stack_GetValue(frame.slotBase",
+            "frame.slotBase + %u",
+            "ZrCore_Object_SuperArrayTryGetIntFast(",
+            "ZrCore_Object_SuperArrayTrySetIntFast(",
+            "ZrCore_Object_SuperArrayAddIntAssumeFast(",
+            "ZrCore_Object_SuperArrayAddIntDiscardResultAssumeFast(",
+            "ZrCore_Object_SuperArrayAddInt4ConstAssumeFast(",
+            "ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(",
+            "ZR_AOT_C_FAIL();",
     };
     static const char *const forbiddenFunctionBodyNeedles[] = {
             "ZrLibrary_AotRuntime_SuperArrayGetInt",
@@ -175,25 +189,24 @@ static void test_aot_c_source_lowers_super_array_int_ops_to_direct_core_calls(vo
             "ZrLibrary_AotRuntime_SuperArrayAddInt4Const",
             "ZrLibrary_AotRuntime_SuperArrayFillInt4Const",
     };
-    char *objectHeaderText = read_repo_text_file_owned("zr_vm_core/include/zr_vm_core/object.h");
+    char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
     char *emitterHeaderText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
-    char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *loweringText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_super_array.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
-    TEST_ASSERT_NOT_NULL(objectHeaderText);
+    TEST_ASSERT_NOT_NULL(runtimeHeaderText);
+    TEST_ASSERT_NOT_NULL(runtimeSourceText);
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
-    TEST_ASSERT_NOT_NULL(emitterText);
     TEST_ASSERT_NOT_NULL(loweringText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
 
-    assert_text_contains_all(objectHeaderText, objectHeaderNeedles, ARRAY_COUNT(objectHeaderNeedles));
+    assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
+    assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
     assert_text_contains_all(emitterHeaderText, emitterHeaderNeedles, ARRAY_COUNT(emitterHeaderNeedles));
-    assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
     assert_text_contains_all(loweringText, loweringNeedles, ARRAY_COUNT(loweringNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
     assert_text_contains_none(loweringText, forbiddenLoweringNeedles, ARRAY_COUNT(forbiddenLoweringNeedles));
@@ -201,9 +214,9 @@ static void test_aot_c_source_lowers_super_array_int_ops_to_direct_core_calls(vo
                               forbiddenFunctionBodyNeedles,
                               ARRAY_COUNT(forbiddenFunctionBodyNeedles));
 
-    free(objectHeaderText);
+    free(runtimeHeaderText);
+    free(runtimeSourceText);
     free(emitterHeaderText);
-    free(emitterText);
     free(loweringText);
     free(functionBodyText);
 }
@@ -214,6 +227,6 @@ void tearDown(void) {}
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_aot_c_source_lowers_super_array_int_ops_to_direct_core_calls);
+    RUN_TEST(test_aot_c_source_lowers_super_array_int_ops_to_boundary_helpers);
     return UNITY_END();
 }

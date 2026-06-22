@@ -138,7 +138,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
 }
 #endif
 
-static void test_aot_c_generated_shared_library_compiles_direct_super_array_core_lowering(void) {
+static void test_aot_c_generated_shared_library_compiles_super_array_boundary_helper_lowering(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C super-array shared-library smoke currently validates the Unix toolchain path");
 #else
@@ -177,22 +177,26 @@ static void test_aot_c_generated_shared_library_compiles_direct_super_array_core
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "#include \"zr_vm_core/object.h\""));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "#include \"zr_vm_library/aot_runtime.h\""));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_super_array_get_int"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_super_array_set_int"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_super_array_add_int"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_super_array_add_int4"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_super_array_fill_int4_const"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayTryGetIntFast(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayTrySetIntFast(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayAddIntAssumeFast(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayAddIntDiscardResultAssumeFast(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayAddInt4ConstAssumeFast(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SuperArray"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayGetInt(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArraySetInt(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayAddInt(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SuperArrayGetInt(state, &frame, 2, 0, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SuperArrayGetInt(state, &frame, 3, 0, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SuperArraySetInt(state, &frame, 1, 0, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SuperArrayAddInt(state, &frame, 2, 0, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SuperArrayAddInt(state, &frame, 65535, 0, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SuperArrayAddInt4(state, &frame, 4, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SuperArrayAddInt4Const(state, &frame, 4, 0)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SuperArrayFillInt4Const(state, &frame, 4, 1, 0)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayTryGetIntFast(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayTrySetIntFast(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayAddIntAssumeFast(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayAddIntDiscardResultAssumeFast(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayAddInt4ConstAssumeFast(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(state,"));
     free(generatedCText);
 
     snprintf(command,
@@ -222,6 +226,6 @@ static void test_aot_c_generated_shared_library_compiles_direct_super_array_core
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_aot_c_generated_shared_library_compiles_direct_super_array_core_lowering);
+    RUN_TEST(test_aot_c_generated_shared_library_compiles_super_array_boundary_helper_lowering);
     return UNITY_END();
 }

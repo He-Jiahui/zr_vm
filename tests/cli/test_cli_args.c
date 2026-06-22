@@ -488,6 +488,127 @@ static int test_debug_flags_require_debug_and_active_run_path(void) {
     return 0;
 }
 
+static int test_profile_run_flags_parse_and_reject_debug_combo(void) {
+    char *argv1[] = {"zr_vm_cli", "demo.zrp", "--profile=profile.txt"};
+    char *argv2[] = {"zr_vm_cli", "--compile", "demo.zrp", "--run", "--profile"};
+    char *argv3[] = {"zr_vm_cli", "demo.zrp", "--profile", "--debug"};
+    char error[256];
+    SZrCliCommand command;
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(3, argv1, &command, error, sizeof(error)), "parse run profile flag");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_RUN_PROJECT, command.mode, "mode should be run project");
+    CLI_ASSERT_TRUE(command.profileEnabled, "profile flag should be set");
+    CLI_ASSERT_STR_EQ("profile.txt", command.profileOutputPath, "profile output path should match");
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(5, argv2, &command, error, sizeof(error)),
+                    "parse compile run profile flag");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_COMPILE_PROJECT, command.mode, "mode should be compile project");
+    CLI_ASSERT_TRUE(command.runAfterCompile, "run flag should be set");
+    CLI_ASSERT_TRUE(command.profileEnabled, "compile run profile flag should be set");
+    CLI_ASSERT_TRUE(command.profileOutputPath == ZR_NULL, "bare --profile should use stdout");
+
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(4, argv3, &command, error, sizeof(error)),
+                    "profile plus debug should fail");
+    CLI_ASSERT_TRUE(strstr(error, "--profile") != ZR_NULL && strstr(error, "--debug") != ZR_NULL,
+                    "profile debug conflict should mention both flags");
+    return 0;
+}
+
+static int test_coverage_run_flags_parse_and_reject_hook_conflicts(void) {
+    char *argv1[] = {"zr_vm_cli", "demo.zrp", "--coverage=coverage.txt"};
+    char *argv2[] = {"zr_vm_cli", "--compile", "demo.zrp", "--run", "--coverage"};
+    char *argv3[] = {"zr_vm_cli", "demo.zrp", "--coverage", "--debug"};
+    char *argv4[] = {"zr_vm_cli", "demo.zrp", "--coverage", "--profile"};
+    char error[256];
+    SZrCliCommand command;
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(3, argv1, &command, error, sizeof(error)), "parse run coverage flag");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_RUN_PROJECT, command.mode, "mode should be run project");
+    CLI_ASSERT_TRUE(command.coverageEnabled, "coverage flag should be set");
+    CLI_ASSERT_STR_EQ("coverage.txt", command.coverageOutputPath, "coverage output path should match");
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(5, argv2, &command, error, sizeof(error)),
+                    "parse compile run coverage flag");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_COMPILE_PROJECT, command.mode, "mode should be compile project");
+    CLI_ASSERT_TRUE(command.runAfterCompile, "run flag should be set");
+    CLI_ASSERT_TRUE(command.coverageEnabled, "compile run coverage flag should be set");
+    CLI_ASSERT_TRUE(command.coverageOutputPath == ZR_NULL, "bare --coverage should use stdout");
+
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(4, argv3, &command, error, sizeof(error)),
+                    "coverage plus debug should fail");
+    CLI_ASSERT_TRUE(strstr(error, "--coverage") != ZR_NULL && strstr(error, "--debug") != ZR_NULL,
+                    "coverage debug conflict should mention both flags");
+
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(4, argv4, &command, error, sizeof(error)),
+                    "coverage plus profile should fail");
+    CLI_ASSERT_TRUE(strstr(error, "--coverage") != ZR_NULL && strstr(error, "--profile") != ZR_NULL,
+                    "coverage profile conflict should mention both flags");
+    return 0;
+}
+
+static int test_dump_bytecode_run_flags_parse_and_require_output_path(void) {
+    char *argv1[] = {"zr_vm_cli", "demo.zrp", "--dump-bytecode", "bytecode.txt"};
+    char *argv2[] = {"zr_vm_cli", "--compile", "demo.zrp", "--run", "--dump-bytecode", "bytecode.txt"};
+    char *argv3[] = {"zr_vm_cli", "demo.zrp", "--dump-bytecode"};
+    char *argv4[] = {"zr_vm_cli", "--compile", "demo.zrp", "--dump-bytecode", "bytecode.txt"};
+    char error[256];
+    SZrCliCommand command;
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(4, argv1, &command, error, sizeof(error)), "parse run dump bytecode flag");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_RUN_PROJECT, command.mode, "mode should be run project");
+    CLI_ASSERT_TRUE(command.dumpBytecodeEnabled, "dump bytecode flag should be set");
+    CLI_ASSERT_STR_EQ("bytecode.txt", command.dumpBytecodeOutputPath, "dump bytecode output path should match");
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(6, argv2, &command, error, sizeof(error)),
+                    "parse compile run dump bytecode flag");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_COMPILE_PROJECT, command.mode, "mode should be compile project");
+    CLI_ASSERT_TRUE(command.runAfterCompile, "run flag should be set");
+    CLI_ASSERT_TRUE(command.dumpBytecodeEnabled, "compile run dump bytecode flag should be set");
+
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(3, argv3, &command, error, sizeof(error)),
+                    "dump bytecode without output path should fail");
+    CLI_ASSERT_TRUE(strstr(error, "Missing output path") != ZR_NULL,
+                    "dump bytecode missing path error should mention missing output path");
+
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(5, argv4, &command, error, sizeof(error)),
+                    "compile-only dump bytecode should fail");
+    CLI_ASSERT_TRUE(strstr(error, "active run path") != ZR_NULL,
+                    "compile-only dump bytecode error should mention active run path");
+    return 0;
+}
+
+static int test_heap_summary_run_flags_parse_and_require_run_path(void) {
+    char *argv1[] = {"zr_vm_cli", "demo.zrp", "--heap-summary"};
+    char *argv2[] = {"zr_vm_cli", "--compile", "demo.zrp", "--run", "--heap-summary=heap.txt"};
+    char *argv3[] = {"zr_vm_cli", "--compile", "demo.zrp", "--heap-summary"};
+    char *argv4[] = {"zr_vm_cli", "--heap-summary="};
+    char error[256];
+    SZrCliCommand command;
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(3, argv1, &command, error, sizeof(error)), "parse run heap summary flag");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_RUN_PROJECT, command.mode, "mode should be run project");
+    CLI_ASSERT_TRUE(command.heapSummaryEnabled, "heap summary flag should be set");
+    CLI_ASSERT_TRUE(command.heapSummaryOutputPath == ZR_NULL, "bare --heap-summary should use stdout");
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(5, argv2, &command, error, sizeof(error)),
+                    "parse compile run heap summary flag");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_COMPILE_PROJECT, command.mode, "mode should be compile project");
+    CLI_ASSERT_TRUE(command.runAfterCompile, "run flag should be set");
+    CLI_ASSERT_TRUE(command.heapSummaryEnabled, "compile run heap summary flag should be set");
+    CLI_ASSERT_STR_EQ("heap.txt", command.heapSummaryOutputPath, "heap summary output path should match");
+
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(4, argv3, &command, error, sizeof(error)),
+                    "compile-only heap summary should fail");
+    CLI_ASSERT_TRUE(strstr(error, "--heap-summary") != ZR_NULL,
+                    "compile-only heap summary error should mention heap summary");
+
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(2, argv4, &command, error, sizeof(error)),
+                    "heap summary with empty output path should fail");
+    CLI_ASSERT_TRUE(strstr(error, "Missing output path") != ZR_NULL,
+                    "empty heap summary path error should mention missing output path");
+    return 0;
+}
+
 static int test_unknown_and_duplicate_modes_fail(void) {
     char *argv1[] = {"zr_vm_cli", "--wat"};
     char *argv2[] = {"zr_vm_cli", "--compile", "a.zrp", "--compile", "b.zrp"};
@@ -570,6 +691,18 @@ int main(void) {
         return 1;
     }
     if (test_debug_flags_require_debug_and_active_run_path() != 0) {
+        return 1;
+    }
+    if (test_profile_run_flags_parse_and_reject_debug_combo() != 0) {
+        return 1;
+    }
+    if (test_coverage_run_flags_parse_and_reject_hook_conflicts() != 0) {
+        return 1;
+    }
+    if (test_dump_bytecode_run_flags_parse_and_require_output_path() != 0) {
+        return 1;
+    }
+    if (test_heap_summary_run_flags_parse_and_require_run_path() != 0) {
         return 1;
     }
     if (test_unknown_and_duplicate_modes_fail() != 0) {

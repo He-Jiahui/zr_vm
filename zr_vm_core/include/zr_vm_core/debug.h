@@ -136,6 +136,16 @@ ZR_CORE_API TZrUInt32 ZrCore_Debug_GetHookMask(struct SZrState *state);
 
 ZR_CORE_API TZrUInt32 ZrCore_Debug_GetHookCount(struct SZrState *state);
 
+ZR_CORE_API TZrSize ZrCore_Debug_GetActiveLines(const struct SZrFunction *function,
+                                                TZrUInt32 *outLines,
+                                                TZrSize lineCapacity);
+
+ZR_CORE_API void ZrCore_Debug_DisassembleFunction(struct SZrState *state,
+                                                  const struct SZrFunction *function,
+                                                  FILE *output);
+
+ZR_CORE_API void ZrCore_Debug_HeapSummary(struct SZrState *state, FILE *output);
+
 ZR_CORE_API TZrNativeString ZrCore_Debug_GetLocal(struct SZrState *state,
                                                   const SZrDebugActivation *activation,
                                                   TZrInt32 localIndex,

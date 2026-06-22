@@ -1810,6 +1810,13 @@ TZrUInt32 compile_member_key_into_slot(SZrCompilerState *cs, SZrMemberExpression
         return ZR_PARSER_SLOT_NONE;
     }
 
+    if (targetSlot != ZR_PARSER_SLOT_NONE && cs->stackSlotCount <= (TZrSize)targetSlot) {
+        cs->stackSlotCount = (TZrSize)targetSlot + 1u;
+        if (cs->maxStackSlotCount < cs->stackSlotCount) {
+            cs->maxStackSlotCount = cs->stackSlotCount;
+        }
+    }
+
     if (!memberExpr->computed) {
         SZrString *fieldName = resolve_member_expression_symbol(cs, memberExpr);
         if (fieldName == ZR_NULL || emit_string_constant(cs, fieldName) == ZR_PARSER_SLOT_NONE) {

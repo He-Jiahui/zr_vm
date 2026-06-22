@@ -161,6 +161,25 @@ static void assert_capture_returns_expected_string(const SZrCliRunCapture *captu
     TEST_ASSERT_EQUAL_STRING(expectedExecutedVia, capture->executedVia);
 }
 
+static TZrBool file_contains_text(const TZrChar *path, const TZrChar *needle) {
+    FILE *file;
+    TZrChar buffer[4096];
+    size_t readCount;
+
+    TEST_ASSERT_NOT_NULL(path);
+    TEST_ASSERT_NOT_NULL(needle);
+
+    file = fopen(path, "rb");
+    if (file == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    readCount = fread(buffer, 1, sizeof(buffer) - 1u, file);
+    fclose(file);
+    buffer[readCount] = '\0';
+    return strstr(buffer, needle) != ZR_NULL ? ZR_TRUE : ZR_FALSE;
+}
+
 static void test_cli_import_basic_callable_export_runs_after_recompile(void) {
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
@@ -187,10 +206,166 @@ static void test_cli_import_basic_callable_export_runs_after_recompile(void) {
     ZrCli_Runtime_RunCapture_Free(&capture);
 }
 
+static void test_cli_dump_bytecode_writes_disassembly_report(void) {
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar bytecodePath[ZR_TESTS_PATH_MAX];
+    SZrCliCommand compileCommand;
+    SZrCliCommand runCommand;
+    SZrCliCompileSummary summary;
+    SZrCliRunCapture capture;
+
+    memset(&summary, 0, sizeof(summary));
+    memset(&capture, 0, sizeof(capture));
+
+    prepare_import_basic_fixture(rootPath, sizeof(rootPath), projectPath, sizeof(projectPath));
+    TEST_ASSERT_TRUE(strlen(rootPath) + strlen("/bytecode.txt") < sizeof(bytecodePath));
+    strcpy(bytecodePath, rootPath);
+    strcat(bytecodePath, "/bytecode.txt");
+
+    init_compile_command(&compileCommand, projectPath);
+    TEST_ASSERT_TRUE(ZrCli_Compiler_CompileProjectWithSummary(&compileCommand, &summary));
+
+    init_binary_run_command(&runCommand, projectPath);
+    runCommand.dumpBytecodeEnabled = ZR_TRUE;
+    runCommand.dumpBytecodeOutputPath = bytecodePath;
+    TEST_ASSERT_TRUE_MESSAGE(ZrCli_Runtime_RunProjectCapture(&runCommand, &capture),
+                             "dump bytecode import_basic binary run should succeed");
+    assert_capture_returns_expected_string(&capture, "hello from import", "binary");
+    ZrCli_Runtime_RunCapture_Free(&capture);
+
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(bytecodePath, "ZR_DISASSEMBLY function"),
+                             "bytecode report should contain the disassembly header");
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(bytecodePath, "offset opcode operands"),
+                             "bytecode report should contain the disassembly columns");
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(bytecodePath, "FUNCTION_RETURN"),
+                             "bytecode report should contain opcode names");
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(bytecodePath, "; line "),
+                             "bytecode report should contain source line comments");
+}
+
+static void test_cli_heap_summary_writes_report(void) {
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar heapPath[ZR_TESTS_PATH_MAX];
+    SZrCliCommand compileCommand;
+    SZrCliCommand runCommand;
+    SZrCliCompileSummary summary;
+    SZrCliRunCapture capture;
+
+    memset(&summary, 0, sizeof(summary));
+    memset(&capture, 0, sizeof(capture));
+
+    prepare_import_basic_fixture(rootPath, sizeof(rootPath), projectPath, sizeof(projectPath));
+    TEST_ASSERT_TRUE(strlen(rootPath) + strlen("/heap.txt") < sizeof(heapPath));
+    strcpy(heapPath, rootPath);
+    strcat(heapPath, "/heap.txt");
+
+    init_compile_command(&compileCommand, projectPath);
+    TEST_ASSERT_TRUE(ZrCli_Compiler_CompileProjectWithSummary(&compileCommand, &summary));
+
+    init_binary_run_command(&runCommand, projectPath);
+    runCommand.heapSummaryEnabled = ZR_TRUE;
+    runCommand.heapSummaryOutputPath = heapPath;
+    TEST_ASSERT_TRUE_MESSAGE(ZrCli_Runtime_RunProjectCapture(&runCommand, &capture),
+                             "heap summary import_basic binary run should succeed");
+    assert_capture_returns_expected_string(&capture, "hello from import", "binary");
+    ZrCli_Runtime_RunCapture_Free(&capture);
+
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(heapPath, "ZR_HEAP_SUMMARY objects"),
+                             "heap summary report should contain the object header");
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(heapPath, "type string count"),
+                             "heap summary report should contain string counts");
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(heapPath, "gc collections"),
+                             "heap summary report should contain GC collection stats");
+}
+
+#if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
+static void test_cli_profile_writes_deterministic_report(void) {
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar profilePath[ZR_TESTS_PATH_MAX];
+    SZrCliCommand compileCommand;
+    SZrCliCommand runCommand;
+    SZrCliCompileSummary summary;
+    SZrCliRunCapture capture;
+
+    memset(&summary, 0, sizeof(summary));
+    memset(&capture, 0, sizeof(capture));
+
+    prepare_import_basic_fixture(rootPath, sizeof(rootPath), projectPath, sizeof(projectPath));
+    TEST_ASSERT_TRUE(strlen(rootPath) + strlen("/profile.txt") < sizeof(profilePath));
+    strcpy(profilePath, rootPath);
+    strcat(profilePath, "/profile.txt");
+
+    init_compile_command(&compileCommand, projectPath);
+    TEST_ASSERT_TRUE(ZrCli_Compiler_CompileProjectWithSummary(&compileCommand, &summary));
+
+    init_binary_run_command(&runCommand, projectPath);
+    runCommand.profileEnabled = ZR_TRUE;
+    runCommand.profileOutputPath = profilePath;
+    TEST_ASSERT_TRUE_MESSAGE(ZrCli_Runtime_RunProjectCapture(&runCommand, &capture),
+                             "profiled import_basic binary run should succeed");
+    assert_capture_returns_expected_string(&capture, "hello from import", "binary");
+    ZrCli_Runtime_RunCapture_Free(&capture);
+
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(profilePath, "ZR_PROFILE deterministic"),
+                             "profile report should contain the deterministic header");
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(profilePath, "calls"),
+                             "profile report should contain the calls column");
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(profilePath, "ZR_PROFILE samples"),
+                             "profile report should contain the sampling header");
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(profilePath, "samples line function source"),
+                             "profile report should contain the sampling columns");
+}
+
+static void test_cli_coverage_writes_line_report(void) {
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar coveragePath[ZR_TESTS_PATH_MAX];
+    SZrCliCommand compileCommand;
+    SZrCliCommand runCommand;
+    SZrCliCompileSummary summary;
+    SZrCliRunCapture capture;
+
+    memset(&summary, 0, sizeof(summary));
+    memset(&capture, 0, sizeof(capture));
+
+    prepare_import_basic_fixture(rootPath, sizeof(rootPath), projectPath, sizeof(projectPath));
+    TEST_ASSERT_TRUE(strlen(rootPath) + strlen("/coverage.txt") < sizeof(coveragePath));
+    strcpy(coveragePath, rootPath);
+    strcat(coveragePath, "/coverage.txt");
+
+    init_compile_command(&compileCommand, projectPath);
+    TEST_ASSERT_TRUE(ZrCli_Compiler_CompileProjectWithSummary(&compileCommand, &summary));
+
+    init_binary_run_command(&runCommand, projectPath);
+    runCommand.coverageEnabled = ZR_TRUE;
+    runCommand.coverageOutputPath = coveragePath;
+    TEST_ASSERT_TRUE_MESSAGE(ZrCli_Runtime_RunProjectCapture(&runCommand, &capture),
+                             "coverage import_basic binary run should succeed");
+    assert_capture_returns_expected_string(&capture, "hello from import", "binary");
+    ZrCli_Runtime_RunCapture_Free(&capture);
+
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(coveragePath, "ZR_COVERAGE lines"),
+                             "coverage report should contain the line header");
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(coveragePath, "source line executable executed function"),
+                             "coverage report should contain the line columns");
+    TEST_ASSERT_TRUE_MESSAGE(file_contains_text(coveragePath, " 1 "),
+                             "coverage report should contain executed line markers");
+}
+#endif
+
 int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_cli_import_basic_callable_export_runs_after_recompile);
+    RUN_TEST(test_cli_dump_bytecode_writes_disassembly_report);
+    RUN_TEST(test_cli_heap_summary_writes_report);
+#if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
+    RUN_TEST(test_cli_profile_writes_deterministic_report);
+    RUN_TEST(test_cli_coverage_writes_line_report);
+#endif
 
     return UNITY_END();
 }

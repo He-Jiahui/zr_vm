@@ -355,16 +355,13 @@ TZrBool ZrSystem_Fs_Entry_Exists(ZrLibCallContext *context, SZrTypeValue *result
 
 TZrBool ZrSystem_Fs_Entry_Refresh(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *self = ZrSystem_Fs_SelfObject(context);
-    const SZrTypeValue *fileInfoValue;
+    SZrObject *infoObject = ZR_NULL;
     if (self == ZR_NULL || result == ZR_NULL ||
-        !ZrSystem_Fs_RefreshEntryObject(context->state, self, ZR_NULL, ZR_NULL)) {
+        !ZrSystem_Fs_RefreshEntryObject(context->state, self, ZR_NULL, &infoObject) ||
+        infoObject == ZR_NULL) {
         return ZR_FALSE;
     }
-    fileInfoValue = ZrSystem_Fs_GetFieldValue(context->state, self, "fileInfo");
-    if (fileInfoValue == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    *result = *fileInfoValue;
+    ZrLib_Value_SetObject(context->state, result, infoObject, ZR_VALUE_TYPE_OBJECT);
     return ZR_TRUE;
 }
 

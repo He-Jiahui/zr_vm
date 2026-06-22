@@ -80,6 +80,27 @@ static SZrAstNode *boolean_literal(TZrBool value, TZrSize startOffset, TZrSize e
     return literal;
 }
 
+static SZrAstNode *integer_literal(TZrInt64 value, TZrSize startOffset, TZrSize endOffset) {
+    SZrAstNode *literal = test_node(ZR_AST_INTEGER_LITERAL, startOffset, endOffset);
+
+    literal->data.integerLiteral.value = value;
+    return literal;
+}
+
+static SZrAstNode *string_literal(const char *value,
+                                  TZrSize valueLength,
+                                  TZrSize startOffset,
+                                  TZrSize endOffset) {
+    SZrAstNode *literal = test_node(ZR_AST_STRING_LITERAL, startOffset, endOffset);
+
+    literal->data.stringLiteral.value =
+            ZrCore_String_Create(g_state, (TZrChar *)value, valueLength);
+    TEST_ASSERT_NOT_NULL(literal->data.stringLiteral.value);
+    literal->data.stringLiteral.literal = literal->data.stringLiteral.value;
+    literal->data.stringLiteral.hasError = ZR_FALSE;
+    return literal;
+}
+
 static SZrAstNode *identifier_node(const TZrChar *name, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *identifier = test_node(ZR_AST_IDENTIFIER_LITERAL, startOffset, endOffset);
 
@@ -250,10 +271,49 @@ static void test_cfg_switch_prunes_short_circuit_false_selector_case(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_cfg_switch_prunes_mismatched_constant_kind_case(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrParserCfg cfg;
+    SZrAstNode *selector = integer_literal(1, 8, 9);
+    SZrAstNode *caseValue = string_literal("x", 1, 28, 31);
+    SZrAstNode *caseStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 40, 46);
+    SZrAstNode *caseBody = block_with_statement(caseStmt, 36, 50);
+    SZrAstNode *caseNode = switch_case_node(caseValue, caseBody);
+    SZrAstNode *defaultStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 84, 90);
+    SZrAstNode *defaultBody = block_with_statement(defaultStmt, 82, 94);
+    SZrAstNode *defaultNode = switch_default_node(defaultBody);
+    SZrAstNode *switchNode = switch_statement_with_case_and_default(
+            selector,
+            caseNode,
+            defaultNode);
+    SZrAstNode *script = script_with_statement(switchNode);
+    const SZrSemanticReachabilityFact *caseFact;
+    const SZrSemanticReachabilityFact *defaultFact;
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrParser_Cfg_Init(g_state, &cfg);
+
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
+
+    caseFact = reachability_fact_at(context, caseNode);
+    defaultFact = reachability_fact_at(context, defaultNode);
+    TEST_ASSERT_NOT_NULL(caseFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_UNREACHABLE, caseFact->state);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH, caseFact->cause);
+    TEST_ASSERT_EQUAL_PTR(selector, caseFact->causeNode);
+    TEST_ASSERT_NULL(defaultFact);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_SemanticContext_Free(context);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cfg_switch_matches_unary_not_selector);
     RUN_TEST(test_cfg_switch_matches_unary_not_case_value);
     RUN_TEST(test_cfg_switch_prunes_short_circuit_false_selector_case);
+    RUN_TEST(test_cfg_switch_prunes_mismatched_constant_kind_case);
     return UNITY_END();
 }

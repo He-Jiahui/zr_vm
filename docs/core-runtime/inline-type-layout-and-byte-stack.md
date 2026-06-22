@@ -255,6 +255,8 @@ Generic call bytecode that is not proven to be a typed value call now remains vi
 
 This keeps call lowering in the same two-path shape used elsewhere in the AOT plan: typed calls use `CALL_TYPED`, while unproven dynamic calls stay explicit runtime/deopt boundaries. Direct C call ABI lowering and typed/dynamic bridge execution remain later work.
 
+Call-site quickening must preserve the same slot-shape contract. A `DYN_CALL` whose result slot is lower than its callee slot stays on the generic instruction instead of being rewritten to cached or no-argument superinstructions, because those fast paths assume the return write cannot clobber the staged callable/receiver window.
+
 ## Dynamic Iterator Deopt Boundary
 
 Generic iterator bytecode now has explicit SemIR runtime boundaries when it is not lowered to a typed loop. The fallback mapper records `ITER_INIT` as `DYN_ITER_INIT` and `ITER_MOVE_NEXT` as `DYN_ITER_MOVE_NEXT`. Both rows are `DYNAMIC_RUNTIME` effects, receive deopt entries, and preserve the result plus iterator/source operands.
@@ -266,6 +268,12 @@ This records the current dynamic iterator contract without pretending it is pure
 Generic index bytecode now has explicit SemIR runtime boundaries when it is not lowered to typed array element access. The fallback mapper records `GET_BY_INDEX` as `DYN_INDEX_GET` and `SET_BY_INDEX` as `DYN_INDEX_SET`. Both rows are `DYNAMIC_RUNTIME` effects, receive deopt entries, and preserve the destination/value slot, receiver slot, and index slot from the exec instruction.
 
 This keeps array and object indexing in the same two-path model as member access and calls: proven typed array work must later lower into explicit bounds checks plus address/value operations, while unproven indexing remains a dynamic runtime/deopt boundary. The current slice records the boundary only; pure C array element lowering and bounds-check SemIR are still later work.
+
+## Runtime Shutdown And GC Root Marking
+
+`ZrCore_GlobalState_Free` releases the garbage collector before releasing the string table. Shutdown GC can still need to mark string-table major roots, so freeing the string table first leaves shutdown collection with dangling root metadata. The string table is therefore kept alive until after `ZrCore_GarbageCollector_Free` returns.
+
+In Debug builds, the short-string major-root traversal uses the string hash-set capacity as the cycle guard instead of the current element count. The linked short-string root list can contain entries whose traversal bound is not safely represented by `elementCount` during shutdown and full-collection edge cases; capacity remains the conservative bounded walk limit for detecting accidental cycles without tripping on valid retained roots.
 
 ## Function Frame Layout Metadata
 
@@ -307,7 +315,13 @@ Inline frame initialization also handles managed fields. `ZrCore_Function_InitIn
 
 Return movement now distinguishes physical stack slots from logical frame value slots. `function_move_returns` and the single-result post-call fast path resolve the callee return source through the callee frame layout before doing the ordinary `SZrTypeValue` copy. Inline struct returns still go through `ZrCore_Function_TryCopyInlineFrameReturnValue`; scalar/object returns whose source lives in frame bytes now read from the logical `FRAME_VALUE_SLOT` rather than from a stale physical stack position.
 
+Generic `ZrCore_Function_PostCall` keeps the historical stack-top contract: after return movement, `state->stackTop` follows the destination/result count, and inline frame payload cleanup must not raise it to the caller frame storage top. The hot single-result/frame-layout return helpers are the places that preserve the previous frame storage top when the interpreter is still executing inside a caller frame whose inline byte storage remains live.
+
+Plain scalar result writes normalize value metadata only when the destination is a complete `SZrTypeValue` frame slot. Destinations that resolve to inline struct storage keep their layout-owned bytes as the canonical representation; call and index results targeting those slots materialize through the inline storage helpers and only mirror a safe value view when the runtime can prove the destination is not a partial inline payload.
+
 Interpreter native and generic call paths stage call windows outside the caller frame storage when frame layout metadata is active. `execution_prepare_frame_layout_call_window` snapshots the logical callable and arguments, materializes inline struct arguments where needed, reserves scratch storage at or beyond `ZrCore_Function_GetCallInfoFrameStorageTop`, and copies the snapshot there. Known native calls, known native member calls, generic calls, meta calls, dynamic calls, and the `SUPER_DYN_TAIL_CALL_NO_ARGS` native fallback use staged windows so temporary frames do not overlap inline local payload bytes. Native and meta-call results are written back through the logical return destination, preserving the caller frame layout.
+
+Frame-layout generic calls compute their effective return destination only after `execution_prepare_frame_layout_call_window` has copied or staged the call window and restored the possibly relocated caller frame base. The slow fetch path also refreshes the cached interpreter `base` after any debug hook or stack relocation, because traceback/debug hooks can reserve stack space and move the underlying stack allocation before control returns to dispatch.
 
 Ownership and typed branch/equality opcodes are part of the same boundary. When frame layout metadata is active, ownership casts/releases, object conversion, typed equality, typed comparisons, and fused signed branch tests read the logical `FRAME_VALUE_SLOT` rather than assuming the physical `BASE(slot)` storage unit is the canonical value. Weak reference expiry additionally verifies that a candidate slot is still weak and still points to the expiring weak ref before clearing it, which prevents a release path from nulling unrelated frame-layout values that happen to share an old weak-reference side table entry.
 

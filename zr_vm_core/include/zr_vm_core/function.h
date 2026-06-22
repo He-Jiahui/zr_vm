@@ -790,6 +790,8 @@ ZR_CORE_API TZrBool ZrCore_Function_TryCopyObjectReturnValueToInlineDestination(
         const struct SZrCallInfo *callInfo,
         TZrStackValuePointer returnDestination,
         const struct SZrTypeValue *returnValue);
+ZR_CORE_API TZrBool ZrCore_Function_TryCopyInlineReceiverParameterBack(struct SZrState *state,
+                                                                       const struct SZrCallInfo *callInfo);
 ZR_CORE_API void ZrCore_Function_TryCopyInlineConstructorReceiverBack(struct SZrState *state,
                                                                       const struct SZrCallInfo *callInfo);
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_GetCallInfoFrameStorageTop(struct SZrState *state,

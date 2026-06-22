@@ -1375,12 +1375,55 @@ SZrAstNode *parse_using_statement(SZrParserState *ps) {
 
 // 解析语句（入口函数）
 
+static TZrBool parser_brace_starts_object_literal_statement(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    TZrBool result = ZR_FALSE;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_LBRACE) {
+        return ZR_FALSE;
+    }
+
+    save_parser_cursor(ps, &cursor);
+    ZrParser_Lexer_Next(ps->lexer);
+
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER || ps->lexer->t.token == ZR_TK_STRING) {
+        ZrParser_Lexer_Next(ps->lexer);
+        result = ps->lexer->t.token == ZR_TK_COLON;
+    } else if (ps->lexer->t.token == ZR_TK_LBRACKET) {
+        TZrInt32 depth = 1;
+
+        ZrParser_Lexer_Next(ps->lexer);
+        while (depth > 0 && ps->lexer->t.token != ZR_TK_EOS) {
+            if (ps->lexer->t.token == ZR_TK_LBRACKET) {
+                depth++;
+            } else if (ps->lexer->t.token == ZR_TK_RBRACKET) {
+                depth--;
+                if (depth == 0) {
+                    ZrParser_Lexer_Next(ps->lexer);
+                    break;
+                }
+            }
+
+            if (depth > 0) {
+                ZrParser_Lexer_Next(ps->lexer);
+            }
+        }
+
+        result = depth == 0 && ps->lexer->t.token == ZR_TK_COLON;
+    }
+
+    restore_parser_cursor(ps, &cursor);
+    return result;
+}
+
 SZrAstNode *parse_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
     switch (token) {
         case ZR_TK_LBRACE:
-            return parse_block(ps);
+            return parser_brace_starts_object_literal_statement(ps)
+                       ? parse_expression_statement(ps)
+                       : parse_block(ps);
 
         case ZR_TK_RETURN:
             return parse_return_statement(ps);

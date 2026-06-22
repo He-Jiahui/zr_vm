@@ -24,6 +24,13 @@ typedef TZrUInt32 TZrOverloadSetId;
 typedef TZrUInt32 TZrLifetimeRegionId;
 #endif
 
+#define ZR_PARSER_NUMERIC_RANGE_SEGMENT_CAPACITY ((TZrSize)2)
+
+typedef struct SZrNumericRangeSegment {
+    TZrInt64 minValue;
+    TZrInt64 maxValue;
+} SZrNumericRangeSegment;
+
 // 推断的类型结构体
 typedef struct SZrInferredType {
     EZrValueType baseType;           // 基础类型（对应EZrValueType枚举）
@@ -36,6 +43,9 @@ typedef struct SZrInferredType {
     TZrInt64 minValue;                 // 最小值
     TZrInt64 maxValue;                 // 最大值
     TZrBool hasRangeConstraint;        // 是否有范围约束
+    TZrSize rangeSegmentCount;          // 分段范围数量；0 表示使用 min/max 单一区间
+    SZrNumericRangeSegment rangeSegments[ZR_PARSER_NUMERIC_RANGE_SEGMENT_CAPACITY];
+    SZrArray rangeExtraSegments;        // 第 3 段及后续分段，元素类型为 SZrNumericRangeSegment
 
     // 布尔精确值约束（用于调试快照、局部语义查询等已知运行时值）
     TZrBool knownBoolValue;
@@ -82,6 +92,43 @@ typedef struct SZrTypeEnvironment {
 } SZrTypeEnvironment;
 
 // 类型操作函数
+
+ZR_PARSER_API void ZrParser_NumericRangeSegments_Reset(TZrSize *segmentCount,
+                                                       SZrNumericRangeSegment *inlineSegments,
+                                                       SZrArray *extraSegments);
+ZR_PARSER_API void ZrParser_NumericRangeSegments_Free(SZrState *state,
+                                                      TZrSize *segmentCount,
+                                                      SZrNumericRangeSegment *inlineSegments,
+                                                      SZrArray *extraSegments);
+ZR_PARSER_API TZrBool ZrParser_NumericRangeSegments_Append(SZrState *state,
+                                                           TZrSize *segmentCount,
+                                                           SZrNumericRangeSegment *inlineSegments,
+                                                           SZrArray *extraSegments,
+                                                           const SZrNumericRangeSegment *segment);
+ZR_PARSER_API TZrBool ZrParser_NumericRangeSegments_Copy(SZrState *state,
+                                                         TZrSize *dstSegmentCount,
+                                                         SZrNumericRangeSegment *dstInlineSegments,
+                                                         SZrArray *dstExtraSegments,
+                                                         TZrSize srcSegmentCount,
+                                                         const SZrNumericRangeSegment *srcInlineSegments,
+                                                         const SZrArray *srcExtraSegments);
+ZR_PARSER_API const SZrNumericRangeSegment *ZrParser_NumericRangeSegments_At(
+        TZrSize segmentCount,
+        const SZrNumericRangeSegment *inlineSegments,
+        const SZrArray *extraSegments,
+        TZrSize index);
+
+ZR_PARSER_API void ZrParser_InferredType_ResetRangeSegments(SZrInferredType *type);
+ZR_PARSER_API TZrBool ZrParser_InferredType_AppendRangeSegment(SZrState *state,
+                                                               SZrInferredType *type,
+                                                               TZrInt64 minValue,
+                                                               TZrInt64 maxValue);
+ZR_PARSER_API TZrBool ZrParser_InferredType_CopyRangeSegments(SZrState *state,
+                                                              SZrInferredType *dest,
+                                                              const SZrInferredType *src);
+ZR_PARSER_API const SZrNumericRangeSegment *ZrParser_InferredType_RangeSegmentAt(
+        const SZrInferredType *type,
+        TZrSize index);
 
 // 内建所有权泛型类型（Unique<T>/Shared<T>/Weak<T>/Borrow<T>/Loan<T>）
 // 的统一识别入口。显式泛型表面会被归一化为内层类型 + 现有 qualifier。
