@@ -94,62 +94,6 @@ void backend_aot_write_c_direct_own_release(FILE *file, TZrUInt32 destinationSlo
             sourceSlot);
 }
 
-void backend_aot_write_c_unsupported_meta_value_access(FILE *file,
-                                                       const char *opcodeName,
-                                                       TZrUInt32 primarySlot,
-                                                       TZrUInt32 secondarySlot,
-                                                       TZrUInt32 memberOrCacheIndex) {
-    const char *safeOpcodeName;
-
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    safeOpcodeName = opcodeName != ZR_NULL ? opcodeName : "META_VALUE_ACCESS";
-    fprintf(file,
-            "    {\n"
-            "        /* zr_aot_value_unsupported_meta_value_access */\n"
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,\n"
-            "                                                                           &frame,\n"
-            "                                                                           %u,\n"
-            "                                                                           %u,\n"
-            "                                                                           %u,\n"
-            "                                                                           \"%s\"));\n"
-            "    }\n",
-            (unsigned)primarySlot,
-            (unsigned)secondarySlot,
-            (unsigned)memberOrCacheIndex,
-            safeOpcodeName);
-}
-
-void backend_aot_write_c_unsupported_dynamic_value_access(FILE *file,
-                                                          const char *opcodeName,
-                                                          TZrUInt32 primarySlot,
-                                                          TZrUInt32 secondarySlot,
-                                                          TZrUInt32 operandIndex) {
-    const char *safeOpcodeName;
-
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    safeOpcodeName = opcodeName != ZR_NULL ? opcodeName : "DYNAMIC_VALUE_ACCESS";
-    fprintf(file,
-            "    {\n"
-            "        /* zr_aot_value_unsupported_dynamic_value_access */\n"
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_UnsupportedDynamicValueAccess(state,\n"
-            "                                                                              &frame,\n"
-            "                                                                              %u,\n"
-            "                                                                              %u,\n"
-            "                                                                              %u,\n"
-            "                                                                              \"%s\"));\n"
-            "    }\n",
-            (unsigned)primarySlot,
-            (unsigned)secondarySlot,
-            (unsigned)operandIndex,
-            safeOpcodeName);
-}
-
 void backend_aot_write_c_direct_to_string(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {
         return;
@@ -549,6 +493,20 @@ void backend_aot_write_c_direct_get_sub_function(FILE *file,
             (unsigned)childFunctionIndex,
             (unsigned)callableFlatIndex,
             (unsigned)callableFlatIndex);
+}
+
+void backend_aot_write_c_create_closure(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 constantIndex) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    do {\n"
+            "        /* zr_aot_value_exec_create_closure */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CreateClosure(state, &frame, %u, %u));\n"
+            "    } while (0);\n",
+            (unsigned)destinationSlot,
+            (unsigned)constantIndex);
 }
 
 void backend_aot_write_c_unsupported_callable_constant_materialization(FILE *file,

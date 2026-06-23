@@ -35,9 +35,18 @@ static void format_aot_c_typed_direct_call_u64_path(char *buffer,
 }
 #endif
 
-static void run_aot_c_typed_direct_call_u64_smoke(const SZrAotTypedDirectCallU64SmokeCase *testCase) {
+static void run_aot_c_typed_direct_call_u64_smoke_with_options(
+        const SZrAotTypedDirectCallU64SmokeCase *testCase,
+        const char *returnBoundaryNeedle,
+        const char *forbiddenReturnBoundaryNeedle,
+        EZrValueType expectedValueType,
+        TZrBool allowRuntimeCallFallbacks) {
 #if !defined(ZR_PLATFORM_UNIX)
     (void)testCase;
+    (void)returnBoundaryNeedle;
+    (void)forbiddenReturnBoundaryNeedle;
+    (void)expectedValueType;
+    (void)allowRuntimeCallFallbacks;
     TEST_IGNORE_MESSAGE("AOT C typed direct-call u64 smoke currently validates the Unix shared-library path");
 #else
     SZrState *state;
@@ -158,11 +167,19 @@ static void run_aot_c_typed_direct_call_u64_smoke(const SZrAotTypedDirectCallU64
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->returnNeedle));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->directCallMarkerNeedle));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->directCallNeedle));
+    if (returnBoundaryNeedle != ZR_NULL) {
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText, returnBoundaryNeedle));
+    }
+    if (forbiddenReturnBoundaryNeedle != ZR_NULL) {
+        TEST_ASSERT_NULL(strstr(generatedCText, forbiddenReturnBoundaryNeedle));
+    }
     TEST_ASSERT_NULL(strstr(generatedCText, testCase->syncMarkerNeedle));
     TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
+    if (!allowRuntimeCallFallbacks) {
+        TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
+        TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
+    }
     free(generatedCText);
 
     snprintf(command,
@@ -195,8 +212,15 @@ static void run_aot_c_typed_direct_call_u64_smoke(const SZrAotTypedDirectCallU64
     ZrCore_Value_ResetAsNull(&result);
     TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result),
                              ZrLibrary_AotRuntime_GetLastError(state->global));
-    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
-    TEST_ASSERT_EQUAL_INT64(testCase->expectedResult, result.value.nativeObject.nativeInt64);
+    if (expectedValueType == ZR_VALUE_TYPE_UINT64) {
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_UNSIGNED_INT(result.type));
+        TEST_ASSERT_EQUAL_UINT64((TZrUInt64)testCase->expectedResult, result.value.nativeObject.nativeUInt64);
+    } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(result.type)) {
+        TEST_ASSERT_EQUAL_UINT64((TZrUInt64)testCase->expectedResult, result.value.nativeObject.nativeUInt64);
+    } else {
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(result.type));
+        TEST_ASSERT_EQUAL_INT64(testCase->expectedResult, result.value.nativeObject.nativeInt64);
+    }
     TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C,
                           ZrLibrary_AotRuntime_GetExecutedVia(state->global));
 
@@ -206,6 +230,14 @@ static void run_aot_c_typed_direct_call_u64_smoke(const SZrAotTypedDirectCallU64
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
+}
+
+static void run_aot_c_typed_direct_call_u64_smoke(const SZrAotTypedDirectCallU64SmokeCase *testCase) {
+    run_aot_c_typed_direct_call_u64_smoke_with_options(testCase,
+                                                       ZR_NULL,
+                                                       ZR_NULL,
+                                                       ZR_VALUE_TYPE_NULL,
+                                                       ZR_FALSE);
 }
 
 #endif

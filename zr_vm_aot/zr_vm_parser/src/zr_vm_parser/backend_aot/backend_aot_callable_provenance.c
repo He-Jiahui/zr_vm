@@ -2,6 +2,109 @@
 
 #include "backend_aot_internal.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/string.h"
+
+static const SZrFunction *backend_aot_find_owner_child_function_by_name(const SZrFunction *ownerFunction,
+                                                                        const SZrString *name) {
+    if (ownerFunction == ZR_NULL || name == ZR_NULL || ownerFunction->childFunctionList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 childIndex = 0; childIndex < ownerFunction->childFunctionLength; childIndex++) {
+        const SZrFunction *childFunction = &ownerFunction->childFunctionList[childIndex];
+        if (childFunction->functionName == name ||
+            (childFunction->functionName != ZR_NULL &&
+             ZrCore_String_Equal(childFunction->functionName, (SZrString *)name))) {
+            return childFunction;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static const SZrFunction *backend_aot_find_owner_child_function_by_stack_slot(const SZrFunction *ownerFunction,
+                                                                              TZrUInt32 stackSlot) {
+    if (ownerFunction == ZR_NULL || ownerFunction->childFunctionList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (ownerFunction->topLevelCallableBindings != ZR_NULL) {
+        for (TZrUInt32 bindingIndex = 0; bindingIndex < ownerFunction->topLevelCallableBindingLength; bindingIndex++) {
+            const SZrFunctionTopLevelCallableBinding *binding =
+                    &ownerFunction->topLevelCallableBindings[bindingIndex];
+            if (binding->stackSlot == stackSlot &&
+                binding->callableChildIndex != ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE &&
+                binding->callableChildIndex < ownerFunction->childFunctionLength) {
+                return &ownerFunction->childFunctionList[binding->callableChildIndex];
+            }
+        }
+    }
+
+    if (ownerFunction->exportedVariables != ZR_NULL) {
+        for (TZrUInt32 bindingIndex = 0; bindingIndex < ownerFunction->exportedVariableLength; bindingIndex++) {
+            const SZrFunctionExportedVariable *binding = &ownerFunction->exportedVariables[bindingIndex];
+            if (binding->stackSlot == stackSlot &&
+                binding->callableChildIndex != ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE &&
+                binding->callableChildIndex < ownerFunction->childFunctionLength) {
+                return &ownerFunction->childFunctionList[binding->callableChildIndex];
+            }
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrUInt32 backend_aot_resolve_callable_closure_function_index(const SZrAotFunctionTable *table,
+                                                                     SZrState *state,
+                                                                     const SZrFunction *function,
+                                                                     TZrUInt32 closureIndex,
+                                                                     TZrUInt32 recursionDepth) {
+    const SZrFunctionClosureVariable *closure;
+    const SZrFunction *ownerFunction;
+    const SZrFunction *childFunction;
+    TZrUInt32 functionIndex;
+
+    if (table == ZR_NULL || state == ZR_NULL || function == ZR_NULL ||
+        function->closureValueList == ZR_NULL || closureIndex >= function->closureValueLength ||
+        recursionDepth > function->instructionsLength + function->closureValueLength + 1u ||
+        function->ownerFunction == ZR_NULL) {
+        return ZR_AOT_INVALID_FUNCTION_INDEX;
+    }
+
+    closure = &function->closureValueList[closureIndex];
+    ownerFunction = function->ownerFunction;
+
+    childFunction = backend_aot_find_owner_child_function_by_name(ownerFunction, closure->name);
+    functionIndex = backend_aot_find_function_table_index(table, childFunction);
+    if (functionIndex != ZR_AOT_INVALID_FUNCTION_INDEX) {
+        return functionIndex;
+    }
+
+    if (closure->inStack) {
+        childFunction = backend_aot_find_owner_child_function_by_stack_slot(ownerFunction, closure->index);
+        functionIndex = backend_aot_find_function_table_index(table, childFunction);
+        if (functionIndex != ZR_AOT_INVALID_FUNCTION_INDEX) {
+            return functionIndex;
+        }
+
+        return backend_aot_resolve_callable_slot_function_index_before_instruction(table,
+                                                                                  state,
+                                                                                  ownerFunction,
+                                                                                  ownerFunction->instructionsLength,
+                                                                                  closure->index,
+                                                                                  recursionDepth + 1u);
+    }
+
+    if (ownerFunction->closureValueList != ZR_NULL && closure->index < ownerFunction->closureValueLength) {
+        return backend_aot_resolve_callable_closure_function_index(table,
+                                                                  state,
+                                                                  ownerFunction,
+                                                                  closure->index,
+                                                                  recursionDepth + 1u);
+    }
+
+    return ZR_AOT_INVALID_FUNCTION_INDEX;
+}
 
 TZrUInt32 *backend_aot_allocate_callable_slot_function_indices(SZrState *state, const SZrFunction *function) {
     TZrUInt32 *slotFunctionIndices;
@@ -109,6 +212,28 @@ TZrUInt32 backend_aot_resolve_callable_slot_function_index_before_instruction(co
                     return functionIndex;
                 }
                 return ZR_AOT_INVALID_FUNCTION_INDEX;
+            }
+            case ZR_INSTRUCTION_ENUM(GET_CLOSURE): {
+                TZrInt32 closureIndex = instruction->instruction.operand.operand2[0];
+                if (closureIndex < 0) {
+                    return ZR_AOT_INVALID_FUNCTION_INDEX;
+                }
+                return backend_aot_resolve_callable_closure_function_index(table,
+                                                                          state,
+                                                                          function,
+                                                                          (TZrUInt32)closureIndex,
+                                                                          recursionDepth + 1u);
+            }
+            case ZR_INSTRUCTION_ENUM(GETUPVAL): {
+                TZrInt32 closureIndex = instruction->instruction.operand.operand1[0];
+                if (closureIndex < 0) {
+                    return ZR_AOT_INVALID_FUNCTION_INDEX;
+                }
+                return backend_aot_resolve_callable_closure_function_index(table,
+                                                                          state,
+                                                                          function,
+                                                                          (TZrUInt32)closureIndex,
+                                                                          recursionDepth + 1u);
             }
             case ZR_INSTRUCTION_ENUM(GET_STACK):
             case ZR_INSTRUCTION_ENUM(SET_STACK): {

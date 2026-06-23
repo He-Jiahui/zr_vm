@@ -989,22 +989,26 @@ static void test_aot_c_generated_shared_library_compiles_dynamic_value_access_bo
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_unsupported_dynamic_value_access"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_UnsupportedDynamicValueAccess(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "GET_MEMBER"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "SET_BY_INDEX"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_dynamic_get_member_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_dynamic_get_member_slot_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_dynamic_get_by_index_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_dynamic_set_member_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_dynamic_set_member_slot_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_dynamic_set_by_index_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GetMember(state, &frame, 0, 1, 7)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GetMemberSlot(state, &frame, 0, 1, 2)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GetByIndex(state, &frame, 0, 1, 2)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SetMember(state, &frame, 1, 0, 7)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SetMemberSlot(state, &frame, 1, 0, 3)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SetByIndex(state, &frame, 1, 0, 2)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "const char *zr_aot_opcode_name"));
     TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_primary"));
     TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_secondary"));
     TEST_ASSERT_NULL(strstr(generatedCText, "const TZrUInt32 zr_aot_operand_index"));
     TEST_ASSERT_NULL(
             strstr(generatedCText, "ZrCore_Debug_RunError(state, \"unsupported AOT dynamic value access: %s\""));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GetMember(state, &frame"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GetMemberSlot(state, &frame"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GetByIndex(state, &frame"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SetMember(state, &frame"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SetMemberSlot(state, &frame"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SetByIndex(state, &frame"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_value_unsupported_dynamic_value_access"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_UnsupportedDynamicValueAccess(state,"));
     free(generatedCText);
 
     snprintf(command,

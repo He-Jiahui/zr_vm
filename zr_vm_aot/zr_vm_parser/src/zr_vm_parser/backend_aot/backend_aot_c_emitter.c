@@ -4,6 +4,7 @@
 #include "backend_aot_c_typed_f64_thunks.h"
 #include "backend_aot_c_typed_i64_thunks.h"
 #include "backend_aot_c_typed_u64_thunks.h"
+#include "backend_aot_c_scalar_locals.h"
 #include "backend_aot_c_type_layouts.h"
 #include "backend_aot_internal.h"
 
@@ -172,12 +173,161 @@ static const SZrFunctionTypedTypeRef *backend_aot_c_signature_parameter_type(
     return &function->parameterMetadata[parameterIndex].type;
 }
 
+typedef TZrBool (*FZrAotCSignatureReturnProof)(const SZrAotExecIrFunction *functionIr,
+                                               TZrUInt32 slot,
+                                               TZrUInt32 execInstructionIndex);
+
+static void backend_aot_c_signature_init_scalar_return_type(SZrFunctionTypedTypeRef *returnType,
+                                                            EZrValueType baseType,
+                                                            EZrStaticCType staticCType) {
+    if (returnType == ZR_NULL) {
+        return;
+    }
+
+    memset(returnType, 0, sizeof(*returnType));
+    returnType->baseType = baseType;
+    returnType->elementBaseType = ZR_VALUE_TYPE_OBJECT;
+    returnType->staticCType = staticCType;
+    returnType->staticCTypeId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+}
+
+static void backend_aot_c_signature_init_i64_return_type(SZrFunctionTypedTypeRef *returnType) {
+    backend_aot_c_signature_init_scalar_return_type(returnType, ZR_VALUE_TYPE_INT64, ZR_STATIC_C_TYPE_I64);
+}
+
+static void backend_aot_c_signature_init_bool_return_type(SZrFunctionTypedTypeRef *returnType) {
+    backend_aot_c_signature_init_scalar_return_type(returnType, ZR_VALUE_TYPE_BOOL, ZR_STATIC_C_TYPE_BOOL);
+}
+
+static void backend_aot_c_signature_init_u64_return_type(SZrFunctionTypedTypeRef *returnType) {
+    backend_aot_c_signature_init_scalar_return_type(returnType, ZR_VALUE_TYPE_UINT64, ZR_STATIC_C_TYPE_U64);
+}
+
+static void backend_aot_c_signature_init_f64_return_type(SZrFunctionTypedTypeRef *returnType) {
+    backend_aot_c_signature_init_scalar_return_type(returnType, ZR_VALUE_TYPE_DOUBLE, ZR_STATIC_C_TYPE_F64);
+}
+
+static TZrBool backend_aot_c_signature_try_infer_scalar_return(
+        const SZrAotExecIrFunction *functionIr,
+        SZrFunctionTypedTypeRef *returnType,
+        FZrAotCSignatureReturnProof returnProof,
+        void (*initReturnType)(SZrFunctionTypedTypeRef *returnType)) {
+    const SZrFunction *function;
+    TZrUInt32 instructionIndex;
+    TZrBool foundReturn = ZR_FALSE;
+
+    if (functionIr == ZR_NULL ||
+        functionIr->function == ZR_NULL ||
+        functionIr->function->instructionsList == ZR_NULL ||
+        returnType == ZR_NULL ||
+        returnProof == ZR_NULL ||
+        initReturnType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    for (instructionIndex = 0u; instructionIndex < function->instructionsLength; instructionIndex++) {
+        const TZrInstruction *instruction = &function->instructionsList[instructionIndex];
+
+        if (instruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
+            continue;
+        }
+
+        foundReturn = ZR_TRUE;
+        if (!returnProof(functionIr, instruction->instruction.operand.operand1[0], instructionIndex)) {
+            return ZR_FALSE;
+        }
+    }
+
+    if (!foundReturn) {
+        return ZR_FALSE;
+    }
+
+    initReturnType(returnType);
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_c_signature_try_infer_i64_return(
+        const SZrAotExecIrFunction *functionIr,
+        SZrFunctionTypedTypeRef *returnType) {
+    return backend_aot_c_signature_try_infer_scalar_return(
+            functionIr,
+            returnType,
+            backend_aot_c_scalar_locals_can_direct_return_i64_local,
+            backend_aot_c_signature_init_i64_return_type);
+}
+
+static TZrBool backend_aot_c_signature_try_infer_bool_return(
+        const SZrAotExecIrFunction *functionIr,
+        SZrFunctionTypedTypeRef *returnType) {
+    return backend_aot_c_signature_try_infer_scalar_return(
+            functionIr,
+            returnType,
+            backend_aot_c_scalar_locals_can_infer_return_bool_local,
+            backend_aot_c_signature_init_bool_return_type);
+}
+
+static TZrBool backend_aot_c_signature_try_infer_u64_return(
+        const SZrAotExecIrFunction *functionIr,
+        SZrFunctionTypedTypeRef *returnType) {
+    return backend_aot_c_signature_try_infer_scalar_return(
+            functionIr,
+            returnType,
+            backend_aot_c_scalar_locals_can_infer_return_u64_local,
+            backend_aot_c_signature_init_u64_return_type);
+}
+
+static TZrBool backend_aot_c_signature_try_infer_f64_return(
+        const SZrAotExecIrFunction *functionIr,
+        SZrFunctionTypedTypeRef *returnType) {
+    return backend_aot_c_signature_try_infer_scalar_return(
+            functionIr,
+            returnType,
+            backend_aot_c_scalar_locals_can_infer_return_f64_local,
+            backend_aot_c_signature_init_f64_return_type);
+}
+
+static TZrBool backend_aot_c_signature_try_infer_static_return(
+        const SZrAotExecIrFunction *functionIr,
+        SZrFunctionTypedTypeRef *returnType) {
+    if (backend_aot_c_signature_try_infer_i64_return(functionIr, returnType)) {
+        return ZR_TRUE;
+    }
+    if (backend_aot_c_signature_try_infer_bool_return(functionIr, returnType)) {
+        return ZR_TRUE;
+    }
+    if (backend_aot_c_signature_try_infer_u64_return(functionIr, returnType)) {
+        return ZR_TRUE;
+    }
+    if (backend_aot_c_signature_try_infer_f64_return(functionIr, returnType)) {
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
+static const SZrFunctionTypedTypeRef *backend_aot_c_signature_return_type(
+        const SZrFunction *function,
+        const SZrAotExecIrFunction *functionIr,
+        SZrFunctionTypedTypeRef *inferredReturnType) {
+    if (function != ZR_NULL && function->hasCallableReturnType) {
+        return &function->callableReturnType;
+    }
+
+    if (backend_aot_c_signature_try_infer_static_return(functionIr, inferredReturnType)) {
+        return inferredReturnType;
+    }
+
+    return ZR_NULL;
+}
+
 static void backend_aot_write_c_signature(FILE *file,
                                           TZrUInt32 functionIndex,
-                                          const SZrFunction *function) {
+                                          const SZrFunction *function,
+                                          const SZrAotExecIrFunction *functionIr) {
     TZrUInt32 parameterCount;
     TZrUInt32 parameterIndex;
     TZrBool hasReturnValue;
+    SZrFunctionTypedTypeRef inferredReturnType;
     const SZrFunctionTypedTypeRef *returnType;
 
     if (file == ZR_NULL) {
@@ -185,8 +335,9 @@ static void backend_aot_write_c_signature(FILE *file,
     }
 
     parameterCount = function != ZR_NULL ? (TZrUInt32)function->parameterCount : 0u;
-    hasReturnValue = (TZrBool)(function != ZR_NULL && function->hasCallableReturnType);
-    returnType = hasReturnValue ? &function->callableReturnType : ZR_NULL;
+    memset(&inferredReturnType, 0, sizeof(inferredReturnType));
+    returnType = backend_aot_c_signature_return_type(function, functionIr, &inferredReturnType);
+    hasReturnValue = (TZrBool)(returnType != ZR_NULL);
 
     fprintf(file, "static const SZrAotSignatureType zr_aot_signature_%u_types[] = {\n",
             (unsigned)functionIndex);
@@ -258,7 +409,7 @@ static void backend_aot_write_c_method_infos(FILE *file,
                 backend_aot_exec_ir_find_function(module, entry->flatIndex);
         TZrUInt32 registerFrameBytes = backend_aot_c_method_info_register_frame_bytes(functionIr);
 
-        backend_aot_write_c_signature(file, entry->flatIndex, entry->function);
+        backend_aot_write_c_signature(file, entry->flatIndex, entry->function, functionIr);
         fprintf(file, "static const SZrAotMethodInfo zr_aot_method_info_%u = {\n", (unsigned)entry->flatIndex);
         fprintf(file, "    .functionIndex = %uu,\n", (unsigned)entry->flatIndex);
         fprintf(file, "    .metadataFunction = ZR_NULL,\n");

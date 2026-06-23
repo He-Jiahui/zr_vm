@@ -43,6 +43,26 @@ static int aot_c_guardrail_runtime_call_allowed(const char *callText) {
             "ZrCore_Debug_RunError(",
             "ZrCore_Bridge_BoxTyped(",
             "ZrCore_Bridge_UnboxTyped(",
+            "ZrLibrary_AotRuntime_ReturnI64(",
+            "ZrLibrary_AotRuntime_ReturnBool(",
+            "ZrLibrary_AotRuntime_ReturnU64(",
+            "ZrLibrary_AotRuntime_ReturnF64(",
+            "ZrLibrary_AotRuntime_ReturnInlineStruct(",
+            "ZrLibrary_AotRuntime_SyncSignedIntLocal(",
+            "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(",
+            "ZrLibrary_AotRuntime_SyncFloatLocal(",
+            "ZrLibrary_AotRuntime_SyncBoolLocal(",
+            "ZrLibrary_AotRuntime_CallStackValue(",
+            "ZrLibrary_AotRuntime_CallStaticDirect(",
+            "ZrLibrary_AotRuntime_CallInlineStruct(",
+            "ZrLibrary_AotRuntime_CallDynamicDeoptBridge(",
+            "ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(",
+            "ZrLibrary_AotRuntime_GetMember(",
+            "ZrLibrary_AotRuntime_SetMember(",
+            "ZrLibrary_AotRuntime_GetMemberSlot(",
+            "ZrLibrary_AotRuntime_SetMemberSlot(",
+            "ZrLibrary_AotRuntime_GetByIndex(",
+            "ZrLibrary_AotRuntime_SetByIndex(",
     };
     size_t index;
 
@@ -97,6 +117,26 @@ static void test_aot_c_guardrail_classifies_allowed_runtime_boundary_calls(void)
     TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrCore_Gc_WriteBarrier(state, owner, newref);"));
     TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrCore_Ownership_Retain(state, value);"));
     TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrCore_Exception_Throw(state, state->currentExceptionStatus);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_ReturnI64(state, zr_aot_s0);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_ReturnBool(state, zr_aot_b0);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_ReturnU64(state, zr_aot_u0);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_ReturnF64(state, zr_aot_f0);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_ReturnInlineStruct(state, source, size);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, slot, value);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, slot, value);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, slot, value);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, slot, value);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_CallStackValue(state, &frame, callee, args);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_CallStaticDirect(state, &frame, functionIndex, args);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_CallInlineStruct(state, &frame, callee, args);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_CallDynamicDeoptBridge(state, &frame, deoptId, callee, args);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(state, &frame, deoptId, kind);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_GetMember(state, &frame, dst, receiver, member);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_SetMember(state, &frame, receiver, member, value);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_GetMemberSlot(state, &frame, dst, receiver, slot);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_SetMemberSlot(state, &frame, receiver, slot, value);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_GetByIndex(state, &frame, dst, receiver, index);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_SetByIndex(state, &frame, receiver, index, value);"));
 }
 
 static void test_aot_c_guardrail_rejects_vm_fallback_runtime_calls(void) {

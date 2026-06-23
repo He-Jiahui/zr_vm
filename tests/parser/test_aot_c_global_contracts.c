@@ -487,66 +487,114 @@ static void test_aot_c_source_lowers_to_string_to_runtime_boundary(void) {
 
 static void test_aot_c_source_makes_dynamic_member_index_access_explicit_boundary(void) {
     static const char *const headerNeedles[] = {
-            "backend_aot_write_c_unsupported_dynamic_value_access(FILE *file,",
-    };
-    static const char *const emitterNeedles[] = {
-            "#include \\\"zr_vm_core/debug.h\\\"\\n",
+            "backend_aot_write_c_direct_get_member(FILE *file,",
+            "backend_aot_write_c_direct_set_member(FILE *file,",
+            "backend_aot_write_c_direct_get_member_slot(FILE *file,",
+            "backend_aot_write_c_direct_set_member_slot(FILE *file,",
+            "backend_aot_write_c_direct_get_by_index(FILE *file,",
+            "backend_aot_write_c_direct_set_by_index(FILE *file,",
     };
     static const char *const runtimeHeaderNeedles[] = {
-            "ZrLibrary_AotRuntime_UnsupportedDynamicValueAccess(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_GetMember(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_SetMember(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_GetMemberSlot(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_SetMemberSlot(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_GetByIndex(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_SetByIndex(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(struct SZrState *state,",
     };
-    static const char *const valueLoweringNeedles[] = {
+    static const char *const runtimeReturnNeedles[] = {
+            "TZrBool ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(SZrState *state,",
+            "generated AOT %s has invalid deopt bridge",
+    };
+    static const char *const valueAccessBoundaryNeedles[] = {
             "backend_aot_write_c_unsupported_dynamic_value_access(",
             "zr_aot_value_unsupported_dynamic_value_access",
-            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_UnsupportedDynamicValueAccess(state,",
+            "ZrLibrary_AotRuntime_UnsupportedDynamicValueAccess(state,",
+            "backend_aot_write_c_direct_get_member(FILE *file,",
+            "backend_aot_write_c_direct_set_member(FILE *file,",
+            "backend_aot_write_c_direct_get_member_slot(FILE *file,",
+            "backend_aot_write_c_direct_set_member_slot(FILE *file,",
+            "backend_aot_write_c_direct_get_by_index(FILE *file,",
+            "backend_aot_write_c_direct_set_by_index(FILE *file,",
+            "zr_aot_value_dynamic_get_member_boundary",
+            "zr_aot_value_dynamic_set_member_boundary",
+            "zr_aot_value_dynamic_get_member_slot_boundary",
+            "zr_aot_value_dynamic_set_member_slot_boundary",
+            "zr_aot_value_dynamic_get_by_index_boundary",
+            "zr_aot_value_dynamic_set_by_index_boundary",
+            "TZrUInt32 deoptId",
+            "zr_aot_value_dynamic_deopt_bridge deopt=%u",
+            "ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(state, &frame, %u,",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, %u, %u, %u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetMember(state, &frame, %u, %u, %u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMemberSlot(state, &frame, %u, %u, %u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetMemberSlot(state, &frame, %u, %u, %u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetByIndex(state, &frame, %u, %u, %u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetByIndex(state, &frame, %u, %u, %u));",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(GET_MEMBER):",
-            "\"GET_MEMBER\"",
+            "backend_aot_write_c_direct_get_member(file, destinationSlot, operandA1, operandB1, deoptId);",
             "case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):",
-            "\"GET_MEMBER_SLOT\"",
+            "backend_aot_write_c_direct_get_member_slot(file, destinationSlot, operandA1, operandB1, deoptId);",
             "case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):",
-            "\"GET_BY_INDEX\"",
+            "backend_aot_write_c_direct_get_by_index(file, destinationSlot, operandA1, operandB1, deoptId);",
             "case ZR_INSTRUCTION_ENUM(SET_MEMBER):",
-            "\"SET_MEMBER\"",
+            "backend_aot_write_c_direct_set_member(file, destinationSlot, operandA1, operandB1, deoptId);",
             "case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT):",
-            "\"SET_MEMBER_SLOT\"",
+            "backend_aot_write_c_direct_set_member_slot(file, destinationSlot, operandA1, operandB1, deoptId);",
             "case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):",
-            "\"SET_BY_INDEX\"",
-            "backend_aot_write_c_unsupported_dynamic_value_access(file,",
+            "backend_aot_write_c_direct_set_by_index(file, destinationSlot, operandA1, operandB1, deoptId);",
     };
     static const char *const forbiddenValueLoweringNeedles[] = {
+            "backend_aot_write_c_unsupported_dynamic_value_access(",
+            "zr_aot_value_unsupported_dynamic_value_access",
+            "ZrLibrary_AotRuntime_UnsupportedDynamicValueAccess(state,",
+            "backend_aot_write_c_direct_get_member(FILE *file,",
+            "backend_aot_write_c_direct_set_member(FILE *file,",
+            "backend_aot_write_c_direct_get_member_slot(FILE *file,",
+            "backend_aot_write_c_direct_set_member_slot(FILE *file,",
+            "backend_aot_write_c_direct_get_by_index(FILE *file,",
+            "backend_aot_write_c_direct_set_by_index(FILE *file,",
+            "zr_aot_value_dynamic_get_member_boundary",
+            "zr_aot_value_dynamic_set_member_boundary",
+            "zr_aot_value_dynamic_get_member_slot_boundary",
+            "zr_aot_value_dynamic_set_member_slot_boundary",
+            "zr_aot_value_dynamic_get_by_index_boundary",
+            "zr_aot_value_dynamic_set_by_index_boundary",
             "const TZrUInt32 zr_aot_operand_index = %u;",
             "ZrCore_Debug_RunError(state, \\\"unsupported AOT dynamic value access: %%s\\\", zr_aot_opcode_name);",
     };
     static const char *const forbiddenFunctionBodyNeedles[] = {
-            "ZrLibrary_AotRuntime_GetMember(state, &frame",
-            "ZrLibrary_AotRuntime_GetMemberSlot(state, &frame",
-            "ZrLibrary_AotRuntime_GetByIndex(state, &frame",
-            "ZrLibrary_AotRuntime_SetMember(state, &frame",
-            "ZrLibrary_AotRuntime_SetMemberSlot(state, &frame",
-            "ZrLibrary_AotRuntime_SetByIndex(state, &frame",
+            "backend_aot_write_c_unsupported_dynamic_value_access(file,",
+            "ZrLibrary_AotRuntime_UnsupportedDynamicValueAccess(state,",
     };
     char *headerText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
-    char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
+    char *runtimeReturnText = read_repo_text_file_owned(
+            "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c");
+    char *valueAccessBoundaryText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_access_boundaries.c");
     char *valueLoweringText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
-    TEST_ASSERT_NOT_NULL(emitterText);
     TEST_ASSERT_NOT_NULL(runtimeHeaderText);
+    TEST_ASSERT_NOT_NULL(runtimeReturnText);
+    TEST_ASSERT_NOT_NULL(valueAccessBoundaryText);
     TEST_ASSERT_NOT_NULL(valueLoweringText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
-    assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
-    assert_text_contains_all(valueLoweringText, valueLoweringNeedles, ARRAY_COUNT(valueLoweringNeedles));
+    assert_text_contains_all(runtimeReturnText, runtimeReturnNeedles, ARRAY_COUNT(runtimeReturnNeedles));
+    assert_text_contains_all(valueAccessBoundaryText,
+                             valueAccessBoundaryNeedles,
+                             ARRAY_COUNT(valueAccessBoundaryNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
     assert_text_contains_none(valueLoweringText, forbiddenValueLoweringNeedles, ARRAY_COUNT(forbiddenValueLoweringNeedles));
     assert_text_contains_none(functionBodyText,
@@ -554,8 +602,9 @@ static void test_aot_c_source_makes_dynamic_member_index_access_explicit_boundar
                               ARRAY_COUNT(forbiddenFunctionBodyNeedles));
 
     free(headerText);
-    free(emitterText);
     free(runtimeHeaderText);
+    free(runtimeReturnText);
+    free(valueAccessBoundaryText);
     free(valueLoweringText);
     free(functionBodyText);
 }
@@ -570,7 +619,7 @@ static void test_aot_c_source_makes_meta_value_access_explicit_boundary(void) {
     static const char *const runtimeHeaderNeedles[] = {
             "ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(struct SZrState *state,",
     };
-    static const char *const valueLoweringNeedles[] = {
+    static const char *const valueAccessBoundaryNeedles[] = {
             "backend_aot_write_c_unsupported_meta_value_access(",
             "zr_aot_value_unsupported_meta_value_access",
             "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,",
@@ -591,6 +640,9 @@ static void test_aot_c_source_makes_meta_value_access_explicit_boundary(void) {
             "backend_aot_write_c_unsupported_meta_value_access(file,",
     };
     static const char *const forbiddenValueLoweringNeedles[] = {
+            "backend_aot_write_c_unsupported_meta_value_access(",
+            "zr_aot_value_unsupported_meta_value_access",
+            "ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,",
             "ZrLibrary_AotRuntime_MetaGet",
             "ZrLibrary_AotRuntime_MetaSet",
             "ZrLibrary_AotRuntime_MetaGetCached",
@@ -613,6 +665,8 @@ static void test_aot_c_source_makes_meta_value_access_explicit_boundary(void) {
     char *emitterText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
+    char *valueAccessBoundaryText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_access_boundaries.c");
     char *valueLoweringText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
@@ -621,13 +675,16 @@ static void test_aot_c_source_makes_meta_value_access_explicit_boundary(void) {
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(emitterText);
     TEST_ASSERT_NOT_NULL(runtimeHeaderText);
+    TEST_ASSERT_NOT_NULL(valueAccessBoundaryText);
     TEST_ASSERT_NOT_NULL(valueLoweringText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
     assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
-    assert_text_contains_all(valueLoweringText, valueLoweringNeedles, ARRAY_COUNT(valueLoweringNeedles));
+    assert_text_contains_all(valueAccessBoundaryText,
+                             valueAccessBoundaryNeedles,
+                             ARRAY_COUNT(valueAccessBoundaryNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
     assert_text_contains_none(valueLoweringText, forbiddenValueLoweringNeedles, ARRAY_COUNT(forbiddenValueLoweringNeedles));
     assert_text_contains_none(functionBodyText,
@@ -637,6 +694,7 @@ static void test_aot_c_source_makes_meta_value_access_explicit_boundary(void) {
     free(headerText);
     free(emitterText);
     free(runtimeHeaderText);
+    free(valueAccessBoundaryText);
     free(valueLoweringText);
     free(functionBodyText);
 }

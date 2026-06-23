@@ -978,6 +978,19 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallStackValue(struct SZrState *stat
                                                            TZrUInt32 argumentCount,
                                                            const TZrChar *errorLabel);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallDynamicDeoptBridge(struct SZrState *state,
+                                                                    ZrAotGeneratedFrame *frame,
+                                                                    TZrUInt32 destinationSlot,
+                                                                    TZrUInt32 functionSlot,
+                                                                    TZrUInt32 argumentCount,
+                                                                    TZrUInt32 deoptId,
+                                                                    const TZrChar *errorLabel);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(struct SZrState *state,
+                                                                       ZrAotGeneratedFrame *frame,
+                                                                       TZrUInt32 deoptId,
+                                                                       const TZrChar *errorLabel);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_UnsupportedMetaCall(struct SZrState *state,
                                                                 ZrAotGeneratedFrame *frame,
                                                                 TZrUInt32 destinationSlot,
@@ -1119,6 +1132,9 @@ ZR_LIBRARY_API TZrInt64 ZrLibrary_AotRuntime_Return(struct SZrState *state,
                                                     TZrUInt32 sourceSlot,
                                                     TZrBool publishExports);
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ReturnI64(struct SZrState *state, TZrInt64 value);
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ReturnBool(struct SZrState *state, TZrBool value);
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ReturnU64(struct SZrState *state, TZrUInt64 value);
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ReturnF64(struct SZrState *state, TZrFloat64 value);
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ReturnInlineStruct(struct SZrState *state,
                                                                ZrAotGeneratedFrame *frame,
                                                                TZrUInt32 sourceSlot,

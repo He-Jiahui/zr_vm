@@ -1,86 +1,21 @@
-//
-// Created by Auto on 2026/06/23.
-//
-
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_parser/compiler.h"
-
 #include "type_inference_branch_assignment_segments.h"
-
+#include "type_inference_loop_assignment_join_internal.h"
+#include "type_inference_loop_assignment_nested_if.h"
+#include "type_inference_loop_assignment_nested_loop.h"
+#include "type_inference_loop_assignment_self_dependency.h"
+#include "type_inference_loop_assignment_syntax.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_common/zr_parser_conf.h"
 
-#include <string.h>
-
-typedef struct SZrTypeInferenceLoopAssignmentStep {
-    SZrString *name;
-    SZrAstNode *assignment;
-    SZrAstNode *right;
-} SZrTypeInferenceLoopAssignmentStep;
-
-typedef struct SZrTypeInferenceLoopAssignmentPlan {
-    SZrArray steps;
-    TZrBool isInitialized;
-} SZrTypeInferenceLoopAssignmentPlan;
-
-typedef struct SZrTypeInferenceLoopAssignmentBindingType {
-    SZrString *name;
-    SZrInferredType type;
-    TZrBool hasType;
-} SZrTypeInferenceLoopAssignmentBindingType;
-
-typedef struct SZrTypeInferenceLoopAssignmentResult {
-    SZrArray bindings;
-    TZrBool isInitialized;
-} SZrTypeInferenceLoopAssignmentResult;
-
-static SZrAstNode *type_inference_loop_assignment_statement_expression(SZrAstNode *statement) {
-    if (statement == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (statement->type == ZR_AST_EXPRESSION_STATEMENT) {
-        return statement->data.expressionStatement.expr;
-    }
-    return statement;
-}
-
-static TZrBool type_inference_loop_assignment_parts(SZrAstNode *assignmentNode,
-                                                    SZrString **outName,
-                                                    SZrAstNode **outRight) {
-    SZrAssignmentExpression *assignment;
-
-    if (outName != ZR_NULL) {
-        *outName = ZR_NULL;
-    }
-    if (outRight != ZR_NULL) {
-        *outRight = ZR_NULL;
-    }
-
-    if (assignmentNode == ZR_NULL ||
-        assignmentNode->type != ZR_AST_ASSIGNMENT_EXPRESSION ||
-        outName == ZR_NULL ||
-        outRight == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    assignment = &assignmentNode->data.assignmentExpression;
-    if (assignment->op.op == ZR_NULL ||
-        strcmp(assignment->op.op, "=") != 0 ||
-        assignment->left == ZR_NULL ||
-        assignment->left->type != ZR_AST_IDENTIFIER_LITERAL ||
-        assignment->left->data.identifier.name == ZR_NULL ||
-        assignment->right == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    *outName = assignment->left->data.identifier.name;
-    *outRight = assignment->right;
-    return ZR_TRUE;
-}
+static TZrBool type_inference_loop_assignment_deferred_self_dependent_delta_is_supported(
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        const SZrTypeInferenceLoopAssignmentStep *step,
+        TZrSize stepIndex);
 
 static TZrBool type_inference_loop_assignment_plan_init(SZrState *state,
-                                                        SZrTypeInferenceLoopAssignmentPlan *plan) {
+        SZrTypeInferenceLoopAssignmentPlan *plan) {
     if (state == ZR_NULL || plan == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -89,22 +24,26 @@ static TZrBool type_inference_loop_assignment_plan_init(SZrState *state,
                       &plan->steps,
                       sizeof(SZrTypeInferenceLoopAssignmentStep),
                       ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(state,
+                      &plan->targetNames,
+                      sizeof(SZrString *),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
     plan->isInitialized = ZR_TRUE;
     return ZR_TRUE;
 }
 
 static void type_inference_loop_assignment_plan_free(SZrState *state,
-                                                     SZrTypeInferenceLoopAssignmentPlan *plan) {
+        SZrTypeInferenceLoopAssignmentPlan *plan) {
     if (state == ZR_NULL || plan == ZR_NULL || !plan->isInitialized) {
         return;
     }
 
     ZrCore_Array_Free(state, &plan->steps);
+    ZrCore_Array_Free(state, &plan->targetNames);
     plan->isInitialized = ZR_FALSE;
 }
 
-static TZrSize type_inference_loop_assignment_plan_count(
-        const SZrTypeInferenceLoopAssignmentPlan *plan) {
+static TZrSize type_inference_loop_assignment_plan_count(const SZrTypeInferenceLoopAssignmentPlan *plan) {
     if (plan == ZR_NULL || !plan->isInitialized) {
         return 0;
     }
@@ -112,12 +51,30 @@ static TZrSize type_inference_loop_assignment_plan_count(
 }
 
 static SZrTypeInferenceLoopAssignmentStep *type_inference_loop_assignment_plan_step_at(
-        const SZrTypeInferenceLoopAssignmentPlan *plan,
-        TZrSize index) {
+        const SZrTypeInferenceLoopAssignmentPlan *plan, TZrSize index) {
     if (plan == ZR_NULL || !plan->isInitialized || index >= plan->steps.length) {
         return ZR_NULL;
     }
     return (SZrTypeInferenceLoopAssignmentStep *)ZrCore_Array_Get((SZrArray *)&plan->steps, index);
+}
+
+static TZrSize type_inference_loop_assignment_plan_target_count(const SZrTypeInferenceLoopAssignmentPlan *plan) {
+    if (plan == ZR_NULL || !plan->isInitialized) {
+        return 0;
+    }
+    return plan->targetNames.length;
+}
+
+static SZrString *type_inference_loop_assignment_plan_target_at(
+        const SZrTypeInferenceLoopAssignmentPlan *plan, TZrSize index) {
+    SZrString **target;
+
+    if (plan == ZR_NULL || !plan->isInitialized || index >= plan->targetNames.length) {
+        return ZR_NULL;
+    }
+
+    target = (SZrString **)ZrCore_Array_Get((SZrArray *)&plan->targetNames, index);
+    return target != ZR_NULL ? *target : ZR_NULL;
 }
 
 static TZrBool type_inference_loop_assignment_plan_contains(
@@ -129,14 +86,27 @@ static TZrBool type_inference_loop_assignment_plan_contains(
         return ZR_FALSE;
     }
 
-    for (index = 0; index < plan->steps.length; index++) {
-        SZrTypeInferenceLoopAssignmentStep *step =
-                type_inference_loop_assignment_plan_step_at(plan, index);
-        if (step != ZR_NULL && step->name != ZR_NULL && ZrCore_String_Equal(step->name, name)) {
+    for (index = 0; index < plan->targetNames.length; index++) {
+        SZrString *target = type_inference_loop_assignment_plan_target_at(plan, index);
+        if (target != ZR_NULL && ZrCore_String_Equal(target, name)) {
             return ZR_TRUE;
         }
     }
     return ZR_FALSE;
+}
+
+static TZrBool type_inference_loop_assignment_plan_add_target(
+        SZrState *state,
+        SZrTypeInferenceLoopAssignmentPlan *plan,
+        SZrString *name) {
+    if (state == ZR_NULL || plan == ZR_NULL || name == ZR_NULL || !plan->isInitialized) {
+        return ZR_FALSE;
+    }
+
+    if (!type_inference_loop_assignment_plan_contains(plan, name)) {
+        ZrCore_Array_Push(state, &plan->targetNames, &name);
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool type_inference_loop_assignment_plan_assigned_before(
@@ -152,70 +122,478 @@ static TZrBool type_inference_loop_assignment_plan_assigned_before(
     for (index = 0; index < beforeIndex && index < plan->steps.length; index++) {
         SZrTypeInferenceLoopAssignmentStep *step =
                 type_inference_loop_assignment_plan_step_at(plan, index);
-        if (step != ZR_NULL && step->name != ZR_NULL && ZrCore_String_Equal(step->name, name)) {
+        if (step == ZR_NULL) {
+            continue;
+        }
+        if (step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_ASSIGNMENT &&
+            step->name != ZR_NULL &&
+            ZrCore_String_Equal(step->name, name)) {
+            return ZR_TRUE;
+        }
+        if (step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_NESTED_IF &&
+            ZrParser_TypeInferenceLoopAssignment_NestedIfAssignsName(step->assignment, name)) {
+            return ZR_TRUE;
+        }
+        if (step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_NESTED_LOOP &&
+            ZrParser_TypeInferenceLoopAssignment_NestedLoopAssignsName(step->assignment, name)) {
             return ZR_TRUE;
         }
     }
     return ZR_FALSE;
 }
 
-static TZrBool type_inference_loop_assignment_plan_add(SZrState *state,
+static TZrBool type_inference_loop_assignment_step_is_zero_delta_preserving(
+        const SZrTypeInferenceLoopAssignmentStep *step) {
+    return step != ZR_NULL &&
+           step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_ASSIGNMENT &&
+           step->hasSelfDependentDelta &&
+           !step->resolveSelfDependentDeltaOnReplay &&
+           step->selfDependentDeltaMin == 0 &&
+           step->selfDependentDeltaMax == 0;
+}
+
+static TZrBool type_inference_loop_assignment_plan_preserves_target_before(
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        SZrString *name,
+        TZrSize beforeIndex) {
+    TZrSize index;
+    TZrBool foundTargetWrite = ZR_FALSE;
+
+    if (plan == ZR_NULL || name == ZR_NULL || !plan->isInitialized) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < beforeIndex && index < plan->steps.length; index++) {
+        SZrTypeInferenceLoopAssignmentStep *step =
+                type_inference_loop_assignment_plan_step_at(plan, index);
+        if (step == ZR_NULL) {
+            continue;
+        }
+        if (step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_ASSIGNMENT &&
+            step->name != ZR_NULL &&
+            ZrCore_String_Equal(step->name, name)) {
+            foundTargetWrite = ZR_TRUE;
+            if (!type_inference_loop_assignment_step_is_zero_delta_preserving(step)) {
+                return ZR_FALSE;
+            }
+        }
+        if (step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_NESTED_IF &&
+            ZrParser_TypeInferenceLoopAssignment_NestedIfAssignsName(step->assignment, name)) {
+            return ZR_FALSE;
+        }
+        if (step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_NESTED_LOOP &&
+            ZrParser_TypeInferenceLoopAssignment_NestedLoopAssignsName(step->assignment, name)) {
+            return ZR_FALSE;
+        }
+    }
+    return foundTargetWrite;
+}
+
+static TZrBool type_inference_loop_assignment_int64_add(TZrInt64 left,
+                                                        TZrInt64 right,
+                                                        TZrInt64 *outValue) {
+    if (outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if ((right > 0 && left > ZR_TYPE_RANGE_INT64_MAX - right) ||
+        (right < 0 && left < ZR_TYPE_RANGE_INT64_MIN - right)) {
+        return ZR_FALSE;
+    }
+    *outValue = left + right;
+    return ZR_TRUE;
+}
+
+static TZrBool type_inference_loop_assignment_int64_range_add(TZrInt64 leftMin,
+                                                              TZrInt64 leftMax,
+                                                              TZrInt64 rightMin,
+                                                              TZrInt64 rightMax,
+                                                              TZrInt64 *outMin,
+                                                              TZrInt64 *outMax) {
+    TZrInt64 minValue;
+    TZrInt64 maxValue;
+
+    if (outMin == ZR_NULL || outMax == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!type_inference_loop_assignment_int64_add(leftMin, rightMin, &minValue) ||
+        !type_inference_loop_assignment_int64_add(leftMax, rightMax, &maxValue)) {
+        return ZR_FALSE;
+    }
+    *outMin = minValue;
+    *outMax = maxValue;
+    return ZR_TRUE;
+}
+
+static TZrBool type_inference_loop_assignment_self_dependent_delta_is_supported(
+        TZrInt64 deltaMin, TZrInt64 deltaMax) {
+    return (deltaMin == 0 && deltaMax == 0) ||
+           (deltaMin >= 0 && deltaMax > 0) ||
+           (deltaMin < 0 && deltaMax <= 0) ||
+           (deltaMin < 0 && deltaMax > 0);
+}
+
+static TZrBool type_inference_loop_assignment_plan_extends_self_dependent_target_sequence(
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        SZrString *name,
+        TZrInt64 currentDeltaMin,
+        TZrInt64 currentDeltaMax) {
+    TZrSize index;
+    TZrInt64 previousDeltaMin = 0;
+    TZrInt64 previousDeltaMax = 0;
+    TZrBool sawTargetReadingInterleave = ZR_FALSE;
+
+    if (plan == ZR_NULL ||
+        name == ZR_NULL ||
+        !plan->isInitialized ||
+        plan->steps.length == 0) {
+        return ZR_FALSE;
+    }
+
+    for (index = plan->steps.length; index > 0; index--) {
+        SZrTypeInferenceLoopAssignmentStep *step =
+                type_inference_loop_assignment_plan_step_at(plan, index - 1);
+
+        if (step == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        if (step->kind != ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_ASSIGNMENT ||
+            step->name == ZR_NULL ||
+            step->right == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        if (ZrCore_String_Equal(step->name, name)) {
+            TZrInt64 nextDeltaMin;
+            TZrInt64 nextDeltaMax;
+            TZrInt64 totalDeltaMin;
+            TZrInt64 totalDeltaMax;
+
+            if (!step->hasSelfDependentDelta ||
+                step->resolveSelfDependentDeltaOnReplay ||
+                !type_inference_loop_assignment_int64_range_add(
+                        previousDeltaMin,
+                        previousDeltaMax,
+                        step->selfDependentDeltaMin,
+                        step->selfDependentDeltaMax,
+                        &nextDeltaMin,
+                        &nextDeltaMax)) {
+                return ZR_FALSE;
+            }
+            previousDeltaMin = nextDeltaMin;
+            previousDeltaMax = nextDeltaMax;
+            if (!sawTargetReadingInterleave) {
+                return ZR_TRUE;
+            }
+            if (!type_inference_loop_assignment_int64_range_add(
+                    previousDeltaMin,
+                    previousDeltaMax,
+                    currentDeltaMin,
+                    currentDeltaMax,
+                    &totalDeltaMin,
+                    &totalDeltaMax)) {
+                return ZR_FALSE;
+            }
+            return type_inference_loop_assignment_self_dependent_delta_is_supported(
+                    totalDeltaMin,
+                    totalDeltaMax);
+        }
+        if (step->hasSelfDependentDelta ||
+            step->resolveSelfDependentDeltaOnReplay) {
+            return ZR_FALSE;
+        }
+        if (ZrParser_TypeInferenceLoopAssignment_ExpressionUsesName(step->right, name)) {
+            sawTargetReadingInterleave = ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool type_inference_loop_assignment_plan_can_extend_replay_resolved_target_sequence(
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        SZrString *name) {
+    TZrSize index;
+    TZrBool sawSameTarget = ZR_FALSE;
+
+    if (plan == ZR_NULL ||
+        name == ZR_NULL ||
+        !plan->isInitialized ||
+        plan->steps.length == 0) {
+        return ZR_FALSE;
+    }
+
+    for (index = plan->steps.length; index > 0; index--) {
+        SZrTypeInferenceLoopAssignmentStep *step =
+                type_inference_loop_assignment_plan_step_at(plan, index - 1);
+
+        if (step == ZR_NULL ||
+            step->kind != ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_ASSIGNMENT ||
+            step->name == ZR_NULL ||
+            step->right == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        if (ZrCore_String_Equal(step->name, name)) {
+            if (!step->hasSelfDependentDelta &&
+                !step->resolveSelfDependentDeltaOnReplay) {
+                return ZR_FALSE;
+            }
+            sawSameTarget = ZR_TRUE;
+            continue;
+        }
+        if (step->hasSelfDependentDelta ||
+            step->resolveSelfDependentDeltaOnReplay) {
+            return ZR_FALSE;
+        }
+    }
+    return sawSameTarget;
+}
+
+static TZrBool type_inference_loop_assignment_plan_add(SZrCompilerState *cs,
                                                        SZrTypeInferenceLoopAssignmentPlan *plan,
                                                        SZrAstNode *assignmentNode) {
     SZrTypeInferenceLoopAssignmentStep step;
+    TZrBool assignedBefore;
+    TZrBool preservesTargetBefore;
+    TZrBool extendsSelfDependentTargetSequence;
+    TZrBool extendsReplayResolvedSelfDependentTargetSequence;
+    TZrBool hasStableSelfDependentDelta;
+    TZrBool hasDeferredSelfDependentDelta;
+    TZrInt64 selfDependentDeltaMin = 0;
+    TZrInt64 selfDependentDeltaMax = 0;
 
-    if (state == ZR_NULL || plan == ZR_NULL || !plan->isInitialized || assignmentNode == ZR_NULL) {
+    if (cs == ZR_NULL ||
+        cs->state == ZR_NULL ||
+        plan == ZR_NULL ||
+        !plan->isInitialized ||
+        assignmentNode == ZR_NULL) {
         return ZR_FALSE;
     }
-    if (!type_inference_loop_assignment_parts(assignmentNode, &step.name, &step.right)) {
+    memset(&step, 0, sizeof(step));
+    if (!ZrParser_TypeInferenceLoopAssignment_AssignmentParts(assignmentNode, &step.name, &step.right)) {
         return ZR_FALSE;
     }
 
+    step.kind = ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_ASSIGNMENT;
     step.assignment = assignmentNode;
+    assignedBefore = type_inference_loop_assignment_plan_assigned_before(
+            plan,
+            step.name,
+            plan->steps.length);
+    preservesTargetBefore = assignedBefore &&
+                            type_inference_loop_assignment_plan_preserves_target_before(
+                                    plan,
+                                    step.name,
+                                    plan->steps.length);
+    hasStableSelfDependentDelta =
+            ZrParser_TypeInferenceLoopAssignment_TrySelfDependentDelta(
+                    cs,
+                    assignmentNode,
+                    step.name,
+                    &selfDependentDeltaMin,
+                    &selfDependentDeltaMax);
+    extendsSelfDependentTargetSequence =
+            assignedBefore &&
+            hasStableSelfDependentDelta &&
+            type_inference_loop_assignment_plan_extends_self_dependent_target_sequence(
+                    plan,
+                    step.name,
+                    selfDependentDeltaMin,
+                    selfDependentDeltaMax);
+    hasDeferredSelfDependentDelta =
+            type_inference_loop_assignment_deferred_self_dependent_delta_is_supported(
+                    plan,
+                    &step,
+                    plan->steps.length);
+    extendsReplayResolvedSelfDependentTargetSequence =
+            assignedBefore &&
+            hasDeferredSelfDependentDelta &&
+            type_inference_loop_assignment_plan_can_extend_replay_resolved_target_sequence(
+                    plan,
+                    step.name);
+    step.resolveSelfDependentDeltaOnReplay =
+            (!assignedBefore || extendsReplayResolvedSelfDependentTargetSequence) &&
+            hasDeferredSelfDependentDelta;
+    step.hasSelfDependentDelta =
+            (!assignedBefore || preservesTargetBefore || extendsSelfDependentTargetSequence) &&
+            !step.resolveSelfDependentDeltaOnReplay &&
+            hasStableSelfDependentDelta;
+    step.selfDependentDeltaMin = selfDependentDeltaMin;
+    step.selfDependentDeltaMax = selfDependentDeltaMax;
+    if (!type_inference_loop_assignment_plan_add_target(cs->state, plan, step.name)) {
+        return ZR_FALSE;
+    }
+    ZrCore_Array_Push(cs->state, &plan->steps, &step);
+    return ZR_TRUE;
+}
+
+static TZrBool type_inference_loop_assignment_plan_add_nested_if(
+        SZrState *state,
+        SZrTypeInferenceLoopAssignmentPlan *plan,
+        SZrAstNode *ifNode) {
+    SZrTypeInferenceLoopAssignmentStep step;
+    TZrBool hasAssignment = ZR_FALSE;
+
+    if (state == ZR_NULL ||
+        plan == ZR_NULL ||
+        !plan->isInitialized ||
+        ifNode == ZR_NULL ||
+        ifNode->type != ZR_AST_IF_EXPRESSION ||
+        !ZrParser_TypeInferenceLoopAssignment_NestedIfCollectTargets(
+                state,
+                ifNode,
+                &plan->targetNames,
+                &hasAssignment)) {
+        return ZR_FALSE;
+    }
+    if (!hasAssignment) {
+        return ZR_TRUE;
+    }
+
+    memset(&step, 0, sizeof(step));
+    step.kind = ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_NESTED_IF;
+    step.assignment = ifNode;
     ZrCore_Array_Push(state, &plan->steps, &step);
     return ZR_TRUE;
 }
 
-static TZrBool type_inference_loop_assignment_collect_plan(
+static TZrBool type_inference_loop_assignment_plan_add_nested_loop(
         SZrState *state,
+        SZrTypeInferenceLoopAssignmentPlan *plan,
+        SZrAstNode *loopNode) {
+    SZrTypeInferenceLoopAssignmentStep step;
+    TZrBool hasAssignment = ZR_FALSE;
+
+    if (state == ZR_NULL ||
+        plan == ZR_NULL ||
+        !plan->isInitialized ||
+        loopNode == ZR_NULL ||
+        !ZrParser_TypeInferenceLoopAssignment_NestedLoopCollectTargets(
+                state,
+                loopNode,
+                &plan->targetNames,
+                &hasAssignment)) {
+        return ZR_FALSE;
+    }
+    if (!hasAssignment) {
+        return ZR_TRUE;
+    }
+
+    memset(&step, 0, sizeof(step));
+    step.kind = ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_NESTED_LOOP;
+    step.assignment = loopNode;
+    ZrCore_Array_Push(state, &plan->steps, &step);
+    return ZR_TRUE;
+}
+
+static TZrBool type_inference_loop_assignment_collect_statement_plan(
+        SZrCompilerState *cs,
+        SZrTypeInferenceLoopAssignmentPlan *plan,
+        SZrAstNode *statement) {
+    SZrAstNode *expression;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || plan == ZR_NULL || !plan->isInitialized) {
+        return ZR_FALSE;
+    }
+    if (statement == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    expression = ZrParser_TypeInferenceLoopAssignment_StatementExpression(statement);
+    if (expression == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (expression->type == ZR_AST_ASSIGNMENT_EXPRESSION) {
+        return type_inference_loop_assignment_plan_add(cs, plan, expression);
+    }
+    if (expression->type == ZR_AST_IF_EXPRESSION) {
+        return type_inference_loop_assignment_plan_add_nested_if(cs->state, plan, expression);
+    }
+    if (expression->type == ZR_AST_WHILE_LOOP ||
+        expression->type == ZR_AST_FOR_LOOP ||
+        expression->type == ZR_AST_FOREACH_LOOP) {
+        return type_inference_loop_assignment_plan_add_nested_loop(cs->state, plan, expression);
+    }
+    if (statement->type == ZR_AST_EXPRESSION_STATEMENT) {
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool type_inference_loop_assignment_collect_body_plan(
+        SZrCompilerState *cs,
         SZrAstNode *block,
         SZrTypeInferenceLoopAssignmentPlan *plan) {
     SZrAstNodeArray *body;
     TZrSize index;
 
-    if (state == ZR_NULL || block == ZR_NULL || plan == ZR_NULL || !plan->isInitialized) {
+    if (cs == ZR_NULL ||
+        cs->state == ZR_NULL ||
+        block == ZR_NULL ||
+        plan == ZR_NULL ||
+        !plan->isInitialized) {
         return ZR_FALSE;
     }
 
     if (block->type != ZR_AST_BLOCK) {
-        SZrAstNode *expression = type_inference_loop_assignment_statement_expression(block);
-        if (expression == ZR_NULL || expression->type != ZR_AST_ASSIGNMENT_EXPRESSION) {
-            return ZR_FALSE;
-        }
-        return type_inference_loop_assignment_plan_add(state, plan, expression);
+        return type_inference_loop_assignment_collect_statement_plan(cs, plan, block);
     }
 
     body = block->data.block.body;
     if (body == ZR_NULL || body->count == 0 || body->nodes == ZR_NULL) {
-        return ZR_FALSE;
+        return ZR_TRUE;
     }
 
     for (index = 0; index < body->count; index++) {
-        SZrAstNode *statement = body->nodes[index];
-        SZrAstNode *expression = type_inference_loop_assignment_statement_expression(statement);
+        if (ZrParser_TypeInferenceLoopAssignment_StatementIsPlainBreak(body->nodes[index])) {
+            return ZR_TRUE;
+        }
+        if (!type_inference_loop_assignment_collect_statement_plan(cs, plan, body->nodes[index])) {
+            return ZR_FALSE;
+        }
+        if (ZrParser_TypeInferenceLoopAssignment_StatementGuaranteesPlainBreak(body->nodes[index])) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_TRUE;
+}
 
-        if (statement == ZR_NULL || expression == ZR_NULL) {
-            continue;
-        }
-        if (expression->type != ZR_AST_ASSIGNMENT_EXPRESSION) {
-            if (statement->type == ZR_AST_EXPRESSION_STATEMENT) {
-                continue;
-            }
-            return ZR_FALSE;
-        }
-        if (!type_inference_loop_assignment_plan_add(state, plan, expression)) {
-            return ZR_FALSE;
-        }
+static TZrBool type_inference_loop_assignment_collect_plan(
+        SZrCompilerState *cs,
+        SZrAstNode *block,
+        SZrTypeInferenceLoopAssignmentPlan *plan) {
+    if (!type_inference_loop_assignment_collect_body_plan(cs, block, plan)) {
+        return ZR_FALSE;
+    }
+    return type_inference_loop_assignment_plan_count(plan) > 0;
+}
+
+static TZrBool type_inference_loop_assignment_collect_step_plan(
+        SZrCompilerState *cs,
+        SZrAstNode *stepNode,
+        SZrTypeInferenceLoopAssignmentPlan *plan) {
+    SZrAstNode *expression;
+
+    if (cs == ZR_NULL ||
+        cs->state == ZR_NULL ||
+        stepNode == ZR_NULL ||
+        plan == ZR_NULL ||
+        !plan->isInitialized) {
+        return ZR_FALSE;
+    }
+
+    expression = ZrParser_TypeInferenceLoopAssignment_StatementExpression(stepNode);
+    if (expression == ZR_NULL || expression->type != ZR_AST_ASSIGNMENT_EXPRESSION) {
+        return ZR_FALSE;
+    }
+    return type_inference_loop_assignment_plan_add(cs, plan, expression);
+}
+
+static TZrBool type_inference_loop_assignment_collect_plan_with_step(
+        SZrCompilerState *cs,
+        SZrAstNode *body,
+        SZrAstNode *stepNode,
+        SZrTypeInferenceLoopAssignmentPlan *plan) {
+    if (!type_inference_loop_assignment_collect_body_plan(cs, body, plan) ||
+        !type_inference_loop_assignment_collect_step_plan(cs, stepNode, plan)) {
+        return ZR_FALSE;
     }
     return type_inference_loop_assignment_plan_count(plan) > 0;
 }
@@ -233,21 +611,6 @@ static TZrBool type_inference_loop_assignment_numeric_range(const SZrInferredTyp
 
     *outMin = type->minValue;
     *outMax = type->maxValue;
-    return ZR_TRUE;
-}
-
-static TZrBool type_inference_loop_assignment_condition_is_known_bool(SZrAstNode *condition,
-                                                                      TZrBool *outValue) {
-    if (outValue != ZR_NULL) {
-        *outValue = ZR_FALSE;
-    }
-    if (condition == ZR_NULL ||
-        condition->type != ZR_AST_BOOLEAN_LITERAL ||
-        outValue == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    *outValue = condition->data.booleanLiteral.value;
     return ZR_TRUE;
 }
 
@@ -327,6 +690,38 @@ static TZrBool type_inference_loop_assignment_rhs_is_supported(
     }
 }
 
+static TZrBool type_inference_loop_assignment_deferred_self_dependent_delta_is_supported(
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        const SZrTypeInferenceLoopAssignmentStep *step,
+        TZrSize stepIndex) {
+    SZrAstNode *deltaExpression;
+
+    if (plan == ZR_NULL || step == ZR_NULL || step->right == ZR_NULL || step->name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    deltaExpression = ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaExpression(
+            step->right,
+            step->name);
+    return deltaExpression != ZR_NULL &&
+           ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaUsesAnyTarget(
+                   step->right,
+                   step->name,
+                   &plan->targetNames) &&
+           type_inference_loop_assignment_rhs_is_supported(deltaExpression, plan, stepIndex);
+}
+
+static TZrBool type_inference_loop_assignment_self_dependent_delta_uses_plan_target(
+        SZrAstNode *right, SZrString *targetName, const SZrTypeInferenceLoopAssignmentPlan *plan) {
+    if (plan == ZR_NULL || !plan->isInitialized) {
+        return ZR_FALSE;
+    }
+    return ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaUsesAnyTarget(
+            right,
+            targetName,
+            &plan->targetNames);
+}
+
 static TZrBool type_inference_loop_assignment_plan_validate(
         SZrCompilerState *cs,
         const SZrTypeInferenceLoopAssignmentPlan *plan) {
@@ -341,7 +736,16 @@ static TZrBool type_inference_loop_assignment_plan_validate(
                 type_inference_loop_assignment_plan_step_at(plan, index);
         const SZrTypeBinding *targetBinding;
 
-        if (step == ZR_NULL || step->name == ZR_NULL || step->right == ZR_NULL) {
+        if (step == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        if (step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_NESTED_IF ||
+            step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_NESTED_LOOP) {
+            continue;
+        }
+        if (step->kind != ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_ASSIGNMENT ||
+            step->name == ZR_NULL ||
+            step->right == ZR_NULL) {
             return ZR_FALSE;
         }
 
@@ -349,244 +753,40 @@ static TZrBool type_inference_loop_assignment_plan_validate(
         if (targetBinding == ZR_NULL ||
             !ZR_VALUE_IS_TYPE_NUMBER(targetBinding->type.baseType) ||
             !targetBinding->type.hasRangeConstraint ||
-            !type_inference_loop_assignment_rhs_is_supported(step->right, plan, index)) {
+            ((step->hasSelfDependentDelta || step->resolveSelfDependentDeltaOnReplay) &&
+             (targetBinding->type.baseType != ZR_VALUE_TYPE_INT64 ||
+              (step->hasSelfDependentDelta &&
+               type_inference_loop_assignment_self_dependent_delta_uses_plan_target(
+                      step->right,
+                      step->name,
+                      plan)) ||
+              (step->resolveSelfDependentDeltaOnReplay &&
+               !type_inference_loop_assignment_deferred_self_dependent_delta_is_supported(
+                       plan,
+                       step,
+                       index)))) ||
+            (!step->hasSelfDependentDelta &&
+             !step->resolveSelfDependentDeltaOnReplay &&
+             !type_inference_loop_assignment_rhs_is_supported(step->right, plan, index))) {
             return ZR_FALSE;
         }
     }
-    return type_inference_loop_assignment_plan_count(plan) > 0;
-}
+    for (index = 0; index < plan->targetNames.length; index++) {
+        SZrString *name = type_inference_loop_assignment_plan_target_at(plan, index);
+        const SZrTypeBinding *targetBinding;
 
-static TZrBool type_inference_loop_assignment_result_init(
-        SZrState *state,
-        SZrTypeInferenceLoopAssignmentResult *result,
-        TZrSize capacity) {
-    if (state == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrCore_Array_Init(state,
-                      &result->bindings,
-                      sizeof(SZrTypeInferenceLoopAssignmentBindingType),
-                      capacity > 0 ? capacity : ZR_PARSER_INITIAL_CAPACITY_TINY);
-    result->isInitialized = ZR_TRUE;
-    return ZR_TRUE;
-}
-
-static void type_inference_loop_assignment_result_free(
-        SZrState *state,
-        SZrTypeInferenceLoopAssignmentResult *result) {
-    TZrSize index;
-
-    if (state == ZR_NULL || result == ZR_NULL || !result->isInitialized) {
-        return;
-    }
-
-    for (index = 0; index < result->bindings.length; index++) {
-        SZrTypeInferenceLoopAssignmentBindingType *binding =
-                (SZrTypeInferenceLoopAssignmentBindingType *)ZrCore_Array_Get(&result->bindings, index);
-        if (binding != ZR_NULL && binding->hasType) {
-            ZrParser_InferredType_Free(state, &binding->type);
-            binding->hasType = ZR_FALSE;
+        if (name == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        targetBinding = ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv, name);
+        if (targetBinding == ZR_NULL ||
+            !ZR_VALUE_IS_TYPE_NUMBER(targetBinding->type.baseType) ||
+            !targetBinding->type.hasRangeConstraint) {
+            return ZR_FALSE;
         }
     }
-    ZrCore_Array_Free(state, &result->bindings);
-    result->isInitialized = ZR_FALSE;
-}
-
-static SZrTypeInferenceLoopAssignmentBindingType *type_inference_loop_assignment_result_find(
-        SZrTypeInferenceLoopAssignmentResult *result,
-        SZrString *name) {
-    TZrSize index;
-
-    if (result == ZR_NULL || name == ZR_NULL || !result->isInitialized) {
-        return ZR_NULL;
-    }
-
-    for (index = 0; index < result->bindings.length; index++) {
-        SZrTypeInferenceLoopAssignmentBindingType *binding =
-                (SZrTypeInferenceLoopAssignmentBindingType *)ZrCore_Array_Get(&result->bindings, index);
-        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, name)) {
-            return binding;
-        }
-    }
-    return ZR_NULL;
-}
-
-static const SZrInferredType *type_inference_loop_assignment_result_find_type(
-        SZrTypeInferenceLoopAssignmentResult *result,
-        SZrString *name) {
-    SZrTypeInferenceLoopAssignmentBindingType *binding =
-            type_inference_loop_assignment_result_find(result, name);
-
-    return binding != ZR_NULL && binding->hasType ? &binding->type : ZR_NULL;
-}
-
-static TZrBool type_inference_loop_assignment_result_store_type(
-        SZrState *state,
-        SZrTypeInferenceLoopAssignmentResult *result,
-        SZrString *name,
-        const SZrInferredType *type) {
-    SZrTypeInferenceLoopAssignmentBindingType *existing;
-    SZrTypeInferenceLoopAssignmentBindingType binding;
-
-    if (state == ZR_NULL || result == ZR_NULL || name == ZR_NULL || type == ZR_NULL || !result->isInitialized) {
-        return ZR_FALSE;
-    }
-
-    existing = type_inference_loop_assignment_result_find(result, name);
-    if (existing != ZR_NULL) {
-        if (existing->hasType) {
-            ZrParser_InferredType_Free(state, &existing->type);
-        }
-        ZrParser_InferredType_Init(state, &existing->type, ZR_VALUE_TYPE_OBJECT);
-        ZrParser_InferredType_Copy(state, &existing->type, type);
-        existing->hasType = ZR_TRUE;
-        return ZR_TRUE;
-    }
-
-    binding.name = name;
-    ZrParser_InferredType_Init(state, &binding.type, ZR_VALUE_TYPE_OBJECT);
-    ZrParser_InferredType_Copy(state, &binding.type, type);
-    binding.hasType = ZR_TRUE;
-    ZrCore_Array_Push(state, &result->bindings, &binding);
-    return ZR_TRUE;
-}
-
-static TZrBool type_inference_loop_assignment_push_replay_scope(
-        SZrCompilerState *cs,
-        SZrTypeInferenceBranchScope *scope) {
-    SZrTypeEnvironment *newEnv;
-
-    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL || scope == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    memset(scope, 0, sizeof(*scope));
-    newEnv = ZrParser_TypeEnvironment_New(cs->state);
-    if (newEnv == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    newEnv->parent = cs->typeEnv;
-    newEnv->semanticContext = ZR_NULL;
-    scope->savedEnv = cs->typeEnv;
-    scope->isActive = ZR_TRUE;
-    cs->typeEnv = newEnv;
-    return ZR_TRUE;
-}
-
-static void type_inference_loop_assignment_pop_replay_scope(
-        SZrCompilerState *cs,
-        SZrTypeInferenceBranchScope *scope) {
-    SZrTypeEnvironment *activeEnv;
-
-    if (cs == ZR_NULL ||
-        cs->state == ZR_NULL ||
-        scope == ZR_NULL ||
-        !scope->isActive ||
-        scope->savedEnv == ZR_NULL) {
-        return;
-    }
-
-    activeEnv = cs->typeEnv;
-    cs->typeEnv = scope->savedEnv;
-    if (activeEnv != ZR_NULL) {
-        ZrParser_TypeEnvironment_Free(cs->state, activeEnv);
-    }
-    memset(scope, 0, sizeof(*scope));
-}
-
-static TZrBool type_inference_loop_assignment_store_replayed_binding(
-        SZrCompilerState *cs,
-        SZrString *name,
-        const SZrInferredType *type) {
-    const SZrTypeBinding *sourceBinding;
-    SZrTypeBinding binding;
-    TZrSize index;
-
-    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL || name == ZR_NULL || type == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (index = 0; index < cs->typeEnv->variableTypes.length; index++) {
-        SZrTypeBinding *existing = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeEnv->variableTypes, index);
-        if (existing != ZR_NULL && existing->name != ZR_NULL && ZrCore_String_Equal(existing->name, name)) {
-            ZrParser_InferredType_Free(cs->state, &existing->type);
-            ZrParser_InferredType_Copy(cs->state, &existing->type, type);
-            return ZR_TRUE;
-        }
-    }
-
-    sourceBinding = cs->typeEnv->parent != ZR_NULL
-                        ? ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv->parent, name)
-                        : ZR_NULL;
-    if (sourceBinding == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    binding.name = name;
-    binding.declarationRange = sourceBinding->declarationRange;
-    binding.hasDeclarationRange = sourceBinding->hasDeclarationRange;
-    binding.typeId = sourceBinding->typeId;
-    binding.symbolId = sourceBinding->symbolId;
-    ZrParser_InferredType_Copy(cs->state, &binding.type, type);
-    ZrCore_Array_Push(cs->state, &cs->typeEnv->variableTypes, &binding);
-    return ZR_TRUE;
-}
-
-static TZrBool type_inference_loop_assignment_replay_assignment(
-        SZrCompilerState *cs,
-        const SZrTypeInferenceLoopAssignmentStep *step,
-        SZrTypeInferenceLoopAssignmentResult *result) {
-    SZrInferredType rhsType;
-    TZrInt64 minValue;
-    TZrInt64 maxValue;
-    TZrBool success;
-
-    if (cs == ZR_NULL || step == ZR_NULL || step->assignment == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrParser_InferredType_Init(cs->state, &rhsType, ZR_VALUE_TYPE_OBJECT);
-    success = ZrParser_ExpressionType_Infer(cs, step->right, &rhsType) &&
-              type_inference_loop_assignment_numeric_range(&rhsType, &minValue, &maxValue) &&
-              type_inference_loop_assignment_store_replayed_binding(cs, step->name, &rhsType) &&
-              type_inference_loop_assignment_result_store_type(cs->state, result, step->name, &rhsType);
-    ZrParser_InferredType_Free(cs->state, &rhsType);
-    return success;
-}
-
-static TZrBool type_inference_loop_assignment_infer_plan(
-        SZrCompilerState *cs,
-        const SZrTypeInferenceLoopAssignmentPlan *plan,
-        SZrTypeInferenceLoopAssignmentResult *result) {
-    SZrTypeInferenceBranchScope scope;
-    TZrBool pushed;
-    TZrBool success;
-    TZrSize index;
-
-    if (cs == ZR_NULL ||
-        plan == ZR_NULL ||
-        !plan->isInitialized ||
-        type_inference_loop_assignment_plan_count(plan) == 0 ||
-        result == ZR_NULL ||
-        !result->isInitialized) {
-        return ZR_FALSE;
-    }
-
-    memset(&scope, 0, sizeof(scope));
-    pushed = type_inference_loop_assignment_push_replay_scope(cs, &scope);
-    success = pushed;
-    for (index = 0; success && index < plan->steps.length; index++) {
-        SZrTypeInferenceLoopAssignmentStep *step =
-                type_inference_loop_assignment_plan_step_at(plan, index);
-        success = step != ZR_NULL &&
-                  type_inference_loop_assignment_replay_assignment(cs, step, result);
-    }
-    if (pushed) {
-        type_inference_loop_assignment_pop_replay_scope(cs, &scope);
-    }
-    return success;
+    return type_inference_loop_assignment_plan_count(plan) > 0 &&
+           type_inference_loop_assignment_plan_target_count(plan) > 0;
 }
 
 static TZrBool type_inference_loop_assignment_join_type(SZrCompilerState *cs,
@@ -634,45 +834,36 @@ static TZrBool type_inference_loop_assignment_join_type(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-TZrBool ZrParser_TypeInference_TryJoinWhileNumericAssignments(SZrCompilerState *cs,
-                                                              SZrAstNode *whileNode) {
-    SZrWhileLoop *whileLoop;
-    SZrTypeInferenceLoopAssignmentPlan plan;
+static TZrBool type_inference_loop_assignment_join_plan(
+        SZrCompilerState *cs,
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        TZrBool includePreLoopPath) {
     SZrTypeInferenceLoopAssignmentResult loopResult;
     SZrTypeInferenceLoopAssignmentResult joinedResult;
-    TZrBool conditionValue;
     TZrBool joined = ZR_FALSE;
     TZrSize index;
 
     if (cs == ZR_NULL ||
         cs->state == ZR_NULL ||
         cs->typeEnv == ZR_NULL ||
-        whileNode == ZR_NULL ||
-        whileNode->type != ZR_AST_WHILE_LOOP) {
+        plan == ZR_NULL ||
+        !plan->isInitialized) {
         return ZR_FALSE;
     }
 
-    whileLoop = &whileNode->data.whileLoop;
-    if (type_inference_loop_assignment_condition_is_known_bool(whileLoop->cond, &conditionValue)) {
-        return ZR_FALSE;
-    }
-
-    memset(&plan, 0, sizeof(plan));
     memset(&loopResult, 0, sizeof(loopResult));
     memset(&joinedResult, 0, sizeof(joinedResult));
 
-    if (!type_inference_loop_assignment_plan_init(cs->state, &plan) ||
-        !type_inference_loop_assignment_collect_plan(cs->state, whileLoop->block, &plan) ||
-        !type_inference_loop_assignment_plan_validate(cs, &plan) ||
-        !type_inference_loop_assignment_result_init(
+    if (!type_inference_loop_assignment_plan_validate(cs, plan) ||
+        !ZrParser_TypeInferenceLoopAssignment_ResultInit(
                 cs->state,
                 &loopResult,
-                type_inference_loop_assignment_plan_count(&plan)) ||
-        !type_inference_loop_assignment_result_init(
+                type_inference_loop_assignment_plan_target_count(plan)) ||
+        !ZrParser_TypeInferenceLoopAssignment_ResultInit(
                 cs->state,
                 &joinedResult,
-                type_inference_loop_assignment_plan_count(&plan)) ||
-        !type_inference_loop_assignment_infer_plan(cs, &plan, &loopResult)) {
+                type_inference_loop_assignment_plan_target_count(plan)) ||
+        !ZrParser_TypeInferenceLoopAssignment_InferPlan(cs, plan, &loopResult)) {
         goto cleanup;
     }
 
@@ -693,13 +884,15 @@ TZrBool ZrParser_TypeInference_TryJoinWhileNumericAssignments(SZrCompilerState *
         if (targetBinding == ZR_NULL ||
             !ZR_VALUE_IS_TYPE_NUMBER(targetBinding->type.baseType) ||
             !targetBinding->type.hasRangeConstraint ||
-            type_inference_loop_assignment_result_find_type(&joinedResult, binding->name) != ZR_NULL) {
+            ZrParser_TypeInferenceLoopAssignment_ResultFindType(&joinedResult, binding->name) != ZR_NULL) {
             goto cleanup;
         }
 
         ZrParser_InferredType_Init(cs->state, &preLoopType, ZR_VALUE_TYPE_OBJECT);
         initializedPreLoop = ZR_TRUE;
-        ZrParser_InferredType_Copy(cs->state, &preLoopType, &targetBinding->type);
+        ZrParser_InferredType_Copy(cs->state,
+                                   &preLoopType,
+                                   includePreLoopPath ? &targetBinding->type : &binding->type);
 
         ZrParser_InferredType_Init(cs->state, &joinedType, ZR_VALUE_TYPE_OBJECT);
         initializedJoined = ZR_TRUE;
@@ -708,10 +901,10 @@ TZrBool ZrParser_TypeInference_TryJoinWhileNumericAssignments(SZrCompilerState *
                                                       &preLoopType,
                                                       &binding->type,
                                                       &joinedType) ||
-            !type_inference_loop_assignment_result_store_type(cs->state,
-                                                              &joinedResult,
-                                                              binding->name,
-                                                              &joinedType)) {
+            !ZrParser_TypeInferenceLoopAssignment_ResultStoreType(cs->state,
+                                                                  &joinedResult,
+                                                                  binding->name,
+                                                                  &joinedType)) {
             if (initializedJoined) {
                 ZrParser_InferredType_Free(cs->state, &joinedType);
             }
@@ -743,8 +936,63 @@ TZrBool ZrParser_TypeInference_TryJoinWhileNumericAssignments(SZrCompilerState *
     }
 
 cleanup:
-    type_inference_loop_assignment_result_free(cs->state, &joinedResult);
-    type_inference_loop_assignment_result_free(cs->state, &loopResult);
+    ZrParser_TypeInferenceLoopAssignment_ResultFree(cs->state, &joinedResult);
+    ZrParser_TypeInferenceLoopAssignment_ResultFree(cs->state, &loopResult);
+    return joined;
+}
+
+static TZrBool type_inference_loop_assignment_join_body_with_cardinality(
+        SZrCompilerState *cs,
+        SZrAstNode *body,
+        TZrBool includePreLoopPath) {
+    SZrTypeInferenceLoopAssignmentPlan plan;
+    TZrBool joined = ZR_FALSE;
+
+    if (cs == ZR_NULL ||
+        cs->state == ZR_NULL ||
+        cs->typeEnv == ZR_NULL ||
+        body == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(&plan, 0, sizeof(plan));
+    if (type_inference_loop_assignment_plan_init(cs->state, &plan) &&
+        type_inference_loop_assignment_collect_plan(cs, body, &plan)) {
+        joined = type_inference_loop_assignment_join_plan(cs, &plan, includePreLoopPath);
+    }
+    type_inference_loop_assignment_plan_free(cs->state, &plan);
+    return joined;
+}
+
+TZrBool ZrParser_TypeInferenceLoopAssignment_JoinBody(SZrCompilerState *cs,
+                                                      SZrAstNode *body) {
+    return type_inference_loop_assignment_join_body_with_cardinality(cs, body, ZR_TRUE);
+}
+
+TZrBool ZrParser_TypeInferenceLoopAssignment_JoinBodyAtLeastOnce(SZrCompilerState *cs,
+                                                                 SZrAstNode *body) {
+    return type_inference_loop_assignment_join_body_with_cardinality(cs, body, ZR_FALSE);
+}
+
+TZrBool ZrParser_TypeInferenceLoopAssignment_JoinBodyWithStep(SZrCompilerState *cs,
+                                                              SZrAstNode *body,
+                                                              SZrAstNode *step) {
+    SZrTypeInferenceLoopAssignmentPlan plan;
+    TZrBool joined = ZR_FALSE;
+
+    if (cs == ZR_NULL ||
+        cs->state == ZR_NULL ||
+        cs->typeEnv == ZR_NULL ||
+        body == ZR_NULL ||
+        step == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(&plan, 0, sizeof(plan));
+    if (type_inference_loop_assignment_plan_init(cs->state, &plan) &&
+        type_inference_loop_assignment_collect_plan_with_step(cs, body, step, &plan)) {
+        joined = type_inference_loop_assignment_join_plan(cs, &plan, ZR_TRUE);
+    }
     type_inference_loop_assignment_plan_free(cs->state, &plan);
     return joined;
 }

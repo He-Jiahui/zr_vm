@@ -2,6 +2,7 @@
 
 #include "aot_runtime_internal.h"
 
+#include "zr_vm_common/zr_runtime_sentinel_conf.h"
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/execution_control.h"
@@ -44,6 +45,149 @@ TZrBool ZrLibrary_AotRuntime_ReturnI64(SZrState *state, TZrInt64 value) {
     }
     ZrCore_Value_InitAsInt(state, callerResultValue, value);
     state->stackTop.valuePointer = callInfo->functionBase.valuePointer + 1;
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_ReturnBool(SZrState *state, TZrBool value) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
+    SZrTypeValue *callerResultValue;
+
+    runtimeState = state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT bool return failed");
+        return ZR_FALSE;
+    }
+
+    callerResultValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
+    if (callerResultValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT bool return failed");
+        return ZR_FALSE;
+    }
+
+    execution_discard_exception_handlers_for_callinfo(state, callInfo);
+    if (callInfo->functionTop.valuePointer != ZR_NULL &&
+        (state->stackTop.valuePointer == ZR_NULL || state->stackTop.valuePointer < callInfo->functionTop.valuePointer)) {
+        state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+    }
+    ZrCore_Closure_CloseClosure(state,
+                                callInfo->functionBase.valuePointer + 1,
+                                ZR_THREAD_STATUS_INVALID,
+                                ZR_FALSE);
+    ZrCore_Function_TryCopyInlineConstructorReceiverBack(state, callInfo);
+    if (callerResultValue->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
+        callerResultValue->isGarbageCollectable) {
+        ZrCore_Ownership_ReleaseValue(state, callerResultValue);
+    }
+    ZrCore_Value_InitAsBool(state, callerResultValue, value);
+    state->stackTop.valuePointer = callInfo->functionBase.valuePointer + 1;
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_ReturnU64(SZrState *state, TZrUInt64 value) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
+    SZrTypeValue *callerResultValue;
+
+    runtimeState = state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT u64 return failed");
+        return ZR_FALSE;
+    }
+
+    callerResultValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
+    if (callerResultValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT u64 return failed");
+        return ZR_FALSE;
+    }
+
+    execution_discard_exception_handlers_for_callinfo(state, callInfo);
+    if (callInfo->functionTop.valuePointer != ZR_NULL &&
+        (state->stackTop.valuePointer == ZR_NULL || state->stackTop.valuePointer < callInfo->functionTop.valuePointer)) {
+        state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+    }
+    ZrCore_Closure_CloseClosure(state,
+                                callInfo->functionBase.valuePointer + 1,
+                                ZR_THREAD_STATUS_INVALID,
+                                ZR_FALSE);
+    ZrCore_Function_TryCopyInlineConstructorReceiverBack(state, callInfo);
+    if (callerResultValue->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
+        callerResultValue->isGarbageCollectable) {
+        ZrCore_Ownership_ReleaseValue(state, callerResultValue);
+    }
+    ZrCore_Value_InitAsUInt(state, callerResultValue, value);
+    state->stackTop.valuePointer = callInfo->functionBase.valuePointer + 1;
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_ReturnF64(SZrState *state, TZrFloat64 value) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
+    SZrTypeValue *callerResultValue;
+
+    runtimeState = state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT f64 return failed");
+        return ZR_FALSE;
+    }
+
+    callerResultValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
+    if (callerResultValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT f64 return failed");
+        return ZR_FALSE;
+    }
+
+    execution_discard_exception_handlers_for_callinfo(state, callInfo);
+    if (callInfo->functionTop.valuePointer != ZR_NULL &&
+        (state->stackTop.valuePointer == ZR_NULL || state->stackTop.valuePointer < callInfo->functionTop.valuePointer)) {
+        state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+    }
+    ZrCore_Closure_CloseClosure(state,
+                                callInfo->functionBase.valuePointer + 1,
+                                ZR_THREAD_STATUS_INVALID,
+                                ZR_FALSE);
+    ZrCore_Function_TryCopyInlineConstructorReceiverBack(state, callInfo);
+    if (callerResultValue->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
+        callerResultValue->isGarbageCollectable) {
+        ZrCore_Ownership_ReleaseValue(state, callerResultValue);
+    }
+    ZrCore_Value_InitAsFloat(state, callerResultValue, value);
+    state->stackTop.valuePointer = callInfo->functionBase.valuePointer + 1;
+    return ZR_TRUE;
+}
+
+static TZrBool aot_runtime_function_has_semir_deopt_id(const SZrFunction *function, TZrUInt32 deoptId) {
+    TZrUInt32 index;
+
+    if (deoptId == ZR_RUNTIME_SEMIR_DEOPT_ID_NONE) {
+        return ZR_TRUE;
+    }
+    if (function == ZR_NULL || function->semIrDeoptTable == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (index = 0u; index < function->semIrDeoptTableLength; index++) {
+        if (function->semIrDeoptTable[index].deoptId == deoptId) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+TZrBool ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(SZrState *state,
+                                                        ZrAotGeneratedFrame *frame,
+                                                        TZrUInt32 deoptId,
+                                                        const TZrChar *errorLabel) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    const TZrChar *label = errorLabel != ZR_NULL ? errorLabel : "dynamic value";
+
+    runtimeState = state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (frame == ZR_NULL || !aot_runtime_function_has_semir_deopt_id(frame->function, deoptId)) {
+        aot_runtime_fail(state, runtimeState, "generated AOT %s has invalid deopt bridge", label);
+        return ZR_FALSE;
+    }
+
     return ZR_TRUE;
 }
 
@@ -119,6 +263,35 @@ TZrBool ZrLibrary_AotRuntime_CallStackValue(SZrState *state,
     frame->slotBase = state->callInfoList->functionBase.valuePointer + 1;
     state->stackTop.valuePointer = state->callInfoList->functionTop.valuePointer;
     return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_CallDynamicDeoptBridge(SZrState *state,
+                                                    ZrAotGeneratedFrame *frame,
+                                                    TZrUInt32 destinationSlot,
+                                                    TZrUInt32 functionSlot,
+                                                    TZrUInt32 argumentCount,
+                                                    TZrUInt32 deoptId,
+                                                    const TZrChar *errorLabel) {
+    const TZrChar *label = errorLabel != ZR_NULL ? errorLabel : "dynamic call";
+
+    if (!ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(state, frame, deoptId, label)) {
+        return ZR_FALSE;
+    }
+    if (deoptId == ZR_RUNTIME_SEMIR_DEOPT_ID_NONE) {
+        return ZrLibrary_AotRuntime_CallStackValue(state,
+                                                   frame,
+                                                   destinationSlot,
+                                                   functionSlot,
+                                                   argumentCount,
+                                                   label);
+    }
+
+    return ZrLibrary_AotRuntime_CallStackValue(state,
+                                               frame,
+                                               destinationSlot,
+                                               functionSlot,
+                                               argumentCount,
+                                               label);
 }
 
 TZrBool ZrLibrary_AotRuntime_UnsupportedMetaCall(SZrState *state,

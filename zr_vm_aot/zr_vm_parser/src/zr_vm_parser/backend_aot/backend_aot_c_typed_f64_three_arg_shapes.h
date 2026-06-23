@@ -1,0 +1,12 @@
+#ifndef ZR_VM_PARSER_BACKEND_AOT_C_TYPED_F64_THREE_ARG_SHAPES_H
+#define ZR_VM_PARSER_BACKEND_AOT_C_TYPED_F64_THREE_ARG_SHAPES_H
+
+#include "backend_aot_internal.h"
+
+TZrBool backend_aot_c_try_get_f64_arg0_arg1_arg2_add_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_f64_arg0_arg1_arg2_subtract_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_f64_arg0_arg1_arg2_multiply_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_f64_arg0_arg1_arg2_divide_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_f64_arg0_arg1_arg2_modulo_return(const SZrFunction *function);
+
+#endif

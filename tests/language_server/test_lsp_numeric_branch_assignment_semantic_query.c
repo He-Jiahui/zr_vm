@@ -4,6 +4,7 @@
 
 #include "semantic/lsp_local_semantic_query.h"
 #include "zr_vm_common/zr_common_conf.h"
+#include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/state.h"
@@ -88,6 +89,7 @@ static TZrBool run_assignment_range_case(SZrState *state,
     SZrString *uri;
     SZrLspPosition position;
     SZrLspLocalSemanticQueryResult query;
+    TZrBool expectUnsignedRange;
     TZrBool passed;
 
     context = ZrLanguageServer_LspContext_New(state);
@@ -110,6 +112,7 @@ static TZrBool run_assignment_range_case(SZrState *state,
         return ZR_FALSE;
     }
 
+    expectUnsignedRange = expectedMin >= 0 && expectedMax >= 0;
     passed = query.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT &&
              query.expressionFact != ZR_NULL &&
              query.expressionFact->kind == ZR_SEMANTIC_EXPRESSION_FACT_BINARY &&
@@ -120,9 +123,10 @@ static TZrBool run_assignment_range_case(SZrState *state,
              query.numericFact->hasRange &&
              query.numericFact->minValue == expectedMin &&
              query.numericFact->maxValue == expectedMax &&
-             query.numericFact->hasUnsignedRange &&
-             query.numericFact->minUnsignedValue == (TZrUInt64)expectedMin &&
-             query.numericFact->maxUnsignedValue == (TZrUInt64)expectedMax &&
+             query.numericFact->hasUnsignedRange == expectUnsignedRange &&
+             (!expectUnsignedRange ||
+              (query.numericFact->minUnsignedValue == (TZrUInt64)expectedMin &&
+               query.numericFact->maxUnsignedValue == (TZrUInt64)expectedMax)) &&
              !query.numericFact->mayOverflow;
 
     if (!passed) {
@@ -473,6 +477,29 @@ static TZrBool test_local_expression_query_joins_while_multi_statement_assignmen
                                      11);
 }
 
+static TZrBool test_local_expression_query_joins_while_nested_if_assignment_range(SZrState *state) {
+    const TZrChar *content =
+        "func calc(flag: bool, inner: bool): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    while (flag) {\n"
+        "        if (inner) {\n"
+        "            narrowed = 1;\n"
+        "        } else {\n"
+        "            narrowed = 10;\n"
+        "        }\n"
+        "    }\n"
+        "    return narrowed + 1;\n"
+        "}\n";
+
+    return run_assignment_range_case(state,
+                                     "while nested if assignment dataflow",
+                                     "file:///local_while_nested_if_assignment_dataflow_numeric_range_fact.zr",
+                                     content,
+                                     0,
+                                     2,
+                                     11);
+}
+
 static TZrBool test_local_expression_query_joins_while_multi_target_assignment_range(SZrState *state) {
     const TZrChar *content =
         "func calc(flag: bool): int {\n"
@@ -492,6 +519,245 @@ static TZrBool test_local_expression_query_joins_while_multi_target_assignment_r
                                      1,
                                      12,
                                      25);
+}
+
+static TZrBool test_local_expression_query_widens_while_self_dependent_increment_range(SZrState *state) {
+    const TZrChar *content =
+        "func calc(flag: bool): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    while (flag) {\n"
+        "        narrowed = narrowed + 1;\n"
+        "    }\n"
+        "    return narrowed + 0;\n"
+        "}\n";
+
+    return run_assignment_range_case(
+            state,
+            "while self-dependent increment assignment dataflow",
+            "file:///local_while_self_dependent_assignment_dataflow_numeric_range_fact.zr",
+            content,
+            1,
+            5,
+            ZR_TYPE_RANGE_INT64_MAX);
+}
+
+static TZrBool test_local_expression_query_widens_while_self_dependent_singleton_delta_range(SZrState *state) {
+    const TZrChar *content =
+        "func calc(flag: bool): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    var step: int = 1;\n"
+        "    while (flag) {\n"
+        "        narrowed = narrowed + step;\n"
+        "    }\n"
+        "    return narrowed + 0;\n"
+        "}\n";
+
+    return run_assignment_range_case(
+            state,
+            "while self-dependent singleton delta assignment dataflow",
+            "file:///local_while_self_dependent_singleton_delta_assignment_dataflow_numeric_range_fact.zr",
+            content,
+            1,
+            5,
+            ZR_TYPE_RANGE_INT64_MAX);
+}
+
+static TZrBool test_local_expression_query_widens_while_self_dependent_positive_range_delta(
+        SZrState *state) {
+    const TZrChar *content =
+        "func calc(flag: bool, seed: u8): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    var step: int = seed + 1;\n"
+        "    while (flag) {\n"
+        "        narrowed = narrowed + step;\n"
+        "    }\n"
+        "    return narrowed + 0;\n"
+        "}\n";
+
+    return run_assignment_range_case(
+            state,
+            "while self-dependent positive range delta assignment dataflow",
+            "file:///local_while_self_dependent_positive_range_delta_assignment_dataflow_numeric_range_fact.zr",
+            content,
+            2,
+            5,
+            ZR_TYPE_RANGE_INT64_MAX);
+}
+
+static TZrBool test_local_expression_query_widens_while_self_dependent_decrement_range(SZrState *state) {
+    const TZrChar *content =
+        "func calc(flag: bool): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    while (flag) {\n"
+        "        narrowed = narrowed - 1;\n"
+        "    }\n"
+        "    return narrowed + 0;\n"
+        "}\n";
+
+    return run_assignment_range_case(
+            state,
+            "while self-dependent decrement assignment dataflow",
+            "file:///local_while_self_dependent_decrement_assignment_dataflow_numeric_range_fact.zr",
+            content,
+            0,
+            ZR_TYPE_RANGE_INT64_MIN,
+            5);
+}
+
+static TZrBool test_local_expression_query_joins_for_assignment_range(SZrState *state) {
+    const TZrChar *content =
+        "func calc(flag: bool): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    for (; flag; ) {\n"
+        "        narrowed = 10;\n"
+        "    }\n"
+        "    return narrowed + 1;\n"
+        "}\n";
+
+    return run_assignment_range_case(state,
+                                     "for assignment dataflow",
+                                     "file:///local_for_assignment_dataflow_numeric_range_fact.zr",
+                                     content,
+                                     0,
+                                     6,
+                                     11);
+}
+
+static TZrBool test_local_expression_query_joins_for_init_assignment_range(SZrState *state) {
+    const TZrChar *content =
+        "func calc(flag: bool): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    for (narrowed = 1; flag; ) {\n"
+        "        narrowed = 10;\n"
+        "    }\n"
+        "    return narrowed + 1;\n"
+        "}\n";
+
+    return run_assignment_range_case(state,
+                                     "for init assignment dataflow",
+                                     "file:///local_for_init_assignment_dataflow_numeric_range_fact.zr",
+                                     content,
+                                     0,
+                                     2,
+                                     11);
+}
+
+static TZrBool test_local_expression_query_applies_for_false_condition_init_assignment_range(
+        SZrState *state) {
+    const TZrChar *content =
+        "func calc(): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    for (narrowed = 1; false; ) {\n"
+        "        narrowed = 10;\n"
+        "    }\n"
+        "    return narrowed + 1;\n"
+        "}\n";
+
+    return run_assignment_range_case(
+            state,
+            "for false-condition init assignment dataflow",
+            "file:///local_for_false_condition_init_assignment_dataflow_numeric_range_fact.zr",
+            content,
+            0,
+            2,
+            2);
+}
+
+static TZrBool test_local_expression_query_joins_for_step_assignment_range(SZrState *state) {
+    const TZrChar *content =
+        "func calc(flag: bool): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    for (; flag; narrowed = 10) {\n"
+        "        flag;\n"
+        "    }\n"
+        "    return narrowed + 1;\n"
+        "}\n";
+
+    return run_assignment_range_case(state,
+                                     "for step assignment dataflow",
+                                     "file:///local_for_step_assignment_dataflow_numeric_range_fact.zr",
+                                     content,
+                                     0,
+                                     6,
+                                     11);
+}
+
+static TZrBool test_local_expression_query_joins_for_non_assignment_step_range(
+        SZrState *state) {
+    const TZrChar *content =
+        "func calc(flag: bool): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    for (; flag; flag) {\n"
+        "        narrowed = 10;\n"
+        "    }\n"
+        "    return narrowed + 1;\n"
+        "}\n";
+
+    return run_assignment_range_case(
+            state,
+            "for non-assignment step dataflow",
+            "file:///local_for_non_assignment_step_dataflow_numeric_range_fact.zr",
+            content,
+            0,
+            6,
+            11);
+}
+
+static TZrBool test_local_expression_query_joins_for_var_init_assignment_range(SZrState *state) {
+    const TZrChar *content =
+        "func calc(flag: bool): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    for (var step: int = 10; flag; ) {\n"
+        "        narrowed = step;\n"
+        "    }\n"
+        "    return narrowed + 1;\n"
+        "}\n";
+
+    return run_assignment_range_case(state,
+                                     "for var init assignment dataflow",
+                                     "file:///local_for_var_init_assignment_dataflow_numeric_range_fact.zr",
+                                     content,
+                                     0,
+                                     6,
+                                     11);
+}
+
+static TZrBool test_local_expression_query_joins_foreach_assignment_range(SZrState *state) {
+    const TZrChar *content =
+        "func calc(items: int[]): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    for (var item in items) {\n"
+        "        narrowed = 10;\n"
+        "    }\n"
+        "    return narrowed + 1;\n"
+        "}\n";
+
+    return run_assignment_range_case(state,
+                                     "foreach assignment dataflow",
+                                     "file:///local_foreach_assignment_dataflow_numeric_range_fact.zr",
+                                     content,
+                                     0,
+                                     6,
+                                     11);
+}
+
+static TZrBool test_local_expression_query_joins_foreach_item_assignment_range(SZrState *state) {
+    const TZrChar *content =
+        "func calc(items: u8[]): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    for (var item in items) {\n"
+        "        narrowed = item;\n"
+        "    }\n"
+        "    return narrowed + 1;\n"
+        "}\n";
+
+    return run_assignment_range_case(state,
+                                     "foreach item assignment dataflow",
+                                     "file:///local_foreach_item_assignment_dataflow_numeric_range_fact.zr",
+                                     content,
+                                     0,
+                                     1,
+                                     256);
 }
 
 static TZrBool test_local_expression_query_joins_if_then_assignment_range(SZrState *state) {
@@ -547,7 +813,20 @@ int main(void) {
     TZrBool nestedIfElseAssignmentDataflowTestPassed;
     TZrBool whileAssignmentDataflowTestPassed;
     TZrBool whileMultiStatementAssignmentDataflowTestPassed;
+    TZrBool whileNestedIfAssignmentDataflowTestPassed;
     TZrBool whileMultiTargetAssignmentDataflowTestPassed;
+    TZrBool whileSelfDependentIncrementAssignmentDataflowTestPassed;
+    TZrBool whileSelfDependentSingletonDeltaAssignmentDataflowTestPassed;
+    TZrBool whileSelfDependentPositiveRangeDeltaAssignmentDataflowTestPassed;
+    TZrBool whileSelfDependentDecrementAssignmentDataflowTestPassed;
+    TZrBool forAssignmentDataflowTestPassed;
+    TZrBool forInitAssignmentDataflowTestPassed;
+    TZrBool forFalseConditionInitAssignmentDataflowTestPassed;
+    TZrBool forStepAssignmentDataflowTestPassed;
+    TZrBool forNonAssignmentStepDataflowTestPassed;
+    TZrBool forVarInitAssignmentDataflowTestPassed;
+    TZrBool foreachAssignmentDataflowTestPassed;
+    TZrBool foreachItemAssignmentDataflowTestPassed;
     TZrBool ifThenAssignmentDataflowTestPassed;
     TZrBool ifElseOnlyAssignmentDataflowTestPassed;
     TZrBool passed;
@@ -600,10 +879,62 @@ int main(void) {
         test_local_expression_query_joins_while_multi_statement_assignment_range(state);
     printf("%s: LSP Local Expression Query Joins While Multi-Statement Assignment Range\n",
            whileMultiStatementAssignmentDataflowTestPassed ? "PASS" : "FAIL");
+    whileNestedIfAssignmentDataflowTestPassed =
+        test_local_expression_query_joins_while_nested_if_assignment_range(state);
+    printf("%s: LSP Local Expression Query Joins While Nested If Assignment Range\n",
+           whileNestedIfAssignmentDataflowTestPassed ? "PASS" : "FAIL");
     whileMultiTargetAssignmentDataflowTestPassed =
         test_local_expression_query_joins_while_multi_target_assignment_range(state);
     printf("%s: LSP Local Expression Query Joins While Multi-Target Assignment Range\n",
            whileMultiTargetAssignmentDataflowTestPassed ? "PASS" : "FAIL");
+    whileSelfDependentIncrementAssignmentDataflowTestPassed =
+        test_local_expression_query_widens_while_self_dependent_increment_range(state);
+    printf("%s: LSP Local Expression Query Widens While Self-Dependent Increment Assignment Range\n",
+           whileSelfDependentIncrementAssignmentDataflowTestPassed ? "PASS" : "FAIL");
+    whileSelfDependentSingletonDeltaAssignmentDataflowTestPassed =
+        test_local_expression_query_widens_while_self_dependent_singleton_delta_range(state);
+    printf("%s: LSP Local Expression Query Widens While Self-Dependent Singleton Delta Assignment Range\n",
+           whileSelfDependentSingletonDeltaAssignmentDataflowTestPassed ? "PASS" : "FAIL");
+    whileSelfDependentPositiveRangeDeltaAssignmentDataflowTestPassed =
+        test_local_expression_query_widens_while_self_dependent_positive_range_delta(state);
+    printf("%s: LSP Local Expression Query Widens While Self-Dependent Positive Range Delta Assignment Range\n",
+           whileSelfDependentPositiveRangeDeltaAssignmentDataflowTestPassed ? "PASS" : "FAIL");
+    whileSelfDependentDecrementAssignmentDataflowTestPassed =
+        test_local_expression_query_widens_while_self_dependent_decrement_range(state);
+    printf("%s: LSP Local Expression Query Widens While Self-Dependent Decrement Assignment Range\n",
+           whileSelfDependentDecrementAssignmentDataflowTestPassed ? "PASS" : "FAIL");
+    forAssignmentDataflowTestPassed =
+        test_local_expression_query_joins_for_assignment_range(state);
+    printf("%s: LSP Local Expression Query Joins For Assignment Range\n",
+           forAssignmentDataflowTestPassed ? "PASS" : "FAIL");
+    forInitAssignmentDataflowTestPassed =
+        test_local_expression_query_joins_for_init_assignment_range(state);
+    printf("%s: LSP Local Expression Query Joins For Init Assignment Range\n",
+           forInitAssignmentDataflowTestPassed ? "PASS" : "FAIL");
+    forFalseConditionInitAssignmentDataflowTestPassed =
+        test_local_expression_query_applies_for_false_condition_init_assignment_range(state);
+    printf("%s: LSP Local Expression Query Applies For False-Condition Init Assignment Range\n",
+           forFalseConditionInitAssignmentDataflowTestPassed ? "PASS" : "FAIL");
+    forStepAssignmentDataflowTestPassed =
+        test_local_expression_query_joins_for_step_assignment_range(state);
+    printf("%s: LSP Local Expression Query Joins For Step Assignment Range\n",
+           forStepAssignmentDataflowTestPassed ? "PASS" : "FAIL");
+    forNonAssignmentStepDataflowTestPassed =
+        test_local_expression_query_joins_for_non_assignment_step_range(state);
+    printf("%s: LSP Local Expression Query Joins For Non-Assignment Step Range\n",
+           forNonAssignmentStepDataflowTestPassed ? "PASS" : "FAIL");
+    forVarInitAssignmentDataflowTestPassed =
+        test_local_expression_query_joins_for_var_init_assignment_range(state);
+    printf("%s: LSP Local Expression Query Joins For Var Init Assignment Range\n",
+           forVarInitAssignmentDataflowTestPassed ? "PASS" : "FAIL");
+    foreachAssignmentDataflowTestPassed =
+        test_local_expression_query_joins_foreach_assignment_range(state);
+    printf("%s: LSP Local Expression Query Joins Foreach Assignment Range\n",
+           foreachAssignmentDataflowTestPassed ? "PASS" : "FAIL");
+    foreachItemAssignmentDataflowTestPassed =
+        test_local_expression_query_joins_foreach_item_assignment_range(state);
+    printf("%s: LSP Local Expression Query Joins Foreach Item Assignment Range\n",
+           foreachItemAssignmentDataflowTestPassed ? "PASS" : "FAIL");
     ifThenAssignmentDataflowTestPassed =
         test_local_expression_query_joins_if_then_assignment_range(state);
     printf("%s: LSP Local Expression Query Joins If/Then Assignment Range\n",
@@ -622,8 +953,21 @@ int main(void) {
               nestedIfElseAssignmentDataflowTestPassed &&
               whileAssignmentDataflowTestPassed &&
               whileMultiStatementAssignmentDataflowTestPassed &&
-              whileMultiTargetAssignmentDataflowTestPassed &&
-              ifThenAssignmentDataflowTestPassed &&
+              whileNestedIfAssignmentDataflowTestPassed &&
+               whileMultiTargetAssignmentDataflowTestPassed &&
+                whileSelfDependentIncrementAssignmentDataflowTestPassed &&
+                whileSelfDependentSingletonDeltaAssignmentDataflowTestPassed &&
+                whileSelfDependentPositiveRangeDeltaAssignmentDataflowTestPassed &&
+                whileSelfDependentDecrementAssignmentDataflowTestPassed &&
+               forAssignmentDataflowTestPassed &&
+               forInitAssignmentDataflowTestPassed &&
+               forFalseConditionInitAssignmentDataflowTestPassed &&
+               forStepAssignmentDataflowTestPassed &&
+               forNonAssignmentStepDataflowTestPassed &&
+               forVarInitAssignmentDataflowTestPassed &&
+               foreachAssignmentDataflowTestPassed &&
+               foreachItemAssignmentDataflowTestPassed &&
+               ifThenAssignmentDataflowTestPassed &&
              ifElseOnlyAssignmentDataflowTestPassed;
 
     ZrCore_GlobalState_Free(global);

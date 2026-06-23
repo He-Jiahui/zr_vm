@@ -333,6 +333,10 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
     assert_text_does_not_contain(generatedCText, "ZR_VALUE_FAST_SET(");
     assert_text_contains(generatedCText, "static const SZrAotMethodInfo zr_aot_method_info_0 = {");
     assert_text_contains(generatedCText, "static const SZrAotSignature zr_aot_signature_0 = {");
+    assert_text_contains(generatedCText, "    .returnType = &zr_aot_signature_0_types[0],");
+    assert_text_contains(generatedCText, "    .hasReturnValue = (TZrUInt8)1u,");
+    assert_text_contains(generatedCText, "        .baseType = (TZrUInt16)5u,");
+    assert_text_contains(generatedCText, "        .staticCType = (TZrUInt16)5u,");
     assert_text_contains(generatedCText, "    .functionIndex = 0u,");
     assert_text_contains(generatedCText, "    .metadataFunction = ZR_NULL,");
     assert_text_contains(generatedCText, "    .registerFrameBytes = 0u,");

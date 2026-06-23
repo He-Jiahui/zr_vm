@@ -1,5 +1,9 @@
 #include "backend_aot_c_typed_u64_thunk_shapes.h"
 
+typedef TZrBool (*TZrAotReadU64BinaryOperands)(const TZrInstruction *instruction,
+                                               TZrUInt32 *outLeftSlot,
+                                               TZrUInt32 *outRightSlot);
+
 static TZrBool backend_aot_c_type_ref_is_u64(const SZrFunctionTypedTypeRef *typeRef) {
     if (typeRef == ZR_NULL) {
         return ZR_FALSE;
@@ -12,7 +16,257 @@ static TZrBool backend_aot_c_type_ref_is_u64(const SZrFunctionTypedTypeRef *type
                      typeRef->staticCType == ZR_STATIC_C_TYPE_U8 ||
                      typeRef->staticCType == ZR_STATIC_C_TYPE_U16 ||
                      typeRef->staticCType == ZR_STATIC_C_TYPE_U32 ||
-                     typeRef->staticCType == ZR_STATIC_C_TYPE_U64);
+                      typeRef->staticCType == ZR_STATIC_C_TYPE_U64);
+}
+
+static TZrBool backend_aot_c_try_read_u64_add_operands(const TZrInstruction *instruction,
+                                                       TZrUInt32 *outLeftSlot,
+                                                       TZrUInt32 *outRightSlot) {
+    if (instruction == ZR_NULL || outLeftSlot == ZR_NULL || outRightSlot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(ADD_UNSIGNED) ||
+        instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST) ||
+        instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(ADD_SIGNED) ||
+        instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST)) {
+        *outLeftSlot = instruction->instruction.operand.operand1[0];
+        *outRightSlot = instruction->instruction.operand.operand1[1];
+        return ZR_TRUE;
+    }
+    if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK)) {
+        *outLeftSlot = instruction->instruction.operand.operand0[0];
+        *outRightSlot = instruction->instruction.operand.operand0[1];
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool backend_aot_c_try_read_u64_multiply_operands(const TZrInstruction *instruction,
+                                                            TZrUInt32 *outLeftSlot,
+                                                            TZrUInt32 *outRightSlot) {
+    if (instruction == ZR_NULL || outLeftSlot == ZR_NULL || outRightSlot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(MUL_UNSIGNED) ||
+        instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_PLAIN_DEST) ||
+        instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(MUL_SIGNED) ||
+        instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST)) {
+        *outLeftSlot = instruction->instruction.operand.operand1[0];
+        *outRightSlot = instruction->instruction.operand.operand1[1];
+        return ZR_TRUE;
+    }
+    if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK)) {
+        *outLeftSlot = instruction->instruction.operand.operand0[0];
+        *outRightSlot = instruction->instruction.operand.operand0[1];
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool backend_aot_c_try_read_u64_subtract_operands(const TZrInstruction *instruction,
+                                                            TZrUInt32 *outLeftSlot,
+                                                            TZrUInt32 *outRightSlot) {
+    if (instruction == ZR_NULL || outLeftSlot == ZR_NULL || outRightSlot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUB_UNSIGNED) ||
+        instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_PLAIN_DEST) ||
+        instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUB_SIGNED) ||
+        instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST)) {
+        *outLeftSlot = instruction->instruction.operand.operand1[0];
+        *outRightSlot = instruction->instruction.operand.operand1[1];
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool backend_aot_c_try_read_u64_divide_operands(const TZrInstruction *instruction,
+                                                          TZrUInt32 *outLeftSlot,
+                                                          TZrUInt32 *outRightSlot) {
+    if (instruction == ZR_NULL || outLeftSlot == ZR_NULL || outRightSlot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (instruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(DIV_UNSIGNED)) {
+        return ZR_FALSE;
+    }
+
+    *outLeftSlot = instruction->instruction.operand.operand1[0];
+    *outRightSlot = instruction->instruction.operand.operand1[1];
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_c_try_read_u64_modulo_operands(const TZrInstruction *instruction,
+                                                          TZrUInt32 *outLeftSlot,
+                                                          TZrUInt32 *outRightSlot) {
+    if (instruction == ZR_NULL || outLeftSlot == ZR_NULL || outRightSlot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (instruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(MOD_UNSIGNED)) {
+        return ZR_FALSE;
+    }
+
+    *outLeftSlot = instruction->instruction.operand.operand1[0];
+    *outRightSlot = instruction->instruction.operand.operand1[1];
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_c_try_read_u64_bitwise_and_operands(const TZrInstruction *instruction,
+                                                               TZrUInt32 *outLeftSlot,
+                                                               TZrUInt32 *outRightSlot) {
+    if (instruction == ZR_NULL || outLeftSlot == ZR_NULL || outRightSlot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (instruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(BITWISE_AND)) {
+        return ZR_FALSE;
+    }
+
+    *outLeftSlot = instruction->instruction.operand.operand1[0];
+    *outRightSlot = instruction->instruction.operand.operand1[1];
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_c_try_read_u64_bitwise_or_operands(const TZrInstruction *instruction,
+                                                              TZrUInt32 *outLeftSlot,
+                                                              TZrUInt32 *outRightSlot) {
+    if (instruction == ZR_NULL || outLeftSlot == ZR_NULL || outRightSlot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (instruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(BITWISE_OR)) {
+        return ZR_FALSE;
+    }
+
+    *outLeftSlot = instruction->instruction.operand.operand1[0];
+    *outRightSlot = instruction->instruction.operand.operand1[1];
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_c_try_read_u64_bitwise_xor_operands(const TZrInstruction *instruction,
+                                                               TZrUInt32 *outLeftSlot,
+                                                               TZrUInt32 *outRightSlot) {
+    if (instruction == ZR_NULL || outLeftSlot == ZR_NULL || outRightSlot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (instruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(BITWISE_XOR)) {
+        return ZR_FALSE;
+    }
+
+    *outLeftSlot = instruction->instruction.operand.operand1[0];
+    *outRightSlot = instruction->instruction.operand.operand1[1];
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_binary_return(
+        const SZrFunction *function,
+        TZrAotReadU64BinaryOperands readOperands,
+        TZrBool preserveOperandOrder) {
+    const TZrInstruction *firstBinaryInstruction;
+    const TZrInstruction *secondBinaryInstruction;
+    const TZrInstruction *returnInstruction;
+    TZrUInt32 firstLeftSlot;
+    TZrUInt32 firstRightSlot;
+    TZrUInt32 secondLeftSlot;
+    TZrUInt32 secondRightSlot;
+    TZrUInt32 firstResultSlot;
+    TZrUInt32 secondResultSlot;
+
+    if (function == ZR_NULL ||
+        function->instructionsList == ZR_NULL ||
+        function->instructionsLength != 3u ||
+        function->parameterCount != 3 ||
+        function->parameterMetadata == ZR_NULL ||
+        function->parameterMetadataCount < 3u ||
+        function->hasVariableArguments ||
+        !function->hasCallableReturnType ||
+        !backend_aot_c_type_ref_is_u64(&function->callableReturnType) ||
+        !backend_aot_c_type_ref_is_u64(&function->parameterMetadata[0].type) ||
+        !backend_aot_c_type_ref_is_u64(&function->parameterMetadata[1].type) ||
+        !backend_aot_c_type_ref_is_u64(&function->parameterMetadata[2].type) ||
+        readOperands == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    firstBinaryInstruction = &function->instructionsList[0];
+    secondBinaryInstruction = &function->instructionsList[1];
+    returnInstruction = &function->instructionsList[2];
+    if (!readOperands(firstBinaryInstruction, &firstLeftSlot, &firstRightSlot) ||
+        !readOperands(secondBinaryInstruction, &secondLeftSlot, &secondRightSlot)) {
+        return ZR_FALSE;
+    }
+
+    firstResultSlot = firstBinaryInstruction->instruction.operandExtra;
+    secondResultSlot = secondBinaryInstruction->instruction.operandExtra;
+    if (preserveOperandOrder) {
+        return (TZrBool)(firstLeftSlot == 0u &&
+                         firstRightSlot == 1u &&
+                         secondLeftSlot == firstResultSlot &&
+                         secondRightSlot == 2u &&
+                         returnInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
+                         returnInstruction->instruction.operand.operand1[0] == secondResultSlot);
+    }
+
+    return (TZrBool)(((firstLeftSlot == 0u && firstRightSlot == 1u) ||
+                      (firstLeftSlot == 1u && firstRightSlot == 0u)) &&
+                     ((secondLeftSlot == firstResultSlot && secondRightSlot == 2u) ||
+                      (secondLeftSlot == 2u && secondRightSlot == firstResultSlot)) &&
+                     returnInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
+                     returnInstruction->instruction.operand.operand1[0] == secondResultSlot);
+}
+
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_add_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_u64_arg0_arg1_arg2_binary_return(function,
+                                                                 backend_aot_c_try_read_u64_add_operands,
+                                                                 ZR_FALSE);
+}
+
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_multiply_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_u64_arg0_arg1_arg2_binary_return(function,
+                                                                 backend_aot_c_try_read_u64_multiply_operands,
+                                                                 ZR_FALSE);
+}
+
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_subtract_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_u64_arg0_arg1_arg2_binary_return(function,
+                                                                 backend_aot_c_try_read_u64_subtract_operands,
+                                                                 ZR_TRUE);
+}
+
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_divide_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_u64_arg0_arg1_arg2_binary_return(function,
+                                                                 backend_aot_c_try_read_u64_divide_operands,
+                                                                 ZR_TRUE);
+}
+
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_modulo_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_u64_arg0_arg1_arg2_binary_return(function,
+                                                                 backend_aot_c_try_read_u64_modulo_operands,
+                                                                 ZR_TRUE);
+}
+
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_bitwise_and_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_u64_arg0_arg1_arg2_binary_return(
+            function,
+            backend_aot_c_try_read_u64_bitwise_and_operands,
+            ZR_FALSE);
+}
+
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_bitwise_or_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_u64_arg0_arg1_arg2_binary_return(
+            function,
+            backend_aot_c_try_read_u64_bitwise_or_operands,
+            ZR_FALSE);
+}
+
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_bitwise_xor_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_u64_arg0_arg1_arg2_binary_return(
+            function,
+            backend_aot_c_try_read_u64_bitwise_xor_operands,
+            ZR_FALSE);
 }
 
 TZrBool backend_aot_c_try_get_u64_arg0_arg1_add_return(const SZrFunction *function) {
@@ -292,6 +546,78 @@ TZrBool backend_aot_c_try_get_u64_arg0_arg1_bitwise_or_return(const SZrFunction 
 
 TZrBool backend_aot_c_try_get_u64_arg0_arg1_bitwise_xor_return(const SZrFunction *function) {
     return backend_aot_c_try_get_u64_arg0_arg1_bitwise_return(function, ZR_INSTRUCTION_ENUM(BITWISE_XOR));
+}
+
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_divide_return(const SZrFunction *function) {
+    const TZrInstruction *divideInstruction;
+    const TZrInstruction *returnInstruction;
+    TZrUInt32 leftSlot;
+    TZrUInt32 rightSlot;
+    TZrUInt32 resultSlot;
+
+    if (function == ZR_NULL ||
+        function->instructionsList == ZR_NULL ||
+        function->instructionsLength != 2u ||
+        function->parameterCount != 2 ||
+        function->parameterMetadata == ZR_NULL ||
+        function->parameterMetadataCount < 2u ||
+        function->hasVariableArguments ||
+        !function->hasCallableReturnType ||
+        !backend_aot_c_type_ref_is_u64(&function->callableReturnType) ||
+        !backend_aot_c_type_ref_is_u64(&function->parameterMetadata[0].type) ||
+        !backend_aot_c_type_ref_is_u64(&function->parameterMetadata[1].type)) {
+        return ZR_FALSE;
+    }
+
+    divideInstruction = &function->instructionsList[0];
+    returnInstruction = &function->instructionsList[1];
+    if (divideInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(DIV_UNSIGNED)) {
+        return ZR_FALSE;
+    }
+
+    leftSlot = divideInstruction->instruction.operand.operand1[0];
+    rightSlot = divideInstruction->instruction.operand.operand1[1];
+    resultSlot = divideInstruction->instruction.operandExtra;
+    return (TZrBool)(leftSlot == 0u &&
+                     rightSlot == 1u &&
+                     returnInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
+                     returnInstruction->instruction.operand.operand1[0] == resultSlot);
+}
+
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_modulo_return(const SZrFunction *function) {
+    const TZrInstruction *moduloInstruction;
+    const TZrInstruction *returnInstruction;
+    TZrUInt32 leftSlot;
+    TZrUInt32 rightSlot;
+    TZrUInt32 resultSlot;
+
+    if (function == ZR_NULL ||
+        function->instructionsList == ZR_NULL ||
+        function->instructionsLength != 2u ||
+        function->parameterCount != 2 ||
+        function->parameterMetadata == ZR_NULL ||
+        function->parameterMetadataCount < 2u ||
+        function->hasVariableArguments ||
+        !function->hasCallableReturnType ||
+        !backend_aot_c_type_ref_is_u64(&function->callableReturnType) ||
+        !backend_aot_c_type_ref_is_u64(&function->parameterMetadata[0].type) ||
+        !backend_aot_c_type_ref_is_u64(&function->parameterMetadata[1].type)) {
+        return ZR_FALSE;
+    }
+
+    moduloInstruction = &function->instructionsList[0];
+    returnInstruction = &function->instructionsList[1];
+    if (moduloInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(MOD_UNSIGNED)) {
+        return ZR_FALSE;
+    }
+
+    leftSlot = moduloInstruction->instruction.operand.operand1[0];
+    rightSlot = moduloInstruction->instruction.operand.operand1[1];
+    resultSlot = moduloInstruction->instruction.operandExtra;
+    return (TZrBool)(leftSlot == 0u &&
+                     rightSlot == 1u &&
+                     returnInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
+                     returnInstruction->instruction.operand.operand1[0] == resultSlot);
 }
 
 TZrBool backend_aot_c_try_get_u64_arg0_arg1_subtract_return(const SZrFunction *function) {

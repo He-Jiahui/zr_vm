@@ -100,6 +100,29 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
+static void assert_text_section_contains_all(const char *text,
+                                             const char *startNeedle,
+                                             const char *endNeedle,
+                                             const char *const *needles,
+                                             size_t needleCount) {
+    const char *start;
+    const char *end;
+    size_t index;
+
+    start = strstr(text, startNeedle);
+    TEST_ASSERT_NOT_NULL(start);
+    end = strstr(start + strlen(startNeedle), endNeedle);
+    TEST_ASSERT_NOT_NULL(end);
+
+    for (index = 0; index < needleCount; index++) {
+        const char *found = strstr(start, needles[index]);
+        if (found == NULL || found >= end) {
+            printf("Missing source contract text in section: %s\n", needles[index]);
+            TEST_FAIL_MESSAGE("missing required section source contract text");
+        }
+    }
+}
+
 static void test_aot_c_source_makes_unresolved_callable_constant_explicit_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_unsupported_callable_constant_materialization(",
@@ -140,6 +163,34 @@ static void test_aot_c_source_makes_unresolved_callable_constant_explicit_bounda
     free(headerText);
     free(valueLoweringText);
     free(functionBodyText);
+}
+
+static void test_aot_c_runtime_constant_helpers_resolve_record_without_frame_handle(void) {
+    static const char *const runtimeSourceNeedles[] = {
+            "SZrLibraryAotRuntimeState *runtimeState;",
+            "runtimeState = state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global)",
+            "function = aot_runtime_frame_function(frame);",
+            "record = frame != ZR_NULL ? (SZrLibraryAotLoadedModule *)frame->recordHandle : ZR_NULL;",
+            "if (record == ZR_NULL) {",
+            "record = aot_runtime_find_record_for_function(runtimeState, function);",
+            "state == ZR_NULL || function == ZR_NULL || record == ZR_NULL",
+    };
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+
+    TEST_ASSERT_NOT_NULL(runtimeSourceText);
+
+    assert_text_section_contains_all(runtimeSourceText,
+                                     "TZrBool ZrLibrary_AotRuntime_CopyConstant(SZrState *state,",
+                                     "TZrBool ZrLibrary_AotRuntime_CreateClosure(SZrState *state,",
+                                     runtimeSourceNeedles,
+                                     ARRAY_COUNT(runtimeSourceNeedles));
+    assert_text_section_contains_all(runtimeSourceText,
+                                     "TZrBool ZrLibrary_AotRuntime_CreateClosure(SZrState *state,",
+                                     "TZrBool ZrLibrary_AotRuntime_GetClosureValue(SZrState *state,",
+                                     runtimeSourceNeedles,
+                                     ARRAY_COUNT(runtimeSourceNeedles));
+
+    free(runtimeSourceText);
 }
 
 static void test_aot_c_source_makes_create_closure_explicit_boundary(void) {
@@ -345,6 +396,7 @@ void tearDown(void) {}
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_source_makes_unresolved_callable_constant_explicit_boundary);
+    RUN_TEST(test_aot_c_runtime_constant_helpers_resolve_record_without_frame_handle);
     RUN_TEST(test_aot_c_source_makes_create_closure_explicit_boundary);
     RUN_TEST(test_aot_c_source_lowers_get_sub_function_to_native_closure_boundary_helper);
     RUN_TEST(test_aot_c_source_lowers_closure_value_access_to_runtime_boundary);

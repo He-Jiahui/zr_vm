@@ -22,6 +22,34 @@ static void test_aot_c_generated_shared_library_executes_static_u64_no_arg_typed
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
 }
 
+static void test_aot_c_generated_shared_library_returns_static_u64_no_arg_result_through_u64_boundary(void) {
+    const SZrAotTypedDirectCallU64SmokeCase testCase = {
+            "func answer(): uint {\n"
+            "    var result: uint = 42;\n"
+            "    return result;\n"
+            "}\n"
+            "var value: uint = answer();\n"
+            "return <int> value;",
+            "aot-runtime-static-u64-return-boundary-smoke",
+            "runtime_static_u64_return_boundary_project",
+            "static_u64_return_boundary_smoke",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state);",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state) {",
+            "return (TZrUInt64)42;",
+            "/* zr_aot_static_u64_no_arg_direct_call */",
+            "zr_aot_typed_u64_fn_1(state)",
+            "/* zr_aot_static_u64_no_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_u64_smoke_with_options(
+            &testCase,
+            "ZrLibrary_AotRuntime_ReturnU64(state, zr_aot_u",
+            "ZrLibrary_AotRuntime_Return(state, &frame, 0, ZR_FALSE)",
+            ZR_VALUE_TYPE_NULL,
+            ZR_FALSE);
+}
+
 static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_typed_thunk(void) {
     const SZrAotTypedDirectCallU64SmokeCase testCase = {
             "func pass(value: uint): uint {\n"
@@ -231,6 +259,54 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_mult
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
 }
 
+static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_divide_typed_thunk(void) {
+    const SZrAotTypedDirectCallU64SmokeCase testCase = {
+            "func quotient(left: uint, right: uint): uint {\n"
+            "    return left / right;\n"
+            "}\n"
+            "var left: uint = 84;\n"
+            "var right: uint = 2;\n"
+            "var value: uint = quotient(left, right);\n"
+            "return <int> value;",
+            "aot-runtime-static-u64-two-arg-divide-typed-call-smoke",
+            "runtime_static_u64_two_arg_divide_project",
+            "static_u64_two_arg_divide_typed_call_smoke",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            "return (TZrUInt64)(zr_aot_arg0 / zr_aot_arg1);",
+            "/* zr_aot_static_u64_two_arg_direct_call */",
+            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_u64_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_modulo_typed_thunk(void) {
+    const SZrAotTypedDirectCallU64SmokeCase testCase = {
+            "func remainder(left: uint, right: uint): uint {\n"
+            "    return left % right;\n"
+            "}\n"
+            "var left: uint = 87;\n"
+            "var right: uint = 45;\n"
+            "var value: uint = remainder(left, right);\n"
+            "return <int> value;",
+            "aot-runtime-static-u64-two-arg-modulo-typed-call-smoke",
+            "runtime_static_u64_two_arg_modulo_project",
+            "static_u64_two_arg_modulo_typed_call_smoke",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            "return (TZrUInt64)(zr_aot_arg0 % zr_aot_arg1);",
+            "/* zr_aot_static_u64_two_arg_direct_call */",
+            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_u64_smoke(&testCase);
+}
+
 static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_subtract_typed_thunk(void) {
     const SZrAotTypedDirectCallU64SmokeCase testCase = {
             "func diff(left: uint, right: uint): uint {\n"
@@ -327,9 +403,210 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_bitw
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
 }
 
+static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_add_typed_thunk(void) {
+    const SZrAotTypedDirectCallU64SmokeCase testCase = {
+            "func sum3(left: uint, middle: uint, right: uint): uint {\n"
+            "    return left + middle + right;\n"
+            "}\n"
+            "var first: uint = 12;\n"
+            "var second: uint = 20;\n"
+            "var third: uint = 10;\n"
+            "var value: uint = sum3(first, second, third);\n"
+            "return <int> value;",
+            "aot-runtime-static-u64-three-arg-add-typed-call-smoke",
+            "runtime_static_u64_three_arg_add_project",
+            "static_u64_three_arg_add_typed_call_smoke",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            "return (TZrUInt64)(zr_aot_arg0 + zr_aot_arg1 + zr_aot_arg2);",
+            "/* zr_aot_static_u64_three_arg_direct_call */",
+            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_u64_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_multiply_typed_thunk(void) {
+    const SZrAotTypedDirectCallU64SmokeCase testCase = {
+            "func product3(left: uint, middle: uint, right: uint): uint {\n"
+            "    return left * middle * right;\n"
+            "}\n"
+            "var first: uint = 2;\n"
+            "var second: uint = 3;\n"
+            "var third: uint = 7;\n"
+            "var value: uint = product3(first, second, third);\n"
+            "return <int> value;",
+            "aot-runtime-static-u64-three-arg-multiply-typed-call-smoke",
+            "runtime_static_u64_three_arg_multiply_project",
+            "static_u64_three_arg_multiply_typed_call_smoke",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            "return (TZrUInt64)(zr_aot_arg0 * zr_aot_arg1 * zr_aot_arg2);",
+            "/* zr_aot_static_u64_three_arg_direct_call */",
+            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_u64_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_subtract_typed_thunk(void) {
+    const SZrAotTypedDirectCallU64SmokeCase testCase = {
+            "func diff3(left: uint, middle: uint, right: uint): uint {\n"
+            "    return left - middle - right;\n"
+            "}\n"
+            "var first: uint = 50;\n"
+            "var second: uint = 7;\n"
+            "var third: uint = 1;\n"
+            "var value: uint = diff3(first, second, third);\n"
+            "return <int> value;",
+            "aot-runtime-static-u64-three-arg-subtract-typed-call-smoke",
+            "runtime_static_u64_three_arg_subtract_project",
+            "static_u64_three_arg_subtract_typed_call_smoke",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            "return (TZrUInt64)(zr_aot_arg0 - zr_aot_arg1 - zr_aot_arg2);",
+            "/* zr_aot_static_u64_three_arg_direct_call */",
+            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_u64_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_divide_typed_thunk(void) {
+    const SZrAotTypedDirectCallU64SmokeCase testCase = {
+            "func quotient3(left: uint, middle: uint, right: uint): uint {\n"
+            "    return left / middle / right;\n"
+            "}\n"
+            "var first: uint = 168;\n"
+            "var second: uint = 2;\n"
+            "var third: uint = 2;\n"
+            "var value: uint = quotient3(first, second, third);\n"
+            "return <int> value;",
+            "aot-runtime-static-u64-three-arg-divide-typed-call-smoke",
+            "runtime_static_u64_three_arg_divide_project",
+            "static_u64_three_arg_divide_typed_call_smoke",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            "return (TZrUInt64)(zr_aot_arg0 / zr_aot_arg1 / zr_aot_arg2);",
+            "/* zr_aot_static_u64_three_arg_direct_call */",
+            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_u64_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_modulo_typed_thunk(void) {
+    const SZrAotTypedDirectCallU64SmokeCase testCase = {
+            "func remainder3(left: uint, middle: uint, right: uint): uint {\n"
+            "    return left % middle % right;\n"
+            "}\n"
+            "var first: uint = 92;\n"
+            "var second: uint = 50;\n"
+            "var third: uint = 43;\n"
+            "var value: uint = remainder3(first, second, third);\n"
+            "return <int> value;",
+            "aot-runtime-static-u64-three-arg-modulo-typed-call-smoke",
+            "runtime_static_u64_three_arg_modulo_project",
+            "static_u64_three_arg_modulo_typed_call_smoke",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            "return (TZrUInt64)(zr_aot_arg0 % zr_aot_arg1 % zr_aot_arg2);",
+            "/* zr_aot_static_u64_three_arg_direct_call */",
+            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_u64_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_bitwise_and_typed_thunk(void) {
+    const SZrAotTypedDirectCallU64SmokeCase testCase = {
+            "func mask3(left: uint, middle: uint, right: uint): uint {\n"
+            "    return left & middle & right;\n"
+            "}\n"
+            "var first: uint = 58;\n"
+            "var second: uint = 47;\n"
+            "var third: uint = 62;\n"
+            "var value: uint = mask3(first, second, third);\n"
+            "return <int> value;",
+            "aot-runtime-static-u64-three-arg-bitwise-and-typed-call-smoke",
+            "runtime_static_u64_three_arg_bitwise_and_project",
+            "static_u64_three_arg_bitwise_and_typed_call_smoke",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            "return (TZrUInt64)(zr_aot_arg0 & zr_aot_arg1 & zr_aot_arg2);",
+            "/* zr_aot_static_u64_three_arg_direct_call */",
+            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_u64_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_bitwise_or_typed_thunk(void) {
+    const SZrAotTypedDirectCallU64SmokeCase testCase = {
+            "func flags3(left: uint, middle: uint, right: uint): uint {\n"
+            "    return left | middle | right;\n"
+            "}\n"
+            "var first: uint = 40;\n"
+            "var second: uint = 2;\n"
+            "var third: uint = 0;\n"
+            "var value: uint = flags3(first, second, third);\n"
+            "return <int> value;",
+            "aot-runtime-static-u64-three-arg-bitwise-or-typed-call-smoke",
+            "runtime_static_u64_three_arg_bitwise_or_project",
+            "static_u64_three_arg_bitwise_or_typed_call_smoke",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            "return (TZrUInt64)(zr_aot_arg0 | zr_aot_arg1 | zr_aot_arg2);",
+            "/* zr_aot_static_u64_three_arg_direct_call */",
+            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_u64_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_bitwise_xor_typed_thunk(void) {
+    const SZrAotTypedDirectCallU64SmokeCase testCase = {
+            "func toggle3(left: uint, middle: uint, right: uint): uint {\n"
+            "    return left ^ middle ^ right;\n"
+            "}\n"
+            "var first: uint = 63;\n"
+            "var second: uint = 21;\n"
+            "var third: uint = 0;\n"
+            "var value: uint = toggle3(first, second, third);\n"
+            "return <int> value;",
+            "aot-runtime-static-u64-three-arg-bitwise-xor-typed-call-smoke",
+            "runtime_static_u64_three_arg_bitwise_xor_project",
+            "static_u64_three_arg_bitwise_xor_typed_call_smoke",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
+            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            "return (TZrUInt64)(zr_aot_arg0 ^ zr_aot_arg1 ^ zr_aot_arg2);",
+            "/* zr_aot_static_u64_three_arg_direct_call */",
+            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_u64_smoke(&testCase);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_no_arg_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_returns_static_u64_no_arg_result_through_u64_boundary);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_one_arg_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_one_arg_add_const_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_one_arg_subtract_const_typed_thunk);
@@ -339,9 +616,19 @@ int main(void) {
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_one_arg_bitwise_xor_const_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_multiply_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_divide_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_modulo_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_subtract_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_bitwise_and_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_bitwise_or_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_bitwise_xor_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_three_arg_add_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_three_arg_multiply_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_three_arg_subtract_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_three_arg_divide_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_three_arg_modulo_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_three_arg_bitwise_and_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_three_arg_bitwise_or_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_three_arg_bitwise_xor_typed_thunk);
     return UNITY_END();
 }

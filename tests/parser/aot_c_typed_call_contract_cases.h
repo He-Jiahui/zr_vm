@@ -1,0 +1,9 @@
+#ifndef ZR_VM_TESTS_AOT_C_TYPED_CALL_CONTRACT_CASES_H
+#define ZR_VM_TESTS_AOT_C_TYPED_CALL_CONTRACT_CASES_H
+
+void test_aot_c_source_lowers_static_no_arg_i64_calls_to_typed_thunks(void);
+void test_aot_c_source_lowers_static_no_arg_bool_calls_to_typed_thunks(void);
+void test_aot_c_source_lowers_static_no_arg_u64_calls_to_typed_thunks(void);
+void test_aot_c_source_lowers_static_f64_calls_to_typed_thunks(void);
+
+#endif

@@ -2807,13 +2807,19 @@ TZrBool ZrLibrary_AotRuntime_CopyConstant(SZrState *state,
                                           ZrAotGeneratedFrame *frame,
                                           TZrUInt32 destinationSlot,
                                           TZrUInt32 constantIndex) {
+    SZrLibraryAotRuntimeState *runtimeState;
     SZrLibraryAotLoadedModule *record;
     const SZrFunction *function;
     TZrStackValuePointer destinationPointer;
     const SZrTypeValue *source;
 
+    runtimeState = state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global)
+                                                                : ZR_NULL;
     function = aot_runtime_frame_function(frame);
     record = frame != ZR_NULL ? (SZrLibraryAotLoadedModule *)frame->recordHandle : ZR_NULL;
+    if (record == ZR_NULL) {
+        record = aot_runtime_find_record_for_function(runtimeState, function);
+    }
     if (state == ZR_NULL || function == ZR_NULL || record == ZR_NULL || constantIndex >= function->constantValueLength) {
         return ZR_FALSE;
     }
@@ -2831,13 +2837,19 @@ TZrBool ZrLibrary_AotRuntime_CreateClosure(SZrState *state,
                                            ZrAotGeneratedFrame *frame,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 constantIndex) {
+    SZrLibraryAotRuntimeState *runtimeState;
     SZrLibraryAotLoadedModule *record;
     const SZrFunction *function;
     TZrStackValuePointer destinationPointer;
     const SZrTypeValue *source;
 
+    runtimeState = state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global)
+                                                                : ZR_NULL;
     function = aot_runtime_frame_function(frame);
     record = frame != ZR_NULL ? (SZrLibraryAotLoadedModule *)frame->recordHandle : ZR_NULL;
+    if (record == ZR_NULL) {
+        record = aot_runtime_find_record_for_function(runtimeState, function);
+    }
     if (state == ZR_NULL || function == ZR_NULL || record == ZR_NULL || constantIndex >= function->constantValueLength) {
         return ZR_FALSE;
     }

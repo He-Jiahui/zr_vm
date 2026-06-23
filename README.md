@@ -1,1002 +1,661 @@
-# ZrVM
+# ZrVM 语法介绍
 
-> 本页按 2026-04-06 当前仓库里的文档、fixtures、测试用例和已跑通的验证结果整理，目标是把 **zr 语言当前已经落地的能力** 收敛到一个根目录总览里。下面优先写“仓库里已经有直接证据”的特性；对仍然只有语法面、索引面或局部运行面证据的点，会单独标明边界。
+更新日期: 2026-06-24
 
-## 当前已验证的能力范围
+本文是 ZR 语言当前语法面的入口文档，面向正在编写 `.zr` 源码的人。内容按现行解析器、语言规范、module/import 规则、using 规则和已有测试入口整理。
 
-- 基本表达式、局部变量、全局变量、顶层函数、入口模块顶层 `return`
-- `class / interface / struct / enum`
-- 字段、成员方法、静态字段、静态方法、getter / setter 属性
-- `lambda`、立即执行闭包、逃逸闭包
-- 生命周期 / 调用 / 运算符 / 转换 / 下标类元方法
-- `%module`、`%import`、`%test`、`%compileTime`、`%extern`、`%type`
-- `%async / %await`、`zr.task`、`zr.coroutine`、`zr.thread`
-- `%owned / %unique / %shared / %weak / %using / %upgrade / %release / %borrowed`
-- `zr.system`、`zr.network`、`zr.container`、`zr.math`、`zr.ffi`
-- FFI 外部函数 / struct / enum / delegate 声明，含 callback
-- GC、字符串异常、`Error` 派生异常、`try / catch / finally`
-- 固定长度数组、容器变长数组、`Map`、`Set`
-- 泛型、`const` 泛型、`%in / %out / %ref` 参数模式、`%type` 反射元数据
+需要先明确一个边界: 本文介绍的是当前推荐写法和解析器已经承认的语法表面，不等同于承诺所有语法都已经在解释器、二进制后端和 AOT 后端中完整闭环。遇到实现状态问题时，以仓库中的计划文档、测试和当前后端能力为准。
 
-## 1. 基本语言特性
+## 基本原则
 
-### 1.1 算数运算、局部变量、全局变量、全局方法
+ZR 的语法目前遵循这些规则:
+
+- 顶层文件必须声明 `%module`。
+- 导入使用 `%import`，项目内显式相对导入只使用前导点语法。
+- 函数声明推荐直接写 `name(...) { ... }`，旧的 `func name(...)` 只作为兼容输入。
+- 顶层测试使用 `%test("name") { ... }`。
+- 资源和模式守卫使用 `using`，不要再使用字段级 `%using`。
+- 所有权类型推荐使用 `Unique<T>`、`Shared<T>`、`Weak<T>`、`Borrow<T>`、`Loan<T>`。
+- 函数类型推荐使用 `%func(...) -> T`，`=>` 只作为兼容输入。
+- `%async`、`%await`、`%compileTime`、`%extern`、`%type` 是当前保留的编译器指令语法。
+
+一个最小文件:
 
 ```zr
-%module "core_types";
+%module "examples.hello";
 
-pub var globalSeed: int = 5;
+pub main(): int {
+    var message: string = "hello";
+    return 0;
+}
+```
 
-add(a: int, b: int): int {
-    var total = a + b;
-    var scaled = total * 3;
-    var shifted = (scaled - 4) << 1;
-    return shifted / 2;
+## 文件与模块
+
+每个 `.zr` 文件应以 `%module` 开头:
+
+```zr
+%module "app.main";
+%module("app.main");
+%module app.main;
+```
+
+三种形式都会被规范化为模块路径。旧的裸 `module app.main;` 不再是推荐语法，当前规则要求写 `%module`。
+
+导入使用 `%import`:
+
+```zr
+%import("zr.system");
+%import("app.math");
+%import app.math;
+```
+
+项目内相对导入使用前导点:
+
+```zr
+%import(".local");
+%import("..shared.types");
+%import("...root.feature");
+```
+
+导入规则要点:
+
+- `"zr.system"`、`"app.math"` 这类裸模块名保持绝对模块名。
+- `".local"` 表示当前模块目录下的 `local`。
+- `"..shared.types"` 表示上一级模块目录下的 `shared.types`。
+- 更多前导点表示继续向上。
+- `.zrp.pathAliases` 可提供 `@alias` 和 `@alias.foo.bar` 形式的别名导入。
+- 不使用 `"./x"`、`"../x"`、裸 `"."`、裸 `".."`、`"@alias/x"`。
+- 显式 `%module` 与 sourceRoot 推导出的模块路径不一致时，项目导入校验会报告不匹配。
+
+## 声明
+
+ZR 支持这些顶层声明:
+
+```zr
+%module "examples.declarations";
+
+pub var version: int = 1;
+
+pub add(left: int, right: int): int {
+    return left + right;
 }
 
-return add(globalSeed, 3);
-```
+pub struct Point {
+    var x: float;
+    var y: float;
+}
 
-常见基础能力已经有仓库级证据：
+pub class Counter {
+    var value: int = 0;
 
-- `+ - * / %`
-- 位运算和位移
-- `<int> expr` 这类显式转换
-- 顶层 `var`
-- 顶层函数
-- 顶层 `return` 作为入口模块返回值
-
-函数声明当前默认直接写 `name(...) { ... }`；`func name(...) { ... }` 仍兼容，但不是必需关键字。
-
-### 1.2 入口写法
-
-zr 当前大量项目 fixture 都直接把入口逻辑写在 `main.zr` 顶层，而不是强制要求 `main()`：
-
-```zr
-var core = %import("core_types");
-var meta = %import("meta_surface");
-
-return core.coreScore() + meta.metaScore();
-```
-
-## 2. 类型系统与面向对象
-
-### 2.1 class、field、getter、setter、member method、static method
-
-```zr
-class Accumulator {
-    pri var _value: int = 0;
-    pub static var created: int = 0;
-
-    pub @constructor(start: int) {
-        this._value = start;
-        Accumulator.created = Accumulator.created + 1;
+    @constructor(start: int = 0) {
+        this.value = start;
     }
 
-    pub get value: int {
-        return this._value;
-    }
-
-    pub set value(next: int) {
-        this._value = next;
-    }
-
-    pub pulse(delta: int): int {
-        this.value = this.value + delta;
+    pub add(step: int): int {
+        this.value += step;
         return this.value;
     }
-
-    pub static identity(value: int): int {
-        return value;
-    }
 }
 
-var counter = new Accumulator(10);
-counter.value = counter.pulse(4);
-return counter.value + Accumulator.identity(1);
-```
-
-这段覆盖了：
-
-- `field`
-- `getter / setter`
-- 普通成员方法
-- 静态字段
-- 静态方法
-- `class` 实例化 `new Type(...)`
-
-### 2.2 interface
-
-```zr
-interface Measure<T> {
+pub interface Reader<out T> {
     read(): T;
 }
 
-class Meter: Measure<int> {
-    pri var value: int = 0;
-
-    pub @constructor(seed: int) {
-        this.value = seed;
-    }
-
-    pub read(): int {
-        return this.value;
-    }
+pub enum Color: int {
+    Red;
+    Green;
+    Blue;
 }
 ```
 
-### 2.3 struct 值类型实例化
+可见性修饰符:
 
 ```zr
-struct Vector2 {
-    pub var x: int;
-    pub var y: int;
-
-    pub @constructor(x: int, y: int) {
-        this.x = x;
-        this.y = y;
-    }
-}
-
-var point = $Vector2(8, 9);
-return point.x + point.y;
+pub api(): void {}
+pri helper(): void {}
+pro inheritedHook(): void {}
 ```
 
-当前仓库里的 `struct` 值类型写法重点是：
+未写可见性时默认私有。`class`、`struct`、`interface`、`enum`、`union` 以及成员声明都可以出现在模块中。`abstract`、`virtual`、`override`、`final`、`shadow` 是当前保留的声明修饰符，具体可用位置由声明种类决定。
 
-- 声明时和 `class` 类似
-- 值构造使用 `$Type(...)`
-- 适合做轻量值语义聚合
+## 变量
 
-### 2.4 enum
+变量声明使用 `var`:
 
 ```zr
-enum Mode: int {
-    Idle = 2;
-    Warm = 5;
-    Hot = 7;
-}
-
-var mode = Mode.Hot;
-return <int> mode;
+var count: int = 0;
+var name = "zr";
+var const limit: int = 10;
 ```
 
-### 2.5 额外已验证的泛型 / const 泛型 / 约束
+解构声明:
 
 ```zr
-interface IProducer<out T> where T: class, new() {
-    next(): T;
+var [first, second] = pair;
+var {width, height} = rect;
+var {localWidth: width, localHeight: height} = rect;
+```
+
+语句通常需要分号。块声明、函数声明和类型声明本身不需要额外分号。
+
+## 函数
+
+函数声明推荐写法:
+
+```zr
+pub distance(a: Point, b: Point): float {
+    var dx = a.x - b.x;
+    var dy = a.y - b.y;
+    return sqrt(dx * dx + dy * dy);
 }
+```
 
-class Matrix<T, const N: int> {
-    pub var rows: Array<T>[N];
+参数支持默认值、`const`、变参和传递模式:
 
-    pub @constructor() {
-    }
-}
+```zr
+pub log(message: string, level: int = 1): void {}
+pub sum(...values: int[]): int { return 0; }
+pub copy(%in src: Buffer, %out dst: Buffer): void {}
+pub mutate(%ref item: Item): void {}
+```
 
-identity<T>(value: T): T {
+约束:
+
+- `%out` 参数不能有默认值。
+- `...args: T[]` 表示变参。
+- `func name(...)` 是兼容写法，新代码应直接写 `name(...)`。
+
+## 类型
+
+常见类型写法:
+
+```zr
+var ok: bool = true;
+var n: int = 1;
+var ratio: float = 0.5;
+var text: string = "hello";
+var letter: char = 'z';
+```
+
+数组、固定数组、范围数组和元组类型:
+
+```zr
+var names: string[];
+var bytes: uint8[16];
+var window: int[1..8];
+var openRange: int[4..];
+var pair: [int, string];
+```
+
+泛型类型:
+
+```zr
+var points: List<Point>;
+var byName: Map<string, Point>;
+```
+
+函数类型使用 `%func`:
+
+```zr
+var transform: %func(int, int) -> int;
+var predicate: %func(string) -> bool;
+var FunctionAlias = %func(int) -> int;
+```
+
+`%func(...) -> T` 是规范写法。`%func(...) => T` 仍可作为兼容输入读取，但文档和格式化输出应使用 `->`。
+
+异步类型:
+
+```zr
+var job: %async int;
+```
+
+所有权类型推荐使用大写泛型:
+
+```zr
+var owner: Unique<Resource>;
+var shared: Shared<Resource>;
+var weak: Weak<Resource>;
+var borrowed: Borrow<Resource>;
+var loaned: Loan<Resource>;
+```
+
+旧式 `%unique T`、`%shared T`、`%weak T`、`%borrow T`、`%loan T` 属于迁移兼容表面，不应作为新代码的主要写法。旧的小写泛型 `unique<T>`、`shared<T>` 等已经不是当前推荐语法。
+
+## 泛型与约束
+
+声明可以带类型参数和编译期常量参数:
+
+```zr
+pub identity<T>(value: T): T {
     return value;
 }
 
-var matrix = new Matrix<int, 4>();
-return identity(matrix);
+pub struct FixedBuffer<T, const N: int> {
+    var data: T[N];
+}
 ```
 
-### 2.6 类型声明规范 v2：`%func`、箭头兼容、类型对象化与别名
-
-当前类型位遵循统一顺序：`前缀 % 保留字修饰 + 主类型 + 后缀修饰`。主类型可以是命名类型、泛型类型、元组类型、分组类型、`%func(...) -> Type`。
+接口支持变型标记:
 
 ```zr
-var ownedName: %borrowed string;
-var fixed: int[4];
-var buckets: Map<string, Array<int>>;
-var callbacks: %shared (%func(int)->string)[];
-```
-
-函数类型正式表面语法统一为 `%func(...) -> ...`；parser 在 `%func` 和 lambda 两处都兼容 `=>`，但规范写法、反射输出、文档示例统一使用 `->`：
-
-```zr
-var canonical: %func(int)->int = (x: int)->{
-    return x;
-};
-
-var compat: %func(int)=>int = (x: int)=>{
-    return x;
-};
-```
-
-类型本身也可以对象化为 `Type` 值，并且可直接复用普通绑定模型做类型别名：
-
-```zr
-var funcType = %type(%func(int)->int);
-
-var F = %func(int)->int;
-var callback: F = (x: int)->{
-    return x;
-};
-
-return funcType.kind == "function" ? callback(7) : 0;
-```
-
-补充规则：
-
-- `func` 关键字继续兼容，但只是函数声明的可选显式写法；默认直接写 `name(...) { ... }`
-- `%async run(): int` 与 `%async run(): %async int` 都兼容，但文档和反射优先展示显式 `%async T`
-- 类型值别名必须是编译期可折叠且冻结的 `Type` 值；名字与正式类型声明冲突时直接报错
-
-## 3. Lambda 与闭包
-
-### 3.1 立即执行闭包
-
-```zr
-var immediateBase = 7;
-var immediateScore = ((delta: int)->{
-    return immediateBase + delta;
-})(5);
-
-return immediateScore;
-```
-
-### 3.2 函数退出后仍然存活的闭包引用
-
-```zr
-makeEscapingCallback(offset: int) {
-    var callback = (value: int)->{
-        return value + offset;
-    };
-    return callback;
+pub interface Source<out T> {
+    read(): T;
 }
 
-var escaped = makeEscapingCallback(8);
-return escaped(6);
+pub interface Sink<in T> {
+    write(value: T): void;
+}
 ```
 
-### 3.3 逃逸到回调句柄的闭包
+`in` 和 `out` 只用于接口类型参数，不用于普通 `class`、`struct` 或函数泛型参数。
 
-这个写法适合“函数退出后，闭包被事件系统 / FFI / 宿主持有”的场景：
+`where` 约束:
 
 ```zr
-%extern("ffi_fixture") {
-    delegate Unary(value: f64): f64;
-
-    #zr.ffi.entry("zr_ffi_apply_callback")#
-    Apply(value: f64, cb: Unary): f64;
+pub make<T>(): T where T: class, new() {
+    return new T();
 }
 
-var ffi = %import("zr.ffi");
-var captured = 3.0;
+pub cloneOwner<T>(value: T): T where T: owner {
+    return value;
+}
 
-var cb = ffi.callback(Unary, (value)->{
-    return value + captured;
-});
-
-return Apply(5.0, cb);
+pub useUnique<T>(value: T): void where T: unique {}
+pub useShared<T>(value: T): void where T: shared {}
 ```
 
-## 4. 元方法与运算符覆盖面
+当前约束表面包含 `class`、`struct`、`new()`、`owner`、`unique`、`shared`、`weak`，也可以使用类型名作为约束。
 
-### 4.1 当前已索引 / 已实现的元方法种类
+## 表达式
 
-按当前编译器/LSP 元数据，仓库里已经能识别这些元方法名字：
-
-- 生命周期：`@constructor`、`@destructor`、`@close`
-- 算数 / 运算符：`@add`、`@sub`、`@mul`、`@div`、`@mod`、`@pow`、`@neg`
-- 比较 / 位运算：`@compare`、`@shiftLeft`、`@shiftRight`、`@bitAnd`、`@bitOr`、`@bitXor`、`@bitNot`
-- 转换：`@toBool`、`@toString`、`@toInt`、`@toUInt`、`@toFloat`
-- 调用 / 访问：`@call`、`@getter`、`@setter`、`@getItem`、`@setItem`
-- 装饰器钩子：`@decorate`
-
-### 4.2 生命周期、调用、属性、下标、运算符示例
+常见表达式:
 
 ```zr
-class LifecycleHandle {
-    pub static var closeCount: int = 0;
-    pub static var destroyCount: int = 0;
+var a = 1 + 2 * 3;
+var b = (a > 3) ? a : 0;
+var c = <TargetType>value;
+var item = list[index];
+var next = object.method(arg).field;
+```
 
-    pub @constructor() {
-    }
+对象、数组和生成器块:
 
-    pub @close() {
-        LifecycleHandle.closeCount = LifecycleHandle.closeCount + 1;
-    }
+```zr
+var array = [1, 2, 3];
+var object = { name: "zr", value: 1 };
+var computed = { [key]: value };
 
-    pub @destructor() {
-        LifecycleHandle.destroyCount = LifecycleHandle.destroyCount + 1;
-    }
+var generated = {{
+    out 1;
+    out 2;
+}};
+```
+
+构造:
+
+```zr
+var p = $Point(x: 1.0, y: 2.0);
+var counter = new Counter(0);
+```
+
+约定:
+
+- `struct` 值构造使用 `$Type(...)`。
+- `class` 实例构造使用 `new Type(...)`。
+- 字符串使用双引号，字符使用单引号，模板字符串使用反引号。
+
+## 控制流
+
+条件:
+
+```zr
+if (count > 0) {
+    log("positive");
+} else if (count == 0) {
+    log("zero");
+} else {
+    log("negative");
+}
+```
+
+循环:
+
+```zr
+while (running) {
+    tick();
 }
 
-class Meter {
-    pri var raw: int = 0;
-
-    pub @constructor(start: int) {
-        this.raw = start;
-    }
-
-    pub get value: int {
-        return this.raw + 1;
-    }
-
-    pub set value(next: int) {
-        this.raw = next + 2;
-    }
-
-    pub @call(delta: int): int {
-        this.value = this.value + delta;
-        return this.value;
-    }
+for (var i: int = 0; i < 10; i += 1) {
+    step(i);
 }
 
-struct Vector2 {
-    pub var x: int;
-    pub var y: int;
+for (;;) {
+    break;
+}
 
-    pub @constructor(x: int, y: int) {
-        this.x = x;
-        this.y = y;
+for (var item in items) {
+    visit(item);
+}
+```
+
+异常:
+
+```zr
+try {
+    risky();
+} catch (e: RuntimeError) {
+    handle(e);
+} finally {
+    cleanup();
+}
+
+throw error;
+```
+
+`break` 和 `continue` 可在当前语法中携带可选表达式，但普通循环中建议只使用无表达式形式，避免和后续语义约束冲突。
+
+## switch 与 union
+
+普通 `switch`:
+
+```zr
+switch (code) {
+    (0) {
+        return "ok";
     }
-
-    pub static @add(left: Vector2, right: Vector2): Vector2 {
-        return $Vector2(left.x + right.x, left.y + right.y);
+    (1) {
+        return "retry";
     }
-
-    pub static @compare(left: Vector2, right: Vector2): int {
-        return (left.x + left.y) - (right.x + right.y);
+    () {
+        return "unknown";
     }
+}
+```
 
-    pub @toString(): string {
-        return "Vector2";
-    }
+`union` 声明:
 
-    pub @getItem(index: int): int {
-        return index == 0 ? this.x : this.y;
-    }
+```zr
+pub union Shape {
+    Empty;
+    Circle(radius: float);
+    Rect { width: float; height: float; }
+    @Fallback(message: string);
+}
+```
 
-    pub @setItem(index: int, value: int): void {
-        if (index == 0) {
-            this.x = value;
-        } else {
-            this.y = value;
+变体形式:
+
+- `Empty;` 是无载荷变体。
+- `Circle(radius: float);` 是元组式载荷。
+- `Rect { width: float; height: float; }` 是结构式载荷。
+- `@Fallback(...)` 表示默认变体，一个 union 中只能有一个默认变体。
+
+Union switch:
+
+```zr
+pub area(shape: Shape): float {
+    switch (shape) {
+        (Shape.Empty) {
+            return 0.0;
+        }
+        (Shape.Circle(r)) {
+            return 3.14159 * r * r;
+        }
+        (Shape.Rect { width: w, height: h }) {
+            return w * h;
         }
     }
 }
-
-var meter = new Meter(4);
-var a = meter.value;
-meter.value = 6;
-var b = meter(3);
-var v = $Vector2(1, 2);
-v[0] = 8;
-return a + b + v[0];
 ```
 
-说明：
+当目标 union 类型已知时，分支中也可以使用未限定的变体名。没有默认分支时，编译器可以对已知 union 做基础穷尽性检查，并报告重复变体等不可达分支。
 
-- 源码里的属性写法是 `get name` / `set name`；底层元数据面对应 getter / setter slot
-- `@call` 已有直接运行时证据
-- `@close` 会参与 `%using` 的自动释放路径
+## using
 
-## 5. 模块、反射、编译期与 `%` 保留字
+`using` 是当前资源释放、所有权借用和 union/plugin 守卫的统一语法。
 
-### 5.1 模块与导入
+资源作用域:
 
 ```zr
-%module "core_types";
+using owner;
 
-var system = %import("zr.system");
-var math = %import("zr.math");
-var container = %import("zr.container");
+using (owner) {
+    owner.work();
+}
 ```
 
-### 5.2 `%type` 反射 / 元数据
+所有权成员方法:
 
 ```zr
-class User {
-    pub var id: int = 1;
-}
+var owner: Unique<Resource> = %unique(new Resource());
+var shared = owner.share();
+var weak = shared.weak();
 
-var info = %type(User);
-var members = info.members;
-var meta = info.metadata;
-return members.id[0];
+using (owner.loan()) {
+    owner.work();
+}
 ```
 
-在当前仓库里，`%type(...)` 已经被用于：
-
-- runtime decorator 元数据读取
-- compile-time decorator 元数据读取
-- 参数 / 成员 / 类型反射
-
-### 5.3 `%compileTime` 编译时变量、函数、代码块
+常见所有权操作:
 
 ```zr
-%compileTime var MAX_SIZE = 100;
-
-%compileTime validateArraySize(size: int): bool {
-    return size > 0;
-}
-
-%compileTime {
-    var internalSeed = 5;
-}
-
-var fixed: int[MAX_SIZE];
-var validated: int[validateArraySize(50) ? 50 : 10];
-```
-
-当前仓库已经有直接证据表明 `%compileTime` 支持：
-
-- 编译期变量
-- 编译期函数
-- 编译期递归
-- 编译期代码块
-- 编译期表达式直接投影到运行时初始化
-- 与命名参数 / 默认参数联动
-
-### 5.4 `%test` 分阶段测试
-
-一个模块里可以拆多个命名 `%test`，把不同语义域分阶段验证：
-
-```zr
-%test("core_types_score") {
-    return coreScore();
-}
-
-%test("core_projection_score") {
-    return coreProjection;
-}
-
-%test("exception_score") {
-    return exceptionScore();
-}
-```
-
-这也是当前仓库很多 fixture 的组织方式：基础类型、元方法、装饰器、并发、异常分别独立测试。
-
-### 5.5 `%` 保留字现状总表
-
-| 关键字 | 当前状态 | 最小写法 |
-| --- | --- | --- |
-| `%module` | 已验证 | `%module "core_types";` |
-| `%import` | 已验证 | `var system = %import("zr.system");` |
-| `%test` | 已验证 | `%test("core") { return 1; }` |
-| `%compileTime` | 已验证 | `%compileTime var MAX = 4;` |
-| `%extern` | 已验证 | `%extern("ffi_fixture") { Add(lhs:i32, rhs:i32): i32; }` |
-| `%type` | 已验证 | `var meta = %type(User).metadata;`, `var funcType = %type(%func(int)->int);` |
-| `%async` | 已验证 | `%async run(): %async int { ... }`，兼容 `%async run(): int { ... }` |
-| `%await` | 已验证 | `return %await task;` |
-| `%owned` | 已验证 | `%owned class PointSet {}` |
-| `%unique` | 已验证 | `return %unique new PointSet();` |
-| `%shared` | 已验证 | `var shared = %shared(owner);` |
-| `%weak` | 已验证 | `var weak = %weak(shared);` |
-| `%using` | 已验证 | `var owner = %using new Holder();` |
-| `%upgrade` | 已验证 | `var upgraded = %upgrade(weak);` |
-| `%release` | 已验证 | `var released = %release(shared);` |
-| `%in` | 已验证 | `keep(%in value: int): int { ... }` |
-| `%out` | 已验证 | `fill(%out value: int): void { ... }` |
-| `%ref` | 已验证 | `swap(%ref left: T, %ref right: T)` |
-| `%borrowed` | 已验证 | `%async f(value: %borrowed string): %async string { ... }` |
-| `%mutex` | 当前拒绝 | 当前测试明确要求报错 |
-| `%atomic` | 当前拒绝 | 当前测试明确要求报错 |
-
-### 5.6 项目 `%import` 路径规则
-
-项目源码里的 `%import` 现在统一先解析成 canonical module key，再进入编译、运行时、CLI manifest 和 LSP。
-
-- 裸模块名 / 现有绝对模块名保持不变：`%import("foo")`、`%import("zr.system")`
-- 显式相对导入只接受 leading-dot 形式：
-  - `%import(".x.y")` => 当前模块目录下的 `x/y`
-  - `%import("..x.y")` => 上一级目录下的 `x/y`
-  - 每多一个前导点，就再向上一级
-- `.zrp` 可以声明 `pathAliases`，alias 值使用 sourceRoot 下的 slash-separated module key：
-
-```json
-{
-  "pathAliases": {
-    "@app": "feature/app",
-    "@shared": "common/shared"
-  }
-}
-```
-
-- alias 导入写法：
-  - `%import("@app")`
-  - `%import("@app.foo.bar")` => `feature/app/foo/bar`
-- 明确拒绝这些形式：
-  - `./foo`
-  - `../foo`
-  - bare `.` / `..`
-  - `@alias/foo`
-  - unknown alias
-  - 解析后越过 `sourceRoot` 的父目录逃逸
-- 旧规则保持不变：canonical 解析失败后，不再做隐式相对猜测或名称回退。
-
-## 6. 装饰器
-
-### 6.1 运行时装饰器 `#decorator#`
-
-```zr
-markClass(target: %type Class): void {
-    target.metadata.runtimeSerializable = true;
-}
-
-markFunction(target: %type Function): void {
-    target.metadata.instrumented = true;
-}
-
-#markClass#
-class User {
-}
-
-#markFunction#
-decoratedBonus(): int {
-    return %type(decoratedBonus).metadata.instrumented ? 1 : 0;
-}
-```
-
-当前仓库对运行时装饰器已有 class / field / method / property / function 级使用证据。
-
-### 6.2 编译时装饰器 `#decorator#`
-
-```zr
-%compileTime class Serializable {
-    pri var marker: int = 15;
-
-    @constructor(marker: int = 15) {
-        this.marker = marker;
-    }
-
-    @decorate(target: %type Class): zr.DecoratorPatch {
-        return {
-            metadata: {
-                serializable: this.marker
-            }
-        };
-    }
-}
-
-%compileTime class MarkParameter {
-    @decorate(target: %type Parameter): zr.DecoratorPatch {
-        return { metadata: { parameterTag: 62 } };
-    }
-}
-
-%compileTime markFunction(target: %type Function, bonus: int = 17): zr.DecoratorPatch {
-    return { metadata: { instrumented: bonus } };
-}
-
-#Serializable()#
-class CompileTimeUser {
-}
-
-#markFunction#
-decoratedBonus(#MarkParameter# value: int = 1): int {
-    return %type(decoratedBonus).metadata.instrumented;
-}
-```
-
-这部分覆盖了：
-
-- 编译时 class decorator
-- 编译时 function decorator
-- 编译时 parameter decorator
-- `@decorate(target: %type X): zr.DecoratorPatch`
-
-## 7. 容器、定长数组、native 库类型推断
-
-### 7.1 定长数组
-
-```zr
-var fixed: int[4] = [1, 2, 3, 4];
-
-summarizeFixed(values: int[4]): int {
-    var total = 0;
-    for (var item in values) {
-        total = total + <int> item;
-    }
-    return total;
-}
-
-var runtimeFixed: int[];
-makeRuntimeFixed(): int[]{
-	var arr = new int[20];
-	return arr;
-}
-
-return summarizeFixed(fixed);
-```
-
-### 7.2 编译期决定长度的数组
-
-```zr
-%compileTime var ROWS = 4;
-var matrixRow: int[ROWS];
-```
-
-### 7.3 `zr.container` 变长数组、Map、Set
-
-```zr
-var container = %import("zr.container");
-
-var list = new container.LinkedList<int>();
-list.addLast(7);
-list.addLast(8);
-
-var arr = new container.Array<int>();
-arr.add(6);
-arr.add(11);
-
-var left = new container.Pair<int, string>(1, "a");
-var right = new container.Pair<int, string>(2, "b");
-
-var seen = new container.Set<Pair<int, string>>();
-seen.add(left);
-seen.add(right);
-
-var buckets = new container.Map<string, Array<int>>();
-buckets["sum"] = arr;
-
-var fetched: Array<int> = buckets["sum"];
-return fetched[0] + list.first.value + seen.count;
-```
-
-这类写法同时体现了当前仓库已经具备的：
-
-- native / builtin 模块导出类型能进入类型推断
-- 泛型容器闭型在导入后可直接用 `new container.Map<string, Array<int>>()`
-- `Array<int>` 这类 builtin 类型可在注解和推断之间来回流动
-
-## 8. native call、system、network、ffi、gc
-
-### 8.1 native call
-
-直接调用 native 模块导出：
-
-```zr
-var math = %import("zr.math");
-var direct = math.Matrix4x4.scale(2.0, 3.0, 4.0);
-return direct.m11 + direct.m22;
-```
-
-按名字动态调用模块导出：
-
-```zr
-var system = %import("zr.system");
-var byName = system.vm.callModuleExport("zr.math", "sqrt", [4.0]);
-return byName;
-```
-
-### 8.2 system
-
-```zr
-var system = %import("zr.system");
-
-system.console.printLine("hello");
-system.gc.stop();
-system.gc.step();
-system.gc.collect();
-system.gc.start();
-```
-
-### 8.3 network
-
-```zr
-var network = %import("zr.network");
-
-var listener = network.tcp.listen("127.0.0.1", 0);
-var client = network.tcp.connect("127.0.0.1", listener.port());
-var server = listener.accept(3000);
-
-var wrotePing = client.write("ping");
-var readPing = server.read(16, 3000);
-
-var socket = network.udp.bind("127.0.0.1", 0);
-var sentEcho = socket.send("127.0.0.1", socket.port(), "echo");
-var packet = socket.receive(16, 3000);
-
-server.close();
-client.close();
-listener.close();
-socket.close();
-```
-
-### 8.4 FFI 调用
-
-最小 `%extern` 函数声明：
-
-```zr
-%extern("ffi_fixture") {
-    #zr.ffi.entry("zr_ffi_add_i32")#
-    Add(lhs: i32, rhs: i32): i32;
-}
-
-return Add(7, 5);
-```
-
-带 `delegate` 的 callback 例子：
-
-```zr
-%extern("ffi_fixture") {
-    delegate Unary(value: f64): f64;
-
-    #zr.ffi.entry("zr_ffi_apply_callback")#
-    Apply(value: f64, cb: Unary): f64;
-}
-
-var ffi = %import("zr.ffi");
-var cb = ffi.callback(Unary, (value)->{
-    return value * 2.0;
-});
-
-return Apply(5.0, cb);
-```
-
-当前 `%extern` 公开面还有：
-
-- extern `struct`
-- extern `enum`
-- extern `delegate`
-- `#zr.ffi.callconv(...)#`
-- `#zr.ffi.charset(...)#`
-- `#zr.ffi.pack(...)#`
-- `#zr.ffi.align(...)#`
-- `#zr.ffi.offset(...)#`
-- `#zr.ffi.value(...)#`
-- `#zr.ffi.underlying(...)#`
-- 参数级 `#zr.ffi.in# / #zr.ffi.out# / #zr.ffi.inout#`
-
-## 9. ownership、弱引用、协程、任务、多线程
-
-### 9.1 `%using`、`%shared`、`%weak`、`%upgrade`、`%release`
-
-```zr
-class Holder {
-}
-
-var owner = %using new Holder();
+var owner = %unique(new Resource());
 var shared = %shared(owner);
 var weak = %weak(shared);
-var upgraded = %upgrade(weak);
-var releasedShared = %release(shared);
-var releasedUpgrade = %release(upgraded);
-var after = %upgrade(weak);
-
-if (owner == null && releasedShared == null && releasedUpgrade == null && after == null) {
-    return 1;
-}
-return 0;
+var borrow = %borrow(owner);
+var loan = %loan(owner);
+var raw = %detach(owner);
+var restored = %upgrade(weak);
+%release(owner);
 ```
 
-### 9.2 `%owned`、`%unique`、`%borrowed`
+限制:
+
+- `%unique new Type(...)` 是当前支持的 `new` 所有权构造表面。
+- `%shared new Type(...)`、`%weak new Type(...)` 等不是当前推荐构造方式。
+- `%borrowed` 和 `%loaned` 用在类型或接收者位置，不作为普通表达式使用。
+
+Union 守卫:
 
 ```zr
-%owned class PointSet {
-    pub @constructor() {
-    }
+using (var [value]: Option.Some = maybeValue) {
+    use(value);
+} else {
+    handleNone();
 }
 
-takeFromPool(): %unique PointSet {
-    return %unique new PointSet();
+using (var {width, height}: Shape.Rect = shape) {
+    draw(width, height);
+} else {
+    skip();
 }
+```
 
-%async valid(value: %borrowed string): %async string {
+无块简写:
+
+```zr
+using [value] = maybeValue;
+using var [value] = maybeValue;
+using {width, h: height} = shape;
+```
+
+插件或动态模块守卫:
+
+```zr
+using (var plugin = %import("render.vulkan")) {
+    plugin.createDevice();
+} else {
+    fallback();
+}
+```
+
+旧的 `using (var Variant(x) = value)` 不是当前推荐写法。请使用 `using (var [x]: Union.Variant = value)` 或结构式解构写法。
+
+## 异步
+
+异步函数使用 `%async`:
+
+```zr
+%async fetchCount(): int {
+    var value = %await loadCount();
     return value;
 }
 ```
 
-### 9.3 task 与 `%async / %await`
+规则:
 
-当前 parser 已兼容两种 async 返回标注：
+- `%async f(): T` 表示函数结果会被任务类型包裹。
+- 如果返回类型已经是任务类型，编译器不会重复包裹。
+- `%await expr` 会等待一个任务表达式并返回其结果。
 
-- `%async run(): int`
-- `%async run(): %async int`
+## 编译期语法
 
-两种写法都会归一到同一个底层 runner 语义；用户面写法和展示优先使用显式 `%async T`，`TaskRunner<T>` 只作为实现名出现。
+`%compileTime` 可用于编译期变量、声明、块或表达式:
 
 ```zr
-%async addOne(value: int): %async int {
-    return value + 1;
+%compileTime var tableSize: int = 256;
+
+%compileTime {
+    var generated = buildTable(tableSize);
 }
 
-%async run(): int {
-    var task = addOne(9).start();
-    return %await task;
+%compileTime class GeneratedType {
+    var id: int;
 }
-
-return %await run().start();
 ```
 
-### 9.4 coroutine 手动 pump
+`%type` 可用于类型对象和类型注解相关场景:
 
 ```zr
-var coroutine = %import("zr.coroutine");
-
-%async addOne(value: int): %async int {
-    return value + 1;
-}
-
-coroutine.coroutineScheduler.setAutoCoroutine(false);
-var task = coroutine.start(addOne(6));
-coroutine.coroutineScheduler.pump();
-return %await task;
+var IntType = %type(int);
+var FnType = %type(%func(int) -> int);
 ```
 
-### 9.5 多线程与 `zr.thread`
+类型字面量也可以作为表达式出现:
 
 ```zr
-var thread = %import("zr.thread");
-
-%async addOne(value: int): %async int {
-    return value + 1;
-}
-
-%async run(): int {
-    var worker = thread.spawnThread();
-    var task = worker.start(addOne(4));
-    return %await task;
-}
-
-return %await run().start();
+var Handler = %func(string) -> bool;
 ```
 
-### 9.6 跨线程句柄：`Channel<T>`、`Shared<T>`、`WeakShared<T>`
+## 外部接口
+
+外部库绑定使用 `%extern`:
 
 ```zr
-var thread = %import("zr.thread");
+%extern("native_math") {
+    #zr.ffi.entry("sin")#
+    sin(value: double): double;
 
-%async run(): int {
-    var worker = thread.spawnThread();
-    var channel = new thread.Channel<int>();
-    var shared = new thread.Shared<int>(7);
-    var weak = shared.downgrade();
+    delegate Callback(value: int): void;
 
-    %async readWeak(): %async int {
-        var upgraded = weak.upgrade();
-        if (upgraded == null) {
-            return 0;
-        }
-        channel.send(upgraded.load());
-        return 1;
+    struct NativePoint {
+        var x: float;
+        var y: float;
     }
 
-    var task = worker.start(readWeak());
-    if (%await task != 1) {
-        return 0;
+    enum NativeCode: int {
+        Ok;
+        Error;
     }
-    return channel.recv();
-}
-
-return %await run().start();
-```
-
-## 10. 异常、抛出、捕获
-
-### 10.1 抛出非 `Error` 类型异常
-
-当前仓库已经验证：直接 `throw "boom"` 这类字符串异常会被装箱成可捕获异常对象。
-
-```zr
-try {
-    throw "boom";
-} catch (e) {
-    return e.message == "boom" ? 1 : 0;
 }
 ```
 
-### 10.2 抛出 `Error` 派生异常
+`%extern` 块内当前主要用于函数签名、delegate、struct 和 enum。FFI 相关属性通过装饰器表达，例如入口名、调用约定、布局等。
 
-异常模块当前走 `zr.system.exception`：
+## 装饰器与元方法
+
+装饰器使用 `#...#`:
 
 ```zr
-var exception = %import("zr.system.exception");
-
-try {
-    throw $exception.RuntimeError("typed");
-} catch (e: RuntimeError) {
-    return 1;
-} catch (e: Error) {
-    return 2;
+#route("/health")#
+pub health(): int {
+    return 200;
 }
+
+#zr.ffi.callconv("cdecl")#
+nativeCall(value: int): int;
 ```
 
-### 10.3 `try / catch / finally`
+装饰器可以放在函数、类型、成员、参数和 extern 成员等声明位置。具体语义由编译期和后端实现决定。
+
+元方法使用 `@name` 声明名:
 
 ```zr
-var marker = 0;
+pub class Box {
+    var value: int;
 
-try {
-    try {
-        throw "boom";
-    } finally {
-        marker = 2;
+    @constructor(value: int) {
+        this.value = value;
     }
-} catch (e) {
-    return marker + 3;
-}
 
-return 0;
+    @destructor() {
+        cleanup();
+    }
+
+    @call(input: int): int {
+        return this.value + input;
+    }
+
+    @getItem(index: int): int {
+        return this.value;
+    }
+}
 ```
 
-当前异常测试已经覆盖：
+当前语法保留了构造、析构、关闭、调用、索引访问、装饰器钩子以及一组运算符/转换相关元方法名。请把这些视为声明表面，具体运算符分派能力以当前测试和后端实现为准。
 
-- `throw` 字符串
-- `throw RuntimeError`
-- `catch` 顺序分派
-- `finally` 在正常返回 / 异常路径下都执行
-- `%test` 内异常语义与普通运行一致
+## 测试
 
-## 11. 参数模式
+测试块使用 `%test`:
 
 ```zr
-swap<T>(%ref left: T, %ref right: T): T {
-    var temp = left;
-    left = right;
-    right = temp;
-    return left;
-}
-
-fill(%out value: int): void {
-    value = 4;
-}
-
-keep(%in value: int): int {
-    return value + 1;
+%test("counter adds values") {
+    var counter = new Counter(0);
+    assert(counter.add(2) == 2);
 }
 ```
 
-这部分已经在当前 gauntlet fixture 里出现。
+裸 `test("name") { ... }` 是兼容输入，新代码应使用 `%test`。
 
-## 12. 额外已出现的特性
+## 当前不推荐或已移除的写法
 
-除了你点名的能力，当前仓库里还能明确看到这些已经接入的语言面：
-
-- 泛型类、泛型接口、泛型函数
-- `const` 泛型与定长数组尺寸联动
-- `where` 约束
-- `pub / pri` 可见性
-- `for (var item in collection)` 迭代
-- 命名参数、默认参数、编译期命名参数投影
-- `%type(...)` 反射读取成员与 metadata
-- field-scoped `%using var field: Type;` 生命周期标记
-
-field-scoped `%using` 例子：
+不要在新代码中使用这些写法:
 
 ```zr
-struct HandleBox {
-    %using var handle: %unique Resource;
-}
-
-class Holder {
-    %using var resource: %shared Resource;
-}
+module old.name;              // 使用 %module
+func add(a: int, b: int): int // 直接写 add(...)
+using (var Some(x) = value)   // 使用 using (var [x]: Option.Some = value)
+%using var field: T;          // 字段所有权写进字段类型
+unique<T>                     // 使用 Unique<T>
+shared<T>                     // 使用 Shared<T>
+%func(int) => int             // 文档和输出使用 %func(int) -> int
 ```
 
-## 13. 当前边界与重点验证结论
+迁移建议:
 
-这部分很重要，避免把“已有语法面”误写成“100% 运行时闭环”：
+- 字段级 `%using` 改为 `var field: Unique<T>` 或 `var field: Shared<T>`。
+- 旧所有权类型语法改为大写泛型所有权类型。
+- 旧 `func` 声明改为直接函数声明。
+- 旧 union 守卫改为“类型注解 + 解构”的 `using` 写法。
+- 函数类型统一输出为 `->`。
 
-1. 当前异常模块路径是 `zr.system.exception`，不是 `zr.exception`。
-2. 当前文档 / LSP /编译器索引里的生命周期元方法标准名是 `@destructor`，不是 `@deconstructor`。
-3. REPL 探针里 `@call` 已有直接正例；`@constructor`、`@destructor` 也已有直接正例。
-4. `@add`、`@sub`、`@mul` 等算数元方法当前已确认“名字面可索引、声明面可写”，但 `@add` 直连 `+` 运算符的运行时路径仍需要更强的回归覆盖，README 这里只给声明写法，不把它表述成“已完全打通的运算符重载体系”。
-5. 定长数组当前有强证据的是“字面量长度、编译期表达式长度、`const` 泛型长度”；没有足够证据证明“运行期才决定的定长数组长度”已经是稳定正向特性。
-6. `%mutex` 和 `%atomic` 当前不是可用正特性；现有任务/线程测试明确要求它们被拒绝。
-7. `@close` 与 `%using` 的资源释放路径已有直接文档和运行时证据；这比泛化声称“所有析构语义都完整落地”要更稳妥。
+## 证据入口
 
-## 14. 证据入口
-
-如果后续继续补 README，可优先从这些文件继续向下核对：
+继续核对语法时，优先看这些文件和目录:
 
 - `docs/zr_language_specification.md`
-- `docs/library-and-builtins/zr-task-runtime.md`
-- `docs/library-and-builtins/zr-coroutine-runtime.md`
-- `docs/library-and-builtins/zr-thread-runtime.md`
-- `docs/library-and-builtins/zr-system-submodules.md`
-- `docs/parser-and-semantics/ffi-extern-declarations.md`
-- `docs/parser-and-semantics/owned-field-lifecycle.md`
-- `docs/parser-and-semantics/ownership-builtins-semir-aot.md`
-- `tests/fixtures/projects/language_feature_gauntlet/src/*.zr`
-- `tests/projects/test_language_feature_gauntlet.c`
-- `tests/exceptions/test_exceptions.c`
-- `tests/task/test_task_runtime.c`
-- `tests/thread/test_thread_runtime.c`
+- `docs/module-system/index.md`
+- `docs/plans/using/index.md`
+- `docs/plans/aot/index.md`
+- `docs/reference-alignment/core-semantics-matrix.md`
+- `zr_vm_parser/include/zr_vm_parser/lexer.h`
+- `zr_vm_parser/include/zr_vm_parser/ast.h`
+- `zr_vm_parser/src/zr_vm_parser/parser/*.c`
+- `tests/parser/`
+- `tests/fixtures/reference/core_semantics/`
+- `tests/fixtures/projects/using_*`
+
+如果文档、解析器和测试之间出现冲突，先以解析器和已启用测试为准，再更新规范或计划文档。

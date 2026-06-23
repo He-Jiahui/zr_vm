@@ -211,10 +211,47 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "if (needsFrameCleanup) {",
             "if (needsSkipDropSlot) {",
     };
+    static const char *const frameDescriptorSourceNeedles[] = {
+            "case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):",
+            "backend_aot_c_scalar_locals_can_direct_return_i64_local(\n"
+            "                                     functionIr, operandA1, instructionIndex)",
+            "backend_aot_c_scalar_locals_can_direct_return_bool_local(\n"
+            "                                     functionIr, operandA1, instructionIndex)",
+            "backend_aot_c_scalar_locals_can_direct_return_u64_local(\n"
+            "                                     functionIr, operandA1, instructionIndex)",
+            "backend_aot_c_scalar_locals_can_direct_return_f64_local(\n"
+            "                                     functionIr, operandA1, instructionIndex)",
+    };
     static const char *const emitterSourceNeedles[] = {
             "backend_aot_write_c_signature_type(FILE *file,",
             "const SZrFunctionTypedTypeRef *typeRef",
+            "#include \"backend_aot_c_scalar_locals.h\"",
+            "backend_aot_c_signature_try_infer_i64_return(",
+            "backend_aot_c_signature_try_infer_bool_return(",
+            "backend_aot_c_signature_try_infer_u64_return(",
+            "backend_aot_c_signature_try_infer_f64_return(",
+            "backend_aot_c_signature_try_infer_scalar_return(",
+            "backend_aot_c_signature_try_infer_static_return(",
+            "backend_aot_c_signature_init_scalar_return_type(",
+            "backend_aot_c_signature_init_i64_return_type(",
+            "backend_aot_c_signature_init_bool_return_type(",
+            "backend_aot_c_signature_init_u64_return_type(",
+            "backend_aot_c_signature_init_f64_return_type(",
+            "ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)",
+            "backend_aot_c_scalar_locals_can_direct_return_i64_local",
+            "backend_aot_c_scalar_locals_can_infer_return_bool_local",
+            "backend_aot_c_scalar_locals_can_infer_return_u64_local",
+            "backend_aot_c_scalar_locals_can_infer_return_f64_local",
+            "ZR_VALUE_TYPE_INT64",
+            "ZR_VALUE_TYPE_BOOL",
+            "ZR_VALUE_TYPE_UINT64",
+            "ZR_VALUE_TYPE_DOUBLE",
+            "ZR_STATIC_C_TYPE_I64",
+            "ZR_STATIC_C_TYPE_BOOL",
+            "ZR_STATIC_C_TYPE_U64",
+            "ZR_STATIC_C_TYPE_F64",
             "backend_aot_write_c_signature(FILE *file,",
+            "const SZrAotExecIrFunction *functionIr",
             "static const SZrAotSignatureType zr_aot_signature_%u_types[] = {",
             "static const SZrAotSignature zr_aot_signature_%u = {",
             "backend_aot_write_c_method_infos(FILE *file,",
@@ -222,7 +259,7 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT",
             "const SZrAotExecIrFunction *functionIr =",
             "backend_aot_exec_ir_find_function(module, entry->flatIndex);",
-            "backend_aot_write_c_signature(file, entry->flatIndex, entry->function);",
+            "backend_aot_write_c_signature(file, entry->flatIndex, entry->function, functionIr);",
             "static const SZrAotMethodInfo zr_aot_method_info_%u = {",
             ".functionIndex = %uu,",
             ".metadataFunction = ZR_NULL,",
@@ -279,6 +316,8 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+    char *frameDescriptorSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_descriptor.c");
     char *emitterSourceText =
             read_repo_text_file_owned("zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
 
@@ -288,6 +327,7 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
     TEST_ASSERT_NOT_NULL(frameSetupHeaderText);
     TEST_ASSERT_NOT_NULL(frameSetupSourceText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
+    TEST_ASSERT_NOT_NULL(frameDescriptorSourceText);
     TEST_ASSERT_NOT_NULL(emitterSourceText);
 
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
@@ -296,6 +336,9 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
     assert_text_contains_all(frameSetupHeaderText, frameSetupHeaderNeedles, ARRAY_COUNT(frameSetupHeaderNeedles));
     assert_text_contains_all(frameSetupSourceText, frameSetupSourceNeedles, ARRAY_COUNT(frameSetupSourceNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
+    assert_text_contains_all(frameDescriptorSourceText,
+                             frameDescriptorSourceNeedles,
+                             ARRAY_COUNT(frameDescriptorSourceNeedles));
     assert_text_contains_all(emitterSourceText, emitterSourceNeedles, ARRAY_COUNT(emitterSourceNeedles));
     assert_text_contains_none(runtimeHeaderText, forbiddenRuntimeNeedles, ARRAY_COUNT(forbiddenRuntimeNeedles));
     assert_text_contains_none(runtimeSourceText, forbiddenRuntimeNeedles, ARRAY_COUNT(forbiddenRuntimeNeedles));
@@ -308,6 +351,7 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
     free(frameSetupHeaderText);
     free(frameSetupSourceText);
     free(functionBodyText);
+    free(frameDescriptorSourceText);
     free(emitterSourceText);
 }
 

@@ -430,12 +430,23 @@ static void test_aot_c_generated_shared_library_executes_static_numeric_call_loc
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_static_function_call"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_static_function_call_sync_u64_local_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state) {"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrUInt64)13;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_u64_no_arg_direct_call */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_u5 = zr_aot_typed_u64_fn_1(state);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrFloat64 zr_aot_typed_f64_fn_2(struct SZrState *state);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrFloat64 zr_aot_typed_f64_fn_2(struct SZrState *state) {"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrFloat64)2.5;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_f64_no_arg_direct_call */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_f6 = zr_aot_typed_f64_fn_2(state);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_stack_copy_sync_u64_local_boundary"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_static_function_call_sync_f64_local_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_stack_copy_sync_f64_local_boundary"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_direct_static_function_call"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
     TEST_ASSERT_NULL(strstr(generatedCText,
                             "const SZrTypeValue *zr_aot_direct_call_result = ZrCore_Stack_GetValue(frame.slotBase +"));
     free(generatedCText);

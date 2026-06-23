@@ -172,8 +172,16 @@ static TZrBool backend_aot_c_frame_descriptor_instruction_can_use_local_only(
                     (TZrInt64)(TZrInt16)operandB1);
 
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
-            return (TZrBool)(!publishExports &&
-                             backend_aot_c_scalar_locals_can_direct_return_i64_local(
+            if (publishExports) {
+                return ZR_FALSE;
+            }
+            return (TZrBool)(backend_aot_c_scalar_locals_can_direct_return_i64_local(
+                                     functionIr, operandA1, instructionIndex) ||
+                             backend_aot_c_scalar_locals_can_direct_return_bool_local(
+                                     functionIr, operandA1, instructionIndex) ||
+                             backend_aot_c_scalar_locals_can_direct_return_u64_local(
+                                     functionIr, operandA1, instructionIndex) ||
+                             backend_aot_c_scalar_locals_can_direct_return_f64_local(
                                      functionIr, operandA1, instructionIndex));
 
         default:

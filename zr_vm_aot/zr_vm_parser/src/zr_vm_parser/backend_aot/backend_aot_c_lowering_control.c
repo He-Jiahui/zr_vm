@@ -550,6 +550,48 @@ void backend_aot_write_c_direct_return_i64_local(FILE *file, TZrUInt32 sourceSlo
             (unsigned)sourceSlot);
 }
 
+void backend_aot_write_c_direct_return_bool_local(FILE *file, TZrUInt32 sourceSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* zr_aot_direct_return_bool_local */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ReturnBool(state, zr_aot_b%u));\n"
+            "        ZR_AOT_C_RETURN(1);\n"
+            "    }\n",
+            (unsigned)sourceSlot);
+}
+
+void backend_aot_write_c_direct_return_u64_local(FILE *file, TZrUInt32 sourceSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* zr_aot_direct_return_u64_local */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ReturnU64(state, zr_aot_u%u));\n"
+            "        ZR_AOT_C_RETURN(1);\n"
+            "    }\n",
+            (unsigned)sourceSlot);
+}
+
+void backend_aot_write_c_direct_return_f64_local(FILE *file, TZrUInt32 sourceSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* zr_aot_direct_return_f64_local */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ReturnF64(state, zr_aot_f%u));\n"
+            "        ZR_AOT_C_RETURN(1);\n"
+            "    }\n",
+            (unsigned)sourceSlot);
+}
+
 void backend_aot_write_c_tail_return(FILE *file, TZrUInt32 sourceSlot, TZrBool publishExports) {
     if (file == ZR_NULL) {
         return;

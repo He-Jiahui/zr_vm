@@ -110,13 +110,14 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
 }
 
-static void test_aot_c_generated_shared_library_executes_static_i64_no_arg_typed_thunk(void) {
+static void test_aot_c_generated_shared_library_executes_static_i64_no_arg_local_constant_typed_thunk(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C typed direct-call smoke currently validates the Unix shared-library path");
 #else
     const char *source =
             "func answer(): int {\n"
-            "    return 42;\n"
+            "    var result: int = 42;\n"
+            "    return result;\n"
             "}\n"
             "var value: int = answer();\n"
             "return value + 1;";
@@ -855,7 +856,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_subt
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_no_arg_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_no_arg_local_constant_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_one_arg_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_one_arg_add_const_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_two_arg_typed_thunk);

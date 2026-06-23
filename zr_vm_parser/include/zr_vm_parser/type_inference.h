@@ -88,10 +88,21 @@ ZR_PARSER_API TZrBool ZrParser_TypeInference_TryJoinIfElseNumericAssignments(
         SZrCompilerState *cs,
         SZrAstNode *ifNode);
 
-// 对未知条件 while 中的单个 simple 数值赋值，按零次或多次执行汇合 pre-loop 与 loop-body 范围。
+// 对未知条件 while 中的 simple 数值赋值块（含普通表达式语句、顺序多 target、受限 nested if/else），
+// 按零次或多次执行汇合 pre-loop 与 loop-body 范围。
 ZR_PARSER_API TZrBool ZrParser_TypeInference_TryJoinWhileNumericAssignments(
         SZrCompilerState *cs,
         SZrAstNode *whileNode);
+
+// 对带未知条件且无 step 的传统 for 中 simple 数值赋值块，按零次或多次执行汇合范围。
+ZR_PARSER_API TZrBool ZrParser_TypeInference_TryJoinForNumericAssignments(
+        SZrCompilerState *cs,
+        SZrAstNode *forNode);
+
+// 对 foreach 中 simple 数值赋值块，按零次或多次执行汇合 pre-loop 与 loop-body 范围。
+ZR_PARSER_API TZrBool ZrParser_TypeInference_TryJoinForeachNumericAssignments(
+        SZrCompilerState *cs,
+        SZrAstNode *foreachNode);
 
 // 类型检查函数
 

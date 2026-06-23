@@ -1,6 +1,7 @@
 #include "backend_aot_c_typed_u64_thunks.h"
 
 #include "backend_aot_c_emitter.h"
+#include "backend_aot_c_typed_u64_three_arg_thunks.h"
 #include "backend_aot_c_typed_u64_thunk_shapes.h"
 
 static TZrBool backend_aot_c_type_ref_is_u64(const SZrFunctionTypedTypeRef *typeRef) {
@@ -20,14 +21,20 @@ static TZrBool backend_aot_c_type_ref_is_u64(const SZrFunctionTypedTypeRef *type
 
 static TZrBool backend_aot_c_try_get_u64_constant_return(const SZrFunction *function, TZrUInt64 *outValue) {
     const TZrInstruction *loadInstruction;
+    const TZrInstruction *copyInstruction;
+    const TZrInstruction *convertInstruction;
     const TZrInstruction *returnInstruction;
     TZrUInt32 constantSlot;
+    TZrUInt32 returnSlot;
+    TZrUInt32 returnInstructionIndex;
     TZrInt32 constantIndex;
     const SZrTypeValue *constantValue;
 
     if (function == ZR_NULL ||
         function->instructionsList == ZR_NULL ||
-        function->instructionsLength != 2u ||
+        (function->instructionsLength != 2u &&
+         function->instructionsLength != 3u &&
+         function->instructionsLength != 4u) ||
         function->parameterCount != 0 ||
         function->hasVariableArguments ||
         !function->hasCallableReturnType ||
@@ -37,15 +44,39 @@ static TZrBool backend_aot_c_try_get_u64_constant_return(const SZrFunction *func
     }
 
     loadInstruction = &function->instructionsList[0];
-    returnInstruction = &function->instructionsList[1];
-    if (loadInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
-        returnInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
+    if (loadInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT)) {
         return ZR_FALSE;
     }
 
     constantSlot = loadInstruction->instruction.operandExtra;
     constantIndex = loadInstruction->instruction.operand.operand2[0];
-    if (returnInstruction->instruction.operand.operand1[0] != constantSlot) {
+    returnSlot = constantSlot;
+    returnInstructionIndex = 1u;
+    if (function->instructionsLength == 3u || function->instructionsLength == 4u) {
+        copyInstruction = &function->instructionsList[1];
+        if ((copyInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_STACK) &&
+             copyInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(SET_STACK)) ||
+            copyInstruction->instruction.operand.operand2[0] < 0 ||
+            (TZrUInt32)copyInstruction->instruction.operand.operand2[0] != constantSlot) {
+            return ZR_FALSE;
+        }
+        returnSlot = copyInstruction->instruction.operandExtra;
+        returnInstructionIndex = 2u;
+    }
+    if (function->instructionsLength == 4u) {
+        convertInstruction = &function->instructionsList[2];
+        if ((convertInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(TO_UINT) &&
+             convertInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED)) ||
+            convertInstruction->instruction.operand.operand1[0] != returnSlot) {
+            return ZR_FALSE;
+        }
+        returnSlot = convertInstruction->instruction.operandExtra;
+        returnInstructionIndex = 3u;
+    }
+
+    returnInstruction = &function->instructionsList[returnInstructionIndex];
+    if (returnInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) ||
+        returnInstruction->instruction.operand.operand1[0] != returnSlot) {
         return ZR_FALSE;
     }
 
@@ -606,6 +637,8 @@ TZrBool backend_aot_c_can_emit_typed_u64_one_arg_thunk(const SZrFunction *functi
 TZrBool backend_aot_c_can_emit_typed_u64_two_arg_thunk(const SZrFunction *function) {
     return (TZrBool)(backend_aot_c_try_get_u64_arg0_arg1_add_return(function) ||
                      backend_aot_c_try_get_u64_arg0_arg1_multiply_return(function) ||
+                     backend_aot_c_try_get_u64_arg0_arg1_divide_return(function) ||
+                     backend_aot_c_try_get_u64_arg0_arg1_modulo_return(function) ||
                      backend_aot_c_try_get_u64_arg0_arg1_subtract_return(function) ||
                      backend_aot_c_try_get_u64_arg0_arg1_bitwise_and_return(function) ||
                      backend_aot_c_try_get_u64_arg0_arg1_bitwise_or_return(function) ||
@@ -653,6 +686,30 @@ static void backend_aot_c_write_u64_two_arg_thunk_definition(FILE *file,
             returnExpression);
 }
 
+static void backend_aot_c_write_u64_two_arg_divide_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrUInt64 zr_aot_typed_u64_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
+            "    if (ZR_UNLIKELY(zr_aot_arg1 == 0u)) {\n"
+            "        ZrCore_Debug_RunError(state, \"generated AOT unsigned divide by zero\");\n"
+            "        return (TZrUInt64)0;\n"
+            "    }\n"
+            "    return (TZrUInt64)(zr_aot_arg0 / zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_u64_two_arg_modulo_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrUInt64 zr_aot_typed_u64_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
+            "    if (ZR_UNLIKELY(zr_aot_arg1 == 0u)) {\n"
+            "        ZrCore_Debug_RunError(state, \"generated AOT unsigned modulo by zero\");\n"
+            "        return (TZrUInt64)0;\n"
+            "    }\n"
+            "    return (TZrUInt64)(zr_aot_arg0 %% zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
 void backend_aot_write_c_typed_u64_thunk_forward_decls(FILE *file, const SZrAotFunctionTable *table) {
     TZrUInt32 index;
 
@@ -674,6 +731,8 @@ void backend_aot_write_c_typed_u64_thunk_forward_decls(FILE *file, const SZrAotF
             fprintf(file,
                     "static TZrUInt64 zr_aot_typed_u64_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);\n",
                     (unsigned)entry->flatIndex);
+        } else if (backend_aot_c_can_emit_typed_u64_three_arg_thunk(entry->function)) {
+            backend_aot_c_write_u64_three_arg_thunk_forward_decl(file, entry->flatIndex);
         }
     }
 }
@@ -746,6 +805,10 @@ void backend_aot_write_c_typed_u64_thunks(FILE *file, const SZrAotFunctionTable 
             backend_aot_c_write_u64_two_arg_thunk_definition(file,
                                                              entry->flatIndex,
                                                              "    return (TZrUInt64)(zr_aot_arg0 * zr_aot_arg1);\n");
+        } else if (backend_aot_c_try_get_u64_arg0_arg1_divide_return(entry->function)) {
+            backend_aot_c_write_u64_two_arg_divide_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_u64_arg0_arg1_modulo_return(entry->function)) {
+            backend_aot_c_write_u64_two_arg_modulo_thunk_definition(file, entry->flatIndex);
         } else if (backend_aot_c_try_get_u64_arg0_arg1_subtract_return(entry->function)) {
             backend_aot_c_write_u64_two_arg_thunk_definition(file,
                                                              entry->flatIndex,
@@ -762,6 +825,8 @@ void backend_aot_write_c_typed_u64_thunks(FILE *file, const SZrAotFunctionTable 
             backend_aot_c_write_u64_two_arg_thunk_definition(file,
                                                              entry->flatIndex,
                                                              "    return (TZrUInt64)(zr_aot_arg0 ^ zr_aot_arg1);\n");
+        } else {
+            (void)backend_aot_c_try_write_u64_three_arg_thunk_definition(file, entry);
         }
     }
 }

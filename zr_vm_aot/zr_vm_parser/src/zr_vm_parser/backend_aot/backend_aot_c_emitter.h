@@ -16,15 +16,22 @@ TZrBool backend_aot_c_constant_can_emit_immediate(const SZrFunction *function, T
 TZrBool backend_aot_c_can_emit_typed_i64_no_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_i64_one_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_i64_two_arg_thunk(const SZrFunction *function);
+TZrBool backend_aot_c_can_emit_typed_i64_three_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_bool_no_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_bool_one_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_bool_two_arg_thunk(const SZrFunction *function);
+TZrBool backend_aot_c_can_emit_typed_bool_three_arg_thunk(const SZrFunction *function);
+TZrBool backend_aot_c_can_emit_typed_bool_i64_two_arg_thunk(const SZrFunction *function);
+TZrBool backend_aot_c_can_emit_typed_bool_u64_two_arg_thunk(const SZrFunction *function);
+TZrBool backend_aot_c_can_emit_typed_bool_f64_two_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_f64_no_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_f64_one_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_f64_two_arg_thunk(const SZrFunction *function);
+TZrBool backend_aot_c_can_emit_typed_f64_three_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_u64_no_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_u64_one_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_u64_two_arg_thunk(const SZrFunction *function);
+TZrBool backend_aot_c_can_emit_typed_u64_three_arg_thunk(const SZrFunction *function);
 void backend_aot_write_c_direct_primitive_constant(FILE *file,
                                                    const SZrAotExecIrFunction *functionIr,
                                                    TZrUInt32 destinationSlot,
@@ -37,9 +44,10 @@ void backend_aot_write_c_direct_callable_constant(FILE *file,
                                                   TZrUInt32 constantIndex,
                                                   TZrUInt32 callableFlatIndex);
 void backend_aot_write_c_direct_get_sub_function(FILE *file,
-                                                 TZrUInt32 destinationSlot,
-                                                 TZrUInt32 childFunctionIndex,
-                                                 TZrUInt32 callableFlatIndex);
+                                                  TZrUInt32 destinationSlot,
+                                                  TZrUInt32 childFunctionIndex,
+                                                  TZrUInt32 callableFlatIndex);
+void backend_aot_write_c_create_closure(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 constantIndex);
 void backend_aot_write_c_unsupported_callable_constant_materialization(FILE *file,
                                                                        TZrUInt32 destinationSlot,
                                                                        TZrUInt32 constantIndex);
@@ -278,6 +286,9 @@ void backend_aot_write_c_direct_to_uint_signed(FILE *file, TZrUInt32 destination
 void backend_aot_write_c_publish_exports(FILE *file);
 void backend_aot_write_c_direct_return(FILE *file, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_return_i64_local(FILE *file, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_return_bool_local(FILE *file, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_return_u64_local(FILE *file, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_return_f64_local(FILE *file, TZrUInt32 sourceSlot);
 void backend_aot_write_c_tail_return(FILE *file, TZrUInt32 sourceSlot, TZrBool publishExports);
 void backend_aot_write_c_begin_instruction(FILE *file, TZrUInt32 instructionIndex, TZrUInt32 stepFlags);
 void backend_aot_write_c_direct_mark_to_be_closed(FILE *file, TZrUInt32 slotIndex);
@@ -386,6 +397,36 @@ void backend_aot_write_c_unsupported_dynamic_value_access(FILE *file,
                                                           TZrUInt32 primarySlot,
                                                           TZrUInt32 secondarySlot,
                                                           TZrUInt32 operandIndex);
+void backend_aot_write_c_direct_get_member(FILE *file,
+                                           TZrUInt32 destinationSlot,
+                                           TZrUInt32 receiverSlot,
+                                           TZrUInt32 memberId,
+                                           TZrUInt32 deoptId);
+void backend_aot_write_c_direct_set_member(FILE *file,
+                                           TZrUInt32 sourceSlot,
+                                           TZrUInt32 receiverSlot,
+                                           TZrUInt32 memberId,
+                                           TZrUInt32 deoptId);
+void backend_aot_write_c_direct_get_member_slot(FILE *file,
+                                                TZrUInt32 destinationSlot,
+                                                TZrUInt32 receiverSlot,
+                                                TZrUInt32 cacheIndex,
+                                                TZrUInt32 deoptId);
+void backend_aot_write_c_direct_set_member_slot(FILE *file,
+                                                TZrUInt32 sourceSlot,
+                                                TZrUInt32 receiverSlot,
+                                                TZrUInt32 cacheIndex,
+                                                TZrUInt32 deoptId);
+void backend_aot_write_c_direct_get_by_index(FILE *file,
+                                             TZrUInt32 destinationSlot,
+                                             TZrUInt32 receiverSlot,
+                                             TZrUInt32 keySlot,
+                                             TZrUInt32 deoptId);
+void backend_aot_write_c_direct_set_by_index(FILE *file,
+                                             TZrUInt32 sourceSlot,
+                                             TZrUInt32 receiverSlot,
+                                             TZrUInt32 keySlot,
+                                             TZrUInt32 deoptId);
 void backend_aot_write_c_direct_logical_equal(FILE *file,
                                               const SZrAotExecIrFunction *functionIr,
                                               TZrUInt32 destinationSlot,
@@ -663,6 +704,13 @@ void backend_aot_write_c_static_direct_i64_two_arg_function_call(FILE *file,
                                                                  TZrUInt32 firstArgumentSlot,
                                                                  TZrUInt32 secondArgumentSlot,
                                                                  TZrBool syncStackSlot);
+void backend_aot_write_c_static_direct_i64_three_arg_function_call(FILE *file,
+                                                                   TZrUInt32 destinationSlot,
+                                                                   TZrUInt32 calleeFlatIndex,
+                                                                   TZrUInt32 firstArgumentSlot,
+                                                                   TZrUInt32 secondArgumentSlot,
+                                                                   TZrUInt32 thirdArgumentSlot,
+                                                                   TZrBool syncStackSlot);
 void backend_aot_write_c_static_direct_bool_no_arg_function_call(FILE *file,
                                                                  TZrUInt32 destinationSlot,
                                                                  TZrUInt32 calleeFlatIndex,
@@ -678,6 +726,31 @@ void backend_aot_write_c_static_direct_bool_two_arg_function_call(FILE *file,
                                                                   TZrUInt32 firstArgumentSlot,
                                                                   TZrUInt32 secondArgumentSlot,
                                                                   TZrBool syncStackSlot);
+void backend_aot_write_c_static_direct_bool_three_arg_function_call(FILE *file,
+                                                                    TZrUInt32 destinationSlot,
+                                                                    TZrUInt32 calleeFlatIndex,
+                                                                    TZrUInt32 firstArgumentSlot,
+                                                                    TZrUInt32 secondArgumentSlot,
+                                                                    TZrUInt32 thirdArgumentSlot,
+                                                                    TZrBool syncStackSlot);
+void backend_aot_write_c_static_direct_i64_bool_two_arg_function_call(FILE *file,
+                                                                      TZrUInt32 destinationSlot,
+                                                                      TZrUInt32 calleeFlatIndex,
+                                                                      TZrUInt32 firstArgumentSlot,
+                                                                      TZrUInt32 secondArgumentSlot,
+                                                                      TZrBool syncStackSlot);
+void backend_aot_write_c_static_direct_u64_bool_two_arg_function_call(FILE *file,
+                                                                      TZrUInt32 destinationSlot,
+                                                                      TZrUInt32 calleeFlatIndex,
+                                                                      TZrUInt32 firstArgumentSlot,
+                                                                      TZrUInt32 secondArgumentSlot,
+                                                                      TZrBool syncStackSlot);
+void backend_aot_write_c_static_direct_f64_bool_two_arg_function_call(FILE *file,
+                                                                      TZrUInt32 destinationSlot,
+                                                                      TZrUInt32 calleeFlatIndex,
+                                                                      TZrUInt32 firstArgumentSlot,
+                                                                      TZrUInt32 secondArgumentSlot,
+                                                                      TZrBool syncStackSlot);
 void backend_aot_write_c_static_direct_u64_no_arg_function_call(FILE *file,
                                                                 TZrUInt32 destinationSlot,
                                                                 TZrUInt32 calleeFlatIndex,
@@ -693,6 +766,13 @@ void backend_aot_write_c_static_direct_u64_two_arg_function_call(FILE *file,
                                                                  TZrUInt32 firstArgumentSlot,
                                                                  TZrUInt32 secondArgumentSlot,
                                                                  TZrBool syncStackSlot);
+void backend_aot_write_c_static_direct_u64_three_arg_function_call(FILE *file,
+                                                                   TZrUInt32 destinationSlot,
+                                                                   TZrUInt32 calleeFlatIndex,
+                                                                   TZrUInt32 firstArgumentSlot,
+                                                                   TZrUInt32 secondArgumentSlot,
+                                                                   TZrUInt32 thirdArgumentSlot,
+                                                                   TZrBool syncStackSlot);
 void backend_aot_write_c_static_direct_f64_no_arg_function_call(FILE *file,
                                                                 TZrUInt32 destinationSlot,
                                                                 TZrUInt32 calleeFlatIndex,
@@ -708,6 +788,13 @@ void backend_aot_write_c_static_direct_f64_two_arg_function_call(FILE *file,
                                                                  TZrUInt32 firstArgumentSlot,
                                                                  TZrUInt32 secondArgumentSlot,
                                                                  TZrBool syncStackSlot);
+void backend_aot_write_c_static_direct_f64_three_arg_function_call(FILE *file,
+                                                                   TZrUInt32 destinationSlot,
+                                                                   TZrUInt32 calleeFlatIndex,
+                                                                   TZrUInt32 firstArgumentSlot,
+                                                                   TZrUInt32 secondArgumentSlot,
+                                                                   TZrUInt32 thirdArgumentSlot,
+                                                                   TZrBool syncStackSlot);
 void backend_aot_write_c_direct_function_call(FILE *file,
                                               const SZrAotExecIrFunction *functionIr,
                                               TZrUInt32 destinationSlot,
@@ -717,7 +804,8 @@ void backend_aot_write_c_dynamic_function_call(FILE *file,
                                                const SZrAotExecIrFunction *functionIr,
                                                TZrUInt32 destinationSlot,
                                                TZrUInt32 functionSlot,
-                                               TZrUInt32 argumentCount);
+                                               TZrUInt32 argumentCount,
+                                               TZrUInt32 deoptId);
 void backend_aot_write_c_dispatch_loop(FILE *file, TZrUInt32 functionFlatIndex, TZrUInt32 instructionCount);
 void backend_aot_write_c_try(FILE *file, TZrUInt32 handlerIndex);
 void backend_aot_write_c_end_try(FILE *file, TZrUInt32 handlerIndex);

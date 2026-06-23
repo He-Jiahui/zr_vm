@@ -8,8 +8,10 @@
 #include "backend_aot_c_scalar_stack_copy.h"
 #include "backend_aot_c_scalar_semir.h"
 #include "backend_aot_c_typed_direct_calls.h"
+#include "backend_aot_c_typed_return.h"
 #include "backend_aot_c_value_semir.h"
 #include "backend_aot_internal.h"
+#include "zr_vm_common/zr_runtime_sentinel_conf.h"
 
 static const SZrAotExecIrInstruction *backend_aot_find_exec_ir_instruction(
         const SZrAotExecIrModule *module,
@@ -38,6 +40,14 @@ static const SZrAotExecIrInstruction *backend_aot_find_exec_ir_instruction(
     }
 
     return ZR_NULL;
+}
+
+static TZrUInt32 backend_aot_find_exec_ir_deopt_id(const SZrAotExecIrModule *module,
+                                                   const SZrAotExecIrFunction *functionIr,
+                                                   TZrUInt32 execInstructionIndex) {
+    const SZrAotExecIrInstruction *execIrInstruction =
+            backend_aot_find_exec_ir_instruction(module, functionIr, execInstructionIndex);
+    return execIrInstruction != ZR_NULL ? execIrInstruction->deoptId : ZR_RUNTIME_SEMIR_DEOPT_ID_NONE;
 }
 
 static TZrBool backend_aot_exec_ir_instruction_is_dynamic_call(
@@ -364,14 +374,11 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                      destinationSlot,
                                                                      callableFunctionIndex);
                     } else {
-                        backend_aot_write_c_unsupported_create_closure_materialization(file,
-                                                                                       destinationSlot,
-                                                                                       operandA1,
-                                                                                       closureCaptureCount);
+                        backend_aot_write_c_create_closure(file, destinationSlot, operandA1);
                         backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                                      entry->function,
                                                                      destinationSlot,
-                                                                     ZR_AOT_INVALID_FUNCTION_INDEX);
+                                                                     callableFunctionIndex);
                     }
                 } else {
                     backend_aot_write_c_unsupported_create_closure_materialization(file,
@@ -1431,7 +1438,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 }
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS):
-                backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0);
+                backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, ZR_RUNTIME_SEMIR_DEOPT_ID_NONE);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -1441,18 +1448,19 @@ void backend_aot_write_c_function_body(FILE *file,
                 backend_aot_write_c_dynamic_function_call(file,
                                                           functionIr,
                                                           destinationSlot,
-                                                          operandA1,
-                                                          backend_aot_get_callsite_cache_argument_count(
-                                                                  entry->function,
-                                                                  operandB1,
-                                                                  ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL));
+                                                           operandA1,
+                                                           backend_aot_get_callsite_cache_argument_count(
+                                                                   entry->function,
+                                                                   operandB1,
+                                                                   ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL),
+                                                           ZR_RUNTIME_SEMIR_DEOPT_ID_NONE);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_NO_ARGS):
-                backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0);
+                backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, ZR_RUNTIME_SEMIR_DEOPT_ID_NONE);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -1462,11 +1470,12 @@ void backend_aot_write_c_function_body(FILE *file,
                 backend_aot_write_c_dynamic_function_call(file,
                                                           functionIr,
                                                           destinationSlot,
-                                                          operandA1,
-                                                          backend_aot_get_callsite_cache_argument_count(
-                                                                  entry->function,
-                                                                  operandB1,
-                                                                  ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL));
+                                                           operandA1,
+                                                           backend_aot_get_callsite_cache_argument_count(
+                                                                   entry->function,
+                                                                   operandB1,
+                                                                   ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL),
+                                                           ZR_RUNTIME_SEMIR_DEOPT_ID_NONE);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -1633,17 +1642,17 @@ void backend_aot_write_c_function_body(FILE *file,
                 backend_aot_write_c_set_pending_continue(file, entry->flatIndex, (TZrUInt32)operandA2);
                 break;
             case ZR_INSTRUCTION_ENUM(GET_MEMBER):
-                backend_aot_write_c_unsupported_dynamic_value_access(file,
-                                                                     "GET_MEMBER",
-                                                                     operandA1,
-                                                                     destinationSlot,
-                                                                     operandB1);
+            {
+                TZrUInt32 deoptId = backend_aot_find_exec_ir_deopt_id(module, functionIr, instructionIndex);
+                backend_aot_write_c_direct_get_member(file, destinationSlot, operandA1, operandB1, deoptId);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
+            }
             case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
+            {
                 if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
                                                                              state,
                                                                              module,
@@ -1657,27 +1666,26 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                  ZR_AOT_INVALID_FUNCTION_INDEX);
                     break;
                 }
-                backend_aot_write_c_unsupported_dynamic_value_access(file,
-                                                                     "GET_MEMBER_SLOT",
-                                                                     operandA1,
-                                                                     destinationSlot,
-                                                                     operandB1);
+                {
+                    TZrUInt32 deoptId = backend_aot_find_exec_ir_deopt_id(module, functionIr, instructionIndex);
+                    backend_aot_write_c_direct_get_member_slot(file, destinationSlot, operandA1, operandB1, deoptId);
+                }
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
+            }
             case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
-                backend_aot_write_c_unsupported_dynamic_value_access(file,
-                                                                     "GET_BY_INDEX",
-                                                                     operandA1,
-                                                                     operandB1,
-                                                                     destinationSlot);
+            {
+                TZrUInt32 deoptId = backend_aot_find_exec_ir_deopt_id(module, functionIr, instructionIndex);
+                backend_aot_write_c_direct_get_by_index(file, destinationSlot, operandA1, operandB1, deoptId);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
+            }
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
                 backend_aot_write_c_direct_super_array_get_int(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
@@ -1693,13 +1701,13 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SET_MEMBER):
-                backend_aot_write_c_unsupported_dynamic_value_access(file,
-                                                                     "SET_MEMBER",
-                                                                     operandA1,
-                                                                     destinationSlot,
-                                                                     operandB1);
+            {
+                TZrUInt32 deoptId = backend_aot_find_exec_ir_deopt_id(module, functionIr, instructionIndex);
+                backend_aot_write_c_direct_set_member(file, destinationSlot, operandA1, operandB1, deoptId);
                 break;
+            }
             case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT):
+            {
                 if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
                                                                              state,
                                                                              module,
@@ -1709,19 +1717,18 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                              ZR_FALSE)) {
                     break;
                 }
-                backend_aot_write_c_unsupported_dynamic_value_access(file,
-                                                                     "SET_MEMBER_SLOT",
-                                                                     operandA1,
-                                                                     destinationSlot,
-                                                                     operandB1);
+                {
+                    TZrUInt32 deoptId = backend_aot_find_exec_ir_deopt_id(module, functionIr, instructionIndex);
+                    backend_aot_write_c_direct_set_member_slot(file, destinationSlot, operandA1, operandB1, deoptId);
+                }
                 break;
+            }
             case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
-                backend_aot_write_c_unsupported_dynamic_value_access(file,
-                                                                     "SET_BY_INDEX",
-                                                                     operandA1,
-                                                                     operandB1,
-                                                                     destinationSlot);
+            {
+                TZrUInt32 deoptId = backend_aot_find_exec_ir_deopt_id(module, functionIr, instructionIndex);
+                backend_aot_write_c_direct_set_by_index(file, destinationSlot, operandA1, operandB1, deoptId);
                 break;
+            }
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
                 backend_aot_write_c_direct_super_array_set_int(file, destinationSlot, operandA1, operandB1);
                 break;
@@ -1922,6 +1929,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 const SZrAotExecIrInstruction *execIrInstruction =
                         backend_aot_find_exec_ir_instruction(module, functionIr, instructionIndex);
                 TZrBool semirDynamicCall = backend_aot_exec_ir_instruction_is_dynamic_call(execIrInstruction);
+                TZrUInt32 deoptId = execIrInstruction != ZR_NULL ? execIrInstruction->deoptId : ZR_RUNTIME_SEMIR_DEOPT_ID_NONE;
                 TZrUInt32 calleeFunctionIndex = backend_aot_get_callable_slot_function_index(callableSlotFunctionIndices,
                                                                                               entry->function,
                                                                                               operandA1);
@@ -1967,7 +1975,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 } else if (semirDynamicCall ||
                            instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(DYN_CALL) ||
                            instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL)) {
-                    backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, operandB1);
+                    backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, operandB1, deoptId);
                 } else {
                     backend_aot_write_c_direct_function_call(file, functionIr, destinationSlot, operandA1, operandB1);
                 }
@@ -1993,6 +2001,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 const SZrAotExecIrInstruction *execIrInstruction =
                         backend_aot_find_exec_ir_instruction(module, functionIr, instructionIndex);
                 TZrBool semirDynamicCall = backend_aot_exec_ir_instruction_is_dynamic_call(execIrInstruction);
+                TZrUInt32 deoptId = execIrInstruction != ZR_NULL ? execIrInstruction->deoptId : ZR_RUNTIME_SEMIR_DEOPT_ID_NONE;
                 TZrUInt32 calleeFunctionIndex = backend_aot_get_callable_slot_function_index(callableSlotFunctionIndices,
                                                                                               entry->function,
                                                                                               operandA1);
@@ -2034,7 +2043,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                         calleeFunctionIndex);
                     }
                 } else if (semirDynamicCall) {
-                    backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0);
+                    backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, deoptId);
                 } else {
                     backend_aot_write_c_direct_function_call(file, functionIr, destinationSlot, operandA1, 0);
                 }
@@ -2064,12 +2073,11 @@ void backend_aot_write_c_function_body(FILE *file,
                 backend_aot_write_c_direct_close_scope(file, destinationSlot);
                 break;
             case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
-                if (backend_aot_c_scalar_locals_can_direct_return_i64_local(
-                            functionIr, operandA1, instructionIndex)) {
-                    if (publishExports) {
-                        backend_aot_write_c_publish_exports(file);
-                    }
-                    backend_aot_write_c_direct_return_i64_local(file, operandA1);
+                if (backend_aot_try_write_c_typed_return(file,
+                                                         functionIr,
+                                                         operandA1,
+                                                         instructionIndex,
+                                                         publishExports)) {
                     break;
                 }
                 if (backend_aot_try_write_c_value_semir_for_exec_instruction(

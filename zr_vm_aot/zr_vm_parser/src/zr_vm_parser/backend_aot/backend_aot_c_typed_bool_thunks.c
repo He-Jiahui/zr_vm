@@ -1,6 +1,8 @@
 #include "backend_aot_c_typed_bool_thunks.h"
 
 #include "backend_aot_c_emitter.h"
+#include "backend_aot_c_typed_bool_two_arg_thunks.h"
+#include "backend_aot_c_typed_bool_three_arg_thunks.h"
 
 static TZrBool backend_aot_c_type_ref_is_bool(const SZrFunctionTypedTypeRef *typeRef) {
     if (typeRef == ZR_NULL) {
@@ -11,16 +13,52 @@ static TZrBool backend_aot_c_type_ref_is_bool(const SZrFunctionTypedTypeRef *typ
                      typeRef->staticCType == ZR_STATIC_C_TYPE_BOOL);
 }
 
+static TZrBool backend_aot_c_type_ref_is_i64(const SZrFunctionTypedTypeRef *typeRef) {
+    if (typeRef == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(typeRef->baseType == ZR_VALUE_TYPE_INT64 ||
+                     typeRef->staticCType == ZR_STATIC_C_TYPE_I64);
+}
+
+static TZrBool backend_aot_c_type_ref_is_u64(const SZrFunctionTypedTypeRef *typeRef) {
+    if (typeRef == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(typeRef->baseType == ZR_VALUE_TYPE_UINT8 ||
+                     typeRef->baseType == ZR_VALUE_TYPE_UINT16 ||
+                     typeRef->baseType == ZR_VALUE_TYPE_UINT32 ||
+                     typeRef->baseType == ZR_VALUE_TYPE_UINT64 ||
+                     typeRef->staticCType == ZR_STATIC_C_TYPE_U8 ||
+                     typeRef->staticCType == ZR_STATIC_C_TYPE_U16 ||
+                     typeRef->staticCType == ZR_STATIC_C_TYPE_U32 ||
+                     typeRef->staticCType == ZR_STATIC_C_TYPE_U64);
+}
+
+static TZrBool backend_aot_c_type_ref_is_f64(const SZrFunctionTypedTypeRef *typeRef) {
+    if (typeRef == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(typeRef->baseType == ZR_VALUE_TYPE_FLOAT ||
+                     typeRef->baseType == ZR_VALUE_TYPE_DOUBLE ||
+                     typeRef->staticCType == ZR_STATIC_C_TYPE_F64);
+}
+
 static TZrBool backend_aot_c_try_get_bool_constant_return(const SZrFunction *function, TZrBool *outValue) {
     const TZrInstruction *loadInstruction;
+    const TZrInstruction *copyInstruction;
     const TZrInstruction *returnInstruction;
     TZrUInt32 constantSlot;
+    TZrUInt32 returnSlot;
     TZrInt32 constantIndex;
     const SZrTypeValue *constantValue;
 
     if (function == ZR_NULL ||
         function->instructionsList == ZR_NULL ||
-        function->instructionsLength != 2u ||
+        (function->instructionsLength != 2u && function->instructionsLength != 3u) ||
         function->parameterCount != 0 ||
         function->hasVariableArguments ||
         !function->hasCallableReturnType ||
@@ -32,13 +70,28 @@ static TZrBool backend_aot_c_try_get_bool_constant_return(const SZrFunction *fun
     loadInstruction = &function->instructionsList[0];
     returnInstruction = &function->instructionsList[1];
     if (loadInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
-        returnInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
+        (function->instructionsLength == 2u &&
+         returnInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN))) {
         return ZR_FALSE;
     }
 
     constantSlot = loadInstruction->instruction.operandExtra;
     constantIndex = loadInstruction->instruction.operand.operand2[0];
-    if (returnInstruction->instruction.operand.operand1[0] != constantSlot) {
+    returnSlot = constantSlot;
+    if (function->instructionsLength == 3u) {
+        copyInstruction = &function->instructionsList[1];
+        returnInstruction = &function->instructionsList[2];
+        if ((copyInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_STACK) &&
+             copyInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(SET_STACK)) ||
+            copyInstruction->instruction.operand.operand2[0] < 0 ||
+            (TZrUInt32)copyInstruction->instruction.operand.operand2[0] != constantSlot) {
+            return ZR_FALSE;
+        }
+        returnSlot = copyInstruction->instruction.operandExtra;
+    }
+
+    if (returnInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) ||
+        returnInstruction->instruction.operand.operand1[0] != returnSlot) {
         return ZR_FALSE;
     }
 
@@ -103,162 +156,193 @@ static TZrBool backend_aot_c_try_get_bool_arg0_logical_not_return(const SZrFunct
                      returnInstruction->instruction.operand.operand1[0] == resultSlot);
 }
 
-static TZrBool backend_aot_c_bool_stack_copy_reads_slot(const TZrInstruction *instruction,
-                                                        TZrUInt32 sourceSlot,
-                                                        TZrUInt32 *outDestinationSlot) {
-    if (instruction == ZR_NULL ||
-        outDestinationSlot == ZR_NULL ||
-        (instruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_STACK) &&
-         instruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(SET_STACK)) ||
-        (TZrUInt32)instruction->instruction.operand.operand2[0] != sourceSlot) {
-        return ZR_FALSE;
-    }
-
-    *outDestinationSlot = instruction->instruction.operandExtra;
-    return ZR_TRUE;
-}
-
-static TZrBool backend_aot_c_try_get_bool_arg0_arg1_logical_return(const SZrFunction *function,
-                                                                   EZrInstructionCode logicalOperationCode,
-                                                                   EZrInstructionCode shortCircuitJumpCode) {
-    const TZrInstruction *logicalInstruction;
+static TZrBool backend_aot_c_try_get_bool_i64_arg0_arg1_compare_return(const SZrFunction *function,
+                                                                       EZrInstructionCode compareOperationCode) {
+    const TZrInstruction *compareInstruction;
     const TZrInstruction *returnInstruction;
-    TZrUInt32 leftSlot;
-    TZrUInt32 rightSlot;
     TZrUInt32 resultSlot;
 
     if (function == ZR_NULL ||
         function->instructionsList == ZR_NULL ||
-        (function->instructionsLength != 2u && function->instructionsLength != 6u) ||
+        function->instructionsLength != 2u ||
         function->parameterCount != 2 ||
         function->parameterMetadata == ZR_NULL ||
         function->parameterMetadataCount < 2u ||
         function->hasVariableArguments ||
         !function->hasCallableReturnType ||
         !backend_aot_c_type_ref_is_bool(&function->callableReturnType) ||
-        !backend_aot_c_type_ref_is_bool(&function->parameterMetadata[0].type) ||
-        !backend_aot_c_type_ref_is_bool(&function->parameterMetadata[1].type)) {
+        !backend_aot_c_type_ref_is_i64(&function->parameterMetadata[0].type) ||
+        !backend_aot_c_type_ref_is_i64(&function->parameterMetadata[1].type)) {
         return ZR_FALSE;
     }
 
-    if (function->instructionsLength == 2u) {
-        logicalInstruction = &function->instructionsList[0];
-        returnInstruction = &function->instructionsList[1];
-        if (logicalInstruction->instruction.operationCode != (TZrUInt16)logicalOperationCode) {
-            return ZR_FALSE;
-        }
-
-        leftSlot = logicalInstruction->instruction.operand.operand1[0];
-        rightSlot = logicalInstruction->instruction.operand.operand1[1];
-        resultSlot = logicalInstruction->instruction.operandExtra;
-        return (TZrBool)(((leftSlot == 0u && rightSlot == 1u) ||
-                          (leftSlot == 1u && rightSlot == 0u)) &&
-                         returnInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
-                         returnInstruction->instruction.operand.operand1[0] == resultSlot);
+    compareInstruction = &function->instructionsList[0];
+    returnInstruction = &function->instructionsList[1];
+    if (compareInstruction->instruction.operationCode != (TZrUInt16)compareOperationCode ||
+        compareInstruction->instruction.operand.operand1[0] != 0u ||
+        compareInstruction->instruction.operand.operand1[1] != 1u) {
+        return ZR_FALSE;
     }
 
-    if (function->instructionsLength == 6u) {
-        const TZrInstruction *leftCopyInstruction = &function->instructionsList[0];
-        const TZrInstruction *initialResultInstruction = &function->instructionsList[1];
-        const TZrInstruction *jumpIfFalseInstruction = &function->instructionsList[2];
-        const TZrInstruction *rightCopyInstruction = &function->instructionsList[3];
-        const TZrInstruction *finalResultInstruction = &function->instructionsList[4];
-        TZrUInt32 leftTempSlot;
-        TZrUInt32 rightTempSlot;
-        TZrUInt32 finalResultSlot;
-
-        returnInstruction = &function->instructionsList[5];
-        if (!backend_aot_c_bool_stack_copy_reads_slot(leftCopyInstruction, 0u, &leftTempSlot) ||
-            !backend_aot_c_bool_stack_copy_reads_slot(initialResultInstruction, leftTempSlot, &resultSlot) ||
-            jumpIfFalseInstruction->instruction.operationCode != (TZrUInt16)shortCircuitJumpCode ||
-            jumpIfFalseInstruction->instruction.operandExtra != leftTempSlot ||
-            jumpIfFalseInstruction->instruction.operand.operand2[0] != 2u ||
-            !backend_aot_c_bool_stack_copy_reads_slot(rightCopyInstruction, 1u, &rightTempSlot) ||
-            !backend_aot_c_bool_stack_copy_reads_slot(finalResultInstruction, rightTempSlot, &finalResultSlot) ||
-            finalResultSlot != resultSlot) {
-            return ZR_FALSE;
-        }
-
-        return (TZrBool)(returnInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
-                         returnInstruction->instruction.operand.operand1[0] == resultSlot);
-    }
-
-    return ZR_FALSE;
+    resultSlot = compareInstruction->instruction.operandExtra;
+    return (TZrBool)(returnInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
+                     returnInstruction->instruction.operand.operand1[0] == resultSlot);
 }
 
-static TZrBool backend_aot_c_try_get_bool_arg0_arg1_logical_and_return(const SZrFunction *function) {
-    return backend_aot_c_try_get_bool_arg0_arg1_logical_return(function,
-                                                              ZR_INSTRUCTION_ENUM(LOGICAL_AND),
-                                                              ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE));
+static TZrBool backend_aot_c_try_get_bool_i64_arg0_arg1_less_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_i64_arg0_arg1_compare_return(function,
+                                                                  ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED));
 }
 
-static TZrBool backend_aot_c_try_get_bool_arg0_arg1_logical_or_return(const SZrFunction *function) {
-    const TZrInstruction *logicalInstruction;
+static TZrBool backend_aot_c_try_get_bool_i64_arg0_arg1_equal_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_i64_arg0_arg1_compare_return(function,
+                                                                  ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED));
+}
+
+static TZrBool backend_aot_c_try_get_bool_i64_arg0_arg1_not_equal_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_i64_arg0_arg1_compare_return(function,
+                                                                  ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_SIGNED));
+}
+
+static TZrBool backend_aot_c_try_get_bool_i64_arg0_arg1_greater_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_i64_arg0_arg1_compare_return(function,
+                                                                  ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED));
+}
+
+static TZrBool backend_aot_c_try_get_bool_i64_arg0_arg1_less_equal_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_i64_arg0_arg1_compare_return(function,
+                                                                  ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED));
+}
+
+static TZrBool backend_aot_c_try_get_bool_i64_arg0_arg1_greater_equal_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_i64_arg0_arg1_compare_return(function,
+                                                                  ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED));
+}
+
+static TZrBool backend_aot_c_try_get_bool_u64_arg0_arg1_compare_return(const SZrFunction *function,
+                                                                       EZrInstructionCode compareOperationCode) {
+    const TZrInstruction *compareInstruction;
     const TZrInstruction *returnInstruction;
-    TZrUInt32 leftSlot;
-    TZrUInt32 rightSlot;
     TZrUInt32 resultSlot;
 
     if (function == ZR_NULL ||
         function->instructionsList == ZR_NULL ||
-        (function->instructionsLength != 2u && function->instructionsLength != 7u) ||
+        function->instructionsLength != 2u ||
         function->parameterCount != 2 ||
         function->parameterMetadata == ZR_NULL ||
         function->parameterMetadataCount < 2u ||
         function->hasVariableArguments ||
         !function->hasCallableReturnType ||
         !backend_aot_c_type_ref_is_bool(&function->callableReturnType) ||
-        !backend_aot_c_type_ref_is_bool(&function->parameterMetadata[0].type) ||
-        !backend_aot_c_type_ref_is_bool(&function->parameterMetadata[1].type)) {
+        !backend_aot_c_type_ref_is_u64(&function->parameterMetadata[0].type) ||
+        !backend_aot_c_type_ref_is_u64(&function->parameterMetadata[1].type)) {
         return ZR_FALSE;
     }
 
-    if (function->instructionsLength == 2u) {
-        logicalInstruction = &function->instructionsList[0];
-        returnInstruction = &function->instructionsList[1];
-        if (logicalInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(LOGICAL_OR)) {
-            return ZR_FALSE;
-        }
-
-        leftSlot = logicalInstruction->instruction.operand.operand1[0];
-        rightSlot = logicalInstruction->instruction.operand.operand1[1];
-        resultSlot = logicalInstruction->instruction.operandExtra;
-        return (TZrBool)(((leftSlot == 0u && rightSlot == 1u) ||
-                          (leftSlot == 1u && rightSlot == 0u)) &&
-                         returnInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
-                         returnInstruction->instruction.operand.operand1[0] == resultSlot);
+    compareInstruction = &function->instructionsList[0];
+    returnInstruction = &function->instructionsList[1];
+    if (compareInstruction->instruction.operationCode != (TZrUInt16)compareOperationCode ||
+        compareInstruction->instruction.operand.operand1[0] != 0u ||
+        compareInstruction->instruction.operand.operand1[1] != 1u) {
+        return ZR_FALSE;
     }
 
-    if (function->instructionsLength == 7u) {
-        const TZrInstruction *leftCopyInstruction = &function->instructionsList[0];
-        const TZrInstruction *initialResultInstruction = &function->instructionsList[1];
-        const TZrInstruction *jumpIfFalseInstruction = &function->instructionsList[2];
-        const TZrInstruction *jumpEndInstruction = &function->instructionsList[3];
-        const TZrInstruction *rightCopyInstruction = &function->instructionsList[4];
-        const TZrInstruction *finalResultInstruction = &function->instructionsList[5];
-        TZrUInt32 leftTempSlot;
-        TZrUInt32 rightTempSlot;
-        TZrUInt32 finalResultSlot;
+    resultSlot = compareInstruction->instruction.operandExtra;
+    return (TZrBool)(returnInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
+                     returnInstruction->instruction.operand.operand1[0] == resultSlot);
+}
 
-        returnInstruction = &function->instructionsList[6];
-        if (!backend_aot_c_bool_stack_copy_reads_slot(leftCopyInstruction, 0u, &leftTempSlot) ||
-            !backend_aot_c_bool_stack_copy_reads_slot(initialResultInstruction, leftTempSlot, &resultSlot) ||
-            jumpIfFalseInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE) ||
-            jumpIfFalseInstruction->instruction.operandExtra != leftTempSlot ||
-            jumpIfFalseInstruction->instruction.operand.operand2[0] != 1u ||
-            jumpEndInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP) ||
-            jumpEndInstruction->instruction.operand.operand2[0] != 2u ||
-            !backend_aot_c_bool_stack_copy_reads_slot(rightCopyInstruction, 1u, &rightTempSlot) ||
-            !backend_aot_c_bool_stack_copy_reads_slot(finalResultInstruction, rightTempSlot, &finalResultSlot) ||
-            finalResultSlot != resultSlot) {
-            return ZR_FALSE;
-        }
+static TZrBool backend_aot_c_try_get_bool_u64_arg0_arg1_less_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_u64_arg0_arg1_compare_return(function,
+                                                                  ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED));
+}
 
-        return (TZrBool)(returnInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
-                         returnInstruction->instruction.operand.operand1[0] == resultSlot);
+static TZrBool backend_aot_c_try_get_bool_u64_arg0_arg1_equal_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_u64_arg0_arg1_compare_return(function,
+                                                                   ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_UNSIGNED));
+}
+
+static TZrBool backend_aot_c_try_get_bool_u64_arg0_arg1_not_equal_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_u64_arg0_arg1_compare_return(function,
+                                                                   ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_UNSIGNED));
+}
+
+static TZrBool backend_aot_c_try_get_bool_u64_arg0_arg1_greater_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_u64_arg0_arg1_compare_return(function,
+                                                                   ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED));
+}
+
+static TZrBool backend_aot_c_try_get_bool_u64_arg0_arg1_less_equal_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_u64_arg0_arg1_compare_return(function,
+                                                                   ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED));
+}
+
+static TZrBool backend_aot_c_try_get_bool_u64_arg0_arg1_greater_equal_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_u64_arg0_arg1_compare_return(function,
+                                                                   ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED));
+}
+
+static TZrBool backend_aot_c_try_get_bool_f64_arg0_arg1_compare_return(const SZrFunction *function,
+                                                                       EZrInstructionCode compareOperationCode) {
+    const TZrInstruction *compareInstruction;
+    const TZrInstruction *returnInstruction;
+    TZrUInt32 resultSlot;
+
+    if (function == ZR_NULL ||
+        function->instructionsList == ZR_NULL ||
+        function->instructionsLength != 2u ||
+        function->parameterCount != 2 ||
+        function->parameterMetadata == ZR_NULL ||
+        function->parameterMetadataCount < 2u ||
+        function->hasVariableArguments ||
+        !function->hasCallableReturnType ||
+        !backend_aot_c_type_ref_is_bool(&function->callableReturnType) ||
+        !backend_aot_c_type_ref_is_f64(&function->parameterMetadata[0].type) ||
+        !backend_aot_c_type_ref_is_f64(&function->parameterMetadata[1].type)) {
+        return ZR_FALSE;
     }
 
-    return ZR_FALSE;
+    compareInstruction = &function->instructionsList[0];
+    returnInstruction = &function->instructionsList[1];
+    if (compareInstruction->instruction.operationCode != (TZrUInt16)compareOperationCode ||
+        compareInstruction->instruction.operand.operand1[0] != 0u ||
+        compareInstruction->instruction.operand.operand1[1] != 1u) {
+        return ZR_FALSE;
+    }
+
+    resultSlot = compareInstruction->instruction.operandExtra;
+    return (TZrBool)(returnInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
+                     returnInstruction->instruction.operand.operand1[0] == resultSlot);
+}
+
+static TZrBool backend_aot_c_try_get_bool_f64_arg0_arg1_less_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_f64_arg0_arg1_compare_return(function,
+                                                                  ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT));
+}
+
+static TZrBool backend_aot_c_try_get_bool_f64_arg0_arg1_equal_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_f64_arg0_arg1_compare_return(function,
+                                                                  ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_FLOAT));
+}
+
+static TZrBool backend_aot_c_try_get_bool_f64_arg0_arg1_not_equal_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_f64_arg0_arg1_compare_return(function,
+                                                                  ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_FLOAT));
+}
+
+static TZrBool backend_aot_c_try_get_bool_f64_arg0_arg1_greater_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_f64_arg0_arg1_compare_return(function,
+                                                                  ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT));
+}
+
+static TZrBool backend_aot_c_try_get_bool_f64_arg0_arg1_less_equal_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_f64_arg0_arg1_compare_return(function,
+                                                                  ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT));
+}
+
+static TZrBool backend_aot_c_try_get_bool_f64_arg0_arg1_greater_equal_return(const SZrFunction *function) {
+    return backend_aot_c_try_get_bool_f64_arg0_arg1_compare_return(function,
+                                                                  ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT));
 }
 
 TZrBool backend_aot_c_can_emit_typed_bool_no_arg_thunk(const SZrFunction *function) {
@@ -272,9 +356,31 @@ TZrBool backend_aot_c_can_emit_typed_bool_one_arg_thunk(const SZrFunction *funct
                      backend_aot_c_try_get_bool_arg0_logical_not_return(function));
 }
 
-TZrBool backend_aot_c_can_emit_typed_bool_two_arg_thunk(const SZrFunction *function) {
-    return (TZrBool)(backend_aot_c_try_get_bool_arg0_arg1_logical_and_return(function) ||
-                     backend_aot_c_try_get_bool_arg0_arg1_logical_or_return(function));
+TZrBool backend_aot_c_can_emit_typed_bool_i64_two_arg_thunk(const SZrFunction *function) {
+    return (TZrBool)(backend_aot_c_try_get_bool_i64_arg0_arg1_less_return(function) ||
+                     backend_aot_c_try_get_bool_i64_arg0_arg1_equal_return(function) ||
+                     backend_aot_c_try_get_bool_i64_arg0_arg1_not_equal_return(function) ||
+                     backend_aot_c_try_get_bool_i64_arg0_arg1_greater_return(function) ||
+                     backend_aot_c_try_get_bool_i64_arg0_arg1_less_equal_return(function) ||
+                     backend_aot_c_try_get_bool_i64_arg0_arg1_greater_equal_return(function));
+}
+
+TZrBool backend_aot_c_can_emit_typed_bool_u64_two_arg_thunk(const SZrFunction *function) {
+    return (TZrBool)(backend_aot_c_try_get_bool_u64_arg0_arg1_less_return(function) ||
+                     backend_aot_c_try_get_bool_u64_arg0_arg1_equal_return(function) ||
+                     backend_aot_c_try_get_bool_u64_arg0_arg1_not_equal_return(function) ||
+                     backend_aot_c_try_get_bool_u64_arg0_arg1_greater_return(function) ||
+                     backend_aot_c_try_get_bool_u64_arg0_arg1_less_equal_return(function) ||
+                     backend_aot_c_try_get_bool_u64_arg0_arg1_greater_equal_return(function));
+}
+
+TZrBool backend_aot_c_can_emit_typed_bool_f64_two_arg_thunk(const SZrFunction *function) {
+    return (TZrBool)(backend_aot_c_try_get_bool_f64_arg0_arg1_less_return(function) ||
+                     backend_aot_c_try_get_bool_f64_arg0_arg1_equal_return(function) ||
+                     backend_aot_c_try_get_bool_f64_arg0_arg1_not_equal_return(function) ||
+                     backend_aot_c_try_get_bool_f64_arg0_arg1_greater_return(function) ||
+                     backend_aot_c_try_get_bool_f64_arg0_arg1_less_equal_return(function) ||
+                     backend_aot_c_try_get_bool_f64_arg0_arg1_greater_equal_return(function));
 }
 
 static void backend_aot_c_write_bool_no_arg_thunk_definition(FILE *file,
@@ -307,20 +413,164 @@ static void backend_aot_c_write_bool_one_arg_logical_not_thunk_definition(FILE *
             (unsigned)flatIndex);
 }
 
-static void backend_aot_c_write_bool_two_arg_logical_and_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+static void backend_aot_c_write_bool_i64_two_arg_less_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1) {\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
             "    (void)state;\n"
-            "    return (TZrBool)(zr_aot_arg0 && zr_aot_arg1);\n"
+            "    return (TZrBool)(zr_aot_arg0 < zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
 }
 
-static void backend_aot_c_write_bool_two_arg_logical_or_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+static void backend_aot_c_write_bool_i64_two_arg_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1) {\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
             "    (void)state;\n"
-            "    return (TZrBool)(zr_aot_arg0 || zr_aot_arg1);\n"
+            "    return (TZrBool)(zr_aot_arg0 == zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_i64_two_arg_not_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 != zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_i64_two_arg_greater_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 > zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_i64_two_arg_less_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 <= zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_i64_two_arg_greater_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 >= zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_u64_two_arg_less_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 < zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_u64_two_arg_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 == zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_u64_two_arg_not_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 != zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_u64_two_arg_greater_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 > zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_u64_two_arg_less_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 <= zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_u64_two_arg_greater_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 >= zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_f64_two_arg_less_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 < zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_f64_two_arg_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 == zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_f64_two_arg_not_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 != zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_f64_two_arg_greater_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 > zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_f64_two_arg_less_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 <= zr_aot_arg1);\n"
+            "}\n",
+            (unsigned)flatIndex);
+}
+
+static void backend_aot_c_write_bool_f64_two_arg_greater_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
+    fprintf(file,
+            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
+            "    (void)state;\n"
+            "    return (TZrBool)(zr_aot_arg0 >= zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
 }
@@ -343,8 +593,20 @@ void backend_aot_write_c_typed_bool_thunk_forward_decls(FILE *file, const SZrAot
                     "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrBool zr_aot_arg0);\n",
                     (unsigned)entry->flatIndex);
         } else if (backend_aot_c_can_emit_typed_bool_two_arg_thunk(entry->function)) {
+            backend_aot_c_write_bool_two_arg_thunk_forward_decl(file, entry->flatIndex);
+        } else if (backend_aot_c_can_emit_typed_bool_three_arg_thunk(entry->function)) {
+            backend_aot_c_write_bool_three_arg_thunk_forward_decl(file, entry->flatIndex);
+        } else if (backend_aot_c_can_emit_typed_bool_i64_two_arg_thunk(entry->function)) {
             fprintf(file,
-                    "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1);\n",
+                    "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);\n",
+                    (unsigned)entry->flatIndex);
+        } else if (backend_aot_c_can_emit_typed_bool_u64_two_arg_thunk(entry->function)) {
+            fprintf(file,
+                    "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);\n",
+                    (unsigned)entry->flatIndex);
+        } else if (backend_aot_c_can_emit_typed_bool_f64_two_arg_thunk(entry->function)) {
+            fprintf(file,
+                    "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1);\n",
                     (unsigned)entry->flatIndex);
         }
     }
@@ -366,10 +628,46 @@ void backend_aot_write_c_typed_bool_thunks(FILE *file, const SZrAotFunctionTable
             backend_aot_c_write_bool_one_arg_identity_thunk_definition(file, entry->flatIndex);
         } else if (backend_aot_c_try_get_bool_arg0_logical_not_return(entry->function)) {
             backend_aot_c_write_bool_one_arg_logical_not_thunk_definition(file, entry->flatIndex);
-        } else if (backend_aot_c_try_get_bool_arg0_arg1_logical_and_return(entry->function)) {
-            backend_aot_c_write_bool_two_arg_logical_and_thunk_definition(file, entry->flatIndex);
-        } else if (backend_aot_c_try_get_bool_arg0_arg1_logical_or_return(entry->function)) {
-            backend_aot_c_write_bool_two_arg_logical_or_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_write_bool_two_arg_thunk_definition(file, entry)) {
+            continue;
+        } else if (backend_aot_c_try_write_bool_three_arg_thunk_definition(file, entry)) {
+            continue;
+        } else if (backend_aot_c_try_get_bool_i64_arg0_arg1_less_return(entry->function)) {
+            backend_aot_c_write_bool_i64_two_arg_less_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_i64_arg0_arg1_equal_return(entry->function)) {
+            backend_aot_c_write_bool_i64_two_arg_equal_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_i64_arg0_arg1_not_equal_return(entry->function)) {
+            backend_aot_c_write_bool_i64_two_arg_not_equal_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_i64_arg0_arg1_greater_return(entry->function)) {
+            backend_aot_c_write_bool_i64_two_arg_greater_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_i64_arg0_arg1_less_equal_return(entry->function)) {
+            backend_aot_c_write_bool_i64_two_arg_less_equal_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_i64_arg0_arg1_greater_equal_return(entry->function)) {
+            backend_aot_c_write_bool_i64_two_arg_greater_equal_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_u64_arg0_arg1_less_return(entry->function)) {
+            backend_aot_c_write_bool_u64_two_arg_less_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_u64_arg0_arg1_equal_return(entry->function)) {
+            backend_aot_c_write_bool_u64_two_arg_equal_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_u64_arg0_arg1_not_equal_return(entry->function)) {
+            backend_aot_c_write_bool_u64_two_arg_not_equal_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_u64_arg0_arg1_greater_return(entry->function)) {
+            backend_aot_c_write_bool_u64_two_arg_greater_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_u64_arg0_arg1_less_equal_return(entry->function)) {
+            backend_aot_c_write_bool_u64_two_arg_less_equal_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_u64_arg0_arg1_greater_equal_return(entry->function)) {
+            backend_aot_c_write_bool_u64_two_arg_greater_equal_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_f64_arg0_arg1_less_return(entry->function)) {
+            backend_aot_c_write_bool_f64_two_arg_less_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_f64_arg0_arg1_equal_return(entry->function)) {
+            backend_aot_c_write_bool_f64_two_arg_equal_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_f64_arg0_arg1_not_equal_return(entry->function)) {
+            backend_aot_c_write_bool_f64_two_arg_not_equal_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_f64_arg0_arg1_greater_return(entry->function)) {
+            backend_aot_c_write_bool_f64_two_arg_greater_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_f64_arg0_arg1_less_equal_return(entry->function)) {
+            backend_aot_c_write_bool_f64_two_arg_less_equal_thunk_definition(file, entry->flatIndex);
+        } else if (backend_aot_c_try_get_bool_f64_arg0_arg1_greater_equal_return(entry->function)) {
+            backend_aot_c_write_bool_f64_two_arg_greater_equal_thunk_definition(file, entry->flatIndex);
         }
     }
 }

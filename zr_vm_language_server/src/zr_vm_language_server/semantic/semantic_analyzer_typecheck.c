@@ -2829,14 +2829,31 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         
         case ZR_AST_FOR_LOOP: {
             SZrForLoop *forLoop = &node->data.forLoop;
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->init);
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->cond);
-            ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(state,
-                                                                               analyzer,
-                                                                               forLoop->cond,
-                                                                               forLoop->block);
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->step);
-            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->block);
+            if (forLoop->init != ZR_NULL &&
+                forLoop->init->type == ZR_AST_VARIABLE_DECLARATION) {
+                SZrTypeEnvironment *savedTypeEnv =
+                    semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
+
+                ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->init);
+                ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->cond);
+                ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(state,
+                                                                                   analyzer,
+                                                                                   forLoop->cond,
+                                                                                   forLoop->block);
+                ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->step);
+                ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->block);
+                semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
+            } else {
+                ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->init);
+                ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->cond);
+                ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(state,
+                                                                                   analyzer,
+                                                                                   forLoop->cond,
+                                                                                   forLoop->block);
+                ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->step);
+                ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->block);
+            }
+            (void)ZrParser_TypeInference_TryJoinForNumericAssignments(analyzer->compilerState, node);
             break;
         }
 
@@ -2854,6 +2871,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                                             : node->location);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, foreachLoop->block);
             semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
+            (void)ZrParser_TypeInference_TryJoinForeachNumericAssignments(analyzer->compilerState, node);
             break;
         }
         

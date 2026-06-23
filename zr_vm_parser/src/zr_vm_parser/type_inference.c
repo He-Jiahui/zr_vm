@@ -2497,6 +2497,32 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
             success = ZR_TRUE;
             break;
         }
+
+        case ZR_AST_FOR_LOOP: {
+            SZrInferredType conditionType;
+            ZrParser_InferredType_Init(cs->state, &conditionType, ZR_VALUE_TYPE_OBJECT);
+            if (node->data.forLoop.cond != ZR_NULL) {
+                (void)ZrParser_ExpressionType_Infer(cs, node->data.forLoop.cond, &conditionType);
+            }
+            ZrParser_InferredType_Free(cs->state, &conditionType);
+            (void)ZrParser_TypeInference_TryJoinForNumericAssignments(cs, node);
+            ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
+            success = ZR_TRUE;
+            break;
+        }
+
+        case ZR_AST_FOREACH_LOOP: {
+            SZrInferredType iterableType;
+            ZrParser_InferredType_Init(cs->state, &iterableType, ZR_VALUE_TYPE_OBJECT);
+            if (node->data.foreachLoop.expr != ZR_NULL) {
+                (void)ZrParser_ExpressionType_Infer(cs, node->data.foreachLoop.expr, &iterableType);
+            }
+            ZrParser_InferredType_Free(cs->state, &iterableType);
+            (void)ZrParser_TypeInference_TryJoinForeachNumericAssignments(cs, node);
+            ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
+            success = ZR_TRUE;
+            break;
+        }
         
         case ZR_AST_IF_EXPRESSION:
             // 实现if expression的类型推断

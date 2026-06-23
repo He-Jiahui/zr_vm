@@ -25,6 +25,24 @@ TZrBool backend_aot_c_scalar_locals_u64_written_before(const SZrAotExecIrFunctio
 TZrBool backend_aot_c_scalar_locals_can_direct_return_i64_local(const SZrAotExecIrFunction *functionIr,
                                                                 TZrUInt32 slot,
                                                                 TZrUInt32 execInstructionIndex);
+TZrBool backend_aot_c_scalar_locals_can_direct_return_bool_local(const SZrAotExecIrFunction *functionIr,
+                                                                 TZrUInt32 slot,
+                                                                 TZrUInt32 execInstructionIndex);
+TZrBool backend_aot_c_scalar_locals_can_direct_return_u64_local(const SZrAotExecIrFunction *functionIr,
+                                                                TZrUInt32 slot,
+                                                                TZrUInt32 execInstructionIndex);
+TZrBool backend_aot_c_scalar_locals_can_direct_return_f64_local(const SZrAotExecIrFunction *functionIr,
+                                                                TZrUInt32 slot,
+                                                                TZrUInt32 execInstructionIndex);
+TZrBool backend_aot_c_scalar_locals_can_infer_return_bool_local(const SZrAotExecIrFunction *functionIr,
+                                                                TZrUInt32 slot,
+                                                                TZrUInt32 execInstructionIndex);
+TZrBool backend_aot_c_scalar_locals_can_infer_return_u64_local(const SZrAotExecIrFunction *functionIr,
+                                                               TZrUInt32 slot,
+                                                               TZrUInt32 execInstructionIndex);
+TZrBool backend_aot_c_scalar_locals_can_infer_return_f64_local(const SZrAotExecIrFunction *functionIr,
+                                                               TZrUInt32 slot,
+                                                               TZrUInt32 execInstructionIndex);
 TZrBool backend_aot_c_scalar_locals_reset_can_skip_value_slot(const SZrAotExecIrFunction *functionIr,
                                                               TZrUInt32 slot,
                                                               TZrUInt32 execInstructionIndex);

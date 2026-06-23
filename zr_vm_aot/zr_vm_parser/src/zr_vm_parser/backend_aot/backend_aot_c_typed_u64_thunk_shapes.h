@@ -5,9 +5,19 @@
 
 TZrBool backend_aot_c_try_get_u64_arg0_arg1_add_return(const SZrFunction *function);
 TZrBool backend_aot_c_try_get_u64_arg0_arg1_multiply_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_divide_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_modulo_return(const SZrFunction *function);
 TZrBool backend_aot_c_try_get_u64_arg0_arg1_subtract_return(const SZrFunction *function);
 TZrBool backend_aot_c_try_get_u64_arg0_arg1_bitwise_and_return(const SZrFunction *function);
 TZrBool backend_aot_c_try_get_u64_arg0_arg1_bitwise_or_return(const SZrFunction *function);
 TZrBool backend_aot_c_try_get_u64_arg0_arg1_bitwise_xor_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_add_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_multiply_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_subtract_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_divide_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_modulo_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_bitwise_and_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_bitwise_or_return(const SZrFunction *function);
+TZrBool backend_aot_c_try_get_u64_arg0_arg1_arg2_bitwise_xor_return(const SZrFunction *function);
 
 #endif

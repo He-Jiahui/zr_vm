@@ -363,6 +363,1883 @@ before/after 速查（与 `04`§2 降级表合并使用）：
 
 ##状态与产出记录
 
+- 2026-06-24 05:06:03 +08:00 · M1.5 / 07-S5 script typed-local return route ·
+  状态：子切片完成、07-S5 typed return boundary route 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：script-level bool/u64/f64 typed-local return 现在复用 inferred scalar proof helper，
+  在 callable return metadata 缺失时也能走 `ZrLibrary_AotRuntime_ReturnBool` / `ReturnU64` / `ReturnF64`
+  native→VM typed return helper，而不是 generic `ZrLibrary_AotRuntime_Return(state, &frame, slot, ...)`。
+  `backend_aot_c_typed_return.c` 对 bool/u64/f64 route 同时接受 direct callable proof 与 inferred script proof；
+  callable metadata gate 仍保留在 scalar-local direct-return proof 中。RED/GREEN：focused method-info signature
+  test 先因缺失 `ReturnBool(state, zr_aot_b...)` 失败 1/1；实现后 method-info signature 1/0。
+  补充验证通过 return contracts 1/0、frame setup contracts 1/0、source contracts 19/0、typed scalar 1/0；
+  generated bool/u64/f64 grep 分别命中 `ReturnBool`/`ReturnU64`/`ReturnF64`，generic frame-slot return grep
+  无命中；CTest `aot_c_method_info_signature` 1/1 passed。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-script-typed-local-return-route.md`。规模：typed return 56 lines、
+  method-info signature test 153 lines、return contract 385 lines。备注：本切片只补 typed-local script return
+  runtime route；表达式直接返回标量化、full typed ABI、inline structs、in/out writeback、完整 07-S5 acceptance、
+  性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 04:38:40 +08:00 · M1.5 / 07-S5 MethodInfo scalar return signatures ·
+  状态：子切片完成、07-S5 MethodInfo/signature boundary metadata 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：在 i64 script-level return signature 的基础上，补齐 bool/u64/f64 typed-local
+  script return 的 inferred MethodInfo signature。`backend_aot_c_emitter.c` 现在通过通用 scalar
+  return 推断器按 i64/bool/u64/f64 顺序扫描所有 `FUNCTION_RETURN`，只有所有返回都能由同一标量 proof
+  证明时才合成 `SZrAotSignature.returnType`；`backend_aot_c_scalar_locals.c` 抽出共享
+  `can_return_kind_local`，typed callable direct-return 仍要求 callable return metadata，script
+  signature inference 使用不要求 callable metadata 的 bool/u64/f64 proof helper。RED/GREEN：
+  focused method-info signature test 先因 bool return 缺失
+  `.returnType = &zr_aot_signature_0_types[0]` 失败 1/1；实现后 method-info signature 1/0。
+  补充验证通过 frame setup contracts 1/0、source contracts 19/0、return contracts 1/0、typed scalar 1/0；
+  CTest `aot_c_method_info_signature` 1/1 passed；generated bool/u64/f64 signature grep 分别命中
+  `baseType/staticCType=1/9/11`、return pointer 与 `hasReturnValue=1`。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-method-info-scalar-return-signatures.md`。规模：emitter 631 lines、
+  scalar locals 2942 lines、scalar locals header 75 lines、new method-info signature test 140 lines、
+  frame setup contract 362 lines、return contract 382 lines。备注：本切片只补 typed-local script return
+  metadata；full typed ABI、inline structs、in/out writeback、表达式直接返回标量化、完整 07-S5 acceptance、
+  性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 04:00:05 +08:00 · M1.5 / 07-S5 MethodInfo typed return signature ·
+  状态：子切片完成、07-S5 MethodInfo/signature boundary metadata 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：`backend_aot_c_emitter.c` 在 `function->hasCallableReturnType` 缺失时，
+  通过 `SZrAotExecIrFunction` 扫描 `FUNCTION_RETURN` 并复用
+  `backend_aot_c_scalar_locals_can_direct_return_i64_local(...)` proof，为 script-level i64
+  direct return 生成非空 `SZrAotSignature.returnType`、`hasReturnValue=1` 和 i64 signature type row；
+  mixed/unknown return 仍保持 `ZR_NULL`。RED/GREEN：typed-scalar generated-product 先因缺失
+  `.returnType = &zr_aot_signature_0_types[0]` 失败 1/1；实现后 focused typed scalar 1/0。
+  补充验证通过 frame setup contracts 1/0、source contracts 19/0、return contracts 1/0、
+  typed scalar 1/0；generated typed scalar 的 07§9 environment grep 与 SZrValue/double-write grep
+  均无命中，signature grep 命中 return pointer、`hasReturnValue=1`、i64 base/static C type。
+  产出：`tests/acceptance/2026-06-24-aot-m1-5-method-info-typed-return-signature.md`。规模：
+  emitter 550 lines、typed scalar 1101 lines、frame setup contract 344 lines。备注：本切片只补
+  i64 script-level return metadata；full typed ABI、inline structs、in/out writeback、bool/u64/f64
+  script-level inferred signatures、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 03:34:00 +08:00 · M1.5 / 07-S5 boundary guardrail allowlist hardening ·
+  状态：支撑子切片完成、07-S5 acceptance/guardrail 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：`tests/parser/test_aot_c_guardrail_contracts.c` 的 runtime-call classifier
+  显式允许当前 07-S5 VM↔native 边界 helper：`ReturnI64` / `ReturnBool` / `ReturnU64` /
+  `ReturnF64` / `ReturnInlineStruct`、`Sync*Local`、`CallStackValue`、`CallStaticDirect`、
+  `CallInlineStruct`、`CallDynamicDeoptBridge`、`ValidateDynamicDeoptBridge` 以及
+  dynamic member/index `Get*` / `Set*` helpers；同时继续拒绝 `ZrCore_Stack_GetValue`、
+  `ZR_VALUE_FAST_SET` 和 `ZrLibrary_AotRuntime_Add` 这类未分类 VM fallback。RED/GREEN：
+  guardrail 合约先因新增 07-S5 boundary helper 未在 allowlist 中分类而失败 1/4；
+  扩展 allowlist 后 focused guardrail contracts 4/0。补充验证通过 source contracts 19/0、
+  guardrail contracts 4/0、global contracts 7/0、return contracts 1/0、call contracts 4/0、
+  typed-call contracts 4/0、dynamic deopt bridge smoke 2/0。`git diff --check` 对 guardrail
+  文件退出 0，仅提示既有 LF/CRLF 规范化警告。规模：`test_aot_c_guardrail_contracts.c`
+  159 physical / 139 non-empty lines。备注：本切片只收紧 07-S5 acceptance 护栏，不改变
+  generated C 行为；07-S5 full typed ABI、inline structs、in/out writeback、完整 07-S5
+  acceptance 和 08-12 仍未完成。
+
+- 2026-06-24 03:24:02 +08:00 · M1.5 / 07-S5 dynamic value-access deopt bridge surfacing ·
+  状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：AOT C dynamic member/index value-access 边界 writer 现在接收 ExecIR/SemIR
+  `deoptId`，在 `GET_MEMBER` / `SET_MEMBER` / `GET_MEMBER_SLOT` /
+  `SET_MEMBER_SLOT` / `GET_BY_INDEX` / `SET_BY_INDEX` runtime boundary 前生成
+  `zr_aot_value_dynamic_deopt_bridge deopt=...` marker，并调用
+  `ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(...)` 校验可见 SemIR deopt id。
+  `ZrLibrary_AotRuntime_CallDynamicDeoptBridge(...)` 改为复用同一校验入口后继续委托
+  `CallStackValue`，成员/索引实际语义仍由原 `GetMember` / `SetMember` /
+  `GetByIndex` / `SetByIndex` helper 执行。RED/GREEN：global contracts 先因缺失
+  `ValidateDynamicDeoptBridge` 和 value-access deopt marker 失败 1/7；实现后 focused
+  global contracts 7/0、dynamic deopt bridge smoke 2/0。补充验证通过 source contracts 19/0、
+  global contracts 7/0、dynamic deopt bridge smoke 2/0、global shared-library smoke 9/0、
+  SemIR dynamic member deopt 1/0、SemIR dynamic index deopt 1/0。`git diff --check`
+  对本切片相关 tracked 文件退出 0，仅提示既有 LF/CRLF 规范化警告。规模：
+  `backend_aot_c_value_access_boundaries.c` 201 physical / 180 non-empty lines，
+  `test_aot_c_dynamic_deopt_bridge_smoke.c` 337 / 288，
+  `test_aot_c_global_contracts.c` 716 / 666。仍未完成：07-S5 full typed ABI、
+  inline structs、in/out writeback、完整 07-S5 acceptance 和 08-12。
+
+- 2026-06-24 02:53:01 +08:00 · M1.5 / 07-S5 dynamic/deopt bridge surfacing ·
+  状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：AOT C dynamic call 边界 writer 现在接收 SemIR/ExecIR `deoptId`，生成
+  `zr_aot_dynamic_deopt_bridge deopt=...` marker，并通过
+  `ZrLibrary_AotRuntime_CallDynamicDeoptBridge(...)` 进入运行时；普通 generic
+  `fn(value)` direct-call 路径继续走 `CallStackValue`，不误标为 deopt bridge。runtime helper
+  在可见 SemIR deopt table 时校验 deopt id，缺少 metadata 或 NONE 哨兵时保持兼容并委托
+  `CallStackValue`。新增独立 `test_aot_c_dynamic_deopt_bridge_smoke.c`，手工构造
+  `FUNCTION_CALL` SemIR dynamic deopt fixture，验证生成 C 文本与 shared-library 链接；原 call smoke
+  回到 5 项普通调用路径覆盖。RED/GREEN：call contracts 先因缺失 `TZrUInt32 deoptId`
+  与 bridge 文本失败 1/4；实现后 call contracts 4/0。验证：重新配置 `build-wsl-gcc` 后，
+  call contracts 4/0、call shared-library smoke 5/0、dynamic deopt bridge smoke 1/0；
+  相关回归 source contracts 19/0、global contracts 7/0、SemIR dynamic call deopt 1/0。
+  `git diff --check` 对本切片相关 tracked 文件通过。规模：`backend_aot_c_call_boundaries.c`
+  233 physical / 223 non-empty lines，`test_aot_c_call_shared_library_smoke.c` 拆回 898 行，
+  新 bridge smoke 189 行。仍未完成：07-S5 full typed ABI、inline structs、in/out writeback、
+  broader dynamic value access hardening、完整 07-S5 acceptance 和 08-12。
+
+- 2026-06-24 02:04:55 +08:00 · M1.5 / 07-S5 value-access boundary writer split ·
+  状态：支撑子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 `backend_aot_c_value_access_boundaries.c`，从
+  `backend_aot_c_lowering_values.c` 迁出 unsupported meta/dynamic value-access 边界 writer、
+  `GET_MEMBER` / `SET_MEMBER` / `GET_MEMBER_SLOT` / `SET_MEMBER_SLOT` /
+  `GET_BY_INDEX` / `SET_BY_INDEX` 动态运行时边界 writer；value lowering 文件继续保留
+  `TO_STRING`、常量/物化、所有权和其他值 lowering。RED/GREEN：global contracts 先读取缺失的
+  value-access boundary 模块并按预期 2/7 `Expected Non-NULL`，拆分后 focused global contracts 7/0。
+  验证：`zr_vm_parser_shared` 构建通过并确认
+  `backend_aot_c_value_access_boundaries.c.o` 编入 parser shared；相关合约/烟测通过 global contracts 7/0、
+  global shared-library smoke 9/0、source contracts 19/0。结构检查确认 value lowering 不再持有
+  dynamic/member/index/meta value-access 边界 writer 字符串。规模：`backend_aot_c_lowering_values.c`
+  降至 839 physical / 755 non-empty lines，新 value-access boundary source 165 / 147，
+  global contract 703 / 653。仍未完成：07-S5 full typed ABI、inline structs、in/out writeback、
+  deopt/dynamic bridges、broader dynamic value access hardening、完整 07-S5 acceptance 和 08-12。
+
+- 2026-06-24 01:47:59 +08:00 · M1.5 / 07-S5 call-boundary writer split ·
+  状态：支撑子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 `backend_aot_c_call_boundaries.c`，从 `backend_aot_c_lowering_calls.c`
+  迁出 generic/dynamic `CallStackValue` 边界 writer、static resolved `CallStaticDirect` 边界 writer
+  以及 i64/bool/u64/f64 scalar-local call-result sync marker/helper 发射；原 lowering 文件继续保留
+  unsupported meta call 和具体 typed direct-call scalar writer。RED/GREEN：call contract 先读取缺失的
+  call-boundary 模块并按预期 3/4 `Expected Non-NULL`，迁出后 focused call contracts 4/0。验证：
+  `zr_vm_parser_shared` 构建通过并确认 `backend_aot_c_call_boundaries.c.o` 编入 parser shared；相关
+  AOT 合约/烟测分组通过 source 19/0、call 4/0、typed call 4/0、constant 5/0、global 7/0、
+  logical 4/0、frame setup 1/0、return 1/0、value SemIR 4/0、shared-library 8/0、call smoke 5/0、
+  typed direct-call 5/0、bool 28/0、u64 25/0。备注：focused call-contract GREEN 末尾出现 CMake
+  `GLOB mismatch`，后续 parser shared 构建完成重新生成并编译新对象；结构检查确认 lowering 文件不再持有
+  `CallStackValue` / `CallStaticDirect` / scalar sync helper 发射字符串。规模：
+  `backend_aot_c_lowering_calls.c` 降至 481 physical / 455 non-empty lines，新 call-boundary source
+  185 / 177，call contract 424 / 386。仍未完成：07-S5 full typed ABI、inline structs、
+  in/out writeback、deopt/dynamic bridges、dynamic value access hardening、完整 07-S5 acceptance 和 08-12。
+
+- 2026-06-24 01:30:26 +08:00 · M1.5 / 07-S5 typed-return route split ·
+  状态：支撑子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 `backend_aot_c_typed_return.{h,c}`，从 `backend_aot_c_function_body.c`
+  迁出 `FUNCTION_RETURN` 的 i64/bool/u64/f64 scalar typed-return route 判定和 typed native-to-VM
+  return writer 调用；函数体现在只委托 `backend_aot_try_write_c_typed_return(...)`，
+  generic/value-SemIR fallback 和普通 direct return boundary 保留在函数体。RED/GREEN：
+  return contract 先读取缺失的 typed-return route 模块并按预期 `Expected Non-NULL`，迁出后
+  focused return contracts 1/0。验证：相关 AOT 合约/烟测分组通过 source 19/0、call 4/0、
+  typed call 4/0、constant 5/0、global 7/0、logical 4/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、shared-library 8/0、call smoke 5/0、typed direct-call 5/0、bool 28/0、
+  u64 25/0；`zr_vm_parser_shared` 构建通过并确认 `backend_aot_c_typed_return.c.o`
+  编入 parser shared。备注：一次 all-in-one broad build/test 命令在 304s 超时且当时仍在长 smoke
+  运行，未作为失败证据；随后拆分执行全部通过。规模：`backend_aot_c_function_body.c`
+  2082 physical / 2034 non-empty lines，新 typed-return source 50 / 42，header 14 / 10，
+  return contract 370 / 344。仍未完成：07-S5 full typed ABI、inline structs、in/out writeback、
+  deopt/dynamic bridges、dynamic value access hardening、完整 07-S5 acceptance 和 08-12。
+
+- 2026-06-24 01:03:26 +08:00 · M1.5 / 07-S5 i64 typed-direct route proof split ·
+  状态：支撑子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 `backend_aot_c_typed_direct_i64_calls.{h,c}`，从
+  `backend_aot_c_typed_direct_calls.c` 迁出 i64 no/one/two/three-arg typed-direct can-write
+  route proof；顶层 typed-direct 文件删除旧的私有 function-table 查表 helper 与 i64 静态 proof，只保留
+  unified typed-direct dispatch、result sync 判定和 writer 调用。RED/GREEN：typed-call i64 合约先改为读取缺失的
+  `backend_aot_c_typed_direct_i64_calls.{h,c}`，`zr_vm_aot_c_typed_call_contracts_test`
+  按预期在 i64 合约处 `Expected Non-NULL`；迁出后 focused typed-call contracts 4/0、i64 typed
+  direct-call shared-library smoke 5/0。验证：相关 AOT 合约/烟测串联执行通过 source 19/0、call 4/0、
+  typed call 4/0、constant 5/0、global 7/0、logical 4/0、frame setup 1/0、return 1/0、value SemIR 4/0、
+  shared-library 8/0、call smoke 5/0、typed direct-call 5/0、bool 28/0、u64 25/0。备注：focused
+  typed-call GREEN 末尾出现 CMake `GLOB mismatch`，这是新增源码进入 glob 后的重新生成提示；i64 smoke
+  构建日志确认 `backend_aot_c_typed_direct_i64_calls.c.o` 编入 `zr_vm_parser_shared`。规模：
+  `backend_aot_c_typed_direct_calls.c` 降至 467 physical / 436 non-empty lines，新 i64 route source
+  152 / 132，header 43 / 40，i64 typed-call 合约 302 / 297。仍未完成：07-S5 full typed ABI、
+  inline structs、in/out writeback、deopt/dynamic bridges、general typed-return ABI、
+  dynamic value access hardening、完整 07-S5 acceptance 和 08-12。
+
+- 2026-06-24 00:50:03 +08:00 · M1.5 / 07-S5 bool typed-direct route proof split ·
+  状态：支撑子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 `backend_aot_c_typed_direct_bool_calls.{h,c}`，从
+  `backend_aot_c_typed_direct_calls.c` 迁出 bool no/one/two/three-arg typed-direct can-write
+  route proof 与 i64 参数到 bool 结果的 two-arg route proof；顶层 typed-direct 文件新增 bool route
+  header include，并保留统一调度与 direct-call writer 调用，匹配既有 u64/f64 route split 形态。
+  RED/GREEN：typed-call bool 合约先改为读取缺失的
+  `backend_aot_c_typed_direct_bool_calls.{h,c}`，`zr_vm_aot_c_typed_call_contracts_test`
+  按预期在 bool 合约处 `Expected Non-NULL`；迁出后 focused typed-call contracts 4/0、bool typed
+  direct-call shared-library smoke 28/0。验证：相关 AOT 合约/烟测串联执行通过 source 19/0、
+  call 4/0、typed call 4/0、constant 5/0、global 7/0、logical 4/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、shared-library 8/0、call smoke 5/0、typed direct-call 5/0、bool 28/0、u64 25/0。
+  备注：第一次 focused GREEN 构建命令因工具 129s 超时被切断，延长超时后同一目标通过；bool smoke
+  构建日志确认 `backend_aot_c_typed_direct_bool_calls.c.o` 编入 `zr_vm_parser_shared`。规模：
+  `backend_aot_c_typed_direct_calls.c` 降至 610 physical / 560 non-empty lines，新 bool route source
+  189 / 165，header 53 / 50，bool typed-call 合约 394 / 388。仍未完成：07-S5 full typed ABI、
+  inline structs、in/out writeback、deopt/dynamic bridges、general typed-return ABI、
+  dynamic value access hardening、完整 07-S5 acceptance 和 08-12。
+
+- 2026-06-24 00:32:08 +08:00 · M1.5 / 07-S5 bool call lowering writer split ·
+  状态：支撑子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 `backend_aot_c_lowering_typed_bool_calls.c`，迁出
+  `backend_aot_write_c_static_direct_bool_{no,one,two,three}_arg_function_call()` 以及
+  `i64/u64/f64 -> bool` two-arg typed direct-call lowering writer；`backend_aot_c_lowering_calls.c`
+  回落为 generic/dynamic call boundary、static VM-boundary call、i64/u64/f64 direct-call writer
+  聚合，不再承载 bool typed direct-call writer。RED/GREEN：typed-call bool 合约先改为读取缺失的
+  `backend_aot_c_lowering_typed_bool_calls.c`，`zr_vm_aot_c_typed_call_contracts_test`
+  按预期在 bool 合约处 `Expected Non-NULL`；迁出后 focused typed-call contracts 4/0、
+  bool typed direct-call shared-library smoke 28/0。验证：干净串联执行相关 AOT 合约/烟测通过
+  source 19/0、call 4/0、typed call 4/0、constant 5/0、global 7/0、logical 4/0、
+  frame setup 1/0、return 1/0、value SemIR 4/0、shared-library 8/0、call smoke 5/0、
+  typed direct-call 5/0、bool 28/0、u64 25/0。备注：第一次脚本化汇总命令因 PowerShell/WSL
+  换行与变量展开干扰未作为退出码证据，最终使用直接串联二进制命令取得 exit 0。规模：
+  `backend_aot_c_lowering_calls.c` 降至 664 physical / 630 non-empty lines，新 bool
+  lowering source 为 272 / 257，bool typed-call contract 为 350 / 344；growth watch 仍包括
+  `backend_aot_c_typed_u64_thunks.c` 832 / 748。仍未完成：07-S5 full typed ABI、inline
+  structs、in/out writeback、deopt/dynamic bridges、general typed-return ABI、dynamic value
+  access hardening、完整 07-S5 acceptance 以及 08-12。
+
+- 2026-06-24 00:08:20 +08:00 · M1.5 / 07-S5 bool two-arg thunk writer split ·
+  状态：支撑子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 `backend_aot_c_typed_bool_two_arg_thunks.{h,c}`，迁出 plain bool/bool
+  two-arg equal/not-equal/logical-and/logical-or recognizer、can-emit、forward declaration writer
+  与 definition writer；`backend_aot_c_typed_bool_thunks.c` 保留 no/one-arg、三参委托以及
+  i64/u64/f64 比较 writer，并通过 `backend_aot_c_try_write_bool_two_arg_thunk_definition()`
+  委托二参 bool/bool 写入。RED/GREEN：typed-call 合约先读取缺失的 bool two-arg thunk 模块，
+  `zr_vm_aot_c_typed_call_contracts_test` 按预期在 bool 合约处 `Expected Non-NULL`；迁出后
+  focused typed-call contracts 4/0、bool smoke 28/0、u64 smoke 25/0。验证：迁出后、清理重复
+  null guard 前补充 AOT 合约/烟测组通过 source 19/0、call 4/0、typed call 4/0、constant 5/0、
+  generic numeric 1/0、global 7/0、logical 4/0、power 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、float 1/0、shared-library 8/0、call smoke 5/0、typed direct-call 5/0、
+  i64 three-arg 8/0、bool 28/0、u64 25/0、f64 19/0、typed arithmetic 7/0、typed bitwise 6/0、
+  global 9/0、logical smoke 4/0、power smoke 1/0、value-type 1/0、generic numeric smoke 1/0、
+  float smoke 1/0；随后仅删除一条重复 `function->instructionsList == ZR_NULL` guard，并重跑
+  focused typed-call contracts 4/0 与 bool smoke 28/0。备注：一次整组重跑因 f64 generated
+  shared-library 编译超过工具超时窗口而未作为证据使用，残留进程已自然结束。规模：
+  `backend_aot_c_typed_bool_thunks.c` 降至 673 physical / 587 non-empty lines，
+  新二参 source 为 298 / 257，header 为 12 / 8；growth watch 仍包括
+  `backend_aot_c_lowering_calls.c` 933 / 885 与 `backend_aot_c_typed_u64_thunks.c` 832 / 748。
+  仍未完成：07-S5 full typed ABI、inline structs、in/out writeback、deopt/dynamic bridges、
+  general typed-return ABI、dynamic value access hardening、完整 07-S5 acceptance 以及 08-12。
+
+- 2026-06-23 23:32:28 +08:00 · M1.5 / 07-S5 u64 three-arg thunk writer split ·
+  状态：支撑子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 `backend_aot_c_typed_u64_three_arg_thunks.{h,c}`，迁出 u64 three-arg
+  typed thunk can-emit、forward declaration writer 与 add/multiply/subtract/divide/modulo/bitwise
+  definition writer；`backend_aot_c_typed_u64_thunks.c` 保留 no/one/two-arg writer 和总入口，
+  对三参 thunk 仅委托新模块。RED/GREEN：typed-call 合约先要求缺失的
+  `backend_aot_c_typed_u64_three_arg_thunks.{h,c}`，`zr_vm_aot_c_typed_call_contracts_test`
+  按预期在 u64 合约处 `Expected Non-NULL`；迁出后 focused typed-call contracts 4/0、
+  u64 smoke 25/0、bool smoke 28/0。验证：补充 AOT 合约/烟测组通过 source 19/0、call 4/0、
+  typed call 4/0、constant 5/0、generic numeric 1/0、global 7/0、logical 4/0、power 2/0、
+  frame setup 1/0、return 1/0、value SemIR 4/0、float 1/0、shared-library 8/0、call smoke 5/0、
+  typed direct-call 5/0、i64 three-arg 8/0、bool 28/0、u64 25/0、f64 19/0、typed arithmetic 7/0、
+  typed bitwise 6/0、global 9/0、logical smoke 4/0、power smoke 1/0、value-type 1/0、
+  generic numeric smoke 1/0、float smoke 1/0。备注：第一次 focused 验证因两个目标并行构建同一
+  build 目录超时，已清理残留进程并串行重跑通过；宽验证第一次停在旧 target 名，改为实际
+  `typed_direct_call_arithmetic/bitwise` 名称后剩余项通过。规模：`backend_aot_c_typed_u64_thunks.c`
+  降至 832 physical / 748 non-empty lines，新增三参 source 为 126 / 109，header 为 12 / 8。
+  仍未完成：07-S5 full typed ABI、inline structs、in/out writeback、deopt/dynamic bridges、
+  general typed-return ABI、dynamic value access hardening、完整 07-S5 acceptance 以及 08-12。
+
+- 2026-06-23 22:51:07 +08:00 · M1.5 / 07-S5 u64 typed-direct route split ·
+  状态：支撑子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 `backend_aot_c_typed_direct_u64_calls.{h,c}`，迁出 u64 no/one/two/three-arg
+  typed-direct can-write proof 与 u64->bool two-arg route proof；`backend_aot_c_typed_direct_calls.c`
+  保留顶层调度和 writer 调用，不改变生成语义。typed-call 合约改为读取 u64 direct-route
+  模块，bool 合约同步锁定 u64->bool route proof 的归属。RED/GREEN：先让合约读取尚不存在的
+  `backend_aot_c_typed_direct_u64_calls.c`，`zr_vm_aot_c_typed_call_contracts_test`
+  按预期在 u64 no-arg 合约处 `Expected Non-NULL`；迁出实现后 focused typed-call contracts
+  4/0，u64 smoke 25/0，bool smoke 28/0。验证：补充 AOT 合约/烟测组通过 source 19/0、call 4/0、
+  typed call 4/0、constant 5/0、generic numeric 1/0、global 7/0、logical 4/0、power 2/0、
+  frame setup 1/0、return 1/0、value SemIR 4/0、float 1/0、shared-library 8/0、call smoke 5/0、
+  typed direct-call 5/0、i64 three-arg 8/0、bool 28/0、u64 25/0、f64 19/0、arithmetic 7/0、
+  bitwise 6/0、global 9/0、logical smoke 4/0、power smoke 1/0、value-type 1/0；generic numeric
+  smoke 初次执行暴露 stale 目标，单独重建后 1/0 通过。规模：`backend_aot_c_typed_direct_calls.c`
+  降至 771 physical / 702 non-empty lines，新增 u64 direct module 为 189 / 165，header 为 53 / 50。
+  仍未完成：07-S5 full typed ABI、inline structs、in/out writeback、deopt/dynamic bridges、
+  general typed-return ABI、dynamic value access hardening、完整 07-S5 acceptance 以及 08-12。
+
+- 2026-06-23 22:20:33 +08:00 · M1.5 / 07-S5 typed-call contract file split ·
+  状态：支撑子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：将到达 1000 行边界的 `tests/parser/test_aot_c_typed_call_contracts.c`
+  拆为 16 行汇总入口，并把 i64、bool、u64、f64 四组 typed-call source-shape 合约分别迁入
+  `test_aot_c_typed_call_i64_contracts.c`、`test_aot_c_typed_call_bool_contracts.c`、
+  `test_aot_c_typed_call_u64_contracts.c`、`test_aot_c_typed_call_f64_contracts.c`。
+  新增 `aot_c_typed_call_contract_cases.h` 管理四个用例原型，保留既有
+  `aot_c_typed_call_contract_support.h` 的 repo 文件读取和 needle 断言 helper；
+  `zr_vm_aot_c_typed_call_contracts_test` 目标名不变，CMake 只把四个拆分源编进同一聚合测试。
+  本切片不新增 AOT 生成行为。RED/GREEN：RED 为先接入 CMake 后构建失败，明确缺少
+  `test_aot_c_typed_call_i64_contracts.c`；补齐拆分文件后 `cmake --build ... --target
+  zr_vm_aot_c_typed_call_contracts_test` 和聚合测试 GREEN，typed call contracts 4/0。
+  首次 GREEN 暴露入口 include 支撑 helper 与用例缺原型的 warning，补 cases header 后重建无该警告。
+  验证：focused typed call contracts 4/0、bool typed direct-call smoke 28/0；补充 AOT 合约/烟测组通过
+  source 19/0、call 4/0、typed call 4/0、constant 5/0、generic numeric 1/0、global 7/0、
+  logical 4/0、power 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float 1/0；
+  shared-library smokes 通过 shared 8/0、call 5/0、typed direct-call 5/0、i64 three-arg 8/0、
+  bool 28/0、u64 25/0、f64 19/0、arithmetic 7/0、bitwise 6/0、global 9/0、logical 4/0、
+  power 1/0、value-type 1/0。`git diff --check` scoped 通过，仅有既有 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-typed-call-contract-file-split.md`。
+  文件规模：typed-call 汇总入口 16 physical / 12 non-empty lines，i64 contract 260 / 255，
+  bool contract 308 / 302，u64 contract 224 / 218，f64 contract 207 / 201，
+  cases header 9 / 7，support header 97 / 78。备注：该支撑拆分为继续扩展 07-S5 typed-call /
+  ABI 边界清理测试容量；general typed-return ABI、inline structs、`in`/`out` writeback、
+  deopt/dynamic bridges、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 21:45:12 +08:00 · M1.5 / 07-S5 static bool three-arg logical-or
+  typed thunk direct-call · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：bool 三参 typed thunk 现在识别三 bool 参数 `arg0 || arg1 || arg2`
+  的窄返回形态，覆盖 compact `LOGICAL_OR -> LOGICAL_OR -> FUNCTION_RETURN` 和当前源码
+  `left || middle || right` 生成的 12 条短路指令形态（两段 `JUMP_IF_BOOL_FALSE` + `JUMP`）。
+  `backend_aot_c_typed_bool_three_arg_thunks.c` 新增 logical-or recognizer/can-emit gate/writer，
+  生成 `return (TZrBool)(zr_aot_arg0 || zr_aot_arg1 || zr_aot_arg2);`；既有
+  `zr_aot_static_bool_three_arg_direct_call` 调用路径复用三 bool scalar-local 参数证明，继续拒绝
+  `CallStaticDirect` / `CallStackValue` fallback 和三参 stack-sync marker。RED/GREEN：RED 为
+  typed call contracts 缺 `backend_aot_c_try_get_bool_arg0_arg1_arg2_logical_or_return(`，
+  bool smoke 新增 `either3(false, false, true)` 后缺三参 OR typed thunk 声明；补实现后 focused
+  GREEN 为 typed call contracts 4/0、bool smoke 28/0。补充验证：contracts 组通过 source 19/0、
+  call 4/0、typed call 4/0、constant 5/0、generic numeric 1/0、global 7/0、logical 4/0、
+  power 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float 1/0；shared-library
+  smokes 通过 shared 8/0、call 5/0、typed direct-call 5/0、i64 three-arg 8/0、
+  arithmetic 7/0、bitwise 6/0、bool 28/0、u64 25/0、f64 19/0、global 9/0、logical 4/0、
+  power 1/0、value-type 1/0。`git diff --check` scoped 通过，仅有既有 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-static-bool-three-arg-logical-or-typed-thunk.md`。
+  文件规模：bool three-arg source 277 physical / 243 non-empty lines，typed call contract
+  1000 / 979，bool smoke 790 / 733。备注：typed call contract 已到 1000 行边界；后续再扩
+  该契约面时应优先拆分或迁移。仅完成 bool 三参 `||` typed direct-call；general typed-return ABI、
+  inline structs、`in`/`out` writeback、deopt/dynamic bridges、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 21:11:23 +08:00 · M1.5 / 07-S5 static bool three-arg logical-and
+  typed thunk direct-call · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：bool 三参 typed thunk 现在识别三 bool 参数 `arg0 && arg1 && arg2`
+  的窄返回形态，生成 `static TZrBool zr_aot_typed_bool_fn_N(struct SZrState *state,
+  TZrBool zr_aot_arg0, TZrBool zr_aot_arg1, TZrBool zr_aot_arg2)` 和
+  `return (TZrBool)(zr_aot_arg0 && zr_aot_arg1 && zr_aot_arg2);`。`backend_aot_c_lowering_calls.c`
+  新增 `zr_aot_static_bool_three_arg_direct_call` 路径，直接赋值到 bool scalar local，并继续拒绝
+  `CallStaticDirect` / `CallStackValue` fallback 和三参 stack-sync marker。`backend_aot_callable_provenance.c`
+  补齐 `GET_CLOSURE` / `GETUPVAL` callable slot provenance，`backend_aot_write_c_create_closure()`
+  将可解析 capture 闭包转交 `ZrLibrary_AotRuntime_CreateClosure()`；`CopyConstant` / `CreateClosure`
+  运行时 helper 在 `frame.recordHandle` 被 07-S3 省略时按当前函数反查 AOT module record，保持
+  frame setup 合同不回退。RED/GREEN：RED 为 typed call contracts 缺
+  `backend_aot_c_can_emit_typed_bool_three_arg_thunk(`，随后 bool smoke 暴露运行时闭包物化的
+  frame-record fallback 缺口；补实现并把 smoke 恢复到现有顶层入口语义后，focused GREEN 为
+  constant contracts 5/0、frame setup contracts 1/0、typed call contracts 4/0、bool smoke 27/0。
+  补充验证：contracts 组通过 source 19/0、call 4/0、typed call 4/0、constant 5/0、
+  generic numeric 1/0、global 7/0、logical 4/0、power 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、float 1/0；shared-library smokes 通过 shared 8/0、call 5/0、
+  typed direct-call 5/0、i64 three-arg 8/0、arithmetic 7/0、bitwise 6/0、bool 27/0、
+  u64 25/0、f64 19/0、global 9/0、logical 4/0、power 1/0、value-type 1/0。生成文本检查：
+  bool 三参生成 C 含 typed thunk 声明和 `zr_aot_typed_bool_fn_1(state, ...)` 直调，无
+  `frame.recordHandle`、无 `ZrLibrary_AotRuntime_CallStaticDirect` / `CallStackValue`。说明：宽 smoke
+  目标一次性构建受工具时限截断，最终证据采用分批构建和所有 smoke executable 拆批运行。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-bool-three-arg-logical-and-typed-thunk.md`。
+  文件规模：bool three-arg source 199 physical / 173 non-empty lines，bool three-arg header
+  12 / 8，bool thunk writer 928 / 812，typed direct calls 932 / 844，call lowering 933 / 885，
+  callable provenance 257 / 224，typed call contract 994 / 973，bool smoke 761 / 706，
+  constant contract 404 / 359，runtime source 8619 / 7566。备注：仅完成 bool 三参 `&&`
+  typed direct-call 及必要 closure materialization fallback；general typed-return ABI、inline structs、
+  `in`/`out` writeback、deopt/dynamic bridges、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 19:45:07 +08:00 · M1.5 / 07-S5 static u64 three-arg modulo
+  typed thunk direct-call · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：u64 三参 typed thunk 现在识别 `MOD_UNSIGNED -> MOD_UNSIGNED ->
+  FUNCTION_RETURN` 的有序 `arg0 % arg1 % arg2` 窄形态；`backend_aot_c_try_read_u64_modulo_operands()`
+  和 `backend_aot_c_try_get_u64_arg0_arg1_arg2_modulo_return()` 复用三参 binary-return helper 的
+  `preserveOperandOrder` 路径，保证取模不接受交换操作数；`backend_aot_c_can_emit_typed_u64_three_arg_thunk()`
+  纳入 modulo gate；`backend_aot_c_typed_u64_thunks.c` 新增三参 modulo writer，生成
+  `zr_aot_arg1 == 0u || zr_aot_arg2 == 0u` 防护、`generated AOT unsigned three-arg modulo by zero`
+  运行时错误和正常路径 `return (TZrUInt64)(zr_aot_arg0 % zr_aot_arg1 % zr_aot_arg2);`。
+  u64 shared-library smoke 新增 `remainder3(92, 50, 43)`，继续拒绝 `CallStaticDirect` /
+  `CallStackValue` fallback 和三参 stack-sync marker。RED/GREEN：RED 为 typed call contracts
+  缺 `generated AOT unsigned three-arg modulo by zero`；补实现后 focused GREEN 为 typed call
+  contracts 4/0、u64 smoke 25/0。补充验证：拆批验证通过；contracts 组通过 source 19/0、
+  call 4/0、typed call 4/0、generic numeric 1/0、global 7/0、logical 4/0、power 2/0、
+  frame setup 1/0、return 1/0、value SemIR 4/0、float 1/0；shared-library smokes 通过 shared 8/0、
+  call 5/0、typed direct-call 5/0、i64 three-arg 8/0、arithmetic 7/0、bitwise 6/0、bool 26/0、
+  u64 25/0、f64 19/0、global 9/0、logical 4/0、power 1/0。说明：宽目标一次性/烟测批量构建
+  受工具时限截断，最终证据采用 focused 构建、合约目标构建以及所有 smoke executable 拆批运行。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-static-u64-three-arg-modulo-typed-thunk.md`。
+  文件规模：u64 thunk writer 912 physical / 824 non-empty lines，u64 shape source
+  731 / 653，u64 shape header 23 / 20，typed call contract 935 / 914，u64 smoke
+  634 / 583。备注：仅完成 u64 三参 modulo typed direct-call；u64 三参除法/取模窄算术对已覆盖，
+  但 general typed-return ABI、inline structs、`in`/`out` writeback、deopt/dynamic bridges、
+  07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 19:18:23 +08:00 · M1.5 / 07-S5 static u64 three-arg divide
+  typed thunk direct-call · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：u64 三参 typed thunk 现在识别 `DIV_UNSIGNED -> DIV_UNSIGNED ->
+  FUNCTION_RETURN` 的有序 `arg0 / arg1 / arg2` 窄形态；`backend_aot_c_try_read_u64_divide_operands()`
+  和 `backend_aot_c_try_get_u64_arg0_arg1_arg2_divide_return()` 复用三参 binary-return helper 的
+  `preserveOperandOrder` 路径，保证除法不接受交换操作数；`backend_aot_c_can_emit_typed_u64_three_arg_thunk()`
+  纳入 divide gate；`backend_aot_c_typed_u64_thunks.c` 新增三参 divide writer，生成
+  `zr_aot_arg1 == 0u || zr_aot_arg2 == 0u` 防护、`generated AOT unsigned three-arg divide by zero`
+  运行时错误和正常路径 `return (TZrUInt64)(zr_aot_arg0 / zr_aot_arg1 / zr_aot_arg2);`。
+  u64 shared-library smoke 新增 `quotient3(168, 2, 2)`，继续拒绝 `CallStaticDirect` /
+  `CallStackValue` fallback 和三参 stack-sync marker。RED/GREEN：RED 为 typed call contracts
+  缺 `generated AOT unsigned three-arg divide by zero`；补实现后 focused GREEN 为 typed call
+  contracts 4/0、u64 smoke 24/0。补充验证：首次全链构建+测试命令在 304s 超时且无失败细节，
+  随后拆批验证通过；目标构建通过；contracts 组通过 source 19/0、call 4/0、typed call 4/0、
+  generic numeric 1/0、global 7/0、logical 4/0、power 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、float 1/0；shared-library smokes 通过 shared 8/0、call 5/0、typed direct-call 5/0、
+  i64 three-arg 8/0、arithmetic 7/0、bitwise 6/0、bool 26/0、u64 24/0、f64 19/0、global 9/0、
+  logical 4/0、power 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-three-arg-divide-typed-thunk.md`。
+  文件规模：u64 thunk writer 897 physical / 810 non-empty lines，u64 shape source
+  710 / 635，u64 shape header 22 / 19，typed call contract 930 / 909，u64 smoke
+  608 / 559。备注：仅完成 u64 三参除法 typed direct-call；u64 三参 modulo parity、
+  general typed-return ABI、inline structs、`in`/`out` writeback、deopt/dynamic bridges、
+  07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 18:55:27 +08:00 · M1.5 / 07-S5 static i64 three-arg modulo
+  typed thunk direct-call · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：i64 三参 typed thunk 现在识别 `MOD_SIGNED -> MOD_SIGNED ->
+  FUNCTION_RETURN` 的有序 `arg0 % arg1 % arg2` 窄形态；`backend_aot_c_try_get_i64_arg0_arg1_arg2_modulo_return()`
+  复用三参 binary-return helper 的 `preserveOperandOrder` 路径，保证取模不接受交换操作数；
+  `backend_aot_c_can_emit_typed_i64_three_arg_thunk()` 纳入 modulo gate；
+  `backend_aot_c_typed_i64_thunks.c` 新增三参 modulo writer，生成
+  `zr_aot_arg1 == 0 || zr_aot_arg2 == 0` 防护、`generated AOT signed three-arg modulo by zero`
+  运行时错误和正常路径 `return (TZrInt64)(zr_aot_arg0 % zr_aot_arg1 % zr_aot_arg2);`。
+  i64 三参 shared-library smoke 新增 `remainder3(92, 50, 43)`，继续拒绝 `CallStaticDirect` /
+  `CallStackValue` fallback 和三参 stack-sync marker。RED/GREEN：RED 为 typed call contracts
+  缺 `backend_aot_c_try_get_i64_arg0_arg1_arg2_modulo_return(`；补实现后 focused GREEN 为
+  typed call contracts 4/0、i64 three-arg smoke 8/0。补充验证：较宽 AOT contracts 组通过
+  source 19/0、call 4/0、typed call 4/0、generic numeric 1/0、global 7/0、logical 4/0、
+  power 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float 1/0；shared-library smokes
+  通过 shared 8/0、call 5/0、typed direct-call 5/0、i64 three-arg 8/0、arithmetic 7/0、
+  bitwise 6/0、bool 26/0、u64 23/0、f64 19/0、global 9/0、logical 4/0、power 1/0。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-static-i64-three-arg-modulo-typed-thunk.md`。
+  文件规模：i64 thunk writer 305 physical / 283 non-empty lines，i64 shape source
+  819 / 714，i64 shape header 38 / 35，typed call contract 924 / 903，i64 three-arg smoke
+  259 / 241。备注：仅完成 i64 三参 modulo typed direct-call；i64 三参除法/取模窄算术对已覆盖，
+  但 general typed-return ABI、inline structs、`in`/`out` writeback、deopt/dynamic bridges、
+  07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 18:35:09 +08:00 · M1.5 / 07-S5 static i64 three-arg divide
+  typed thunk direct-call · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：i64 三参 typed thunk 现在识别 `DIV_SIGNED -> DIV_SIGNED ->
+  FUNCTION_RETURN` 的有序 `arg0 / arg1 / arg2` 窄形态；`backend_aot_c_try_get_i64_arg0_arg1_arg2_divide_return()`
+  复用三参 binary-return helper 的 `preserveOperandOrder` 路径，保证除法不接受交换操作数；
+  `backend_aot_c_can_emit_typed_i64_three_arg_thunk()` 纳入 divide gate；
+  `backend_aot_c_typed_i64_thunks.c` 新增三参 divide writer，生成
+  `zr_aot_arg1 == 0 || zr_aot_arg2 == 0` 防护、`generated AOT signed three-arg divide by zero`
+  运行时错误和正常路径 `return (TZrInt64)(zr_aot_arg0 / zr_aot_arg1 / zr_aot_arg2);`。
+  i64 三参 shared-library smoke 新增 `quotient3(64, 4, 2)`，继续拒绝 `CallStaticDirect` /
+  `CallStackValue` fallback 和三参 stack-sync marker。RED/GREEN：RED 为 typed call contracts
+  缺 `backend_aot_c_try_get_i64_arg0_arg1_arg2_divide_return(`；补实现后 focused GREEN 为
+  typed call contracts 4/0、i64 three-arg smoke 7/0。补充验证：较宽 AOT contracts 组通过
+  source 19/0、call 4/0、typed call 4/0、generic numeric 1/0、global 7/0、logical 4/0、
+  power 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float 1/0；shared-library smokes
+  通过 shared 8/0、call 5/0、typed direct-call 5/0、i64 three-arg 7/0、arithmetic 7/0、
+  bitwise 6/0、bool 26/0、u64 23/0、f64 19/0、global 9/0、logical 4/0、power 1/0。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-static-i64-three-arg-divide-typed-thunk.md`。
+  备注：仅完成 i64 三参除法 typed direct-call；modulo parity、general typed-return ABI、
+  inline structs、`in`/`out` writeback、deopt/dynamic bridges、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 18:12:47 +08:00 · M1.5 / 07-S5 i64 no/one-arg thunk shape split ·
+  状态：支撑子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：保持生成行为不变，将 i64 no-arg constant-return 与 one-arg
+  identity/negate/bitwise-not/bitwise-const/add-const/subtract-const/multiply-const
+  shape recognizer 从 `backend_aot_c_typed_i64_thunks.c` 迁入
+  `backend_aot_c_typed_i64_thunk_shapes.{h,c}`；writer 文件继续只负责 can-emit gate、
+  forward declaration 和 thunk definition 发射。typed call contract 改为在 shape 源文件中
+  锁定 no/one-arg shape 的 opcode/type/parameter 校验。RED/GREEN：RED 为 typed call
+  contracts 缺 `backend_aot_c_try_get_i64_constant_return(` 于 shape 文件；迁移后第一次
+  focused smoke 暴露 shape 文件缺 `backend_aot_c_get_constant_value()` 声明导致隐式声明与
+  运行时崩溃，补 `backend_aot_c_emitter.h` 后 GREEN。focused GREEN 为 typed call
+  contracts 4/0、i64 no/one/two-arg smoke 5/0、i64 three-arg smoke 6/0、arithmetic
+  shared-library smoke 7/0、bitwise shared-library smoke 6/0。补充验证：较宽 AOT
+  contracts 组通过 source 19/0、call 4/0、typed call 4/0、generic numeric 1/0、
+  global 7/0、logical 4/0、power 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、
+  float 1/0；shared-library smokes 通过 shared 8/0、call 5/0、typed direct-call 5/0、
+  i64 three-arg 6/0、arithmetic 7/0、bitwise 6/0、bool 26/0、u64 23/0、f64 19/0、
+  global 9/0、logical 4/0、power 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-i64-no-one-arg-shape-split.md`。备注：
+  仅完成行为保持的 i64 no/one-arg shape 拆分；general typed-return ABI、inline structs、
+  `in`/`out` writeback、deopt/dynamic bridges、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 17:43:06 +08:00 · M1.5 / 07-S5 i64 two-arg thunk shape split ·
+  状态：支撑子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：保持生成行为不变，将 i64 两参 typed thunk 的 add/subtract/multiply/divide/
+  modulo/AND/OR/XOR shape recognizer 从 `backend_aot_c_typed_i64_thunks.c` 迁入
+  `backend_aot_c_typed_i64_thunk_shapes.{h,c}`；writer 文件继续只负责 can-emit gate、
+  forward declaration 和 thunk definition 发射，divide/modulo 的 zero-denominator guard
+  保持在 writer。typed call contract 改为在 shape 源文件中锁定两参 shape 内部校验。
+  RED/GREEN：RED 为 typed call contracts 缺
+  `backend_aot_c_try_get_i64_arg0_arg1_add_return(` 于 shape 文件；迁移 recognizer 后
+  focused GREEN 为 typed call contracts 4/0、i64 three-arg smoke 6/0、arithmetic
+  shared-library smoke 7/0。补充验证：较宽 AOT contracts 组通过 source 19/0、call 4/0、
+  typed call 4/0、generic numeric 1/0、global 7/0、logical 4/0、power 2/0、
+  frame setup 1/0、return 1/0、value SemIR 4/0、float 1/0；shared-library smokes
+  通过 shared 8/0、call 5/0、typed direct-call 5/0、i64 three-arg 6/0、arithmetic 7/0、
+  bool 26/0、u64 23/0、f64 19/0、global 9/0、logical 4/0、power 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-i64-two-arg-shape-split.md`。备注：
+  仅完成行为保持的 i64 两参 shape 拆分；general typed-return ABI、inline structs、
+  `in`/`out` writeback、deopt/dynamic bridges、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 17:11:47 +08:00 · M1.5 / 07-S5 static i64 two-arg modulo
+  typed thunk direct-call · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：先将 arithmetic shared-library smoke 从复制型 harness
+  拆为 `aot_c_typed_direct_call_arithmetic_smoke_support.h` 共享 runner + case 数据，
+  现有 6 个算术 smoke 保持 6/0；随后 i64 两参 typed thunk 识别 `MOD_SIGNED -> FUNCTION_RETURN`
+  的 `return left % right` 窄形态，`backend_aot_c_can_emit_typed_i64_two_arg_thunk()`
+  纳入 modulo gate，生成的 `zr_aot_typed_i64_fn_N(state, arg0, arg1)` 对
+  `zr_aot_arg1 == 0` 调用 `ZrCore_Debug_RunError(state, "generated AOT signed modulo by zero")`
+  并防御性返回 `(TZrInt64)0`，否则直接返回 `(TZrInt64)(zr_aot_arg0 % zr_aot_arg1)`。
+  arithmetic shared-library smoke 新增 `remainder(left: int, right: int): int { return left % right; }`，
+  要求 `zr_aot_static_i64_two_arg_direct_call`，并禁止 `CallStaticDirect`、`CallStackValue`
+  和 typed-destination stack sync fallback。RED/GREEN：typed call contract 先因缺
+  `backend_aot_c_try_get_i64_arg0_arg1_modulo_return(` 失败；新增 arithmetic smoke
+  再因缺 i64 modulo typed thunk generated C 片段失败；补 recognizer/gate/writer 后 focused
+  GREEN 为 typed call contracts 4/0、arithmetic shared-library smoke 7/0。补充验证：
+  较宽 AOT contracts 组通过 source 19/0、call 4/0、typed call 4/0、generic numeric 1/0、
+  global 7/0、logical 4/0、power 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、
+  float 1/0；shared-library smokes 拆批后通过 shared 8/0、call 5/0、typed direct-call 5/0、
+  arithmetic 7/0、bool 26/0、u64 23/0、f64 19/0、global 9/0、logical 4/0、power 1/0。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-static-i64-two-arg-modulo-typed-thunk.md`。
+  备注：仅完成 i64 两参 modulo 直调与必要 smoke harness 拆分；general typed-return ABI、
+  inline structs、`in`/`out` writeback、deopt/dynamic bridges、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 16:50:50 +08:00 · M1.5 / 07-S5 static i64 two-arg divide
+  typed thunk direct-call · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：i64 两参 typed thunk 现在识别 `DIV_SIGNED -> FUNCTION_RETURN`
+  的 `return left / right` 窄形态；`backend_aot_c_can_emit_typed_i64_two_arg_thunk()`
+  纳入 divide gate；生成的 `zr_aot_typed_i64_fn_N(state, arg0, arg1)` 对
+  `zr_aot_arg1 == 0` 调用 `ZrCore_Debug_RunError(state, "generated AOT signed divide by zero")`
+  并防御性返回 `(TZrInt64)0`，否则直接返回 `(TZrInt64)(zr_aot_arg0 / zr_aot_arg1)`。
+  arithmetic shared-library smoke 新增 `ratio(left: int, right: int): int { return left / right; }`，
+  要求 `zr_aot_static_i64_two_arg_direct_call`，并禁止 `CallStaticDirect`、`CallStackValue`
+  和 typed-destination stack sync fallback。RED/GREEN：typed call contract 先因缺
+  `backend_aot_c_try_get_i64_arg0_arg1_divide_return(` 失败；新增 arithmetic smoke
+  再因缺 i64 divide typed thunk generated C 片段失败；补 recognizer/gate/writer 后 focused
+  GREEN 为 typed call contracts 4/0、arithmetic shared-library smoke 6/0。补充验证：
+  较宽 AOT contracts 组通过 source 19/0、call 4/0、typed call 4/0、generic numeric 1/0、
+  global 7/0、logical 4/0、power 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、
+  float 1/0；shared-library smokes 拆批后通过 shared 8/0、call 5/0、typed direct-call 5/0、
+  arithmetic 6/0、bool 26/0、u64 23/0、f64 19/0、global 9/0、logical 4/0、power 1/0。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-static-i64-two-arg-divide-typed-thunk.md`。
+  备注：仅完成 i64 两参除法直调；i64 modulo parity、general typed-return ABI、
+  inline structs、`in`/`out` writeback、deopt/dynamic bridges、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 16:30:13 +08:00 · M1.5 / 07-S5 i64/bool/u64/f64 no-arg local-constant
+  typed direct-call · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：i64/bool/u64/f64 no-arg typed thunk recognizer 现在接受
+  `var result = constant; return result;` 产生的本地常量返回形态；i64/bool/f64 接受
+  `GET_CONSTANT -> GET_STACK/SET_STACK copy -> FUNCTION_RETURN`，u64 额外接受
+  copy 后接 `TO_UINT` / `TO_UINT_SIGNED` 再返回。对应 return-boundary smoke 现在要求
+  `zr_aot_typed_i64/bool/u64/f64_fn_N` forward declaration、definition 与
+  `zr_aot_static_*_no_arg_direct_call` call site，并禁止
+  `ZrLibrary_AotRuntime_CallStaticDirect()` / `CallStackValue()` fallback；
+  static numeric call shared-library smoke 也从旧 runtime fallback 断言改为要求 u64/f64
+  no-arg typed thunk 直调；i64 no-arg typed direct-call smoke 也从直接常量返回收紧为
+  本地常量返回。RED/GREEN：bool return-boundary smoke 先因缺 typed bool forward
+  declaration 失败；i64 no-arg smoke 收紧后同样因缺 typed i64 forward declaration
+  失败；补 recognizer 后 focused GREEN 为 i64 typed direct-call shared-library smoke
+  5/0、bool smoke 26/0、u64 smoke 23/0、f64 smoke 19/0，call shared-library smoke
+  5/0 对齐旧断言后通过。补充验证：较宽 AOT 组通过 source 19/0、call 4/0、
+  typed call 4/0、generic numeric 1/0、global 7/0、logical 4/0、power 2/0、
+  frame setup 1/0、return 1/0、value SemIR 4/0、float 1/0、shared 8/0、
+  call smoke 5/0、typed direct-call 5/0、bool 26/0、u64 23/0、f64 19/0、
+  global 9/0、logical 4/0、power 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-no-arg-local-constant-typed-direct-call.md`。
+  备注：仅完成 no-arg local-constant return shape 的 typed→typed 直调收紧；
+  general typed-return ABI、inline structs、`in`/`out` writeback、deopt/dynamic
+  bridges、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 15:35:25 +08:00 · M1.5 / 07-S5 bool/u64/f64 direct-return
+  frame descriptor gates · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：`backend_aot_c_frame_descriptor.c` 的
+  `FUNCTION_RETURN` local-only 判定不再只认 i64 direct return，在非 export tail 下同时复用
+  `backend_aot_c_scalar_locals_can_direct_return_bool_local()`、
+  `backend_aot_c_scalar_locals_can_direct_return_u64_local()` 和
+  `backend_aot_c_scalar_locals_can_direct_return_f64_local()`；其余需要 frame 的指令仍按
+  既有保守判定保留 frame descriptor。RED/GREEN：frame setup contract 先因缺 bool
+  direct-return descriptor gate 失败；补 bool/u64/f64 gates 后 focused GREEN 为 frame setup
+  contracts 1/0、bool typed direct-call shared-library smoke 26/0、u64 smoke 23/0、f64 smoke
+  19/0。补充验证：较宽 AOT 组通过 source 19/0、call 4/0、typed call 4/0、generic
+  numeric 1/0、global 7/0、logical 4/0、power 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、float 1/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool 26/0、u64 23/0、f64 19/0、global 9/0、logical 4/0、power 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-bool-u64-f64-return-frame-descriptor-gates.md`。
+  备注：仅完成 return-frame descriptor gate 对齐；general typed-return ABI、
+  inline structs、`in`/`out` writeback、deopt/dynamic bridges、07-S5 完整验收和
+  08-12 仍未完成。
+
+- 2026-06-23 15:17:34 +08:00 · M1.5 / 07-S5 static f64 native-to-VM return
+  boundary helper · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12
+  未开始 · 完成项目：`ZrLibrary_AotRuntime_ReturnF64()` 进入 public AOT runtime
+  header 与拆分后的 `aot_runtime_return.c`，用 `ZrCore_Value_InitAsFloat()` 把
+  `TZrFloat64` 直接打包到 caller result；`backend_aot_write_c_direct_return_f64_local()`
+  生成 `zr_aot_direct_return_f64_local` 和
+  `ZrLibrary_AotRuntime_ReturnF64(state, zr_aot_f*)`；
+  `backend_aot_c_scalar_locals_can_direct_return_f64_local()` 只在 callable return type
+  可证明为 `float`、source slot 有 f64 local 且 written-before、无异常处理/导出槽/
+  constructor 时开放；`FUNCTION_RETURN` 在 i64/bool/u64 fast path 后接入 f64 fast path。
+  RED/GREEN：return contracts 先因缺 f64 writer prototype 失败；新增普通 static call
+  进入 f64 callee 的 shared-library smoke 后 focused GREEN 为 return contracts 1/0、
+  f64 typed direct-call shared-library smoke 19/0。补充验证：较宽 AOT 组通过 source
+  19/0、call 4/0、typed call 4/0、generic numeric 1/0、global 7/0、logical 4/0、
+  power 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float 1/0、shared 8/0、
+  call smoke 5/0、typed direct-call 5/0、bool 26/0、u64 23/0、f64 19/0、global 9/0、
+  logical 4/0、power 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-f64-return-boundary-helper.md`。
+  备注：仅完成窄 f64 native-to-VM return packing；general typed-return ABI、
+  inline structs、`in`/`out` writeback、deopt/dynamic bridges、07-S5 完整验收和
+  08-12 仍未完成。
+
+- 2026-06-23 14:59:10 +08:00 · M1.5 / 07-S5 static bool native-to-VM return
+  boundary helper · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12
+  未开始 · 完成项目：`ZrLibrary_AotRuntime_ReturnBool()` 进入 public AOT runtime
+  header 与拆分后的 `aot_runtime_return.c`，用 `ZrCore_Value_InitAsBool()` 把
+  `TZrBool` 直接打包到 caller result；`backend_aot_write_c_direct_return_bool_local()`
+  生成 `zr_aot_direct_return_bool_local` 和
+  `ZrLibrary_AotRuntime_ReturnBool(state, zr_aot_b*)`；
+  `backend_aot_c_scalar_locals_can_direct_return_bool_local()` 只在 callable return type
+  可证明为 `bool`、source slot 有 bool local 且 written-before、无异常处理/导出槽/
+  constructor 时允许该路径；`FUNCTION_RETURN` 在 i64 fast path 后、u64 fast path 前
+  接入 bool fast path。RED/GREEN：return contracts 先因缺 bool direct-return writer
+  prototype 得到 RED；bool shared-library smoke 新增普通 static call 进入 bool callee
+  的 native-to-VM return 边界 case。focused GREEN 为 return contracts 1/0、bool
+  typed direct-call shared-library smoke 26/0。补充验证：较宽 AOT 组通过 source 19/0、
+  call contracts 4/0、typed call contracts 4/0、generic numeric 1/0、global 7/0、
+  logical 4/0、power 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float
+  contracts 1/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、bool 26/0、
+  u64 23/0、f64 18/0、global 9/0、logical 4/0、power 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-bool-return-boundary-helper.md`。
+  备注：本切片只覆盖窄 bool native-to-VM return packing；f64/general typed-return
+  ABI、inline structs、`in`/`out` writeback、deopt/dynamic bridges、07-S5 完整验收和
+  08-12 仍未完成。
+
+- 2026-06-23 14:26:38 +08:00 · M1.5 / 07-S5 static u64 native-to-VM return
+  boundary helper · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12
+  未开始 · 完成项目：`ZrLibrary_AotRuntime_ReturnU64()` 进入 public AOT runtime
+  header 与拆分后的 `aot_runtime_return.c`，用 `ZrCore_Value_InitAsUInt()` 把
+  `TZrUInt64` 直接打包到 caller result；`backend_aot_write_c_direct_return_u64_local()`
+  生成 `zr_aot_direct_return_u64_local` 和
+  `ZrLibrary_AotRuntime_ReturnU64(state, zr_aot_u*)`；
+  `backend_aot_c_scalar_locals_can_direct_return_u64_local()` 只在 callable return type
+  可证明为 `uint`、source slot 有 u64 local 且 written-before、无异常处理/导出槽/
+  constructor 时允许该路径；`FUNCTION_RETURN` 在 i64 fast path 后接入 u64 fast path。
+  RED/GREEN：先以 return contracts 缺 u64 writer prototype 得到 RED；初版 u64 proof
+  过宽导致既有 int-return u64 smoke 误走 u64 return，收窄到 callable return type U64
+  后修复；最终 focused GREEN 为 return contracts 1/0、u64 typed direct-call
+  shared-library smoke 23/0。补充验证（2026-06-23 14:42:02 +08:00）：较宽 AOT
+  组通过 source 19/0、call contracts 4/0、typed call contracts 4/0、generic numeric
+  1/0、global 7/0、logical 4/0、power 2/0、frame setup 1/0、return 1/0、value
+  SemIR 4/0、float contracts 1/0、shared 8/0、call smoke 5/0、typed direct-call
+  5/0、bool 25/0、u64 23/0、f64 18/0、global 9/0、logical 4/0、power 1/0；
+  u64 smoke support 结果断言改为按实际 signed/unsigned value type 读取，避免 unsigned
+  返回结果被按 signed union 字段误读。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-return-boundary-helper.md`。
+  备注：本切片只覆盖窄 u64 native-to-VM return packing；bool/f64/general typed-return
+  ABI、inline structs、`in`/`out` writeback、deopt/dynamic bridges、07-S5 完整验收和
+  08-12 仍未完成。
+
+- 2026-06-23 13:49:07 +08:00 · M1.5 / 07-S5 dynamic member/index runtime
+  boundary helpers · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：`backend_aot_c_lowering_values.c` 新增
+  `backend_aot_write_c_direct_get_member()`、`backend_aot_write_c_direct_set_member()`、
+  `backend_aot_write_c_direct_get_member_slot()`、
+  `backend_aot_write_c_direct_set_member_slot()`、
+  `backend_aot_write_c_direct_get_by_index()`、
+  `backend_aot_write_c_direct_set_by_index()` 六个动态 member/index 边界 writer，
+  生成 C 现在分别调用既有
+  `ZrLibrary_AotRuntime_GetMember` / `SetMember` / `GetMemberSlot` /
+  `SetMemberSlot` / `GetByIndex` / `SetByIndex`，不再对这些已具备 runtime helper
+  的 opcode 生成 `UnsupportedDynamicValueAccess`。`backend_aot_c_function_body.c`
+  将 `GET_MEMBER`、`GET_MEMBER_SLOT`、`GET_BY_INDEX`、`SET_MEMBER`、
+  `SET_MEMBER_SLOT`、`SET_BY_INDEX` 分支切到上述 writer；GET 分支继续清空
+  callable slot tracking，SET 分支保持写边界语义。支撑产出：
+  `tests/parser/aot_c_typed_call_contract_support.h` 抽出 typed-call source contract
+  共享 helper，`tests/parser/test_aot_c_typed_call_contracts.c` 从 982 / 944 回落到
+  893 / 872。RED/GREEN：RED 为 global contracts 7 tests / 1 failure，缺
+  `backend_aot_write_c_direct_get_member(FILE *file,`；global shared-library smoke
+  新期望尚未满足。补实现后 focused GREEN 为 global contracts 7/0、global smoke
+  9/0，typed call contracts 拆分后保持 4/0。测试结果：较宽 AOT 组通过 source 19/0、
+  call contracts 4/0、typed call contracts 4/0、generic numeric 1/0、global 7/0、
+  logical 4/0、power 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float
+  contracts 1/0；共享库烟测通过 shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool 25/0、u64 22/0、f64 18/0、global 9/0、logical 4/0、power 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-dynamic-member-index-runtime-boundaries.md`。
+  文件规模：lowering values 989 / 889，function body 2085 / 2037，emitter header
+  805 / 800，global contracts 670 / 620，global smoke 1206 / 1048，typed call
+  contract 893 / 872，typed call support 97 / 78。备注：dynamic member/index
+  boundary helper 项已完成当前六 opcode 的显式 runtime helper 路由；inline structs、
+  `in`/`out` writeback、deopt/dynamic bridges、general typed-return ABI、07-S5
+  完整验收和 08-12 仍未完成。
+
+- 2026-06-23 13:05:52 +08:00 · M1.5 / 07-S5 static f64 two-arg
+  comparison bool typed thunk family · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：在上一条 f64 `<` bool direct-call 路径基础上，
+  `backend_aot_c_typed_bool_thunks.c` 补齐两 f64 参数返回 bool 的比较族识别和
+  thunk writer，`backend_aot_c_can_emit_typed_bool_f64_two_arg_thunk(...)` 现在覆盖
+  `<`、`<=`、`==`、`!=`、`>`、`>=`，对应 `LOGICAL_LESS_FLOAT`、
+  `LOGICAL_LESS_EQUAL_FLOAT`、`LOGICAL_EQUAL_FLOAT`、`LOGICAL_NOT_EQUAL_FLOAT`、
+  `LOGICAL_GREATER_FLOAT`、`LOGICAL_GREATER_EQUAL_FLOAT` + `FUNCTION_RETURN`
+  窄形态，并发出直接 `TZrBool` 比较返回。调用侧继续复用
+  `backend_aot_write_c_static_direct_f64_bool_two_arg_function_call()` 与
+  `zr_aot_static_f64_bool_two_arg_direct_call`，以 `zr_aot_f*` 参数调用 bool thunk，
+  只在需要时同步 bool 栈槽。测试补强：typed call contracts 增加 f64 比较族
+  recognizer、opcode、writer 和 return 表达式 needles；bool shared-library smoke 新增
+  `<=`、`==`、`!=`、`>`、`>=` 五个 f64 bool direct-call case。RED/GREEN：第一轮 RED 为
+  typed call contracts 缺 `backend_aot_c_try_get_bool_f64_arg0_arg1_less_equal_return(`
+  且 bool smoke 21 tests / 1 failure（新 `<=` case 为 `Expected Non-NULL`）；补 `<=`
+  后 focused GREEN 为 typed call contracts 4/0、bool smoke 21/0。第二轮 RED 为
+  contracts 缺 `backend_aot_c_try_get_bool_f64_arg0_arg1_equal_return(`，bool smoke
+  25 tests / 4 failures（`==`、`!=`、`>`、`>=` 均为 `Expected Non-NULL`）；补齐后
+  focused GREEN 为 typed call contracts 4/0、bool smoke 25/0。测试结果：WSL GCC debug
+  宽构建通过；合约组 source 19/0、call contracts 4/0、typed call contracts 4/0、
+  generic numeric 1/0、global 7/0、logical 4/0、power 2/0、frame setup 1/0、return
+  1/0、value SemIR 4/0、float contracts 1/0；smoke 组在 300s 首次超时后废弃该输出并以
+  900s 重跑，结果为 shared 8/0、call smoke 5/0、typed direct-call 5/0、i64 three-arg
+  6/0、bool 25/0、u64 22/0、f64 18/0、typed arithmetic 5/0、typed bitwise 6/0、
+  value-type 1/0、float smoke 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-f64-two-arg-comparison-bool-typed-thunk.md`。
+  文件规模：bool thunks 906 / 791，typed call contract 982 / 944，bool direct-call
+  smoke 702 / 651，本计划 4878 / 4605，AOT index 5007 / 4862，C# value-type
+  SemIR AOT doc 1178 / 810。备注：本切片只补齐窄 f64 两参 bool 比较族；inline
+  structs、`in`/`out` writeback、deopt/dynamic bridges、dynamic value access helpers、
+  general typed-return ABI、07-S5 完整验收和 08-12 仍未完成。大文件备注：
+  `tests/parser/test_aot_c_typed_call_contracts.c` 已接近 1000 行，后续再扩充 contract
+  前应优先拆分 focused contract/support。
+
+- 2026-06-23 12:45:38 +08:00 · M1.5 / 07-S5 static f64 two-arg less bool
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：`backend_aot_c_typed_bool_thunks.c` 新增
+  `backend_aot_c_try_get_bool_f64_arg0_arg1_less_return()`，识别两 f64 参数
+  `arg0 < arg1` 的 `LOGICAL_LESS_FLOAT` + `FUNCTION_RETURN` 窄形态；bool typed
+  thunk forward decl/definition 现在覆盖 `TZrFloat64` 两参签名并返回
+  `(TZrBool)(zr_aot_arg0 < zr_aot_arg1)`。调用侧新增
+  `backend_aot_write_c_static_direct_f64_bool_two_arg_function_call()`，生成
+  `zr_aot_static_f64_bool_two_arg_direct_call`，直接传 `zr_aot_f*` 参数并只在需要时
+  同步 bool 栈槽。支撑拆分：新增 `backend_aot_c_typed_direct_f64_calls.{h,c}`，
+  把 f64 direct-call route proof 从 `backend_aot_c_typed_direct_calls.c` 抽出，
+  主调度文件降至 868 / 785 行。RED/GREEN：RED 为 typed call contracts 缺
+  `backend_aot_c_can_emit_typed_bool_f64_two_arg_thunk(...)`，bool smoke 新 f64 less
+  case 为 `Expected Non-NULL`；补实现后 focused GREEN 为 typed call contracts 4/0、
+  bool smoke 20/0；拆分后 focused GREEN 为 typed call contracts 4/0、bool smoke
+  20/0、f64 smoke 18/0。测试结果：WSL GCC debug 宽构建通过；合约组 source
+  19/0、call contracts 4/0、typed call contracts 4/0、generic numeric 1/0、
+  global 7/0、logical 4/0、power 2/0、frame setup 1/0、return 1/0、value SemIR
+  4/0、float contracts 1/0；共享库烟测组 shared 8/0、call smoke 5/0、typed
+  direct-call 5/0、i64 three-arg 6/0、bool 20/0、u64 22/0、f64 18/0、
+  typed arithmetic 5/0、typed bitwise 6/0、value-type 1/0、float smoke 1/0、
+  generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、power smoke
+  1/0。产出：`tests/acceptance/2026-06-23-aot-m1-5-static-f64-two-arg-less-bool-typed-thunk.md`。
+  文件规模：bool thunks 821 / 716，typed direct calls 868 / 785，f64 direct route
+  source 189 / 165，f64 direct route header 53 / 50，lowering calls 892 / 846，
+  emitter header 781 / 776，typed call contract 965 / 927，bool smoke 562 / 521。
+  备注：只覆盖窄 f64 `<` 返回 bool 的 typed direct-call；inline structs、`in`/`out`
+  writeback、deopt/dynamic bridges、general typed-return ABI、dynamic value access
+  helpers、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 12:10:24 +08:00 · M1.5 / 07-S5 f64 three-arg shape split
+  支撑切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12
+  未开始 · 完成项目：新增 `backend_aot_c_typed_f64_three_arg_shapes.{h,c}`，
+  将 f64 三参数 add/subtract/multiply/divide/modulo typed thunk shape 识别从
+  `backend_aot_c_typed_f64_thunk_shapes.c` 拆出；`backend_aot_c_typed_f64_thunk_shapes.h`
+  include 新三参 shape header，原基础 shape source 只保留常量、一参数和二参数 f64
+  形态；typed call contracts 分别读取基础 f64 shape source 与三参数 f64 shape
+  source，锁住 `function->parameterMetadataCount < 3u`、第三参数类型校验和
+  `ADD_FLOAT`/`SUB_FLOAT`/`MUL_FLOAT`/`DIV_FLOAT`/`MOD_FLOAT` 三参识别归属。
+  RED/GREEN：RED 为 typed call contracts 读取新三参 shape source 时 `Expected Non-NULL`；
+  补拆分实现后 focused GREEN 为 typed call contracts 4/0、f64 shared-library smoke 18/0。
+  测试结果：WSL GCC debug 目标构建通过，CMake 因新增 glob source 自动重新配置并编译新源；
+  合约组通过 source 19/0、call contracts 4/0、typed call contracts 4/0、generic
+  numeric contracts 1/0、global contracts 7/0、logical contracts 4/0、power contracts
+  2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float contracts 1/0；共享库烟测组通过
+  shared 8/0、call smoke 5/0、typed direct-call 5/0、i64 three-arg smoke 6/0、bool
+  19/0、u64 22/0、f64 18/0、typed arithmetic 5/0、typed bitwise 6/0、value-type
+  1/0、float smoke 1/0、generic numeric smoke 1/0、global smoke 9/0、logical smoke
+  4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-f64-three-arg-shape-split.md`。
+  文件规模：f64 thunk writer 267 physical / 246 non-empty lines，f64 base shape
+  source 698 / 602，f64 base shape header 21 / 18，f64 three-arg shape source
+  256 / 229，f64 three-arg shape header 12 / 9，typed call contract 919 / 881，
+  f64 smoke 452 / 415。备注：该切片只做行为保持的 shape ownership 拆分；inline
+  structs、`in`/`out` writeback、deopt/dynamic bridges、dynamic value access helpers、
+  general multi-arg typed-return ABI、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 11:48:03 +08:00 · M1.5 / 07-S5 static f64 three-arg modulo
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_f64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_f64_arg0_arg1_arg2_modulo_return()`，只接受三参数
+  float/double return callee 中两条有序 `MOD_FLOAT` 后接 `FUNCTION_RETURN` 的窄形态：
+  第一步必须为 `arg0 % arg1`，第二步必须为 first-result `% arg2`。
+  `backend_aot_c_can_emit_typed_f64_three_arg_thunk()` 纳入 modulo shape；
+  `backend_aot_c_typed_f64_thunks.c` 新增三参 modulo thunk writer，生成
+  `ZR_UNLIKELY(zr_aot_arg1 == 0.0 || zr_aot_arg2 == 0.0)` 保护，失败时调用
+  `ZrCore_Debug_RunError(state, "generated AOT float three-arg modulo by zero")`
+  并 defensive 返回 `(TZrFloat64)0.0`，正常路径返回
+  `return (TZrFloat64)fmod(fmod(zr_aot_arg0, zr_aot_arg1), zr_aot_arg2);`。调用侧复用
+  已有 `zr_aot_static_f64_three_arg_direct_call` route proof/writer 与 `nativeDouble`
+  destination sync guard。RED/GREEN：RED 为 typed call contracts 缺三参 modulo
+  writer 文本，新增 f64 三参 modulo smoke 失败为 `Expected Non-NULL`；补实现后
+  focused GREEN 为 typed call contracts 4/0、f64 shared-library smoke 18/0。
+  测试结果：WSL GCC debug 目标构建通过；合约组通过 source 19/0、call contracts
+  4/0、typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR
+  4/0、float contracts 1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、
+  typed direct-call 5/0、i64 three-arg smoke 6/0、bool 19/0、u64 22/0、f64 18/0、
+  typed arithmetic 5/0、typed bitwise 6/0、value-type 1/0、float smoke 1/0、
+  generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、power smoke 1/0。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-static-f64-three-arg-modulo-typed-thunk.md`。
+  文件规模：f64 thunk writer 267 physical / 246 non-empty lines，f64 shape source
+  943 / 822，f64 shape header 25 / 22，typed call contract 907 / 869，f64 smoke
+  452 / 415。大文件备注：f64 shape source 已接近 1000 行，后续再新增 f64 shape 前应
+  优先拆出三参数 shape 模块。备注：该切片只覆盖窄 f64 三参 modulo typed direct-call；
+  inline structs、`in`/`out` writeback、deopt/dynamic bridges、dynamic value access
+  helpers、general multi-arg typed-return ABI、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 11:38:58 +08:00 · M1.5 / 07-S5 static f64 three-arg divide
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_f64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_f64_arg0_arg1_arg2_divide_return()`，只接受三参数
+  float/double return callee 中两条有序 `DIV_FLOAT` 后接 `FUNCTION_RETURN` 的窄形态：
+  第一步必须为 `arg0 / arg1`，第二步必须为 first-result `/ arg2`。
+  `backend_aot_c_can_emit_typed_f64_three_arg_thunk()` 纳入 divide shape；
+  `backend_aot_c_typed_f64_thunks.c` 新增三参 divide thunk writer，生成
+  `ZR_UNLIKELY(zr_aot_arg1 == 0.0 || zr_aot_arg2 == 0.0)` 保护，失败时调用
+  `ZrCore_Debug_RunError(state, "generated AOT float three-arg divide by zero")`
+  并 defensive 返回 `(TZrFloat64)0.0`，正常路径返回
+  `return (TZrFloat64)(zr_aot_arg0 / zr_aot_arg1 / zr_aot_arg2);`。调用侧复用已有
+  `zr_aot_static_f64_three_arg_direct_call` route proof/writer 与 `nativeDouble`
+  destination sync guard。RED/GREEN：RED 为 typed call contracts 缺三参 divide
+  writer 文本，新增 f64 三参 divide smoke 失败为 `Expected Non-NULL`；补实现后
+  focused GREEN 为 typed call contracts 4/0、f64 shared-library smoke 17/0。
+  测试结果：WSL GCC debug 目标构建通过；合约组通过 source 19/0、call contracts
+  4/0、typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR
+  4/0、float contracts 1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、
+  typed direct-call 5/0、i64 three-arg smoke 6/0、bool 19/0、u64 22/0、f64 17/0、
+  typed arithmetic 5/0、typed bitwise 6/0、value-type 1/0、float smoke 1/0、
+  generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、power smoke 1/0。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-static-f64-three-arg-divide-typed-thunk.md`。
+  文件规模：f64 thunk writer 252 physical / 232 non-empty lines，f64 shape source
+  894 / 778，f64 shape header 24 / 21，typed call contract 903 / 865，f64 smoke
+  426 / 391。备注：该切片只覆盖窄 f64 三参 divide typed direct-call；inline
+  structs、`in`/`out` writeback、deopt/dynamic bridges、dynamic value access helpers、
+  general multi-arg typed-return ABI、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 11:29:03 +08:00 · M1.5 / 07-S5 static f64 three-arg subtract
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_f64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_f64_arg0_arg1_arg2_subtract_return()`，只接受三参数
+  float/double return callee 中两条有序 `SUB_FLOAT` 后接 `FUNCTION_RETURN` 的窄形态：
+  第一步必须为 `arg0 - arg1`，第二步必须为 first-result `- arg2`。
+  `backend_aot_c_can_emit_typed_f64_three_arg_thunk()` 纳入 subtract shape；
+  `backend_aot_c_typed_f64_thunks.c` 复用三参 f64 thunk definition writer，发出
+  `return (TZrFloat64)(zr_aot_arg0 - zr_aot_arg1 - zr_aot_arg2);`。调用侧复用已有
+  `zr_aot_static_f64_three_arg_direct_call` route proof/writer 与 `nativeDouble`
+  destination sync guard。RED/GREEN：RED 为 typed call contracts 缺三参 subtract
+  return 文本，新增 f64 三参 subtract smoke 失败为 `Expected Non-NULL`；补实现后
+  focused GREEN 为 typed call contracts 4/0、f64 shared-library smoke 16/0。
+  测试结果：WSL GCC debug 目标构建通过；合约组通过 source 19/0、call contracts
+  4/0、typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR
+  4/0、float contracts 1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、
+  typed direct-call 5/0、i64 three-arg smoke 6/0、bool 19/0、u64 22/0、f64 16/0、
+  typed arithmetic 5/0、typed bitwise 6/0、value-type 1/0、float smoke 1/0、
+  generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、power smoke 1/0。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-static-f64-three-arg-subtract-typed-thunk.md`。
+  文件规模：f64 thunk writer 237 physical / 218 non-empty lines，f64 shape source
+  845 / 734，f64 shape header 23 / 20，typed call contract 898 / 860，f64 smoke
+  400 / 367。备注：该切片只覆盖窄 f64 三参 subtract typed direct-call；inline
+  structs、`in`/`out` writeback、deopt/dynamic bridges、dynamic value access helpers、
+  general multi-arg typed-return ABI、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 11:17:58 +08:00 · M1.5 / 07-S5 static f64 three-arg multiply
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_f64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_f64_arg0_arg1_arg2_multiply_return()`，只接受三参数
+  float/double return callee 中两条 `MUL_FLOAT` 后接 `FUNCTION_RETURN` 的窄形态。
+  `backend_aot_c_can_emit_typed_f64_three_arg_thunk()` 纳入 multiply shape；
+  `backend_aot_c_typed_f64_thunks.c` 复用三参 f64 thunk definition writer，发出
+  `return (TZrFloat64)(zr_aot_arg0 * zr_aot_arg1 * zr_aot_arg2);`。调用侧复用已有
+  `zr_aot_static_f64_three_arg_direct_call` route proof/writer 与 `nativeDouble`
+  destination sync guard。RED/GREEN：RED 为 typed call contracts 缺三参 multiply
+  return 文本，新增 f64 三参 multiply smoke 失败为 `Expected Non-NULL`；补实现后
+  focused GREEN 为 typed call contracts 4/0、f64 shared-library smoke 15/0。
+  测试结果：WSL GCC debug 目标构建通过；合约组通过 source 19/0、call contracts
+  4/0、typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR
+  4/0、float contracts 1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、
+  typed direct-call 5/0、i64 three-arg smoke 6/0、bool 19/0、u64 22/0、f64 15/0、
+  typed arithmetic 5/0、typed bitwise 6/0、value-type 1/0、float smoke 1/0、
+  generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、power smoke 1/0。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-static-f64-three-arg-multiply-typed-thunk.md`。
+  文件规模：f64 thunk writer 231 physical / 212 non-empty lines，f64 shape source
+  796 / 690，f64 shape header 22 / 19，typed call contract 896 / 858，f64 smoke
+  374 / 343。备注：该切片只覆盖窄 f64 三参 multiply typed direct-call；inline
+  structs、`in`/`out` writeback、deopt/dynamic bridges、dynamic value access helpers、
+  general multi-arg typed-return ABI、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 11:07:26 +08:00 · M1.5 / 07-S5 f64 thunk shape split
+  支撑切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 `backend_aot_c_typed_f64_thunk_shapes.{h,c}`，把 f64 typed thunk
+  shape 识别函数从 `backend_aot_c_typed_f64_thunks.c` 抽出；f64 thunk writer 现在只保留
+  can-emit gate、forward declarations 和 thunk definition writer，并通过
+  `backend_aot_c_typed_f64_thunk_shapes.h` 调用 shape recognizers。
+  `tests/parser/test_aot_c_typed_call_contracts.c` 改为分别检查 f64 thunk writer 与 f64
+  shape source，和现有 i64/u64 shape split 模式对齐。RED/GREEN：RED 为 typed call
+  contracts 读取新 shape source 时 `Expected Non-NULL`；拆分后 focused GREEN 为 typed
+  call contracts 4/0、f64 shared-library smoke 14/0。测试结果：WSL GCC debug 目标构建
+  通过，CMake 因新增 glob source 自动重新配置并编译
+  `backend_aot_c_typed_f64_thunk_shapes.c`；合约组通过 source 19/0、call contracts
+  4/0、typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR
+  4/0、float contracts 1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、
+  typed direct-call 5/0、i64 three-arg smoke 6/0、bool 19/0、u64 22/0、f64 14/0、
+  typed arithmetic 5/0、typed bitwise 6/0、value-type 1/0、float smoke 1/0、
+  generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、power smoke 1/0。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-f64-thunk-shape-split.md`。文件规模：
+  f64 thunk writer 225 physical / 206 non-empty lines，f64 shape source 748 / 646，
+  f64 shape header 21 / 18，typed call contract 894 / 856，f64 smoke 348 / 319。备注：
+  这是行为保持的支撑拆分；inline structs、`in`/`out` writeback、deopt/dynamic bridges、
+  dynamic value access helpers、general multi-arg typed-return ABI、07-S5 完整验收和 08-12
+  仍未完成。
+
+- 2026-06-23 10:54:32 +08:00 · M1.5 / 07-S5 static f64 three-arg add
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_f64_thunks.c`
+  新增 `backend_aot_c_try_get_f64_arg0_arg1_arg2_add_return()`，只接受三参数
+  float/double return callee 中两条 `ADD_FLOAT` 后接 `FUNCTION_RETURN` 的窄形态，
+  参数槽必须覆盖 `arg0 + arg1 + arg2`。`backend_aot_c_can_emit_typed_f64_three_arg_thunk()`
+  进入 f64 can-emit gate；f64 thunk forward/definition writer 生成
+  `static TZrFloat64 ... (TZrFloat64, TZrFloat64, TZrFloat64)`，正常路径返回
+  `return (TZrFloat64)(zr_aot_arg0 + zr_aot_arg1 + zr_aot_arg2);`。
+  `backend_aot_c_typed_direct_calls.c` 新增 f64 三参 route proof，证明 destination 与
+  三个 call-window 参数槽都是已写入的 f64 scalar locals；
+  `backend_aot_c_lowering_calls.c` / `backend_aot_c_emitter.h` 新增
+  `backend_aot_write_c_static_direct_f64_three_arg_function_call()`，发出
+  `zr_aot_static_f64_three_arg_direct_call` 并在需要时同步 `nativeDouble` 栈槽。
+  RED/GREEN：RED 为 typed call contracts 缺
+  `backend_aot_c_can_emit_typed_f64_three_arg_thunk(const SZrFunction *function)`，
+  新增 f64 三参 add smoke 失败为 `Expected Non-NULL`；补实现后 focused GREEN 为
+  typed call contracts 4/0、f64 shared-library smoke 14/0。测试结果：WSL GCC debug
+  全量构建通过；合约组通过 source 19/0、call contracts 4/0、typed call contracts
+  4/0、generic numeric contracts 1/0、global contracts 7/0、logical contracts 4/0、
+  power contracts 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float contracts
+  1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、typed direct-call 5/0、i64
+  three-arg smoke 6/0、bool 19/0、u64 22/0、f64 14/0、typed arithmetic 5/0、typed
+  bitwise 6/0、value-type 1/0、float smoke 1/0、generic numeric smoke 1/0、global
+  smoke 9/0、logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-f64-three-arg-add-typed-thunk.md`。
+  文件规模：emitter header 774 physical / 769 non-empty lines，f64 thunk source
+  968 / 849，lowering calls 853 / 809，typed direct-call route 973 / 876，typed
+  call contract 886 / 848，f64 smoke 348 / 319。大文件备注：f64 thunk source 与
+  typed direct-call route 仍低于 1000 行且职责仍分别集中；本切片不强拆，后续若继续添加
+  f64 多参数/更多 direct-call route，最小拆分边界应分别抽出 f64 thunk shape helpers 与按
+  标量类型拆分的 direct-call route 模块。备注：该切片只覆盖窄
+  f64 三参 add typed direct-call；inline structs、`in`/`out` writeback、deopt/dynamic
+  bridges、dynamic value access helpers、general multi-arg typed-return ABI、07-S5
+  完整验收和 08-12 仍未完成。验证备注：CTest 在该构建目录未注册这些测试名，最终使用
+  现有测试二进制逐个执行并通过。
+
+- 2026-06-23 10:30:14 +08:00 · M1.5 / 07-S5 static u64 two-arg modulo
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_u64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_u64_arg0_arg1_modulo_return()`，只接受两参数
+  unsigned return callee 中 `MOD_UNSIGNED` 后接 `FUNCTION_RETURN` 且 operand 顺序为
+  `arg0 % arg1` 的窄形态。`backend_aot_c_can_emit_typed_u64_two_arg_thunk()`
+  纳入 modulo；`backend_aot_write_c_typed_u64_thunks()` 为 matching callee 发出带
+  `ZR_UNLIKELY(zr_aot_arg1 == 0u)` 的运行期取模除零保护，除零时调用
+  `ZrCore_Debug_RunError(state, "generated AOT unsigned modulo by zero")` 并返回
+  defensive `(TZrUInt64)0`，正常路径返回
+  `return (TZrUInt64)(zr_aot_arg0 % zr_aot_arg1);`。调用侧复用已有
+  `zr_aot_static_u64_two_arg_direct_call` proof/writer 和 scalar-only destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺
+  `generated AOT unsigned modulo by zero`，新增 modulo smoke 失败为
+  `Expected Non-NULL`；补 shape 与 guarded writer 后第一次 focused GREEN 暴露
+  contract needle 需匹配 generator 源文件里的 `%%` 转义，调整契约后 focused GREEN 为
+  typed call contracts 4/0、u64 shared-library smoke 22/0。测试结果：实际存在的较宽
+  WSL GCC AOT 目标构建通过；合约组通过 source 19/0、call contracts 4/0、typed call
+  contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、logical contracts
+  4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float
+  contracts 1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  i64 three-arg smoke 6/0、bool 19/0、u64 22/0、f64 13/0、typed arithmetic 5/0、
+  typed bitwise 6/0、value-type 1/0、float smoke 1/0、generic numeric smoke 1/0、
+  global smoke 9/0、logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-two-arg-modulo-typed-thunk.md`。
+  文件规模：u64 thunk 主文件 852 physical / 767 non-empty lines，u64 shape source
+  689 / 617，shape header 21 / 18，typed call contract 866 / 828，u64 smoke 553 / 508。
+  备注：u64 两参 divide/modulo 窄形态与生成除零保护已覆盖；更多
+  runtime-failure-capable shapes、inline structs、`in`/`out` writeback、deopt/dynamic
+  bridges、dynamic value access helpers、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 10:20:11 +08:00 · M1.5 / 07-S5 static u64 two-arg divide
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_u64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_u64_arg0_arg1_divide_return()`，只接受两参数
+  unsigned return callee 中 `DIV_UNSIGNED` 后接 `FUNCTION_RETURN` 且 operand 顺序为
+  `arg0 / arg1` 的窄形态。`backend_aot_c_can_emit_typed_u64_two_arg_thunk()`
+  纳入 divide；`backend_aot_write_c_typed_u64_thunks()` 为 matching callee 发出带
+  `ZR_UNLIKELY(zr_aot_arg1 == 0u)` 的运行期除零保护，除零时调用
+  `ZrCore_Debug_RunError(state, "generated AOT unsigned divide by zero")` 并返回
+  defensive `(TZrUInt64)0`，正常路径返回
+  `return (TZrUInt64)(zr_aot_arg0 / zr_aot_arg1);`。调用侧复用已有
+  `zr_aot_static_u64_two_arg_direct_call` proof/writer 和 scalar-only destination
+  sync elision。RED/GREEN：初版 RED contract 曾过度要求 u64 thunk writer 源文件直接包含
+  `ZR_INSTRUCTION_ENUM(DIV_UNSIGNED)`，随后按职责收窄到 shape-source needle；最终 RED 为
+  typed call contracts 缺 `generated AOT unsigned divide by zero`，新增 divide smoke
+  失败为 `Expected Non-NULL`；补 shape 与 guarded writer 后 focused GREEN 为
+  typed call contracts 4/0、u64 shared-library smoke 21/0。测试结果：实际存在的较宽
+  WSL GCC AOT 目标构建通过；合约组通过 source 19/0、call contracts 4/0、typed call
+  contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、logical contracts
+  4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float
+  contracts 1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  i64 three-arg smoke 6/0、bool 19/0、u64 21/0、f64 13/0、typed arithmetic 5/0、
+  typed bitwise 6/0、value-type 1/0、float smoke 1/0、generic numeric smoke 1/0、
+  global smoke 9/0、logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-two-arg-divide-typed-thunk.md`。
+  文件规模：u64 thunk 主文件 837 physical / 753 non-empty lines，u64 shape source
+  653 / 585，shape header 20 / 17，typed call contract 862 / 824，u64 smoke 528 / 485。
+  备注：u64 两参 divide 窄形态与生成除零保护已覆盖；u64/f64 modulo、更多
+  runtime-failure-capable shapes、inline structs、`in`/`out` writeback、deopt/dynamic
+  bridges、dynamic value access helpers、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 10:04:13 +08:00 · M1.5 / 07-S5 static u64 three-arg bitwise-xor
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_u64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_u64_arg0_arg1_arg2_bitwise_xor_return()` 与
+  bitwise-xor operand reader，复用三参 u64 binary-return helper 校验两条
+  `BITWISE_XOR` 指令和最终 `FUNCTION_RETURN`。`backend_aot_c_can_emit_typed_u64_three_arg_thunk()`
+  现在覆盖 add/multiply/subtract/bitwise-and/bitwise-or/bitwise-xor，`backend_aot_write_c_typed_u64_thunks()`
+  对 matching callee 发出 `return (TZrUInt64)(zr_aot_arg0 ^ zr_aot_arg1 ^ zr_aot_arg2);`。
+  调用侧复用已有 `zr_aot_static_u64_three_arg_direct_call` proof/writer 和
+  scalar-only destination sync elision。RED/GREEN：RED 为 typed call contracts 缺
+  `return (TZrUInt64)(zr_aot_arg0 ^ zr_aot_arg1 ^ zr_aot_arg2);`，新增 bitwise-xor
+  smoke 失败为 `Expected Non-NULL`；补 shape 与 writer 后 focused GREEN 为
+  typed call contracts 4/0、u64 shared-library smoke 20/0。测试结果：实际存在的较宽
+  WSL GCC AOT 目标构建通过；合约组通过 source 19/0、call contracts 4/0、typed call
+  contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、logical contracts
+  4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float
+  contracts 1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  i64 three-arg smoke 6/0、bool 19/0、u64 20/0、f64 13/0、typed arithmetic 5/0、
+  typed bitwise 6/0、value-type 1/0、float smoke 1/0、generic numeric smoke 1/0、
+  global smoke 9/0、logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-three-arg-bitwise-xor-typed-thunk.md`。
+  文件规模：u64 thunk 主文件 822 physical / 739 non-empty lines，u64 shape source
+  617 / 553，shape header 19 / 16，typed call contract 857 / 819，u64 smoke 503 / 462。
+  备注：三参 u64 add/multiply/subtract/bitwise-and/bitwise-or/bitwise-xor 窄形态已覆盖；
+  runtime-failure-capable division/modulo、inline structs、`in`/`out` writeback、
+  deopt/dynamic bridges、dynamic value access helpers、07-S5 完整验收和 08-12
+  仍未完成。
+
+- 2026-06-23 09:55:55 +08:00 · M1.5 / 07-S5 static u64 three-arg bitwise-or
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_u64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_u64_arg0_arg1_arg2_bitwise_or_return()` 与
+  bitwise-or operand reader，复用三参 u64 binary-return helper 校验两条
+  `BITWISE_OR` 指令和最终 `FUNCTION_RETURN`。`backend_aot_c_can_emit_typed_u64_three_arg_thunk()`
+  现在覆盖 add/multiply/subtract/bitwise-and/bitwise-or，`backend_aot_write_c_typed_u64_thunks()`
+  对 matching callee 发出 `return (TZrUInt64)(zr_aot_arg0 | zr_aot_arg1 | zr_aot_arg2);`。
+  调用侧复用已有 `zr_aot_static_u64_three_arg_direct_call` proof/writer 和
+  scalar-only destination sync elision。RED/GREEN：RED 为 typed call contracts 缺
+  `return (TZrUInt64)(zr_aot_arg0 | zr_aot_arg1 | zr_aot_arg2);`，新增 bitwise-or
+  smoke 失败为 `Expected Non-NULL`；补 shape 与 writer 后 focused GREEN 为
+  typed call contracts 4/0、u64 shared-library smoke 19/0。测试结果：实际存在的较宽
+  WSL GCC AOT 目标构建通过；合约组通过 source 19/0、call contracts 4/0、typed call
+  contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、logical contracts
+  4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float
+  contracts 1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  i64 three-arg smoke 6/0、bool 19/0、u64 19/0、f64 13/0、typed arithmetic 5/0、
+  typed bitwise 6/0、value-type 1/0、float smoke 1/0、generic numeric smoke 1/0、
+  global smoke 9/0、logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-three-arg-bitwise-or-typed-thunk.md`。
+  文件规模：u64 thunk 主文件 816 physical / 733 non-empty lines，u64 shape source
+  595 / 534，shape header 18 / 15，typed call contract 854 / 816，u64 smoke 477 / 438。
+  备注：三参 u64 add/multiply/subtract/bitwise-and/bitwise-or 窄形态已覆盖；u64 三参
+  XOR、runtime-failure-capable division/modulo、inline structs、`in`/`out` writeback、
+  deopt/dynamic bridges、dynamic value access helpers、07-S5 完整验收和 08-12
+  仍未完成。
+
+- 2026-06-23 09:46:43 +08:00 · M1.5 / 07-S5 static u64 three-arg bitwise-and
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_u64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_u64_arg0_arg1_arg2_bitwise_and_return()` 与
+  bitwise-and operand reader，复用三参 u64 binary-return helper 校验两条
+  `BITWISE_AND` 指令和最终 `FUNCTION_RETURN`。`backend_aot_c_can_emit_typed_u64_three_arg_thunk()`
+  现在覆盖 add/multiply/subtract/bitwise-and，`backend_aot_write_c_typed_u64_thunks()`
+  对 matching callee 发出 `return (TZrUInt64)(zr_aot_arg0 & zr_aot_arg1 & zr_aot_arg2);`。
+  调用侧复用已有 `zr_aot_static_u64_three_arg_direct_call` proof/writer 和
+  scalar-only destination sync elision。RED/GREEN：RED 为 typed call contracts 缺
+  `return (TZrUInt64)(zr_aot_arg0 & zr_aot_arg1 & zr_aot_arg2);`，新增 bitwise-and
+  smoke 失败为 `Expected Non-NULL`；补 shape 与 writer 后 focused GREEN 为
+  typed call contracts 4/0、u64 shared-library smoke 18/0。测试结果：实际存在的较宽
+  WSL GCC AOT 目标构建通过；合约组通过 source 19/0、call contracts 4/0、typed call
+  contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、logical contracts
+  4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float
+  contracts 1/0；共享库烟测组第一次整串运行在 124s 超时且无失败输出，拆分为两段后通过
+  shared 8/0、call smoke 5/0、typed direct-call 5/0、i64 three-arg smoke 6/0、bool
+  19/0、u64 18/0、f64 13/0、typed arithmetic 5/0、typed bitwise 6/0、value-type 1/0、
+  float smoke 1/0、generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、
+  power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-three-arg-bitwise-and-typed-thunk.md`。
+  文件规模：u64 thunk 主文件 810 physical / 727 non-empty lines，u64 shape source
+  573 / 515，shape header 17 / 14，typed call contract 851 / 813，u64 smoke 451 / 414。
+  备注：三参 u64 add/multiply/subtract/bitwise-and 窄形态已覆盖；u64 三参 OR/XOR、
+  runtime-failure-capable division/modulo、inline structs、`in`/`out` writeback、
+  deopt/dynamic bridges、dynamic value access helpers、07-S5 完整验收和 08-12
+  仍未完成。
+
+- 2026-06-23 09:33:50 +08:00 · M1.5 / 07-S5 static u64 three-arg subtract
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_u64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_u64_arg0_arg1_arg2_subtract_return()` 与
+  subtract operand reader。三参 u64 binary-return helper 增加 `preserveOperandOrder`，
+  subtract 必须证明 `(arg0 - arg1) - arg2`，add/multiply 继续使用 commutative
+  operand set。`backend_aot_c_can_emit_typed_u64_three_arg_thunk()` 现在覆盖
+  add/multiply/subtract，`backend_aot_write_c_typed_u64_thunks()` 对 matching callee
+  发出 `return (TZrUInt64)(zr_aot_arg0 - zr_aot_arg1 - zr_aot_arg2);`。调用侧复用
+  已有 `zr_aot_static_u64_three_arg_direct_call` proof/writer 和 scalar-only destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺
+  `return (TZrUInt64)(zr_aot_arg0 - zr_aot_arg1 - zr_aot_arg2);`，新增 subtract
+  smoke 失败为 `Expected Non-NULL`；补 ordered shape 与 writer 后 focused GREEN 为
+  typed call contracts 4/0、u64 shared-library smoke 17/0。测试结果：实际存在的较宽
+  WSL GCC AOT 目标构建通过；合约组通过 source 19/0、call contracts 4/0、typed call
+  contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、logical contracts
+  4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float
+  contracts 1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、typed direct-call
+  5/0、i64 three-arg smoke 6/0、bool 19/0、u64 17/0、f64 13/0、typed arithmetic
+  5/0、typed bitwise 6/0、value-type 1/0、float smoke 1/0、generic numeric smoke
+  1/0、global smoke 9/0、logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-three-arg-subtract-typed-thunk.md`。
+  文件规模：u64 thunk 主文件 804 physical / 721 non-empty lines，u64 shape source
+  551 / 496，shape header 16 / 13，typed call contract 849 / 811，u64 smoke 425 / 390。
+  备注：三参 u64 add/multiply/subtract 窄形态已覆盖；u64 三参 bitwise、
+  runtime-failure-capable division/modulo、inline structs、`in`/`out` writeback、
+  deopt/dynamic bridges、dynamic value access helpers、07-S5 完整验收和 08-12
+  仍未完成。
+
+- 2026-06-23 09:24:25 +08:00 · M1.5 / 07-S5 static u64 three-arg multiply
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_u64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_u64_arg0_arg1_arg2_multiply_return()` 与
+  multiply operand reader，复用三参 u64 binary-return helper 校验 `(arg0 * arg1) * arg2`
+  两条 multiply 指令和最终 `FUNCTION_RETURN`。`backend_aot_c_can_emit_typed_u64_three_arg_thunk()`
+  现在覆盖 add/multiply，`backend_aot_write_c_typed_u64_thunks()` 对 matching callee
+  发出 `return (TZrUInt64)(zr_aot_arg0 * zr_aot_arg1 * zr_aot_arg2);`。调用侧复用
+  已有 `zr_aot_static_u64_three_arg_direct_call` proof/writer 和 scalar-only destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺
+  `return (TZrUInt64)(zr_aot_arg0 * zr_aot_arg1 * zr_aot_arg2);`，新增 multiply
+  smoke 失败为 `Expected Non-NULL`；补 shape 与 writer 后 focused GREEN 为 typed
+  call contracts 4/0、u64 shared-library smoke 16/0。测试结果：实际存在的较宽 WSL GCC
+  AOT 目标构建通过；合约组通过 source 19/0、call contracts 4/0、typed call contracts
+  4/0、generic numeric contracts 1/0、global contracts 7/0、logical contracts 4/0、
+  power contracts 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float contracts
+  1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  i64 three-arg smoke 6/0、bool 19/0、u64 16/0、f64 13/0、typed arithmetic 5/0、
+  typed bitwise 6/0、value-type 1/0、float smoke 1/0、generic numeric smoke 1/0、
+  global smoke 9/0、logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-three-arg-multiply-typed-thunk.md`。
+  文件规模：u64 thunk 主文件 798 physical / 715 non-empty lines，u64 shape source
+  514 / 464，shape header 15 / 12，typed call contract 847 / 809，u64 smoke 399 / 366。
+  备注：这是 broader typed parameter ABI 的三参 u64 multiply 窄覆盖；u64 三参
+  subtract/bitwise、runtime-failure-capable division/modulo、inline structs、
+  `in`/`out` writeback、deopt/dynamic bridges、dynamic value access helpers、07-S5
+  完整验收和 08-12 仍未完成。
+
+- 2026-06-23 09:13:42 +08:00 · M1.5 / 07-S5 static u64 three-arg add
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_u64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_u64_arg0_arg1_arg2_add_return()`、三参 u64
+  binary-return helper 和 add operand reader，覆盖三参数 unsigned callee 的两条
+  `ADD_UNSIGNED` / `ADD_UNSIGNED_PLAIN_DEST` 或兼容 signed-add 形态后接
+  `FUNCTION_RETURN`。`backend_aot_c_can_emit_typed_u64_three_arg_thunk()`
+  接入 u64 三参 can-emit gate，`backend_aot_write_c_typed_u64_thunks()`
+  对 matching callee 发出
+  `return (TZrUInt64)(zr_aot_arg0 + zr_aot_arg1 + zr_aot_arg2);`。
+  `backend_aot_can_write_c_static_direct_u64_three_arg_call()` 证明 destination
+  与三个 call-window arguments 都是已写入的 u64 scalar locals，lowering writer
+  发出 `zr_aot_static_u64_three_arg_direct_call`，并在 scalar-only destination
+  下继续省略 typed-destination stack sync。RED/GREEN：RED 为 typed call contracts
+  缺 `backend_aot_c_can_emit_typed_u64_three_arg_thunk(const SZrFunction *function)`，
+  新增 u64 three-arg add smoke 在 generated C 中找不到三参 thunk/direct-call 文本，
+  失败为 `Expected Non-NULL`；补 shape、can-emit、writer 和 route 后 focused GREEN
+  为 typed call contracts 4/0、u64 shared-library smoke 15/0。测试结果：实际存在的
+  较宽 WSL GCC AOT 目标构建通过；合约组通过 source 19/0、call contracts 4/0、
+  typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、float contracts 1/0；共享库烟测组通过 shared 8/0、call smoke
+  5/0、typed direct-call 5/0、i64 three-arg smoke 6/0、bool 19/0、u64 15/0、
+  f64 13/0、typed arithmetic 5/0、typed bitwise 6/0、value-type 1/0、float smoke
+  1/0、generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、power smoke
+  1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-three-arg-add-typed-thunk.md`。
+  文件规模：u64 thunk 主文件 792 physical / 709 non-empty lines，u64 shape source
+  485 / 439，shape header 14 / 11，typed direct-call router 909 / 817，call
+  lowering 812 / 770，emitter header 766 / 761，typed call contract 845 / 807，
+  u64 smoke 373 / 342。备注：这是 broader typed parameter ABI 的首个三参 u64
+  add 窄覆盖；u64 三参 subtract/multiply/bitwise、runtime-failure-capable
+  division/modulo、inline structs、`in`/`out` writeback、deopt/dynamic bridges、
+  dynamic value access helpers、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 08:52:55 +08:00 · M1.5 / 07-S5 static i64 three-arg subtract
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_i64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_i64_arg0_arg1_arg2_subtract_return()` 与
+  `backend_aot_c_try_read_i64_subtract_operands()`，覆盖三参数 i64 callee 的
+  `SUB_SIGNED` / `SUB_SIGNED_PLAIN_DEST` + `FUNCTION_RETURN` shape。
+  私有 `backend_aot_c_try_get_i64_arg0_arg1_arg2_binary_return()` 增加
+  `preserveOperandOrder`，subtract 形态必须证明 `(arg0 - arg1) - arg2`，不走
+  add/multiply/bitwise 的 commutative operand set。`backend_aot_c_can_emit_typed_i64_three_arg_thunk()`
+  现在覆盖 add/subtract/multiply/bitwise-and/bitwise-or/bitwise-xor，
+  thunk writer 对 matching callee 发出
+  `return (TZrInt64)(zr_aot_arg0 - zr_aot_arg1 - zr_aot_arg2);`。调用侧继续复用
+  `zr_aot_static_i64_three_arg_direct_call` proof/writer 和 scalar-only destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺
+  `backend_aot_c_try_get_i64_arg0_arg1_arg2_subtract_return(`，新增 subtract smoke
+  失败为 `Expected Non-NULL`；初次实现还因过度指定不存在的
+  `SUB_SIGNED_LOAD_STACK` opcode 编译失败，随后收紧为当前 enum 表面
+  `SUB_SIGNED` / `SUB_SIGNED_PLAIN_DEST` 后 focused GREEN 为 typed call contracts 4/0、
+  i64 three-arg smoke 6/0。测试结果：实际存在的较宽 WSL GCC AOT 目标构建通过；
+  合约组通过 source 19/0、call contracts 4/0、typed call contracts 4/0、generic
+  numeric contracts 1/0、global contracts 7/0、logical contracts 4/0、power contracts
+  2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float contracts 1/0；共享库烟测组通过
+  shared 8/0、call smoke 5/0、typed direct-call 5/0、i64 three-arg smoke 6/0、bool
+  19/0、u64 14/0、f64 13/0、typed arithmetic 5/0、typed bitwise 6/0、value-type 1/0、
+  float smoke 1/0、generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、
+  power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-i64-three-arg-subtract-typed-thunk.md`。
+  文件规模：i64 thunk 主文件 843 physical / 755 non-empty lines，i64 shape source
+  221 / 190，shape header 13 / 10，typed call contract 828 / 790，i64 three-arg
+  smoke 197 / 183，i64 smoke support 197 / 178。备注：这是 broader typed parameter
+  ABI 的三参 i64 subtract 窄覆盖；至此三参 i64 add/subtract/multiply/AND/OR/XOR
+  窄形态已覆盖，但 inline structs、`in`/`out` writeback、deopt/dynamic bridges、
+  general multi-arg returns、dynamic value access helpers、07-S5 完整验收和
+  08-12 仍未完成。
+
+- 2026-06-23 08:40:52 +08:00 · M1.5 / 07-S5 static i64 three-arg bitwise-xor
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_i64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_i64_arg0_arg1_arg2_bitwise_xor_return()` 与
+  `backend_aot_c_try_read_i64_bitwise_xor_operands()`，复用三参 binary-return
+  helper 校验三参数 i64 metadata、return type、两条 `BITWISE_XOR` 指令和最终
+  `FUNCTION_RETURN` result。`backend_aot_c_can_emit_typed_i64_three_arg_thunk()`
+  现在覆盖 add/multiply/bitwise-and/bitwise-or/bitwise-xor，
+  `backend_aot_write_c_typed_i64_thunks()` 对 matching callee 发出
+  `return (TZrInt64)(zr_aot_arg0 ^ zr_aot_arg1 ^ zr_aot_arg2);`。调用侧继续复用
+  `zr_aot_static_i64_three_arg_direct_call` proof/writer，保持三参 native C 形参直传
+  与 scalar-only destination sync elision。RED/GREEN：RED focused 为 typed call
+  contracts 缺 `backend_aot_c_try_get_i64_arg0_arg1_arg2_bitwise_xor_return(`，
+  新增 bitwise-xor smoke 也因缺少三参 bitwise-xor thunk/direct-call 文本失败为
+  `Expected Non-NULL`；补 shape、can-emit gate 与 writer branch 后 focused GREEN
+  为 typed call contracts 4/0、i64 three-arg smoke 5/0。测试结果：实际存在的较宽
+  WSL GCC AOT 目标构建通过；合约组通过 source 19/0、call contracts 4/0、typed call
+  contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、logical
+  contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR
+  4/0、float contracts 1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、
+  typed direct-call 5/0、i64 three-arg smoke 5/0、bool 19/0、u64 14/0、f64 13/0、
+  typed arithmetic 5/0、typed bitwise 6/0、value-type 1/0、float smoke 1/0、
+  generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、power smoke
+  1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-i64-three-arg-bitwise-xor-typed-thunk.md`。
+  文件规模：i64 thunk 主文件 838 physical / 750 non-empty lines，i64 shape source
+  183 / 156，shape header 12 / 9，typed call contract 822 / 784，i64 three-arg
+  smoke 166 / 154，i64 smoke support 197 / 178。备注：这是 broader typed parameter
+  ABI 的三参 i64 bitwise-xor 窄覆盖；至此三参 i64 add/multiply/AND/OR/XOR
+  窄形态已覆盖，但 inline structs、`in`/`out` writeback、deopt/dynamic bridges、
+  general multi-arg returns、dynamic value access helpers、07-S5 完整验收和
+  08-12 仍未完成。
+
+- 2026-06-23 08:32:29 +08:00 · M1.5 / 07-S5 static i64 three-arg bitwise-or
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_i64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_i64_arg0_arg1_arg2_bitwise_or_return()` 与
+  `backend_aot_c_try_read_i64_bitwise_or_operands()`，复用三参 binary-return helper
+  校验三参数 i64 metadata、return type、两条 `BITWISE_OR` 指令和最终
+  `FUNCTION_RETURN` result。`backend_aot_c_can_emit_typed_i64_three_arg_thunk()`
+  现在覆盖 add/multiply/bitwise-and/bitwise-or，
+  `backend_aot_write_c_typed_i64_thunks()` 对 matching callee 发出
+  `return (TZrInt64)(zr_aot_arg0 | zr_aot_arg1 | zr_aot_arg2);`。调用侧继续复用
+  `zr_aot_static_i64_three_arg_direct_call` proof/writer，保持三参 native C 形参直传
+  与 scalar-only destination sync elision。RED/GREEN：RED focused 为 typed call
+  contracts 缺 `backend_aot_c_try_get_i64_arg0_arg1_arg2_bitwise_or_return(`，
+  新增 bitwise-or smoke 也因缺少三参 bitwise-or thunk/direct-call 文本失败为
+  `Expected Non-NULL`；补 shape、can-emit gate 与 writer branch 后 focused GREEN
+  为 typed call contracts 4/0、i64 three-arg smoke 4/0。测试结果：实际存在的较宽
+  WSL GCC AOT 目标构建通过；合约组通过 source 19/0、call contracts 4/0、typed call
+  contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、logical
+  contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR
+  4/0、float contracts 1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、
+  typed direct-call 5/0、i64 three-arg smoke 4/0、bool 19/0、u64 14/0、f64 13/0、
+  typed arithmetic 5/0、typed bitwise 6/0、value-type 1/0、float smoke 1/0、
+  generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、power smoke
+  1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-i64-three-arg-bitwise-or-typed-thunk.md`。
+  文件规模：i64 thunk 主文件 833 physical / 745 non-empty lines，i64 shape source
+  161 / 138，shape header 11 / 8，typed call contract 817 / 779，i64 three-arg
+  smoke 135 / 125，i64 smoke support 197 / 178。备注：这是 broader typed parameter
+  ABI 的三参 i64 bitwise-or 窄覆盖；inline structs、`in`/`out` writeback、
+  deopt/dynamic bridges、general multi-arg returns、dynamic value access helpers、
+  07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 08:24:03 +08:00 · M1.5 / 07-S5 static i64 three-arg bitwise-and
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`backend_aot_c_typed_i64_thunk_shapes.{h,c}`
+  新增 `backend_aot_c_try_get_i64_arg0_arg1_arg2_bitwise_and_return()` 与
+  `backend_aot_c_try_read_i64_bitwise_and_operands()`，复用三参 binary-return
+  helper 校验三参数 i64 metadata、return type、两条 `BITWISE_AND` 指令和最终
+  `FUNCTION_RETURN` result。`backend_aot_c_can_emit_typed_i64_three_arg_thunk()`
+  现在覆盖 add/multiply/bitwise-and，`backend_aot_write_c_typed_i64_thunks()`
+  对 matching callee 发出
+  `return (TZrInt64)(zr_aot_arg0 & zr_aot_arg1 & zr_aot_arg2);`。调用侧继续复用
+  `zr_aot_static_i64_three_arg_direct_call` proof/writer，保持三参 native C 形参直传
+  与 scalar-only destination sync elision。RED/GREEN：RED focused 为 typed call
+  contracts 缺 `backend_aot_c_try_get_i64_arg0_arg1_arg2_bitwise_and_return(`，
+  新增 bitwise-and smoke 也因缺少三参 bitwise-and thunk/direct-call 文本失败为
+  `Expected Non-NULL`；补 shape、can-emit gate 与 writer branch 后 focused GREEN
+  为 typed call contracts 4/0、i64 three-arg smoke 3/0。测试结果：实际存在的较宽
+  WSL GCC AOT 目标构建通过；合约组通过 source 19/0、call contracts 4/0、typed call
+  contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、logical
+  contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR
+  4/0、float contracts 1/0；共享库烟测组通过 shared 8/0、call smoke 5/0、
+  typed direct-call 5/0、i64 three-arg smoke 3/0、bool 19/0、u64 14/0、f64 13/0、
+  typed arithmetic 5/0、typed bitwise 6/0、value-type 1/0、float smoke 1/0、
+  generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、power smoke
+  1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-i64-three-arg-bitwise-and-typed-thunk.md`。
+  文件规模：i64 thunk 主文件 828 physical / 740 non-empty lines，i64 shape source
+  139 / 120，shape header 10 / 7，typed call contract 812 / 774，i64 three-arg
+  smoke 104 / 96，i64 smoke support 197 / 178。备注：这是 broader typed parameter
+  ABI 的三参 i64 bitwise-and 窄覆盖；inline structs、`in`/`out` writeback、
+  deopt/dynamic bridges、general multi-arg returns、dynamic value access helpers、
+  07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 08:13:44 +08:00 · M1.5 / 07-S5 static i64 three-arg multiply
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：在上一轮 i64 三参 add 和 shape split
+  基础上，`backend_aot_c_typed_i64_thunk_shapes.{h,c}` 新增
+  `backend_aot_c_try_get_i64_arg0_arg1_arg2_multiply_return()` 与
+  `backend_aot_c_try_read_i64_multiply_operands()`，识别三参数 int callee 中两条
+  signed multiply 后 `FUNCTION_RETURN` 的 `arg0 * arg1 * arg2` 形态。
+  shape 模块现在通过私有
+  `backend_aot_c_try_get_i64_arg0_arg1_arg2_binary_return()` 共享三参
+  add/multiply 的参数元数据、返回类型、两段二元指令和 return-result 校验。
+  `backend_aot_c_can_emit_typed_i64_three_arg_thunk()` 纳入 multiply shape，
+  `backend_aot_write_c_typed_i64_thunks()` 对匹配 callee 发出
+  `return (TZrInt64)(zr_aot_arg0 * zr_aot_arg1 * zr_aot_arg2);`。调用侧复用
+  已有 `zr_aot_static_i64_three_arg_direct_call` route proof/writer，继续证明
+  destination 与三个 call-window i64 argument locals 已写入后发出直接 C 调用并省略
+  不必要的 destination stack sync。RED/GREEN：RED focused 为 typed call contracts
+  缺 `backend_aot_c_try_get_i64_arg0_arg1_arg2_multiply_return(`，新增 i64
+  three-arg multiply smoke 也因缺少三参乘法 thunk/direct-call 文本失败为
+  `Expected Non-NULL`；补 shape、can-emit gate 与 writer branch 后 focused GREEN 为
+  typed call contracts 4/0、i64 three-arg smoke 2/0。测试结果：实际存在的较宽
+  WSL GCC AOT 目标构建通过；合约组通过 source 19/0、call contracts 4/0、
+  typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、float contracts 1/0；共享库烟测组通过 shared 8/0、call smoke
+  5/0、typed direct-call 5/0、i64 three-arg smoke 2/0、bool 19/0、u64 14/0、
+  f64 13/0、typed arithmetic 5/0、typed bitwise 6/0、value-type 1/0、float smoke
+  1/0、generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、power
+  smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-i64-three-arg-multiply-typed-thunk.md`。
+  文件规模：i64 thunk 主文件 823 physical / 735 non-empty lines，i64 shape source
+  117 / 102，shape header 9 / 6，typed call contract 807 / 769，i64 three-arg
+  smoke 73 / 67，i64 smoke support 197 / 178。备注：这是 broader typed parameter
+  ABI 的三参 i64 乘法窄覆盖；inline structs、`in`/`out` writeback、
+  deopt/dynamic bridges、general multi-arg returns、dynamic value access helpers、
+  07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 08:00:16 +08:00 · M1.5 / 07-S5 i64 three-arg thunk shape split
+  支持切片 · 状态：支持切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：为继续扩展 broader typed parameter ABI，先把三参 i64 thunk shape 识别从
+  `backend_aot_c_typed_i64_thunks.c` 拆到 `backend_aot_c_typed_i64_thunk_shapes.{h,c}`。
+  新模块目前承载 `backend_aot_c_try_get_i64_arg0_arg1_arg2_add_return()` 及其 add
+  operand reader/type-ref predicate；主 i64 thunk 文件继续负责 no/one/two/three-arg
+  can-emit gate、forward declaration 和 thunk definition writer。契约测试同步拆分文件归属，
+  `tests/parser/test_aot_c_typed_call_contracts.c` 现在同时读取 i64 thunk 主文件与 i64
+  shape 文件，避免三参参数元数据/ADD shape 校验随模块拆分丢失。RED/GREEN：这是同行为
+  拆分，未新增行为 RED；首次 focused split 后契约测试暴露旧测试仍只读主文件，缺少
+  `function->parameterMetadataCount < 3u`，调整契约归属后 focused GREEN 为 typed call
+  contracts 4/0、i64 three-arg smoke 1/0。测试结果：较宽 WSL GCC focused AOT 组通过
+  source 19/0、call contracts 4/0、typed call contracts 4/0、generic numeric contracts
+  1/0、global contracts 7/0、logical contracts 4/0、power contracts 2/0、frame setup
+  1/0、return 1/0、value SemIR 4/0、float contracts 1/0、shared 8/0、call smoke 5/0、
+  typed direct-call i64 smoke 5/0、i64 three-arg smoke 1/0、bool smoke 19/0、u64 smoke
+  14/0、f64 smoke 13/0、arithmetic 5/0、bitwise 6/0、typed scalar 1/0、value-type
+  1/0、float smoke 1/0、generic numeric smoke 1/0、global smoke 9/0、logical smoke
+  4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-i64-three-arg-shape-split.md`。文件规模：
+  i64 thunk 主文件降至 818 physical / 730 non-empty lines，新 i64 shape source 为
+  76 / 67，新 header 为 8 / 5，typed call contract 为 800 / 762。备注：这是后续三参
+  i64 multiply/更多三参表达式切片的支撑拆分，不新增 runtime 行为；inline structs、
+  `in`/`out` writeback、deopt/dynamic bridges、general multi-arg returns、dynamic
+  value access helpers、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 07:47:14 +08:00 · M1.5 / 07-S5 static i64 three-arg add
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`i64(i64, i64, i64)` typed direct-call route
+  首次把 i64 native 参数 ABI 从 no/one/two-arg 扩展到三参窄形态。`backend_aot_c_typed_i64_thunks.c`
+  新增 `backend_aot_c_try_get_i64_arg0_arg1_arg2_add_return()`，识别三参数 int
+  callee 中连续两条 signed add 后 `FUNCTION_RETURN` 的 `arg0 + arg1 + arg2`
+  形态，并发出
+  `static TZrInt64 zr_aot_typed_i64_fn_N(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1, TZrInt64 zr_aot_arg2)`
+  native thunk，直接返回
+  `return (TZrInt64)(zr_aot_arg0 + zr_aot_arg1 + zr_aot_arg2);`。
+  `backend_aot_c_typed_direct_calls.c` 新增三参 route proof，要求 destination local
+  与 `functionSlot + 1/2/3` 三个 argument locals 均为已写入 i64 scalar locals；
+  `backend_aot_c_lowering_calls.c` 新增 `zr_aot_static_i64_three_arg_direct_call`
+  writer，发出
+  `zr_aot_sD = zr_aot_typed_i64_fn_N(state, zr_aot_sA, zr_aot_sB, zr_aot_sC)`
+  并沿用 scalar-only destination sync elision。RED/GREEN：RED 为 typed call contracts
+  缺少 `backend_aot_c_can_emit_typed_i64_three_arg_thunk(const SZrFunction *function)`，
+  新增 i64 three-arg shared-library smoke 也因缺少三参 thunk/direct-call 形态失败为
+  `Expected Non-NULL`；补 recognizer、can-emit、writer、route proof 与新测试目标后
+  focused GREEN 为 typed call contracts 4/0、i64 three-arg smoke 1/0。测试结果：较宽
+  WSL GCC focused AOT 组通过 source 19/0、call contracts 4/0、typed call contracts
+  4/0、generic numeric contracts 1/0、global contracts 7/0、logical contracts 4/0、
+  power contracts 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、float contracts
+  1/0、shared 8/0、call smoke 5/0、typed direct-call i64 smoke 5/0、i64 three-arg
+  smoke 1/0、bool smoke 19/0、u64 smoke 14/0、f64 smoke 13/0、arithmetic 5/0、
+  bitwise 6/0、typed scalar 1/0、value-type 1/0、float smoke 1/0、generic numeric
+  smoke 1/0、global smoke 9/0、logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-i64-three-arg-add-typed-thunk.md`。
+  文件规模：i64 thunk 主文件 883 physical / 788 non-empty lines，typed direct-call
+  route 845 / 758，call lowering 771 / 731，emitter header 758 / 753，typed call
+  contract 787 / 749，新增 i64 smoke support 197 / 178，新增 i64 three-arg smoke
+  42 / 38。备注：这是 broader typed parameter ABI 的三参 i64 加法窄覆盖；inline
+  structs、`in`/`out` writeback、deopt/dynamic bridges、general multi-arg returns、
+  dynamic value access helpers、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 07:27:42 +08:00 · M1.5 / 07-S5 static f64 two-arg modulo
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`f64(f64, f64)` typed direct-call route
+  从 add/subtract/multiply/divide 扩展到有运行期失败通道的 ordered modulo。`backend_aot_c_typed_f64_thunks.c`
+  新增 `MOD_FLOAT/FUNCTION_RETURN` recognizer，`backend_aot_c_can_emit_typed_f64_two_arg_thunk()`
+  现在覆盖 add/subtract/multiply/divide/modulo；modulo thunk 维持
+  `static TZrFloat64 zr_aot_typed_f64_fn_N(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1)`
+  native ABI，先检查 `zr_aot_arg1 == 0.0`，通过
+  `ZrCore_Debug_RunError(state, "generated AOT float modulo by zero")`
+  进入运行期错误通道，并保留防御性 `return (TZrFloat64)0.0;`，正常路径直接发出
+  `return (TZrFloat64)fmod(zr_aot_arg0, zr_aot_arg1);`。调用侧复用
+  `zr_aot_static_f64_two_arg_direct_call` proof/writer，继续证明 f64 destination local
+  与两个已写入 f64 argument locals 后发
+  `zr_aot_fD = zr_aot_typed_f64_fn_N(state, zr_aot_fA, zr_aot_fB)` 并允许 destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺少
+  `backend_aot_c_try_get_f64_arg0_arg1_modulo_return(`；新增 f64 shared-library smoke
+  `remainder(93.0, 51.0)` 覆盖运行路径；补 modulo recognizer、can-emit gate 与带零除
+  guard 的 thunk writer 后 focused GREEN 为 typed call contracts 4/0、f64 typed direct-call
+  smoke 13/0。测试结果：较宽 WSL GCC focused AOT 组通过 source 19/0、call contracts
+  4/0、typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、float contracts 1/0、shared 8/0、call smoke 5/0、typed direct-call
+  5/0、bool smoke 19/0、u64 smoke 14/0、f64 smoke 13/0、arithmetic 5/0、bitwise
+  6/0、typed scalar 1/0、value-type 1/0、float smoke 1/0、generic numeric smoke
+  1/0、global smoke 9/0、logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-f64-two-arg-modulo-typed-thunk.md`。
+  文件规模：f64 thunk 主文件 894 physical / 782 non-empty lines，typed call contract
+  766 / 728，f64 smoke 322 / 295，f64 smoke support 211 / 191。备注：这是 f64 二参
+  modulo-return 窄覆盖并补齐 typed f64 dynamic denominator modulo 的运行期零除失败通道；
+  inline structs、`in`/`out` writeback、deopt/dynamic bridges、broader ABI、
+  dynamic value access helpers、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 07:08:37 +08:00 · M1.5 / 07-S5 static f64 two-arg divide
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：`f64(f64, f64)` typed direct-call route
+  从 add/subtract/multiply 扩展到有运行期失败通道的 ordered divide。`backend_aot_c_typed_f64_thunks.c`
+  新增 `DIV_FLOAT/FUNCTION_RETURN` recognizer，`backend_aot_c_can_emit_typed_f64_two_arg_thunk()`
+  现在覆盖 add/subtract/multiply/divide；divide thunk 维持
+  `static TZrFloat64 zr_aot_typed_f64_fn_N(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1)`
+  native ABI，先检查 `zr_aot_arg1 == 0.0`，通过
+  `ZrCore_Debug_RunError(state, "generated AOT float divide by zero")`
+  进入运行期错误通道，并保留防御性 `return (TZrFloat64)0.0;`，正常路径直接发出
+  `return (TZrFloat64)(zr_aot_arg0 / zr_aot_arg1);`。调用侧复用
+  `zr_aot_static_f64_two_arg_direct_call` proof/writer，继续证明 f64 destination local
+  与两个已写入 f64 argument locals 后发
+  `zr_aot_fD = zr_aot_typed_f64_fn_N(state, zr_aot_fA, zr_aot_fB)` 并允许 destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺少
+  `backend_aot_c_try_get_f64_arg0_arg1_divide_return(`；新增 f64 shared-library smoke
+  `ratio(84.0, 2.0)` 覆盖运行路径；补 divide recognizer、can-emit gate 与带零除 guard
+  的 thunk writer 后 focused GREEN 为 typed call contracts 4/0、f64 typed direct-call smoke
+  12/0。测试结果：较宽 WSL GCC focused AOT 组通过 source 19/0、call contracts 4/0、
+  typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool smoke 19/0、u64 smoke 14/0、f64 smoke 12/0、arithmetic 5/0、bitwise 6/0、
+  typed scalar 1/0、value-type 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-f64-two-arg-divide-typed-thunk.md`。
+  文件规模：f64 thunk 主文件 843 physical / 736 non-empty lines，typed call contract
+  763 / 725，f64 smoke 297 / 272，f64 smoke support 211 / 191。备注：这是 f64 二参
+  divide-return 窄覆盖并首次为 typed f64 dynamic denominator route 写入运行期零除失败通道；
+  f64 modulo runtime-failure route、inline structs、`in`/`out` writeback、deopt/dynamic
+  bridges、broader ABI、dynamic value access helpers、07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 06:53:10 +08:00 · M1.5 / 07-S5 static u64 two-arg greater-equal bool
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：mixed `bool(u64, u64)` typed direct-call route
+  从 unsigned less-than-or-equal 扩展到 unsigned greater-than-or-equal。`backend_aot_c_typed_bool_thunks.c`
+  复用 shared u64 bool-return compare helper，新增 `LOGICAL_GREATER_EQUAL_UNSIGNED/FUNCTION_RETURN`
+  wrapper；u64 greater-equal thunk 发出
+  `return (TZrBool)(zr_aot_arg0 >= zr_aot_arg1);`，且 u64-bool can-emit gate
+  现在覆盖 `<`、`==`、`!=`、`>`、`<=`、`>=`。调用侧复用
+  `zr_aot_static_u64_bool_two_arg_direct_call` proof/writer，继续证明 bool destination local
+  与两个已写入 u64 argument locals 后发
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_uA, zr_aot_uB)` 并允许 destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺少
+  `backend_aot_c_try_get_bool_u64_arg0_arg1_greater_equal_return(`；新增 bool shared-library
+  smoke `at_least(50u, 8u)` 覆盖运行路径；补 greater-equal wrapper 与 thunk writer branch 后
+  focused GREEN 为 typed call contracts 4/0、bool typed direct-call smoke 19/0。测试结果：
+  较宽 WSL GCC focused AOT 组通过 source 19/0、call contracts 4/0、
+  typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool smoke 19/0、u64 smoke 14/0、f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、
+  typed scalar 1/0、value-type 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-two-arg-greater-equal-bool-typed-thunk.md`。
+  备注：这是 mixed u64-parameter bool-return greater-than-or-equal 窄覆盖并完成当前 unsigned comparison
+  subset；07-S5 完整验收和 08-12 仍未完成。
+
+- 2026-06-23 06:44:19 +08:00 · M1.5 / 07-S5 static u64 two-arg less-equal bool
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：mixed `bool(u64, u64)` typed direct-call route
+  从 unsigned greater-than 扩展到 unsigned less-than-or-equal。`backend_aot_c_typed_bool_thunks.c`
+  复用 shared u64 bool-return compare helper，新增 `LOGICAL_LESS_EQUAL_UNSIGNED/FUNCTION_RETURN`
+  wrapper；u64 less-equal thunk 发出
+  `return (TZrBool)(zr_aot_arg0 <= zr_aot_arg1);`，且 u64-bool can-emit gate
+  现在接受 `<`、`==`、`!=`、`>`、`<=`。调用侧复用
+  `zr_aot_static_u64_bool_two_arg_direct_call` proof/writer，继续证明 bool destination local
+  与两个已写入 u64 argument locals 后发
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_uA, zr_aot_uB)` 并允许 destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺少
+  `backend_aot_c_try_get_bool_u64_arg0_arg1_less_equal_return(`；新增 bool shared-library
+  smoke `at_most(8u, 50u)` 覆盖运行路径；补 less-equal wrapper 与 thunk writer branch 后
+  focused GREEN 为 typed call contracts 4/0、bool typed direct-call smoke 18/0。测试结果：
+  较宽 WSL GCC focused AOT 组通过 source 19/0、call contracts 4/0、
+  typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool smoke 18/0、u64 smoke 14/0、f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、
+  typed scalar 1/0、value-type 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-two-arg-less-equal-bool-typed-thunk.md`。
+  备注：这是 mixed u64-parameter bool-return less-than-or-equal 窄覆盖；07-S5 完整验收和
+  08-12 仍未完成。
+
+- 2026-06-23 06:34:55 +08:00 · M1.5 / 07-S5 static u64 two-arg greater bool
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：mixed `bool(u64, u64)` typed direct-call route
+  从 unsigned inequality 扩展到 unsigned greater-than。`backend_aot_c_typed_bool_thunks.c`
+  复用 shared u64 bool-return compare helper，新增 `LOGICAL_GREATER_UNSIGNED/FUNCTION_RETURN`
+  wrapper；u64 greater thunk 发出
+  `return (TZrBool)(zr_aot_arg0 > zr_aot_arg1);`，且 u64-bool can-emit gate
+  现在接受 `<`、`==`、`!=`、`>`。调用侧复用
+  `zr_aot_static_u64_bool_two_arg_direct_call` proof/writer，继续证明 bool destination local
+  与两个已写入 u64 argument locals 后发
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_uA, zr_aot_uB)` 并允许 destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺少
+  `backend_aot_c_try_get_bool_u64_arg0_arg1_greater_return(`；新增 bool shared-library
+  smoke `greater(50u, 8u)` 覆盖运行路径；补 greater wrapper 与 thunk writer branch 后
+  focused GREEN 为 typed call contracts 4/0、bool typed direct-call smoke 17/0。测试结果：
+  较宽 WSL GCC focused AOT 组通过 source 19/0、call contracts 4/0、
+  typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool smoke 17/0、u64 smoke 14/0、f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、
+  typed scalar 1/0、value-type 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-two-arg-greater-bool-typed-thunk.md`。
+  备注：这是 mixed u64-parameter bool-return greater-than 窄覆盖；07-S5 完整验收和
+  08-12 仍未完成。
+
+- 2026-06-23 06:24:43 +08:00 · M1.5 / 07-S5 static u64 two-arg not-equal bool
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：mixed `bool(u64, u64)` typed direct-call route
+  从 unsigned equality 扩展到 unsigned inequality。`backend_aot_c_typed_bool_thunks.c`
+  复用 shared u64 bool-return compare helper，新增 `LOGICAL_NOT_EQUAL_UNSIGNED/FUNCTION_RETURN`
+  wrapper；u64 inequality thunk 发出
+  `return (TZrBool)(zr_aot_arg0 != zr_aot_arg1);`，且 u64-bool can-emit gate
+  现在接受 `<`、`==`、`!=`。调用侧复用
+  `zr_aot_static_u64_bool_two_arg_direct_call` proof/writer，继续证明 bool destination local
+  与两个已写入 u64 argument locals 后发
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_uA, zr_aot_uB)` 并允许 destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺少
+  `backend_aot_c_try_get_bool_u64_arg0_arg1_not_equal_return(`；新增 bool shared-library
+  smoke `different(21u, 22u)` 覆盖运行路径；补 not-equal wrapper 与 thunk writer branch 后
+  focused GREEN 为 typed call contracts 4/0、bool typed direct-call smoke 16/0。测试结果：
+  较宽 WSL GCC focused AOT 组通过 source 19/0、call contracts 4/0、
+  typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool smoke 16/0、u64 smoke 14/0、f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、
+  typed scalar 1/0、value-type 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-two-arg-not-equal-bool-typed-thunk.md`。
+  备注：这是 mixed u64-parameter bool-return inequality 窄覆盖；07-S5 完整验收和
+  08-12 仍未完成。
+
+- 2026-06-23 06:10:01 +08:00 · M1.5 / 07-S5 static u64 two-arg equal bool
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：mixed `bool(u64, u64)` typed direct-call route
+  从 unsigned less-than 扩展到 unsigned equality。`backend_aot_c_typed_bool_thunks.c`
+  复用 shared u64 bool-return compare helper，新增 `LOGICAL_EQUAL_UNSIGNED/FUNCTION_RETURN`
+  wrapper；u64 equality thunk 发出
+  `return (TZrBool)(zr_aot_arg0 == zr_aot_arg1);`。调用侧复用刚建立的
+  `zr_aot_static_u64_bool_two_arg_direct_call` proof/writer，继续证明 bool destination local
+  与两个已写入 u64 argument locals 后发
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_uA, zr_aot_uB)` 并允许 destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺少
+  `backend_aot_c_try_get_bool_u64_arg0_arg1_equal_return(`；新增 bool shared-library
+  smoke `same(21u, 21u)` 覆盖运行路径；补 equality wrapper 与 thunk writer branch 后
+  focused GREEN 为 typed call contracts 4/0、bool typed direct-call smoke 15/0。测试结果：
+  较宽 WSL GCC focused AOT 组通过 source 19/0、call contracts 4/0、
+  typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool smoke 15/0、u64 smoke 14/0、f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、
+  typed scalar 1/0、value-type 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-two-arg-equal-bool-typed-thunk.md`。
+  备注：这是 mixed u64-parameter bool-return equality 窄覆盖；07-S5 完整验收和
+  08-12 仍未完成。
+
+- 2026-06-23 05:56:13 +08:00 · M1.5 / 07-S5 static u64 two-arg less bool
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：mixed `bool(u64, u64)` typed direct-call route
+  覆盖第一条 unsigned comparison：`uint < uint -> bool`。`backend_aot_c_typed_bool_thunks.c`
+  新增 u64 type-ref 判定、shared u64 bool-return compare helper、`LOGICAL_LESS_UNSIGNED`
+  wrapper 与 `backend_aot_c_can_emit_typed_bool_u64_two_arg_thunk()`；生成 thunk 签名为
+  `static TZrBool zr_aot_typed_bool_fn_N(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1)`，
+  并直接发 `return (TZrBool)(zr_aot_arg0 < zr_aot_arg1);`。调用侧新增
+  `zr_aot_static_u64_bool_two_arg_direct_call` proof/writer，证明 bool destination local
+  与两个已写入 u64 argument locals 后，发
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_uA, zr_aot_uB)` 并允许 destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺少
+  `backend_aot_c_can_emit_typed_bool_u64_two_arg_thunk(const SZrFunction *function)`；
+  新增 bool shared-library smoke `smaller(7u, 9u)` 覆盖运行路径，并要求无
+  `CallStaticDirect` / `CallStackValue` / typed-destination sync。补 recognizer、thunk writer
+  与 u64-bool route/writer 后 focused GREEN 为 typed call contracts 4/0、bool typed direct-call
+  smoke 14/0。测试结果：较宽 WSL GCC focused AOT 组通过 source 19/0、call contracts 4/0、
+  typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool smoke 14/0、u64 smoke 14/0、f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、
+  typed scalar 1/0、value-type 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-u64-two-arg-less-bool-typed-thunk.md`。
+  备注：这是 mixed u64-parameter bool-return less-than 窄覆盖；07-S5 完整验收和
+  08-12 仍未完成。
+
+- 2026-06-23 05:34:37 +08:00 · M1.5 / 07-S5 static i64 two-arg greater-equal bool
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：mixed `bool(i64, i64)` typed direct-call route
+  扩展到 signed greater-than-or-equal，并完成当前窄范围 signed compare set
+  `<`、`==`、`!=`、`>`、`<=`、`>=`。`backend_aot_c_typed_bool_thunks.c`
+  复用 shared i64 bool-return compare helper，新增
+  `LOGICAL_GREATER_EQUAL_SIGNED/FUNCTION_RETURN` wrapper；greater-equal thunk 发出
+  `return (TZrBool)(zr_aot_arg0 >= zr_aot_arg1);`。调用侧复用既有
+  `zr_aot_static_i64_bool_two_arg_direct_call` route proof 与 writer，继续发
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_sA, zr_aot_sB)`，允许 destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺少
+  `backend_aot_c_try_get_bool_i64_arg0_arg1_greater_equal_return(`；新增 bool shared-library
+  smoke `at_least(50, 8)` 覆盖运行路径。补 greater-equal wrapper 与 writer branch 后
+  focused GREEN 为 typed call contracts 4/0、bool typed direct-call smoke 13/0。
+  测试结果：较宽 WSL GCC focused AOT 组继续通过 source 19/0、call contracts 4/0、
+  typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool smoke 13/0、u64 smoke 14/0、f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、
+  typed scalar 1/0、value-type 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-i64-two-arg-greater-equal-bool-typed-thunk.md`。
+  文件规模：bool thunk 主文件 597 physical / 520 non-empty lines，typed call contract
+  725 physical / 687 non-empty lines，bool smoke 366 physical / 339 non-empty lines。
+  备注：当前 signed compare narrow set 已覆盖，但本切片仍不关闭 07-S5；inline structs、
+  `in`/`out` writeback、deopt/dynamic bridges、broader ABI、dynamic value access helpers、
+  runtime-failure-capable division/modulo policy 与 08-12 仍待后续。
+
+- 2026-06-23 05:24:23 +08:00 · M1.5 / 07-S5 static i64 two-arg less-equal bool
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：mixed `bool(i64, i64)` typed direct-call route
+  从 signed less-than/equality/inequality/greater-than 扩展到 signed less-than-or-equal。
+  `backend_aot_c_typed_bool_thunks.c` 复用 shared i64 bool-return compare helper，
+  新增 `LOGICAL_LESS_EQUAL_SIGNED/FUNCTION_RETURN` wrapper，并在 mixed can-emit gate 中
+  同时接受 `<`、`==`、`!=`、`>`、`<=`。less-equal thunk 发出
+  `return (TZrBool)(zr_aot_arg0 <= zr_aot_arg1);`。调用侧复用既有
+  `zr_aot_static_i64_bool_two_arg_direct_call` route proof 与 writer，继续发
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_sA, zr_aot_sB)`，允许 destination
+  sync elision。RED/GREEN：RED 为 typed call contracts 缺少
+  `backend_aot_c_try_get_bool_i64_arg0_arg1_less_equal_return(`；新增 bool shared-library
+  smoke `at_most(8, 50)` 证明旧生成物还需要 `TZrInt64` 参数 bool thunk/direct typed call。
+  补 less-equal wrapper 与 writer branch 后 focused GREEN 为 typed call contracts 4/0、
+  bool typed direct-call smoke 12/0。测试结果：较宽 WSL GCC focused AOT 组继续通过
+  source 19/0、call contracts 4/0、typed call contracts 4/0、generic numeric contracts 1/0、
+  global contracts 7/0、logical contracts 4/0、power contracts 2/0、frame setup 1/0、
+  return 1/0、value SemIR 4/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool smoke 12/0、u64 smoke 14/0、f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、
+  typed scalar 1/0、value-type 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-i64-two-arg-less-equal-bool-typed-thunk.md`。
+  文件规模：bool thunk 主文件 580 physical / 505 non-empty lines，typed call contract
+  723 physical / 685 non-empty lines，bool smoke 338 physical / 313 non-empty lines。
+  备注：本切片仍不关闭 07-S5；remaining signed greater-equal comparison、inline structs、
+  `in`/`out` writeback、deopt/dynamic bridges、broader ABI、dynamic value access helpers、
+  runtime-failure-capable division/modulo policy 与 08-12 仍待后续。
+
+- 2026-06-23 05:10:52 +08:00 · M1.5 / 07-S5 static i64 two-arg greater bool
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：mixed `bool(i64, i64)` typed direct-call route
+  从 signed less-than/equality/inequality 扩展到 signed greater-than。
+  `backend_aot_c_typed_bool_thunks.c` 复用 shared i64 bool-return compare helper，
+  新增 `LOGICAL_GREATER_SIGNED/FUNCTION_RETURN` wrapper，并在 mixed can-emit gate 中
+  同时接受 `<`、`==`、`!=`、`>`。greater-than thunk 发出
+  `return (TZrBool)(zr_aot_arg0 > zr_aot_arg1);`。调用侧复用既有
+  `zr_aot_static_i64_bool_two_arg_direct_call` route proof 与 writer，继续发
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_sA, zr_aot_sB)`，允许 destination
+  sync elision。RED/GREEN：RED 为 bool shared-library smoke 新增 `greater(50, 8)`
+  case 缺少 `TZrInt64` 参数 bool thunk 且仍走 `CallStaticDirect` + `SyncBoolLocal`；
+  补 greater wrapper 与 writer branch 后 focused GREEN 为 typed call contracts 4/0、
+  bool typed direct-call smoke 11/0。测试结果：较宽 WSL GCC focused AOT 组继续通过
+  source 19/0、call contracts 4/0、typed call contracts 4/0、generic numeric contracts 1/0、
+  global contracts 7/0、logical contracts 4/0、power contracts 2/0、frame setup 1/0、
+  return 1/0、value SemIR 4/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool smoke 11/0、u64 smoke 14/0、f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、
+  typed scalar 1/0、value-type 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-i64-two-arg-greater-bool-typed-thunk.md`。
+  文件规模：bool thunk 主文件 563 physical / 490 non-empty lines，typed call contract
+  721 physical / 683 non-empty lines，bool smoke 310 physical / 287 non-empty lines。
+  备注：本切片仍不关闭 07-S5；remaining signed comparisons、inline structs、
+  `in`/`out` writeback、deopt/dynamic bridges、broader ABI、dynamic value access helpers、
+  runtime-failure-capable division/modulo policy 与 08-12 仍待后续。
+
+- 2026-06-23 04:58:12 +08:00 · M1.5 / 07-S5 static i64 two-arg not-equal
+  bool typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07
+  部分完成、08-12 未开始 · 完成项目：mixed `bool(i64, i64)` typed direct-call
+  route 从 signed less-than/equality 扩展到 signed inequality。
+  `backend_aot_c_typed_bool_thunks.c` 复用 shared i64 bool-return compare helper，
+  新增 `LOGICAL_NOT_EQUAL_SIGNED/FUNCTION_RETURN` wrapper，并在 mixed can-emit gate 中
+  同时接受 `<`、`==`、`!=`。inequality thunk 发出
+  `return (TZrBool)(zr_aot_arg0 != zr_aot_arg1);`。调用侧复用既有
+  `zr_aot_static_i64_bool_two_arg_direct_call` route proof 与 writer，继续发
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_sA, zr_aot_sB)`，允许 destination
+  sync elision。RED/GREEN：RED 为 bool shared-library smoke 新增 `different(21, 22)`
+  case 缺少 `TZrInt64` 参数 bool thunk 且仍走 `CallStaticDirect` + `SyncBoolLocal`；
+  补 not-equal wrapper 与 writer branch 后 focused GREEN 为 typed call contracts 4/0、
+  bool typed direct-call smoke 10/0。测试结果：较宽 WSL GCC focused AOT 组继续通过
+  source 19/0、call contracts 4/0、typed call contracts 4/0、generic numeric contracts 1/0、
+  global contracts 7/0、logical contracts 4/0、power contracts 2/0、frame setup 1/0、
+  return 1/0、value SemIR 4/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool smoke 10/0、u64 smoke 14/0、f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、
+  typed scalar 1/0、value-type 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-i64-two-arg-not-equal-bool-typed-thunk.md`。
+  文件规模：bool thunk 主文件 546 physical / 475 non-empty lines，typed call contract
+  719 physical / 681 non-empty lines，bool smoke 282 physical / 261 non-empty lines。
+  备注：本切片仍不关闭 07-S5；remaining signed comparisons、inline structs、`in`/`out`
+  writeback、deopt/dynamic bridges、broader ABI、dynamic value access helpers、
+  runtime-failure-capable division/modulo policy 与 08-12 仍待后续。
+
+- 2026-06-23 04:43:21 +08:00 · M1.5 / 07-S5 static i64 two-arg equal bool
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：mixed `bool(i64, i64)` typed direct-call route 从
+  signed less-than 扩展到 signed equality。`backend_aot_c_typed_bool_thunks.c`
+  将 i64 bool-return recognizer 泛化为 shared compare helper，新增
+  `LOGICAL_EQUAL_SIGNED/FUNCTION_RETURN` wrapper，并在 mixed can-emit gate 中同时接受
+  `<` 与 `==`。equality thunk 发出
+  `return (TZrBool)(zr_aot_arg0 == zr_aot_arg1);`。调用侧复用既有
+  `zr_aot_static_i64_bool_two_arg_direct_call` route proof 与 writer，继续要求 bool
+  destination local、两个已写入 i64 argument locals，并发
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_sA, zr_aot_sB)`，允许 destination
+  sync elision。RED/GREEN：RED 为 bool shared-library smoke 新增 `same(21, 21)` case
+  缺少 `TZrInt64` 参数 bool thunk 且仍走 `CallStaticDirect` + `SyncBoolLocal`；补
+  shared i64 compare recognizer、equality wrapper 与 writer branch 后 focused GREEN 为
+  typed call contracts 4/0、bool typed direct-call smoke 9/0。测试结果：较宽 WSL GCC
+  focused AOT 组继续通过 source 19/0、call contracts 4/0、typed call contracts 4/0、
+  generic numeric contracts 1/0、global contracts 7/0、logical contracts 4/0、
+  power contracts 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、shared 8/0、
+  call smoke 5/0、typed direct-call 5/0、bool smoke 9/0、u64 smoke 14/0、
+  f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、typed scalar 1/0、value-type 1/0、
+  generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、power smoke 1/0。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-static-i64-two-arg-equal-bool-typed-thunk.md`。
+  文件规模：bool thunk 主文件 529 physical / 460 non-empty lines，typed direct-call
+  726 physical / 649 non-empty lines，typed call contract 717 physical / 679 non-empty
+  lines，bool smoke 254 physical / 235 non-empty lines。备注：本切片仍不关闭 07-S5；
+  additional signed comparisons、inline structs、`in`/`out` writeback、deopt/dynamic
+  bridges、broader ABI、dynamic value access helpers、runtime-failure-capable
+  division/modulo policy 与 08-12 仍待后续。
+
+- 2026-06-23 04:30:53 +08:00 · M1.5 / 07-S5 static i64 two-arg less bool
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：新增 mixed scalar native signature 覆盖
+  `bool smaller(int left, int right) { return left < right; }` 形态。
+  `backend_aot_c_typed_bool_thunks.c` 识别 bool 返回、两个 i64 参数且函数体为
+  `LOGICAL_LESS_SIGNED/FUNCTION_RETURN` 的 callee，并生成
+  `static TZrBool zr_aot_typed_bool_fn_N(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1)`
+  以及 `return (TZrBool)(zr_aot_arg0 < zr_aot_arg1);`。
+  `backend_aot_c_typed_direct_calls.c` 新增 route proof：destination 为 bool scalar local、
+  `functionSlot + 1u` 与 `functionSlot + 2u` 均为已写入 i64 scalar local，callee 命中新
+  recognizer 后发 direct typed call。`backend_aot_c_lowering_calls.c` 新增
+  `zr_aot_static_i64_bool_two_arg_direct_call` writer，调用侧生成
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_sA, zr_aot_sB)`，并允许 destination
+  sync elision。RED/GREEN：RED 为 bool shared-library smoke 中新增
+  `smaller(7, 9)` case 缺少 `TZrInt64` 参数 bool thunk declaration/definition 且仍走
+  `ZrLibrary_AotRuntime_CallStaticDirect` + `SyncBoolLocal`；实现 recognizer、writer 与
+  route 后 focused GREEN 为 typed call contracts 4/0、bool typed direct-call smoke 8/0。
+  测试结果：较宽 WSL GCC focused AOT 组继续通过 source 19/0、call contracts 4/0、
+  typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、
+  value SemIR 4/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool smoke 8/0、u64 smoke 14/0、f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、
+  typed scalar 1/0、value-type 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-i64-two-arg-less-bool-typed-thunk.md`。
+  文件规模：bool thunk 主文件 506 physical / 440 non-empty lines，typed direct-call
+  726 physical / 649 non-empty lines，call lowering 691 physical / 655 non-empty lines，
+  bool smoke 226 physical / 209 non-empty lines。备注：本切片仍不关闭 07-S5；inline
+  structs、`in`/`out` writeback、deopt/dynamic bridges、broader ABI、dynamic value access
+  helpers、runtime-failure-capable division/modulo policy 与 08-12 仍待后续。
+
+- 2026-06-23 04:01:46 +08:00 · M1.5 / 07-S5 static two-arg bool inequality
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：`backend_aot_c_typed_bool_thunks.c` 新增二参 bool
+  `left != right` recognizer，复用 compact bool compare helper 覆盖
+  `LOGICAL_NOT_EQUAL_BOOL/FUNCTION_RETURN` 形态；thunk 发出
+  `return (TZrBool)(zr_aot_arg0 != zr_aot_arg1);`。调用侧复用既有 bool two-arg direct-call
+  writer 与 route proof，继续在 destination、`functionSlot + 1u`、`functionSlot + 2u`
+  均为已写入 bool scalar locals 时发
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_bA, zr_aot_bB)`，并允许 destination
+  sync elision。bool shared-library smoke 新增 `different(true, false)` 验证结果 42，
+  并拒绝 `CallStaticDirect`、`CallStackValue` 与 typed destination sync。
+  RED/GREEN：RED 为 typed call contract 缺少
+  `backend_aot_c_try_get_bool_arg0_arg1_not_equal_return(`；smoke 同步证明旧生成物仍走
+  `zr_aot_bool_compare_exec` / `SZrTypeValue` frame path；补 compare helper、not-equal wrapper、
+  two-arg can-emit gate 与 exact writer 后 focused GREEN 为 typed call contracts 4/0、
+  bool typed direct-call smoke 7/0。测试结果：较宽 WSL GCC focused AOT 组继续通过 source 19/0、
+  call contracts 4/0、typed call contracts 4/0、generic numeric contracts 1/0、global contracts 7/0、
+  logical contracts 4/0、power contracts 2/0、frame setup 1/0、return 1/0、value SemIR 4/0、
+  shared 8/0、call smoke 5/0、typed direct-call 5/0、bool smoke 7/0、u64 smoke 14/0、
+  f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、typed scalar 1/0、value-type 1/0、
+  generic numeric smoke 1/0、global smoke 9/0、logical smoke 4/0、power smoke 1/0。
+  产出：`tests/acceptance/2026-06-23-aot-m1-5-static-bool-two-arg-not-equal-typed-thunk.md`。
+  文件规模：bool thunk 主文件 446 physical / 388 non-empty lines，typed call contract
+  695 physical / 657 non-empty lines，bool smoke 198 physical / 183 non-empty lines，
+  bool smoke support 211 physical / 191 non-empty lines。
+  备注：本切片仍不关闭 07-S5；inline structs、`in`/`out` writeback、deopt/dynamic
+  bridges、broader ABI 与 08-12 仍待后续。
+
+- 2026-06-23 03:46:11 +08:00 · M1.5 / 07-S5 typed direct-call bool smoke
+  support split · 状态：支持子切片完成、07-S5 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 `tests/parser/aot_c_typed_direct_call_bool_smoke_support.h`，把 bool
+  typed direct-call shared-library smoke 的项目写入、binary/AOT 生成、生成 C 断言、Unix
+  shared-library 编译和 runtime entry 执行集中到 `SZrAotTypedDirectCallBoolSmokeCase`
+  harness；`test_aot_c_typed_direct_call_bool_shared_library_smoke.c` 只保留 6 个具体 case
+  与 `RUN_TEST` 列表。RED/GREEN：这是 support split，无新增行为 RED；拆分后 focused
+  GREEN 为 bool typed direct-call smoke 6/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-typed-direct-call-bool-smoke-support-split.md`。
+  文件规模：bool smoke 主文件从 914 physical / 847 non-empty lines 降至 170 physical /
+  157 non-empty lines；新增 support header 211 physical / 191 non-empty lines。
+  备注：本切片不关闭 07-S5，也不新增 typed thunk 行为；为后续 bool inequality 等小切片留出
+  测试承载空间。
+
+- 2026-06-23 03:39:28 +08:00 · M1.5 / 07-S5 static two-arg bool equality
+  typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
+  08-12 未开始 · 完成项目：`backend_aot_c_typed_bool_thunks.c` 新增二参 bool
+  `left == right` recognizer，覆盖 `LOGICAL_EQUAL_BOOL/FUNCTION_RETURN` 形态；
+  thunk 发出 `return (TZrBool)(zr_aot_arg0 == zr_aot_arg1);`。调用侧复用既有
+  bool two-arg direct-call writer 与 route proof，继续在 destination、
+  `functionSlot + 1u`、`functionSlot + 2u` 均为已写入 bool scalar locals 时发
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(state, zr_aot_bA, zr_aot_bB)`，并允许
+  destination sync elision。bool shared-library smoke 新增 `same(true, true)` 验证结果 42，
+  并拒绝 `CallStaticDirect`、`CallStackValue` 与 typed destination sync。
+  RED/GREEN：RED 为 typed call contract 缺少
+  `backend_aot_c_try_get_bool_arg0_arg1_equal_return(`；smoke 同步证明旧生成物仍走
+  `zr_aot_bool_compare_exec` / `SZrTypeValue` frame path；补 recognizer、two-arg
+  can-emit gate 与 exact writer 后 focused GREEN 为 typed call contracts 4/0、
+  bool typed direct-call smoke 6/0。测试结果：较宽 WSL GCC focused AOT 组继续通过
+  source 19/0、call contracts 4/0、typed call contracts 4/0、generic numeric contracts 1/0、
+  global contracts 7/0、logical contracts 4/0、power contracts 2/0、frame setup 1/0、
+  return 1/0、value SemIR 4/0、shared 8/0、call smoke 5/0、typed direct-call 5/0、
+  bool smoke 6/0、u64 smoke 14/0、f64 smoke 11/0、arithmetic 5/0、bitwise 6/0、
+  typed scalar 1/0、value-type 1/0、generic numeric smoke 1/0、global smoke 9/0、
+  logical smoke 4/0、power smoke 1/0。产出：
+  `tests/acceptance/2026-06-23-aot-m1-5-static-bool-two-arg-equal-typed-thunk.md`。
+  文件规模：bool thunk 主文件 423 physical / 368 non-empty lines，typed call contract
+  692 physical / 654 non-empty lines，bool smoke 914 physical / 847 non-empty lines。
+  备注：本切片仍不关闭 07-S5；bool inequality、inline structs、`in`/`out` writeback、
+  deopt/dynamic bridges、broader ABI 与 08-12 仍待后续。
+
 - 2026-06-23 03:24:18 +08:00 · M1.5 / 07-S5 static one-arg bool logical-not
   typed thunk direct-call 切片 · 状态：子切片完成、07-S5 部分完成、M1.5/07 部分完成、
   08-12 未开始 · 完成项目：`backend_aot_c_typed_bool_thunks.c` 新增一参 bool

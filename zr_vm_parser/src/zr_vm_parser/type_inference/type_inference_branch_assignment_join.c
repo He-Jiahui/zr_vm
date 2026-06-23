@@ -6,6 +6,8 @@
 #include "zr_vm_parser/compiler.h"
 
 #include "type_inference_branch_assignment_segments.h"
+#include "type_inference_constant_eval.h"
+#include "type_inference_semantic_facts.h"
 
 #include "zr_vm_core/string.h"
 #include "zr_vm_common/zr_parser_conf.h"
@@ -267,6 +269,26 @@ static TZrBool type_inference_branch_assignment_numeric_range(const SZrInferredT
     *outMin = type->minValue;
     *outMax = type->maxValue;
     return ZR_TRUE;
+}
+
+static TZrBool type_inference_branch_assignment_condition_is_known_bool(
+        SZrCompilerState *cs,
+        SZrAstNode *condition,
+        TZrBool *outValue) {
+    if (outValue != ZR_NULL) {
+        *outValue = ZR_FALSE;
+    }
+    if (condition == ZR_NULL || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (condition->type == ZR_AST_BOOLEAN_LITERAL) {
+        *outValue = condition->data.booleanLiteral.value;
+        return ZR_TRUE;
+    }
+    if (type_inference_logical_fact_known_bool_value(cs, condition, outValue, ZR_NULL)) {
+        return ZR_TRUE;
+    }
+    return type_inference_node_bool_value(condition, outValue);
 }
 
 static TZrBool type_inference_branch_assignment_result_init(SZrState *state,
@@ -677,6 +699,29 @@ static TZrBool type_inference_branch_assignment_join_type(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+static TZrBool type_inference_branch_assignment_commit_result(
+        SZrCompilerState *cs,
+        SZrTypeInferenceBranchAssignmentResult *result) {
+    TZrSize index;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL ||
+        result == ZR_NULL || !result->isInitialized) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < result->bindings.length; index++) {
+        SZrTypeInferenceBranchAssignmentBindingType *binding =
+                (SZrTypeInferenceBranchAssignmentBindingType *)ZrCore_Array_Get(&result->bindings, index);
+        if (binding == ZR_NULL ||
+            binding->name == ZR_NULL ||
+            !binding->hasType ||
+            !ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, binding->name, &binding->type)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrParser_TypeInference_TryJoinIfElseNumericAssignments(SZrCompilerState *cs,
                                                                SZrAstNode *ifNode) {
     SZrIfExpression *ifExpr;
@@ -687,6 +732,8 @@ TZrBool ZrParser_TypeInference_TryJoinIfElseNumericAssignments(SZrCompilerState 
     SZrTypeInferenceBranchAssignmentResult elseResult;
     SZrTypeInferenceBranchAssignmentResult joinedResult;
     TZrBool initialized;
+    TZrBool conditionKnown = ZR_FALSE;
+    TZrBool conditionValue = ZR_FALSE;
     TZrBool joined = ZR_FALSE;
     TZrSize index;
 
@@ -702,6 +749,10 @@ TZrBool ZrParser_TypeInference_TryJoinIfElseNumericAssignments(SZrCompilerState 
     if (ifExpr->thenExpr == ZR_NULL) {
         return ZR_FALSE;
     }
+    conditionKnown = type_inference_branch_assignment_condition_is_known_bool(
+            cs,
+            ifExpr->condition,
+            &conditionValue);
 
     memset(&thenPlan, 0, sizeof(thenPlan));
     memset(&elsePlan, 0, sizeof(elsePlan));
@@ -740,6 +791,27 @@ TZrBool ZrParser_TypeInference_TryJoinIfElseNumericAssignments(SZrCompilerState 
                     &joinedResult,
                     type_inference_branch_assignment_plan_target_count(&targetPlan));
     if (!initialized) {
+        goto cleanup;
+    }
+
+    if (conditionKnown) {
+        SZrTypeInferenceBranchAssignmentPlan *activePlan =
+                conditionValue ? &thenPlan : &elsePlan;
+        SZrTypeInferenceBranchAssignmentResult *activeResult =
+                conditionValue ? &thenResult : &elseResult;
+        SZrAstNode *activeBranch = conditionValue ? ifExpr->thenExpr : ifExpr->elseExpr;
+        if (!activePlan->hasAssignment) {
+            goto cleanup;
+        }
+        if (!type_inference_branch_assignment_infer_plan(cs,
+                                                         ifExpr->condition,
+                                                         activeBranch,
+                                                         activePlan,
+                                                         conditionValue ? ZR_FALSE : ZR_TRUE,
+                                                         activeResult)) {
+            goto cleanup;
+        }
+        joined = type_inference_branch_assignment_commit_result(cs, activeResult);
         goto cleanup;
     }
 
@@ -851,18 +923,7 @@ TZrBool ZrParser_TypeInference_TryJoinIfElseNumericAssignments(SZrCompilerState 
         }
     }
 
-    joined = ZR_TRUE;
-    for (index = 0; index < joinedResult.bindings.length; index++) {
-        SZrTypeInferenceBranchAssignmentBindingType *binding =
-                (SZrTypeInferenceBranchAssignmentBindingType *)ZrCore_Array_Get(&joinedResult.bindings, index);
-        if (binding == ZR_NULL ||
-            binding->name == ZR_NULL ||
-            !binding->hasType ||
-            !ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, binding->name, &binding->type)) {
-            joined = ZR_FALSE;
-            break;
-        }
-    }
+    joined = type_inference_branch_assignment_commit_result(cs, &joinedResult);
 
 cleanup:
     type_inference_branch_assignment_result_free(cs->state, &joinedResult);

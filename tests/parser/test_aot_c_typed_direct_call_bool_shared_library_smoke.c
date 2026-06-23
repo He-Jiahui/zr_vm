@@ -1,10 +1,7 @@
-#include "aot_c_typed_direct_call_arithmetic_smoke_support.h"
+#include "aot_c_typed_direct_call_bool_smoke_support.h"
 
 static void test_aot_c_generated_shared_library_executes_static_bool_no_arg_typed_thunk(void) {
-#if !defined(ZR_PLATFORM_UNIX)
-    TEST_IGNORE_MESSAGE("AOT C typed direct-call bool smoke currently validates the Unix shared-library path");
-#else
-    const char *source =
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
             "func yes(): bool {\n"
             "    return true;\n"
             "}\n"
@@ -12,147 +9,53 @@ static void test_aot_c_generated_shared_library_executes_static_bool_no_arg_type
             "if (!flag) {\n"
             "    return 0;\n"
             "}\n"
-            "return 42;";
-    const char *projectJson =
-            "{"
-            "\"name\":\"aot-runtime-static-bool-no-arg-typed-call-smoke\","
-            "\"source\":\"src\","
-            "\"binary\":\"bin\","
-            "\"entry\":\"main\""
-            "}";
-    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-    SZrFunction *function;
-    SZrLibrary_Project *project;
-    SZrBinaryWriterOptions binaryOptions;
-    SZrAotWriterOptions aotOptions;
-    SZrTypeValue result;
-    TZrBytePtr embeddedBlob = ZR_NULL;
-    TZrSize embeddedBlobLength = 0u;
-    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
-    TZrChar projectPath[ZR_TESTS_PATH_MAX];
-    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
-    TZrChar zroPath[ZR_TESTS_PATH_MAX];
-    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
-    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
-    char *generatedCText;
-    char command[4096];
+            "return 42;",
+            "aot-runtime-static-bool-no-arg-typed-call-smoke",
+            "runtime_static_bool_no_arg_project",
+            "static_bool_no_arg_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state) {",
+            "return ZR_TRUE;",
+            "/* zr_aot_static_bool_no_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state)",
+            "/* zr_aot_static_bool_no_arg_direct_call_sync_stack_slot */",
+            42,
+    };
 
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_source(state, source, "main.zr");
-    TEST_ASSERT_NOT_NULL(function);
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
 
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_no_arg_project",
-                                                       "static_bool_no_arg_typed_call_smoke",
-                                                       ".zrp",
-                                                       projectPath,
-                                                       sizeof(projectPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_no_arg_project/src",
-                                                       "main",
-                                                       ".zr",
-                                                       sourcePath,
-                                                       sizeof(sourcePath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_no_arg_project/bin",
-                                                       "main",
-                                                       ".zro",
-                                                       zroPath,
-                                                       sizeof(zroPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_no_arg_project/bin/aot_c/src",
-                                                       "main",
-                                                       ".c",
-                                                       generatedCPath,
-                                                       sizeof(generatedCPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_no_arg_project/bin/aot_c/lib",
-                                                       "zrvm_aot_main",
-                                                       ".so",
-                                                       sharedLibraryPath,
-                                                       sizeof(sharedLibraryPath)));
+static void test_aot_c_generated_shared_library_returns_static_bool_no_arg_result_through_bool_boundary(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func answer(): bool {\n"
+            "    var result: bool = true;\n"
+            "    return result;\n"
+            "}\n"
+            "var flag: bool = answer();\n"
+            "if (!flag) {\n"
+            "    return 0;\n"
+            "}\n"
+            "return 42;",
+            "aot-runtime-static-bool-return-boundary-smoke",
+            "runtime_static_bool_return_boundary_project",
+            "static_bool_return_boundary_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state) {",
+            "return ZR_TRUE;",
+            "/* zr_aot_static_bool_no_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state)",
+            "/* zr_aot_static_bool_no_arg_direct_call_sync_stack_slot */",
+            42,
+    };
 
-    write_text_file_or_fail(projectPath, projectJson);
-    write_text_file_or_fail(sourcePath, source);
-
-    memset(&binaryOptions, 0, sizeof(binaryOptions));
-    binaryOptions.moduleName = "main";
-    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
-    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
-    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(zroPath, &embeddedBlob, &embeddedBlobLength));
-    TEST_ASSERT_NOT_NULL(embeddedBlob);
-    TEST_ASSERT_GREATER_THAN_UINT64(0u, embeddedBlobLength);
-
-    memset(&aotOptions, 0, sizeof(aotOptions));
-    aotOptions.moduleName = "main";
-    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
-    aotOptions.inputHash = zroHash;
-    aotOptions.embeddedModuleBlob = embeddedBlob;
-    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
-    aotOptions.requireExecutableLowering = ZR_TRUE;
-    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
-
-    generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state) {"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return ZR_TRUE;"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_bool_no_arg_direct_call */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_bool_fn_1(state)"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_bool_no_arg_direct_call_sync_stack_slot */"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
-    free(generatedCText);
-
-    snprintf(command,
-             sizeof(command),
-             "\"%s\" -std=c11 -g -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
-             "-I\"%s/zr_vm_common/include\" "
-             "-I\"%s/zr_vm_core/include\" "
-             "-I\"%s/zr_vm_library/include\" "
-             "\"%s\" "
-             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
-             "-o \"%s\"",
-             ZR_VM_TESTS_C_COMPILER,
-             ZR_VM_TESTS_REPO_ROOT,
-             ZR_VM_TESTS_REPO_ROOT,
-             ZR_VM_TESTS_REPO_ROOT,
-             generatedCPath,
-             ZR_VM_TESTS_BUILD_LIB_DIR,
-             ZR_VM_TESTS_BUILD_LIB_DIR,
-             sharedLibraryPath);
-    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
-
-    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
-    TEST_ASSERT_NOT_NULL(project);
-    state->global->userData = project;
-    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
-                                                          ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
-                                                          ZR_TRUE));
-
-    ZrCore_Value_ResetAsNull(&result);
-    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result),
-                             ZrLibrary_AotRuntime_GetLastError(state->global));
-    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
-    TEST_ASSERT_EQUAL_INT64(42, result.value.nativeObject.nativeInt64);
-    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C,
-                          ZrLibrary_AotRuntime_GetExecutedVia(state->global));
-
-    state->global->userData = ZR_NULL;
-    ZrLibrary_Project_Free(state, project);
-    free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
-    ZrTests_Runtime_State_Destroy(state);
-#endif
+    run_aot_c_typed_direct_call_bool_smoke_with_options(
+            &testCase,
+            "ZrLibrary_AotRuntime_ReturnBool(state, zr_aot_b",
+            ZR_FALSE);
 }
 
 static void test_aot_c_generated_shared_library_executes_static_bool_one_arg_typed_thunk(void) {
-#if !defined(ZR_PLATFORM_UNIX)
-    TEST_IGNORE_MESSAGE("AOT C typed direct-call bool smoke currently validates the Unix shared-library path");
-#else
-    const char *source =
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
             "func pass(flag: bool): bool {\n"
             "    return flag;\n"
             "}\n"
@@ -161,147 +64,24 @@ static void test_aot_c_generated_shared_library_executes_static_bool_one_arg_typ
             "if (!flag) {\n"
             "    return 0;\n"
             "}\n"
-            "return 42;";
-    const char *projectJson =
-            "{"
-            "\"name\":\"aot-runtime-static-bool-one-arg-typed-call-smoke\","
-            "\"source\":\"src\","
-            "\"binary\":\"bin\","
-            "\"entry\":\"main\""
-            "}";
-    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-    SZrFunction *function;
-    SZrLibrary_Project *project;
-    SZrBinaryWriterOptions binaryOptions;
-    SZrAotWriterOptions aotOptions;
-    SZrTypeValue result;
-    TZrBytePtr embeddedBlob = ZR_NULL;
-    TZrSize embeddedBlobLength = 0u;
-    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
-    TZrChar projectPath[ZR_TESTS_PATH_MAX];
-    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
-    TZrChar zroPath[ZR_TESTS_PATH_MAX];
-    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
-    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
-    char *generatedCText;
-    char command[4096];
+            "return 42;",
+            "aot-runtime-static-bool-one-arg-typed-call-smoke",
+            "runtime_static_bool_one_arg_project",
+            "static_bool_one_arg_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0) {",
+            "return zr_aot_arg0;",
+            "/* zr_aot_static_bool_one_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_b",
+            "/* zr_aot_static_bool_one_arg_direct_call_sync_stack_slot */",
+            42,
+    };
 
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_source(state, source, "main.zr");
-    TEST_ASSERT_NOT_NULL(function);
-
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_one_arg_project",
-                                                       "static_bool_one_arg_typed_call_smoke",
-                                                       ".zrp",
-                                                       projectPath,
-                                                       sizeof(projectPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_one_arg_project/src",
-                                                       "main",
-                                                       ".zr",
-                                                       sourcePath,
-                                                       sizeof(sourcePath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_one_arg_project/bin",
-                                                       "main",
-                                                       ".zro",
-                                                       zroPath,
-                                                       sizeof(zroPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_one_arg_project/bin/aot_c/src",
-                                                       "main",
-                                                       ".c",
-                                                       generatedCPath,
-                                                       sizeof(generatedCPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_one_arg_project/bin/aot_c/lib",
-                                                       "zrvm_aot_main",
-                                                       ".so",
-                                                       sharedLibraryPath,
-                                                       sizeof(sharedLibraryPath)));
-
-    write_text_file_or_fail(projectPath, projectJson);
-    write_text_file_or_fail(sourcePath, source);
-
-    memset(&binaryOptions, 0, sizeof(binaryOptions));
-    binaryOptions.moduleName = "main";
-    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
-    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
-    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(zroPath, &embeddedBlob, &embeddedBlobLength));
-    TEST_ASSERT_NOT_NULL(embeddedBlob);
-    TEST_ASSERT_GREATER_THAN_UINT64(0u, embeddedBlobLength);
-
-    memset(&aotOptions, 0, sizeof(aotOptions));
-    aotOptions.moduleName = "main";
-    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
-    aotOptions.inputHash = zroHash;
-    aotOptions.embeddedModuleBlob = embeddedBlob;
-    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
-    aotOptions.requireExecutableLowering = ZR_TRUE;
-    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
-
-    generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0) {"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return zr_aot_arg0;"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_bool_one_arg_direct_call */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_bool_fn_1(state, zr_aot_b"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_bool_one_arg_direct_call_sync_stack_slot */"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
-    free(generatedCText);
-
-    snprintf(command,
-             sizeof(command),
-             "\"%s\" -std=c11 -g -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
-             "-I\"%s/zr_vm_common/include\" "
-             "-I\"%s/zr_vm_core/include\" "
-             "-I\"%s/zr_vm_library/include\" "
-             "\"%s\" "
-             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
-             "-o \"%s\"",
-             ZR_VM_TESTS_C_COMPILER,
-             ZR_VM_TESTS_REPO_ROOT,
-             ZR_VM_TESTS_REPO_ROOT,
-             ZR_VM_TESTS_REPO_ROOT,
-             generatedCPath,
-             ZR_VM_TESTS_BUILD_LIB_DIR,
-             ZR_VM_TESTS_BUILD_LIB_DIR,
-             sharedLibraryPath);
-    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
-
-    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
-    TEST_ASSERT_NOT_NULL(project);
-    state->global->userData = project;
-    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
-                                                          ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
-                                                          ZR_TRUE));
-
-    ZrCore_Value_ResetAsNull(&result);
-    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result),
-                             ZrLibrary_AotRuntime_GetLastError(state->global));
-    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
-    TEST_ASSERT_EQUAL_INT64(42, result.value.nativeObject.nativeInt64);
-    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C,
-                          ZrLibrary_AotRuntime_GetExecutedVia(state->global));
-
-    state->global->userData = ZR_NULL;
-    ZrLibrary_Project_Free(state, project);
-    free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
-    ZrTests_Runtime_State_Destroy(state);
-#endif
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
 }
 
 static void test_aot_c_generated_shared_library_executes_static_bool_one_arg_logical_not_typed_thunk(void) {
-#if !defined(ZR_PLATFORM_UNIX)
-    TEST_IGNORE_MESSAGE("AOT C typed direct-call bool smoke currently validates the Unix shared-library path");
-#else
-    const char *source =
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
             "func invert(flag: bool): bool {\n"
             "    return !flag;\n"
             "}\n"
@@ -310,147 +90,24 @@ static void test_aot_c_generated_shared_library_executes_static_bool_one_arg_log
             "if (flag) {\n"
             "    return 42;\n"
             "}\n"
-            "return 0;";
-    const char *projectJson =
-            "{"
-            "\"name\":\"aot-runtime-static-bool-one-arg-not-typed-call-smoke\","
-            "\"source\":\"src\","
-            "\"binary\":\"bin\","
-            "\"entry\":\"main\""
-            "}";
-    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-    SZrFunction *function;
-    SZrLibrary_Project *project;
-    SZrBinaryWriterOptions binaryOptions;
-    SZrAotWriterOptions aotOptions;
-    SZrTypeValue result;
-    TZrBytePtr embeddedBlob = ZR_NULL;
-    TZrSize embeddedBlobLength = 0u;
-    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
-    TZrChar projectPath[ZR_TESTS_PATH_MAX];
-    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
-    TZrChar zroPath[ZR_TESTS_PATH_MAX];
-    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
-    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
-    char *generatedCText;
-    char command[4096];
+            "return 0;",
+            "aot-runtime-static-bool-one-arg-not-typed-call-smoke",
+            "runtime_static_bool_one_arg_not_project",
+            "static_bool_one_arg_not_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0) {",
+            "return (TZrBool)!zr_aot_arg0;",
+            "/* zr_aot_static_bool_one_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_b",
+            "/* zr_aot_static_bool_one_arg_direct_call_sync_stack_slot */",
+            42,
+    };
 
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_source(state, source, "main.zr");
-    TEST_ASSERT_NOT_NULL(function);
-
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_one_arg_not_project",
-                                                       "static_bool_one_arg_not_typed_call_smoke",
-                                                       ".zrp",
-                                                       projectPath,
-                                                       sizeof(projectPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_one_arg_not_project/src",
-                                                       "main",
-                                                       ".zr",
-                                                       sourcePath,
-                                                       sizeof(sourcePath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_one_arg_not_project/bin",
-                                                       "main",
-                                                       ".zro",
-                                                       zroPath,
-                                                       sizeof(zroPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_one_arg_not_project/bin/aot_c/src",
-                                                       "main",
-                                                       ".c",
-                                                       generatedCPath,
-                                                       sizeof(generatedCPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_one_arg_not_project/bin/aot_c/lib",
-                                                       "zrvm_aot_main",
-                                                       ".so",
-                                                       sharedLibraryPath,
-                                                       sizeof(sharedLibraryPath)));
-
-    write_text_file_or_fail(projectPath, projectJson);
-    write_text_file_or_fail(sourcePath, source);
-
-    memset(&binaryOptions, 0, sizeof(binaryOptions));
-    binaryOptions.moduleName = "main";
-    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
-    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
-    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(zroPath, &embeddedBlob, &embeddedBlobLength));
-    TEST_ASSERT_NOT_NULL(embeddedBlob);
-    TEST_ASSERT_GREATER_THAN_UINT64(0u, embeddedBlobLength);
-
-    memset(&aotOptions, 0, sizeof(aotOptions));
-    aotOptions.moduleName = "main";
-    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
-    aotOptions.inputHash = zroHash;
-    aotOptions.embeddedModuleBlob = embeddedBlob;
-    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
-    aotOptions.requireExecutableLowering = ZR_TRUE;
-    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
-
-    generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0) {"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrBool)!zr_aot_arg0;"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_bool_one_arg_direct_call */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_bool_fn_1(state, zr_aot_b"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_bool_one_arg_direct_call_sync_stack_slot */"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
-    free(generatedCText);
-
-    snprintf(command,
-             sizeof(command),
-             "\"%s\" -std=c11 -g -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
-             "-I\"%s/zr_vm_common/include\" "
-             "-I\"%s/zr_vm_core/include\" "
-             "-I\"%s/zr_vm_library/include\" "
-             "\"%s\" "
-             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
-             "-o \"%s\"",
-             ZR_VM_TESTS_C_COMPILER,
-             ZR_VM_TESTS_REPO_ROOT,
-             ZR_VM_TESTS_REPO_ROOT,
-             ZR_VM_TESTS_REPO_ROOT,
-             generatedCPath,
-             ZR_VM_TESTS_BUILD_LIB_DIR,
-             ZR_VM_TESTS_BUILD_LIB_DIR,
-             sharedLibraryPath);
-    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
-
-    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
-    TEST_ASSERT_NOT_NULL(project);
-    state->global->userData = project;
-    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
-                                                          ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
-                                                          ZR_TRUE));
-
-    ZrCore_Value_ResetAsNull(&result);
-    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result),
-                             ZrLibrary_AotRuntime_GetLastError(state->global));
-    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
-    TEST_ASSERT_EQUAL_INT64(42, result.value.nativeObject.nativeInt64);
-    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C,
-                          ZrLibrary_AotRuntime_GetExecutedVia(state->global));
-
-    state->global->userData = ZR_NULL;
-    ZrLibrary_Project_Free(state, project);
-    free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
-    ZrTests_Runtime_State_Destroy(state);
-#endif
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
 }
 
 static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_logical_and_typed_thunk(void) {
-#if !defined(ZR_PLATFORM_UNIX)
-    TEST_IGNORE_MESSAGE("AOT C typed direct-call bool smoke currently validates the Unix shared-library path");
-#else
-    const char *source =
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
             "func both(left: bool, right: bool): bool {\n"
             "    return left && right;\n"
             "}\n"
@@ -460,149 +117,80 @@ static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_log
             "if (flag) {\n"
             "    return 0;\n"
             "}\n"
-            "return 42;";
-    const char *projectJson =
-            "{"
-            "\"name\":\"aot-runtime-static-bool-two-arg-typed-call-smoke\","
-            "\"source\":\"src\","
-            "\"binary\":\"bin\","
-            "\"entry\":\"main\""
-            "}";
-    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-    SZrFunction *function;
-    SZrLibrary_Project *project;
-    SZrBinaryWriterOptions binaryOptions;
-    SZrAotWriterOptions aotOptions;
-    SZrTypeValue result;
-    TZrBytePtr embeddedBlob = ZR_NULL;
-    TZrSize embeddedBlobLength = 0u;
-    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
-    TZrChar projectPath[ZR_TESTS_PATH_MAX];
-    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
-    TZrChar zroPath[ZR_TESTS_PATH_MAX];
-    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
-    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
-    char *generatedCText;
-    char command[4096];
+            "return 42;",
+            "aot-runtime-static-bool-two-arg-typed-call-smoke",
+            "runtime_static_bool_two_arg_project",
+            "static_bool_two_arg_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 && zr_aot_arg1);",
+            "/* zr_aot_static_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_b",
+            "/* zr_aot_static_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
 
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_source(state, source, "main.zr");
-    TEST_ASSERT_NOT_NULL(function);
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
 
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_two_arg_project",
-                                                       "static_bool_two_arg_typed_call_smoke",
-                                                       ".zrp",
-                                                       projectPath,
-                                                       sizeof(projectPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_two_arg_project/src",
-                                                       "main",
-                                                       ".zr",
-                                                       sourcePath,
-                                                       sizeof(sourcePath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_two_arg_project/bin",
-                                                       "main",
-                                                       ".zro",
-                                                       zroPath,
-                                                       sizeof(zroPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_two_arg_project/bin/aot_c/src",
-                                                       "main",
-                                                       ".c",
-                                                       generatedCPath,
-                                                       sizeof(generatedCPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_two_arg_project/bin/aot_c/lib",
-                                                       "zrvm_aot_main",
-                                                       ".so",
-                                                       sharedLibraryPath,
-                                                       sizeof(sharedLibraryPath)));
+static void test_aot_c_generated_shared_library_executes_static_bool_three_arg_logical_and_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func all(left: bool, middle: bool, right: bool): bool {\n"
+            "    return left && middle && right;\n"
+            "}\n"
+            "var left: bool = true;\n"
+            "var middle: bool = true;\n"
+            "var right: bool = true;\n"
+            "var flag: bool = all(left, middle, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-bool-three-arg-typed-call-smoke",
+            "runtime_static_bool_three_arg_project",
+            "static_bool_three_arg_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1, TZrBool zr_aot_arg2);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1, TZrBool zr_aot_arg2) {",
+            "return (TZrBool)(zr_aot_arg0 && zr_aot_arg1 && zr_aot_arg2);",
+            "/* zr_aot_static_bool_three_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_b",
+            "/* zr_aot_static_bool_three_arg_direct_call_sync_stack_slot */",
+            42,
+    };
 
-    write_text_file_or_fail(projectPath, projectJson);
-    write_text_file_or_fail(sourcePath, source);
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
 
-    memset(&binaryOptions, 0, sizeof(binaryOptions));
-    binaryOptions.moduleName = "main";
-    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
-    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
-    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(zroPath, &embeddedBlob, &embeddedBlobLength));
-    TEST_ASSERT_NOT_NULL(embeddedBlob);
-    TEST_ASSERT_GREATER_THAN_UINT64(0u, embeddedBlobLength);
+static void test_aot_c_generated_shared_library_executes_static_bool_three_arg_logical_or_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func either3(left: bool, middle: bool, right: bool): bool {\n"
+            "    return left || middle || right;\n"
+            "}\n"
+            "var left: bool = false;\n"
+            "var middle: bool = false;\n"
+            "var right: bool = true;\n"
+            "var flag: bool = either3(left, middle, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-bool-three-arg-or-typed-call-smoke",
+            "runtime_static_bool_three_arg_or_project",
+            "static_bool_three_arg_or_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1, TZrBool zr_aot_arg2);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1, TZrBool zr_aot_arg2) {",
+            "return (TZrBool)(zr_aot_arg0 || zr_aot_arg1 || zr_aot_arg2);",
+            "/* zr_aot_static_bool_three_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_b",
+            "/* zr_aot_static_bool_three_arg_direct_call_sync_stack_slot */",
+            42,
+    };
 
-    memset(&aotOptions, 0, sizeof(aotOptions));
-    aotOptions.moduleName = "main";
-    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
-    aotOptions.inputHash = zroHash;
-    aotOptions.embeddedModuleBlob = embeddedBlob;
-    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
-    aotOptions.requireExecutableLowering = ZR_TRUE;
-    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
-
-    generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1) {"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrBool)(zr_aot_arg0 && zr_aot_arg1);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_bool_two_arg_direct_call */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_bool_fn_1(state, zr_aot_b"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_bool_two_arg_direct_call_sync_stack_slot */"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
-    free(generatedCText);
-
-    snprintf(command,
-             sizeof(command),
-             "\"%s\" -std=c11 -g -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
-             "-I\"%s/zr_vm_common/include\" "
-             "-I\"%s/zr_vm_core/include\" "
-             "-I\"%s/zr_vm_library/include\" "
-             "\"%s\" "
-             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
-             "-o \"%s\"",
-             ZR_VM_TESTS_C_COMPILER,
-             ZR_VM_TESTS_REPO_ROOT,
-             ZR_VM_TESTS_REPO_ROOT,
-             ZR_VM_TESTS_REPO_ROOT,
-             generatedCPath,
-             ZR_VM_TESTS_BUILD_LIB_DIR,
-             ZR_VM_TESTS_BUILD_LIB_DIR,
-             sharedLibraryPath);
-    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
-
-    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
-    TEST_ASSERT_NOT_NULL(project);
-    state->global->userData = project;
-    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
-                                                          ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
-                                                          ZR_TRUE));
-
-    ZrCore_Value_ResetAsNull(&result);
-    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result),
-                             ZrLibrary_AotRuntime_GetLastError(state->global));
-    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
-    TEST_ASSERT_EQUAL_INT64(42, result.value.nativeObject.nativeInt64);
-    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C,
-                          ZrLibrary_AotRuntime_GetExecutedVia(state->global));
-
-    state->global->userData = ZR_NULL;
-    ZrLibrary_Project_Free(state, project);
-    free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
-    ZrTests_Runtime_State_Destroy(state);
-#endif
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
 }
 
 static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_logical_or_typed_thunk(void) {
-#if !defined(ZR_PLATFORM_UNIX)
-    TEST_IGNORE_MESSAGE("AOT C typed direct-call bool smoke currently validates the Unix shared-library path");
-#else
-    const char *source =
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
             "func either(left: bool, right: bool): bool {\n"
             "    return left || right;\n"
             "}\n"
@@ -612,150 +200,591 @@ static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_log
             "if (flag) {\n"
             "    return 42;\n"
             "}\n"
-            "return 0;";
-    const char *projectJson =
-            "{"
-            "\"name\":\"aot-runtime-static-bool-two-arg-or-typed-call-smoke\","
-            "\"source\":\"src\","
-            "\"binary\":\"bin\","
-            "\"entry\":\"main\""
-            "}";
-    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-    SZrFunction *function;
-    SZrLibrary_Project *project;
-    SZrBinaryWriterOptions binaryOptions;
-    SZrAotWriterOptions aotOptions;
-    SZrTypeValue result;
-    TZrBytePtr embeddedBlob = ZR_NULL;
-    TZrSize embeddedBlobLength = 0u;
-    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
-    TZrChar projectPath[ZR_TESTS_PATH_MAX];
-    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
-    TZrChar zroPath[ZR_TESTS_PATH_MAX];
-    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
-    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
-    char *generatedCText;
-    char command[4096];
+            "return 0;",
+            "aot-runtime-static-bool-two-arg-or-typed-call-smoke",
+            "runtime_static_bool_two_arg_or_project",
+            "static_bool_two_arg_or_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 || zr_aot_arg1);",
+            "/* zr_aot_static_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_b",
+            "/* zr_aot_static_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
 
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_source(state, source, "main.zr");
-    TEST_ASSERT_NOT_NULL(function);
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
 
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_two_arg_or_project",
-                                                       "static_bool_two_arg_or_typed_call_smoke",
-                                                       ".zrp",
-                                                       projectPath,
-                                                       sizeof(projectPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_two_arg_or_project/src",
-                                                       "main",
-                                                       ".zr",
-                                                       sourcePath,
-                                                       sizeof(sourcePath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_two_arg_or_project/bin",
-                                                       "main",
-                                                       ".zro",
-                                                       zroPath,
-                                                       sizeof(zroPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_two_arg_or_project/bin/aot_c/src",
-                                                       "main",
-                                                       ".c",
-                                                       generatedCPath,
-                                                       sizeof(generatedCPath)));
-    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_typed_direct_call_bool",
-                                                       "runtime_static_bool_two_arg_or_project/bin/aot_c/lib",
-                                                       "zrvm_aot_main",
-                                                       ".so",
-                                                       sharedLibraryPath,
-                                                       sizeof(sharedLibraryPath)));
+static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_equal_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func same(left: bool, right: bool): bool {\n"
+            "    return left == right;\n"
+            "}\n"
+            "var left: bool = true;\n"
+            "var right: bool = true;\n"
+            "var flag: bool = same(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-bool-two-arg-equal-typed-call-smoke",
+            "runtime_static_bool_two_arg_equal_project",
+            "static_bool_two_arg_equal_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 == zr_aot_arg1);",
+            "/* zr_aot_static_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_b",
+            "/* zr_aot_static_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
 
-    write_text_file_or_fail(projectPath, projectJson);
-    write_text_file_or_fail(sourcePath, source);
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
 
-    memset(&binaryOptions, 0, sizeof(binaryOptions));
-    binaryOptions.moduleName = "main";
-    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
-    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
-    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(zroPath, &embeddedBlob, &embeddedBlobLength));
-    TEST_ASSERT_NOT_NULL(embeddedBlob);
-    TEST_ASSERT_GREATER_THAN_UINT64(0u, embeddedBlobLength);
+static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_not_equal_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func different(left: bool, right: bool): bool {\n"
+            "    return left != right;\n"
+            "}\n"
+            "var left: bool = true;\n"
+            "var right: bool = false;\n"
+            "var flag: bool = different(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-bool-two-arg-not-equal-typed-call-smoke",
+            "runtime_static_bool_two_arg_not_equal_project",
+            "static_bool_two_arg_not_equal_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 != zr_aot_arg1);",
+            "/* zr_aot_static_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_b",
+            "/* zr_aot_static_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
 
-    memset(&aotOptions, 0, sizeof(aotOptions));
-    aotOptions.moduleName = "main";
-    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
-    aotOptions.inputHash = zroHash;
-    aotOptions.embeddedModuleBlob = embeddedBlob;
-    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
-    aotOptions.requireExecutableLowering = ZR_TRUE;
-    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
 
-    generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1) {"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrBool)(zr_aot_arg0 || zr_aot_arg1);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_bool_two_arg_direct_call */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_bool_fn_1(state, zr_aot_b"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_bool_two_arg_direct_call_sync_stack_slot */"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
-    free(generatedCText);
+static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_less_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func smaller(left: int, right: int): bool {\n"
+            "    return left < right;\n"
+            "}\n"
+            "var left: int = 7;\n"
+            "var right: int = 9;\n"
+            "var flag: bool = smaller(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-i64-two-arg-less-bool-typed-call-smoke",
+            "runtime_static_i64_two_arg_less_bool_project",
+            "static_i64_two_arg_less_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 < zr_aot_arg1);",
+            "/* zr_aot_static_i64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_s",
+            "/* zr_aot_static_i64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
 
-    snprintf(command,
-             sizeof(command),
-             "\"%s\" -std=c11 -g -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
-             "-I\"%s/zr_vm_common/include\" "
-             "-I\"%s/zr_vm_core/include\" "
-             "-I\"%s/zr_vm_library/include\" "
-             "\"%s\" "
-             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
-             "-o \"%s\"",
-             ZR_VM_TESTS_C_COMPILER,
-             ZR_VM_TESTS_REPO_ROOT,
-             ZR_VM_TESTS_REPO_ROOT,
-             ZR_VM_TESTS_REPO_ROOT,
-             generatedCPath,
-             ZR_VM_TESTS_BUILD_LIB_DIR,
-             ZR_VM_TESTS_BUILD_LIB_DIR,
-             sharedLibraryPath);
-    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
 
-    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
-    TEST_ASSERT_NOT_NULL(project);
-    state->global->userData = project;
-    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
-                                                          ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
-                                                          ZR_TRUE));
+static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_equal_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func same(left: int, right: int): bool {\n"
+            "    return left == right;\n"
+            "}\n"
+            "var left: int = 21;\n"
+            "var right: int = 21;\n"
+            "var flag: bool = same(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-i64-two-arg-equal-bool-typed-call-smoke",
+            "runtime_static_i64_two_arg_equal_bool_project",
+            "static_i64_two_arg_equal_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 == zr_aot_arg1);",
+            "/* zr_aot_static_i64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_s",
+            "/* zr_aot_static_i64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
 
-    ZrCore_Value_ResetAsNull(&result);
-    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result),
-                             ZrLibrary_AotRuntime_GetLastError(state->global));
-    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
-    TEST_ASSERT_EQUAL_INT64(42, result.value.nativeObject.nativeInt64);
-    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C,
-                          ZrLibrary_AotRuntime_GetExecutedVia(state->global));
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
 
-    state->global->userData = ZR_NULL;
-    ZrLibrary_Project_Free(state, project);
-    free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
-    ZrTests_Runtime_State_Destroy(state);
-#endif
+static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_not_equal_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func different(left: int, right: int): bool {\n"
+            "    return left != right;\n"
+            "}\n"
+            "var left: int = 21;\n"
+            "var right: int = 22;\n"
+            "var flag: bool = different(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-i64-two-arg-not-equal-bool-typed-call-smoke",
+            "runtime_static_i64_two_arg_not_equal_bool_project",
+            "static_i64_two_arg_not_equal_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 != zr_aot_arg1);",
+            "/* zr_aot_static_i64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_s",
+            "/* zr_aot_static_i64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_greater_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func greater(left: int, right: int): bool {\n"
+            "    return left > right;\n"
+            "}\n"
+            "var left: int = 50;\n"
+            "var right: int = 8;\n"
+            "var flag: bool = greater(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-i64-two-arg-greater-bool-typed-call-smoke",
+            "runtime_static_i64_two_arg_greater_bool_project",
+            "static_i64_two_arg_greater_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 > zr_aot_arg1);",
+            "/* zr_aot_static_i64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_s",
+            "/* zr_aot_static_i64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_less_equal_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func at_most(left: int, right: int): bool {\n"
+            "    return left <= right;\n"
+            "}\n"
+            "var left: int = 8;\n"
+            "var right: int = 50;\n"
+            "var flag: bool = at_most(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-i64-two-arg-less-equal-bool-typed-call-smoke",
+            "runtime_static_i64_two_arg_less_equal_bool_project",
+            "static_i64_two_arg_less_equal_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 <= zr_aot_arg1);",
+            "/* zr_aot_static_i64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_s",
+            "/* zr_aot_static_i64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_greater_equal_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func at_least(left: int, right: int): bool {\n"
+            "    return left >= right;\n"
+            "}\n"
+            "var left: int = 50;\n"
+            "var right: int = 8;\n"
+            "var flag: bool = at_least(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-i64-two-arg-greater-equal-bool-typed-call-smoke",
+            "runtime_static_i64_two_arg_greater_equal_bool_project",
+            "static_i64_two_arg_greater_equal_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 >= zr_aot_arg1);",
+            "/* zr_aot_static_i64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_s",
+            "/* zr_aot_static_i64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_less_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func smaller(left: uint, right: uint): bool {\n"
+            "    return left < right;\n"
+            "}\n"
+            "var left: uint = 7;\n"
+            "var right: uint = 9;\n"
+            "var flag: bool = smaller(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-u64-two-arg-less-bool-typed-call-smoke",
+            "runtime_static_u64_two_arg_less_bool_project",
+            "static_u64_two_arg_less_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 < zr_aot_arg1);",
+            "/* zr_aot_static_u64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_equal_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func same(left: uint, right: uint): bool {\n"
+            "    return left == right;\n"
+            "}\n"
+            "var left: uint = 21;\n"
+            "var right: uint = 21;\n"
+            "var flag: bool = same(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-u64-two-arg-equal-bool-typed-call-smoke",
+            "runtime_static_u64_two_arg_equal_bool_project",
+            "static_u64_two_arg_equal_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 == zr_aot_arg1);",
+            "/* zr_aot_static_u64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_not_equal_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func different(left: uint, right: uint): bool {\n"
+            "    return left != right;\n"
+            "}\n"
+            "var left: uint = 21;\n"
+            "var right: uint = 22;\n"
+            "var flag: bool = different(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-u64-two-arg-not-equal-bool-typed-call-smoke",
+            "runtime_static_u64_two_arg_not_equal_bool_project",
+            "static_u64_two_arg_not_equal_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 != zr_aot_arg1);",
+            "/* zr_aot_static_u64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_greater_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func greater(left: uint, right: uint): bool {\n"
+            "    return left > right;\n"
+            "}\n"
+            "var left: uint = 50;\n"
+            "var right: uint = 8;\n"
+            "var flag: bool = greater(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-u64-two-arg-greater-bool-typed-call-smoke",
+            "runtime_static_u64_two_arg_greater_bool_project",
+            "static_u64_two_arg_greater_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 > zr_aot_arg1);",
+            "/* zr_aot_static_u64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_less_equal_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func at_most(left: uint, right: uint): bool {\n"
+            "    return left <= right;\n"
+            "}\n"
+            "var left: uint = 8;\n"
+            "var right: uint = 50;\n"
+            "var flag: bool = at_most(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-u64-two-arg-less-equal-bool-typed-call-smoke",
+            "runtime_static_u64_two_arg_less_equal_bool_project",
+            "static_u64_two_arg_less_equal_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 <= zr_aot_arg1);",
+            "/* zr_aot_static_u64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_greater_equal_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func at_least(left: uint, right: uint): bool {\n"
+            "    return left >= right;\n"
+            "}\n"
+            "var left: uint = 50;\n"
+            "var right: uint = 8;\n"
+            "var flag: bool = at_least(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-u64-two-arg-greater-equal-bool-typed-call-smoke",
+            "runtime_static_u64_two_arg_greater_equal_bool_project",
+            "static_u64_two_arg_greater_equal_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 >= zr_aot_arg1);",
+            "/* zr_aot_static_u64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_u",
+            "/* zr_aot_static_u64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_less_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func smaller(left: float, right: float): bool {\n"
+            "    return left < right;\n"
+            "}\n"
+            "var left: float = 20.5;\n"
+            "var right: float = 21.5;\n"
+            "var flag: bool = smaller(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-f64-two-arg-less-bool-typed-call-smoke",
+            "runtime_static_f64_two_arg_less_bool_project",
+            "static_f64_two_arg_less_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 < zr_aot_arg1);",
+            "/* zr_aot_static_f64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_f",
+            "/* zr_aot_static_f64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_less_equal_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func at_most(left: float, right: float): bool {\n"
+            "    return left <= right;\n"
+            "}\n"
+            "var left: float = 21.5;\n"
+            "var right: float = 21.5;\n"
+            "var flag: bool = at_most(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-f64-two-arg-less-equal-bool-typed-call-smoke",
+            "runtime_static_f64_two_arg_less_equal_bool_project",
+            "static_f64_two_arg_less_equal_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 <= zr_aot_arg1);",
+            "/* zr_aot_static_f64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_f",
+            "/* zr_aot_static_f64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_equal_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func same(left: float, right: float): bool {\n"
+            "    return left == right;\n"
+            "}\n"
+            "var left: float = 21.5;\n"
+            "var right: float = 21.5;\n"
+            "var flag: bool = same(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-f64-two-arg-equal-bool-typed-call-smoke",
+            "runtime_static_f64_two_arg_equal_bool_project",
+            "static_f64_two_arg_equal_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 == zr_aot_arg1);",
+            "/* zr_aot_static_f64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_f",
+            "/* zr_aot_static_f64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_not_equal_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func different(left: float, right: float): bool {\n"
+            "    return left != right;\n"
+            "}\n"
+            "var left: float = 21.5;\n"
+            "var right: float = 22.5;\n"
+            "var flag: bool = different(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-f64-two-arg-not-equal-bool-typed-call-smoke",
+            "runtime_static_f64_two_arg_not_equal_bool_project",
+            "static_f64_two_arg_not_equal_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 != zr_aot_arg1);",
+            "/* zr_aot_static_f64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_f",
+            "/* zr_aot_static_f64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_greater_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func greater(left: float, right: float): bool {\n"
+            "    return left > right;\n"
+            "}\n"
+            "var left: float = 50.5;\n"
+            "var right: float = 8.5;\n"
+            "var flag: bool = greater(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-f64-two-arg-greater-bool-typed-call-smoke",
+            "runtime_static_f64_two_arg_greater_bool_project",
+            "static_f64_two_arg_greater_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 > zr_aot_arg1);",
+            "/* zr_aot_static_f64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_f",
+            "/* zr_aot_static_f64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
+}
+
+static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_greater_equal_bool_typed_thunk(void) {
+    static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
+            "func at_least(left: float, right: float): bool {\n"
+            "    return left >= right;\n"
+            "}\n"
+            "var left: float = 21.5;\n"
+            "var right: float = 21.5;\n"
+            "var flag: bool = at_least(left, right);\n"
+            "if (flag) {\n"
+            "    return 42;\n"
+            "}\n"
+            "return 0;",
+            "aot-runtime-static-f64-two-arg-greater-equal-bool-typed-call-smoke",
+            "runtime_static_f64_two_arg_greater_equal_bool_project",
+            "static_f64_two_arg_greater_equal_bool_typed_call_smoke",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1);",
+            "static TZrBool zr_aot_typed_bool_fn_1(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {",
+            "return (TZrBool)(zr_aot_arg0 >= zr_aot_arg1);",
+            "/* zr_aot_static_f64_bool_two_arg_direct_call */",
+            "zr_aot_typed_bool_fn_1(state, zr_aot_f",
+            "/* zr_aot_static_f64_bool_two_arg_direct_call_sync_stack_slot */",
+            42,
+    };
+
+    run_aot_c_typed_direct_call_bool_smoke(&testCase);
 }
 
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_bool_no_arg_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_returns_static_bool_no_arg_result_through_bool_boundary);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_bool_one_arg_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_bool_one_arg_logical_not_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_bool_two_arg_logical_and_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_bool_three_arg_logical_and_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_bool_three_arg_logical_or_typed_thunk);
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_bool_two_arg_logical_or_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_bool_two_arg_equal_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_bool_two_arg_not_equal_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_two_arg_less_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_two_arg_equal_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_two_arg_not_equal_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_two_arg_greater_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_two_arg_less_equal_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_two_arg_greater_equal_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_less_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_equal_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_not_equal_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_greater_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_less_equal_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_two_arg_greater_equal_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_f64_two_arg_less_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_f64_two_arg_less_equal_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_f64_two_arg_equal_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_f64_two_arg_not_equal_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_f64_two_arg_greater_bool_typed_thunk);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_f64_two_arg_greater_equal_bool_typed_thunk);
     return UNITY_END();
 }

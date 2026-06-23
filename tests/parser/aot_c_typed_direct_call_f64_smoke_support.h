@@ -35,9 +35,14 @@ static void format_aot_c_typed_direct_call_f64_path(char *buffer,
 }
 #endif
 
-static void run_aot_c_typed_direct_call_f64_smoke(const SZrAotTypedDirectCallF64SmokeCase *testCase) {
+static void run_aot_c_typed_direct_call_f64_smoke_with_options(
+        const SZrAotTypedDirectCallF64SmokeCase *testCase,
+        const char *returnBoundaryNeedle,
+        TZrBool allowRuntimeCallFallbacks) {
 #if !defined(ZR_PLATFORM_UNIX)
     (void)testCase;
+    (void)returnBoundaryNeedle;
+    (void)allowRuntimeCallFallbacks;
     TEST_IGNORE_MESSAGE("AOT C typed direct-call f64 smoke currently validates the Unix shared-library path");
 #else
     SZrState *state;
@@ -158,11 +163,16 @@ static void run_aot_c_typed_direct_call_f64_smoke(const SZrAotTypedDirectCallF64
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->returnNeedle));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->directCallMarkerNeedle));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->directCallNeedle));
+    if (returnBoundaryNeedle != ZR_NULL) {
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText, returnBoundaryNeedle));
+    }
     TEST_ASSERT_NULL(strstr(generatedCText, testCase->syncMarkerNeedle));
     TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
+    if (!allowRuntimeCallFallbacks) {
+        TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
+        TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
+    }
     free(generatedCText);
 
     snprintf(command,
@@ -206,6 +216,10 @@ static void run_aot_c_typed_direct_call_f64_smoke(const SZrAotTypedDirectCallF64
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
+}
+
+static void run_aot_c_typed_direct_call_f64_smoke(const SZrAotTypedDirectCallF64SmokeCase *testCase) {
+    run_aot_c_typed_direct_call_f64_smoke_with_options(testCase, ZR_NULL, ZR_FALSE);
 }
 
 #endif

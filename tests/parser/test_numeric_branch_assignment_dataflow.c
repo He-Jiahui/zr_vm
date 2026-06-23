@@ -6,6 +6,7 @@
 #include "harness/runtime_support.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
@@ -529,162 +530,6 @@ static void test_if_else_nested_assignments_join_numeric_range_for_following_exp
     destroy_compiler_state(cs);
 }
 
-static void test_while_assignment_joins_pre_loop_range_for_following_expression(void) {
-    SZrCompilerState *cs = create_compiler_state();
-    SZrString *sourceName;
-    SZrAstNode *ast;
-    SZrAstNode *whileStatement;
-    SZrAstNode *finalExpression;
-    SZrInferredType whileType;
-    SZrInferredType result;
-    const SZrSemanticNumericFact *numericFact;
-    const char *source =
-            "while (flag) {\n"
-            "    narrowed = 10;\n"
-            "}\n"
-            "narrowed + 1;\n";
-
-    sourceName = ZrCore_String_Create(
-            g_state,
-            "numeric_while_branch_assignment_dataflow_test.zr",
-            strlen("numeric_while_branch_assignment_dataflow_test.zr"));
-    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
-    whileStatement = statement_at(ast, 0);
-    finalExpression = expression_statement_expression(statement_at(ast, 1));
-    register_bool_variable(cs, "flag");
-    register_int64_range_variable(cs, "narrowed", 5, 5);
-
-    ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
-    ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
-    TEST_ASSERT_NOT_NULL(ast);
-    TEST_ASSERT_NOT_NULL(whileStatement);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
-    TEST_ASSERT_NOT_NULL(finalExpression);
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, finalExpression, &result));
-    numericFact = ZrParser_SemanticFacts_FindNumericByNode(cs->semanticContext, finalExpression);
-
-    TEST_ASSERT_TRUE(result.hasRangeConstraint);
-    TEST_ASSERT_EQUAL_INT64(6, result.minValue);
-    TEST_ASSERT_EQUAL_INT64(11, result.maxValue);
-    TEST_ASSERT_NOT_NULL(numericFact);
-    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_NUMERIC_FACT_PROMOTION, numericFact->kind);
-    TEST_ASSERT_TRUE(numericFact->hasRange);
-    TEST_ASSERT_EQUAL_INT64(6, numericFact->minValue);
-    TEST_ASSERT_EQUAL_INT64(11, numericFact->maxValue);
-    TEST_ASSERT_FALSE(numericFact->mayOverflow);
-
-    ZrParser_InferredType_Free(g_state, &result);
-    ZrParser_InferredType_Free(g_state, &whileType);
-    ZrParser_Ast_Free(g_state, ast);
-    destroy_compiler_state(cs);
-}
-
-static void test_while_multi_statement_assignment_joins_pre_loop_range_for_following_expression(void) {
-    SZrCompilerState *cs = create_compiler_state();
-    SZrString *sourceName;
-    SZrAstNode *ast;
-    SZrAstNode *whileStatement;
-    SZrAstNode *finalExpression;
-    SZrInferredType whileType;
-    SZrInferredType result;
-    const SZrSemanticNumericFact *numericFact;
-    const char *source =
-            "while (flag) {\n"
-            "    flag;\n"
-            "    narrowed = 10;\n"
-            "    flag;\n"
-            "}\n"
-            "narrowed + 1;\n";
-
-    sourceName = ZrCore_String_Create(
-            g_state,
-            "numeric_while_multi_statement_assignment_dataflow_test.zr",
-            strlen("numeric_while_multi_statement_assignment_dataflow_test.zr"));
-    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
-    whileStatement = statement_at(ast, 0);
-    finalExpression = expression_statement_expression(statement_at(ast, 1));
-    register_bool_variable(cs, "flag");
-    register_int64_range_variable(cs, "narrowed", 5, 5);
-
-    ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
-    ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
-    TEST_ASSERT_NOT_NULL(ast);
-    TEST_ASSERT_NOT_NULL(whileStatement);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
-    TEST_ASSERT_NOT_NULL(finalExpression);
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, finalExpression, &result));
-    numericFact = ZrParser_SemanticFacts_FindNumericByNode(cs->semanticContext, finalExpression);
-
-    TEST_ASSERT_TRUE(result.hasRangeConstraint);
-    TEST_ASSERT_EQUAL_INT64(6, result.minValue);
-    TEST_ASSERT_EQUAL_INT64(11, result.maxValue);
-    TEST_ASSERT_NOT_NULL(numericFact);
-    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_NUMERIC_FACT_PROMOTION, numericFact->kind);
-    TEST_ASSERT_TRUE(numericFact->hasRange);
-    TEST_ASSERT_EQUAL_INT64(6, numericFact->minValue);
-    TEST_ASSERT_EQUAL_INT64(11, numericFact->maxValue);
-    TEST_ASSERT_FALSE(numericFact->mayOverflow);
-
-    ZrParser_InferredType_Free(g_state, &result);
-    ZrParser_InferredType_Free(g_state, &whileType);
-    ZrParser_Ast_Free(g_state, ast);
-    destroy_compiler_state(cs);
-}
-
-static void test_while_multi_target_assignments_join_cross_target_rhs_dependent_range(void) {
-    SZrCompilerState *cs = create_compiler_state();
-    SZrString *sourceName;
-    SZrAstNode *ast;
-    SZrAstNode *whileStatement;
-    SZrAstNode *finalExpression;
-    SZrInferredType whileType;
-    SZrInferredType result;
-    const SZrSemanticNumericFact *numericFact;
-    const char *source =
-            "while (flag) {\n"
-            "    low = 1;\n"
-            "    high = low + 10;\n"
-            "}\n"
-            "high + low;\n";
-
-    sourceName = ZrCore_String_Create(
-            g_state,
-            "numeric_while_multi_target_assignment_dataflow_test.zr",
-            strlen("numeric_while_multi_target_assignment_dataflow_test.zr"));
-    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
-    whileStatement = statement_at(ast, 0);
-    finalExpression = expression_statement_expression(statement_at(ast, 1));
-    register_bool_variable(cs, "flag");
-    register_int64_range_variable(cs, "low", 5, 5);
-    register_int64_range_variable(cs, "high", 20, 20);
-
-    ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
-    ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
-
-    TEST_ASSERT_NOT_NULL(whileStatement);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
-    TEST_ASSERT_NOT_NULL(finalExpression);
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, finalExpression, &result));
-    TEST_ASSERT_TRUE(result.hasRangeConstraint);
-    TEST_ASSERT_EQUAL_INT64(12, result.minValue);
-    TEST_ASSERT_EQUAL_INT64(25, result.maxValue);
-
-    numericFact = ZrParser_SemanticFacts_FindNumericByNode(cs->semanticContext, finalExpression);
-    TEST_ASSERT_NOT_NULL(numericFact);
-    TEST_ASSERT_TRUE(numericFact->hasRange);
-    TEST_ASSERT_EQUAL_INT64(12, numericFact->minValue);
-    TEST_ASSERT_EQUAL_INT64(25, numericFact->maxValue);
-    TEST_ASSERT_FALSE(numericFact->mayOverflow);
-
-    ZrParser_InferredType_Free(g_state, &result);
-    ZrParser_InferredType_Free(g_state, &whileType);
-    ZrParser_Ast_Free(g_state, ast);
-    destroy_compiler_state(cs);
-}
-
 static void test_if_then_assignment_joins_pre_branch_range_for_following_expression(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -804,9 +649,6 @@ int main(void) {
     RUN_TEST(test_if_else_same_target_sequential_assignments_join_rhs_dependent_range_for_following_expression);
     RUN_TEST(test_if_else_multi_target_assignments_join_cross_target_rhs_dependent_range);
     RUN_TEST(test_if_else_nested_assignments_join_numeric_range_for_following_expression);
-    RUN_TEST(test_while_assignment_joins_pre_loop_range_for_following_expression);
-    RUN_TEST(test_while_multi_statement_assignment_joins_pre_loop_range_for_following_expression);
-    RUN_TEST(test_while_multi_target_assignments_join_cross_target_rhs_dependent_range);
     RUN_TEST(test_if_then_assignment_joins_pre_branch_range_for_following_expression);
     RUN_TEST(test_if_else_only_assignment_joins_pre_branch_range_for_following_expression);
     return UNITY_END();
