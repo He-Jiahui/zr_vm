@@ -8,6 +8,7 @@
 void backend_aot_write_llvm_function_body(FILE *file,
                                           SZrState *state,
                                           const SZrAotFunctionTable *functionTable,
-                                          const SZrAotFunctionEntry *entry);
+                                          const SZrAotFunctionEntry *entry,
+                                          TZrBool stripGeneratedSymbols);
 
 #endif

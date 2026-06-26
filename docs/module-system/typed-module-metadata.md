@@ -1,6 +1,8 @@
 ---
 related_code:
   - zr_vm_core/include/zr_vm_core/metadata_token.h
+  - zr_vm_core/include/zr_vm_core/zrp_metadata.h
+  - zr_vm_core/include/zr_vm_core/metadata_runtime.h
   - zr_vm_core/include/zr_vm_core/hash.h
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/include/zr_vm_core/io.h
@@ -8,6 +10,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/function_metadata_binding.c
   - zr_vm_core/src/zr_vm_core/function_metadata_query.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_layout_binding.c
   - zr_vm_core/src/zr_vm_core/hash.c
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
@@ -26,8 +29,16 @@ related_code:
   - zr_vm_library/include/zr_vm_library/zrm.h
   - zr_vm_library/src/zr_vm_library/project/project.c
   - zr_vm_library/src/zr_vm_library/project/project_import_resolver.c
+  - zr_vm_library/src/zr_vm_library/project/project_aot_options.c
+  - zr_vm_library/src/zr_vm_library/project/project_aot_options.h
+  - zr_vm_library/src/zr_vm_library/project/project_features.c
+  - zr_vm_library/src/zr_vm_library/project/project_features.h
+  - zr_vm_library/src/zr_vm_library/project/project_preserve.c
+  - zr_vm_library/src/zr_vm_library/project/project_preserve.h
   - zr_vm_library/src/zr_vm_library/zrm.c
+  - zr_vm_language_server_extension/schemas/zrp.schema.json
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
   - zr_vm_lib_system/include/zr_vm_lib_system/assembly.h
   - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
@@ -68,8 +79,14 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/metadata_token.h
+  - zr_vm_core/include/zr_vm_core/zrp_metadata.h
+  - zr_vm_core/include/zr_vm_core/metadata_runtime.h
   - zr_vm_core/include/zr_vm_core/hash.h
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/include/zr_vm_core/io.h
@@ -77,6 +94,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/function_metadata_binding.c
   - zr_vm_core/src/zr_vm_core/function_metadata_query.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_layout_binding.c
   - zr_vm_core/src/zr_vm_core/hash.c
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
@@ -95,8 +113,16 @@ implementation_files:
   - zr_vm_library/include/zr_vm_library/zrm.h
   - zr_vm_library/src/zr_vm_library/project/project.c
   - zr_vm_library/src/zr_vm_library/project/project_import_resolver.c
+  - zr_vm_library/src/zr_vm_library/project/project_aot_options.c
+  - zr_vm_library/src/zr_vm_library/project/project_aot_options.h
+  - zr_vm_library/src/zr_vm_library/project/project_features.c
+  - zr_vm_library/src/zr_vm_library/project/project_features.h
+  - zr_vm_library/src/zr_vm_library/project/project_preserve.c
+  - zr_vm_library/src/zr_vm_library/project/project_preserve.h
   - zr_vm_library/src/zr_vm_library/zrm.c
+  - zr_vm_language_server_extension/schemas/zrp.schema.json
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
   - zr_vm_lib_system/include/zr_vm_lib_system/assembly.h
   - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
@@ -134,6 +160,10 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c
 plan_sources:
   - user: 2026-03-31 实现 “M6 强类型推断完整闭环计划”
   - .codex/plans/M6 强类型推断完整闭环计划.md
@@ -141,6 +171,8 @@ plan_sources:
   - docs/plans/using/02-using-scopes-and-plugin-guards.md
   - docs/plans/using/03-metadata-and-token-model.md
   - docs/plans/using/07-implementation-blueprint.md
+  - docs/plans/aot/11-metadata.md
+  - docs/plans/aot/12-code-stripping.md
   - user: 2026-04-06 struct 值类型与 native wrapper 分层方案
   - user: 2026-04-06 新的 source-level wrapper decorator surface 和具体 handle_id lowering runtime完善
 tests:
@@ -160,14 +192,45 @@ tests:
   - tests/module/test_metadata_token_model.c
   - tests/module/test_metadata_type_ref_binding.c
   - tests/module/test_metadata_runtime_query.c
+  - tests/module/test_metadata_runtime_typespec_layout.c
   - tests/module/test_metadata_module_hash_golden.c
   - tests/library/test_zrm_container.c
   - tests/library/test_project_import_resolver.c
+  - tests/library/test_project_manifest_normalization.c
   - tests/cli/test_cli_args.c
   - tests/cli/test_cli_project_incremental.c
   - tests/system/test_system_assembly_module.c
   - tests/parser/test_project_import_canonicalization.c
   - tests/acceptance/2026-06-17-using-import-guard.md
+  - tests/acceptance/2026-06-24-aot-11-s7e-zrp-project-manifest-preserve-rule-parsing.md
+  - tests/acceptance/2026-06-25-aot-11-s7f-zrp-project-manifest-aot-mode.md
+  - tests/acceptance/2026-06-25-aot-11-s7i-12-s4c-preserve-method-root-binding.md
+  - tests/acceptance/2026-06-25-aot-11-s7j-12-s4d-dotted-type-method-preserve-roots.md
+  - tests/acceptance/2026-06-25-aot-11-s7k-12-s4e-preserve-feature-condition-model.md
+  - tests/acceptance/2026-06-25-aot-11-s7l-12-s4f-feature-switch-preserve-root-gating.md
+  - tests/acceptance/2026-06-25-aot-11-s7m-12-s4g-generic-preserve-argument-model.md
+  - tests/acceptance/2026-06-25-aot-11-s7n-12-s4h-manifest-generic-preserve-writer-roots.md
+  - tests/acceptance/2026-06-25-aot-11-s7o-12-s4i-manifest-generic-preserve-typespec-binding.md
+  - tests/acceptance/2026-06-25-aot-11-s7p-12-s8h-full-aot-generic-preserve-typespec-closure-gate.md
+  - tests/acceptance/2026-06-25-aot-11-s7q-12-s3a-manifest-generic-preserve-instantiation-root.md
+  - tests/acceptance/2026-06-25-aot-11-s7r-12-s8i-full-aot-generic-instantiation-closure-gate.md
+  - tests/acceptance/2026-06-25-aot-11-s7s-12-s3c-generic-instantiation-open-base-token.md
+  - tests/acceptance/2026-06-25-aot-11-s7t-12-s3d-generic-instantiation-typedef-base-token.md
+  - tests/acceptance/2026-06-25-aot-11-s7u-12-s3e-manifest-generic-synthesized-typespec.md
+  - tests/acceptance/2026-06-25-aot-11-s7v-12-s3f-manifest-generic-methodspec-binding.md
+  - tests/acceptance/2026-06-25-aot-11-s4j-typespec-layout-binding-view.md
+  - tests/acceptance/2026-06-25-aot-11-s4k-type-token-layout-cache.md
+  - tests/acceptance/2026-06-25-aot-11-s4l-layout-id-token-reverse-cache.md
+  - tests/acceptance/2026-06-25-aot-11-s4m-multi-entry-type-layout-cache.md
+  - tests/acceptance/2026-06-25-aot-11-s4n-ctype-id-token-resolver.md
+  - tests/acceptance/2026-06-25-aot-11-s4o-type-layout-token-carrier.md
+  - tests/acceptance/2026-06-26-aot-11-s4p-generated-type-layout-token-population.md
+  - tests/acceptance/2026-06-26-aot-11-s4q-generated-typespec-type-layout-token-population.md
+  - tests/acceptance/2026-06-26-aot-11-s4r-generated-ownership-offset-table.md
+  - tests/acceptance/2026-06-26-aot-12-s7k-zrp-metadata-section-byte-statistics.md
+  - tests/parser/test_aot_c_code_stripping.c
+  - tests/parser/test_aot_c_generic_call_typed.c
+  - tests/parser/test_aot_c_value_type_shared_library_smoke.c
   - tests/fixtures/projects/using_feature_matrix
   - tests/fixtures/projects/using_edge_matrix
   - tests/fixtures/projects/lsp_language_feature_matrix
@@ -228,7 +291,11 @@ metadata/token 本体仍直接升级 `.zro` schema，不保留旧格式双读兼
 - assembly container and packaging
   - [zr_vm_library/include/zr_vm_library/zrm.h](../../zr_vm_library/include/zr_vm_library/zrm.h) and [zr_vm_library/src/zr_vm_library/zrm.c](../../zr_vm_library/src/zr_vm_library/zrm.c) define the `.zrm` archive API, manifest entry, module entries, resource entries, and safe logical-name rules.
   - [zr_vm_library/src/zr_vm_library/project/project.c](../../zr_vm_library/src/zr_vm_library/project/project.c) and [zr_vm_library/src/zr_vm_library/project/project_import_resolver.c](../../zr_vm_library/src/zr_vm_library/project/project_import_resolver.c) parse `assembly.output`, `resources`, and `.zrm` references, and resolve modules from referenced assemblies.
+  - [zr_vm_library/src/zr_vm_library/project/project_features.c](../../zr_vm_library/src/zr_vm_library/project/project_features.c) parses top-level `.zrp` `features` boolean switch values into `SZrLibrary_ProjectFeatureSwitch` entries.
+    - [zr_vm_library/src/zr_vm_library/project/project_preserve.c](../../zr_vm_library/src/zr_vm_library/project/project_preserve.c) parses declaration-level `.zrp` `preserve` rules into `SZrLibrary_ProjectPreserveRule` entries, including optional `feature` / `featureValue` condition declarations and non-empty `arguments` arrays for generic preserve rules. The current CLI AOT C path binds same-module `method` targets to top-level callable function flat indices, expands `type` rules with `members: "methods"` / `"all"` to same-prefix callable roots, applies matching feature switches before injecting roots, forwards generic preserve target/arguments to AOT writer options, binds those generic roots to existing current-module `TYPE_SPEC` records when the metadata signature matches, can synthesize current-function TypeSpec/signature bindings from matching same-module open `TYPE_REF` or `TYPE_DEF` metadata when the TypeSpec is missing, materializes the bound type roots as generic instantiation identities that prefer matching same-module open base tokens while falling back to TypeSpec tokens when no matching open-base record exists, and binds generic method roots to existing current-module MethodSpec-shaped `GENERIC_INST(MEMBER_REF methodToken, args...)` signatures. Full-AOT writer generation rejects generic type preserve roots that are text-only, TypeSpec-unbound, or TypeSpec-only without generic instantiation identity, while accepting MethodSpec-bound generic method roots. Cross-module generic target binding remains future work.
+  - [zr_vm_library/src/zr_vm_library/project/project_aot_options.c](../../zr_vm_library/src/zr_vm_library/project/project_aot_options.c) parses declaration-level `.zrp` `aotMode` into `SZrLibrary_Project.aotMode`, which the CLI/compiler bridge maps to `SZrAotWriterOptions.requireFullAot`.
   - [zr_vm_cli/src/zr_vm_cli/compiler/compiler.c](../../zr_vm_cli/src/zr_vm_cli/compiler/compiler.c) emits project assemblies through `--emit-zrm`.
+    - [zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c](../../zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c) emits project AOT C through `--emit-aot-c`, embeds the `.zro` blob, applies project AOT mode, injects same-module method/type plus generic preserve roots into writer options, binds generic type roots to existing `TYPE_SPEC` token/signature identity when current-function metadata contains a matching `GENERIC_INST` signature, synthesizes a writer-visible current-function TypeSpec/signature pair when a matching open `TYPE_REF` or `TYPE_DEF` record exists but the closed TypeSpec is missing, materializes those bound type roots as generic instantiation identities with `baseToken`, `cInstanceId`, and `shareKind`, and binds generic method roots to existing MethodSpec-shaped `GENERIC_INST(MEMBER_REF methodToken, args...)` signatures. When a same-module `TYPE_REF` or `TYPE_DEF` record matches the generic target name and the TypeSpec base node, that open generic token becomes the instance base token; otherwise the bridge falls back to the TypeSpec token for compatibility. Full-AOT writer generation now rejects manifest generic type roots that remain unbound to TypeSpec metadata or lack generic instantiation identity, while accepting MethodSpec-bound generic method roots.
   - [zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c](../../zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c) exposes the current project assembly resource API as `zr.system.assembly`.
 
 ## Behavior Model
@@ -274,6 +341,40 @@ Typed metadata 现在有一层稳定的 token / signature 表示，用来给后�
 
 TypeRef binding uses the same status/diagnostic pattern: `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus()` reports unmatched, definition mismatch, and layout mismatch for stable `TYPE_REF -> TYPE_DEF` records, and successful member import verification records `type_ref_mismatch` when those records drift while leaving import success best-effort.
 
+Project manifest preserve update (2026-06-24 23:36:19 +08:00): `.zrp` project loading now parses declaration-level `preserve` arrays into `SZrLibrary_ProjectPreserveRule` records on `SZrLibrary_Project`. The parser accepts `type`, `method`, and `generic` rule kinds, a safe dotted `target`, and optional `members` values `all` or `methods`; invalid target text rejects the manifest before the project model is used by later AOT metadata or trimming stages. `zrp.schema.json` mirrors this shape. This is only the manifest declaration surface: later AOT passes must still bind targets to metadata tokens, function flat indices, generic instantiations, and writer roots. Verification covered WSL GCC/clang `zr_vm_project_manifest_normalization_test` 12/0 and `zr_vm_project_import_resolver_test` 9/0, schema JSON parsing, Windows MSVC Debug manifest normalization 12/0 and import resolver 9/0, plus CLI `hello_world`.
+
+Project manifest AOT mode writer-option update (2026-06-25 00:29:49 +08:00): `.zrp` `aotMode` is now consumable by the CLI/compiler AOT writer option bridge. `ZrCli_Compiler_ApplyProjectAotWriterOptions()` reads `SZrLibrary_Project.aotMode` from `SZrCliProjectContext.libraryProject` and writes `SZrAotWriterOptions.requireFullAot`, setting true for `full-aot` and false for default hybrid while preserving the rest of the writer option struct. Verification covered WSL GCC/clang and Windows MSVC Debug `zr_vm_cli_project_incremental_test` 10/0, plus Windows CLI `hello_world`. This update does not add a CLI AOT C emission mode or full-AOT closure diagnostics.
+
+Project CLI AOT C emission update (2026-06-25 01:13:27 +08:00): project compilation now has a real CLI AOT C emission entry through `--emit-aot-c`. `SZrCliCommand.emitAotC` flows into `ZrCli_Compiler_CompileProjectWithSummary()`, which writes `.zro` first, reads that binary as the embedded module blob, sets `SZrAotWriterOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY`, applies project `aotMode` through `ZrCli_Compiler_ApplyProjectAotWriterOptions()`, and emits `bin/aot_c/src/<module>.c`. The incremental manifest is now v3 and records `aot_c` paths for stale artifact cleanup. Verification covered WSL GCC/clang and Windows MSVC Debug `cli_args|cli_project_incremental`, plus a Windows CLI run that regenerated `bin/aot_c/src/main.c` after deletion. This still does not bind preserve rules to writer roots or implement default-minimal metadata policy.
+
+Project manifest method preserve root update (2026-06-25 01:53:48 +08:00): same-module `.zrp` `preserve` rules with `kind: "method"` now bind to AOT writer manifest roots during project AOT C emission. `ZrParser_Writer_ResolveTopLevelCallableFlatIndex()` resolves an entry function top-level callable binding name to the AOT flat function index, and `ZrCli_Compiler_ApplyProjectAotPreserveRules()` injects the resolved roots into `SZrAotWriterOptions.manifestPreserveFunctionFlatIndices`. The focused test proves `main.kept` preserves an otherwise unreachable callable child under opt-in code stripping. Verification covered WSL GCC, WSL clang, and Windows MSVC Debug focused CTest groups. Type/generic preserve targets, metadata-token resolution, cross-module method binding, and default-minimal metadata policy remain future work.
+
+Project manifest type/method preserve root update (2026-06-25 02:09:47 +08:00): method preserve matching now treats dotted callable names such as `Widget.kept` as exact top-level callable binding names before falling back to current-module prefix stripping. Type preserve rules with `members: "methods"` or `"all"` scan top-level callable bindings and inject every `<type>.` prefixed callable as a writer manifest root, so `Widget` can preserve `Widget.used` and `Widget.kept` together. Verification covered WSL GCC, WSL clang, and Windows MSVC Debug `cli_project_incremental|cli_aot_writer_options|aot_c_code_stripping`. Generic preserve, metadata-token resolution, cross-module targets, annotations, and feature switches remain future work.
+
+Project manifest preserve feature-condition update (2026-06-25 02:23:14 +08:00): `.zrp` `preserve` rules now carry the manifest-side feature switch condition model. `SZrLibrary_ProjectPreserveRule` stores `feature`, `hasFeatureValue`, and `featureValue`; the parser accepts a safe dotted `feature` name only when paired with boolean `featureValue`, rejects either field on its own, and `zrp.schema.json` mirrors the same fields and dependency constraints. Verification covered WSL GCC, WSL clang, and Windows MSVC Debug `zr_vm_project_manifest_normalization_test` 17/0, schema JSON parsing, WSL GCC `cli_aot_writer_options|aot_c_code_stripping` CTest 2/2, and `git diff --check`. This is declaration modeling only: build feature values are not yet evaluated to enable/disable roots.
+
+Project manifest feature switch root-gating update (2026-06-25 02:40:15 +08:00): `.zrp` manifests now have a top-level `features` object for boolean switch values. `project_features.{h,c}` owns parsing and memory cleanup so the large project loader stays an orchestration boundary. `ZrCli_Compiler_ApplyProjectAotPreserveRules()` evaluates a rule's `feature` / `featureValue` before resolving method/type targets: matching switches activate the preserve rule, missing or mismatched switches skip it. Verification covered WSL GCC, WSL clang, and Windows MSVC Debug `zr_vm_project_manifest_normalization_test` 19/0 and `zr_vm_cli_aot_writer_options_test` 5/0, WSL GCC CTest `cli_aot_writer_options|aot_c_code_stripping` 2/2, schema JSON parsing, and `git diff --check`. Generic preserve, metadata-token binding, cross-module roots, annotations, and default-minimal metadata remain future work.
+
+Project manifest generic preserve argument update (2026-06-25 03:02:14 +08:00): `.zrp` generic preserve rules now have a concrete argument declaration surface. `SZrLibrary_ProjectPreserveRule` stores `genericArguments`, `genericArgumentCount`, and `genericArgumentCapacity`; `project_preserve.c` requires `kind: "generic"` rules to carry a non-empty `arguments` array of safe dotted type names, rejects missing/empty/non-array/invalid arguments, and rejects `arguments` on non-generic rules. `zrp.schema.json` mirrors `arguments`, `minItems: 1`, and the generic-only conditional constraint. Verification covered WSL GCC, WSL clang, and Windows MSVC Debug `zr_vm_project_manifest_normalization_test` 25/0, schema JSON parsing, WSL GCC CTest `cli_aot_writer_options|aot_c_code_stripping` 2/2, and `git diff --check`. This is declaration modeling only; generic instantiation roots, MethodSpec/TypeSpec token binding, cross-module target binding, and default-minimal metadata remain future work.
+
+Project manifest generic preserve writer-root update (2026-06-25 03:27:16 +08:00): `.zrp` generic preserve declarations now have a writer-visible bridge. `SZrAotWriterOptions` carries `manifestPreserveGenericRoots` and `manifestPreserveGenericRootCount`; `ZrCli_Compiler_ApplyProjectAotPreserveRules()` forwards a generic preserve rule's target and arguments after feature gating, and generated AOT C records `manifest.genericRoots` plus each target/argument as a header diagnostic. Verification covered WSL GCC, WSL clang, and Windows MSVC Debug `zr_vm_cli_aot_writer_options_test` 6/0, CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed` 3/3 in all three environments, schema JSON parsing, and `git diff --check` with only LF/CRLF warnings. This still does not materialize MethodSpec/TypeSpec tokens, generic instantiation table entries, cross-module generic targets, or default-minimal metadata output.
+
+Project manifest generic preserve TypeSpec binding update (2026-06-25 04:00:47 +08:00): `.zrp` generic preserve roots can now bind to an already-emitted current-module `TYPE_SPEC` metadata record. `SZrAotManifestGenericRoot` carries optional TypeSpec/signature token and hash fields; the CLI AOT preserve bridge matches the root target and concrete arguments against `GENERIC_INST(TYPE_REF target, args...)` signatures in the current function metadata record stream, then generated AOT C reports the bound TypeSpec token, paired signature token, and signature hash in the manifest diagnostics. Verification covered WSL GCC `zr_vm_cli_aot_writer_options_test` 7/0, WSL GCC/clang and Windows MSVC Debug CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model` 5/5, and `git diff --check` with only LF/CRLF warnings. This is a narrow current-module existing-TypeSpec bridge; MethodSpec parsing, TypeSpec synthesis, generic instantiation materialization, cross-module generic targets, and default-minimal metadata output remain open.
+
+Project manifest full-AOT generic preserve TypeSpec closure update (2026-06-25 04:14:31 +08:00): full-AOT AOT C generation now consumes the TypeSpec binding status above as a closure gate. `ZrParser_Writer_WriteAotCFileWithOptions()` rejects `SZrAotWriterOptions.manifestPreserveGenericRoots` when `requireFullAot` is true and any root lacks `hasTypeSpecBinding`, so a text-only `.zrp` generic preserve declaration is not treated as a complete AOT generic closure. Hybrid generation still emits the manifest diagnostics for unbound roots. Verification covered WSL GCC `zr_vm_cli_aot_writer_options_test` 8/0 plus WSL GCC/clang and Windows MSVC Debug CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model` 5/5. This does not synthesize missing TypeSpecs, parse MethodSpecs, materialize generic instantiation roots, bind cross-module generic targets, or complete default-minimal metadata output.
+
+Project manifest generic preserve instantiation update (2026-06-25 04:50:01 +08:00): TypeSpec-bound `.zrp` generic preserve roots now also carry a writer-visible generic instantiation identity. `SZrAotManifestGenericRoot` stores `hasGenericInstantiationBinding`, `genericInstantiationBaseToken`, `genericInstantiationInstanceId`, and `genericInstantiationShareKind`; the CLI AOT preserve bridge builds resolved type arguments from the manifest concrete argument text and reuses `SZrGenericInstantiationTable_GetOrAddResolved()` to assign a stable instance id/share kind. Generated AOT C reports `genericInstance.baseToken`, `genericInstance.id`, and `genericInstance.shareKind` in the manifest diagnostics. Verification covered WSL GCC `zr_vm_cli_aot_writer_options_test` 9/0 plus WSL GCC/clang and Windows MSVC Debug CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model` 5/5. This is TypeSpec-backed identity materialization only; MethodSpec parsing, missing TypeSpec synthesis, cross-module generic targets, and default-minimal metadata output remain open.
+
+Project manifest full-AOT generic instantiation closure update (2026-06-25 05:08:49 +08:00): full-AOT AOT C generation now requires a manifest generic preserve root to carry both TypeSpec metadata binding and generic instantiation identity. `backend_aot_manifest_generic_roots_closed_for_full_aot()` rejects TypeSpec-only roots whose `hasGenericInstantiationBinding` is false, so a root with token/signature metadata but no `cInstanceId`/share kind is not treated as a closed full-AOT generic instance. Verification covered WSL GCC `zr_vm_cli_aot_writer_options_test` 10/0 plus WSL GCC/clang and Windows MSVC Debug CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model` 5/5. This is a writer-side closure gate only; MethodSpec parsing, missing TypeSpec synthesis, cross-module generic targets, reflection-driven generic construction, and default-minimal metadata output remain open.
+
+Project manifest generic instantiation open-base update (2026-06-25 05:28:38 +08:00): TypeSpec-bound `.zrp` generic preserve roots now prefer a same-module open generic base token when materializing their generic instantiation identity. `compiler_aot.c` scans current-function metadata token records for a `TYPE_REF` signature whose name matches the generic target, passes that token to `SZrGenericInstantiationTable_GetOrAddResolved()`, and keeps the previous TypeSpec token fallback when no such record exists. Verification covered WSL GCC `zr_vm_cli_aot_writer_options_test` 11/0 plus WSL GCC/clang and Windows MSVC Debug CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model` 5/5. This closes only current-module TypeRef-backed open-base binding; MethodSpec parsing, TypeSpec synthesis, cross-module generic targets, reflection-driven generic construction, and default-minimal metadata output remain open.
+
+Project manifest generic instantiation TypeDef-base update (2026-06-25 05:41:31 +08:00): the open-base resolver now also accepts current-module `TYPE_DEF` bases. `compiler_aot.c` matches `GENERIC_INST(TYPE_DEF target, args...)` TypeSpec signatures, scans same-table `TYPE_DEF` records for the open generic target name, and passes the open TypeDef token to `SZrGenericInstantiationTable_GetOrAddResolved()`; TypeRef-backed open bases and the TypeSpec fallback are unchanged. Verification covered WSL GCC `zr_vm_cli_aot_writer_options_test` 12/0 plus WSL GCC/clang and Windows MSVC Debug CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model` 5/5. This closes only current-module TypeDef-backed open-base binding; MethodSpec parsing, TypeSpec synthesis, cross-module generic targets, reflection-driven generic construction, and default-minimal metadata output remain open.
+
+Project manifest generic synthesized TypeSpec update (2026-06-25 06:03:45 +08:00): `.zrp` generic preserve roots can now get a writer-visible TypeSpec/signature binding even when the current function has no pre-existing closed `TYPE_SPEC` record. `compiler_aot.c` scans current-function metadata for a same-name open `TYPE_DEF` or `TYPE_REF` record, appends a synthesized `TYPE_SPEC` plus paired `SIGNATURE` record and signature blob to the in-memory function metadata, then reuses the generic instantiation materialization path so full-AOT sees both TypeSpec binding and `baseToken`/`cInstanceId`/`shareKind`. Verification covered WSL GCC `zr_vm_cli_aot_writer_options_test` 13/0 plus WSL GCC/clang and Windows MSVC Debug CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model` 5/5. This closes only current-module writer-visible synthesis for AOT C emission; MethodSpec parsing, cross-module generic targets, reflection-driven generic construction, default-minimal metadata output, and full `.zro` metadata persistence policy remain open.
+
+Project manifest generic MethodSpec update (2026-06-25 06:26:16 +08:00): `.zrp` generic preserve roots whose target names a current-module typed exported method can now bind to an existing MethodSpec-shaped signature. `SZrAotManifestGenericRoot` carries MethodSpec token, method token, and instantiation signature hash; `compiler_aot.c` matches `GENERIC_INST(MEMBER_REF methodToken, args...)` against typed exported method metadata; generated AOT C reports the MethodSpec identity, and full-AOT accepts that method root without requiring TypeSpec/generic type-instantiation identity. Verification covered WSL GCC `zr_vm_cli_aot_writer_options_test` 14/0 plus WSL GCC/clang and Windows MSVC Debug CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model` 5/5. This closes only current-module writer-visible MethodSpec binding; cross-module generic method targets, generic method body closure, zrp MethodSpec table persistence, reflection-driven generic construction, and default-minimal metadata output remain open.
+
 共享 string heap 索引化、`.zro` patch 30 roundtrip 及 project-import metadata blob 验证读取已同步；descriptor plugin safe unload/cache invalidation baseline 已接入 native registry owner refcount；loader-facing TypeSpec mismatch diagnostics 已接入 module-load diagnostic channel；AOT descriptor 更细 loader diagnostics 已接入 AOT runtime 和 core module-load diagnostic channel。当前实现先保证 token 结构、函数级 ref owner-chain、entry-function 级 module ref 聚合表、导出签名中闭型/复合类型的基础 `TYPE_SPEC` records、TypeSpec canonical signature 去重、TypeSpec canonical signature 跨模块 baseline binding、union TypeSpec→TypeDef definition/layout binding、TypeRef→TypeDef consumer-side binding、provider summary backed stable TypeRef producer（含嵌套泛型实参、module-qualified typed local annotations 和 destructured/unqualified alias annotations）、TypeSpec mismatch status 和 loader-facing diagnostic、runtime 对 module ref table 的优先消费/直连扫描/旧 records 回退、runtime ref→def binding sidecar、AssemblyRef→MODULE binding sidecar、binding 查询 API、函数级与 module ref table 的 token/signature record 查询 API 和 `.zro` patch 28 roundtrip、`.zro` patch 29 provider module version / AssemblyRef semver range roundtrip、`.zro` patch 30 metadata string heap roundtrip、`.zro` patch 31 record layout identity roundtrip、`.zro` patch 32 binding layout identity roundtrip、dependency manifest 显式 AssemblyRef min/max range、future patch actual/supported 诊断、target module hash 绑定、target token 绑定、target token mismatch diagnostics、target signature hash、def/ref canonical MethodSig/FieldSig、非 union 泛型闭型 `GENERIC_INST` 签名编码、签名 hash 和 module ABI hash 基础、native/source/binary compile-time member identity、registered native verifier 覆盖、required provider unavailable `import_load_unavailable`、project source loader/native descriptor plugin load-error detail、AOT descriptor field-level loader detail、registry owner refcount API、descriptor plugin live-owner invalidation/reload guard、同名 provider export 运行期候选绑定、二进制 roundtrip 稳定，以及 required/guard import 的运行期 version/module/token/hash-first + signature-confirmed 消费路径（含 required member-level `import signature mismatch`、required module-level `assembly_signature_mismatch`、required version-level `assembly_version_mismatch`、guard version mismatch、guard target module hash mismatch、guard target token mismatch、guard target bytes mismatch、entry effects 缺失时的 module ref table drift、provider unavailable 与 nested callable caller）。
 
 TypeRef mismatch status and loader-facing `type_ref_mismatch` diagnostics are also covered for provider-summary backed stable TypeRefs; module-qualified explicit typed local annotations and destructured/unqualified alias mapping are covered.
@@ -309,6 +410,22 @@ Module ABI TypeDef/TypeSpec identity hash update (2026-06-18 17:08:15 +08:00): `
 Module ABI golden update (2026-06-18 23:45:06 +08:00; refreshed 2026-06-21 12:32:00 +08:00): `tests/module/test_metadata_module_hash_golden.c` fixes module-level ABI fingerprints for both a simple public function module and a local generic-union module. The expected hashes are `0xE701BC33ECB6BF89` for `sum(i64,i64)->i64` and `0x485AE44EE06010E4` for `Option<T>` plus `choose(): Option<int>`. During this slice, `compiler_metadata_type_def_layout.c` also stopped feeding host `ZR_ALIGN_SIZE` and `sizeof(SZrTypeValue)` directly into record-level layout fingerprints for unknown/generic payload slots and scalar fallback alignment; the metadata fingerprint uses canonical 64-bit reference size and max-8 scalar alignment so GCC/Clang and MSVC produce the same module ABI hash. This does not change runtime union layout generation and does not require a `.zro` patch. Verification covered WSL GCC/clang `metadata_token_model` 21/0, `metadata_type_ref_binding` 8/0, `metadata_module_hash_golden` 2/0, direct `zr_vm_project_import_canonicalization_test` 31/0, and MSVC Debug metadata CTest 3/3.
 
 Runtime metadata record query update (2026-06-19 00:12:05 +08:00): `function_metadata_query.c` now exposes read-only lookup helpers for function-level metadata records and entry-function module ref table records: `ZrCore_Function_FindMetadataTokenRecord()`, `ZrCore_Function_FindMetadataSignatureRecord()`, `ZrCore_Function_FindModuleMetadataTokenRecord()`, and `ZrCore_Function_FindModuleMetadataSignatureRecord()`. Signature lookup requires the entity/signature pair to mutually point through `relatedToken` plus `ownerToken`, and does not alter `.zro` schema or binding sidecars. Verification covered WSL GCC/clang `zr_vm_metadata_runtime_query_test` 3/0 and WSL GCC/clang plus MSVC Debug CTest `metadata_token_model|metadata_type_ref_binding|metadata_runtime_query|metadata_module_hash_golden` 4/4.
+
+AOT TypeSpec runtime layout binding update (2026-06-25 21:18:46 +08:00): zrp `SZrZrpMetadataTypeSpecRow` now carries `typeLayoutId` in the former reserved slot, and the metadata runtime exposes `ZrCore_MetadataRuntime_ReadTypeSpecLayoutBindingView()` for read-only TypeSpec layout binding. The view resolves the TypeSpec token record, paired signature record, zrp TypeSpec row, and generic base-token binding, verifies row signature offset/length/hash against token identity, then resolves the row `typeLayoutId` through the code-registration layout registry. Missing registry layout data returns false even when stale `prototypeFrameTypeLayouts` exist. Verification covered WSL GCC/clang and MSVC Debug `zr_vm_metadata_runtime_typespec_layout_test` 2/0, `zr_vm_zrp_metadata_format_test` 11/0, `zr_vm_metadata_runtime_query_test` 22/0, and `zr_vm_metadata_runtime_type_layout_test` 10/0. This is runtime binding only; it does not synthesize generic layouts, persist new `.zro` schema, or complete public generic reflection.
+
+AOT TypeDef/TypeSpec token layout cache update (2026-06-25 21:37:38 +08:00): metadata runtime now exposes `ZrCore_MetadataRuntime_ResolveTypeTokenLayout(runtime, typeToken, outTypeLayoutId)` for public `TYPE_DEF` / `TYPE_SPEC` token-to-layout lookup. The resolver delegates to the TypeDef and TypeSpec binding views, requires a code-registration registry-backed `SZrTypeLayout`, resets the output layout id on failure, and caches the latest successful token/layoutId/layout hit. It rejects non-type tokens and does not fall back to stale `prototypeFrameTypeLayouts` when registry layout data is missing. Verification covered WSL GCC/clang CTest `metadata_runtime_typespec_layout|metadata_runtime_query|metadata_runtime_type_layout|zrp_metadata_format` 4/4 and MSVC Debug focused binaries 5/0, 11/0, 22/0, and 10/0. This is a narrow token-level resolver/cache; it does not add a reverse cTypeId table, generic layout synthesis, new `.zro` schema, or public generic reflection entities.
+
+AOT type layout token reverse-cache update (2026-06-25 21:53:56 +08:00): metadata runtime now exposes `ZrCore_MetadataRuntime_ResolveTypeLayoutToken(runtime, typeLayoutId)` for the reverse direction of the latest TypeDef/TypeSpec token layout cache. The resolver first reuses the latest token/layout cache entry, then scans zrp TypeDef rows followed by TypeSpec rows and revalidates each candidate through the existing registry-backed binding views. It returns 0 for null runtime, `ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE`, missing zrp metadata, missing registry layout data, or stale prototype-cache-only layouts. Verification covered WSL GCC/clang CTest `metadata_runtime_typespec_layout|metadata_runtime_query|metadata_runtime_type_layout|zrp_metadata_format` 4/4 and MSVC Debug focused binaries 8/0, 11/0, 22/0, and 10/0. This remains a narrow latest-hit reverse lookup; it does not add a persistent cTypeId-to-token index, generic layout synthesis, new `.zro` schema, or public generic reflection entities.
+
+AOT multi-entry type layout cache update (2026-06-25 22:13:54 +08:00): `SZrMetadataRuntime` now keeps an 8-entry bounded cache for TypeDef/TypeSpec token/layout bindings. `ZrCore_MetadataRuntime_ResolveTypeTokenLayout()` probes by token, `ZrCore_MetadataRuntime_ResolveTypeLayoutToken()` probes by layout id, and both write back successful registry-backed TypeDef/TypeSpec binding view results. The cache can retain TypeDef and TypeSpec entries concurrently, so clearing the registry after two successful lookups still leaves both cached token->layout and layoutId->token hits available. Verification covered WSL GCC/clang CTest `metadata_runtime_typespec_layout|metadata_runtime_query|metadata_runtime_type_layout|zrp_metadata_format` 4/4 and MSVC Debug focused binaries 10/0, 11/0, 22/0, and 10/0. This remains a bounded runtime cache; it does not add a persistent cTypeId-to-token index, generic layout synthesis, new `.zro` schema, or public generic reflection entities.
+
+AOT cTypeId token resolver update (2026-06-25 22:22:13 +08:00): metadata runtime now exposes `ZrCore_MetadataRuntime_ResolveCTypeIdToken(runtime, cTypeId)`. Under the current registry invariant that `cTypeId` equals `typeLayoutId`, the resolver reuses the existing typeLayoutId-to-token reverse path, including bounded multi-entry cache hits and TypeDef/TypeSpec binding-view registry validation. It returns 0 for null runtime, `ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE`, missing registry layout data, or stale prototype-cache-only layouts. Verification covered WSL GCC/clang CTest `metadata_runtime_typespec_layout|metadata_runtime_query|metadata_runtime_type_layout|zrp_metadata_format` 4/4 and MSVC Debug focused binaries 12/0, 11/0, 22/0, and 10/0. This remains a public runtime resolver facade; it does not add a persistent cTypeId-to-token index, cTypeId/typeLayoutId decoupling, generic layout synthesis, new `.zro` schema, or public generic reflection entities.
+
+AOT type layout token carrier update (2026-06-25 23:13:20 +08:00): AOT ABI 10 adds `typeLayoutTokens/typeLayoutTokenCount` to the code-registration and compiled-module descriptors. Generated C emits a `zr_aot_type_layout_tokens[]` carrier indexed by cTypeId/typeLayoutId, runtime loading validates descriptor/codeRegistration pointer/count agreement and requires the count to match `typeLayoutCount`, and metadata runtime mirrors the count during attach. `ZrCore_MetadataRuntime_ResolveTypeLayoutToken()` and `ZrCore_MetadataRuntime_ResolveCTypeIdToken()` now try valid TypeDef/TypeSpec entries from that table before falling back to zrp row scans. Verification covered WSL GCC/clang focused executables 14/0, 19/0, 1/0, 8/0, and 2/0, plus MSVC Debug focused executables 14/0, 19/0, 1/0 and existing Unix-only smoke ignores. This carrier is not yet a persistent cTypeId-to-token index, new `.zro` schema, generic layout synthesis, or public generic reflection entity support.
+
+AOT generated type layout token population update (2026-06-26 00:42:14 +08:00): generated `zr_aot_type_layout_tokens[]` entries now carry real `TYPE_DEF` tokens for local named struct/union layouts that can be uniquely matched to TypeDef metadata, and real `TYPE_SPEC` tokens for current-function generated generic layouts whose type name structurally matches a unique canonical TypeSpec signature blob. The token writer lives in `backend_aot_c_type_layout_tokens.c`, the type-layout emitter exposes a generated table resolver, and union layouts get runtime `SZrTypeLayout` descriptors so a local union TypeDef can bind to the generated layout registry. Missing metadata, ambiguous names, cross-module records, and unsupported signature shapes remain `0u` and still rely on zrp row-scan fallback. Verification covered WSL GCC/clang focused TypeSpec token emission through `aot_c_type_layout_contracts|aot_c_generic_call_typed` CTest 2/2 plus source contracts 19/0 and value-type smoke 3/0, and MSVC Debug covered the same CTest 2/2 plus source contracts 19/0 and value-type smoke 2/0/1 ignored. This token-population slice is not yet a cross-module token table, new `.zro` schema, generic layout synthesis, MethodSpec materialization, or public generic reflection entity support.
+
+AOT generated ownership offset table update (2026-06-26 01:14:40 +08:00): generated `SZrTypeLayout` descriptors now write static `ZrOwnershipOffsets_<typeLayoutId>[]` arrays for struct owner fields when the offsets are present in `ownershipFieldOffsets` or derivable from managed `fields[]` entries marked as value slots with ownership. The descriptor points `.ownershipFieldOffsets` at the generated array and keeps zero-count, union, or unsafe/unsupported cases at `ZR_NULL` with an explicit failure marker for unsupported ownership offsets. Verification covered WSL GCC/clang `aot_c_type_layout_contracts` CTest 1/1, source contracts 19/0, value-type smoke 4/0, and MSVC Debug CTest 1/1 plus source contracts 19/0 and value-type smoke 3/0/1 ignored. This is not yet union ownership-offset emission, runtime generic layout construction, cross-module token-table policy, MethodSpec materialization, or public reflection entity support.
 
 TypeRef binding update (2026-06-18 19:02:36 +08:00): `ZrCore_Function_BindMatchingTypeRefMetadata()` now records caller `TYPE_REF -> provider TYPE_DEF / SIGNATURE` binding when the caller TypeRef already carries stable provider TypeDef target identity. The matcher checks TypeDef token, paired signature hash/token, module hash, layout identity, and base name before writing the sidecar. Verification covered WSL clang/gcc `zr_vm_metadata_type_ref_binding_test` 1/0, `zr_vm_metadata_token_model_test` 21/0, `zr_vm_project_import_canonicalization_test` 31/0, plus MSVC Debug `zr_vm_metadata_type_ref_binding_test` 1/0. Current import owner-chain TypeRefs remain module-member placeholders until producer-side stable TypeRef extraction is added.
 
@@ -562,6 +679,8 @@ LSP / compiler 侧正式消费的单模块 typed metadata 载体固定为 `.zro`
 
 从 patch 20 起，`.zro` 还会持久化 typed export 的 metadata token 与 signature token，并追加函数级 signature blob heap。patch 21 在这些字段后追加 typed export 与 metadata token record 的 `signatureHash`。patch 22 在 metadata token record 中追加 `ownerToken`。patch 23 在 metadata token record 中追加 `targetSignatureHash`，并在 module effect 中追加 `targetMetadataToken`、`targetSignatureToken`、`targetSignatureHash`。patch 24 在 metadata token record 中追加 `targetMetadataToken` 和 `targetSignatureToken`，让 `MEMBER_REF` 及配对 `SIGNATURE` record 也能保留 provider def/signature token。patch 25 在 signature blob heap 后追加 `moduleMetadataTokenRecords`，保存 entry-function 级 import ref 聚合表。patch 26 在 signature blob heap 后、module ref table 前追加 `moduleSignatureHash`。patch 27 在 module effect 和 metadata token record 中追加 `targetModuleSignatureHash`。patch 28 在 module ref table 后追加 runtime `moduleMetadataBindings` binding result list。patch 29 在 metadata token model 中追加 provider `moduleVersion`，并在 module effect 与 metadata token record 中追加 AssemblyRef requested/min/max version 字符串。patch 30 在 signature blob heap 后追加 metadata string heap，signature blob 中的字符串引用改为固定 `u32` heap index。patch 31 在 metadata token record 的 `signatureHash` 后追加 record-level `layoutVersion` / `layoutHash`。patch 32 在 binding result 的 expected/resolved signature/module hash 后追加 expected/resolved `layoutVersion` / `layoutHash`。patch 33 在 module effect 的 `moduleName` 后追加 `assemblyName`，用于把 alias canonical module key 与真实 AssemblyRef identity 分离。
 
+当 AOT C writer 嵌入的是可由 `ZrCore_ZrpMetadata_ReadHeader()` 校验的 zrp data metadata blob 时，生成 C 会输出只读 size attribution marker：总 zrp metadata 字节、token-record 字节、definition-table 字节、pool 字节，以及 tokenRecords、TypeDef/MethodDef/FieldDef、generic、TypeSpec/MethodSpec、ModuleRef 和三类 pool 的 section 明细。`.zro` 或非 zrp embedded blob 仍输出稳定 0 值 zrp marker，不改变既有 embedded module 载体语义。
+
 旧 patch 产物读取时缺失区会保守置 0、null 或空表：patch 20 产物 token/blob 可用但 hash、owner、target identity、module ABI hash、module ref table、binding result list、version fields、metadata string heap、record layout identity、binding layout identity 与 effect assembly identity 为空；patch 21/22/23/24/25/26/27/28/29 按各自已存在字段读取，其后新增字段置 0/null/空；patch 30 产物 metadata string heap 可用但 record layout identity、binding layout identity 与 effect assembly identity 置 0/null；patch 31 产物 record layout identity 可用但 binding layout identity 与 effect assembly identity 置 0/null；patch 32 产物 binding layout identity 可用但 effect assembly identity 置 null。patch 33 写出的产物双写“原 typed metadata + token/signature/hash/owner/target identity + module version + AssemblyRef version range + module ABI hash + target module hash + module ref table + runtime binding result list + metadata string heap + record layout identity + binding layout identity + effect assembly identity 结构”，保证当前 import 消费路径不被迫一次性迁移。高于 `ZR_IO_SOURCE_PATCH_CURRENT` 的 future patch 会在 header 阶段被拒绝并带出 actual/supported patch 诊断。
 
 `.zri` 继续由 [writer_intermediate.c](../../zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c) 输出，保留：
@@ -601,7 +720,7 @@ typed opcode 只在运行时也守住调用栈边界时才成立。
 - 没有可恢复类型的导出变量仍会降级为 `object`
 - 数组类型元数据当前只记录统一元素类型视图，符合 M6 现阶段的数组元素推断需求
 - `typedExportedSymbols` 只描述模块对外可见的符号，不替代 prototypeData
-- 本轮不实现 typed IR / AOT backend，只保证元数据稳定落盘并可被 import / writer / runtime 验证
+- 早期 M6 只保证元数据稳定落盘并可被 import / writer / runtime 验证；当前 AOT C 只新增 zrp metadata size attribution 消费，typed IR 和真实 metadata sweep 仍未接入
 - M6 早期 typed metadata schema 变更仍以重生成仓库内 fixture 为准；metadata token patch 20 对缺少 token 区的旧产物按空 token model 读取，patch 21 对旧 token model 产物把 `signatureHash` 置 0，patch 22 对旧 token/hash 产物把 `ownerToken` 置 0
 
 ## Test Coverage
@@ -640,8 +759,23 @@ M6 的验证不是“编译成功”级别，而是直接断言 opcode、签名�
 - [tests/module/test_metadata_runtime_query.c](../../tests/module/test_metadata_runtime_query.c)
   - function-level and entry-function module ref table token/signature record queries
   - null/zero-token handling and loose signature-pair rejection
+- [tests/module/test_metadata_runtime_typespec_layout.c](../../tests/module/test_metadata_runtime_typespec_layout.c)
+  - AOT runtime TypeSpec token to zrp TypeSpec row, generic base-token binding, and registry-backed layout binding
+  - public TypeDef/TypeSpec token to registry-backed layout resolver and bounded multi-entry cache behavior
+  - registry-backed typeLayoutId to TypeDef/TypeSpec token reverse lookup and bounded multi-entry cache behavior
+  - public cTypeId to TypeDef/TypeSpec token resolver under the current cTypeId/typeLayoutId registry invariant
+  - code-registration typeLayout token carrier consumption, including non-type token and missing-layout rejection
+  - no prototype layout cache fallback when the code-registration type layout registry is missing
 - [tests/module/test_metadata_module_hash_golden.c](../../tests/module/test_metadata_module_hash_golden.c)
   - cross-toolchain stable module ABI fingerprints for a simple exported function and a local generic union export
+- [tests/library/test_project_manifest_normalization.c](../../tests/library/test_project_manifest_normalization.c)
+  - `.zrp` manifestVersion, assembly identity, legacy dependency/reference compatibility, publicKeyToken normalization, declaration-level `preserve` rule parsing/rejection, preserve feature condition parsing/rejection, top-level feature switch parsing/rejection, generic preserve argument parsing/rejection, and declaration-level `aotMode` parsing/rejection
+- [tests/cli/test_cli_aot_writer_options.c](../../tests/cli/test_cli_aot_writer_options.c)
+  - `.zrp` preserve method/type/generic writer option injection, feature-conditioned root gating, generic preserve TypeSpec token binding, synthesized TypeSpec/signature binding from open metadata, TypeRef- and TypeDef-backed open-base generic instantiation identity materialization, current-module generic method MethodSpec binding, full-AOT unbound generic TypeSpec rejection, full-AOT TypeSpec-only generic instantiation rejection, generated-C manifest root diagnostics, and opt-in code-stripping preservation/trimming behavior
+- [tests/parser/test_aot_c_code_stripping.c](../../tests/parser/test_aot_c_code_stripping.c)
+  - generated AOT C zrp metadata total/token-record/definition-table/pool byte statistics and section-level size markers for valid embedded zrp metadata blobs
+- [tests/library/test_project_import_resolver.c](../../tests/library/test_project_import_resolver.c)
+  - project import aliases, dependency package/reference resolution, AssemblyRef identity/range query behavior, `.zrp` / `.zrm` references, and manifest-cycle handling
 - [tests/parser/test_union.c](../../tests/parser/test_union.c)
   - union prototypeData serialization
   - variant member metadata shell
@@ -677,6 +811,6 @@ M6 的验证不是“编译成功”级别，而是直接断言 opcode、签名�
 
 ## Open Follow-Up
 
-- AOT / typed IR 仍未消费这批元数据
+- AOT C 目前只消费 zrp metadata header/section directory 做 generated-C size attribution；typed IR、默认最小 metadata policy 和真实 metadata sweep 仍未消费这批元数据
 - 更细粒度的多元素数组类型表达和 AOT/typed IR 专用消费仍未进入 `.zro` schema；当前 metadata/token 结构已经覆盖非 union 泛型闭型、union TypeDef/TypeSpec identity、stable provider TypeRef、module-qualified typed annotations 和 destructured/unqualified alias annotations
 - `import_pub_function` fixture 仍带有与本轮无关的旧语法诊断噪音，当前不影响结果验证，但后续应独立清理

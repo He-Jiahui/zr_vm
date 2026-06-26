@@ -88,6 +88,25 @@ static const char *backend_aot_c_scalar_i64_compare_operator(TZrUInt32 semIrOpco
     }
 }
 
+static const char *backend_aot_c_scalar_f64_compare_operator(TZrUInt32 semIrOpcode) {
+    switch ((EZrSemIrOpcode)semIrOpcode) {
+        case ZR_SEMIR_OPCODE_EQ:
+            return "==";
+        case ZR_SEMIR_OPCODE_NE:
+            return "!=";
+        case ZR_SEMIR_OPCODE_LT:
+            return "<";
+        case ZR_SEMIR_OPCODE_LE:
+            return "<=";
+        case ZR_SEMIR_OPCODE_GT:
+            return ">";
+        case ZR_SEMIR_OPCODE_GE:
+            return ">=";
+        default:
+            return ZR_NULL;
+    }
+}
+
 static TZrBool backend_aot_c_scalar_read_i64_constant(const SZrFunction *function,
                                                       TZrUInt32 constantIndex,
                                                       TZrInt64 *outValue) {
@@ -186,6 +205,37 @@ static TZrBool backend_aot_c_scalar_decode_unsigned_compare_operands(const TZrIn
         case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED):
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool backend_aot_c_scalar_decode_float_compare_operands(const TZrInstruction *instruction,
+                                                                  TZrUInt32 *outDestinationSlot,
+                                                                  TZrUInt32 *outLeftSlot,
+                                                                  TZrUInt32 *outRightSlot) {
+    EZrInstructionCode opcode;
+
+    if (instruction == ZR_NULL ||
+        outDestinationSlot == ZR_NULL ||
+        outLeftSlot == ZR_NULL ||
+        outRightSlot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+    *outDestinationSlot = instruction->instruction.operandExtra;
+    *outLeftSlot = instruction->instruction.operand.operand1[0];
+    *outRightSlot = instruction->instruction.operand.operand1[1];
+
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT):
             return ZR_TRUE;
         default:
             return ZR_FALSE;
@@ -505,6 +555,141 @@ static void backend_aot_write_c_scalar_u64_compare(FILE *file,
     fprintf(file, "    }\n");
 }
 
+static void backend_aot_write_c_scalar_f64_compare(FILE *file,
+                                                   const SZrAotExecIrFunction *functionIr,
+                                                   const SZrAotExecIrInstruction *semIrInstruction,
+                                                   const char *operatorText,
+                                                   TZrUInt32 destinationSlot,
+                                                   TZrUInt32 leftSlot,
+                                                   TZrUInt32 rightSlot,
+                                                   TZrUInt32 execInstructionIndex) {
+    TZrBool useScalarOperands =
+            backend_aot_c_scalar_locals_has_f64_slot(functionIr, leftSlot) &&
+            backend_aot_c_scalar_locals_has_f64_slot(functionIr, rightSlot);
+    TZrBool useScalarDestination = backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot);
+    TZrBool leftLocalWrittenBefore = ZR_FALSE;
+    TZrBool rightLocalWrittenBefore = ZR_FALSE;
+    TZrBool useWrittenScalarSources = ZR_FALSE;
+    TZrBool canSkipValueSlot = ZR_FALSE;
+
+    if (useScalarOperands) {
+        leftLocalWrittenBefore =
+                backend_aot_c_scalar_locals_f64_written_before(functionIr, leftSlot, execInstructionIndex);
+        rightLocalWrittenBefore =
+                backend_aot_c_scalar_locals_f64_written_before(functionIr, rightSlot, execInstructionIndex);
+        useWrittenScalarSources = (TZrBool)(leftLocalWrittenBefore && rightLocalWrittenBefore);
+        canSkipValueSlot =
+                (TZrBool)(useScalarDestination &&
+                          useWrittenScalarSources &&
+                          backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
+                                  functionIr, destinationSlot, execInstructionIndex));
+    }
+
+    if (canSkipValueSlot) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_f64_compare semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n"
+                "        zr_aot_b%u = (TZrBool)(zr_aot_f%u %s zr_aot_f%u);\n"
+                "    }\n",
+                (unsigned)semIrInstruction->semIrOpcode,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                (unsigned)rightSlot,
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                operatorText,
+                (unsigned)rightSlot);
+        return;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* zr_aot_scalar_exec_f64_compare semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n"
+            "        SZrTypeValue *zr_aot_destination = ZR_NULL;\n"
+            "        TZrBool zr_aot_b_result;\n"
+            "        if (frame.slotBase == ZR_NULL || %u >= frame.generatedFrameSlotCount ||\n"
+            "            %u >= frame.generatedFrameSlotCount ||\n"
+            "            %u >= frame.generatedFrameSlotCount) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        zr_aot_destination = &frame.slotBase[%u].value;\n",
+            (unsigned)semIrInstruction->semIrOpcode,
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)rightSlot,
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)rightSlot,
+            (unsigned)destinationSlot);
+    if (!leftLocalWrittenBefore || !rightLocalWrittenBefore) {
+        TZrBool wroteSourceCheck = ZR_FALSE;
+        fprintf(file, "        if (");
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "!ZR_VALUE_IS_TYPE_FLOAT(frame.slotBase[%u].value.type)",
+                    (unsigned)leftSlot);
+            wroteSourceCheck = ZR_TRUE;
+        }
+        if (!rightLocalWrittenBefore) {
+            if (wroteSourceCheck) {
+                fprintf(file, " ||\n            ");
+            }
+            fprintf(file,
+                    "!ZR_VALUE_IS_TYPE_FLOAT(frame.slotBase[%u].value.type)",
+                    (unsigned)rightSlot);
+        }
+        fprintf(file,
+                ") {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n");
+    }
+    if (useScalarOperands) {
+        if (!leftLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_f%u = frame.slotBase[%u].value.value.nativeObject.nativeDouble;\n",
+                    (unsigned)leftSlot,
+                    (unsigned)leftSlot);
+        }
+        if (!rightLocalWrittenBefore) {
+            fprintf(file,
+                    "        zr_aot_f%u = frame.slotBase[%u].value.value.nativeObject.nativeDouble;\n",
+                    (unsigned)rightSlot,
+                    (unsigned)rightSlot);
+        }
+        if (useScalarDestination) {
+            fprintf(file,
+                    "        zr_aot_b%u = (TZrBool)(zr_aot_f%u %s zr_aot_f%u);\n"
+                    "        zr_aot_b_result = zr_aot_b%u;\n",
+                    (unsigned)destinationSlot,
+                    (unsigned)leftSlot,
+                    operatorText,
+                    (unsigned)rightSlot,
+                    (unsigned)destinationSlot);
+        } else {
+            fprintf(file,
+                    "        zr_aot_b_result = (TZrBool)(zr_aot_f%u %s zr_aot_f%u);\n",
+                    (unsigned)leftSlot,
+                    operatorText,
+                    (unsigned)rightSlot);
+        }
+    } else {
+        fprintf(file,
+                "        TZrFloat64 zr_aot_f_left;\n"
+                "        TZrFloat64 zr_aot_f_right;\n"
+                "        zr_aot_f_left = frame.slotBase[%u].value.value.nativeObject.nativeDouble;\n"
+                "        zr_aot_f_right = frame.slotBase[%u].value.value.nativeObject.nativeDouble;\n"
+                "        zr_aot_b_result = (TZrBool)(zr_aot_f_left %s zr_aot_f_right);\n",
+                (unsigned)leftSlot,
+                (unsigned)rightSlot,
+                operatorText);
+    }
+    if (!useScalarOperands && useScalarDestination) {
+        fprintf(file, "        zr_aot_b%u = zr_aot_b_result;\n", (unsigned)destinationSlot);
+    }
+    backend_aot_write_c_scalar_plain_bool_result(file, "zr_aot_b_result");
+    fprintf(file, "    }\n");
+}
+
 static TZrBool backend_aot_c_scalar_semir_file_contains_frame_reference(FILE *file) {
     static const char needle[] = "frame.";
     TZrSize matchedLength = 0u;
@@ -539,6 +724,7 @@ TZrBool backend_aot_try_write_c_scalar_semir_for_exec_instruction(FILE *file,
     const SZrFunction *function;
     const char *unsignedCompareOperatorText;
     const char *compareOperatorText;
+    const char *floatCompareOperatorText;
     TZrUInt32 destinationSlot;
     TZrUInt32 leftSlot;
     TZrUInt32 rightSlot;
@@ -561,6 +747,25 @@ TZrBool backend_aot_try_write_c_scalar_semir_for_exec_instruction(FILE *file,
     }
 
     if (backend_aot_try_write_c_scalar_binary(file, functionIr, semIrInstruction, execInstruction, staticCType)) {
+        return ZR_TRUE;
+    }
+
+    floatCompareOperatorText = semIrInstruction != ZR_NULL
+            ? backend_aot_c_scalar_f64_compare_operator(semIrInstruction->semIrOpcode)
+            : ZR_NULL;
+    if (floatCompareOperatorText != ZR_NULL &&
+        backend_aot_c_scalar_decode_float_compare_operands(execInstruction,
+                                                           &destinationSlot,
+                                                           &leftSlot,
+                                                           &rightSlot)) {
+        backend_aot_write_c_scalar_f64_compare(file,
+                                               functionIr,
+                                               semIrInstruction,
+                                               floatCompareOperatorText,
+                                               destinationSlot,
+                                               leftSlot,
+                                               rightSlot,
+                                               execInstructionIndex);
         return ZR_TRUE;
     }
 

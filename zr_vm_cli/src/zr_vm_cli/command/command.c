@@ -53,6 +53,7 @@ static void zr_cli_command_init(SZrCliCommand *command) {
     command->interactiveAfterRun = ZR_FALSE;
     command->emitIntermediate = ZR_FALSE;
     command->emitZrm = ZR_FALSE;
+    command->emitAotC = ZR_FALSE;
     command->incremental = ZR_FALSE;
     command->emitExecutedVia = ZR_FALSE;
     command->debugEnabled = ZR_FALSE;
@@ -154,6 +155,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  --heap-summary[=out]             Print or write heap and GC summary after a successful run.\n"
             "  --intermediate                   Also emit .zri files next to .zro outputs.\n"
             "  --emit-zrm                       Pack reachable .zro outputs and resources into a .zrm assembly.\n"
+            "  --emit-aot-c                     Emit AOT C sources under the project binary directory.\n"
             "  --incremental                    Use manifest-based incremental compilation.\n"
             "  --run                            Run the compiled project after a successful compile.\n"
             "\n"
@@ -222,6 +224,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  --heap-summary[=out]             Print or write heap and GC summary after a successful run.\n"
              "  --intermediate                   Also emit .zri files next to .zro outputs.\n"
              "  --emit-zrm                       Pack reachable .zro outputs and resources into a .zrm assembly.\n"
+             "  --emit-aot-c                     Emit AOT C sources under the project binary directory.\n"
              "  --incremental                    Use manifest-based incremental compilation.\n"
              "  --run                            Run the compiled project after a successful compile.\n"
              "\n"
@@ -414,6 +417,11 @@ TZrBool ZrCli_Command_Parse(int argc,
             continue;
         }
 
+        if (strcmp(argument, "--emit-aot-c") == 0) {
+            outCommand->emitAotC = ZR_TRUE;
+            continue;
+        }
+
         if (strcmp(argument, "--incremental") == 0) {
             outCommand->incremental = ZR_TRUE;
             continue;
@@ -571,16 +579,16 @@ TZrBool ZrCli_Command_Parse(int argc,
     }
 
     if (!compileSeen &&
-        (outCommand->emitIntermediate || outCommand->emitZrm ||
+        (outCommand->emitIntermediate || outCommand->emitZrm || outCommand->emitAotC ||
          outCommand->incremental || outCommand->runAfterCompile)) {
         zr_cli_write_error(errorBuffer,
                            errorBufferSize,
-                           "--run, --intermediate, --emit-zrm, and --incremental require --compile <project.zrp>");
+                           "--run, --intermediate, --emit-zrm, --emit-aot-c, and --incremental require --compile <project.zrp>");
         return ZR_FALSE;
     }
 
     if (primaryMode == ZR_CLI_PRIMARY_MODE_HELP) {
-        if (interactiveRequested || outCommand->emitIntermediate || outCommand->emitZrm ||
+        if (interactiveRequested || outCommand->emitIntermediate || outCommand->emitZrm || outCommand->emitAotC ||
             outCommand->incremental || outCommand->runAfterCompile ||
             outCommand->emitExecutedVia ||
             outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
@@ -597,7 +605,7 @@ TZrBool ZrCli_Command_Parse(int argc,
     }
 
     if (primaryMode == ZR_CLI_PRIMARY_MODE_VERSION) {
-        if (interactiveRequested || outCommand->emitIntermediate || outCommand->emitZrm ||
+        if (interactiveRequested || outCommand->emitIntermediate || outCommand->emitZrm || outCommand->emitAotC ||
             outCommand->incremental || outCommand->runAfterCompile ||
             outCommand->emitExecutedVia ||
             outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
@@ -629,7 +637,7 @@ TZrBool ZrCli_Command_Parse(int argc,
     }
 
     if (primaryMode == ZR_CLI_PRIMARY_MODE_INLINE &&
-        (outCommand->emitIntermediate || outCommand->emitZrm ||
+        (outCommand->emitIntermediate || outCommand->emitZrm || outCommand->emitAotC ||
          outCommand->incremental || outCommand->runAfterCompile ||
          outCommand->emitExecutedVia ||
          outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||

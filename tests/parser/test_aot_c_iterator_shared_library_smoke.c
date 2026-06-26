@@ -211,8 +211,51 @@ static void test_aot_c_generated_shared_library_compiles_iterator_boundary_helpe
 #endif
 }
 
+static void test_aot_c_full_aot_rejects_dynamic_iterator_deopt_bridge(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C iterator shared-library smoke currently validates the Unix toolchain path");
+#else
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    FILE *generatedFile;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_iterator_function(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_full_aot_iterator_deopt_rejected";
+    options.sourceHash = "full-aot-iterator-deopt-rejected";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "full-aot-iterator-deopt-rejected";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.requireFullAot = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_iterator_shared_library",
+                                                       "src",
+                                                       "full_aot_iterator_deopt_rejected",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    remove(generatedCPath);
+
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_compiles_iterator_boundary_helper_lowering);
+    RUN_TEST(test_aot_c_full_aot_rejects_dynamic_iterator_deopt_bridge);
     return UNITY_END();
 }

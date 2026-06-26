@@ -13,6 +13,7 @@
 
 struct SZrGlobalState;
 struct SZrFunction;
+struct SZrAotGcRootMap;
 
 typedef enum EZrVmExceptionHandlerPhase {
     ZR_VM_EXCEPTION_HANDLER_PHASE_TRY = 0,
@@ -43,6 +44,12 @@ typedef struct SZrVmPendingControl {
     TZrBool hasValue;
 } SZrVmPendingControl;
 
+typedef struct SZrAotGcRootFrame {
+    const struct SZrAotGcRootMap *rootMap;
+    TZrStackValuePointer frameBase;
+    struct SZrAotGcRootFrame *previous;
+} SZrAotGcRootFrame;
+
 struct ZR_STRUCT_ALIGN SZrState {
     SZrRawObject super;
     // reverse pointer to global
@@ -67,6 +74,8 @@ struct ZR_STRUCT_ALIGN SZrState {
     TZrStackPointer stackBase;
 
     TZrStackPointer toBeClosedValueList;
+    SZrAotGcRootFrame *aotGcRootFrameStack;
+    TZrUInt32 aotGcRootFrameDepth;
     // closures
     struct SZrState *threadWithStackClosures;
     SZrClosureValue *stackClosureValueList;

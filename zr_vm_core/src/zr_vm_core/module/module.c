@@ -54,6 +54,8 @@ struct SZrObjectModule *ZrCore_Module_Create(SZrState *state) {
     module->reserved1 = 0;
     module->exportDescriptors = ZR_NULL;
     module->exportDescriptorLength = 0;
+    module->hasMetadataRuntime = ZR_FALSE;
+    memset(&module->metadataRuntime, 0, sizeof(module->metadataRuntime));
 
     ZrCore_HashSet_Init(state, &module->super.nodeMap, ZR_OBJECT_TABLE_INITIAL_SIZE_LOG2);
     ZrCore_HashSet_Construct(&module->proNodeMap);
@@ -341,4 +343,34 @@ void ZrCore_Module_SetInitializationState(struct SZrObjectModule *module, EZrMod
     }
 
     module->initState = (TZrUInt8)state;
+}
+
+SZrMetadataRuntime *ZrCore_Module_AttachMetadataRuntime(SZrObjectModule *module,
+                                                        SZrFunction *metadataFunction,
+                                                        const SZrAotCodeRegistration *codeRegistration) {
+    if (module == ZR_NULL || codeRegistration == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    memset(&module->metadataRuntime, 0, sizeof(module->metadataRuntime));
+    module->metadataRuntime.module = module;
+    module->metadataRuntime.metadataFunction = metadataFunction;
+    module->metadataRuntime.codeRegistration = codeRegistration;
+    module->metadataRuntime.functionCount = codeRegistration->functionCount;
+    module->metadataRuntime.methodInfoCount = codeRegistration->methodInfoCount;
+    module->metadataRuntime.invokerCount = codeRegistration->invokerCount;
+    module->metadataRuntime.typeLayoutCount = codeRegistration->typeLayoutCount;
+    module->metadataRuntime.typeLayoutTokenCount = codeRegistration->typeLayoutTokenCount;
+    module->metadataRuntime.gcDescriptorCount = codeRegistration->gcDescriptorCount;
+    ZrCore_MetadataRuntime_AttachFunction(&module->metadataRuntime, metadataFunction);
+    module->hasMetadataRuntime = ZR_TRUE;
+    return &module->metadataRuntime;
+}
+
+SZrMetadataRuntime *ZrCore_Module_GetMetadataRuntime(SZrObjectModule *module) {
+    if (module == ZR_NULL || !module->hasMetadataRuntime) {
+        return ZR_NULL;
+    }
+
+    return &module->metadataRuntime;
 }

@@ -48,6 +48,89 @@ static void typed_type_ref_from_inferred(SZrFunctionTypedTypeRef *dest, const SZ
 static const SZrCompilerStackSlotTypeHint *find_stack_slot_type_hint_for_slot(const SZrCompilerState *cs,
                                                                               TZrUInt32 stackSlot);
 
+static SZrGenericDeclaration *typed_metadata_current_generic_declaration(SZrCompilerState *cs) {
+    SZrAstNode *node;
+
+    if (cs == ZR_NULL || cs->currentFunctionNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    node = cs->currentFunctionNode;
+    switch (node->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            return node->data.functionDeclaration.generic;
+        case ZR_AST_STRUCT_METHOD:
+            return node->data.structMethod.generic;
+        case ZR_AST_CLASS_METHOD:
+            return node->data.classMethod.generic;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static const SZrParameter *typed_metadata_find_generic_parameter_by_name(SZrCompilerState *cs,
+                                                                         SZrString *name) {
+    SZrGenericDeclaration *genericDeclaration;
+
+    if (cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    genericDeclaration = typed_metadata_current_generic_declaration(cs);
+    if (genericDeclaration == ZR_NULL || genericDeclaration->params == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < genericDeclaration->params->count; index++) {
+        const SZrAstNode *paramNode = genericDeclaration->params->nodes[index];
+        if (paramNode == ZR_NULL ||
+            paramNode->type != ZR_AST_PARAMETER ||
+            paramNode->data.parameter.name == ZR_NULL ||
+            paramNode->data.parameter.name->name == ZR_NULL ||
+            paramNode->data.parameter.genericKind != ZR_GENERIC_PARAMETER_TYPE) {
+            continue;
+        }
+
+        if (ZrCore_String_Equal(paramNode->data.parameter.name->name, name)) {
+            return &paramNode->data.parameter;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool typed_type_ref_from_generic_parameter_ast_type(SZrCompilerState *cs,
+                                                              SZrType *typeNode,
+                                                              SZrFunctionTypedTypeRef *outType) {
+    SZrAstNode *nameNode;
+    SZrString *typeName;
+    const SZrParameter *genericParameter;
+
+    if (cs == ZR_NULL || typeNode == ZR_NULL || outType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nameNode = typeNode->name;
+    if (nameNode == ZR_NULL ||
+        nameNode->type != ZR_AST_IDENTIFIER_LITERAL ||
+        nameNode->data.identifier.name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    typeName = nameNode->data.identifier.name;
+    genericParameter = typed_metadata_find_generic_parameter_by_name(cs, typeName);
+    if (genericParameter == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    typed_type_ref_init_unknown(outType);
+    outType->typeName = typeName;
+    outType->ownershipQualifier = typeNode->ownershipQualifier;
+    outType->baseType = genericParameter->genericRequiresStruct ? ZR_VALUE_TYPE_UNKNOWN : ZR_VALUE_TYPE_OBJECT;
+    outType->elementBaseType = ZR_VALUE_TYPE_OBJECT;
+    return ZR_TRUE;
+}
+
 static TZrBool typed_type_ref_from_ast_type(SZrCompilerState *cs,
                                             SZrType *typeNode,
                                             SZrFunctionTypedTypeRef *outType) {
@@ -56,6 +139,10 @@ static TZrBool typed_type_ref_from_ast_type(SZrCompilerState *cs,
 
     if (cs == ZR_NULL || outType == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (typed_type_ref_from_generic_parameter_ast_type(cs, typeNode, outType)) {
+        return ZR_TRUE;
     }
 
     ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
@@ -795,14 +882,18 @@ static TZrBool build_compile_time_function_infos(SZrCompilerState *cs,
         }
 
         if (declaration != ZR_NULL) {
+            SZrAstNode *previousFunctionNode = cs->currentFunctionNode;
+            cs->currentFunctionNode = record->declaration;
             if (!compiler_build_function_parameter_metadata(cs,
                                                             declaration->params,
                                                             ZR_TRUE,
                                                             &infos[index].parameters,
                                                             &infos[index].parameterCount)) {
+                cs->currentFunctionNode = previousFunctionNode;
                 free_compile_time_function_infos(cs->state, infos, infoCount);
                 return ZR_FALSE;
             }
+            cs->currentFunctionNode = previousFunctionNode;
         } else if (record->paramTypes.length > 0) {
             if (!compiler_build_compile_time_function_parameter_metadata_from_record(cs,
                                                                                      record,
@@ -1451,12 +1542,48 @@ static TZrBool compiler_type_name_matches_generic_instance_base(SZrString *proto
                      strncmp(prototypeText, typeText, baseLength) == 0);
 }
 
-static TZrBool compiler_type_name_matches_prototype_name(SZrString *prototypeName,
-                                                         SZrString *typeName) {
-    return (TZrBool)(prototypeName != ZR_NULL &&
-                     typeName != ZR_NULL &&
-                     (ZrCore_String_Equal(prototypeName, typeName) ||
-                      compiler_type_name_matches_generic_instance_base(prototypeName, typeName)));
+static TZrBool compiler_type_name_matches_inline_layout_pass(SZrString *prototypeName,
+                                                             SZrString *typeName,
+                                                             TZrBool exactOnly) {
+    if (prototypeName == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrCore_String_Equal(prototypeName, typeName)) {
+        return ZR_TRUE;
+    }
+
+    return (TZrBool)(!exactOnly &&
+                     compiler_type_name_matches_generic_instance_base(prototypeName, typeName));
+}
+
+static TZrBool compiler_try_use_inline_type_layout(SZrCompilerState *cs,
+                                                   SZrTypePrototypeInfo *prototypeInfo,
+                                                   TZrUInt32 serializedIndex,
+                                                   TZrUInt32 *outLayoutId,
+                                                   TZrUInt32 *outSize,
+                                                   TZrUInt32 *outAlign) {
+    if (cs == ZR_NULL || prototypeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+        compiler_finalize_current_struct_inline_layout(cs, prototypeInfo);
+    }
+    if (!compiler_prototype_has_inline_frame_layout(prototypeInfo)) {
+        return ZR_FALSE;
+    }
+
+    if (outLayoutId != ZR_NULL) {
+        *outLayoutId = serializedIndex;
+    }
+    if (outSize != ZR_NULL) {
+        *outSize = prototypeInfo->layoutByteSize;
+    }
+    if (outAlign != ZR_NULL) {
+        *outAlign = prototypeInfo->layoutByteAlign;
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool compiler_find_inline_type_layout(SZrCompilerState *cs,
@@ -1465,68 +1592,60 @@ static TZrBool compiler_find_inline_type_layout(SZrCompilerState *cs,
                                                 TZrUInt32 *outSize,
                                                 TZrUInt32 *outAlign) {
     SZrTypePrototypeInfo *currentPrototypeInfo;
-    TZrUInt32 serializedIndex = 0u;
 
     if (cs == ZR_NULL || typeRef == ZR_NULL || typeRef->typeName == ZR_NULL) {
         return ZR_FALSE;
     }
 
     currentPrototypeInfo = cs->currentTypePrototypeInfo;
-    if (currentPrototypeInfo != ZR_NULL &&
-        currentPrototypeInfo->name != ZR_NULL &&
-        compiler_type_name_matches_prototype_name(currentPrototypeInfo->name, typeRef->typeName)) {
-        if (currentPrototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
-            compiler_finalize_current_struct_inline_layout(cs, currentPrototypeInfo);
-        }
-        if (!compiler_prototype_has_inline_frame_layout(currentPrototypeInfo)) {
-            return ZR_FALSE;
-        }
-        if (outLayoutId != ZR_NULL) {
+    for (TZrUInt32 pass = 0u; pass < 2u; pass++) {
+        TZrBool exactOnly = pass == 0u ? ZR_TRUE : ZR_FALSE;
+        TZrUInt32 serializedIndex = 0u;
+
+        if (currentPrototypeInfo != ZR_NULL &&
+            currentPrototypeInfo->name != ZR_NULL &&
+            compiler_type_name_matches_inline_layout_pass(currentPrototypeInfo->name,
+                                                          typeRef->typeName,
+                                                          exactOnly)) {
             if (!compiler_type_prototype_serializes_to_runtime(currentPrototypeInfo)) {
                 return ZR_FALSE;
             }
-            *outLayoutId = compiler_serialized_type_prototype_count(cs);
-        }
-        if (outSize != ZR_NULL) {
-            *outSize = currentPrototypeInfo->layoutByteSize;
-        }
-        if (outAlign != ZR_NULL) {
-            *outAlign = currentPrototypeInfo->layoutByteAlign;
-        }
-        return ZR_TRUE;
-    }
-
-    for (TZrSize index = 0; index < cs->typePrototypes.length; index++) {
-        SZrTypePrototypeInfo *prototypeInfo =
-                (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, index);
-        if (!compiler_type_prototype_serializes_to_runtime(prototypeInfo)) {
-            continue;
-        }
-        if (prototypeInfo == ZR_NULL ||
-            prototypeInfo->name == ZR_NULL ||
-            !compiler_type_name_matches_prototype_name(prototypeInfo->name, typeRef->typeName)) {
-            serializedIndex++;
-            continue;
+            if (compiler_try_use_inline_type_layout(cs,
+                                                    currentPrototypeInfo,
+                                                    compiler_serialized_type_prototype_count(cs),
+                                                    outLayoutId,
+                                                    outSize,
+                                                    outAlign)) {
+                return ZR_TRUE;
+            }
+            return ZR_FALSE;
         }
 
-        if (prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
-            compiler_finalize_current_struct_inline_layout(cs, prototypeInfo);
-        }
-        if (!compiler_prototype_has_inline_frame_layout(prototypeInfo)) {
-            serializedIndex++;
-            continue;
-        }
+        for (TZrSize index = 0; index < cs->typePrototypes.length; index++) {
+            SZrTypePrototypeInfo *prototypeInfo =
+                    (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, index);
+            if (!compiler_type_prototype_serializes_to_runtime(prototypeInfo)) {
+                continue;
+            }
+            if (prototypeInfo == ZR_NULL ||
+                prototypeInfo->name == ZR_NULL ||
+                !compiler_type_name_matches_inline_layout_pass(prototypeInfo->name,
+                                                               typeRef->typeName,
+                                                               exactOnly)) {
+                serializedIndex++;
+                continue;
+            }
 
-        if (outLayoutId != ZR_NULL) {
-            *outLayoutId = serializedIndex;
+            if (compiler_try_use_inline_type_layout(cs,
+                                                    prototypeInfo,
+                                                    serializedIndex,
+                                                    outLayoutId,
+                                                    outSize,
+                                                    outAlign)) {
+                return ZR_TRUE;
+            }
+            return ZR_FALSE;
         }
-        if (outSize != ZR_NULL) {
-            *outSize = prototypeInfo->layoutByteSize;
-        }
-        if (outAlign != ZR_NULL) {
-            *outAlign = prototypeInfo->layoutByteAlign;
-        }
-        return ZR_TRUE;
     }
 
     return ZR_FALSE;
@@ -1945,13 +2064,17 @@ static TZrBool build_typed_export_symbols(SZrCompilerState *cs,
 
         functionDeclNode = find_script_function_declaration_for_export(cs, exportedVar);
         if (functionDeclNode != ZR_NULL && functionDeclNode->type == ZR_AST_FUNCTION_DECLARATION) {
+            SZrAstNode *previousFunctionNode = cs->currentFunctionNode;
+            cs->currentFunctionNode = functionDeclNode;
             if (!build_function_export_symbol(cs,
                                               exportedVar,
                                                &functionDeclNode->data.functionDeclaration,
                                                &symbols[index])) {
+                cs->currentFunctionNode = previousFunctionNode;
                 free_typed_export_symbols(cs->state, symbols, exportCount);
                 return ZR_FALSE;
             }
+            cs->currentFunctionNode = previousFunctionNode;
             typed_export_symbol_set_declaration_from_function(&symbols[index], functionDeclNode);
         } else {
             variableDeclNode = find_script_variable_declaration_by_name(cs, exportedVar->name);
@@ -1964,13 +2087,17 @@ static TZrBool build_typed_export_symbols(SZrCompilerState *cs,
                     functionDeclNode =
                             find_script_function_declaration_by_name(cs, declaration->value->data.identifier.name);
                     if (functionDeclNode != ZR_NULL && functionDeclNode->type == ZR_AST_FUNCTION_DECLARATION) {
+                        SZrAstNode *previousFunctionNode = cs->currentFunctionNode;
+                        cs->currentFunctionNode = functionDeclNode;
                         if (!build_function_export_symbol(cs,
                                                           exportedVar,
                                                           &functionDeclNode->data.functionDeclaration,
                                                           &symbols[index])) {
+                            cs->currentFunctionNode = previousFunctionNode;
                             free_typed_export_symbols(cs->state, symbols, exportCount);
                             return ZR_FALSE;
                         }
+                        cs->currentFunctionNode = previousFunctionNode;
                         typed_export_symbol_set_declaration_from_variable(&symbols[index], variableDeclNode);
                         continue;
                     }

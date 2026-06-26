@@ -22,7 +22,7 @@ void backend_aot_write_c_static_direct_bool_no_arg_function_call(FILE *file,
                 (unsigned)destinationSlot);
     }
     fprintf(file,
-            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u(state);\n",
+            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u();\n",
             (unsigned)destinationSlot,
             (unsigned)calleeFlatIndex);
     if (syncStackSlot) {
@@ -58,7 +58,7 @@ void backend_aot_write_c_static_direct_bool_one_arg_function_call(FILE *file,
                 (unsigned)destinationSlot);
     }
     fprintf(file,
-            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u(state, zr_aot_b%u);\n",
+            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u(zr_aot_b%u);\n",
             (unsigned)destinationSlot,
             (unsigned)calleeFlatIndex,
             (unsigned)argumentSlot);
@@ -96,7 +96,7 @@ void backend_aot_write_c_static_direct_bool_two_arg_function_call(FILE *file,
                 (unsigned)destinationSlot);
     }
     fprintf(file,
-            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u(state, zr_aot_b%u, zr_aot_b%u);\n",
+            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u(zr_aot_b%u, zr_aot_b%u);\n",
             (unsigned)destinationSlot,
             (unsigned)calleeFlatIndex,
             (unsigned)firstArgumentSlot,
@@ -136,7 +136,7 @@ void backend_aot_write_c_static_direct_bool_three_arg_function_call(FILE *file,
                 (unsigned)destinationSlot);
     }
     fprintf(file,
-            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u(state, zr_aot_b%u, zr_aot_b%u, zr_aot_b%u);\n",
+            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u(zr_aot_b%u, zr_aot_b%u, zr_aot_b%u);\n",
             (unsigned)destinationSlot,
             (unsigned)calleeFlatIndex,
             (unsigned)firstArgumentSlot,
@@ -176,7 +176,7 @@ void backend_aot_write_c_static_direct_i64_bool_two_arg_function_call(FILE *file
                 (unsigned)destinationSlot);
     }
     fprintf(file,
-            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u(state, zr_aot_s%u, zr_aot_s%u);\n",
+            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u(zr_aot_s%u, zr_aot_s%u);\n",
             (unsigned)destinationSlot,
             (unsigned)calleeFlatIndex,
             (unsigned)firstArgumentSlot,
@@ -215,7 +215,7 @@ void backend_aot_write_c_static_direct_u64_bool_two_arg_function_call(FILE *file
                 (unsigned)destinationSlot);
     }
     fprintf(file,
-            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u(state, zr_aot_u%u, zr_aot_u%u);\n",
+            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u(zr_aot_u%u, zr_aot_u%u);\n",
             (unsigned)destinationSlot,
             (unsigned)calleeFlatIndex,
             (unsigned)firstArgumentSlot,
@@ -254,7 +254,7 @@ void backend_aot_write_c_static_direct_f64_bool_two_arg_function_call(FILE *file
                 (unsigned)destinationSlot);
     }
     fprintf(file,
-            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u(state, zr_aot_f%u, zr_aot_f%u);\n",
+            "        zr_aot_b%u = zr_aot_typed_bool_fn_%u(zr_aot_f%u, zr_aot_f%u);\n",
             (unsigned)destinationSlot,
             (unsigned)calleeFlatIndex,
             (unsigned)firstArgumentSlot,

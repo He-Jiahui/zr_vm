@@ -8,6 +8,7 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/raw_object.h"
+#include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
 
 
@@ -58,6 +59,8 @@
     ZR_ASSERT((o)->garbageCollectMark.generationalStatus == (f), (o)->garbageCollectMark.generationalStatus = (t))
 struct SZrGlobalState;
 struct SZrState;
+struct SZrAotGcRootFrame;
+struct SZrAotGcRootMap;
 
 enum EZrGarbageCollectCollectionKind {
     ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR = 0,
@@ -219,6 +222,13 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
 
 typedef struct SZrGarbageCollector SZrGarbageCollector;
 
+typedef struct SZrGcNativeCallPin {
+    SZrRawObject *object;
+    EZrGarbageCollectPinKind pinKind;
+    TZrBool ignoredAddedByCaller;
+    TZrBool pinKindAddedByCaller;
+} SZrGcNativeCallPin;
+
 ZR_FORCE_INLINE TZrBool ZrCore_GarbageCollector_IsObjectIgnoredFast(struct SZrGlobalState *global,
                                                                     SZrRawObject *object) {
     SZrGarbageCollector *collector;
@@ -282,6 +292,17 @@ ZR_CORE_API TZrBool ZrCore_GarbageCollector_IsInvariant(struct SZrGlobalState *g
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_IsSweeping(struct SZrGlobalState *global);
 
 ZR_CORE_API void ZrCore_GarbageCollector_CheckGc(struct SZrState *state);
+ZR_CORE_API void ZrCore_Gc_SafePoint(struct SZrState *state);
+ZR_CORE_API void ZrCore_Gc_WriteBarrier(struct SZrState *state,
+                                        SZrRawObject *ownerObject,
+                                        SZrTypeValue *value);
+ZR_CORE_API TZrBool ZrCore_Gc_NativeCallPinObject(struct SZrState *state,
+                                                  SZrRawObject *object,
+                                                  SZrGcNativeCallPin *pin);
+ZR_CORE_API TZrBool ZrCore_Gc_NativeCallPinValue(struct SZrState *state,
+                                                 const SZrTypeValue *value,
+                                                 SZrGcNativeCallPin *pin);
+ZR_CORE_API void ZrCore_Gc_NativeCallUnpin(struct SZrGlobalState *global, SZrGcNativeCallPin *pin);
 
 ZR_CORE_API void ZrCore_GarbageCollector_Barrier(struct SZrState *state, SZrRawObject *object, SZrRawObject *valueObject);
 
@@ -298,6 +319,13 @@ ZR_CORE_API void ZrCore_GarbageCollector_ScheduleCollection(struct SZrGlobalStat
                                                             EZrGarbageCollectCollectionKind kind);
 ZR_CORE_API void ZrCore_GarbageCollector_GetStatsSnapshot(struct SZrGlobalState *global,
                                                           SZrGarbageCollectorStatsSnapshot *outSnapshot);
+ZR_CORE_API TZrBool ZrCore_Gc_AotRootFramePush(struct SZrState *state,
+                                               struct SZrAotGcRootFrame *frame,
+                                               TZrStackValuePointer frameBase,
+                                               const struct SZrAotGcRootMap *rootMap);
+ZR_CORE_API TZrBool ZrCore_Gc_AotRootFramePop(struct SZrState *state,
+                                              struct SZrAotGcRootFrame *frame);
+ZR_CORE_API TZrUInt32 ZrCore_Gc_AotRootFrameDepth(const struct SZrState *state);
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_HasRememberedObject(struct SZrGlobalState *global, SZrRawObject *object);
 ZR_CORE_API void ZrCore_GarbageCollector_PinObject(struct SZrState *state,
                                                    SZrRawObject *object,

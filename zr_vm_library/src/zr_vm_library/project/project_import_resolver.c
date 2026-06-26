@@ -1043,7 +1043,9 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_GetDependencyImportVersionRange(
         return ZR_FALSE;
     }
 
-    if (dependencyRef->useAliasForModuleKey && targetPackage->assemblyName != ZR_NULL) {
+    if (dependencyRef->assemblyName != ZR_NULL) {
+        *outAssemblyName = dependencyRef->assemblyName;
+    } else if (dependencyRef->useAliasForModuleKey && targetPackage->assemblyName != ZR_NULL) {
         *outAssemblyName = targetPackage->assemblyName;
     }
     *outRequestedVersion = targetPackage->version;

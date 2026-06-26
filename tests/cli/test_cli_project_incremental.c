@@ -124,6 +124,18 @@ static TZrBool text_ends_with(const TZrChar *text, const TZrChar *suffix) {
     return textLength >= suffixLength && strcmp(text + textLength - suffixLength, suffix) == 0;
 }
 
+static void assert_text_contains(const TZrChar *text, const TZrChar *needle) {
+    TEST_ASSERT_NOT_NULL(text);
+    TEST_ASSERT_NOT_NULL(needle);
+    TEST_ASSERT_NOT_NULL(strstr(text, needle));
+}
+
+static void assert_text_not_contains(const TZrChar *text, const TZrChar *needle) {
+    TEST_ASSERT_NOT_NULL(text);
+    TEST_ASSERT_NOT_NULL(needle);
+    TEST_ASSERT_NULL(strstr(text, needle));
+}
+
 static TZrBool rewrite_text_file_replacing_once(const TZrChar *path,
                                                 const TZrChar *needle,
                                                 const TZrChar *replacement) {
@@ -518,7 +530,7 @@ static void test_cli_incremental_decorator_import_compile_skips_clean_rebuild_an
     TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)firstSummary.removedCount);
 
     TEST_ASSERT_TRUE(load_manifest_for_project(projectPath, &projectContext, &manifest));
-    TEST_ASSERT_EQUAL_UINT32(2u, (unsigned int)manifest.version);
+    TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)manifest.version);
     TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)manifest.count);
 
     TEST_ASSERT_TRUE(ZrCli_Project_ResolveBinaryPath(&projectContext, "main", mainZroPath, sizeof(mainZroPath)));
@@ -574,7 +586,7 @@ static void test_cli_incremental_decorator_import_compile_skips_clean_rebuild_an
 
     memset(&projectContext, 0, sizeof(projectContext));
     TEST_ASSERT_TRUE(load_manifest_for_project(projectPath, &projectContext, &manifest));
-    TEST_ASSERT_EQUAL_UINT32(2u, (unsigned int)manifest.version);
+    TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)manifest.version);
     TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)manifest.count);
 
     mainEntry = ZrCli_Project_FindManifestEntryConst(&manifest, "main");
@@ -682,7 +694,7 @@ static void test_cli_incremental_decorator_import_prunes_removed_modules_and_kee
 
     memset(&projectContext, 0, sizeof(projectContext));
     TEST_ASSERT_TRUE(load_manifest_for_project(projectPath, &projectContext, &manifest));
-    TEST_ASSERT_EQUAL_UINT32(2u, (unsigned int)manifest.version);
+    TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)manifest.version);
     TEST_ASSERT_EQUAL_UINT32(1u, (unsigned int)manifest.count);
 
     mainEntry = ZrCli_Project_FindManifestEntryConst(&manifest, "main");
@@ -812,7 +824,7 @@ static void test_cli_incremental_decorator_import_rename_reuses_clean_dependenci
 
     memset(&projectContext, 0, sizeof(projectContext));
     TEST_ASSERT_TRUE(load_manifest_for_project(projectPath, &projectContext, &manifest));
-    TEST_ASSERT_EQUAL_UINT32(2u, (unsigned int)manifest.version);
+    TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)manifest.version);
     TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)manifest.count);
 
     TEST_ASSERT_TRUE(ZrCli_Project_ResolveBinaryPath(&projectContext,
@@ -957,6 +969,7 @@ static void test_cli_project_path_resolution_maps_dotted_module_name_to_nested_a
     TZrChar sourcePath[ZR_TESTS_PATH_MAX];
     TZrChar zroPath[ZR_TESTS_PATH_MAX];
     TZrChar zriPath[ZR_TESTS_PATH_MAX];
+    TZrChar aotCPath[ZR_TESTS_PATH_MAX];
     SZrGlobalState *global = ZR_NULL;
     SZrCliProjectContext projectContext;
 
@@ -964,6 +977,7 @@ static void test_cli_project_path_resolution_maps_dotted_module_name_to_nested_a
     memset(sourcePath, 0, sizeof(sourcePath));
     memset(zroPath, 0, sizeof(zroPath));
     memset(zriPath, 0, sizeof(zriPath));
+    memset(aotCPath, 0, sizeof(aotCPath));
 
     TEST_ASSERT_TRUE(prepare_cli_args_fixture(projectRoot,
                                               sizeof(projectRoot),
@@ -976,12 +990,15 @@ static void test_cli_project_path_resolution_maps_dotted_module_name_to_nested_a
     TEST_ASSERT_TRUE(ZrCli_Project_ResolveSourcePath(&projectContext, "tools.seed", sourcePath, sizeof(sourcePath)));
     TEST_ASSERT_TRUE(ZrCli_Project_ResolveBinaryPath(&projectContext, "tools.seed", zroPath, sizeof(zroPath)));
     TEST_ASSERT_TRUE(ZrCli_Project_ResolveIntermediatePath(&projectContext, "tools.seed", zriPath, sizeof(zriPath)));
+    TEST_ASSERT_TRUE(ZrCli_Project_ResolveAotCPath(&projectContext, "tools.seed", aotCPath, sizeof(aotCPath)));
     normalize_path_text(sourcePath);
     normalize_path_text(zroPath);
     normalize_path_text(zriPath);
+    normalize_path_text(aotCPath);
     TEST_ASSERT_TRUE(text_ends_with(sourcePath, "/src/tools/seed.zr"));
     TEST_ASSERT_TRUE(text_ends_with(zroPath, "/bin/tools/seed.zro"));
     TEST_ASSERT_TRUE(text_ends_with(zriPath, "/bin/tools/seed.zri"));
+    TEST_ASSERT_TRUE(text_ends_with(aotCPath, "/bin/aot_c/src/tools/seed.c"));
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
@@ -991,6 +1008,7 @@ static void test_cli_project_path_resolution_maps_dependency_module_to_package_r
     TZrChar sourcePath[ZR_TESTS_PATH_MAX];
     TZrChar zroPath[ZR_TESTS_PATH_MAX];
     TZrChar zriPath[ZR_TESTS_PATH_MAX];
+    TZrChar aotCPath[ZR_TESTS_PATH_MAX];
     SZrGlobalState *global = ZR_NULL;
     SZrCliProjectContext projectContext;
 
@@ -998,6 +1016,7 @@ static void test_cli_project_path_resolution_maps_dependency_module_to_package_r
     memset(sourcePath, 0, sizeof(sourcePath));
     memset(zroPath, 0, sizeof(zroPath));
     memset(zriPath, 0, sizeof(zriPath));
+    memset(aotCPath, 0, sizeof(aotCPath));
 
     TEST_ASSERT_TRUE(prepare_dependency_path_fixture(projectRoot,
                                                      sizeof(projectRoot),
@@ -1019,12 +1038,162 @@ static void test_cli_project_path_resolution_maps_dependency_module_to_package_r
                                                            "$math@1.0.0/ops/sum",
                                                            zriPath,
                                                            sizeof(zriPath)));
+    TEST_ASSERT_TRUE(ZrCli_Project_ResolveAotCPath(&projectContext,
+                                                   "$math@1.0.0/ops/sum",
+                                                   aotCPath,
+                                                   sizeof(aotCPath)));
     normalize_path_text(sourcePath);
     normalize_path_text(zroPath);
     normalize_path_text(zriPath);
+    normalize_path_text(aotCPath);
     TEST_ASSERT_TRUE(text_ends_with(sourcePath, "/deps/math/src/ops/sum.zr"));
     TEST_ASSERT_TRUE(text_ends_with(zroPath, "/deps/math/bin/ops/sum.zro"));
     TEST_ASSERT_TRUE(text_ends_with(zriPath, "/deps/math/bin/ops/sum.zri"));
+    TEST_ASSERT_TRUE(text_ends_with(aotCPath, "/deps/math/bin/aot_c/src/ops/sum.c"));
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+}
+
+static void test_cli_project_aot_mode_applies_full_aot_writer_option(void) {
+    static const TZrChar *projectContent =
+            "{\n"
+            "  \"name\": \"cli_project_aot_mode\",\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\",\n"
+            "  \"aotMode\": \"full-aot\"\n"
+            "}\n";
+    TZrChar projectRoot[ZR_TESTS_PATH_MAX];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    SZrGlobalState *global = ZR_NULL;
+    SZrCliProjectContext projectContext;
+    SZrAotWriterOptions options;
+
+    memset(&projectContext, 0, sizeof(projectContext));
+    memset(&options, 0, sizeof(options));
+
+    build_generated_project_root("aot_mode_full", projectRoot, sizeof(projectRoot));
+    clean_directory_tree(projectRoot);
+    TEST_ASSERT_TRUE(join_path_suffix(projectRoot, "/aot_mode_full.zrp", projectPath, sizeof(projectPath)));
+    TEST_ASSERT_TRUE(join_path_suffix(projectRoot, "/src/main.zr", mainPath, sizeof(mainPath)));
+    TEST_ASSERT_TRUE(write_text_file(projectPath, projectContent));
+    TEST_ASSERT_TRUE(write_text_file(mainPath, "pub func run(): i32 { return 0; }\n"));
+
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+    global = ZrCli_Project_CreateProjectGlobal(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+    TEST_ASSERT_TRUE(ZrCli_ProjectContext_FromGlobal(&projectContext, global, projectPath));
+    TEST_ASSERT_TRUE(ZrCli_Compiler_ApplyProjectAotWriterOptions(&projectContext, &options));
+    TEST_ASSERT_TRUE(options.requireFullAot);
+    TEST_ASSERT_TRUE(options.stripGeneratedSymbols);
+    TEST_ASSERT_TRUE(options.requireExecutableLowering);
+    TEST_ASSERT_TRUE(options.enableCodeStripping);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+}
+
+static void test_cli_project_aot_mode_keeps_hybrid_writer_option_default(void) {
+    static const TZrChar *projectContent =
+            "{\n"
+            "  \"name\": \"cli_project_aot_mode_hybrid\",\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\"\n"
+            "}\n";
+    TZrChar projectRoot[ZR_TESTS_PATH_MAX];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    SZrGlobalState *global = ZR_NULL;
+    SZrCliProjectContext projectContext;
+    SZrAotWriterOptions options;
+
+    memset(&projectContext, 0, sizeof(projectContext));
+    memset(&options, 0, sizeof(options));
+
+    build_generated_project_root("aot_mode_hybrid", projectRoot, sizeof(projectRoot));
+    clean_directory_tree(projectRoot);
+    TEST_ASSERT_TRUE(join_path_suffix(projectRoot, "/aot_mode_hybrid.zrp", projectPath, sizeof(projectPath)));
+    TEST_ASSERT_TRUE(join_path_suffix(projectRoot, "/src/main.zr", mainPath, sizeof(mainPath)));
+    TEST_ASSERT_TRUE(write_text_file(projectPath, projectContent));
+    TEST_ASSERT_TRUE(write_text_file(mainPath, "pub func run(): i32 { return 0; }\n"));
+
+    options.requireFullAot = ZR_TRUE;
+    options.stripGeneratedSymbols = ZR_TRUE;
+    global = ZrCli_Project_CreateProjectGlobal(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+    TEST_ASSERT_TRUE(ZrCli_ProjectContext_FromGlobal(&projectContext, global, projectPath));
+    TEST_ASSERT_TRUE(ZrCli_Compiler_ApplyProjectAotWriterOptions(&projectContext, &options));
+    TEST_ASSERT_FALSE(options.requireFullAot);
+    TEST_ASSERT_FALSE(options.stripGeneratedSymbols);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+}
+
+static void test_cli_compile_emit_aot_c_writes_full_aot_project_c_source(void) {
+    static const TZrChar *projectContent =
+            "{\n"
+            "  \"name\": \"cli_emit_aot_c_full\",\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\",\n"
+            "  \"aotMode\": \"full-aot\"\n"
+            "}\n";
+    static const TZrChar *sourceContent =
+            "struct Stamp {\n"
+            "    pub var value: int;\n"
+            "    pub @constructor(value: int) { this.value = value; }\n"
+            "}\n"
+            "class RefA { }\n"
+            "func stamp<T>(value: T): Stamp where T: class {\n"
+            "    var local: Stamp = $Stamp(42);\n"
+            "    return local;\n"
+            "}\n"
+            "var input: RefA;\n"
+            "var returned: Stamp = stamp<RefA>(input);\n"
+            "return returned.value;";
+    TZrChar projectRoot[ZR_TESTS_PATH_MAX];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    TZrChar aotCPath[ZR_TESTS_PATH_MAX];
+    TZrChar *aotCText = ZR_NULL;
+    TZrSize aotCTextLength = 0;
+    SZrCliCommand compileCommand;
+    SZrCliCompileSummary summary;
+    SZrGlobalState *global = ZR_NULL;
+    SZrCliProjectContext projectContext;
+
+    memset(&summary, 0, sizeof(summary));
+    memset(&projectContext, 0, sizeof(projectContext));
+    memset(aotCPath, 0, sizeof(aotCPath));
+
+    build_generated_project_root("aot_c_emit_full", projectRoot, sizeof(projectRoot));
+    clean_directory_tree(projectRoot);
+    TEST_ASSERT_TRUE(join_path_suffix(projectRoot, "/aot_c_emit_full.zrp", projectPath, sizeof(projectPath)));
+    TEST_ASSERT_TRUE(join_path_suffix(projectRoot, "/src/main.zr", mainPath, sizeof(mainPath)));
+    TEST_ASSERT_TRUE(write_text_file(projectPath, projectContent));
+    TEST_ASSERT_TRUE(write_text_file(mainPath, sourceContent));
+
+    init_incremental_compile_command(&compileCommand, projectPath);
+    compileCommand.emitAotC = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrCli_Compiler_CompileProjectWithSummary(&compileCommand, &summary));
+    TEST_ASSERT_EQUAL_UINT32(1u, (unsigned int)summary.compiledCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)summary.skippedCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)summary.removedCount);
+
+    global = ZrCli_Project_CreateProjectGlobal(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+    TEST_ASSERT_TRUE(ZrCli_ProjectContext_FromGlobal(&projectContext, global, projectPath));
+    TEST_ASSERT_TRUE(ZrCli_Project_ResolveAotCPath(&projectContext, "main", aotCPath, sizeof(aotCPath)));
+    normalize_path_text(aotCPath);
+    TEST_ASSERT_TRUE(text_ends_with(aotCPath, "/bin/aot_c/src/main.c"));
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(aotCPath));
+    TEST_ASSERT_TRUE(ZrCli_Project_ReadTextFile(aotCPath, &aotCText, &aotCTextLength));
+    assert_text_contains(aotCText, "/* descriptor.moduleName = main */");
+    assert_text_contains(aotCText, "/* descriptor.inputKind = 2 */");
+    assert_text_contains(aotCText, "/* symbol_stripping.generatedSymbols = 1 */");
+    assert_text_contains(aotCText, "/* zr_aot_generic_call_typed_full_aot_no_deopt */");
+    assert_text_not_contains(aotCText, "/* zr_aot_generic_call_typed_missing_instance_deopt deopt=");
+    assert_text_not_contains(aotCText, "ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge(state,");
+    free(aotCText);
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
@@ -1180,6 +1349,9 @@ int main(void) {
     RUN_TEST(test_cli_incremental_disabling_intermediate_prunes_stale_zri_for_reachable_modules);
     RUN_TEST(test_cli_project_path_resolution_maps_dotted_module_name_to_nested_artifacts);
     RUN_TEST(test_cli_project_path_resolution_maps_dependency_module_to_package_roots);
+    RUN_TEST(test_cli_project_aot_mode_applies_full_aot_writer_option);
+    RUN_TEST(test_cli_project_aot_mode_keeps_hybrid_writer_option_default);
+    RUN_TEST(test_cli_compile_emit_aot_c_writes_full_aot_project_c_source);
     RUN_TEST(test_cli_incremental_compiles_dependency_modules_into_package_binary_root);
     RUN_TEST(test_cli_compile_emit_zrm_packs_reachable_modules_and_resources);
 

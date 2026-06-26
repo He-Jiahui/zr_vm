@@ -6,11 +6,14 @@
   "properties": {
     "name": {
       "type": "string",
-      "description": "Human-readable project name."
+      "minLength": 1,
+      "pattern": "^[^\\s/\\\\@$]+(?:\\.[^\\s/\\\\@$.]+)*$",
+      "description": "Legacy assembly identity name used when assembly.name is absent."
     },
     "manifestVersion": {
       "type": "integer",
       "minimum": 1,
+      "maximum": 1,
       "description": "Manifest schema version. Version 1 enables assembly identity and alias-based references."
     },
     "assembly": {
@@ -38,12 +41,20 @@
           "description": "Optional assembly culture. Defaults to neutral."
         },
         "publicKeyToken": {
-          "type": "string",
-          "description": "Optional assembly public key token."
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "pattern": "^[0-9A-Fa-f]+$",
+          "description": "Optional assembly public key token identity text. String values are hexadecimal and normalized to lowercase by the project loader."
         },
         "kind": {
           "type": "string",
-          "minLength": 1,
+          "enum": [
+            "library",
+            "application"
+          ],
           "description": "Optional assembly kind. Defaults to library."
         },
         "output": {
@@ -54,6 +65,14 @@
         }
       },
       "additionalProperties": true
+    },
+    "aotMode": {
+      "type": "string",
+      "enum": [
+        "hybrid",
+        "full-aot"
+      ],
+      "description": "Optional AOT policy declaration. Defaults to hybrid; full-aot records that the project expects closed-world AOT policy in later compiler stages."
     },
     "version": {
       "type": "string",
@@ -147,6 +166,18 @@
                   "type": "string",
                   "minLength": 1,
                   "description": "Dependency .zrp path relative to this manifest."
+                },
+                "assembly": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^\\s/\\\\@$]+(?:\\.[^\\s/\\\\@$.]+)*$",
+                  "description": "Optional declared target assembly name. If present, the dependency manifest assembly identity must match."
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^\\s/\\\\@$]+(?:\\.[^\\s/\\\\@$.]+)*$",
+                  "description": "Legacy alias for assembly; must match assembly when both fields are present."
                 },
                 "version": {
                   "type": "string",
@@ -289,6 +320,140 @@
             "compress": true
           },
           "assets/logo.bin": "resources/logo.bin"
+        }
+      ]
+    },
+    "preserve": {
+      "type": "array",
+      "description": "Optional AOT/linker preserve rules. Parsed into manifest roots for later code stripping and metadata policy.",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "target"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "type",
+              "method",
+              "generic"
+            ],
+            "description": "Preserve target category."
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\s/\\\\@$]+(?:\\.[^\\s/\\\\@$.]+)*$",
+            "description": "Type, method, or generic definition target to preserve."
+          },
+          "members": {
+            "type": "string",
+            "enum": [
+              "all",
+              "methods"
+            ],
+            "description": "Optional member retention level for type preserve rules."
+          },
+          "arguments": {
+            "type": "array",
+            "description": "Optional concrete type arguments for generic preserve rules.",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[^\\s/\\\\@$]+(?:\\.[^\\s/\\\\@$.]+)*$"
+            }
+          },
+          "feature": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\s/\\\\@$]+(?:\\.[^\\s/\\\\@$.]+)*$",
+            "description": "Optional build feature switch that gates this preserve rule."
+          },
+          "featureValue": {
+            "type": "boolean",
+            "description": "Required expected value when feature is present."
+          }
+        },
+        "dependencies": {
+          "feature": [
+            "featureValue"
+          ],
+          "featureValue": [
+            "feature"
+          ]
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "generic"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "required": [
+                "arguments"
+              ]
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "arguments"
+              ]
+            },
+            "then": {
+              "properties": {
+                "kind": {
+                  "const": "generic"
+                }
+              }
+            }
+          }
+        ],
+        "additionalProperties": true
+      },
+      "examples": [
+        [
+          {
+            "kind": "type",
+            "target": "Foo",
+            "members": "all"
+          },
+          {
+            "kind": "method",
+            "target": "Baz.run"
+          },
+          {
+            "kind": "generic",
+            "target": "List",
+            "arguments": [
+              "Foo"
+            ]
+          }
+        ]
+      ]
+    },
+    "features": {
+      "type": "object",
+      "description": "Build feature switch values used by feature-conditioned preserve rules.",
+      "patternProperties": {
+        "^[^\\s/\\\\@$]+(?:\\.[^\\s/\\\\@$.]+)*$": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "EnableFastAot": true,
+          "KeepDiagnostics": false
         }
       ]
     },

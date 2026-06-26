@@ -26,6 +26,18 @@ TZrBool backend_aot_c_frame_cleanup_would_emit(const SZrAotExecIrFrameLayout *fr
     return ZR_FALSE;
 }
 
+void backend_aot_write_c_frame_root_cleanup(FILE *file) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    if (zr_aot_has_gc_root_frame) {\n"
+            "        ZrCore_Gc_AotRootFramePop(state, &zr_aot_gc_root_frame);\n"
+            "        zr_aot_has_gc_root_frame = ZR_FALSE;\n"
+            "    }\n");
+}
+
 void backend_aot_write_c_frame_cleanup(FILE *file, const SZrAotExecIrFrameLayout *frameLayout) {
     TZrUInt32 reverseIndex;
 

@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "zr_vm_core/call_info.h"
+#include "zr_vm_core/bridge.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/execution_control.h"
@@ -41,6 +42,7 @@ typedef struct SZrLibraryAotLoadedModule {
     TZrChar *libraryPath;
     void *libraryHandle;
     const ZrAotCompiledModule *descriptor;
+    const SZrAotCodeRegistration *codeRegistration;
     SZrFunction *moduleFunction;
     SZrFunction **functionTable;
     TZrUInt32 functionCount;
@@ -213,6 +215,8 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
                                           EZrAotBackendKind backendKind,
                                           const TZrChar *moduleName,
                                           SZrLibraryAotLoadedModule **outRecord);
+static void aot_runtime_bind_record_code_registration(SZrLibraryAotLoadedModule *record,
+                                                      const ZrAotCompiledModule *descriptor);
 static void aot_runtime_execute_entry_body(SZrState *state, TZrPtr arguments);
 static void aot_runtime_resolve_observation_policy(const SZrState *state,
                                                    TZrUInt32 *outObservationMask,
@@ -547,6 +551,59 @@ static TZrBool aot_runtime_validate_descriptor(SZrState *state,
         aot_runtime_fail(state,
                          runtimeState,
                          "AOT descriptor validation failed for module '%s': functionThunkCount=0",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if (descriptor->codeRegistration == ZR_NULL) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': codeRegistration=null",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if (descriptor->codeRegistration->functionPointers != descriptor->functionThunks ||
+        descriptor->codeRegistration->functionCount != descriptor->functionThunkCount ||
+        descriptor->codeRegistration->methodInfos != descriptor->methodInfos ||
+        descriptor->codeRegistration->methodInfoCount != descriptor->methodInfoCount ||
+        descriptor->codeRegistration->typeLayouts != descriptor->typeLayouts ||
+        descriptor->codeRegistration->typeLayoutCount != descriptor->typeLayoutCount ||
+        descriptor->codeRegistration->typeLayoutTokens != descriptor->typeLayoutTokens ||
+        descriptor->codeRegistration->typeLayoutTokenCount != descriptor->typeLayoutTokenCount ||
+        descriptor->codeRegistration->gcDescriptors != descriptor->gcDescriptors ||
+        descriptor->codeRegistration->gcDescriptorCount != descriptor->gcDescriptorCount) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': codeRegistration table mismatch",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if ((descriptor->typeLayoutCount > 0u && descriptor->typeLayouts == ZR_NULL) ||
+        (descriptor->typeLayoutCount == 0u && descriptor->typeLayouts != ZR_NULL)) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': typeLayout table mismatch",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if (descriptor->typeLayoutTokenCount != descriptor->typeLayoutCount ||
+        (descriptor->typeLayoutTokenCount > 0u && descriptor->typeLayoutTokens == ZR_NULL) ||
+        (descriptor->typeLayoutTokenCount == 0u && descriptor->typeLayoutTokens != ZR_NULL)) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': typeLayout token table mismatch",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if (descriptor->codeRegistration->invokers == ZR_NULL ||
+        descriptor->codeRegistration->invokerCount == 0u) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': codeRegistration invokers missing",
                          normalizedModule);
         return ZR_FALSE;
     }
@@ -1039,6 +1096,15 @@ static TZrBool aot_runtime_record_try_get_generated_slot_count(const SZrLibraryA
     return ZR_TRUE;
 }
 
+static void aot_runtime_bind_record_code_registration(SZrLibraryAotLoadedModule *record,
+                                                      const ZrAotCompiledModule *descriptor) {
+    if (record == ZR_NULL || descriptor == ZR_NULL) {
+        return;
+    }
+
+    record->codeRegistration = descriptor->codeRegistration;
+}
+
 static const SZrFunction *aot_runtime_frame_function(const ZrAotGeneratedFrame *frame) {
     return frame != ZR_NULL ? frame->function : ZR_NULL;
 }
@@ -1460,14 +1526,14 @@ static TZrBool aot_runtime_try_prepare_direct_native_call(SZrState *state,
     }
 
     record = aot_runtime_find_record_for_function(runtimeState, metadataFunction);
-    if (record == ZR_NULL || record->descriptor == ZR_NULL || record->descriptor->functionThunks == ZR_NULL ||
-        record->descriptor->functionThunkCount == 0) {
+    if (record == ZR_NULL || record->codeRegistration == ZR_NULL ||
+        record->codeRegistration->functionPointers == ZR_NULL || record->codeRegistration->functionCount == 0) {
         return ZR_TRUE;
     }
 
     functionIndex = aot_runtime_find_function_index_in_record(record, metadataFunction);
-    if (functionIndex == UINT32_MAX || functionIndex >= record->descriptor->functionThunkCount ||
-        record->descriptor->functionThunks[functionIndex] == ZR_NULL) {
+    if (functionIndex == UINT32_MAX || functionIndex >= record->codeRegistration->functionCount ||
+        record->codeRegistration->functionPointers[functionIndex] == ZR_NULL) {
         return ZR_TRUE;
     }
 
@@ -1484,7 +1550,7 @@ static TZrBool aot_runtime_try_prepare_direct_native_call(SZrState *state,
         return ZR_FALSE;
     }
 
-    directCall->nativeFunction = record->descriptor->functionThunks[functionIndex];
+    directCall->nativeFunction = record->codeRegistration->functionPointers[functionIndex];
     return ZR_TRUE;
 }
 
@@ -1730,7 +1796,7 @@ static TZrBool aot_runtime_project_closure_into_vm_shim(SZrState *state,
         }
 
         ZrCore_Value_Copy(state, destinationCaptureValue, sourceCaptureValue);
-        ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(destinationCapture), sourceCaptureValue);
+        ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(destinationCapture), sourceCaptureValue);
     }
 
     *outClosure = closure;
@@ -1757,7 +1823,7 @@ static TZrBool aot_runtime_bind_native_closure_capture(SZrState *state,
     if (captureOwner != ZR_NULL) {
         ZrCore_RawObject_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(destinationClosure), captureOwner);
     } else {
-        ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(destinationClosure), captureValue);
+        ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(destinationClosure), captureValue);
     }
     return ZR_TRUE;
 }
@@ -1859,15 +1925,15 @@ static TZrBool aot_runtime_materialize_callable_constant_with_context(SZrState *
         return ZR_TRUE;
     }
 
-    if (record->descriptor == ZR_NULL || record->descriptor->functionThunks == ZR_NULL ||
-        record->descriptor->functionThunkCount == 0) {
+    if (record->codeRegistration == ZR_NULL || record->codeRegistration->functionPointers == ZR_NULL ||
+        record->codeRegistration->functionCount == 0) {
         ZrCore_Value_Copy(state, destination, source);
         return ZR_TRUE;
     }
 
     functionIndex = aot_runtime_find_function_index_in_record(record, metadataFunction);
-    if (functionIndex == UINT32_MAX || functionIndex >= record->descriptor->functionThunkCount ||
-        record->descriptor->functionThunks[functionIndex] == ZR_NULL) {
+    if (functionIndex == UINT32_MAX || functionIndex >= record->codeRegistration->functionCount ||
+        record->codeRegistration->functionPointers[functionIndex] == ZR_NULL) {
         aot_runtime_fail(state,
                          runtimeState,
                          "AOT callable thunk missing for module '%s' function index %u",
@@ -1882,7 +1948,7 @@ static TZrBool aot_runtime_materialize_callable_constant_with_context(SZrState *
         return ZR_FALSE;
     }
 
-    closure->nativeFunction = (FZrNativeFunction)record->descriptor->functionThunks[functionIndex];
+    closure->nativeFunction = (FZrNativeFunction)record->codeRegistration->functionPointers[functionIndex];
     closure->aotShimFunction = metadataFunction;
 
     if (captureCount > 0) {
@@ -2110,6 +2176,7 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
     TZrUInt32 *generatedFrameSlotCounts = ZR_NULL;
     SZrLibraryAotLoadedModule record;
     SZrString *moduleNameString;
+    SZrMetadataRuntime *metadataRuntime;
     TZrBool sourceExists;
     TZrBool zroExists;
 
@@ -2230,9 +2297,10 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
         return ZR_FALSE;
     }
 
-    if ((descriptor->functionThunks != ZR_NULL || descriptor->functionThunkCount != 0) &&
-        (descriptor->functionThunks == ZR_NULL || descriptor->functionThunkCount != functionCount)) {
-        TZrUInt32 descriptorThunkCount = descriptor != ZR_NULL ? descriptor->functionThunkCount : 0;
+    if ((descriptor->codeRegistration->functionPointers != ZR_NULL || descriptor->codeRegistration->functionCount != 0) &&
+        (descriptor->codeRegistration->functionPointers == ZR_NULL ||
+         descriptor->codeRegistration->functionCount != functionCount)) {
+        TZrUInt32 descriptorThunkCount = descriptor != ZR_NULL ? descriptor->codeRegistration->functionCount : 0;
         aot_runtime_close_library(handle);
         if (generatedFrameSlotCounts != ZR_NULL) {
             aot_runtime_reallocate(global, generatedFrameSlotCounts, sizeof(*generatedFrameSlotCounts) * functionCount, 0);
@@ -2257,6 +2325,7 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
     record.libraryPath = aot_runtime_duplicate_string(global, libraryPath);
     record.libraryHandle = handle;
     record.descriptor = descriptor;
+    aot_runtime_bind_record_code_registration(&record, descriptor);
     record.moduleFunction = moduleFunction;
     record.functionTable = functionTable;
     record.functionCount = functionCount;
@@ -2284,6 +2353,28 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
     if (moduleNameString != ZR_NULL) {
         TZrUInt64 pathHash = ZrCore_Module_CalculatePathHash(state, moduleNameString);
         ZrCore_Module_SetInfo(state, record.module, moduleNameString, pathHash, moduleNameString);
+    }
+    metadataRuntime = ZrCore_Module_AttachMetadataRuntime(record.module, record.moduleFunction, record.codeRegistration);
+    if (metadataRuntime == ZR_NULL) {
+        aot_runtime_close_library(handle);
+        aot_runtime_free_string(global, record.moduleName);
+        aot_runtime_free_string(global, record.sourcePath);
+        aot_runtime_free_string(global, record.zroPath);
+        aot_runtime_free_string(global, record.libraryPath);
+        if (generatedFrameSlotCounts != ZR_NULL) {
+            aot_runtime_reallocate(global, generatedFrameSlotCounts, sizeof(*generatedFrameSlotCounts) * functionCount, 0);
+        }
+        if (functionTable != ZR_NULL) {
+            aot_runtime_reallocate(global, functionTable, sizeof(*functionTable) * functionCapacity, 0);
+        }
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "failed to attach AOT metadata runtime for module '%s'",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+    for (TZrUInt32 functionIndex = 0; functionIndex < functionCount; functionIndex++) {
+        ZrCore_MetadataRuntime_AttachFunction(metadataRuntime, functionTable[functionIndex]);
     }
     ZrCore_Reflection_AttachModuleRuntimeMetadata(state, record.module, record.moduleFunction);
     ZrCore_Module_CreatePrototypesFromConstants(state, record.module, record.moduleFunction);
@@ -2632,12 +2723,19 @@ TZrBool ZrLibrary_AotRuntime_ResolveGeneratedModuleContext(SZrState *state,
     aot_runtime_mark_record_executed(runtimeState, record);
     context->recordHandle = record;
     context->metadataFunction = metadataFunction;
+    context->codeRegistration = record->codeRegistration;
+    context->methodInfo = record->codeRegistration != ZR_NULL &&
+                                  record->codeRegistration->methodInfos != ZR_NULL &&
+                                  resolvedIndex < record->codeRegistration->methodInfoCount
+                                  ? record->codeRegistration->methodInfos[resolvedIndex]
+                                  : ZR_NULL;
     context->module = record->module;
     context->moduleExecuted = &record->moduleExecuted;
     context->functionTable = record->functionTable;
     context->functionCount = record->functionCount;
-    context->functionThunks = record->descriptor != ZR_NULL ? record->descriptor->functionThunks : ZR_NULL;
-    context->functionThunkCount = record->descriptor != ZR_NULL ? record->descriptor->functionThunkCount : 0;
+    context->functionThunks =
+            record->codeRegistration != ZR_NULL ? record->codeRegistration->functionPointers : ZR_NULL;
+    context->functionThunkCount = record->codeRegistration != ZR_NULL ? record->codeRegistration->functionCount : 0;
     context->resolvedFunctionIndex = resolvedIndex;
     context->generatedFrameSlotCount = generatedFrameSlotCount;
     return ZR_TRUE;
@@ -2745,8 +2843,9 @@ TZrBool ZrLibrary_AotRuntime_BeginGeneratedFunction(SZrState *state,
     frame->moduleExecuted = &record->moduleExecuted;
     frame->functionTable = record->functionTable;
     frame->functionCount = record->functionCount;
-    frame->functionThunks = record->descriptor != ZR_NULL ? record->descriptor->functionThunks : ZR_NULL;
-    frame->functionThunkCount = record->descriptor != ZR_NULL ? record->descriptor->functionThunkCount : 0;
+    frame->codeRegistration = record->codeRegistration;
+    frame->functionThunks = record->codeRegistration != ZR_NULL ? record->codeRegistration->functionPointers : ZR_NULL;
+    frame->functionThunkCount = record->codeRegistration != ZR_NULL ? record->codeRegistration->functionCount : 0;
     frame->functionIndex = resolvedIndex;
     frame->currentInstructionIndex = 0;
     frame->lastObservedInstructionIndex = UINT32_MAX;
@@ -2909,7 +3008,7 @@ TZrBool ZrLibrary_AotRuntime_SetClosureValue(SZrState *state,
 
     ZrCore_Value_Copy(state, targetValue, sourceValue);
     if (barrierObject != ZR_NULL) {
-        ZrCore_Value_Barrier(state, barrierObject, sourceValue);
+        ZrCore_Gc_WriteBarrier(state, barrierObject, sourceValue);
     }
     return ZR_TRUE;
 }
@@ -3060,11 +3159,11 @@ TZrBool ZrLibrary_AotRuntime_ToObject(SZrState *state,
     sourceValue = ZrCore_Stack_GetValue(sourcePointer);
     typeNameValue = &function->constantValueList[typeNameConstantIndex];
     if (destinationValue == ZR_NULL || sourceValue == ZR_NULL ||
-        !ZrCore_Execution_ToObject(state,
-                                   frame != ZR_NULL ? frame->callInfo : state->callInfoList,
-                                   destinationValue,
-                                   sourceValue,
-                                   typeNameValue)) {
+        !ZrCore_Bridge_BoxTyped(state,
+                                frame != ZR_NULL ? frame->callInfo : state->callInfoList,
+                                destinationValue,
+                                sourceValue,
+                                typeNameValue)) {
         aot_runtime_fail(state, runtimeState, "TO_OBJECT: failed to materialize object conversion");
         return ZR_FALSE;
     }
@@ -3097,11 +3196,11 @@ TZrBool ZrLibrary_AotRuntime_ToStruct(SZrState *state,
     sourceValue = ZrCore_Stack_GetValue(sourcePointer);
     typeNameValue = &function->constantValueList[typeNameConstantIndex];
     if (destinationValue == ZR_NULL || sourceValue == ZR_NULL ||
-        !ZrCore_Execution_ToStruct(state,
-                                   frame != ZR_NULL ? frame->callInfo : state->callInfoList,
-                                   destinationValue,
-                                   sourceValue,
-                                   typeNameValue)) {
+        !ZrCore_Bridge_UnboxTyped(state,
+                                  frame != ZR_NULL ? frame->callInfo : state->callInfoList,
+                                  destinationValue,
+                                  sourceValue,
+                                  typeNameValue)) {
         aot_runtime_fail(state, runtimeState, "TO_STRUCT: failed to materialize struct conversion");
         return ZR_FALSE;
     }
@@ -4686,10 +4785,11 @@ static TZrBool aot_runtime_invoke_unary_meta(SZrState *state,
 
     memset(&directCall, 0, sizeof(directCall));
     record = runtimeState != ZR_NULL ? aot_runtime_find_record_for_function(runtimeState, metadataFunction) : ZR_NULL;
-    if (record != ZR_NULL && record->descriptor != ZR_NULL && record->descriptor->functionThunks != ZR_NULL) {
+    if (record != ZR_NULL && record->codeRegistration != ZR_NULL &&
+        record->codeRegistration->functionPointers != ZR_NULL) {
         functionIndex = aot_runtime_find_function_index_in_record(record, metadataFunction);
-        if (functionIndex != UINT32_MAX && functionIndex < record->descriptor->functionThunkCount &&
-            record->descriptor->functionThunks[functionIndex] != ZR_NULL) {
+        if (functionIndex != UINT32_MAX && functionIndex < record->codeRegistration->functionCount &&
+            record->codeRegistration->functionPointers[functionIndex] != ZR_NULL) {
             if (!aot_runtime_prepare_vm_direct_call_frame(state,
                                                           frame,
                                                           destinationSlot,
@@ -4702,7 +4802,7 @@ static TZrBool aot_runtime_invoke_unary_meta(SZrState *state,
                                                           &directCall)) {
                 return ZR_FALSE;
             }
-            directCall.nativeFunction = record->descriptor->functionThunks[functionIndex];
+            directCall.nativeFunction = record->codeRegistration->functionPointers[functionIndex];
             return ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,
                                                               frame,
                                                               &directCall,
@@ -4757,10 +4857,11 @@ static TZrBool aot_runtime_invoke_binary_meta(SZrState *state,
 
     memset(&directCall, 0, sizeof(directCall));
     record = runtimeState != ZR_NULL ? aot_runtime_find_record_for_function(runtimeState, metadataFunction) : ZR_NULL;
-    if (record != ZR_NULL && record->descriptor != ZR_NULL && record->descriptor->functionThunks != ZR_NULL) {
+    if (record != ZR_NULL && record->codeRegistration != ZR_NULL &&
+        record->codeRegistration->functionPointers != ZR_NULL) {
         functionIndex = aot_runtime_find_function_index_in_record(record, metadataFunction);
-        if (functionIndex != UINT32_MAX && functionIndex < record->descriptor->functionThunkCount &&
-            record->descriptor->functionThunks[functionIndex] != ZR_NULL) {
+        if (functionIndex != UINT32_MAX && functionIndex < record->codeRegistration->functionCount &&
+            record->codeRegistration->functionPointers[functionIndex] != ZR_NULL) {
             if (!aot_runtime_prepare_vm_direct_call_frame(state,
                                                           frame,
                                                           destinationSlot,
@@ -4773,7 +4874,7 @@ static TZrBool aot_runtime_invoke_binary_meta(SZrState *state,
                                                           &directCall)) {
                 return ZR_FALSE;
             }
-            directCall.nativeFunction = record->descriptor->functionThunks[functionIndex];
+            directCall.nativeFunction = record->codeRegistration->functionPointers[functionIndex];
             return ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,
                                                               frame,
                                                               &directCall,
@@ -5802,6 +5903,36 @@ TZrBool ZrLibrary_AotRuntime_SetMember(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_AotRuntime_SetMemberNewOwnerNoWriteBarrier(SZrState *state,
+                                                             ZrAotGeneratedFrame *frame,
+                                                             TZrUInt32 sourceSlot,
+                                                             TZrUInt32 receiverSlot,
+                                                             TZrUInt32 memberId) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverSlot);
+    SZrString *memberSymbol = ZR_NULL;
+    SZrTypeValue *receiverValue;
+    SZrTypeValue *sourceValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || sourcePointer == ZR_NULL || receiverPointer == ZR_NULL ||
+        !aot_runtime_resolve_member_symbol(aot_runtime_frame_function(frame), memberId, &memberSymbol)) {
+        aot_runtime_fail(state, runtimeState, "SET_MEMBER: invalid member id");
+        return ZR_FALSE;
+    }
+
+    receiverValue = ZrCore_Stack_GetValue(receiverPointer);
+    sourceValue = ZrCore_Stack_GetValue(sourcePointer);
+    if (receiverValue == ZR_NULL || sourceValue == ZR_NULL ||
+        !ZrCore_Object_SetMemberAssumeNewOwnerNoWriteBarrier(state, receiverValue, memberSymbol, sourceValue)) {
+        aot_runtime_fail(state, runtimeState, "SET_MEMBER: receiver must be a writable object member");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_AotRuntime_GetMemberSlot(SZrState *state,
                                            ZrAotGeneratedFrame *frame,
                                            TZrUInt32 destinationSlot,
@@ -5860,6 +5991,40 @@ TZrBool ZrLibrary_AotRuntime_SetMemberSlot(SZrState *state,
     sourceValue = ZrCore_Stack_GetValue(sourcePointer);
     if (receiverValue == ZR_NULL || sourceValue == ZR_NULL ||
         !ZrCore_Object_SetMember(state, receiverValue, memberSymbol, sourceValue)) {
+        aot_runtime_fail(state, runtimeState, "SET_MEMBER_SLOT: receiver must be a writable object member");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_SetMemberSlotNewOwnerNoWriteBarrier(SZrState *state,
+                                                                 ZrAotGeneratedFrame *frame,
+                                                                 TZrUInt32 sourceSlot,
+                                                                 TZrUInt32 receiverSlot,
+                                                                 TZrUInt32 cacheIndex) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverSlot);
+    SZrString *memberSymbol = ZR_NULL;
+    SZrTypeValue *receiverValue;
+    SZrTypeValue *sourceValue;
+    const SZrFunction *function = aot_runtime_frame_function(frame);
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || sourcePointer == ZR_NULL || receiverPointer == ZR_NULL ||
+        !aot_runtime_resolve_cached_member_symbol(function,
+                                                  cacheIndex,
+                                                  ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET,
+                                                  &memberSymbol)) {
+        aot_runtime_fail(state, runtimeState, "SET_MEMBER_SLOT: invalid cached member");
+        return ZR_FALSE;
+    }
+
+    receiverValue = ZrCore_Stack_GetValue(receiverPointer);
+    sourceValue = ZrCore_Stack_GetValue(sourcePointer);
+    if (receiverValue == ZR_NULL || sourceValue == ZR_NULL ||
+        !ZrCore_Object_SetMemberAssumeNewOwnerNoWriteBarrier(state, receiverValue, memberSymbol, sourceValue)) {
         aot_runtime_fail(state, runtimeState, "SET_MEMBER_SLOT: receiver must be a writable object member");
         return ZR_FALSE;
     }
@@ -5998,6 +6163,68 @@ TZrBool ZrLibrary_AotRuntime_SetByIndex(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_AotRuntime_SetByIndexNewOwnerNoWriteBarrier(SZrState *state,
+                                                              ZrAotGeneratedFrame *frame,
+                                                              TZrUInt32 sourceSlot,
+                                                              TZrUInt32 receiverSlot,
+                                                              TZrUInt32 keySlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverSlot);
+    TZrStackValuePointer keyPointer = aot_runtime_frame_slot(frame, keySlot);
+    SZrTypeValue *receiverValue;
+    SZrTypeValue *keyValue;
+    SZrTypeValue *sourceValue;
+    SZrTypeValue stableReceiver;
+    SZrTypeValue stableKey;
+    SZrTypeValue stableValue;
+    SZrCallInfo *callInfo;
+    TZrBool resolved;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || sourcePointer == ZR_NULL || receiverPointer == ZR_NULL || keyPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SET_BY_INDEX: invalid slot");
+        return ZR_FALSE;
+    }
+
+    receiverValue = ZrCore_Stack_GetValue(receiverPointer);
+    keyValue = ZrCore_Stack_GetValue(keyPointer);
+    sourceValue = ZrCore_Stack_GetValue(sourcePointer);
+    if (receiverValue == ZR_NULL || keyValue == ZR_NULL || sourceValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SET_BY_INDEX: invalid slot value");
+        return ZR_FALSE;
+    }
+    if (receiverValue->type != ZR_VALUE_TYPE_OBJECT && receiverValue->type != ZR_VALUE_TYPE_ARRAY) {
+        aot_runtime_fail(state, runtimeState, "SET_BY_INDEX: receiver must be an object or array");
+        return ZR_FALSE;
+    }
+
+    stableReceiver = *receiverValue;
+    stableKey = *keyValue;
+    stableValue = *sourceValue;
+    callInfo = frame->callInfo != ZR_NULL ? frame->callInfo : state->callInfoList;
+    if (callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL ||
+        callInfo->functionTop.valuePointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SET_BY_INDEX: missing active call frame");
+        return ZR_FALSE;
+    }
+
+    state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+    resolved = ZrCore_Object_SetByIndexAssumeNewOwnerNoWriteBarrier(state, &stableReceiver, &stableKey, &stableValue);
+    if (!aot_runtime_refresh_frame_from_callinfo(state, frame, callInfo)) {
+        aot_runtime_fail(state, runtimeState, "SET_BY_INDEX: failed to refresh frame after index write");
+        return ZR_FALSE;
+    }
+
+    if (!resolved) {
+        aot_runtime_fail(state, runtimeState, "SET_BY_INDEX: receiver must be an object or array");
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_AotRuntime_SuperArrayGetInt(SZrState *state,
                                               ZrAotGeneratedFrame *frame,
                                               TZrUInt32 destinationSlot,
@@ -6066,6 +6293,43 @@ TZrBool ZrLibrary_AotRuntime_SuperArraySetInt(SZrState *state,
     }
 
     if (!ZrCore_Object_SuperArraySetInt(state, receiverValue, keyValue, sourceValue)) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "SUPER_ARRAY_SET_INT: receiver must be an array-like object with int index");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_SuperArraySetIntNewOwnerNoWriteBarrier(SZrState *state,
+                                                                    ZrAotGeneratedFrame *frame,
+                                                                    TZrUInt32 sourceSlot,
+                                                                    TZrUInt32 receiverSlot,
+                                                                    TZrUInt32 keySlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverSlot);
+    TZrStackValuePointer keyPointer = aot_runtime_frame_slot(frame, keySlot);
+    SZrTypeValue *receiverValue;
+    SZrTypeValue *keyValue;
+    SZrTypeValue *sourceValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || sourcePointer == ZR_NULL || receiverPointer == ZR_NULL || keyPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_SET_INT: invalid slot");
+        return ZR_FALSE;
+    }
+
+    receiverValue = ZrCore_Stack_GetValue(receiverPointer);
+    keyValue = ZrCore_Stack_GetValue(keyPointer);
+    sourceValue = ZrCore_Stack_GetValue(sourcePointer);
+    if (receiverValue == ZR_NULL || keyValue == ZR_NULL || sourceValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_SET_INT: invalid slot value");
+        return ZR_FALSE;
+    }
+
+    if (!ZrCore_Object_SuperArraySetIntAssumeNewOwnerNoWriteBarrier(state, receiverValue, keyValue, sourceValue)) {
         aot_runtime_fail(state,
                          runtimeState,
                          "SUPER_ARRAY_SET_INT: receiver must be an array-like object with int index");
@@ -6547,13 +6811,14 @@ TZrBool ZrLibrary_AotRuntime_PrepareMetaCall(SZrState *state,
     }
 
     record = aot_runtime_find_record_for_function(runtimeState, metadataFunction);
-    if (record == ZR_NULL || record->descriptor == ZR_NULL || record->descriptor->functionThunks == ZR_NULL) {
+    if (record == ZR_NULL || record->codeRegistration == ZR_NULL ||
+        record->codeRegistration->functionPointers == ZR_NULL) {
         return ZR_TRUE;
     }
 
     functionIndex = aot_runtime_find_function_index_in_record(record, metadataFunction);
-    if (functionIndex == UINT32_MAX || functionIndex >= record->descriptor->functionThunkCount ||
-        record->descriptor->functionThunks[functionIndex] == ZR_NULL) {
+    if (functionIndex == UINT32_MAX || functionIndex >= record->codeRegistration->functionCount ||
+        record->codeRegistration->functionPointers[functionIndex] == ZR_NULL) {
         return ZR_TRUE;
     }
 
@@ -6570,7 +6835,7 @@ TZrBool ZrLibrary_AotRuntime_PrepareMetaCall(SZrState *state,
         return ZR_FALSE;
     }
 
-    directCall->nativeFunction = record->descriptor->functionThunks[functionIndex];
+    directCall->nativeFunction = record->codeRegistration->functionPointers[functionIndex];
     return ZR_TRUE;
 }
 
@@ -6593,9 +6858,10 @@ TZrBool ZrLibrary_AotRuntime_PrepareStaticDirectCall(SZrState *state,
             state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
     record = frame != ZR_NULL ? (SZrLibraryAotLoadedModule *)frame->recordHandle : ZR_NULL;
     if (state == ZR_NULL || frame == ZR_NULL || directCall == ZR_NULL || runtimeState == ZR_NULL || record == ZR_NULL ||
-        record->descriptor == ZR_NULL || record->functionTable == ZR_NULL || record->descriptor->functionThunks == ZR_NULL ||
-        calleeFunctionIndex >= record->functionCount || calleeFunctionIndex >= record->descriptor->functionThunkCount ||
-        record->descriptor->functionThunks[calleeFunctionIndex] == ZR_NULL) {
+        record->codeRegistration == ZR_NULL || record->functionTable == ZR_NULL ||
+        record->codeRegistration->functionPointers == ZR_NULL || calleeFunctionIndex >= record->functionCount ||
+        calleeFunctionIndex >= record->codeRegistration->functionCount ||
+        record->codeRegistration->functionPointers[calleeFunctionIndex] == ZR_NULL) {
         aot_runtime_fail(state, runtimeState, "generated AOT static direct call is missing callee thunk metadata");
         return ZR_FALSE;
     }
@@ -6617,12 +6883,12 @@ TZrBool ZrLibrary_AotRuntime_PrepareStaticDirectCall(SZrState *state,
                                                   record,
                                                   metadataFunction,
                                                   calleeFunctionIndex,
-                                                  record->descriptor->functionThunks[calleeFunctionIndex],
+                                                  record->codeRegistration->functionPointers[calleeFunctionIndex],
                                                   directCall)) {
         return ZR_FALSE;
     }
 
-    directCall->nativeFunction = record->descriptor->functionThunks[calleeFunctionIndex];
+    directCall->nativeFunction = record->codeRegistration->functionPointers[calleeFunctionIndex];
     return ZR_TRUE;
 }
 

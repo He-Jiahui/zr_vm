@@ -800,7 +800,15 @@ static void test_aot_c_source_lowers_typed_arithmetic_to_c_expressions(void) {
             "zr_aot_arith_exec_signed_unary",
             "zr_aot_arith_exec_float_unary",
             "backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot)",
+            "backend_aot_c_scalar_locals_i64_written_before(functionIr, sourceSlot, execInstructionIndex)",
+            "backend_aot_c_scalar_locals_i64_written_before(",
+            "functionIr, leftSlot, execInstructionIndex)",
+            "backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(functionIr, destinationSlot, execInstructionIndex)",
+            "zr_aot_scalar_exec_i64_unary",
             "backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot)",
+            "backend_aot_c_scalar_locals_f64_written_before(functionIr, sourceSlot, execInstructionIndex)",
+            "backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(functionIr, destinationSlot, execInstructionIndex)",
+            "zr_aot_scalar_exec_f64_unary",
             "zr_aot_arith_exec_signed_const",
             "zr_aot_arith_exec_unsigned_const",
             "backend_aot_c_format_signed_integer_literal",
@@ -815,7 +823,11 @@ static void test_aot_c_source_lowers_typed_arithmetic_to_c_expressions(void) {
             "zr_aot_left_scalar / zr_aot_right_literal",
             "-zr_aot_source_scalar",
             "zr_aot_s%u = %s;",
+            "zr_aot_left_scalar = zr_aot_s%u;",
+            "zr_aot_s%u = zr_aot_result;",
             "zr_aot_f%u = %s;",
+            "zr_aot_s%u = -zr_aot_s%u;",
+            "zr_aot_f%u = -zr_aot_f%u;",
             "zr_aot_arith_exec_signed_mod",
             "zr_aot_arith_exec_unsigned_mod",
             "zr_aot_left_scalar % zr_aot_right_scalar",
@@ -837,33 +849,34 @@ static void test_aot_c_source_lowers_typed_arithmetic_to_c_expressions(void) {
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(ADD_SIGNED):",
-            "backend_aot_write_c_direct_add_signed(file, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_add_signed(file, functionIr, destinationSlot, operandA1, operandB1);",
             "backend_aot_write_c_direct_add_unsigned(file, destinationSlot, operandA1, operandB1);",
-            "backend_aot_write_c_direct_sub_signed(file, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_sub_signed(file, functionIr, destinationSlot, operandA1, operandB1);",
             "backend_aot_write_c_direct_sub_unsigned(file, destinationSlot, operandA1, operandB1);",
-            "backend_aot_write_c_direct_mul_signed(file, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_mul_signed(file, functionIr, destinationSlot, operandA1, operandB1);",
             "backend_aot_write_c_direct_mul_unsigned(file, destinationSlot, operandA1, operandB1);",
-            "backend_aot_write_c_direct_div_signed(file, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_div_signed(file, functionIr, destinationSlot, operandA1, operandB1);",
             "backend_aot_write_c_direct_div_unsigned(file, destinationSlot, operandA1, operandB1);",
             "backend_aot_write_c_direct_add_float(file, destinationSlot, operandA1, operandB1);",
             "backend_aot_write_c_direct_sub_float(file, destinationSlot, operandA1, operandB1);",
             "backend_aot_write_c_direct_mul_float(file, destinationSlot, operandA1, operandB1);",
             "backend_aot_write_c_direct_div_float(file, destinationSlot, operandA1, operandB1);",
             "case ZR_INSTRUCTION_ENUM(NEG_SIGNED):",
-            "backend_aot_write_c_direct_neg_signed(file, functionIr, destinationSlot, operandA1);",
+            "backend_aot_write_c_direct_neg_signed(file, functionIr, destinationSlot, operandA1, instructionIndex);",
             "case ZR_INSTRUCTION_ENUM(NEG_FLOAT):",
-            "backend_aot_write_c_direct_neg_float(file, functionIr, destinationSlot, operandA1);",
-            "backend_aot_write_c_direct_add_signed_const(file, entry->function, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_neg_float(file, functionIr, destinationSlot, operandA1, instructionIndex);",
+            "backend_aot_write_c_direct_add_signed_const(",
             "backend_aot_write_c_direct_add_unsigned_const(file, entry->function, destinationSlot, operandA1, operandB1);",
-            "backend_aot_write_c_direct_sub_signed_const(file, entry->function, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_sub_signed_const(",
             "backend_aot_write_c_direct_sub_unsigned_const(file, entry->function, destinationSlot, operandA1, operandB1);",
-            "backend_aot_write_c_direct_mul_signed_const(file, entry->function, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_mul_signed_const(",
             "backend_aot_write_c_direct_mul_unsigned_const(file, entry->function, destinationSlot, operandA1, operandB1);",
-            "backend_aot_write_c_direct_div_signed_const(file, entry->function, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_div_signed_const(",
             "backend_aot_write_c_direct_div_unsigned_const(file, entry->function, destinationSlot, operandA1, operandB1);",
-            "backend_aot_write_c_direct_mod_signed(file, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_mod_signed(file, functionIr, destinationSlot, operandA1, operandB1);",
             "backend_aot_write_c_direct_mod_unsigned(file, destinationSlot, operandA1, operandB1);",
-            "backend_aot_write_c_direct_mod_signed_const(file, entry->function, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_direct_mod_signed_const(",
+            "file, functionIr, entry->function, destinationSlot, operandA1, operandB1, instructionIndex);",
             "backend_aot_write_c_direct_mod_unsigned_const(file, entry->function, destinationSlot, operandA1, operandB1);",
             "case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):",
             "backend_aot_write_c_direct_add_signed_mod_const(",
@@ -935,9 +948,17 @@ static void test_aot_c_source_lowers_typed_arithmetic_to_c_expressions(void) {
             "backend_aot_c_scalar_locals_has_i64_slot(functionIr, rightSlot)",
             "backend_aot_c_scalar_locals_has_u64_slot(functionIr, leftSlot)",
             "backend_aot_c_scalar_locals_has_u64_slot(functionIr, rightSlot)",
+            "backend_aot_c_scalar_locals_has_f64_slot(functionIr, leftSlot)",
+            "backend_aot_c_scalar_locals_has_f64_slot(functionIr, rightSlot)",
             "backend_aot_try_write_c_scalar_binary(file, functionIr, semIrInstruction, execInstruction, staticCType)",
+            "backend_aot_c_scalar_f64_compare_operator(",
+            "backend_aot_c_scalar_decode_float_compare_operands(",
             "backend_aot_write_c_scalar_u64_compare(FILE *file,",
+            "backend_aot_write_c_scalar_f64_compare(FILE *file,",
             "TZrBool useScalarDestination",
+            "backend_aot_c_scalar_locals_f64_written_before(functionIr, leftSlot, execInstructionIndex)",
+            "backend_aot_c_scalar_locals_f64_written_before(functionIr, rightSlot, execInstructionIndex)",
+            "backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(",
             "zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;",
             "zr_aot_b%u = (TZrBool)(zr_aot_s%u %s zr_aot_s%u);",
             "zr_aot_s_result = zr_aot_b%u;",
@@ -945,6 +966,7 @@ static void test_aot_c_source_lowers_typed_arithmetic_to_c_expressions(void) {
             "zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;",
             "zr_aot_u_result = (TZrBool)(zr_aot_u%u %s zr_aot_u%u);",
             "zr_aot_b%u = zr_aot_u_result;",
+            "zr_aot_b%u = (TZrBool)(zr_aot_f%u %s zr_aot_f%u);",
     };
     static const char *const scalarSemirForbiddenNeedles[] = {
             "zr_aot_s%u = zr_aot_s_left;",
@@ -1377,10 +1399,14 @@ static void test_aot_c_source_mirrors_scalar_stack_copy_to_c_locals(void) {
             "backend_aot_c_scalar_stack_copy_source_slot_is_parameter(",
             "backend_aot_c_scalar_stack_copy_source_local_is_available(",
             "backend_aot_c_scalar_stack_copy_destination_local_is_available(",
+            "backend_aot_c_scalar_stack_copy_prefer_available_source_type(",
+            "backend_aot_c_scalar_stack_copy_try_prefer_available_source_type(",
             "backend_aot_c_scalar_locals_i64_written_before(functionIr, sourceSlot, execInstructionIndex)",
             "backend_aot_c_scalar_stack_copy_can_use_local_only(const SZrAotExecIrFunction *functionIr",
             "TZrUInt32 execInstructionIndex)",
             "hasSourceLocal = backend_aot_c_scalar_stack_copy_source_local_is_available(",
+            "if (forceValueSlotWrite) {",
+            "ZR_STATIC_C_TYPE_U64",
             "sourceIsParameter = backend_aot_c_scalar_stack_copy_source_slot_is_parameter(",
             "sourceStaticCType = backend_aot_c_scalar_stack_copy_static_type_for_slot(functionIr->function, sourceSlot)",
             "sourceLocalStaticCType = backend_aot_c_scalar_stack_copy_static_type_from_locals(functionIr, sourceSlot)",
@@ -1493,10 +1519,26 @@ static void test_aot_c_source_lowers_typed_bool_equality_to_c_expressions(void) 
             "backend_aot_write_c_direct_jump_if_bool_false(",
     };
     static const char *const scalarLocalNeedles[] = {
+            "backend_aot_c_scalar_locals_kind_from_result_opcode(",
+            "case ZR_INSTRUCTION_OP_NEG_SIGNED:",
+            "case ZR_INSTRUCTION_OP_NEG_FLOAT:",
+            "backend_aot_c_scalar_locals_instruction_is_signed_local_consumer(",
+            "case ZR_INSTRUCTION_OP_NEG_SIGNED:\n"
+            "            return (TZrBool)(leftSlot == slot);",
+            "backend_aot_c_scalar_locals_signed_consumer_destination_kind(",
+            "*outKind = ZR_AOT_SCALAR_LOCAL_KIND_I64;",
+            "case ZR_INSTRUCTION_OP_NEG_SIGNED:\n"
+            "            return backend_aot_c_scalar_locals_has_i64_slot(functionIr, leftSlot);",
+            "case ZR_INSTRUCTION_OP_LOGICAL_EQUAL_FLOAT:",
+            "case ZR_INSTRUCTION_OP_LOGICAL_GREATER_FLOAT:",
             "case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_BOOL):",
             "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_BOOL):",
-            "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL): {",
-            "declaredSlotKinds[destinationSlot] & ZR_AOT_SCALAR_LOCAL_KIND_BOOL",
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL):",
+            "return ZR_AOT_SCALAR_LOCAL_KIND_BOOL;",
+            "backend_aot_c_scalar_locals_instruction_is_f64_local_consumer(",
+            "backend_aot_c_scalar_locals_f64_consumer_reads_slot(",
+            "backend_aot_c_scalar_locals_f64_consumer_mentions_slot(",
+            "backend_aot_c_scalar_locals_record_result_destinations(",
             "backend_aot_c_scalar_locals_record_slot(slotKinds,",
     };
     static const char *const forbiddenFunctionBodyNeedles[] = {
@@ -1585,10 +1627,23 @@ static void test_aot_c_source_lowers_typed_signed_branch_to_c_comparisons(void) 
             "case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):",
     };
     static const char *const execIrNeedles[] = {
+            "#include \"backend_aot_exec_ir_source_location.h\"",
             "case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):",
             "case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):",
             "case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):",
             "case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):",
+            "backend_aot_exec_ir_debug_column_for_instruction(",
+            "backend_aot_exec_ir_debug_column_end_for_instruction(",
+            "destinationInstruction->debugColumn =",
+            "destinationInstruction->debugColumnEnd =",
+    };
+    static const char *const execIrSourceLocationNeedles[] = {
+            "backend_aot_exec_ir_debug_line_for_instruction(",
+            "backend_aot_exec_ir_debug_line_end_for_instruction(",
+            "backend_aot_exec_ir_debug_column_for_instruction(",
+            "backend_aot_exec_ir_debug_column_end_for_instruction(",
+            "columnInSourceStart",
+            "columnInSourceEnd",
     };
     static const char *const forbiddenControlNeedles[] = {
             "ZrLibrary_AotRuntime_ShouldJumpIfGreaterSigned",
@@ -1607,12 +1662,15 @@ static void test_aot_c_source_lowers_typed_signed_branch_to_c_comparisons(void) 
             read_repo_text_file_owned("zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
     char *execIrText =
             read_repo_text_file_owned("zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c");
+    char *execIrSourceLocationText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(controlLoweringText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
     TEST_ASSERT_NOT_NULL(backendSupportText);
     TEST_ASSERT_NOT_NULL(execIrText);
+    TEST_ASSERT_NOT_NULL(execIrSourceLocationText);
 
     assert_text_contains_all(emitterHeaderText, headerNeedles, ARRAY_COUNT(headerNeedles));
     assert_text_contains_all(controlLoweringText, controlNeedles, ARRAY_COUNT(controlNeedles));
@@ -1620,12 +1678,16 @@ static void test_aot_c_source_lowers_typed_signed_branch_to_c_comparisons(void) 
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
     assert_text_contains_all(backendSupportText, backendSupportNeedles, ARRAY_COUNT(backendSupportNeedles));
     assert_text_contains_all(execIrText, execIrNeedles, ARRAY_COUNT(execIrNeedles));
+    assert_text_contains_all(execIrSourceLocationText,
+                             execIrSourceLocationNeedles,
+                             ARRAY_COUNT(execIrSourceLocationNeedles));
 
     free(emitterHeaderText);
     free(controlLoweringText);
     free(functionBodyText);
     free(backendSupportText);
     free(execIrText);
+    free(execIrSourceLocationText);
 }
 
 static void test_aot_c_source_lowers_typed_numeric_conversion_to_c_casts(void) {
@@ -1734,6 +1796,8 @@ static void test_aot_c_source_emits_typed_scalar_local_declarations(void) {
             "(kind & expectedKind) == expectedKind",
             "backend_aot_c_scalar_locals_record_typed_locals(",
             "backend_aot_c_scalar_locals_record_semir(",
+            "backend_aot_c_scalar_locals_kind_from_result_opcode(",
+            "backend_aot_c_scalar_locals_record_result_destinations(",
             "backend_aot_c_scalar_locals_instruction_is_stack_copy(",
             "backend_aot_c_scalar_locals_record_stack_copy_destinations(",
             "function->typedLocalBindings",
@@ -2008,6 +2072,239 @@ static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
     free(valueSemirCallText);
 }
 
+static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
+    static const char *const emitterNeedles[] = {
+            "#include \"backend_aot_c_zrp_metadata_prune.h\"",
+            "#include \"backend_aot_c_zrp_metadata_size.h\"",
+            "SZrAotCEmbeddedZrpMetadata embeddedZrpMetadata;",
+            "backend_aot_collect_zrp_metadata_size_stats(options, &zrpMetadataSizeBeforeStripping);",
+            "backend_aot_c_prepare_embedded_zrp_metadata(options,",
+            "backend_aot_collect_zrp_metadata_size_stats_from_blob(embeddedZrpMetadata.blob,",
+            "backend_aot_write_code_stripping_zrp_metadata_size_deltas(file,",
+            "descriptor.embeddedModuleBlobLength = %llu",
+            "embeddedZrpMetadata.length",
+            "backend_aot_write_embedded_blob_c(file,",
+            "backend_aot_c_release_embedded_zrp_metadata(&embeddedZrpMetadata);",
+            "backend_aot_write_zrp_metadata_size_stats(file, &zrpMetadataSizeAfterStripping);",
+    };
+    static const char *const emitterForbiddenNeedles[] = {
+            "#include \"zr_vm_core/zrp_metadata.h\"",
+            "ZrCore_ZrpMetadata_ReadHeader(",
+            "static unsigned long long backend_aot_zrp_section_bytes(",
+            "static void backend_aot_collect_zrp_metadata_size_stats(",
+            "static void backend_aot_write_zrp_metadata_size_stats(",
+            "static void backend_aot_write_code_stripping_zrp_metadata_size_deltas(",
+    };
+    static const char *const metadataHeaderNeedles[] = {
+            "ZR_VM_PARSER_BACKEND_AOT_C_ZRP_METADATA_SIZE_H",
+            "typedef struct SZrAotZrpMetadataSizeStats",
+            "backend_aot_collect_zrp_metadata_size_stats(",
+            "backend_aot_collect_zrp_metadata_size_stats_from_blob(",
+            "backend_aot_write_zrp_metadata_size_stats(",
+            "backend_aot_write_code_stripping_zrp_metadata_size_deltas(",
+    };
+    static const char *const metadataSourceNeedles[] = {
+            "#include \"backend_aot_c_zrp_metadata_size.h\"",
+            "#include \"zr_vm_core/zrp_metadata.h\"",
+            "ZrCore_ZrpMetadata_ReadHeader(",
+            "backend_aot_zrp_section_bytes(",
+            "backend_aot_collect_zrp_metadata_size_stats(",
+            "backend_aot_collect_zrp_metadata_size_stats_from_blob(",
+            "backend_aot_write_zrp_metadata_size_stats(",
+            "backend_aot_write_code_stripping_zrp_metadata_size_deltas(",
+            "code_stripping.%sBefore",
+            "aot_size.%s",
+    };
+    static const char *const pruneHeaderNeedles[] = {
+            "ZR_VM_PARSER_BACKEND_AOT_C_ZRP_METADATA_PRUNE_H",
+            "typedef struct SZrAotCEmbeddedZrpMetadata",
+            "const TZrByte *blob;",
+            "TZrSize length;",
+            "TZrByte *ownedBlob;",
+            "backend_aot_c_prepare_embedded_zrp_metadata(",
+            "backend_aot_c_release_embedded_zrp_metadata(",
+    };
+    static const char *const pruneSourceNeedles[] = {
+            "#include \"backend_aot_c_zrp_metadata_prune.h\"",
+            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"backend_aot_c_zrp_metadata_signature.h\"",
+            "#include \"zr_vm_core/zrp_metadata.h\"",
+            "backend_aot_c_zrp_can_prune_method_defs(",
+            "backend_aot_c_zrp_build_pruned_header(",
+            "backend_aot_c_zrp_build_signature_blob_remap(",
+            "backend_aot_c_zrp_copy_signature_blob_pool(",
+            "backend_aot_c_zrp_rewrite_retained_method_spec_signature_blobs(",
+            "backend_aot_c_zrp_copy_token_records(",
+            "backend_aot_c_zrp_copy_type_defs(",
+            "backend_aot_c_zrp_copy_method_defs(",
+            "backend_aot_c_zrp_copy_field_defs(",
+            "backend_aot_c_zrp_copy_generic_params(",
+            "backend_aot_c_zrp_copy_generic_param_constraints(",
+            "backend_aot_c_zrp_copy_method_specs(",
+            "ZrCore_ZrpMetadata_WriteHeader(",
+            "malloc(prunedLength)",
+            "free(metadata->ownedBlob);",
+    };
+    static const char *const remapHeaderNeedles[] = {
+            "ZR_VM_PARSER_BACKEND_AOT_C_ZRP_METADATA_REMAP_H",
+            "backend_aot_c_zrp_method_def_row_is_retained(",
+            "backend_aot_c_zrp_count_retained_method_defs(",
+            "backend_aot_c_zrp_compacted_method_def_token(",
+            "backend_aot_c_zrp_compacted_field_def_token(",
+            "backend_aot_c_zrp_remap_token_record(",
+            "backend_aot_c_zrp_count_retained_token_records(",
+            "backend_aot_c_zrp_remap_method_spec_row(",
+            "backend_aot_c_zrp_count_retained_method_specs(",
+            "backend_aot_c_zrp_remap_generic_param_owner_token(",
+            "backend_aot_c_zrp_generic_param_row_is_retained(",
+            "backend_aot_c_zrp_count_retained_generic_params(",
+            "backend_aot_c_zrp_remap_generic_param_constraint_row(",
+            "backend_aot_c_zrp_count_retained_generic_param_constraints(",
+            "backend_aot_c_zrp_adjust_generic_param_range(",
+            "backend_aot_c_zrp_adjust_generic_param_constraint_range(",
+            "backend_aot_c_zrp_adjust_type_def_method_range(",
+    };
+    static const char *const remapSourceNeedles[] = {
+            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"backend_aot_internal.h\"",
+            "backend_aot_c_function_table_contains_flat_index(",
+            "backend_aot_c_zrp_find_field_def_index_for_token(",
+            "backend_aot_c_zrp_remap_member_def_token(",
+            "backend_aot_c_zrp_remap_method_spec_row(",
+            "backend_aot_c_zrp_count_retained_method_specs(",
+            "backend_aot_c_zrp_remap_generic_param_owner_token(",
+            "backend_aot_c_zrp_count_retained_generic_params(",
+            "backend_aot_c_zrp_compacted_generic_param_index(",
+            "backend_aot_c_zrp_remap_generic_param_constraint_row(",
+            "backend_aot_c_zrp_count_retained_generic_param_constraints(",
+            "backend_aot_c_zrp_adjust_generic_param_range(",
+            "backend_aot_c_zrp_adjust_generic_param_constraint_range(",
+            "backend_aot_c_zrp_remap_token_record(",
+            "backend_aot_c_zrp_count_retained_token_records(",
+            "backend_aot_c_zrp_count_retained_method_defs(",
+            "backend_aot_c_zrp_adjust_type_def_method_range(",
+    };
+    static const char *const signatureHeaderNeedles[] = {
+            "ZR_VM_PARSER_BACKEND_AOT_C_ZRP_METADATA_SIGNATURE_H",
+            "typedef struct SZrAotCZrpSignatureBlobRemap",
+            "backend_aot_c_zrp_signature_blob_remap_init(",
+            "backend_aot_c_zrp_signature_blob_remap_destroy(",
+            "backend_aot_c_zrp_build_signature_blob_remap(",
+            "backend_aot_c_zrp_copy_signature_blob_pool(",
+            "backend_aot_c_zrp_rewrite_retained_method_spec_signature_blobs(",
+            "backend_aot_c_zrp_remap_signature_blob_offset(",
+            "backend_aot_c_zrp_recomputed_signature_hash(",
+    };
+    static const char *const signatureSourceNeedles[] = {
+            "#include \"backend_aot_c_zrp_metadata_signature.h\"",
+            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"zr_vm_core/hash.h\"",
+            "CZrAotCZrpSignatureHashV1Prefix",
+            "backend_aot_c_zrp_signature_blob_remap_add(",
+            "backend_aot_c_zrp_add_retained_method_spec_signature_blobs(",
+            "backend_aot_c_zrp_rewrite_method_spec_signature_blob(",
+            "ZrCore_ZrpMetadata_ValidateSignatureBlob(",
+            "backend_aot_c_zrp_recomputed_signature_hash(",
+    };
+    char *emitterText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+    char *metadataHeaderText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.h");
+    char *metadataSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.c");
+    char *pruneHeaderText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.h");
+    char *pruneSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c");
+    char *remapHeaderText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.h");
+    char *remapSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c");
+    char *signatureHeaderText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.h");
+    char *signatureSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c");
+
+    TEST_ASSERT_NOT_NULL(emitterText);
+    TEST_ASSERT_NOT_NULL(metadataHeaderText);
+    TEST_ASSERT_NOT_NULL(metadataSourceText);
+    TEST_ASSERT_NOT_NULL(pruneHeaderText);
+    TEST_ASSERT_NOT_NULL(pruneSourceText);
+    TEST_ASSERT_NOT_NULL(remapHeaderText);
+    TEST_ASSERT_NOT_NULL(remapSourceText);
+    TEST_ASSERT_NOT_NULL(signatureHeaderText);
+    TEST_ASSERT_NOT_NULL(signatureSourceText);
+
+    assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
+    assert_text_contains_none(emitterText, emitterForbiddenNeedles, ARRAY_COUNT(emitterForbiddenNeedles));
+    assert_text_contains_all(metadataHeaderText, metadataHeaderNeedles, ARRAY_COUNT(metadataHeaderNeedles));
+    assert_text_contains_all(metadataSourceText, metadataSourceNeedles, ARRAY_COUNT(metadataSourceNeedles));
+    assert_text_contains_all(pruneHeaderText, pruneHeaderNeedles, ARRAY_COUNT(pruneHeaderNeedles));
+    assert_text_contains_all(pruneSourceText, pruneSourceNeedles, ARRAY_COUNT(pruneSourceNeedles));
+    assert_text_contains_all(remapHeaderText, remapHeaderNeedles, ARRAY_COUNT(remapHeaderNeedles));
+    assert_text_contains_all(remapSourceText, remapSourceNeedles, ARRAY_COUNT(remapSourceNeedles));
+    assert_text_contains_all(signatureHeaderText, signatureHeaderNeedles, ARRAY_COUNT(signatureHeaderNeedles));
+    assert_text_contains_all(signatureSourceText, signatureSourceNeedles, ARRAY_COUNT(signatureSourceNeedles));
+
+    free(emitterText);
+    free(metadataHeaderText);
+    free(metadataSourceText);
+    free(pruneHeaderText);
+    free(pruneSourceText);
+    free(remapHeaderText);
+    free(remapSourceText);
+    free(signatureHeaderText);
+    free(signatureSourceText);
+}
+
+static void test_aot_c_source_tracks_method_metadata_generated_byte_deltas(void) {
+    static const char *const emitterNeedles[] = {
+            "methodMetadataGeneratedBytesBeforeStripping",
+            "methodMetadataGeneratedBytesAfterStripping",
+            "methodMetadataGeneratedBytesRemovedByStripping",
+            "TZrUInt8 reflectionMetadataLevel",
+            "reflectionMetadataLevel = backend_aot_option_reflection_metadata_level(options);",
+            "backend_aot_c_method_metadata_generated_bytes_referenced(state,",
+            "reflectionMetadataLevel);",
+            "metadata_policy.reflectionLevel = %u",
+            "code_stripping.methodMetadataGeneratedBytesBefore = %llu",
+            "code_stripping.methodMetadataGeneratedBytesAfter = %llu",
+            "code_stripping.methodMetadataGeneratedBytesRemoved = %llu",
+    };
+    static const char *const methodMetadataHeaderNeedles[] = {
+            "backend_aot_c_method_metadata_generated_bytes_referenced(",
+    };
+    static const char *const methodMetadataSourceNeedles[] = {
+            "backend_aot_c_method_metadata_generated_bytes_referenced(",
+            "tmpfile()",
+            "backend_aot_c_reflection_metadata_level_name(",
+            "ZR_AOT_REFLECTION_METADATA_NONE",
+            "backend_aot_write_c_method_infos(scratchFile, state, table, module, reflectionMetadataLevel);",
+    };
+    char *emitterText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+    char *methodMetadataHeaderText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.h");
+    char *methodMetadataSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c");
+
+    TEST_ASSERT_NOT_NULL(emitterText);
+    TEST_ASSERT_NOT_NULL(methodMetadataHeaderText);
+    TEST_ASSERT_NOT_NULL(methodMetadataSourceText);
+
+    assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
+    assert_text_contains_all(methodMetadataHeaderText,
+                             methodMetadataHeaderNeedles,
+                             ARRAY_COUNT(methodMetadataHeaderNeedles));
+    assert_text_contains_all(methodMetadataSourceText,
+                             methodMetadataSourceNeedles,
+                             ARRAY_COUNT(methodMetadataSourceNeedles));
+
+    free(emitterText);
+    free(methodMetadataHeaderText);
+    free(methodMetadataSourceText);
+}
+
 static void test_aot_c_generated_abi_header_is_public(void) {
     static const char *const abiHeaderNeedles[] = {
             "ZR_VM_COMMON_ZR_AOT_ABI_H",
@@ -2019,19 +2316,54 @@ static void test_aot_c_generated_abi_header_is_public(void) {
             "ZR_AOT_INPUT_KIND_SOURCE",
             "ZR_AOT_INPUT_KIND_BINARY",
             "FZrAotEntryThunk",
+            "EZrAotGenericSlotKind",
+            "ZR_AOT_GENERIC_SLOT_TYPE_LAYOUT",
+            "ZR_AOT_GENERIC_SLOT_METHOD",
+            "ZR_AOT_GENERIC_SLOT_SIZEOF",
+            "SZrAotGenericSlot",
+            "SZrAotGenericResolvedSlot",
+            "SZrAotGenericDictionary",
             "SZrAotMethodInfo",
+            "const SZrAotGenericDictionary *genericDictionary;",
+            "SZrAotCodeRegistration",
+            "const FZrAotEntryThunk *functionPointers;",
+            "const FZrAotReflectionInvoker *invokers;",
+            "TZrUInt32 invokerCount;",
+            "const SZrAotCodeRegistration *codeRegistration;",
             "const SZrAotMethodInfo *const *methodInfos;",
             "TZrUInt32 methodInfoCount;",
+            "const struct SZrTypeLayout *const *typeLayouts;",
+            "TZrUInt32 typeLayoutCount;",
+            "const TZrUInt32 *typeLayoutTokens;",
+            "TZrUInt32 typeLayoutTokenCount;",
+            "SZrAotGcDescriptor",
+            "const SZrAotGcDescriptor *const *gcDescriptors;",
+            "TZrUInt32 gcDescriptorCount;",
             "ZrAotCompiledModule",
             "FZrVmGetAotCompiledModule",
             "ZR_VM_AOT_EXPORT",
     };
     static const char *const emitterNeedles[] = {
             "#include \"zr_vm_common/zr_aot_abi.h\"",
+            "static const SZrAotCodeRegistration zr_aot_code_registration",
             "static const ZrAotCompiledModule zr_aot_module",
+            ".codeRegistration = &zr_aot_code_registration,",
             "ZR_VM_AOT_EXPORT const ZrAotCompiledModule *ZrVm_GetAotCompiledModule(void)",
             "ZR_AOT_BACKEND_KIND_C",
             "ZR_VM_AOT_ABI_VERSION",
+            "backend_aot_c_type_layout_index_space(state, &functionTable);",
+            "backend_aot_write_c_type_layout_registration_table(file, state, &functionTable, typeLayoutIndexSpace);",
+            "backend_aot_write_c_type_layout_token_table(file, state, &functionTable, typeLayoutIndexSpace);",
+            ".typeLayouts = ",
+            ".typeLayoutCount = %u,",
+            ".typeLayoutTokens = ",
+            ".typeLayoutTokenCount = %u,",
+            "backend_aot_write_c_generic_dictionary_macros(file);",
+            "TZrBool stripGeneratedSymbols;",
+            "stripGeneratedSymbols = backend_aot_option_strip_generated_symbols(options);",
+            "/* symbol_stripping.generatedSymbols = %u */",
+            "backend_aot_write_c_generic_monomorphization_entries(file, &functionTable, stripGeneratedSymbols);",
+            "backend_aot_write_c_generic_sharing_entries(file, &functionTable, stripGeneratedSymbols);",
     };
     char *abiHeaderText = read_repo_text_file_owned("zr_vm_common/include/zr_vm_common/zr_aot_abi.h");
     char *emitterText = read_repo_text_file_owned(
@@ -2059,6 +2391,10 @@ static void test_aot_c_writer_options_are_public(void) {
             "const TZrByte *embeddedModuleBlob;",
             "TZrSize embeddedModuleBlobLength;",
             "TZrBool requireExecutableLowering;",
+            "TZrBool stripGeneratedSymbols;",
+            "TZrBool suppressRuntimeFallbackWarnings;",
+            "TZrUInt32 suppressRuntimeFallbackWarningReasonMask;",
+            "ZR_AOT_RUNTIME_FALLBACK_WARNING_DYNAMIC_CALL",
             "ZrParser_Writer_WriteAotCFileWithOptions(",
             "const SZrAotWriterOptions *options",
             "ZrParser_Writer_WriteAotLlvmFileWithOptions(",
@@ -2068,6 +2404,9 @@ static void test_aot_c_writer_options_are_public(void) {
             "backend_aot_option_text(const SZrAotWriterOptions *options",
             "backend_aot_option_input_kind(const SZrAotWriterOptions *options)",
             "backend_aot_option_input_hash(const SZrAotWriterOptions *options",
+            "backend_aot_option_strip_generated_symbols(const SZrAotWriterOptions *options)",
+            "backend_aot_option_suppress_runtime_fallback_warnings(const SZrAotWriterOptions *options)",
+            "backend_aot_option_runtime_fallback_warning_suppression_mask(const SZrAotWriterOptions *options)",
     };
     char *writerHeaderText = read_repo_text_file_owned("zr_vm_parser/include/zr_vm_parser/writer.h");
     char *internalHeaderText = read_repo_text_file_owned(
@@ -2106,6 +2445,8 @@ int main(void) {
     RUN_TEST(test_aot_c_source_lowers_typed_numeric_conversion_to_c_casts);
     RUN_TEST(test_aot_c_source_emits_typed_scalar_local_declarations);
     RUN_TEST(test_aot_c_source_emits_value_frame_cleanup_exit);
+    RUN_TEST(test_aot_c_source_separates_zrp_metadata_size_accounting);
+    RUN_TEST(test_aot_c_source_tracks_method_metadata_generated_byte_deltas);
     RUN_TEST(test_aot_c_generated_abi_header_is_public);
     RUN_TEST(test_aot_c_writer_options_are_public);
     return UNITY_END();

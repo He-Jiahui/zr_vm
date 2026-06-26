@@ -9,6 +9,7 @@
 #include "harness/runtime_support.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/string.h"
 #include "zr_vm_parser/writer.h"
 
 #ifndef ZR_VM_TESTS_C_COMPILER
@@ -22,6 +23,12 @@
 #ifndef ZR_VM_TESTS_BUILD_LIB_DIR
 #define ZR_VM_TESTS_BUILD_LIB_DIR "lib"
 #endif
+
+#define ZR_AOT_DYNAMIC_DEOPT_TEST_SOURCE_LINE 41u
+#define ZR_AOT_DYNAMIC_DEOPT_TEST_SOURCE_LINE_END 43u
+#define ZR_AOT_DYNAMIC_DEOPT_TEST_SOURCE_COLUMN 7u
+#define ZR_AOT_DYNAMIC_DEOPT_TEST_SOURCE_COLUMN_END 19u
+#define ZR_AOT_DYNAMIC_DEOPT_TEST_SOURCE_FILE "dynamic_deopt_bridge.zr"
 
 #if defined(ZR_PLATFORM_UNIX)
 static int run_command_expect_success(const char *command) {
@@ -112,6 +119,22 @@ static SZrFunction *create_dynamic_deopt_boundary_function(SZrState *state,
     function->parameterCount = 0u;
     function->hasVariableArguments = ZR_FALSE;
     function->closureValueLength = 0u;
+    function->sourceCodeList = ZrCore_String_CreateFromNative(state, ZR_AOT_DYNAMIC_DEOPT_TEST_SOURCE_FILE);
+    TEST_ASSERT_NOT_NULL(function->sourceCodeList);
+    function->lineInSourceStart = ZR_AOT_DYNAMIC_DEOPT_TEST_SOURCE_LINE;
+    function->lineInSourceEnd = ZR_AOT_DYNAMIC_DEOPT_TEST_SOURCE_LINE_END;
+    function->executionLocationInfoList = (SZrFunctionExecutionLocationInfo *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionExecutionLocationInfo),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->executionLocationInfoList);
+    memset(function->executionLocationInfoList, 0, sizeof(SZrFunctionExecutionLocationInfo));
+    function->executionLocationInfoLength = 1u;
+    function->executionLocationInfoList[0].currentInstructionOffset = 0u;
+    function->executionLocationInfoList[0].lineInSource = ZR_AOT_DYNAMIC_DEOPT_TEST_SOURCE_LINE;
+    function->executionLocationInfoList[0].lineInSourceEnd = ZR_AOT_DYNAMIC_DEOPT_TEST_SOURCE_LINE_END;
+    function->executionLocationInfoList[0].columnInSourceStart = ZR_AOT_DYNAMIC_DEOPT_TEST_SOURCE_COLUMN;
+    function->executionLocationInfoList[0].columnInSourceEnd = ZR_AOT_DYNAMIC_DEOPT_TEST_SOURCE_COLUMN_END;
     return function;
 }
 
@@ -216,6 +239,9 @@ static void test_aot_c_generated_shared_library_compiles_semir_dynamic_deopt_bri
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* trim_warnings.runtimeFallbackCount = 1 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "/* trim_warning.runtimeFallback[0] function=0 instruction=0 sourceFile=dynamic_deopt_bridge.zr sourceLine=41 sourceLineEnd=43 sourceColumn=7 sourceColumnEnd=19 reason=dynamic-call */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "DYN_CALL"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_dynamic_deopt_bridge deopt="));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallDynamicDeoptBridge(state,"));
@@ -226,6 +252,235 @@ static void test_aot_c_generated_shared_library_compiles_semir_dynamic_deopt_bri
     assert_generated_source_compiles(generatedCPath, sharedLibraryPath);
 
     ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
+static void test_aot_c_suppresses_runtime_fallback_trim_warnings_when_requested(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C dynamic deopt bridge smoke currently validates the Unix shared-library toolchain path");
+#else
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_dynamic_deopt_call_boundary_function(state);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(compiler_build_function_semir_metadata(state, function));
+    TEST_ASSERT_EQUAL_UINT32(1u, function->semIrDeoptTableLength);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_dynamic_deopt_bridge_trim_suppressed";
+    options.sourceHash = "dynamic-deopt-bridge-trim-suppressed";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "dynamic-deopt-bridge-trim-suppressed";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.suppressRuntimeFallbackWarnings = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_dynamic_deopt_bridge",
+                                                       "runtime_project/bin/aot_c/src",
+                                                       "dynamic_deopt_bridge_trim_suppressed",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* trim_warnings.runtimeFallbackCount = 0 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* trim_warnings.runtimeFallbackSuppressedCount = 1 */"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "trim_warning.runtimeFallback[0]"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallDynamicDeoptBridge(state,"));
+    free(generatedCText);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
+static void test_aot_c_suppresses_runtime_fallback_trim_warnings_by_reason(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C dynamic deopt bridge smoke currently validates the Unix shared-library toolchain path");
+#else
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *callFunction;
+    SZrFunction *memberFunction;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    callFunction = create_dynamic_deopt_call_boundary_function(state);
+    TEST_ASSERT_NOT_NULL(callFunction);
+    TEST_ASSERT_TRUE(compiler_build_function_semir_metadata(state, callFunction));
+    TEST_ASSERT_EQUAL_UINT32(1u, callFunction->semIrDeoptTableLength);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_dynamic_deopt_bridge_dynamic_call_reason_suppressed";
+    options.sourceHash = "dynamic-call-reason-suppressed";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "dynamic-call-reason-suppressed";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.suppressRuntimeFallbackWarningReasonMask = ZR_AOT_RUNTIME_FALLBACK_WARNING_DYNAMIC_CALL;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_dynamic_deopt_bridge",
+                                                       "runtime_project/bin/aot_c/src",
+                                                       "dynamic_call_reason_suppressed",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, callFunction, generatedCPath, &options));
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* trim_warnings.runtimeFallbackCount = 0 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* trim_warnings.runtimeFallbackSuppressedCount = 1 */"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "trim_warning.runtimeFallback[0]"));
+    free(generatedCText);
+
+    memberFunction = create_dynamic_member_deopt_boundary_function(state);
+    TEST_ASSERT_NOT_NULL(memberFunction);
+    TEST_ASSERT_TRUE(compiler_build_function_semir_metadata(state, memberFunction));
+    TEST_ASSERT_EQUAL_UINT32(1u, memberFunction->semIrDeoptTableLength);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_dynamic_deopt_bridge_dynamic_member_reason_visible";
+    options.sourceHash = "dynamic-member-reason-visible";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "dynamic-member-reason-visible";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.suppressRuntimeFallbackWarningReasonMask = ZR_AOT_RUNTIME_FALLBACK_WARNING_DYNAMIC_CALL;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_dynamic_deopt_bridge",
+                                                       "runtime_project/bin/aot_c/src",
+                                                       "dynamic_member_reason_visible",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, memberFunction, generatedCPath, &options));
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* trim_warnings.runtimeFallbackCount = 1 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* trim_warnings.runtimeFallbackSuppressedCount = 0 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "/* trim_warning.runtimeFallback[0] function=0 instruction=0 sourceFile=dynamic_deopt_bridge.zr sourceLine=41 sourceLineEnd=43 sourceColumn=7 sourceColumnEnd=19 reason=dynamic-value-access */"));
+    free(generatedCText);
+
+    ZrCore_Function_Free(state, callFunction);
+    ZrCore_Function_Free(state, memberFunction);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
+static void test_aot_c_full_aot_rejects_semir_dynamic_call_deopt_bridge(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C dynamic deopt bridge smoke currently validates the Unix shared-library toolchain path");
+#else
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    FILE *generatedFile;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_dynamic_deopt_call_boundary_function(state);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(compiler_build_function_semir_metadata(state, function));
+    TEST_ASSERT_EQUAL_UINT32(1u, function->semIrDeoptTableLength);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_full_aot_dynamic_deopt_rejected";
+    options.sourceHash = "full-aot-dynamic-deopt-rejected";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "full-aot-dynamic-deopt-rejected";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.requireFullAot = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_dynamic_deopt_bridge",
+                                                       "runtime_project/bin/aot_c/src",
+                                                       "full_aot_dynamic_deopt_rejected",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    remove(generatedCPath);
+
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
+static void assert_full_aot_rejects_dynamic_value_access_deopt_bridge(SZrState *state,
+                                                                      SZrFunction *function,
+                                                                      const TZrChar *moduleName,
+                                                                      const TZrChar *artifactName,
+                                                                      const TZrChar *inputHash) {
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    FILE *generatedFile;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(compiler_build_function_semir_metadata(state, function));
+    TEST_ASSERT_EQUAL_UINT32(1u, function->semIrDeoptTableLength);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = moduleName;
+    options.sourceHash = inputHash;
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = inputHash;
+    options.requireExecutableLowering = ZR_TRUE;
+    options.requireFullAot = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_dynamic_deopt_bridge",
+                                                       "runtime_project/bin/aot_c/src",
+                                                       artifactName,
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    remove(generatedCPath);
+
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+}
+
+static void test_aot_c_full_aot_rejects_dynamic_value_access_deopt_bridges(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C dynamic value-access deopt bridge smoke currently validates the Unix shared-library toolchain path");
+#else
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *memberFunction;
+    SZrFunction *indexFunction;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    memberFunction = create_dynamic_member_deopt_boundary_function(state);
+    assert_full_aot_rejects_dynamic_value_access_deopt_bridge(state,
+                                                              memberFunction,
+                                                              "aot_c_full_aot_dynamic_member_deopt_rejected",
+                                                              "full_aot_dynamic_member_deopt_rejected",
+                                                              "full-aot-dynamic-member-deopt-rejected");
+
+    indexFunction = create_dynamic_index_deopt_boundary_function(state);
+    assert_full_aot_rejects_dynamic_value_access_deopt_bridge(state,
+                                                              indexFunction,
+                                                              "aot_c_full_aot_dynamic_index_deopt_rejected",
+                                                              "full_aot_dynamic_index_deopt_rejected",
+                                                              "full-aot-dynamic-index-deopt-rejected");
+
+    ZrCore_Function_Free(state, memberFunction);
+    ZrCore_Function_Free(state, indexFunction);
     ZrTests_Runtime_State_Destroy(state);
 #endif
 }
@@ -276,6 +531,9 @@ static void test_aot_c_generated_shared_library_compiles_dynamic_value_access_de
 
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, memberFunction, generatedCPath, &options));
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* trim_warnings.runtimeFallbackCount = 1 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "/* trim_warning.runtimeFallback[0] function=0 instruction=0 sourceFile=dynamic_deopt_bridge.zr sourceLine=41 sourceLineEnd=43 sourceColumn=7 sourceColumnEnd=19 reason=dynamic-value-access */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_dynamic_get_member_boundary"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, expectedDeoptMarker));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(state,"));
@@ -315,6 +573,9 @@ static void test_aot_c_generated_shared_library_compiles_dynamic_value_access_de
 
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, indexFunction, generatedCPath, &options));
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* trim_warnings.runtimeFallbackCount = 1 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "/* trim_warning.runtimeFallback[0] function=0 instruction=0 sourceFile=dynamic_deopt_bridge.zr sourceLine=41 sourceLineEnd=43 sourceColumn=7 sourceColumnEnd=19 reason=dynamic-value-access */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_dynamic_get_by_index_boundary"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, expectedDeoptMarker));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(state,"));
@@ -332,6 +593,10 @@ static void test_aot_c_generated_shared_library_compiles_dynamic_value_access_de
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_compiles_semir_dynamic_deopt_bridge);
+    RUN_TEST(test_aot_c_suppresses_runtime_fallback_trim_warnings_when_requested);
+    RUN_TEST(test_aot_c_suppresses_runtime_fallback_trim_warnings_by_reason);
+    RUN_TEST(test_aot_c_full_aot_rejects_semir_dynamic_call_deopt_bridge);
+    RUN_TEST(test_aot_c_full_aot_rejects_dynamic_value_access_deopt_bridges);
     RUN_TEST(test_aot_c_generated_shared_library_compiles_dynamic_value_access_deopt_bridges);
     return UNITY_END();
 }

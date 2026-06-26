@@ -11,6 +11,21 @@ TZrUInt32 backend_aot_llvm_next_temp(TZrUInt32 *tempCounter) {
     return current;
 }
 
+void backend_aot_llvm_format_function_symbol(TZrChar *buffer,
+                                             TZrSize bufferSize,
+                                             TZrUInt32 functionIndex,
+                                             TZrBool stripGeneratedSymbols) {
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    if (stripGeneratedSymbols) {
+        snprintf(buffer, bufferSize, "zr_fn_g%u", (unsigned)functionIndex);
+    } else {
+        snprintf(buffer, bufferSize, "zr_aot_fn_%u", (unsigned)functionIndex);
+    }
+}
+
 void backend_aot_llvm_make_function_label(TZrChar *buffer,
                                           TZrSize bufferSize,
                                           TZrUInt32 functionIndex,

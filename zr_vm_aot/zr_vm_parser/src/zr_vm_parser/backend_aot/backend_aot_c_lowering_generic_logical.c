@@ -359,7 +359,8 @@ void backend_aot_write_c_direct_logical_not(FILE *file,
 void backend_aot_write_c_direct_jump_if(FILE *file,
                                         TZrUInt32 functionIndex,
                                         TZrUInt32 conditionSlot,
-                                        TZrUInt32 targetInstructionIndex) {
+                                        TZrUInt32 targetInstructionIndex,
+                                        TZrBool isBackEdge) {
     if (file == ZR_NULL) {
         return;
     }
@@ -371,7 +372,11 @@ void backend_aot_write_c_direct_jump_if(FILE *file,
             "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(state, &frame, %u, &zr_aot_truthy));\n",
             (unsigned)conditionSlot);
     fprintf(file,
-            "        if (!zr_aot_truthy) {\n"
+            "        if (!zr_aot_truthy) {\n");
+    if (isBackEdge) {
+        backend_aot_write_c_gc_safepoint(file, "            ", "zr_aot_gc_safepoint_back_edge");
+    }
+    fprintf(file,
             "            goto zr_aot_fn_%u_ins_%u;\n"
             "        }\n"
             "    }\n",

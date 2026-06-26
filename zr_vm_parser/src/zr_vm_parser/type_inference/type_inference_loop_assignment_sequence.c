@@ -1,6 +1,9 @@
 #include "type_inference_loop_assignment_sequence.h"
 
+#include "type_inference_loop_assignment_nested_if.h"
+#include "type_inference_loop_assignment_nested_loop.h"
 #include "type_inference_loop_assignment_self_dependency.h"
+#include "type_inference_loop_assignment_sequence_symbolic_delta.h"
 
 #include "zr_vm_common/zr_parser_conf.h"
 #include "zr_vm_common/zr_type_conf.h"
@@ -14,6 +17,19 @@ static SZrTypeInferenceLoopAssignmentStep *loop_assignment_sequence_plan_step_at
         return ZR_NULL;
     }
     return (SZrTypeInferenceLoopAssignmentStep *)ZrCore_Array_Get((SZrArray *)&plan->steps, index);
+}
+
+static SZrString *loop_assignment_sequence_plan_target_at(
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        TZrSize index) {
+    SZrString **target;
+
+    if (plan == ZR_NULL || !plan->isInitialized || index >= plan->targetNames.length) {
+        return ZR_NULL;
+    }
+
+    target = (SZrString **)ZrCore_Array_Get((SZrArray *)&plan->targetNames, index);
+    return target != ZR_NULL ? *target : ZR_NULL;
 }
 
 static TZrBool loop_assignment_sequence_int64_add(TZrInt64 left,
@@ -59,6 +75,56 @@ static TZrBool loop_assignment_sequence_delta_is_supported(TZrInt64 deltaMin,
            (deltaMin >= 0 && deltaMax > 0) ||
            (deltaMin < 0 && deltaMax <= 0) ||
            (deltaMin < 0 && deltaMax > 0);
+}
+
+static TZrBool loop_assignment_sequence_delta_is_sign_crossing(TZrInt64 deltaMin,
+                                                               TZrInt64 deltaMax) {
+    return deltaMin < 0 && deltaMax > 0;
+}
+
+static TZrBool loop_assignment_sequence_delta_contains(TZrInt64 outerMin,
+                                                       TZrInt64 outerMax,
+                                                       TZrInt64 innerMin,
+                                                       TZrInt64 innerMax) {
+    return outerMin <= innerMin && innerMax <= outerMax;
+}
+
+static TZrBool loop_assignment_sequence_symbolic_delta_range_is_preferred(
+        TZrBool hasCoefficientRange,
+        TZrInt64 currentMin,
+        TZrInt64 currentMax,
+        TZrInt64 symbolicMin,
+        TZrInt64 symbolicMax) {
+    if (!loop_assignment_sequence_delta_is_supported(symbolicMin, symbolicMax)) {
+        return ZR_FALSE;
+    }
+    if (!hasCoefficientRange) {
+        return ZR_TRUE;
+    }
+    if (loop_assignment_sequence_delta_contains(
+                currentMin,
+                currentMax,
+                symbolicMin,
+                symbolicMax)) {
+        return ZR_TRUE;
+    }
+    return loop_assignment_sequence_delta_is_sign_crossing(currentMin, currentMax) &&
+           !loop_assignment_sequence_delta_is_sign_crossing(symbolicMin, symbolicMax);
+}
+
+static TZrBool loop_assignment_sequence_symbolic_delta_has_coefficient_range(
+        const SZrTypeInferenceLoopAssignmentSequenceDeltaTracker *tracker) {
+    TZrSize index;
+
+    if (tracker == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (index = 0; index < tracker->symbolicResidualTermCount; index++) {
+        if (tracker->symbolicResidualTerms[index].hasCoefficientRange) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
 }
 
 static TZrBool loop_assignment_sequence_resolved_target_reading_delta_is_supported(
@@ -137,60 +203,6 @@ static TZrBool loop_assignment_sequence_join_int64_envelope(
             leftType->minValue < rightType->minValue ? leftType->minValue : rightType->minValue;
     outType->maxValue =
             leftType->maxValue > rightType->maxValue ? leftType->maxValue : rightType->maxValue;
-    return ZR_TRUE;
-}
-
-static TZrBool loop_assignment_sequence_symbolic_delta_exact_zero(
-        const SZrTypeInferenceLoopAssignmentSequenceDeltaTracker *tracker) {
-    return tracker != ZR_NULL &&
-           tracker->canTrackSymbolicDelta &&
-           tracker->symbolicDeltaExpression != ZR_NULL &&
-           tracker->symbolicDeltaBalance == 0;
-}
-
-static TZrBool loop_assignment_sequence_symbolic_delta_update(
-        const SZrTypeInferenceLoopAssignmentStep *step,
-        SZrString *sequenceName,
-        SZrTypeInferenceLoopAssignmentSequenceDeltaTracker *tracker) {
-    SZrAstNode *deltaExpression;
-    TZrInt32 deltaSign = 0;
-
-    if (sequenceName == ZR_NULL || tracker == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    if (!tracker->canTrackSymbolicDelta) {
-        return ZR_TRUE;
-    }
-    if (step == ZR_NULL ||
-        step->right == ZR_NULL ||
-        step->resolveSelfDependentDeltaOnReplay) {
-        tracker->canTrackSymbolicDelta = ZR_FALSE;
-        return ZR_TRUE;
-    }
-
-    deltaExpression = ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaExpression(
-            step->right,
-            sequenceName);
-    if (deltaExpression == ZR_NULL ||
-        !ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaSign(
-                step->right,
-                sequenceName,
-                &deltaSign)) {
-        tracker->canTrackSymbolicDelta = ZR_FALSE;
-        return ZR_TRUE;
-    }
-
-    if (tracker->symbolicDeltaExpression == ZR_NULL) {
-        tracker->symbolicDeltaExpression = deltaExpression;
-    } else if (!ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaExpressionsEqual(
-                       tracker->symbolicDeltaExpression,
-                       deltaExpression,
-                       sequenceName)) {
-        tracker->canTrackSymbolicDelta = ZR_FALSE;
-        return ZR_TRUE;
-    }
-
-    tracker->symbolicDeltaBalance += (TZrInt64)deltaSign;
     return ZR_TRUE;
 }
 
@@ -291,7 +303,28 @@ void ZrParser_TypeInferenceLoopAssignment_SequenceDeltaTrackerInit(
     tracker->canTrackSymbolicDelta = ZR_TRUE;
     tracker->symbolicDeltaExpression = ZR_NULL;
     tracker->symbolicDeltaBalance = 0;
+    tracker->hasSymbolicConstantResidualDelta = ZR_FALSE;
+    tracker->symbolicConstantResidualDelta = 0;
+    tracker->symbolicResidualTermCount = 0;
+    tracker->symbolicResidualIntegerLiteralSum = 0;
 }
+
+static void loop_assignment_sequence_invalidate_symbolic_delta(
+        SZrTypeInferenceLoopAssignmentSequenceDeltaTracker *tracker) {
+    if (tracker == ZR_NULL) {
+        return;
+    }
+
+    tracker->canTrackSymbolicDelta = ZR_FALSE;
+    tracker->deltaMin = -1;
+    tracker->deltaMax = 1;
+}
+
+static TZrBool loop_assignment_sequence_step_writes_expression_dependency(
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        const SZrTypeInferenceLoopAssignmentStep *step,
+        SZrString *sequenceName,
+        SZrAstNode *expression);
 
 static TZrBool loop_assignment_sequence_prior_interleave_writes_delta_dependency(
         const SZrTypeInferenceLoopAssignmentPlan *plan,
@@ -314,6 +347,13 @@ static TZrBool loop_assignment_sequence_prior_interleave_writes_delta_dependency
         SZrTypeInferenceLoopAssignmentStep *prior =
                 loop_assignment_sequence_plan_step_at(plan, index);
 
+        if (loop_assignment_sequence_step_writes_expression_dependency(
+                    plan,
+                    prior,
+                    sequenceName,
+                    deltaStep->right)) {
+            return ZR_TRUE;
+        }
         if (!ZrParser_TypeInferenceLoopAssignment_SequenceStepIsInterleavable(
                     prior,
                     sequenceName,
@@ -325,6 +365,191 @@ static TZrBool loop_assignment_sequence_prior_interleave_writes_delta_dependency
                     deltaStep->right,
                     prior->name)) {
             return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool loop_assignment_sequence_step_is_delta_for_name(
+        const SZrTypeInferenceLoopAssignmentStep *step,
+        SZrString *sequenceName) {
+    return step != ZR_NULL &&
+           sequenceName != ZR_NULL &&
+           step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_ASSIGNMENT &&
+           step->name != ZR_NULL &&
+           step->right != ZR_NULL &&
+           ZrCore_String_Equal(step->name, sequenceName) &&
+           (step->hasSelfDependentDelta || step->resolveSelfDependentDeltaOnReplay);
+}
+
+static TZrBool loop_assignment_sequence_step_assigns_dependency_name(
+        const SZrTypeInferenceLoopAssignmentStep *step,
+        SZrString *sequenceName,
+        SZrString *dependencyName) {
+    if (step == ZR_NULL ||
+        sequenceName == ZR_NULL ||
+        dependencyName == ZR_NULL ||
+        ZrCore_String_Equal(dependencyName, sequenceName)) {
+        return ZR_FALSE;
+    }
+
+    if (step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_ASSIGNMENT) {
+        return step->name != ZR_NULL && ZrCore_String_Equal(step->name, dependencyName);
+    }
+    if (step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_NESTED_IF) {
+        return ZrParser_TypeInferenceLoopAssignment_NestedIfAssignsName(
+                step->assignment,
+                dependencyName);
+    }
+    if (step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_NESTED_LOOP) {
+        return ZrParser_TypeInferenceLoopAssignment_NestedLoopAssignsName(
+                step->assignment,
+                dependencyName);
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool loop_assignment_sequence_step_writes_expression_dependency(
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        const SZrTypeInferenceLoopAssignmentStep *step,
+        SZrString *sequenceName,
+        SZrAstNode *expression) {
+    TZrSize index;
+
+    if (step == ZR_NULL || sequenceName == ZR_NULL || expression == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_ASSIGNMENT &&
+        step->name != ZR_NULL &&
+        !ZrCore_String_Equal(step->name, sequenceName) &&
+        ZrParser_TypeInferenceLoopAssignment_ExpressionUsesName(expression, step->name)) {
+        return ZR_TRUE;
+    }
+
+    if (plan == ZR_NULL || !plan->isInitialized) {
+        return ZR_FALSE;
+    }
+    for (index = 0; index < plan->targetNames.length; index++) {
+        SZrString *dependencyName = loop_assignment_sequence_plan_target_at(plan, index);
+
+        if (dependencyName != ZR_NULL &&
+            !ZrCore_String_Equal(dependencyName, sequenceName) &&
+            ZrParser_TypeInferenceLoopAssignment_ExpressionUsesName(
+                    expression,
+                    dependencyName) &&
+            loop_assignment_sequence_step_assigns_dependency_name(
+                    step,
+                    sequenceName,
+                    dependencyName)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool loop_assignment_sequence_prior_interleave_writes_tracked_delta_dependency(
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        TZrSize startIndex,
+        TZrSize currentIndex,
+        SZrString *sequenceName) {
+    TZrSize writerIndex;
+
+    if (plan == ZR_NULL ||
+        sequenceName == ZR_NULL ||
+        !plan->isInitialized ||
+        currentIndex > plan->steps.length) {
+        return ZR_TRUE;
+    }
+
+    for (writerIndex = startIndex; writerIndex < currentIndex; writerIndex++) {
+        TZrSize deltaIndex;
+        SZrTypeInferenceLoopAssignmentStep *writer =
+                loop_assignment_sequence_plan_step_at(plan, writerIndex);
+
+        if (writer == ZR_NULL) {
+            continue;
+        }
+
+        for (deltaIndex = startIndex; deltaIndex < writerIndex; deltaIndex++) {
+            SZrTypeInferenceLoopAssignmentStep *deltaStep =
+                    loop_assignment_sequence_plan_step_at(plan, deltaIndex);
+
+            if (loop_assignment_sequence_step_is_delta_for_name(deltaStep, sequenceName) &&
+                loop_assignment_sequence_step_writes_expression_dependency(
+                        plan,
+                        writer,
+                        sequenceName,
+                        deltaStep->right)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    return ZR_FALSE;
+}
+
+TZrBool ZrParser_TypeInferenceLoopAssignment_SequenceFutureWritesExpressionDependency(
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        TZrSize currentIndex,
+        SZrString *sequenceName,
+        SZrAstNode *expression) {
+    TZrSize index;
+
+    if (plan == ZR_NULL ||
+        sequenceName == ZR_NULL ||
+        expression == ZR_NULL ||
+        !plan->isInitialized ||
+        currentIndex >= plan->steps.length) {
+        return ZR_FALSE;
+    }
+
+    for (index = currentIndex + 1; index < plan->steps.length; index++) {
+        if (loop_assignment_sequence_step_writes_expression_dependency(
+                    plan,
+                    loop_assignment_sequence_plan_step_at(plan, index),
+                    sequenceName,
+                    expression)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool loop_assignment_sequence_future_interleave_writes_delta_dependency(
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        TZrSize currentIndex,
+        SZrString *sequenceName,
+        const SZrTypeInferenceLoopAssignmentStep *deltaStep) {
+    TZrSize index;
+
+    if (plan == ZR_NULL ||
+        sequenceName == ZR_NULL ||
+        deltaStep == ZR_NULL ||
+        deltaStep->right == ZR_NULL ||
+        !plan->isInitialized ||
+        currentIndex >= plan->steps.length) {
+        return ZR_TRUE;
+    }
+
+    for (index = currentIndex + 1; index < plan->steps.length; index++) {
+        SZrTypeInferenceLoopAssignmentStep *future =
+                loop_assignment_sequence_plan_step_at(plan, index);
+
+        if (loop_assignment_sequence_step_is_delta_for_name(future, sequenceName)) {
+            break;
+        }
+        if (loop_assignment_sequence_step_writes_expression_dependency(
+                    plan,
+                    future,
+                    sequenceName,
+                    deltaStep->right)) {
+            return ZR_TRUE;
+        }
+        if (!ZrParser_TypeInferenceLoopAssignment_SequenceStepIsInterleavable(
+                    future,
+                    sequenceName,
+                    ZR_TRUE)) {
+            break;
         }
     }
     return ZR_FALSE;
@@ -388,13 +613,44 @@ TZrBool ZrParser_TypeInferenceLoopAssignment_SequenceAccumulateStep(
                        sequenceName,
                        step)) {
         tracker->canTrackSymbolicDelta = ZR_FALSE;
+    } else if (tracker->canTrackSymbolicDelta &&
+               loop_assignment_sequence_prior_interleave_writes_tracked_delta_dependency(
+                       plan,
+                       startIndex,
+                       stepIndex,
+                       sequenceName)) {
+        loop_assignment_sequence_invalidate_symbolic_delta(tracker);
+    } else if (loop_assignment_sequence_future_interleave_writes_delta_dependency(
+                       plan,
+                       stepIndex,
+                       sequenceName,
+                       step)) {
+        loop_assignment_sequence_invalidate_symbolic_delta(tracker);
     }
-    if (!loop_assignment_sequence_symbolic_delta_update(step, sequenceName, tracker)) {
+    if (!ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicDeltaUpdate(
+                cs,
+                step,
+                sequenceName,
+                tracker)) {
         return ZR_FALSE;
     }
-    if (loop_assignment_sequence_symbolic_delta_exact_zero(tracker)) {
-        tracker->deltaMin = 0;
-        tracker->deltaMax = 0;
+    if (tracker->hasSymbolicConstantResidualDelta) {
+        tracker->deltaMin = tracker->symbolicConstantResidualDelta;
+        tracker->deltaMax = tracker->symbolicConstantResidualDelta;
+        tracker->hasSymbolicConstantResidualDelta = ZR_FALSE;
+    } else if (ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicDeltaCurrentRange(
+                       cs,
+                       tracker,
+                       &nextDeltaMin,
+                       &nextDeltaMax) &&
+               loop_assignment_sequence_symbolic_delta_range_is_preferred(
+                       loop_assignment_sequence_symbolic_delta_has_coefficient_range(tracker),
+                       tracker->deltaMin,
+                       tracker->deltaMax,
+                       nextDeltaMin,
+                       nextDeltaMax)) {
+        tracker->deltaMin = nextDeltaMin;
+        tracker->deltaMax = nextDeltaMax;
     }
 
     *outIsSequenceStep = ZR_TRUE;

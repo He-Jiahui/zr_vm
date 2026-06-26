@@ -207,11 +207,35 @@ void backend_aot_write_c_set_pending_continue(FILE *file,
                                                  ZR_FALSE);
 }
 
-void backend_aot_write_c_direct_jump(FILE *file, TZrUInt32 functionIndex, TZrUInt32 targetInstructionIndex) {
+void backend_aot_write_c_gc_safepoint(FILE *file, const char *indent, const char *marker) {
+    const char *lineIndent;
+    const char *pointMarker;
+
     if (file == ZR_NULL) {
         return;
     }
 
+    lineIndent = indent != ZR_NULL ? indent : "";
+    pointMarker = marker != ZR_NULL ? marker : "zr_aot_gc_safepoint";
+    fprintf(file,
+            "%s/* %s */\n"
+            "%sZrCore_Gc_SafePoint(state);\n",
+            lineIndent,
+            pointMarker,
+            lineIndent);
+}
+
+void backend_aot_write_c_direct_jump(FILE *file,
+                                     TZrUInt32 functionIndex,
+                                     TZrUInt32 targetInstructionIndex,
+                                     TZrBool isBackEdge) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    if (isBackEdge) {
+        backend_aot_write_c_gc_safepoint(file, "    ", "zr_aot_gc_safepoint_back_edge");
+    }
     fprintf(file, "    goto zr_aot_fn_%u_ins_%u;\n", (unsigned)functionIndex, (unsigned)targetInstructionIndex);
 }
 
@@ -220,7 +244,8 @@ void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
                                                    TZrUInt32 functionIndex,
                                                    TZrUInt32 conditionSlot,
                                                    TZrUInt32 execInstructionIndex,
-                                                   TZrUInt32 targetInstructionIndex) {
+                                                   TZrUInt32 targetInstructionIndex,
+                                                   TZrBool isBackEdge) {
     TZrBool useScalarCondition;
 
     if (file == ZR_NULL) {
@@ -235,11 +260,15 @@ void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
                 "    {\n"
                 "        /* zr_aot_jump_if_bool_false */\n"
                 "        /* zr_aot_jump_if_bool_false_scalar_local */\n"
-                "        if (!zr_aot_b%u) {\n"
+                "        if (!zr_aot_b%u) {\n",
+                (unsigned)conditionSlot);
+        if (isBackEdge) {
+            backend_aot_write_c_gc_safepoint(file, "            ", "zr_aot_gc_safepoint_back_edge");
+        }
+        fprintf(file,
                 "            goto zr_aot_fn_%u_ins_%u;\n"
                 "        }\n"
                 "    }\n",
-                (unsigned)conditionSlot,
                 (unsigned)functionIndex,
                 (unsigned)targetInstructionIndex);
         return;
@@ -258,12 +287,16 @@ void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
             "        zr_aot_condition_bool = (TZrBool)(zr_aot_condition->value.nativeObject.nativeBool != 0u);\n"
-            "        if (!zr_aot_condition_bool) {\n"
+            "        if (!zr_aot_condition_bool) {\n",
+            (unsigned)conditionSlot,
+            (unsigned)conditionSlot);
+    if (isBackEdge) {
+        backend_aot_write_c_gc_safepoint(file, "            ", "zr_aot_gc_safepoint_back_edge");
+    }
+    fprintf(file,
             "            goto zr_aot_fn_%u_ins_%u;\n"
             "        }\n"
             "    }\n",
-            (unsigned)conditionSlot,
-            (unsigned)conditionSlot,
             (unsigned)functionIndex,
             (unsigned)targetInstructionIndex);
 }
@@ -298,7 +331,8 @@ static void backend_aot_write_c_direct_signed_branch(FILE *file,
                                                      TZrUInt32 leftSlot,
                                                      TZrUInt32 rightSlot,
                                                      TZrUInt32 execInstructionIndex,
-                                                     TZrUInt32 targetInstructionIndex) {
+                                                     TZrUInt32 targetInstructionIndex,
+                                                     TZrBool isBackEdge) {
     TZrBool leftUseScalar;
     TZrBool rightUseScalar;
     TZrBool useScalarOperands;
@@ -315,13 +349,17 @@ static void backend_aot_write_c_direct_signed_branch(FILE *file,
         fprintf(file,
                 "    {\n"
                 "        /* zr_aot_jump_if_signed_compare */\n"
-                "        if (zr_aot_s%u %s zr_aot_s%u) {\n"
+                "        if (zr_aot_s%u %s zr_aot_s%u) {\n",
+                (unsigned)leftSlot,
+                operatorText,
+                (unsigned)rightSlot);
+        if (isBackEdge) {
+            backend_aot_write_c_gc_safepoint(file, "            ", "zr_aot_gc_safepoint_back_edge");
+        }
+        fprintf(file,
                 "            goto zr_aot_fn_%u_ins_%u;\n"
                 "        }\n"
                 "    }\n",
-                (unsigned)leftSlot,
-                operatorText,
-                (unsigned)rightSlot,
                 (unsigned)functionIndex,
                 (unsigned)targetInstructionIndex);
         return;
@@ -368,10 +406,14 @@ static void backend_aot_write_c_direct_signed_branch(FILE *file,
                 (unsigned)rightSlot);
     }
     fprintf(file,
-            "        if (%s) {\n"
+            "        if (%s) {\n",
+            expressionText);
+    if (isBackEdge) {
+        backend_aot_write_c_gc_safepoint(file, "            ", "zr_aot_gc_safepoint_back_edge");
+    }
+    fprintf(file,
             "            goto zr_aot_fn_%u_ins_%u;\n"
             "        }\n",
-            expressionText,
             (unsigned)functionIndex,
             (unsigned)targetInstructionIndex);
     fprintf(file, "    }\n");
@@ -386,7 +428,8 @@ static void backend_aot_write_c_direct_signed_branch_const(FILE *file,
                                                            TZrUInt32 leftSlot,
                                                            TZrUInt32 constantIndex,
                                                            TZrUInt32 execInstructionIndex,
-                                                           TZrUInt32 targetInstructionIndex) {
+                                                           TZrUInt32 targetInstructionIndex,
+                                                           TZrBool isBackEdge) {
     const SZrTypeValue *constantValue;
     char rightLiteral[64];
 
@@ -411,13 +454,17 @@ static void backend_aot_write_c_direct_signed_branch_const(FILE *file,
                 "    {\n"
                 "        /* zr_aot_jump_if_signed_compare */\n"
                 "        TZrInt64 zr_aot_right_literal = %s;\n"
-                "        if (zr_aot_s%u %s zr_aot_right_literal) {\n"
+                "        if (zr_aot_s%u %s zr_aot_right_literal) {\n",
+                rightLiteral,
+                (unsigned)leftSlot,
+                operatorText);
+        if (isBackEdge) {
+            backend_aot_write_c_gc_safepoint(file, "            ", "zr_aot_gc_safepoint_back_edge");
+        }
+        fprintf(file,
                 "            goto zr_aot_fn_%u_ins_%u;\n"
                 "        }\n"
                 "    }\n",
-                rightLiteral,
-                (unsigned)leftSlot,
-                operatorText,
                 (unsigned)functionIndex,
                 (unsigned)targetInstructionIndex);
         return;
@@ -437,14 +484,18 @@ static void backend_aot_write_c_direct_signed_branch_const(FILE *file,
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
             "        zr_aot_left_scalar = zr_aot_left->value.nativeObject.nativeInt64;\n"
-            "        if (%s) {\n"
-            "            goto zr_aot_fn_%u_ins_%u;\n"
-            "        }\n"
-            "    }\n",
+            "        if (%s) {\n",
             rightLiteral,
             (unsigned)leftSlot,
             (unsigned)leftSlot,
-            expressionText,
+            expressionText);
+    if (isBackEdge) {
+        backend_aot_write_c_gc_safepoint(file, "            ", "zr_aot_gc_safepoint_back_edge");
+    }
+    fprintf(file,
+            "            goto zr_aot_fn_%u_ins_%u;\n"
+            "        }\n"
+            "    }\n",
             (unsigned)functionIndex,
             (unsigned)targetInstructionIndex);
 }
@@ -455,7 +506,8 @@ void backend_aot_write_c_direct_jump_if_greater_signed(FILE *file,
                                                        TZrUInt32 leftSlot,
                                                        TZrUInt32 rightSlot,
                                                        TZrUInt32 execInstructionIndex,
-                                                       TZrUInt32 targetInstructionIndex) {
+                                                       TZrUInt32 targetInstructionIndex,
+                                                       TZrBool isBackEdge) {
     backend_aot_write_c_direct_signed_branch(file,
                                              functionIr,
                                              "zr_aot_left_scalar > zr_aot_right_scalar",
@@ -464,7 +516,8 @@ void backend_aot_write_c_direct_jump_if_greater_signed(FILE *file,
                                              leftSlot,
                                              rightSlot,
                                              execInstructionIndex,
-                                             targetInstructionIndex);
+                                             targetInstructionIndex,
+                                             isBackEdge);
 }
 
 void backend_aot_write_c_direct_jump_if_less_equal_signed(FILE *file,
@@ -473,7 +526,8 @@ void backend_aot_write_c_direct_jump_if_less_equal_signed(FILE *file,
                                                           TZrUInt32 leftSlot,
                                                           TZrUInt32 rightSlot,
                                                           TZrUInt32 execInstructionIndex,
-                                                          TZrUInt32 targetInstructionIndex) {
+                                                          TZrUInt32 targetInstructionIndex,
+                                                          TZrBool isBackEdge) {
     backend_aot_write_c_direct_signed_branch(file,
                                              functionIr,
                                              "zr_aot_left_scalar <= zr_aot_right_scalar",
@@ -482,7 +536,8 @@ void backend_aot_write_c_direct_jump_if_less_equal_signed(FILE *file,
                                              leftSlot,
                                              rightSlot,
                                              execInstructionIndex,
-                                             targetInstructionIndex);
+                                             targetInstructionIndex,
+                                             isBackEdge);
 }
 
 void backend_aot_write_c_direct_jump_if_not_equal_signed(FILE *file,
@@ -491,7 +546,8 @@ void backend_aot_write_c_direct_jump_if_not_equal_signed(FILE *file,
                                                          TZrUInt32 leftSlot,
                                                          TZrUInt32 rightSlot,
                                                          TZrUInt32 execInstructionIndex,
-                                                         TZrUInt32 targetInstructionIndex) {
+                                                         TZrUInt32 targetInstructionIndex,
+                                                         TZrBool isBackEdge) {
     backend_aot_write_c_direct_signed_branch(file,
                                              functionIr,
                                              "zr_aot_left_scalar != zr_aot_right_scalar",
@@ -500,7 +556,8 @@ void backend_aot_write_c_direct_jump_if_not_equal_signed(FILE *file,
                                              leftSlot,
                                              rightSlot,
                                              execInstructionIndex,
-                                             targetInstructionIndex);
+                                             targetInstructionIndex,
+                                             isBackEdge);
 }
 
 void backend_aot_write_c_direct_jump_if_not_equal_signed_const(FILE *file,
@@ -510,7 +567,8 @@ void backend_aot_write_c_direct_jump_if_not_equal_signed_const(FILE *file,
                                                                TZrUInt32 leftSlot,
                                                                TZrUInt32 constantIndex,
                                                                TZrUInt32 execInstructionIndex,
-                                                               TZrUInt32 targetInstructionIndex) {
+                                                               TZrUInt32 targetInstructionIndex,
+                                                               TZrBool isBackEdge) {
     backend_aot_write_c_direct_signed_branch_const(file,
                                                    functionIr,
                                                    function,
@@ -520,7 +578,8 @@ void backend_aot_write_c_direct_jump_if_not_equal_signed_const(FILE *file,
                                                    leftSlot,
                                                    constantIndex,
                                                    execInstructionIndex,
-                                                   targetInstructionIndex);
+                                                   targetInstructionIndex,
+                                                   isBackEdge);
 }
 
 void backend_aot_write_c_direct_return(FILE *file, TZrUInt32 sourceSlot) {

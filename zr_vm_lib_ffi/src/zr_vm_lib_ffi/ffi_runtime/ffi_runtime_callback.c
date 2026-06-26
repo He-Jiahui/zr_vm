@@ -523,6 +523,8 @@ void zr_ffi_callback_trampoline(ffi_cif *cif, void *returnValue, void **argument
     ZrFfiCallbackInvokeArgs invokeArgs;
     SZrCallInfo *savedCallInfo = ZR_NULL;
     TZrStackValuePointer savedStackTop;
+    SZrFunctionStackAnchor savedStackTopAnchor;
+    TZrBool hasSavedStackTopAnchor = ZR_FALSE;
     EZrThreadStatus callbackStatus = ZR_THREAD_STATUS_FINE;
     TZrSize index;
 
@@ -595,6 +597,10 @@ void zr_ffi_callback_trampoline(ffi_cif *cif, void *returnValue, void **argument
 
     savedCallInfo = callbackData->state->callInfoList;
     savedStackTop = callbackData->state->stackTop.valuePointer;
+    if (savedStackTop != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(callbackData->state, savedStackTop, &savedStackTopAnchor);
+        hasSavedStackTopAnchor = ZR_TRUE;
+    }
     invokeArgs.callbackValue = callbackValue;
     invokeArgs.argumentValues = argumentValues;
     invokeArgs.argumentCount = callbackData->signature->parameterCount;
@@ -610,6 +616,9 @@ void zr_ffi_callback_trampoline(ffi_cif *cif, void *returnValue, void **argument
         free(argumentValues);
         zr_ffi_zero_call_storage(callbackData->signature->returnType, returnValue);
         return;
+    }
+    if (hasSavedStackTopAnchor) {
+        savedStackTop = ZrCore_Function_StackAnchorRestore(callbackData->state, &savedStackTopAnchor);
     }
     if (callbackData->state->callInfoList != savedCallInfo ||
         callbackData->state->stackTop.valuePointer != savedStackTop) {

@@ -726,6 +726,48 @@ static void test_aot_c_generated_shared_library_compiles_typeof_runtime_boundary
 #endif
 }
 
+static void test_aot_c_full_aot_rejects_typeof_reflection_runtime_contract(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C TYPEOF shared-library smoke currently validates the Unix toolchain path");
+#else
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    FILE *generatedFile;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_typeof_global_function(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_full_aot_typeof_rejected";
+    options.sourceHash = "full-aot-typeof-rejected";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "full-aot-typeof-rejected";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.requireFullAot = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_global_shared_library",
+                                                       "src",
+                                                       "full_aot_typeof_rejected",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    remove(generatedCPath);
+
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
 static void test_aot_c_generated_shared_library_compiles_object_array_creation_runtime_boundary(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C CREATE_OBJECT/CREATE_ARRAY shared-library smoke currently validates the Unix toolchain path");
@@ -1196,6 +1238,7 @@ int main(void) {
     RUN_TEST(test_aot_c_generated_shared_library_compiles_get_global_runtime_boundary);
     RUN_TEST(test_aot_c_generated_shared_library_compiles_get_sub_function_native_closure_boundary);
     RUN_TEST(test_aot_c_generated_shared_library_compiles_typeof_runtime_boundary);
+    RUN_TEST(test_aot_c_full_aot_rejects_typeof_reflection_runtime_contract);
     RUN_TEST(test_aot_c_generated_shared_library_compiles_object_array_creation_runtime_boundary);
     RUN_TEST(test_aot_c_generated_shared_library_compiles_object_struct_conversions_runtime_boundary);
     RUN_TEST(test_aot_c_generated_shared_library_compiles_closure_value_runtime_boundary);

@@ -735,6 +735,12 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetMember(struct SZrState *state,
                                                       TZrUInt32 receiverSlot,
                                                       TZrUInt32 memberId);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetMemberNewOwnerNoWriteBarrier(struct SZrState *state,
+                                                                            ZrAotGeneratedFrame *frame,
+                                                                            TZrUInt32 sourceSlot,
+                                                                            TZrUInt32 receiverSlot,
+                                                                            TZrUInt32 memberId);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GetMemberSlot(struct SZrState *state,
                                                           ZrAotGeneratedFrame *frame,
                                                           TZrUInt32 destinationSlot,
@@ -746,6 +752,12 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetMemberSlot(struct SZrState *state
                                                           TZrUInt32 sourceSlot,
                                                           TZrUInt32 receiverSlot,
                                                           TZrUInt32 cacheIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetMemberSlotNewOwnerNoWriteBarrier(struct SZrState *state,
+                                                                                ZrAotGeneratedFrame *frame,
+                                                                                TZrUInt32 sourceSlot,
+                                                                                TZrUInt32 receiverSlot,
+                                                                                TZrUInt32 cacheIndex);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GetByIndex(struct SZrState *state,
                                                        ZrAotGeneratedFrame *frame,
@@ -759,6 +771,12 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetByIndex(struct SZrState *state,
                                                        TZrUInt32 receiverSlot,
                                                        TZrUInt32 keySlot);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetByIndexNewOwnerNoWriteBarrier(struct SZrState *state,
+                                                                             ZrAotGeneratedFrame *frame,
+                                                                             TZrUInt32 sourceSlot,
+                                                                             TZrUInt32 receiverSlot,
+                                                                             TZrUInt32 keySlot);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SuperArrayGetInt(struct SZrState *state,
                                                              ZrAotGeneratedFrame *frame,
                                                              TZrUInt32 destinationSlot,
@@ -770,6 +788,12 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SuperArraySetInt(struct SZrState *st
                                                              TZrUInt32 sourceSlot,
                                                              TZrUInt32 receiverSlot,
                                                              TZrUInt32 keySlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SuperArraySetIntNewOwnerNoWriteBarrier(struct SZrState *state,
+                                                                                   ZrAotGeneratedFrame *frame,
+                                                                                   TZrUInt32 sourceSlot,
+                                                                                   TZrUInt32 receiverSlot,
+                                                                                   TZrUInt32 keySlot);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SuperArrayAddInt(struct SZrState *state,
                                                              ZrAotGeneratedFrame *frame,

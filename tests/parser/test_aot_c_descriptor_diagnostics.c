@@ -102,6 +102,52 @@ static void write_bad_abi_descriptor_library(const TZrChar *descriptorSourcePath
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 }
 
+static void write_missing_code_registration_descriptor_library(const TZrChar *descriptorSourcePath,
+                                                               const TZrChar *sharedLibraryPath) {
+    const char *descriptorSource =
+            "#include \"zr_vm_common/zr_aot_abi.h\"\n"
+            "static TZrInt64 bad_entry(struct SZrState *state) { (void)state; return 0; }\n"
+            "static const TZrByte kBlob[] = { 0x7a, 0x72, 0x6f };\n"
+            "static const FZrAotEntryThunk kThunks[] = { bad_entry };\n"
+            "static const ZrAotCompiledModule kModule = {\n"
+            "    .abiVersion = ZR_VM_AOT_ABI_VERSION,\n"
+            "    .backendKind = ZR_AOT_BACKEND_KIND_C,\n"
+            "    .moduleName = \"main\",\n"
+            "    .inputKind = ZR_AOT_INPUT_KIND_BINARY,\n"
+            "    .inputHash = \"\",\n"
+            "    .runtimeContracts = ZR_NULL,\n"
+            "    .embeddedModuleBlob = kBlob,\n"
+            "    .embeddedModuleBlobLength = sizeof(kBlob),\n"
+            "    .functionThunks = kThunks,\n"
+            "    .functionThunkCount = 1u,\n"
+            "    .entryThunk = bad_entry,\n"
+            "    .methodInfos = ZR_NULL,\n"
+            "    .methodInfoCount = 0u,\n"
+            "    .gcDescriptors = ZR_NULL,\n"
+            "    .gcDescriptorCount = 0u,\n"
+            "    .codeRegistration = ZR_NULL,\n"
+            "};\n"
+            "ZR_VM_AOT_EXPORT const ZrAotCompiledModule *ZrVm_GetAotCompiledModule(void) {\n"
+            "    return &kModule;\n"
+            "}\n";
+    char command[4096];
+
+    write_text_file_or_fail(descriptorSourcePath, descriptorSource);
+    TEST_ASSERT_TRUE(ZrTests_Path_EnsureParentDirectory(sharedLibraryPath));
+
+    snprintf(command,
+             sizeof(command),
+             "\"%s\" -std=c11 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "-I\"%s/zr_vm_common/include\" "
+             "\"%s\" "
+             "-o \"%s\"",
+             ZR_VM_TESTS_C_COMPILER,
+             ZR_VM_TESTS_REPO_ROOT,
+             descriptorSourcePath,
+             sharedLibraryPath);
+    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+}
+
 static void test_aot_c_descriptor_diagnostic_names_abi_version_mismatch(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C descriptor diagnostic test currently validates the Unix dlopen toolchain path");
@@ -125,6 +171,7 @@ static void test_aot_c_descriptor_diagnostic_names_abi_version_mismatch(void) {
     TZrChar zroPath[ZR_TESTS_PATH_MAX];
     TZrChar descriptorSourcePath[ZR_TESTS_PATH_MAX];
     TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+    TZrChar expectedAbiText[32];
 
     TEST_ASSERT_NOT_NULL(state);
     function = compile_source(state, source, "main.zr");
@@ -180,10 +227,100 @@ static void test_aot_c_descriptor_diagnostic_names_abi_version_mismatch(void) {
     TEST_ASSERT_FALSE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result));
     lastError = ZrLibrary_AotRuntime_GetLastError(state->global);
     TEST_ASSERT_NOT_NULL(lastError);
+    snprintf(expectedAbiText, sizeof(expectedAbiText), "expected=%u", (unsigned)ZR_VM_AOT_ABI_VERSION);
     TEST_ASSERT_NOT_NULL(strstr(lastError, "AOT descriptor validation failed for module 'main'"));
     TEST_ASSERT_NOT_NULL(strstr(lastError, "abiVersion"));
-    TEST_ASSERT_NOT_NULL(strstr(lastError, "expected=2"));
+    TEST_ASSERT_NOT_NULL(strstr(lastError, expectedAbiText));
     TEST_ASSERT_NOT_NULL(strstr(lastError, "actual=1"));
+
+    state->global->userData = ZR_NULL;
+    ZrLibrary_Project_Free(state, project);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
+static void test_aot_c_descriptor_diagnostic_rejects_missing_code_registration(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C descriptor diagnostic test currently validates the Unix dlopen toolchain path");
+#else
+    const char *source = "return 1;\n";
+    const char *projectJson =
+            "{"
+            "\"name\":\"aot-descriptor-code-registration\","
+            "\"source\":\"src\","
+            "\"binary\":\"bin\","
+            "\"entry\":\"main\""
+            "}";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrLibrary_Project *project;
+    SZrBinaryWriterOptions binaryOptions;
+    SZrTypeValue result;
+    const TZrChar *lastError;
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar zroPath[ZR_TESTS_PATH_MAX];
+    TZrChar descriptorSourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_source(state, source, "main.zr");
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_descriptor_diagnostics",
+                                                       "runtime_project_missing_code_registration",
+                                                       "aot_descriptor_code_registration",
+                                                       ".zrp",
+                                                       projectPath,
+                                                       sizeof(projectPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_descriptor_diagnostics",
+                                                       "runtime_project_missing_code_registration/src",
+                                                       "main",
+                                                       ".zr",
+                                                       sourcePath,
+                                                       sizeof(sourcePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_descriptor_diagnostics",
+                                                       "runtime_project_missing_code_registration/bin",
+                                                       "main",
+                                                       ".zro",
+                                                       zroPath,
+                                                       sizeof(zroPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_descriptor_diagnostics",
+                                                       "runtime_project_missing_code_registration/bin/aot_c/src",
+                                                       "missing_code_registration_descriptor",
+                                                       ".c",
+                                                       descriptorSourcePath,
+                                                       sizeof(descriptorSourcePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_descriptor_diagnostics",
+                                                       "runtime_project_missing_code_registration/bin/aot_c/lib",
+                                                       "zrvm_aot_main",
+                                                       ".so",
+                                                       sharedLibraryPath,
+                                                       sizeof(sharedLibraryPath)));
+
+    write_text_file_or_fail(projectPath, projectJson);
+    write_text_file_or_fail(sourcePath, source);
+
+    memset(&binaryOptions, 0, sizeof(binaryOptions));
+    binaryOptions.moduleName = "main";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
+    write_missing_code_registration_descriptor_library(descriptorSourcePath, sharedLibraryPath);
+
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
+    TEST_ASSERT_NOT_NULL(project);
+    state->global->userData = project;
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
+                                                          ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
+                                                          ZR_TRUE));
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_FALSE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result));
+    lastError = ZrLibrary_AotRuntime_GetLastError(state->global);
+    TEST_ASSERT_NOT_NULL(lastError);
+    TEST_ASSERT_NOT_NULL(strstr(lastError, "AOT descriptor validation failed for module 'main'"));
+    TEST_ASSERT_NOT_NULL(strstr(lastError, "codeRegistration"));
+    TEST_ASSERT_NOT_NULL(strstr(lastError, "null"));
 
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
@@ -195,5 +332,6 @@ static void test_aot_c_descriptor_diagnostic_names_abi_version_mismatch(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_descriptor_diagnostic_names_abi_version_mismatch);
+    RUN_TEST(test_aot_c_descriptor_diagnostic_rejects_missing_code_registration);
     return UNITY_END();
 }

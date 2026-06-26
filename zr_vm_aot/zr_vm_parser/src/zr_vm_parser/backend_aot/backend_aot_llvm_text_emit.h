@@ -4,6 +4,10 @@
 #include "backend_aot_internal.h"
 
 TZrUInt32 backend_aot_llvm_next_temp(TZrUInt32 *tempCounter);
+void backend_aot_llvm_format_function_symbol(TZrChar *buffer,
+                                             TZrSize bufferSize,
+                                             TZrUInt32 functionIndex,
+                                             TZrBool stripGeneratedSymbols);
 void backend_aot_llvm_make_function_label(TZrChar *buffer,
                                           TZrSize bufferSize,
                                           TZrUInt32 functionIndex,

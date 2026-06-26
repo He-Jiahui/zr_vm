@@ -13,6 +13,8 @@
 
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/exception.h"
+#include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/raw_object.h"

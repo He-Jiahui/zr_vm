@@ -5,6 +5,7 @@
 #include "type_inference_loop_assignment_nested_if.h"
 #include "type_inference_loop_assignment_nested_loop.h"
 #include "type_inference_loop_assignment_self_dependency.h"
+#include "type_inference_loop_assignment_sequence.h"
 #include "type_inference_loop_assignment_syntax.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_common/zr_parser_conf.h"
@@ -354,6 +355,7 @@ static TZrBool type_inference_loop_assignment_plan_add(SZrCompilerState *cs,
     TZrBool preservesTargetBefore;
     TZrBool extendsSelfDependentTargetSequence;
     TZrBool extendsReplayResolvedSelfDependentTargetSequence;
+    TZrBool canReplayStableSelfDependentDelta;
     TZrBool hasStableSelfDependentDelta;
     TZrBool hasDeferredSelfDependentDelta;
     TZrInt64 selfDependentDeltaMin = 0;
@@ -408,11 +410,15 @@ static TZrBool type_inference_loop_assignment_plan_add(SZrCompilerState *cs,
             type_inference_loop_assignment_plan_can_extend_replay_resolved_target_sequence(
                     plan,
                     step.name);
+    canReplayStableSelfDependentDelta = assignedBefore && hasStableSelfDependentDelta;
     step.resolveSelfDependentDeltaOnReplay =
             (!assignedBefore || extendsReplayResolvedSelfDependentTargetSequence) &&
             hasDeferredSelfDependentDelta;
     step.hasSelfDependentDelta =
-            (!assignedBefore || preservesTargetBefore || extendsSelfDependentTargetSequence) &&
+            (!assignedBefore ||
+             preservesTargetBefore ||
+             extendsSelfDependentTargetSequence ||
+             canReplayStableSelfDependentDelta) &&
             !step.resolveSelfDependentDeltaOnReplay &&
             hasStableSelfDependentDelta;
     step.selfDependentDeltaMin = selfDependentDeltaMin;
@@ -711,17 +717,6 @@ static TZrBool type_inference_loop_assignment_deferred_self_dependent_delta_is_s
            type_inference_loop_assignment_rhs_is_supported(deltaExpression, plan, stepIndex);
 }
 
-static TZrBool type_inference_loop_assignment_self_dependent_delta_uses_plan_target(
-        SZrAstNode *right, SZrString *targetName, const SZrTypeInferenceLoopAssignmentPlan *plan) {
-    if (plan == ZR_NULL || !plan->isInitialized) {
-        return ZR_FALSE;
-    }
-    return ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaUsesAnyTarget(
-            right,
-            targetName,
-            &plan->targetNames);
-}
-
 static TZrBool type_inference_loop_assignment_plan_validate(
         SZrCompilerState *cs,
         const SZrTypeInferenceLoopAssignmentPlan *plan) {
@@ -756,10 +751,15 @@ static TZrBool type_inference_loop_assignment_plan_validate(
             ((step->hasSelfDependentDelta || step->resolveSelfDependentDeltaOnReplay) &&
              (targetBinding->type.baseType != ZR_VALUE_TYPE_INT64 ||
               (step->hasSelfDependentDelta &&
-               type_inference_loop_assignment_self_dependent_delta_uses_plan_target(
+               ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaUsesAnyTarget(
                       step->right,
                       step->name,
-                      plan)) ||
+                      &plan->targetNames) &&
+               !ZrParser_TypeInferenceLoopAssignment_SequenceFutureWritesExpressionDependency(
+                       plan,
+                       index,
+                       step->name,
+                       step->right)) ||
               (step->resolveSelfDependentDeltaOnReplay &&
                !type_inference_loop_assignment_deferred_self_dependent_delta_is_supported(
                        plan,

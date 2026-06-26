@@ -32,7 +32,8 @@ void backend_aot_write_c_frame_setup(FILE *file,
                                      const SZrAotExecIrFrameLayout *frameLayout,
                                      TZrUInt32 functionIndex,
                                      TZrBool includeExportContext,
-                                     TZrBool includeFrameDescriptor) {
+                                     TZrBool includeFrameDescriptor,
+                                     TZrBool includeGcRootFrame) {
     TZrUInt32 frameByteSize = backend_aot_c_frame_setup_register_frame_bytes(frameLayout);
     TZrBool includeStackFrameSetup = (TZrBool)(includeFrameDescriptor || frameByteSize > 0u);
 
@@ -47,6 +48,12 @@ void backend_aot_write_c_frame_setup(FILE *file,
     fprintf(file,
             "    /* zr_aot_generated_frame_setup */\n"
             "    SZrCallInfo *zr_aot_call_info = state->callInfoList;\n");
+
+    if (includeGcRootFrame) {
+        fprintf(file,
+                "    SZrAotGcRootFrame zr_aot_gc_root_frame;\n"
+                "    TZrBool zr_aot_has_gc_root_frame = ZR_FALSE;\n");
+    }
 
     fprintf(file,
             "    ZrAotGeneratedModuleContext zr_aot_context;\n"
@@ -111,6 +118,18 @@ void backend_aot_write_c_frame_setup(FILE *file,
             "        state->stackTop.valuePointer = zr_aot_frame_top;\n"
             "    }\n");
 
+    if (includeGcRootFrame) {
+        fprintf(file,
+                "    if (zr_aot_context.methodInfo != ZR_NULL &&\n"
+                "        zr_aot_context.methodInfo->gcRootMap != ZR_NULL) {\n"
+                "        ZR_AOT_C_GUARD(ZrCore_Gc_AotRootFramePush(state,\n"
+                "                                                  &zr_aot_gc_root_frame,\n"
+                "                                                  zr_aot_slot_base,\n"
+                "                                                  zr_aot_context.methodInfo->gcRootMap));\n"
+                "        zr_aot_has_gc_root_frame = ZR_TRUE;\n"
+                "    }\n");
+    }
+
     if (includeFrameDescriptor) {
         fprintf(file,
                 "    frame.function = zr_aot_context.metadataFunction;\n"
@@ -123,6 +142,7 @@ void backend_aot_write_c_frame_setup(FILE *file,
                     "    frame.moduleExecuted = zr_aot_context.moduleExecuted;\n"
                     "    frame.functionTable = zr_aot_context.functionTable;\n"
                     "    frame.functionCount = zr_aot_context.functionCount;\n"
+                    "    frame.codeRegistration = zr_aot_context.codeRegistration;\n"
                     "    frame.functionThunks = zr_aot_context.functionThunks;\n"
                     "    frame.functionThunkCount = zr_aot_context.functionThunkCount;\n");
         }

@@ -708,6 +708,154 @@ TZrBool ZrLibrary_AotRuntime_CallInlineStruct(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge(
+        SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 functionSlot,
+        TZrUInt32 argumentCount,
+        TZrUInt32 destinationTypeLayoutId,
+        TZrUInt32 destinationByteOffset,
+        TZrUInt32 destinationByteSize,
+        TZrUInt32 deoptId,
+        const TZrChar *errorLabel) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    const TZrChar *label = errorLabel != ZR_NULL ? errorLabel : "generic inline struct call";
+    const SZrTypeLayout *returnLayout;
+    TZrStackValuePointer callBase;
+    TZrStackValuePointer destinationPointer;
+    TZrStackValuePointer resultBase;
+    SZrFunctionStackAnchor callerFrameTopAnchor;
+    SZrTypeValue *callableValue;
+    TZrUInt32 callWindowIndex;
+    TZrUInt32 argumentIndex;
+
+    runtimeState = state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (!ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(state, frame, deoptId, label)) {
+        return ZR_FALSE;
+    }
+
+    if (state == ZR_NULL || frame == ZR_NULL || frame->function == ZR_NULL || frame->slotBase == ZR_NULL ||
+        frame->callInfo == ZR_NULL || frame->callInfo != state->callInfoList ||
+        destinationSlot >= frame->generatedFrameSlotCount || functionSlot >= frame->generatedFrameSlotCount ||
+        argumentCount > frame->generatedFrameSlotCount - functionSlot - 1u) {
+        aot_runtime_fail(state, runtimeState, "generated AOT %s deopt failed", label);
+        return ZR_FALSE;
+    }
+
+    returnLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame->function,
+                                                                   destinationTypeLayoutId,
+                                                                   state);
+    if (returnLayout == ZR_NULL || returnLayout->kind != ZR_TYPE_LAYOUT_KIND_STRUCT ||
+        returnLayout->byteSize != destinationByteSize) {
+        aot_runtime_fail(state, runtimeState, "generated AOT %s deopt failed", label);
+        return ZR_FALSE;
+    }
+
+    callBase = frame->callInfo->functionTop.valuePointer;
+    if (callBase != ZR_NULL && callBase < frame->slotBase + frame->generatedFrameSlotCount) {
+        callBase = frame->slotBase + frame->generatedFrameSlotCount;
+    }
+    if (callBase == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT %s deopt failed", label);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Function_StackAnchorInit(state, callBase, &callerFrameTopAnchor);
+    callBase = ZrCore_Function_CheckStackAndGc(state, 1u + argumentCount, callBase);
+    if (callBase == ZR_NULL || state->threadStatus != ZR_THREAD_STATUS_FINE ||
+        state->callInfoList == ZR_NULL || state->callInfoList->functionBase.valuePointer == ZR_NULL ||
+        state->callInfoList->functionTop.valuePointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT %s deopt failed", label);
+        return ZR_FALSE;
+    }
+    callBase = ZrCore_Function_StackAnchorRestore(state, &callerFrameTopAnchor);
+    if (callBase == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT %s deopt failed", label);
+        return ZR_FALSE;
+    }
+
+    frame->callInfo = state->callInfoList;
+    frame->slotBase = state->callInfoList->functionBase.valuePointer + 1;
+    for (callWindowIndex = 0u; callWindowIndex < 1u + argumentCount; callWindowIndex++) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(callBase + callWindowIndex));
+    }
+    state->stackTop.valuePointer = callBase + 1 + argumentCount;
+    if (state->callInfoList->functionTop.valuePointer == ZR_NULL ||
+        state->callInfoList->functionTop.valuePointer < state->stackTop.valuePointer) {
+        state->callInfoList->functionTop.valuePointer = state->stackTop.valuePointer;
+    }
+
+    callableValue = ZrCore_Stack_GetValue(frame->slotBase + functionSlot);
+    destinationPointer = (TZrStackValuePointer)((TZrByte *)frame->slotBase + destinationByteOffset);
+    if (callableValue == ZR_NULL || destinationPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT %s deopt failed", label);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(callBase), callableValue);
+    for (argumentIndex = 0u; argumentIndex < argumentCount; argumentIndex++) {
+        const TZrUInt32 sourceSlot = functionSlot + 1u + argumentIndex;
+        const SZrFunctionFrameSlotLayout *argumentLayout =
+                ZrCore_Function_FindFrameSlotLayout(frame->function, sourceSlot);
+        SZrTypeValue *argumentDense = ZrCore_Stack_GetValue(frame->slotBase + sourceSlot);
+        SZrTypeValue *argumentFrame = ZR_NULL;
+
+        if (argumentLayout == ZR_NULL ||
+            argumentLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE ||
+            argumentLayout->byteSize < (TZrUInt32)sizeof(SZrTypeValue) ||
+            argumentDense == ZR_NULL) {
+            aot_runtime_fail(state, runtimeState, "generated AOT %s deopt failed", label);
+            return ZR_FALSE;
+        }
+
+        {
+            SZrStackFramePlace argumentPlace;
+
+            if (!ZrCore_Function_MakeFrameSlotPlace(state,
+                                                    frame->function,
+                                                    frame->slotBase,
+                                                    sourceSlot,
+                                                    &argumentPlace)) {
+                aot_runtime_fail(state, runtimeState, "generated AOT %s deopt failed", label);
+                return ZR_FALSE;
+            }
+            argumentFrame = (SZrTypeValue *)argumentPlace.address;
+        }
+        if (argumentFrame == ZR_NULL) {
+            aot_runtime_fail(state, runtimeState, "generated AOT %s deopt failed", label);
+            return ZR_FALSE;
+        }
+        if (argumentFrame != argumentDense) {
+            ZrCore_Value_Copy(state, argumentFrame, argumentDense);
+        }
+        ZrCore_Value_Copy(state,
+                          ZrCore_Stack_GetValue(callBase + 1u + argumentIndex),
+                          argumentFrame);
+    }
+
+    resultBase = ZrCore_Function_CallWithoutYieldAndRestoreWithReturnDestination(state,
+                                                                                 callBase,
+                                                                                 1,
+                                                                                 destinationPointer);
+    if (resultBase == ZR_NULL || state->threadStatus != ZR_THREAD_STATUS_FINE ||
+        state->callInfoList == ZR_NULL || state->callInfoList->functionBase.valuePointer == ZR_NULL ||
+        state->callInfoList->functionTop.valuePointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT %s deopt failed", label);
+        return ZR_FALSE;
+    }
+
+    frame->callInfo = state->callInfoList;
+    frame->slotBase = state->callInfoList->functionBase.valuePointer + 1;
+    callBase = resultBase;
+    for (callWindowIndex = 0u; callWindowIndex < 1u + argumentCount; callWindowIndex++) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(callBase + callWindowIndex));
+    }
+    frame->callInfo->functionTop.valuePointer = callBase;
+    state->stackTop.valuePointer = callBase;
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_AotRuntime_ReturnInlineStruct(SZrState *state,
                                                 ZrAotGeneratedFrame *frame,
                                                 TZrUInt32 sourceSlot,

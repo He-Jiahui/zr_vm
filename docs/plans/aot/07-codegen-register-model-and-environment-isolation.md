@@ -363,6 +363,252 @@ before/after 速查（与 `04`§2 降级表合并使用）：
 
 ##状态与产出记录
 
+- 2026-06-24 09:41:44 +08:00 · M1.5 / 07-S5 scalar typed direct-call aggregate guardrail ·
+  状态：验收护栏子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：`zr_vm_aot_c_guardrail_contracts_test` 现在可编译 mixed scalar typed-call fixture 并生成 AOT C，
+  同一产物同时覆盖 i64/u64/f64/bool 二参 typed→typed direct-call；guardrail 要求四类 scalar typed thunk 的
+  state-free forward declaration、definition 与 direct-call marker，并禁止 `sync_stack_slot`、
+  `SZrTypeValue *zr_aot_typed_destination`、`ZR_VALUE_FAST_SET(zr_aot_typed_destination,`、
+  `ZrLibrary_AotRuntime_CallStaticDirect(state,`、`ZrLibrary_AotRuntime_CallStackValue(state,`，
+  以及 `zr_aot_typed_{i64,u64,f64,bool}_fn_N(state` / `struct SZrState *state` 首参退化。
+  同一护栏还按函数体范围检查四类 scalar typed thunk definition，禁止 `zr_aot_begin_instruction`、`frame.`、
+  `state`、`SZrTypeValue`、`ZR_VALUE_FAST_SET` 和 `ZrLibrary_AotRuntime_` 等解释器环境符号进入 thunk body。
+  RED/GREEN：新增 generated-product guardrail 后，target 先因仍只暴露 core 依赖而缺失
+  `zr_vm_parser/compiler.h` 构建失败；补齐 parser/core/library include/link 后 guardrail contracts 6/0。
+  生成物 grep 确认 i64/u64/f64/bool 二参 direct-call 均只传 scalar locals，无 stateful typed-thunk 用法，
+  且无 typed destination / runtime fallback；scoped thunk-body 检查确认四类 typed thunk body 都是直接 C return。
+  产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-scalar-typed-direct-call-guardrail.md`。规模：
+  guardrail contract 486 lines。备注：07-S5 仍部分完成；full typed ABI、inline structs、in/out writeback、
+  完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 09:26:01 +08:00 · M1.5 / 07-S5 bool state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：bool no-arg constant-return thunks 现在生成 `zr_aot_typed_bool_fn_N(void)` 并以空实参调用；
+  bool one-arg identity/logical-not thunks 生成 `zr_aot_typed_bool_fn_N(TZrBool)` 并以单 scalar local 调用；
+  bool 二参 equality/logical thunks 与三参 logical thunks 生成不带 `struct SZrState *state` 的 forward declaration、
+  definition 和 direct-call 调用点；i64/u64/f64 二参 comparison -> bool thunks 也改为只接收对应 scalar locals。
+  RED/GREEN：typed-call contracts 先因缺失 `static TZrBool zr_aot_typed_bool_fn_%u(void);` 失败 1/4；
+  实现后 typed-call contracts 4/0、bool shared-library smoke 28/0、source contracts 19/0。生成物 grep 确认
+  bool no/two/three-arg 与 i64/u64/f64 comparison bool thunks 的 signature/call 均不传 `state`。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-bool-state-free-typed-direct-call.md`。规模：bool thunk source 652 lines，
+  bool two-arg thunk source 294 lines，bool three-arg thunk source 275 lines，bool call lowering 272 lines，
+  bool typed-call contract 394 lines，bool smoke 790 lines。备注：07-S5 仍部分完成；full typed ABI、inline structs、
+  in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 09:10:18 +08:00 · M1.5 / 07-S5 f64 state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：f64 no-arg constant-return thunks 现在生成 `zr_aot_typed_f64_fn_N(void)` 并以空实参调用；
+  f64 one-arg identity/negate/nonzero constant arithmetic/modulo thunks 生成 `zr_aot_typed_f64_fn_N(TZrFloat64)`
+  并以单 scalar local 调用；纯 f64 二参/三参 add/subtract/multiply thunks 生成不带
+  `struct SZrState *state` 的 forward declaration、definition 和 direct-call 调用点。f64 divide/modulo
+  仍保留 `state`，以执行 `ZrCore_Debug_RunError(state, ...)`。f64 direct-call route 现在对 two/three-arg
+  回传 `outPassStateToThunk`，call writer 按该标志选择 stateful 或 state-free 调用。RED/GREEN：
+  typed-call contracts 先因缺失
+  `backend_aot_c_can_emit_typed_f64_two_arg_state_free_thunk(const SZrFunction *function)` 失败 1/4；
+  实现后 typed-call contracts 4/0、f64 shared-library smoke 19/0、source contracts 19/0。生成物 grep
+  确认 two-arg add 与 three-arg add 使用 state-free signature/call，two-arg divide 与 three-arg divide
+  保持 stateful signature/call。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-f64-state-free-typed-direct-call.md`。规模：
+  f64 thunk source 274 lines，call lowering 544 lines，f64 direct-call proof 195 lines，
+  typed-direct dispatcher 485 lines，emitter header 848 lines，f64 typed-call contract 228 lines，
+  f64 smoke 479 lines。备注：07-S5 仍部分完成；bool ABI parity、full typed ABI、inline structs、
+  in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 08:52:05 +08:00 · M1.5 / 07-S5 u64 two/three-arg state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：纯 u64 二参/三参 typed thunks（add/subtract/multiply/bitwise AND/OR/XOR）现在生成
+  不带 `struct SZrState *state` 的 forward declaration、definition 和 direct-call 调用点；
+  unsigned divide/modulo 仍保留 `state`，以执行 `ZrCore_Debug_RunError(state, ...)`。u64 direct-call
+  route 现在对 two/three-arg 回传 `outPassStateToThunk`，call writer 按该标志选择 stateful 或
+  state-free 调用。RED/GREEN：typed-call contracts 先因缺失
+  `backend_aot_c_can_emit_typed_u64_two_arg_state_free_thunk(const SZrFunction *function)` 失败 1/4；
+  实现后 typed-call contracts 4/0、u64 shared-library smoke 25/0、source contracts 19/0。生成物 grep
+  确认 two-arg add 与 three-arg add 使用 state-free signature/call，two-arg divide 与 three-arg divide
+  保持 stateful signature/call。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-u64-two-three-arg-state-free-typed-direct-call.md`。规模：
+  u64 thunk source 839 lines，u64 three-arg thunk source 139 lines，call lowering 523 lines，
+  u64 direct-call proof 195 lines，typed-direct dispatcher 479 lines，u64 typed-call contract 296 lines，
+  u64 smoke 665 lines。备注：07-S5 仍部分完成；f64/bool ABI parity、full typed ABI、inline structs、
+  in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 08:26:14 +08:00 · M1.5 / 07-S5 u64 no/one-arg state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：u64 no-arg typed thunks 现在生成 `zr_aot_typed_u64_fn_N(void)` 并以空实参调用；
+  u64 one-arg identity/constant arithmetic/bitwise thunks 生成 `zr_aot_typed_u64_fn_N(TZrUInt64)`
+  并以单个 u64 scalar local 调用，不再传 `state`。同时修复 typed signed-const fallback 对 scalar-local
+  来源/目的的读取写回，以及 forced stack-copy 在调用参数槽上优先保留源槽 u64 类型，避免 two-arg
+  u64 direct call 参数被复用的 i64 local 污染。RED/GREEN：typed-call contracts 先因缺失
+  `static TZrUInt64 zr_aot_typed_u64_fn_%u(void);` 失败 1/4；实现后 source contracts 19/0、
+  typed-call contracts 4/0、u64 shared-library smoke 25/0。生成物 grep 确认 no-arg `void`
+  signature/call、one-arg `TZrUInt64` signature/call，two-arg call-argument sync 生成
+  `zr_aot_scalar_stack_copy_u64 dstSlot=6 srcSlot=7`。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-u64-no-one-arg-state-free-typed-direct-call.md`。规模：
+  u64 thunk source 830 lines，call lowering 502 lines，typed arithmetic lowering 1168 lines，
+  scalar stack copy 645 lines，u64 typed-call contract 269 lines，u64 smoke 645 lines，source contracts
+  2156 lines。备注：07-S5 仍部分完成；u64 two/three-arg state-free ABI、f64/bool ABI parity、
+  full typed ABI、inline structs、in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和
+  08-12 仍未完成。
+
+- 2026-06-24 07:54:44 +08:00 · M1.5 / 07-S5 i64 three-arg state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：纯 signed i64 三参 typed thunks（add/sub/multiply/bitwise AND/OR/XOR）现在生成
+  `zr_aot_typed_i64_fn_N(TZrInt64, TZrInt64, TZrInt64)` forward declaration/definition，
+  direct-call 调用点以三个 scalar locals 直接调用，不再传 `state`；三参 divide/modulo 仍保留
+  `struct SZrState *state`，以执行 `ZrCore_Debug_RunError(state, ...)`。direct-call i64 route 现在
+  对三参同样回传 `outPassStateToThunk`，call writer 按该标志选择 stateful 或 state-free 调用。
+  RED/GREEN：typed-call contracts 先因缺失
+  `backend_aot_c_can_emit_typed_i64_three_arg_state_free_thunk(const SZrFunction *function)` 失败 1/4；
+  实现后 typed-call contracts 4/0、i64 three-arg shared-library smoke 8/0。生成物 grep 确认
+  three-arg add/bitwise OR 使用 state-free signature/call，three-arg divide 保持 stateful signature/call。
+  `git diff --check` 通过，仅有 LF/CRLF conversion warnings。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-i64-three-arg-state-free-typed-direct-call.md`。规模：
+  i64 thunk source 317 lines，call lowering 502 lines，i64 direct-call proof 158 lines，
+  typed-direct dispatcher 473 lines，i64 typed-call contract 325 lines，i64 three-arg smoke 267 lines。
+  备注：07-S5 仍部分完成；u64/f64/bool ABI parity、full typed ABI、inline structs、in/out writeback、
+  完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 07:34:41 +08:00 · M1.5 / 07-S5 i64 no/one-arg state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：signed i64 no-arg constant-return thunks 现在生成 `zr_aot_typed_i64_fn_N(void)` 并以
+  `zr_aot_typed_i64_fn_N()` 调用；one-arg identity/negate/bit-not/constant bitwise/constant arithmetic
+  thunks 现在生成 `zr_aot_typed_i64_fn_N(TZrInt64)` 并以单 scalar local 调用，不再传 `state`。
+  前一切片的纯二参 state-free ABI 与 divide/modulo stateful ABI 保持不变。RED/GREEN：typed-call contracts
+  先按新 `void` signature 失败 1/4；实现后 typed-call contracts 4/0、arithmetic smoke 7/0、
+  bitwise smoke 6/0、typed direct-call shared-library smoke 5/0。生成物 grep 确认 no-arg 使用
+  `zr_aot_typed_i64_fn_1(void)` / `zr_aot_typed_i64_fn_1()`，one-arg 使用 `zr_aot_typed_i64_fn_1(TZrInt64)`
+  / `zr_aot_typed_i64_fn_1(zr_aot_sN)`，divide 仍为 stateful two-arg signature/call。
+  `git diff --check` 通过，仅有 LF/CRLF conversion warnings。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-i64-no-one-arg-state-free-typed-direct-call.md`。规模：
+  i64 thunk source 310 lines，call lowering 491 lines，i64 typed-call contract 314 lines，通用 direct-call smoke 870 lines。
+  备注：07-S5 仍部分完成；i64 three-arg state-free ABI、u64/f64/bool ABI parity、full typed ABI、inline structs、
+  in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 07:24:50 +08:00 · M1.5 / 07-S5 i64 two-arg state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：纯 signed i64 二参 typed thunks（add/sub/multiply/bitwise AND/OR/XOR）现在生成
+  不带 `struct SZrState *state` 的 forward declaration、definition 和 direct-call 调用点；
+  runtime-error-capable divide/modulo 仍保留 `state` 以执行 `ZrCore_Debug_RunError(state, ...)`。
+  direct-call i64 route 现在回传 `outPassStateToThunk`，call writer 按该标志选择
+  `zr_aot_typed_i64_fn_N(zr_aot_sA, zr_aot_sB)` 或原有 stateful 调用。RED/GREEN：新增/更新
+  arithmetic、bitwise、通用 shared-library smoke 与 i64 typed-call source-contract 期望；最终
+  arithmetic smoke 7/0、bitwise smoke 6/0、typed-call contracts 4/0、typed direct-call shared-library smoke 5/0。
+  生成物 grep 确认 multiply/bitwise OR 使用 state-free signature/call，divide 保持 stateful signature/call。
+  `git diff --check` 通过，仅有 LF/CRLF conversion warnings。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-i64-two-arg-state-free-typed-direct-call.md`。规模：
+  i64 thunk source 312 lines，call lowering 491 lines，i64 direct-call proof 155 lines，typed-direct dispatcher 470 lines，
+  i64 typed-call contract 314 lines，通用 direct-call smoke 867 lines。备注：07-S5 仍部分完成；no/one/three-arg
+  state-free ABI、u64/f64/bool ABI parity、full typed ABI、inline structs、in/out writeback、完整 07-S5 acceptance、
+  性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 06:48:00 +08:00 · M1.5 / 07-S5 i64 bitwise binary expression return coverage ·
+  状态：覆盖子切片完成、07-S5 expression direct-return scalarization 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：script-level signed integer binary bitwise direct return（`return left & right;`）现在由
+  method-info generated-product 合同锁定为 i64 scalar direct-return case。新增 `i64_bitwise_and_expr`
+  断言 i64 signature、`ReturnI64(state, zr_aot_sN)`，并禁止旧 `zr_aot_bitwise_exec_binary`
+  与 expression-result `SZrTypeValue *zr_aot_destination`；探针显示既有 binary bitwise
+  scalar-local/result-local proof 已覆盖该形态，因此生产代码无需改动。RED/GREEN：覆盖 probe
+  直接通过，method-info signature 1/0，CTest `aot_c_method_info_signature` 1/1 passed。生成物 grep
+  命中 `zr_aot_scalar_constant_i64_local`、`zr_aot_scalar_exec_i64_bitwise`
+  与 `ReturnI64(state, zr_aot_s2)`；`zr_aot_bitwise_exec_binary`、`SZrTypeValue *zr_aot_destination`
+  和 `zr_aot_value_exec_primitive_constant` 均无命中。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-i64-bitwise-binary-expression-return.md`。规模：
+  method-info signature test 252 lines。备注：07-S5 仍部分完成；full typed ABI、inline structs、
+  in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 06:42:01 +08:00 · M1.5 / 07-S5 i64 bit-not expression return coverage ·
+  状态：覆盖子切片完成、07-S5 expression direct-return scalarization 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：script-level signed integer bit-not direct return（`return ~value;`）现在由
+  method-info generated-product 合同锁定为 i64 scalar direct-return case。新增 `i64_bit_not_expr`
+  断言 i64 signature、`ReturnI64(state, zr_aot_sN)`，并禁止旧 `zr_aot_bitwise_exec_unary`
+  与 expression-result `SZrTypeValue *zr_aot_destination`；探针显示既有
+  `BITWISE_NOT` scalar-local/result-local proof 已覆盖该形态，因此生产代码无需改动。RED/GREEN：
+  本次是覆盖确认 probe，未产生预期 RED；一次 build+run 合并命令超过工具等待窗口，拆分后
+  method-info signature 1/0，CTest `aot_c_method_info_signature` 1/1 passed。生成物 grep 命中
+  `zr_aot_scalar_constant_i64_local`、`zr_aot_scalar_stack_copy_i64`、`zr_aot_scalar_exec_i64_bit_not`
+  与 `ReturnI64(state, zr_aot_s1)`；`zr_aot_bitwise_exec_unary`、`SZrTypeValue *zr_aot_destination`
+  和 `zr_aot_value_exec_primitive_constant` 均无命中。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-i64-bit-not-expression-return.md`。规模：
+  method-info signature test 243 lines。备注：07-S5 仍部分完成；full typed ABI、inline structs、
+  in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 06:32:09 +08:00 · M1.5 / 07-S5 i64 unary expression return scalarization ·
+  状态：子切片完成、07-S5 expression direct-return scalarization 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：script-level signed integer unary direct return（`return -value;`）现在从 `NEG_SIGNED`
+  result opcode 记录 i64 scalar-local destination，并在 source i64 local 已写、result value slot 可跳过时生成
+  `zr_aot_scalar_exec_i64_unary` / `zr_aot_sN = -zr_aot_sM`。`backend_aot_write_c_direct_neg_signed(...)`
+  增加 `execInstructionIndex` 入参以复用 scalar-local written-before 与 result-skip proof；`NEG_SIGNED`
+  同时纳入 signed i64 local consumer proof，使 source constant 可跳过 value-slot materialization；return route
+  调用 `ZrLibrary_AotRuntime_ReturnI64`，不再落回 `zr_aot_arith_exec_signed_unary`。RED/GREEN：
+  focused method-info signature test 先因 `i64_neg_expr` 仍命中 forbidden
+  `zr_aot_arith_exec_signed_unary` 失败 1/1；随后严格 zero-materialization 检查又因
+  `SZrTypeValue *zr_aot_destination` 失败 1/1；补齐 signed-consumer proof 后 method-info signature 1/0。
+  补充验证通过 return contracts 1/0、frame setup contracts 1/0、
+  source contracts 19/0、typed scalar 1/0；generated `i64_neg_expr` grep 命中 i64 signature、
+  `zr_aot_scalar_constant_i64_local`、`zr_aot_scalar_exec_i64_unary` 和 `ReturnI64(state, zr_aot_s1)`，
+  `SZrTypeValue *zr_aot_destination` / `zr_aot_value_exec_primitive_constant` / old signed unary writer 均无命中；
+  CTest `aot_c_method_info_signature` 1/1 passed。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-i64-unary-expression-return.md`。规模：scalar locals
+  3047 lines、typed arithmetic lowering 1114 lines、emitter header 826 lines、method-info signature test
+  235 lines、source contracts 2147 lines。备注：07-S5 仍部分完成；full typed ABI、inline structs、
+  in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 06:04:14 +08:00 · M1.5 / 07-S5 f64 unary expression return scalarization ·
+  状态：子切片完成、07-S5 expression direct-return scalarization 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：script-level `float` unary direct return（`return -value;`）现在从 `NEG_FLOAT` result opcode
+  记录 f64 scalar-local destination，并在 source f64 local 已写、result value slot 可跳过时生成
+  `zr_aot_scalar_exec_f64_unary` / `zr_aot_fN = -zr_aot_fM`。`backend_aot_write_c_direct_neg_float(...)`
+  增加 `execInstructionIndex` 入参以复用 scalar-local written-before 与 result-skip proof；return route
+  调用 `ZrLibrary_AotRuntime_ReturnF64`，不再落回 `zr_aot_arith_exec_float_unary`、generic frame-slot return
+  或 expression result `SZrTypeValue *zr_aot_destination`。RED/GREEN：focused method-info signature test
+  先因 `f64_neg_expr` 缺失 `.returnType = &zr_aot_signature_0_types[0]` 失败 1/1；一次 build+run 合并
+  GREEN 命令在 124s 工具超时，拆分构建后 method-info signature 1/0。补充验证通过 return contracts 1/0、
+  frame setup contracts 1/0、source contracts 19/0、typed scalar 1/0；generated `f64_neg_expr` grep 命中
+  f64 signature、`zr_aot_scalar_exec_f64_unary` 和 `ReturnF64(state, zr_aot_f1)`，generic return / destination /
+  old float unary writer 均无命中；CTest `aot_c_method_info_signature` 1/1 passed。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-f64-unary-expression-return.md`。规模：scalar locals 3041 lines、
+  typed arithmetic lowering 1096 lines、emitter header 825 lines、method-info signature test 187 lines、
+  source contracts 2135 lines。备注：07-S5 仍部分完成；signed unary direct return、full typed ABI、
+  inline structs、in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 05:50:48 +08:00 · M1.5 / 07-S5 f64 comparison expression return scalarization ·
+  状态：子切片完成、07-S5 expression direct-return scalarization 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：script-level `float` comparison direct return（`return left > right;`）现在从 `LOGICAL_*_FLOAT`
+  result opcode 记录 bool scalar-local destination，并把该比较识别为 f64 source consumer + bool result writer。
+  `backend_aot_c_scalar_semir.c` 新增 parallel 于 i64/u64 compare 的 f64 scalar compare route，生成
+  `zr_aot_scalar_exec_f64_compare` 和 `zr_aot_bN = (TZrBool)(zr_aot_fL op zr_aot_fR)`，return route
+  调用 `ZrLibrary_AotRuntime_ReturnBool`，不再落回 `zr_aot_compare_exec_float`、generic frame-slot return
+  或 expression result `SZrTypeValue *zr_aot_destination`。RED/GREEN：focused method-info signature test
+  先因 `f64_bool_expr` 缺失 `.returnType = &zr_aot_signature_0_types[0]` 失败 1/1；实现后 method-info
+  signature 1/0。补充验证通过 return contracts 1/0、frame setup contracts 1/0、source contracts 19/0、
+  typed scalar 1/0；generated `f64_bool_expr` grep 命中 bool signature、`zr_aot_scalar_exec_f64_compare`
+  和 `ReturnBool(state, zr_aot_b2)`，generic return / destination / old float compare writer 均无命中；
+  CTest `aot_c_method_info_signature` 1/1 passed。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-f64-comparison-expression-return.md`。规模：scalar locals
+  3032 lines、scalar SEMIR 842 lines、method-info signature test 181 lines、source contracts 2130 lines。
+  备注：07-S5 仍部分完成；full typed ABI、inline structs、in/out writeback、完整 07-S5 acceptance、
+  性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 05:30:05 +08:00 · M1.5 / 07-S5 expression direct-return scalarization ·
+  状态：子切片完成、07-S5 expression direct-return scalarization 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：script-level bool/u64/f64 direct expression returns（`return left > right;`、`return left + right;`）
+  现在能从 typed expression result opcode 记录 scalar-local destination coverage，并在 `FUNCTION_RETURN`
+  边界复用 kind-based scalar return proof；生成 C 为 bool/u64/f64 expression cases 发射非空
+  `SZrAotSignature.returnType`、`hasReturnValue=1`、`baseType/staticCType=1/9/11`，表达式结果保持在
+  `zr_aot_bN` / `zr_aot_uN` / `zr_aot_fN`，return route 调用 `ReturnBool` / `ReturnU64` / `ReturnF64`，
+  不再落回 generic frame-slot return，也不生成 expression result `SZrTypeValue *zr_aot_destination`。
+  `backend_aot_c_scalar_locals.c` 新增 result-opcode kind 推断与 result destination 记录，return/value-slot
+  liveness proof 从 i64-only gate 改为 `can_return_kind_local(..., expectedKind, ZR_FALSE)`。
+  RED/GREEN：focused method-info signature test 先因 direct bool expression 缺失
+  `.returnType = &zr_aot_signature_0_types[0]` 失败 1/1；实现后 method-info signature 1/0。
+  补充验证通过 return contracts 1/0、frame setup contracts 1/0、source contracts 19/0、typed scalar 1/0；
+  generated bool_expr/u64_expr/f64_expr grep 命中 signature/typed Return helper，generic return 和
+  `SZrTypeValue *zr_aot_destination` 无命中；CTest `aot_c_method_info_signature` 1/1 passed。
+  产出：`tests/acceptance/2026-06-24-aot-m1-5-expression-direct-return-scalarization.md`。规模：
+  scalar locals 2999 lines、method-info signature test 174 lines、source contracts 2116 lines。
+  备注：07-S5 仍部分完成；full typed ABI、inline structs、in/out writeback、完整 07-S5 acceptance、
+  性能/SZrValue 计数和 08-12 仍未完成。
+
 - 2026-06-24 05:06:03 +08:00 · M1.5 / 07-S5 script typed-local return route ·
   状态：子切片完成、07-S5 typed return boundary route 部分完成、M1.5/07 部分完成、08-12 未开始 ·
   完成项目：script-level bool/u64/f64 typed-local return 现在复用 inferred scalar proof helper，

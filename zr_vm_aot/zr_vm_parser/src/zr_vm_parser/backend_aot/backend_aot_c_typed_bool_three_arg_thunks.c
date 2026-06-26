@@ -236,14 +236,13 @@ void backend_aot_c_write_bool_three_arg_thunk_forward_decl(FILE *file, TZrUInt32
     }
 
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1, TZrBool zr_aot_arg2);\n",
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrBool zr_aot_arg0, TZrBool zr_aot_arg1, TZrBool zr_aot_arg2);\n",
             (unsigned)flatIndex);
 }
 
 static void backend_aot_c_write_bool_three_arg_logical_and_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1, TZrBool zr_aot_arg2) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrBool zr_aot_arg0, TZrBool zr_aot_arg1, TZrBool zr_aot_arg2) {\n"
             "    return (TZrBool)(zr_aot_arg0 && zr_aot_arg1 && zr_aot_arg2);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -251,8 +250,7 @@ static void backend_aot_c_write_bool_three_arg_logical_and_thunk_definition(FILE
 
 static void backend_aot_c_write_bool_three_arg_logical_or_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrBool zr_aot_arg0, TZrBool zr_aot_arg1, TZrBool zr_aot_arg2) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrBool zr_aot_arg0, TZrBool zr_aot_arg1, TZrBool zr_aot_arg2) {\n"
             "    return (TZrBool)(zr_aot_arg0 || zr_aot_arg1 || zr_aot_arg2);\n"
             "}\n",
             (unsigned)flatIndex);

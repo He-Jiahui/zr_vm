@@ -5,10 +5,12 @@
 void backend_aot_write_llvm_function_body(FILE *file,
                                           SZrState *state,
                                           const SZrAotFunctionTable *functionTable,
-                                          const SZrAotFunctionEntry *entry) {
+                                          const SZrAotFunctionEntry *entry,
+                                          TZrBool stripGeneratedSymbols) {
     TZrUInt32 tempCounter = 0;
     TZrBool publishExports;
     TZrUInt32 *callableSlotFunctionIndices;
+    TZrChar functionSymbol[64];
     TZrChar failLabel[96];
     TZrChar endUnsupportedLabel[96];
     TZrChar startLabel[96];
@@ -44,8 +46,13 @@ void backend_aot_write_llvm_function_body(FILE *file,
     loweringContext.failLabel = failLabel;
     loweringContext.instructionCount = instructionCount;
     loweringContext.publishExports = publishExports;
+    loweringContext.stripGeneratedSymbols = stripGeneratedSymbols;
 
-    fprintf(file, "define internal i64 @zr_aot_fn_%u(ptr %%state) {\n", (unsigned)entry->flatIndex);
+    backend_aot_llvm_format_function_symbol(functionSymbol,
+                                            sizeof(functionSymbol),
+                                            entry->flatIndex,
+                                            stripGeneratedSymbols);
+    fprintf(file, "define internal i64 @%s(ptr %%state) {\n", functionSymbol);
     fprintf(file, "entry:\n");
     fprintf(file, "  %%frame = alloca %%ZrAotGeneratedFrame, align 8\n");
     fprintf(file, "  %%direct_call = alloca %%ZrAotGeneratedDirectCall, align 8\n");

@@ -15,6 +15,9 @@ related_code:
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
+  - zr_vm_core/include/zr_vm_core/metadata_runtime.h
+  - zr_vm_core/src/zr_vm_core/metadata_runtime.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_layout_binding.c
   - zr_vm_core/src/zr_vm_core/function_precall_internal.h
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
@@ -52,6 +55,10 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c
   - tests/core/test_type_layout_inline_copy.c
   - tests/core/test_precall_frame_slot_reset.c
@@ -59,6 +66,7 @@ related_code:
   - tests/core/test_object_call_known_native_fast_path.c
   - tests/core/test_native_inline_span_dispatch.c
   - tests/gc/gc_tests.c
+  - tests/module/test_metadata_runtime_type_layout.c
   - tests/parser/test_compiler_features.c
   - tests/parser/test_compiler_integration_main.c
 implementation_files:
@@ -77,6 +85,9 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
+  - zr_vm_core/include/zr_vm_core/metadata_runtime.h
+  - zr_vm_core/src/zr_vm_core/metadata_runtime.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_layout_binding.c
   - zr_vm_core/src/zr_vm_core/function_precall_internal.h
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
@@ -112,6 +123,10 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c
 plan_sources:
   - user: 2026-05-16 struct inline stack storage and memcpy parameter passing
@@ -127,9 +142,16 @@ tests:
   - tests/core/test_object_call_known_native_fast_path.c
   - tests/core/test_native_inline_span_dispatch.c
   - tests/gc/gc_tests.c
+  - tests/module/test_metadata_runtime_typespec_layout.c
+  - tests/module/test_metadata_runtime_type_layout.c
   - tests/parser/test_compiler_features.c
   - tests/parser/test_compiler_integration_main.c
   - tests/parser/test_value_type_runtime.c
+  - tests/parser/test_aot_c_type_layout_contracts.c
+  - tests/parser/test_aot_c_source_contracts.c
+  - tests/parser/test_aot_c_code_stripping.c
+  - tests/parser/test_aot_c_value_type_shared_library_smoke.c
+  - tests/parser/test_aot_c_generic_call_typed.c
   - tests/parser/test_semir_type_conflict_deopt.c
   - tests/parser/test_semir_dynamic_arithmetic_deopt.c
   - tests/parser/test_semir_dynamic_member_deopt.c
@@ -142,6 +164,17 @@ tests:
   - tests/acceptance/2026-06-20-aot-m1-semir-type-conflict-deopt.md
   - tests/acceptance/2026-06-20-aot-m1-semir-dynamic-index-deopt.md
   - tests/acceptance/2026-06-20-aot-m2-typed-scalar-i64.md
+  - tests/acceptance/2026-06-25-aot-11-s4g-gc-inline-frame-runtime-layout-resolver.md
+  - tests/acceptance/2026-06-25-aot-11-s4j-typespec-layout-binding-view.md
+  - tests/acceptance/2026-06-25-aot-11-s4k-type-token-layout-cache.md
+  - tests/acceptance/2026-06-25-aot-11-s4l-layout-id-token-reverse-cache.md
+  - tests/acceptance/2026-06-25-aot-11-s4m-multi-entry-type-layout-cache.md
+  - tests/acceptance/2026-06-25-aot-11-s4n-ctype-id-token-resolver.md
+  - tests/acceptance/2026-06-25-aot-11-s4o-type-layout-token-carrier.md
+  - tests/acceptance/2026-06-26-aot-11-s4p-generated-type-layout-token-population.md
+  - tests/acceptance/2026-06-26-aot-11-s4q-generated-typespec-type-layout-token-population.md
+  - tests/acceptance/2026-06-26-aot-11-s4r-generated-ownership-offset-table.md
+  - tests/acceptance/2026-06-26-aot-12-s7l-type-layout-payload-byte-trim-delta.md
 doc_type: module-detail
 ---
 
@@ -166,6 +199,8 @@ POD layouts use `memmove` through `ZrCore_TypeLayout_CopyInline`, so overlapping
 
 `ZrCore_TypeLayout_InitStructWithMetadata` is the AOT-facing initializer for these generated-C metadata fields. The existing `ZrCore_TypeLayout_InitStruct` entry remains the compatibility path and initializes neutral metadata (`cTypeId == 0`, no offset tables). Metadata field counts are still derived from the layout field flags, so the offset tables must describe the same field model as the canonical `SZrTypeLayout`.
 
+Generated AOT C descriptors now preserve that contract for owner-field struct layouts: when a struct layout has ownership fields whose offsets are present or can be derived from `ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT | ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE` fields, the emitter writes a static `ZrOwnershipOffsets_<typeLayoutId>[]` table and points `.ownershipFieldOffsets` at it. Zero-count, union, and unsafe offset cases keep `ZR_NULL` so consumers do not infer ownership locations that the generated metadata cannot prove.
+
 `ZR_TYPE_LAYOUT_KIND_VALUE` is a special layout for a standalone `SZrTypeValue`. It always copies through `ZrCore_Value_Copy`, so boxed struct objects still clone instead of being raw-copied by pointer. Dropping a value layout releases the value slot through the ownership runtime.
 
 `ZR_TYPE_LAYOUT_KIND_UNION` is the matching inline layout kind for tagged union values. The layout records the tag byte offset and size, and managed fields carry an `activeTag`. Copy, drop, and GC visitors only process fields whose `activeTag` matches the currently stored union tag. Union copy first drops the destination's old active value payload, then copies non-active byte ranges and active `SZrTypeValue` payload fields through the normal value copy path.
@@ -189,6 +224,10 @@ The fields are serialized into `function->prototypeData`, imported back into par
 ## Runtime Prototype Type Layout Resolver
 
 `ZrCore_Function_ResolvePrototypeFrameTypeLayout` is the current runtime bridge from `SZrFunctionFrameSlotLayout.typeLayoutId` to `SZrTypeLayout`. In this increment the id is still a checked prototype index, not a standalone serialized type-layout table id. The resolver reads the owning entry function's `prototypeData`, validates the encoded prototype count and byte bounds, and builds a per-function cache of layouts.
+
+For AOT-loaded functions that have an attached code registration, GC inline-frame mark/rewrite now resolves the same `typeLayoutId` through `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout`. That path reads the code-registration layout registry attached to the function or its prototype-context entry function, so AOT GC consumers use the same metadata runtime layout table as generic dictionary and GC descriptor lookup. When an AOT registry is present but a registry layout is missing, GC does not fall back to the prototype layout cache. When no AOT registry is attached, ordinary VM/interpreter inline-frame GC keeps using `ZrCore_Function_ResolvePrototypeFrameTypeLayout`.
+
+`metadata_runtime_layout_binding.c` keeps the row-to-layout binding views separate from the main metadata runtime cache code. TypeDef and FieldDef binding views resolve their rows through the attached zrp metadata and the code-registration layout registry. TypeSpec binding now follows the same rule: a `TYPE_SPEC` token must match its zrp TypeSpec row and paired signature record, then the row's `typeLayoutId` resolves through `ZrCore_MetadataRuntime_ResolveTypeLayout`. `ZrCore_MetadataRuntime_ResolveTypeTokenLayout` wraps the TypeDef and TypeSpec binding views with a public token-level resolver. `ZrCore_MetadataRuntime_ResolveTypeLayoutToken` first checks bounded cache entries and, when present, `codeRegistration->typeLayoutTokens[typeLayoutId]`; accepted table entries must be TypeDef or TypeSpec tokens whose registry-backed layout resolves. If the table has no usable entry, it scans TypeDef/TypeSpec rows to reverse a registry-backed layout id back to its metadata token. `ZrCore_MetadataRuntime_ResolveCTypeIdToken` exposes the same reverse path under the current `cTypeId == typeLayoutId` registry invariant. Generated C now emits the token-table carrier as `zr_aot_type_layout_tokens[]`; entries for uniquely matched local TypeDef-backed named struct/union layouts carry real `TYPE_DEF` tokens, and current-function generated generic layouts whose type name structurally matches a unique `TYPE_SPEC` canonical signature carry real `TYPE_SPEC` tokens. Missing metadata, ambiguous matches, cross-module records, and unsupported signature shapes stay `0u`. Both directions share a bounded 8-entry cache on `SZrMetadataRuntime`, so TypeDef and TypeSpec token/layout hits can coexist instead of replacing only the latest hit. Missing registry layout data does not fall back to prototype layout cache. This is still a read-only binding/cache/carrier path; runtime construction of generic layouts and ownership-offset tables remains later work.
 
 The resolver succeeds only when it can prove the inline representation is safe:
 
@@ -359,7 +398,9 @@ The implemented boundary covers:
 - Ownership, object-conversion, typed equality/comparison, and fused branch opcodes read logical frame value slots under frame-layout metadata; weak expiry clears only matching weak slots.
 - Tail-call frame reuse refuses inline-parameter callees until a layout-aware overlapping move exists, causing those calls to fall back to the non-reuse path instead of raw slot copying.
 - Runtime prototype-index layout resolution for provable primitive POD fields, value-sized builtin reference fields, managed embedded `SZrTypeValue` fields, and local nested struct fields with managed embedded values, with checked failure for unsafe, pointer-sized reference, recursive, imported, or otherwise unknown metadata.
-- GC mark and minor rewrite traversal for embedded inline-frame values through the resolved field layout.
+- GC mark and minor rewrite traversal for embedded inline-frame values through the resolved field layout, using metadata-runtime layout resolution for attached AOT code-registration functions and the prototype resolver for non-AOT VM frames.
+- Generated AOT `SZrTypeLayout` descriptors for struct owner fields now include static ownership-offset arrays when the field offsets are provable; union and unsupported offset cases keep null ownership-offset pointers.
+- Generated AOT code-stripping statistics report referenced inline type-layout payload bytes before and after reachability filtering via `code_stripping.typeLayoutPayloadBytesBefore/After/Removed`; the metric sums each distinct inline slot layout's `frameSlotLayout.byteSize` and is separate from emitted-C descriptor byte-span markers.
 - Frame post-call and tail-call reuse drop wiring for owned embedded inline values.
 - Native callback inline argument spans in the real dispatch context for already-inline VM frame payloads, including span refresh after native callback stack relocation in stack-root, stable fast/inline-pinned, and generic dispatcher lanes, with non-parameter inline slots rejected, ordinary boxed argument reads blocked for inline struct parameters, and missing/non-inline metadata preserving boxed argument reads.
 - Runtime validation for local struct field mutation, frame-byte probes, by-value parameter mutation, by-value return mutation, large POD values, managed string fields, GC scanning of embedded value fields, constructor copyback, and nested struct field copy.

@@ -387,8 +387,7 @@ static void backend_aot_c_write_bool_no_arg_thunk_definition(FILE *file,
                                                              TZrUInt32 flatIndex,
                                                              TZrBool returnValue) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(void) {\n"
             "    return %s;\n"
             "}\n",
             (unsigned)flatIndex,
@@ -397,8 +396,7 @@ static void backend_aot_c_write_bool_no_arg_thunk_definition(FILE *file,
 
 static void backend_aot_c_write_bool_one_arg_identity_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrBool zr_aot_arg0) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrBool zr_aot_arg0) {\n"
             "    return zr_aot_arg0;\n"
             "}\n",
             (unsigned)flatIndex);
@@ -406,8 +404,7 @@ static void backend_aot_c_write_bool_one_arg_identity_thunk_definition(FILE *fil
 
 static void backend_aot_c_write_bool_one_arg_logical_not_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrBool zr_aot_arg0) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrBool zr_aot_arg0) {\n"
             "    return (TZrBool)!zr_aot_arg0;\n"
             "}\n",
             (unsigned)flatIndex);
@@ -415,8 +412,7 @@ static void backend_aot_c_write_bool_one_arg_logical_not_thunk_definition(FILE *
 
 static void backend_aot_c_write_bool_i64_two_arg_less_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 < zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -424,8 +420,7 @@ static void backend_aot_c_write_bool_i64_two_arg_less_thunk_definition(FILE *fil
 
 static void backend_aot_c_write_bool_i64_two_arg_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 == zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -433,8 +428,7 @@ static void backend_aot_c_write_bool_i64_two_arg_equal_thunk_definition(FILE *fi
 
 static void backend_aot_c_write_bool_i64_two_arg_not_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 != zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -442,8 +436,7 @@ static void backend_aot_c_write_bool_i64_two_arg_not_equal_thunk_definition(FILE
 
 static void backend_aot_c_write_bool_i64_two_arg_greater_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 > zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -451,8 +444,7 @@ static void backend_aot_c_write_bool_i64_two_arg_greater_thunk_definition(FILE *
 
 static void backend_aot_c_write_bool_i64_two_arg_less_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 <= zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -460,8 +452,7 @@ static void backend_aot_c_write_bool_i64_two_arg_less_equal_thunk_definition(FIL
 
 static void backend_aot_c_write_bool_i64_two_arg_greater_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 >= zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -469,8 +460,7 @@ static void backend_aot_c_write_bool_i64_two_arg_greater_equal_thunk_definition(
 
 static void backend_aot_c_write_bool_u64_two_arg_less_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 < zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -478,8 +468,7 @@ static void backend_aot_c_write_bool_u64_two_arg_less_thunk_definition(FILE *fil
 
 static void backend_aot_c_write_bool_u64_two_arg_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 == zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -487,8 +476,7 @@ static void backend_aot_c_write_bool_u64_two_arg_equal_thunk_definition(FILE *fi
 
 static void backend_aot_c_write_bool_u64_two_arg_not_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 != zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -496,8 +484,7 @@ static void backend_aot_c_write_bool_u64_two_arg_not_equal_thunk_definition(FILE
 
 static void backend_aot_c_write_bool_u64_two_arg_greater_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 > zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -505,8 +492,7 @@ static void backend_aot_c_write_bool_u64_two_arg_greater_thunk_definition(FILE *
 
 static void backend_aot_c_write_bool_u64_two_arg_less_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 <= zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -514,8 +500,7 @@ static void backend_aot_c_write_bool_u64_two_arg_less_equal_thunk_definition(FIL
 
 static void backend_aot_c_write_bool_u64_two_arg_greater_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 >= zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -523,8 +508,7 @@ static void backend_aot_c_write_bool_u64_two_arg_greater_equal_thunk_definition(
 
 static void backend_aot_c_write_bool_f64_two_arg_less_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 < zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -532,8 +516,7 @@ static void backend_aot_c_write_bool_f64_two_arg_less_thunk_definition(FILE *fil
 
 static void backend_aot_c_write_bool_f64_two_arg_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 == zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -541,8 +524,7 @@ static void backend_aot_c_write_bool_f64_two_arg_equal_thunk_definition(FILE *fi
 
 static void backend_aot_c_write_bool_f64_two_arg_not_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 != zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -550,8 +532,7 @@ static void backend_aot_c_write_bool_f64_two_arg_not_equal_thunk_definition(FILE
 
 static void backend_aot_c_write_bool_f64_two_arg_greater_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 > zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -559,8 +540,7 @@ static void backend_aot_c_write_bool_f64_two_arg_greater_thunk_definition(FILE *
 
 static void backend_aot_c_write_bool_f64_two_arg_less_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 <= zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -568,8 +548,7 @@ static void backend_aot_c_write_bool_f64_two_arg_less_equal_thunk_definition(FIL
 
 static void backend_aot_c_write_bool_f64_two_arg_greater_equal_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
-            "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrBool zr_aot_typed_bool_fn_%u(TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1) {\n"
             "    return (TZrBool)(zr_aot_arg0 >= zr_aot_arg1);\n"
             "}\n",
             (unsigned)flatIndex);
@@ -586,11 +565,11 @@ void backend_aot_write_c_typed_bool_thunk_forward_decls(FILE *file, const SZrAot
         const SZrAotFunctionEntry *entry = &table->entries[index];
         if (backend_aot_c_can_emit_typed_bool_no_arg_thunk(entry->function)) {
             fprintf(file,
-                    "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state);\n",
+                    "static TZrBool zr_aot_typed_bool_fn_%u(void);\n",
                     (unsigned)entry->flatIndex);
         } else if (backend_aot_c_can_emit_typed_bool_one_arg_thunk(entry->function)) {
             fprintf(file,
-                    "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrBool zr_aot_arg0);\n",
+                    "static TZrBool zr_aot_typed_bool_fn_%u(TZrBool zr_aot_arg0);\n",
                     (unsigned)entry->flatIndex);
         } else if (backend_aot_c_can_emit_typed_bool_two_arg_thunk(entry->function)) {
             backend_aot_c_write_bool_two_arg_thunk_forward_decl(file, entry->flatIndex);
@@ -598,15 +577,15 @@ void backend_aot_write_c_typed_bool_thunk_forward_decls(FILE *file, const SZrAot
             backend_aot_c_write_bool_three_arg_thunk_forward_decl(file, entry->flatIndex);
         } else if (backend_aot_c_can_emit_typed_bool_i64_two_arg_thunk(entry->function)) {
             fprintf(file,
-                    "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);\n",
+                    "static TZrBool zr_aot_typed_bool_fn_%u(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);\n",
                     (unsigned)entry->flatIndex);
         } else if (backend_aot_c_can_emit_typed_bool_u64_two_arg_thunk(entry->function)) {
             fprintf(file,
-                    "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);\n",
+                    "static TZrBool zr_aot_typed_bool_fn_%u(TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);\n",
                     (unsigned)entry->flatIndex);
         } else if (backend_aot_c_can_emit_typed_bool_f64_two_arg_thunk(entry->function)) {
             fprintf(file,
-                    "static TZrBool zr_aot_typed_bool_fn_%u(struct SZrState *state, TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1);\n",
+                    "static TZrBool zr_aot_typed_bool_fn_%u(TZrFloat64 zr_aot_arg0, TZrFloat64 zr_aot_arg1);\n",
                     (unsigned)entry->flatIndex);
         }
     }

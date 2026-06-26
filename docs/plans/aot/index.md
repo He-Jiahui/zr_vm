@@ -5,6 +5,13 @@ plan_sources:
 related_code:
   - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
+  - zr_vm_core/include/zr_vm_core/gc.h
+  - zr_vm_core/include/zr_vm_core/bridge.h
+  - zr_vm_core/src/zr_vm_core/bridge.c
+  - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
+  - zr_vm_core/src/zr_vm_core/object/object_super_array.c
+  - zr_vm_core/src/zr_vm_core/object/object_internal.h
   - zr_vm_core/include/zr_vm_core/value.h
   - zr_vm_core/include/zr_vm_core/stack.h
   - zr_vm_core/include/zr_vm_core/type_layout.h
@@ -22,7 +29,47 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_logical.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_iterators.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_access_boundaries.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_internal.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_super_array.c
+  - zr_vm_library/include/zr_vm_library/aot_runtime.h
+  - zr_vm_library/src/zr_vm_library/aot_runtime.c
+  - zr_vm_aot/zr_vm_library/include/zr_vm_library/aot_runtime.h
+  - zr_vm_aot/zr_vm_library/src/zr_vm_library/aot_runtime.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_internal.h
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
+  - tests/core/test_aot_gc_root_frame.c
+  - tests/ffi/test_ffi_native_call_pin_contract.c
+  - tests/parser/test_aot_c_constant_contracts.c
+  - tests/parser/test_aot_c_control_contracts.c
+  - tests/parser/test_aot_c_control_shared_library_smoke.c
+  - tests/parser/test_aot_c_guardrail_contracts.c
+  - tests/parser/test_aot_c_global_contracts.c
+  - tests/parser/test_aot_c_generic_call_typed.c
+  - tests/parser/test_aot_c_code_stripping.c
+  - tests/parser/test_aot_c_zrp_metadata_pruning.c
+  - tests/parser/test_aot_c_source_contracts.c
+  - tests/parser/test_aot_c_frame_setup_contracts.c
+  - tests/parser/test_aot_c_global_shared_library_smoke.c
+  - tests/parser/test_aot_c_super_array_contracts.c
+  - tests/parser/test_aot_c_super_array_shared_library_smoke.c
   - docs/core-runtime/inline-type-layout-and-byte-stack.md
 references:
   - lua/hybridclr/libil2cpp/hybridclr/interpreter/Instruction.h
@@ -99,11 +146,11 @@ references:
 | 05   | [`05-ownership-gc-and-bridge.md`](05-ownership-gc-and-bridge.md)                                                   | 所有权/GC 在生成 C 中的表达 + 解释器与 AOT 桥                                                                                  | 📋 规划 |
 | 06   | [`06-implementation-blueprint.md`](06-implementation-blueprint.md)                                                 | 分阶段路线图、里程碑、测试矩阵、验收标准                                                                                       | 📋 规划 |
 | 07   | [`07-codegen-register-model-and-environment-isolation.md`](07-codegen-register-model-and-environment-isolation.md) | 寄存器模型 + AOT/解释器环境隔离：删除 prologue 观测机制、消除 register/SZrValue 双写、MethodInfo 取代胖 frame、边界 marshaling | 🚧 进行中 |
-| 08   | [`08-generic-sharing.md`](08-generic-sharing.md)                                                                   | 泛型共享：值类型单态化 + 引用类型共享 + 泛型字典(RGCTX 等价) + 实例化收集 + hybrid 动态实例化兜底                              | 📋 规划 |
-| 09   | [`09-memory-management.md`](09-memory-management.md)                                                               | 内存管理(AOT 视角)：GC 引用 descriptor、精确栈根 + safepoint + 移动 GC 根更新、写屏障与编译期消除、值类型分配/装箱边界化       | 📋 规划 |
-| 10   | [`10-reflection.md`](10-reflection.md)                                                                             | 反射：三级元数据(None/RuntimeMapping/Description)、invoker thunk(复用 07 边界)、token/泛型/offset 反射、保留注解驱动裁剪       | 📋 规划 |
-| 11   | [`11-metadata.md`](11-metadata.md)                                                                                 | 元数据：zrp 两段式(数据元数据 + 代码注册表)、运行期 token lazy 解析、token↔cTypeId↔ZrLayout 三向表、版本校验、元数据策略     | 📋 规划 |
-| 12   | [`12-code-stripping.md`](12-code-stripping.md)                                                                     | 代码裁剪：mark-and-sweep 可达性、裁剪驱动函数/类型/元数据生成、注解 + manifest 保留、泛型实例可达性、trim 警告、符号剥离       | 📋 规划 |
+| 08   | [`08-generic-sharing.md`](08-generic-sharing.md)                                                                   | 泛型共享：值类型单态化 + 引用类型共享 + 泛型字典(RGCTX 等价) + 实例化收集 + hybrid 动态实例化兜底                              | 🚧 进行中 |
+| 09   | [`09-memory-management.md`](09-memory-management.md)                                                               | 内存管理(AOT 视角)：GC 引用 descriptor、精确栈根 + safepoint + 移动 GC 根更新、写屏障与编译期消除、值类型分配/装箱边界化       | ✅ 完成 |
+| 10   | [`10-reflection.md`](10-reflection.md)                                                                             | 反射：三级元数据(None/RuntimeMapping/Description)、invoker thunk(复用 07 边界)、token/泛型/offset 反射、保留注解驱动裁剪       | 🚧 进行中 |
+| 11   | [`11-metadata.md`](11-metadata.md)                                                                                 | 元数据：zrp 两段式(数据元数据 + 代码注册表)、运行期 token lazy 解析、token↔cTypeId↔ZrLayout 三向表、版本校验、元数据策略     | 🚧 进行中 |
+| 12   | [`12-code-stripping.md`](12-code-stripping.md)                                                                     | 代码裁剪：mark-and-sweep 可达性、裁剪驱动函数/类型/元数据生成、注解 + manifest 保留、泛型实例可达性、trim 警告、符号剥离       | 🚧 进行中 |
 
 ## 5. 与现有模块的关系
 
@@ -117,6 +164,2054 @@ references:
 ## 状态与产出记录
 
 > 落地每个阶段或切片时在此追加：时间戳 · 里程碑/切片号 · 状态 · 完成项目 · RED/GREEN · 测试结果 · 备注。
+
+- 2026-06-27 03:49:57 +08:00 · 12-S7ZG / 11-S7 zrp MethodSpec signature-pool rewrite/compaction ·
+  状态：12-S7 与 11-S7 交叉子切片完成；11/12 阶段继续进行中 · 完成项目：
+  emitted zrp metadata pruning 现在会为 retained signature blob slices 构建 compacted pool，
+  重写保留 MethodSpec `GENERIC_INST(MEMBER_REF methodToken, args...)` signature 内的 method token payload，
+  并同步更新 token record / MethodSpec 的 signature blob offset 与 stable hash。新增
+  `backend_aot_c_zrp_metadata_signature.{h,c}` 承载 slice collection、pool copy、offset remap 和 hash recomputation。
+  RED/GREEN：RED 为 MethodSpec-present direct zrp fixture 要求 signature pool 30->15、method token RID 2->1、
+  hash 重算后失败 1/5；GREEN 后 zrp pruning 5/0，并由 source contract 锁定 signature module 边界。
+  测试结果：WSL gcc/clang direct zrp pruning 5/0、code stripping 5/0、source contracts 21/0、frame setup 1/0、
+  typed scalar 1/0、shared-library smoke 8/0，focused CTest 3/3；Windows MSVC Debug direct zrp pruning 5/0、
+  code stripping 5/0、source contracts 21/0、frame setup 1/0、typed scalar 0 failures/1 ignored、
+  shared-library smoke 0 failures/8 ignored，focused CTest 3/3。WSL clang 仍有既有
+  generated generic-conversion `-Wlogical-not-parentheses` warning。产出：
+  `tests/acceptance/2026-06-27-aot-12-s7zg-zrp-methodspec-signature-pool-rewrite.md`。
+  备注：完整 trim analyzer、attribute/annotation promotion/suppression、cross-module/export token、非 signature pool sweep
+  和 dump/diff 仍待后续。
+
+- 2026-06-26 08:38:24 +08:00 · 12-S7ZF / 11-S7 zrp MethodSpec method-token cascade ·
+  状态：12-S7 与 11-S7 交叉子切片完成；11/12 阶段继续进行中 · 完成项目：
+  emitted zrp metadata pruning 现在随 MethodDef table 压缩同步处理 MethodSpec table；
+  指向被删除 MethodDef 的 MethodSpec row 会被删除，指向保留 MethodDef 的 `methodToken`
+  会重映射到 compacted `MEMBER_DEF` RID。signature blob pool 本切片原样保留，不声明池压缩完成。
+  RED/GREEN：RED 为 MethodSpec-present direct zrp fixture 要求 owned pruned blob、MethodSpec count 2->1、
+  methodToken RID 2->1 和 signature blob pool 保留后失败 1/5；GREEN 后 zrp pruning 5/0，
+  并由 source contract 锁定 MethodSpec remap/count/copy 路径。测试结果：
+  WSL gcc/clang direct zrp pruning 5/0、code stripping 5/0、source contracts 21/0、frame setup 1/0、typed scalar 1/0、
+  shared-library smoke 8/0，focused CTest 3/3；Windows MSVC Debug direct zrp pruning 5/0、code stripping 5/0、
+  source contracts 21/0、frame setup 1/0、typed scalar 0 failures/1 ignored、
+  shared-library smoke 0 failures/8 ignored，focused CTest 3/3。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7zf-zrp-methodspec-method-token-cascade.md`。
+  备注：MethodSpec signature-pool rewrite、pool compaction、annotation promotion/suppression、export token 和 dump/diff 仍待后续。
+
+- 2026-06-26 08:15:19 +08:00 · 12-S7ZE / 11-S7 zrp GenericParamConstraint cascade ·
+  状态：12-S7 与 11-S7 交叉子切片完成；11/12 阶段继续进行中 · 完成项目：
+  emitted zrp metadata pruning 现在会随 GenericParam table 压缩同步处理 GenericParamConstraint table；
+  指向被删除 MethodDef-owned GenericParam 的 constraints 会被删除，保留 constraints 的 `genericParamIndex`
+  会重映射到 compacted GenericParam index，保留 GenericParam 的 constraint range 同步重算。
+  RED/GREEN：RED 为 GenericParamConstraint-present direct zrp fixture 要求 owned pruned blob、constraint section count 4->3、
+  `genericParamIndex` 2->1 和 constraint range compaction 后失败 1/4；GREEN 后 zrp pruning 4/0，
+  并由 source contract 锁定 constraint copy/remap/count/range 路径。测试结果：
+  WSL gcc/clang direct zrp pruning 4/0、code stripping 5/0、source contracts 21/0、frame setup 1/0、typed scalar 1/0、
+  shared-library smoke 8/0，focused CTest 3/3；Windows MSVC Debug direct zrp pruning 4/0、code stripping 5/0、
+  source contracts 21/0、frame setup 1/0、typed scalar 0 failures/1 ignored、
+  shared-library smoke 0 failures/8 ignored，focused CTest 3/3。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7ze-zrp-generic-param-constraint-cascade.md`。
+  备注：MethodSpec method-token/signature-pool rewrite、pool compaction、annotation promotion/suppression、export token 和 dump/diff 仍待后续。
+
+- 2026-06-26 07:55:51 +08:00 · 12-S7ZD / 11-S7 zrp metadata remap module split ·
+  状态：12-S7 与 11-S7 交叉支持性 refinement 完成；11/12 阶段继续进行中 · 完成项目：
+  新增 `backend_aot_c_zrp_metadata_remap.{h,c}`，把 emitted zrp pruning 的 MethodDef/FieldDef/GenericParam
+  token/range remap helper 从 prune orchestration 中拆出，`backend_aot_c_zrp_metadata_prune.c` 从 982 行降到 549 行。
+  RED/GREEN：无行为变化拆分，复用 zrp pruning 3 个 direct fixture；GREEN 后 source contract 21/0 锁定 prune/remap 模块边界。
+  测试结果：WSL gcc/clang direct zrp pruning 3/0、code stripping 5/0、source contracts 21/0、frame setup 1/0、
+  typed scalar 1/0、shared-library smoke 8/0，focused CTest 3/3；Windows MSVC Debug direct zrp pruning 3/0、
+  code stripping 5/0、source contracts 21/0、frame setup 1/0、typed scalar 0 failures/1 ignored、
+  shared-library smoke 0 failures/8 ignored，focused CTest 3/3。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7zd-zrp-metadata-remap-module-split.md`。
+  备注：为后续 GenericParamConstraint/MethodSpec/pool cascade 继续扩展前收敛模块边界，不改变当前剪枝语义。
+
+- 2026-06-26 07:30:55 +08:00 · 12-S7ZC / 11-S7 zrp GenericParam owner remap ·
+  状态：12-S7 与 11-S7 交叉子切片完成；11/12 阶段继续进行中 · 完成项目：
+  emitted zrp MethodDef pruning 现在可处理无 constraints 的 GenericParam rows；TypeDef-owned rows 保留，retained
+  MethodDef/FieldDef-owned rows remap owner token，被删除 MethodDef 拥有的 rows 删除，TypeDef/MethodDef generic-param range
+  随压缩后的 GenericParam 表重算。RED/GREEN：RED 为 GenericParam-present direct zrp fixture 要求 owned pruned blob 后失败 1/3；
+  GREEN 后 zrp pruning 3/0，并由 source contract 锁定 GenericParam remap/count/range/copy 路径。测试结果：
+  WSL gcc/clang direct zrp pruning 3/0、code stripping 5/0、source contracts 21/0、frame setup 1/0、typed scalar 1/0、
+  shared-library smoke 8/0，focused CTest 3/3；Windows MSVC Debug direct zrp pruning 3/0、code stripping 5/0、source contracts 21/0、
+  frame setup 1/0、typed scalar 0 failures/1 ignored、shared-library smoke 0 failures/8 ignored，focused CTest 3/3。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7zc-zrp-generic-param-owner-remap.md`。
+  备注：GenericParamConstraint cascade、MethodSpec signature-pool rewrite、pool compaction、annotation promotion、export token 和 dump/diff 仍待后续。
+
+- 2026-06-26 07:14:57 +08:00 · 12-S7ZB / 11-S7 zrp FieldDef member-token remap ·
+  状态：12-S7 与 11-S7 交叉子切片完成；11/12 阶段继续进行中 · 完成项目：
+  emitted zrp MethodDef pruning 现在可处理含 FieldDef rows 的 blob；MethodDef 删除后，FieldDef row token 与 token record
+  内的 FieldDef `MEMBER_DEF` 引用会重排到保留 MethodDef 之后，指向已删除 MethodDef 的 token record 继续被移除。
+  RED/GREEN：RED 为 FieldDef-present direct zrp fixture 要求 owned pruned blob 和 FieldDef RID 3->2 remap 后失败 1/2；
+  GREEN 后 zrp pruning 2/0，并由 source contract 锁定 FieldDef lookup/remap/copy 路径。测试结果：
+  WSL gcc/clang direct zrp pruning 2/0、code stripping 5/0、source contracts 21/0、frame setup 1/0、typed scalar 1/0、
+  shared-library smoke 8/0，focused CTest 3/3；Windows MSVC Debug direct zrp pruning 2/0、code stripping 5/0、source contracts 21/0、
+  frame setup 1/0、typed scalar 0 failures/1 ignored、shared-library smoke 0 failures/8 ignored，focused CTest 3/3。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7zb-zrp-fielddef-member-token-remap.md`。
+  备注：GenericParam/MethodSpec cascade、pool compaction、annotation promotion、export token 和 dump/diff 仍待后续。
+
+- 2026-06-26 06:58:15 +08:00 · 12-S7ZA / 11-S7 zrp token-record MethodDef pruning/remap ·
+  状态：12-S7 与 11-S7 交叉子切片完成；11/12 阶段继续进行中 · 完成项目：
+  emitted zrp MethodDef pruning 现在会同步压缩 tokenRecords section，重写保留 MethodDef row 的 `MEMBER_DEF` RID，
+  并同步重映射 token record 内指向保留 MethodDef 的 member-token 字段；指向被裁剪 MethodDef 的 token record 被删除。
+  含 FieldDef rows 的 blob 暂时保留原始元数据，因为当前 MethodDef/FieldDef 共享 `MEMBER_DEF` token 空间。
+  RED/GREEN：RED 为新 direct zrp pruning fixture 要求 owned pruned blob 后失败 1/1（旧 guard 保留原 blob）；
+  GREEN 后 zrp pruning 2/0，FieldDef guard 也被锁住。测试结果：WSL gcc/clang direct zrp pruning 2/0、code stripping 5/0、
+  source contracts 21/0、frame setup 1/0、typed scalar 1/0、shared-library smoke 8/0，focused CTest 3/3；
+  Windows MSVC Debug direct zrp pruning 2/0、code stripping 5/0、source contracts 21/0、frame setup 1/0、
+  typed scalar 0 failures/1 ignored、shared-library smoke 0 failures/8 ignored，focused CTest 3/3。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7za-zrp-token-record-methoddef-pruning.md`。
+  备注：FieldDef token remap、GenericParam/MethodSpec cascade、pool compaction、annotation 抑制和 dump/diff 仍待后续。
+
+- 2026-06-26 06:30:39 +08:00 · 12-S7Z / 11-S7 zrp MethodDef metadata pruning ·
+  状态：12-S7 与 11-S7 交叉子切片完成；11/12 阶段继续进行中 · 完成项目：
+  opt-in code stripping 的 emitted embedded zrp metadata blob 现在会在 reachability filter 后按 stripped function table
+  裁剪 MethodDef rows，并让 descriptor length、embeddedModuleBytes、zrp section stats 与 before/after/removed deltas
+  读取实际 emitted blob。RED/GREEN：RED 为 code-stripping fixture 要求 retained/removable MethodDef row 剪枝后失败 1/5；
+  GREEN 后 MethodDef section 72->36、zrp metadata 446->410、definition-table removed=36。测试结果：
+  WSL gcc/clang direct code stripping 5/0、source contracts 21/0、frame setup 1/0、typed scalar 1/0、shared-library smoke 8/0，
+  focused CTest 2/2；Windows MSVC Debug direct code stripping 5/0、source contracts 21/0、frame setup 1/0、
+  typed scalar 0 failures/1 ignored、shared-library smoke 0 failures/8 ignored，focused CTest 2/2。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7z-zrp-methoddef-metadata-pruning.md`。
+  备注：完整 trim analyzer、attribute/annotation suppression、GenericParam/MethodSpec/token/pool 跟随剪枝、导出 token 和 dump/diff 仍待后续。
+
+- 2026-06-26 06:00:16 +08:00 · 12-S7Y / 10-S1 / 11-S7 default-min reflection metadata policy ·
+  状态：12-S7、10-S1 与 11-S7 交叉子切片完成；10/11/12 阶段继续进行中 · 完成项目：
+  AOT C generated MethodInfo 的 reflection metadata level 现在按 writer policy 输出；默认/非裁剪产物保持
+  `ZR_AOT_REFLECTION_METADATA_RUNTIME_MAPPING`，opt-in code stripping 产物输出
+  `ZR_AOT_REFLECTION_METADATA_NONE`，文件头新增 `metadata_policy.reflectionLevel` marker。RED/GREEN：
+  RED 为 `zr_vm_aot_c_code_stripping_test` 新增 stripped MethodInfo `NONE` 与 policy marker 断言后失败 1/4；
+  GREEN 后新增 shared option helper，并把 policy 穿过 C emitter、method metadata emitter 和 byte sampling。
+  测试结果：WSL gcc 与 WSL clang 均通过 direct code stripping 4/0、source contracts 21/0、frame setup 1/0、
+  typed scalar 1/0、shared-library smoke 8/0，focused CTest 2/2；Windows MSVC Debug 通过 direct code stripping
+  4/0、source contracts 21/0、frame setup 1/0、typed scalar 1 test 0 failures/1 ignored、shared-library smoke
+  8 tests 0 failures/8 ignored，focused CTest 2/2。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7y-default-min-reflection-metadata-policy.md`。
+  备注：完整 trim analyzer、attribute/annotation suppression、实际 zrp metadata sweep/pruning、导出 token 和
+  dump/diff 工具仍待后续。
+
+- 2026-06-26 05:41:31 +08:00 · 12-S7X release symbol stripping CLI policy ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7 仍未关闭 · 完成项目：
+  `ZrCli_Compiler_ApplyProjectAotWriterOptions()` 把 `.zrp` `aotMode: "full-aot"` 同时映射为
+  `requireFullAot = ZR_TRUE` 和 `stripGeneratedSymbols = ZR_TRUE`；缺省/`hybrid` 映射为二者均 false。
+  CLI `--emit-aot-c` full-AOT project fixture 生成 C 现在输出
+  `/* symbol_stripping.generatedSymbols = 1 */`。RED/GREEN：RED 为 `zr_vm_cli_project_incremental_test`
+  新增 full-AOT/hybrid writer option expectations 和 generated-C marker expectation 后失败 3/11；
+  GREEN 为 existing project AOT option helper 增加 symbol-stripping policy mapping。
+  测试结果：WSL gcc、WSL clang、Windows MSVC Debug 均通过 direct CLI incremental 11/0、
+  generic call typed 7/0、LLVM symbol stripping 2/0，focused CTest
+  `cli_project_incremental|aot_c_generic_call_typed|aot_llvm_symbol_stripping` 3/3；Windows generic
+  call typed 仍按既有 Unix shared-library guard 3 ignored。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7x-release-symbol-stripping-cli-policy.md`。
+  备注：本切片未新增单独 `release` manifest 字段；完整 trim analyzer、attribute/annotation 抑制策略、
+  实际 metadata sweep/pruning 和默认最小 metadata policy 仍待后续。
+
+- 2026-06-26 05:30:36 +08:00 · 12-S7W LLVM generated-symbol stripping parity ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7 仍未关闭 · 完成项目：
+  LLVM writer 复用 `stripGeneratedSymbols` option；默认保持 `@zr_aot_fn_<flatIndex>`，
+  开启后 generated private function definition、function thunk table、entry thunk 和静态 direct-call
+  references 改为稳定 `@zr_fn_g<flatIndex>`；`.ll` 头部新增
+  `; symbol_stripping.generatedSymbols = 0/1`，公开 `@ZrVm_GetAotCompiledModule` 导出保持不变。
+  RED/GREEN：RED 为新增 `zr_vm_aot_llvm_symbol_stripping_test` 后先缺 marker 与 stripped
+  `@zr_fn_g0/@zr_fn_g1` 失败 2/2；GREEN 后新增 LLVM function-symbol formatter 并把 strip flag
+  穿过 emitter/function body/static direct call/module artifacts。
+  测试结果：WSL gcc、WSL clang、Windows MSVC Debug 均通过 direct LLVM 2/0、code-stripping 4/0、
+  generic call typed 7/0，focused CTest
+  `aot_llvm_symbol_stripping|aot_c_code_stripping|aot_c_generic_call_typed` 3/3；Windows generic
+  call typed 仍按既有 Unix shared-library guard 3 ignored。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7w-llvm-generated-symbol-stripping.md`。
+  备注：完整 trim analyzer、attribute/annotation 抑制策略、实际 metadata sweep/pruning、
+  默认最小 metadata policy 和 release-mode 默认策略/CLI 接线仍待后续。
+
+- 2026-06-26 05:06:33 +08:00 · 12-S7V method metadata generated byte trim delta ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7 仍未关闭 · 完成项目：
+  AOT C 文件头部新增 `code_stripping.methodMetadataGeneratedBytesBefore/After/Removed`
+  markers；`backend_aot_write_c_method_infos()` 返回已发射 method signature/info metadata byte total，
+  新增 `backend_aot_c_method_metadata_generated_bytes_referenced()` 复用真实 method metadata emitter
+  在裁剪前后采样 generated-C byte span。Code-stripping fixture 校验 before >= after、
+  removed = before - after、after 等于 `aot_size.methodMetadataBytesTotal`，并区分普通不可达 child
+  裁剪 removed > 0 与 export/manifest root 保留 removed = 0。RED/GREEN：RED 为
+  `zr_vm_aot_c_code_stripping_test` 缺少 method metadata generated-byte markers 失败 3/4，
+  source contract 同步锁定 emitter/header/source plumbing；GREEN 后输出三项 byte-delta markers。
+  测试结果：WSL gcc、WSL clang、Windows MSVC Debug 均通过 direct code-stripping 4/0、
+  generic call typed 7/0、source contracts 21/0、frame setup contract 1/0，CTest
+  `aot_c_code_stripping|aot_c_generic_call_typed|aot_c_frame_setup_contracts` 2/2。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7v-method-metadata-generated-byte-trim-delta.md`。
+  备注：真实 metadata pool sweep/pruning、默认最小 metadata policy、release-mode 默认策略/CLI 接线
+  和完整 trim analyzer 仍待后续。
+
+- 2026-06-26 04:49:28 +08:00 · 12-S7U release generated-symbol stripping option ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7 仍未关闭 · 完成项目：
+  新增 writer-level `stripGeneratedSymbols` option 与 `symbol_stripping.generatedSymbols`
+  generated-C marker；默认模式保持可读泛型 helper/debugName，开启后把 generic monomorphized/shared
+  私有 helper 符号和 shared slot `debugName` 剥离为稳定 ID（如 `zr_fn_g1__1`、`zr_fn_g1__shared`、
+  `generic#1`），避免在这些 release 私有表面暴露 `Pair`/`Box` 类型名。RED/GREEN：
+  RED 为 generic generated-C fixture 使用 `options.stripGeneratedSymbols` 后编译失败，source contract
+  同步要求 public option 和 emitter plumbing；GREEN 后 option 经 backend helper 传入 generic emitters。
+  测试结果：WSL gcc、WSL clang、Windows MSVC Debug 均通过 direct code-stripping 4/0、CTest
+  `aot_c_code_stripping|aot_c_generic_call_typed|zrp_metadata_format` 3/3、source contracts 20/0、
+  frame setup contract 1/0。产出：`tests/acceptance/2026-06-26-aot-12-s7u-release-generated-symbol-stripping.md`。
+  备注：release-mode 默认策略/CLI 接线、完整 trim analyzer、attribute/annotation 抑制和 metadata
+  sweep/pruning 仍待后续。
+
+- 2026-06-26 04:21:08 +08:00 · 12-S7T zrp metadata size module split ·
+  状态：12-S7 支持性 refinement 完成、12 阶段继续进行中；完整 12-S7 仍未关闭 · 完成项目：
+  新增 `backend_aot_c_zrp_metadata_size.{h,c}`，把 zrp metadata size stats、`aot_size.zrpMetadata*`
+  marker 和 `code_stripping.zrpMetadata*Before/After/Removed` marker 写入从主 emitter 拆出；`backend_aot_c_emitter.c`
+  从 893 行收回到 763 行，新模块为 116 行。RED/GREEN：RED 为 source contract 要求新模块存在且 emitter
+  不再直接读取 zrp header 后 20 个 source contract 中 1 个失败；GREEN 后新模块进入 parser shared 链接，
+  行为保持 12-S7S 语义。测试结果：WSL gcc 直接 code-stripping 4/0；WSL gcc/clang/Windows MSVC Debug
+  的 `aot_c_code_stripping|aot_c_generic_call_typed|zrp_metadata_format` 3/3，source contracts 20/0。
+  产出：`tests/acceptance/2026-06-26-aot-12-s7t-zrp-metadata-size-module-split.md`。
+  备注：完整 trim analyzer、attribute/annotation suppression、实际 metadata sweep/pruning、默认最小 metadata policy
+  和 release 符号剥离仍未关闭；WSL clang 需重新生成 CMake 以接入新 globbed source。
+
+- 2026-06-26 04:04:49 +08:00 · 12-S7S zrp metadata byte trim delta carrier ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7 仍未关闭 · 完成项目：
+  generated AOT C 现在输出 zrp metadata size group 的
+  `code_stripping.zrpMetadataBytesBefore/After/Removed`、
+  `zrpMetadataTokenRecordBytesBefore/After/Removed`、
+  `zrpMetadataDefinitionTableBytesBefore/After/Removed` 和
+  `zrpMetadataPoolBytesBefore/After/Removed`。当前 writer 尚未重写 metadata blob，因此
+  before=after、removed=0；后续实际 metadata sweep/pruning 可复用该载体。
+  RED/GREEN：RED 为 zrp metadata size fixture 要求 code-stripping metadata byte delta markers 后旧生成物缺 marker；
+  GREEN 后 total/token-record/definition-table/pool 四组 marker 均输出并保持 removed=0。
+  测试结果：WSL gcc/clang 直接运行 `zr_vm_aot_c_code_stripping_test` 均为 4/0；WSL gcc/clang 和
+  Windows MSVC Debug 均通过 CTest `aot_c_code_stripping|aot_c_generic_call_typed|zrp_metadata_format` 3/3，
+  并通过 source contracts 19/0。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7s-zrp-metadata-byte-trim-delta.md`。
+  备注：完整 trim analyzer、attribute/annotation suppression、实际 metadata sweep/pruning、默认最小 metadata policy
+  和 release 符号剥离仍未关闭；WSL clang 普通构建入口被无关缺失测试源引用阻塞，已用 fast target 完成聚焦验证。
+
+- 2026-06-26 03:52:50 +08:00 · 12-S7R generated type-layout byte trim delta ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7 仍未关闭 · 完成项目：
+  opt-in code stripping 现在输出 referenced inline type-layout 的 generated-C byte span
+  `code_stripping.typeLayoutGeneratedBytesBefore/After/Removed`；采样复用真实 type-layout 发射循环，
+  GREEN 后普通 trim fixture 报告 `1072 -> 536`、removed `536`，export/manifest root fixture
+  报告 `1072 -> 1072`、removed `0`，且 after 等于 `aot_size.typeLayoutBytesTotal`。
+  RED/GREEN：RED 为生成 C 缺少 generated-byte markers，code-stripping 测试 4 个用例中 3 个失败；
+  GREEN 后新增 markers、裁剪差值和 after/total 一致性断言均通过。
+  测试结果：WSL gcc/clang 直接运行 `zr_vm_aot_c_code_stripping_test` 均为 4/0；WSL gcc/clang 和
+  Windows MSVC Debug 均通过 CTest `aot_c_code_stripping|aot_c_generic_call_typed|zrp_metadata_format` 3/3，
+  并通过 source contracts 19/0。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7r-generated-type-layout-byte-trim-delta.md`。
+  备注：完整 trim analyzer、attribute/annotation suppression、metadata sweep diff、默认最小 metadata policy
+  和 release 符号剥离仍未关闭；WSL clang 普通构建入口被无关缺失测试源引用阻塞，已用 fast target 完成聚焦验证。
+
+- 2026-06-26 03:24:43 +08:00 · 12-S7Q runtime fallback warning source file attribution ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7 仍未关闭 · 完成项目：
+  runtime fallback trim warning marker 现在从 `SZrFunction.sourceCodeList` 输出 `sourceFile=<file>`，
+  缺失或空 source file 回退为 `<unknown>`。
+  RED/GREEN：RED 为动态 deopt warning fixture 要求 `sourceFile=dynamic_deopt_bridge.zr` 后旧生成物缺 marker；
+  GREEN 后 dynamic-call 与 dynamic-value-access warning 均输出
+  `sourceFile=dynamic_deopt_bridge.zr sourceLine=41 sourceLineEnd=43 sourceColumn=7 sourceColumnEnd=19`，
+  suppressed fixture 仍只输出 suppressed count。
+  测试结果：WSL gcc/clang 直接运行 `zr_vm_aot_c_dynamic_deopt_bridge_smoke_test` 均为 6/0；WSL gcc/clang 和
+  Windows MSVC Debug 均通过 CTest `aot_c_code_stripping|aot_c_generic_call_typed|zrp_metadata_format` 3/3，
+  并通过 source contracts 19/0。Windows 动态 deopt shared-library 用例按既有规则 6 ignored。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7q-runtime-fallback-warning-source-file.md`。
+  备注：完整 trim analyzer、attribute/annotation suppression、pre-trim generated-C type/layout byte span attribution、
+  metadata sweep diff、默认最小 metadata policy 和 release 符号剥离仍未关闭。
+
+- 2026-06-26 03:14:26 +08:00 · 12-S7P runtime fallback warning column span ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7 仍未关闭 · 完成项目：
+  `SZrAotExecIrInstruction` 现在携带 `debugColumn/debugColumnEnd`，runtime fallback trim warning marker 输出
+  `sourceLine=<start> sourceLineEnd=<end> sourceColumn=<start> sourceColumnEnd=<end>`；
+  source-location 推导从 `backend_aot_exec_ir.c` 拆入 `backend_aot_exec_ir_source_location.{h,c}`。
+  RED/GREEN：RED 为动态 deopt warning fixture 要求 `sourceColumn=7 sourceColumnEnd=19` 后旧生成物缺 marker；
+  GREEN 后 dynamic-call 与 dynamic-value-access warning 均输出 `sourceLine=41 sourceLineEnd=43 sourceColumn=7 sourceColumnEnd=19`，
+  suppressed fixture 仍只输出 suppressed count。
+  测试结果：WSL gcc/clang 直接运行 `zr_vm_aot_c_dynamic_deopt_bridge_smoke_test` 均为 6/0；WSL gcc/clang 和
+  Windows MSVC Debug 均通过 CTest `aot_c_code_stripping|aot_c_generic_call_typed|zrp_metadata_format` 3/3，
+  并通过 source contracts 19/0。Windows 动态 deopt shared-library 用例按既有规则 6 ignored。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7p-runtime-fallback-warning-column-span.md`。
+  备注：为满足大文件边界，`backend_aot_exec_ir.c` 已从 1023 行收回到 906 行；完整 trim analyzer、source file attribution、
+  attribute/annotation suppression、pre-trim generated-C type/layout byte span attribution、metadata sweep diff、
+  默认最小 metadata policy 和 release 符号剥离仍未关闭。
+
+- 2026-06-26 02:46:07 +08:00 · 12-S7O runtime fallback warning reason-mask suppression ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7 仍未关闭 · 完成项目：
+  `EZrAotRuntimeFallbackWarningFlag` 和
+  `SZrAotWriterOptions.suppressRuntimeFallbackWarningReasonMask` 现在支持按 reason 抑制 hybrid
+  runtime fallback trim warning；全局 `suppressRuntimeFallbackWarnings` 继续等价 all-reasons mask；
+  visible count 与 suppressed count 分离，非匹配 reason 仍输出 compact `trim_warning.runtimeFallback[...]` marker。
+  RED/GREEN：RED 为动态 deopt reason-mask fixture 引用新 option/constant 后构建失败；GREEN 后 dynamic-call
+  生成物输出 `runtimeFallbackCount = 0`、`runtimeFallbackSuppressedCount = 1` 且无 visible marker，
+  dynamic-value-access 在同一 mask 下仍输出 `sourceLine=41 sourceLineEnd=43 reason=dynamic-value-access`。
+  测试结果：WSL gcc/clang 直接运行 `zr_vm_aot_c_dynamic_deopt_bridge_smoke_test` 均为 6/0；WSL gcc/clang 和
+  Windows MSVC Debug 均通过 CTest `aot_c_code_stripping|aot_c_generic_call_typed|zrp_metadata_format` 3/3，
+  并通过 source contracts 19/0。Windows 动态 deopt shared-library 用例按既有规则 6 ignored。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7o-runtime-fallback-warning-reason-mask-suppression.md`。
+  备注：完整 trim analyzer、file/column source span、attribute/annotation suppression、pre-trim generated-C
+  type/layout byte span attribution、metadata sweep diff、默认最小 metadata policy 和 release 符号剥离仍未关闭。
+
+- 2026-06-26 02:26:36 +08:00 · 12-S7N runtime fallback source line span ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7 仍未关闭 · 完成项目：
+  ExecIR instruction 现在携带 `debugLineEnd`，runtime fallback trim warning marker 输出
+  `sourceLine=<start> sourceLineEnd=<end>`，line-span 来源优先 execution location，随后 fallback 到 per-instruction
+  line list 与 function end/start line。
+  RED/GREEN：RED 为动态 deopt warning fixture 要求 `sourceLineEnd=43` 后旧生成物缺 marker；GREEN 后
+  dynamic-call 与 dynamic-value-access warning 均输出 `sourceLine=41 sourceLineEnd=43`，suppressed fixture
+  仍只输出 suppressed count。
+  测试结果：WSL gcc/clang 直接运行 `zr_vm_aot_c_dynamic_deopt_bridge_smoke_test` 均为 5/0；WSL gcc/clang 和
+  Windows MSVC Debug 均通过 CTest `aot_c_code_stripping|aot_c_generic_call_typed|zrp_metadata_format` 3/3，
+  并通过 source contracts 19/0。Windows 动态 deopt shared-library 用例按既有规则 5 ignored。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7n-runtime-fallback-source-line-span.md`。
+  备注：完整 trim analyzer、file/column source span、per-warning/attribute-based suppression、pre-trim generated-C
+  type/layout byte span attribution、metadata sweep diff、默认最小 metadata policy 和 release 符号剥离仍未关闭。
+
+- 2026-06-26 02:12:56 +08:00 · 12-S7M runtime fallback warning suppression ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7 仍未关闭 · 完成项目：
+  `SZrAotWriterOptions.suppressRuntimeFallbackWarnings` 现在可让 hybrid AOT C 生成物抑制 runtime fallback
+  trim warning entry，并用 `trim_warnings.runtimeFallbackSuppressedCount` 保留被抑制数量。
+  RED/GREEN：RED 为动态 deopt fixture 引用新 writer option 后编译失败；GREEN 后 suppressed 生成物输出
+  `runtimeFallbackCount = 0`、`runtimeFallbackSuppressedCount = 1`，保留 dynamic deopt bridge 调用，且没有
+  `trim_warning.runtimeFallback[0]`。
+  测试结果：WSL gcc/clang 直接运行 `zr_vm_aot_c_dynamic_deopt_bridge_smoke_test` 均为 5/0；WSL gcc/clang 和
+  Windows MSVC Debug 均通过 CTest `aot_c_code_stripping|aot_c_generic_call_typed|zrp_metadata_format` 3/3，
+  并通过 source contracts 19/0。Windows 动态 deopt shared-library 用例按既有规则 5 ignored。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7m-runtime-fallback-warning-suppression.md`。
+  备注：完整 trim analyzer、完整 source span、per-warning/attribute-based suppression、pre-trim generated-C
+  type/layout byte span attribution、metadata sweep diff、默认最小 metadata policy 和 release 符号剥离仍未关闭。
+
+- 2026-06-26 01:56:33 +08:00 · 12-S7L type-layout payload byte trim delta ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7 仍未关闭 · 完成项目：
+  generated AOT C writer 现在输出 `code_stripping.typeLayoutPayloadBytesBefore/After/Removed`，按 distinct
+  inline layout 的 `frameSlotLayout.byteSize` 聚合 opt-in code stripping 前后 referenced payload bytes。
+  RED/GREEN：RED 为 code-stripping 生成 C fixture 缺 payload byte delta marker；GREEN 后普通裁剪 fixture
+  输出 before=16、after=8、removed=8，export root 与 manifest root 输出 before=16、after=16、removed=0。
+  测试结果：WSL gcc/clang 和 Windows MSVC Debug 均通过 CTest
+  `aot_c_code_stripping|aot_c_generic_call_typed|zrp_metadata_format` 3/3，并通过 source contracts 19/0。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7l-type-layout-payload-byte-trim-delta.md`。
+  备注：完整 trim analyzer、source span/warning 抑制、pre-trim generated-C type/layout byte span attribution、
+  metadata sweep diff、默认最小 metadata policy 和 release 符号剥离仍未关闭。
+
+- 2026-06-26 01:40:40 +08:00 · 12-S7K zrp metadata section/table/pool byte statistics ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7/11-S7 仍未关闭 · 完成项目：
+  generated AOT C writer 现在在 embedded module size marker 后识别有效 zrp data metadata blob，并输出
+  total、token-record、definition-table、pool 与 12 个 section 的 byte attribution marker；非 zrp 或缺失 blob
+  保持稳定 0 值统计。RED/GREEN：RED 为 zrp metadata size fixture 缺少 zrp 统计 marker；GREEN 后生成物包含
+  `zrpMetadataBytes = 374`、`zrpMetadataTokenRecordBytes = 96`、
+  `zrpMetadataDefinitionTableBytes = 52`、`zrpMetadataPoolBytes = 18`，并列出
+  `tokenRecords/typeDefs/stringPool/signatureBlobPool/constantPool` 等 section marker。
+  测试结果：WSL gcc/clang 和 Windows MSVC Debug 均通过 CTest
+  `aot_c_code_stripping|aot_c_generic_call_typed|zrp_metadata_format` 3/3，并通过 source contracts 19/0。产出：
+  `tests/acceptance/2026-06-26-aot-12-s7k-zrp-metadata-section-byte-statistics.md`。
+  备注：完整 trim analyzer、source span/warning 抑制、metadata/type-layout 裁剪前后 diff、默认最小 metadata 策略、
+  zrp dump/diff 和 release 符号剥离仍未关闭。
+
+- 2026-06-26 01:14:40 +08:00 · 11-S4R generated ownership offset table emission ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/10-S4 仍未关闭 · 完成项目：
+  generated `SZrTypeLayout` descriptor 现在为可安全导出 offset 的 struct owner fields 写出
+  `ZrOwnershipOffsets_<typeLayoutId>[]`，并将 `.ownershipFieldOffsets` 指向该表；zero-count、union 和 unsafe/
+  unsupported offset 路径保持 `ZR_NULL` 并输出 failure marker。RED/GREEN：RED 为 type-layout source contract
+  要求 ownership-offset writer helper 后缺少 `backend_aot_c_type_layout_can_emit_ownership_offsets(`；GREEN 后
+  `Unique<string>` 字段的 `Holder` generated C 出现 `/* zr_aot_ownership_offsets layout=0 count=1 */`、
+  `ZrOwnershipOffsets_0[]`、`.ownershipFieldCount = 1u` 和 `.ownershipFieldOffsets = ZrOwnershipOffsets_0`。
+  测试结果：WSL gcc/clang 均通过 CTest `aot_c_type_layout_contracts` 1/1、source contracts 19/0、value-type smoke
+  4/0；Windows MSVC Debug 通过同组 CTest 1/1、source contracts 19/0、value-type smoke 3/0/1 ignored。产出：
+  `tests/acceptance/2026-06-26-aot-11-s4r-generated-ownership-offset-table.md`。
+  备注：union ownership offset 表、持久 cTypeId→token 索引、runtime generic layout construction、cross-module token table
+  和 public reflection entity 仍未关闭。
+
+- 2026-06-26 00:42:14 +08:00 · 11-S4Q generated TypeSpec-backed type layout token population ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/10-S4 仍未关闭 · 完成项目：
+  generated C token-table writer 在 TypeDef 未命中后会结构匹配 current-function `TYPE_SPEC` signature blob，
+  并为唯一匹配的 generated generic layout 写入真实 TypeSpec token；`Pair<int, int>` generated layout 现在在
+  `zr_aot_type_layout_tokens[]` 中得到 `0x07000001u`，缺 metadata、多重匹配、跨模块/unsupported signature
+  形态仍保守写 0。RED/GREEN：RED 为 `aot_c_generic_call_typed` 新增 TypeSpec token 断言后旧生成物 table 全为
+  `0u`；GREEN 后 generated token slot、shared-library 编译和既有 TypeDef-backed union token smoke 均通过。
+  测试结果：WSL gcc/clang CTest `aot_c_type_layout_contracts|aot_c_generic_call_typed` 2/2，通过 source contracts
+  19/0 与 value-type smoke 3/0；Windows MSVC Debug 通过同组 CTest 2/2、source contracts 19/0、value-type smoke
+  2/0/1 ignored。产出：
+  `tests/acceptance/2026-06-26-aot-11-s4q-generated-typespec-type-layout-token-population.md`。
+  备注：持久 cTypeId→token 索引、ownership offsets、runtime generic layout construction、cross-module token table
+  和 public 泛型反射实体仍未关闭。
+
+- 2026-06-26 00:13:32 +08:00 · 11-S4P generated TypeDef-backed type layout token population ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/10-S4 仍未关闭 · 完成项目：
+  generated C 的 `zr_aot_type_layout_tokens[]` 现在对唯一匹配本地 TypeDef metadata 的 named struct/union
+  `SZrTypeLayout` 写入真实 `TYPE_DEF` token；token writer 拆到
+  `backend_aot_c_type_layout_tokens.c`，type-layout emitter 暴露 generated table resolver，并为 union layout
+  发射 runtime descriptor。缺 TypeDef metadata、多重匹配、TypeSpec/generic entries 仍写 0。
+  RED/GREEN：RED 为 union `Shape` generated-C smoke 缺 `ZrTypeLayout_` descriptor 和非零 token；GREEN 后
+  generated union layout registry、`zr_aot_type_layout_tokens[]`、`0x02000001u` token entry 和无 debug-only
+  `typeLayoutToken` 注释断言通过。测试结果：WSL gcc/clang 直接运行通过 metadata TypeSpec layout 14/0、
+  AOT type-layout contracts 1/0、source contracts 19/0、frame setup 1/0、shared-library smoke 8/0、value-type
+  smoke 3/0；Windows MSVC Debug 通过 metadata 14/0、type-layout contracts 1/0、source contracts 19/0、
+  frame setup 1/0，shared/value-type smoke 的 Unix-only 分支按既有规则 ignored。产出：
+  `tests/acceptance/2026-06-26-aot-11-s4p-generated-type-layout-token-population.md`。
+  备注：TypeSpec/generic token population、持久 cTypeId→token 索引、ownership offsets、runtime layout
+  construction 和 public reflection entity 仍未关闭。
+
+- 2026-06-25 23:13:20 +08:00 · 11-S4O code-registration type layout token carrier ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/10-S4 仍未关闭 · 完成项目：
+  AOT ABI 10 新增 `typeLayoutTokens/typeLayoutTokenCount` carrier，generated C 发射
+  `zr_aot_type_layout_tokens[]` 并连接 module descriptor/codeRegistration；loader 校验 token table shape/count，
+  metadata runtime attach 镜像 token count，`ResolveTypeLayoutToken()`/`ResolveCTypeIdToken()` 先读 registration
+  token 表，再 fallback 到 zrp scan。RED/GREEN：RED 为 token carrier source/runtime tests 缺字段和 runtime mirror；
+  GREEN 后手工非零 token 表消费、非 type token/缺 layout 拒绝、generated table shape 与 descriptor validation 通过。
+  测试结果：WSL gcc/clang 直接运行通过 metadata TypeSpec layout 14/0、source contracts 19/0、frame setup 1/0、
+  shared-library smoke 8/0、value-type smoke 2/0；Windows MSVC Debug 通过 metadata TypeSpec layout 14/0、
+  source contracts 19/0、frame setup 1/0，shared/value-type smoke 的 Unix-only 分支按既有规则 ignored。产出：
+  `tests/acceptance/2026-06-25-aot-11-s4o-type-layout-token-carrier.md`。
+  备注：generated entries 当前零填充；真实 token 填充/持久 cTypeId→token 索引、TypeSpec/generic layout
+  materialization、ownership offsets、runtime layout construction 和 public 泛型反射实体仍未关闭。
+
+- 2026-06-25 22:22:13 +08:00 · 11-S4N cTypeId to TypeDef/TypeSpec token resolver ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/10-S4 仍未关闭 · 完成项目：
+  新增 `ZrCore_MetadataRuntime_ResolveCTypeIdToken(runtime, cTypeId)`，在当前 `cTypeId == typeLayoutId`
+  不变量下复用 typeLayoutId→token resolver、bounded multi-entry cache 与 TypeDef/TypeSpec binding-view
+  registry-backed 校验；null、NONE 和 stale prototype cache 路径返回 0。
+  RED/GREEN：RED 为 cTypeId→token focused tests 暴露缺少 public resolver/API；GREEN 后 TypeDef/TypeSpec
+  cTypeId 反查、多项 cache 命中和 no-prototype-fallback 通过。测试结果：WSL gcc/clang CTest
+  `metadata_runtime_typespec_layout|metadata_runtime_query|metadata_runtime_type_layout|zrp_metadata_format` 4/4；
+  Windows MSVC Debug 通过 metadata TypeSpec layout 12/0、zrp metadata format 11/0、metadata query 22/0、
+  metadata type-layout 10/0。产出：
+  `tests/acceptance/2026-06-25-aot-11-s4n-ctype-id-token-resolver.md`。
+  备注：持久 cTypeId→token 索引表、TypeSpec/generic layout materialization、ownership offset 表、运行期 layout
+  构建和 public 泛型反射实体仍未关闭。
+
+- 2026-06-25 22:13:54 +08:00 · 11-S4M bounded multi-entry type layout cache ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/10-S4 仍未关闭 · 完成项目：
+  `SZrMetadataRuntime` 将 TypeDef/TypeSpec token/layout cache 从单项最近命中扩展为 8 项 bounded cache，
+  `ResolveTypeTokenLayout()` 按 token 查/写 cache，`ResolveTypeLayoutToken()` 按 layout id 查/写 cache，
+  未命中时仍经 TypeDef/TypeSpec binding view 校验 registry-backed layout；同一 runtime 可同时保留 TypeDef 与
+  TypeSpec 的正向和反向命中，registry 表项清空后仍可命中已缓存项，满表按 round-robin 覆盖。
+  RED/GREEN：RED 为多项 token/layout cache focused tests 暴露旧单项 cache 覆盖前一个 TypeDef/TypeSpec 命中；
+  GREEN 后两项多项 cache 用例和既有 TypeSpec layout 组均通过。测试结果：WSL gcc/clang CTest
+  `metadata_runtime_typespec_layout|metadata_runtime_query|metadata_runtime_type_layout|zrp_metadata_format` 4/4；
+  Windows MSVC Debug 通过 metadata TypeSpec layout 10/0、zrp metadata format 11/0、metadata query 22/0、
+  metadata type-layout 10/0。产出：
+  `tests/acceptance/2026-06-25-aot-11-s4m-multi-entry-type-layout-cache.md`。
+  备注：持久 cTypeId→token 索引表、TypeSpec/generic layout materialization、ownership offset 表、运行期 layout
+  构建和 public 泛型反射实体仍未关闭。
+
+- 2026-06-25 21:53:56 +08:00 · 11-S4L typeLayoutId to TypeDef/TypeSpec token reverse resolver ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/10-S4 仍未关闭 · 完成项目：
+  新增 `ZrCore_MetadataRuntime_ResolveTypeLayoutToken(runtime, typeLayoutId)`，从最近一次
+  token/layout cache 命中反查 type token，未命中时扫描 zrp `TYPE_DEFS` / `TYPE_SPECS` 并复用 binding view
+  确认 registry-backed layout 后返回 TypeDef/TypeSpec token；null、NONE、缺 registry layout 和 stale prototype cache
+  路径返回 0。RED/GREEN：RED 为 focused TypeSpec layout 测试新增 layoutId→token coverage 后缺少 API；GREEN 后
+  TypeDef/TypeSpec layoutId 反查、cache 命中和 no-prototype-fallback 负向用例通过。测试结果：WSL gcc/clang CTest
+  metadata runtime 相关 4/4 通过；Windows MSVC Debug 通过 metadata TypeSpec layout 8/0、zrp metadata format 11/0、
+  metadata query 22/0、metadata type-layout 10/0。产出：
+  `tests/acceptance/2026-06-25-aot-11-s4l-layout-id-token-reverse-cache.md`。
+  备注：完整多项 token/cTypeId/layout cache、持久 cTypeId→token 索引、TypeSpec/generic layout materialization、
+  ownership offset 表和 public 泛型反射实体仍未关闭。
+
+- 2026-06-25 21:37:38 +08:00 · 11-S4K TypeDef/TypeSpec token layout cache resolver ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/10-S4 仍未关闭 · 完成项目：
+  新增 `ZrCore_MetadataRuntime_ResolveTypeTokenLayout(runtime, typeToken, outTypeLayoutId)`，通过 TypeDef/TypeSpec
+  binding view 把 type token 解析到 code-registration registry-backed `SZrTypeLayout`，缓存最近一次
+  token→layoutId/layout 命中，拒绝 null、非 type token 和缺 registry layout 的路径，并在失败时复位输出 layout id。
+  RED/GREEN：RED 为 focused TypeSpec layout 测试新增 public resolver/cache 覆盖后缺少 API；GREEN 后 TypeDef cache、
+  TypeSpec cache、非 type token 拒绝和 stale prototype cache 负向用例通过。测试结果：WSL gcc/clang CTest
+  metadata runtime 相关 4/4 通过；Windows MSVC Debug 通过 metadata TypeSpec layout 5/0、zrp metadata format 11/0、
+  metadata query 22/0、metadata type-layout 10/0。产出：
+  `tests/acceptance/2026-06-25-aot-11-s4k-type-token-layout-cache.md`。
+  备注：完整多项 token/cTypeId/layout cache、cTypeId→token 反查、TypeSpec/generic layout materialization、
+  ownership offset 表和 public 泛型反射实体仍未关闭。
+
+- 2026-06-25 21:18:46 +08:00 · 11-S4J TypeSpec layout binding view ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；10-S4 获得后续类型实参反射的数据路径支撑，
+  但完整 10-S4/11-S4 仍未关闭 · 完成项目：`SZrZrpMetadataTypeSpecRow` 使用 `typeLayoutId` 记录 closed
+  TypeSpec 对应的 layout id；新增 `SZrMetadataRuntimeTypeSpecLayoutBindingView` 和
+  `ZrCore_MetadataRuntime_ReadTypeSpecLayoutBindingView(runtime, typeSpecToken, outView)`，从 `TYPE_SPEC`
+  token 绑定 type record、paired signature record、zrp `TYPE_SPECS` row、11-S3K generic base-token binding、
+  `typeLayoutId/cTypeId/signatureHash` 和 code-registration registry 中的 `SZrTypeLayout`。row 的
+  `signatureBlobOffset/signatureBlobLength/signatureHash` 必须与 token/signature record 一致，缺 registry layout
+  时不 fallback 到 prototype layout cache。实现上把 TypeDef/TypeSpec/FieldDef layout binding reader 拆入
+  `metadata_runtime_layout_binding.c`。RED/GREEN：RED 为 focused TypeSpec layout 测试新增后缺少 row 字段、view type
+  和 API；GREEN 后正向 TypeSpec binding 与 stale prototype cache 负向用例通过。测试结果：WSL gcc/clang/MSVC Debug
+  均通过 metadata TypeSpec layout 2/0、zrp metadata format 11/0、metadata query 22/0、metadata type-layout 10/0。
+  产出：`tests/acceptance/2026-06-25-aot-11-s4j-typespec-layout-binding-view.md`。
+  备注：完整 TypeSpec/generic layout materialization、ownership offset 表、runtime layout construction、
+  token/cTypeId/layout cache，以及 public 泛型反射实体仍未关闭。
+
+- 2026-06-25 20:43:52 +08:00 · 11-S4I FieldDef layout binding view ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；10-S4 获得后续 token-driven 字段反射实体的数据路径支撑，
+  但完整 10-S4/11-S4 仍未关闭 · 完成项目：新增 `SZrMetadataRuntimeFieldDefLayoutBindingView` 和
+  `ZrCore_MetadataRuntime_ReadFieldDefLayoutBindingView(runtime, fieldDefToken, outView)`，从 attached zrp metadata
+  的 `FIELD_DEFS` section 读取 FieldDef row，绑定 field token record、owner TypeDef token/record/row、
+  FieldDef `byteOffset/typeLayoutId` 和 owner `typeLayoutId`，并要求 owner/field layout 都经
+  code-registration layout registry 解析；缺 registry layout 时不 fallback 到 prototype layout cache。RED/GREEN：
+  RED 为 focused metadata runtime query 新增 FieldDef binding view 后缺少 view type/API 编译失败；GREEN 后
+  正向 binding 与 stale prototype cache 负向用例通过。测试结果：WSL gcc/clang/MSVC Debug 均通过 metadata query
+  22/0 和 metadata type-layout 10/0。产出：
+  `tests/acceptance/2026-06-25-aot-11-s4i-fielddef-layout-binding-view.md`。
+  备注：TypeSpec/generic layout materialization、ownership offset 表、runtime layout construction、完整三向缓存，
+  以及 public token-driven field reflection entity 仍未关闭。
+
+- 2026-06-25 20:27:41 +08:00 · 11-S4H / 10-S4A reflection registry-backed layout consumer ·
+  状态：11-S4 与 10-S4 子切片完成、10/11 阶段继续进行中；完整 10-S4/11-S4 仍未关闭 ·
+  完成项目：新增 `ZrCore_MetadataRuntime_ResolveFunctionPrototypeTypeLayout(function, prototype, outTypeLayoutId)`，
+  通过函数自身或 prototype-context entry function 的 prototype 实例表映射 `typeLayoutId`，再从 attached
+  code-registration layout registry 解析 `SZrTypeLayout`，且不 fallback 到 prototype layout cache；反射 type/member
+  layout 消费端在 attached registry 下读取 `SZrTypeLayout`，字段 offset/size 按实例字段序号从
+  `SZrTypeLayout.fields[i]` 写回，非 AOT/native/无 registry 匹配时保留旧 fallback。RED/GREEN：RED 为 focused
+  metadata runtime type-layout 测试新增 prototype layout resolver 后缺少 API 链接失败；GREEN 后 stale prototype
+  cache 不会使 detached 函数成功，反射源码契约锁定 metadata runtime include、resolver 调用、类型/字段 layout
+  写入 helper 和实例字段序号消费。测试结果：WSL gcc/clang/MSVC Debug 均通过 metadata type-layout 10/0、
+  metadata query 20/0、AOT type-layout contracts 1/0、source contracts 19/0。产出：
+  `tests/acceptance/2026-06-25-aot-11-s4h-10-s4a-reflection-layout-registry-consumer.md`。
+  备注：11-S4 的 TypeSpec/generic layout materialization、ownership offset 表、runtime layout construction 和完整三向缓存仍未关闭；
+  10-S4 的泛型参数反射、token-driven 字段实体和类型实参反射仍未关闭。
+
+- 2026-06-25 19:31:46 +08:00 · 11-S4G GC inline-frame metadata-runtime layout resolver ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：AOT functions 绑定 code-registration layout registry，GC mark/rewrite 的 inline-frame
+  layout resolver 对 attached registry 函数使用 `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout()`，并在
+  registry layout 缺失时拒绝 prototype fallback；function reset 清空 attached registry 字段；未绑定 registry 的 VM/interpreter 函数保留旧
+  `ZrCore_Function_ResolvePrototypeFrameTypeLayout()` fallback。RED/GREEN：RED 为新增 function-level resolver
+  测试缺少 attach/resolve API；第二个 RED 为 GC inline-frame minor rewrite work 计数从 2 降到 1；GREEN 后
+  AOT registry lookup 与非 AOT fallback 均通过。测试结果：WSL gcc/clang/MSVC Debug 均通过 metadata
+  type-layout 7/0、metadata query 20/0、AOT GC root-frame 5/0、GC 66/0、value-type runtime 14/0、frame setup
+  1/0、source contracts 19/0、value-type smoke 2/0、shared-library smoke 8/0、descriptor diagnostics 2/0、
+  generic reference sharing 4/0；MSVC ignored 均为既有 Unix-only 分支。产出：
+  `tests/acceptance/2026-06-25-aot-11-s4g-gc-inline-frame-runtime-layout-resolver.md`。
+  备注：反射 consumer 迁移已由 11-S4H / 10-S4A 后续切片处理；TypeSpec/generic layout materialization、
+  runtime layout construction、ownership offset 表和完整三向缓存仍未关闭。
+
+- 2026-06-25 18:45:50 +08:00 · 11-S4F GC descriptor metadata-runtime resolver ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：新增 `ZrCore_MetadataRuntime_ResolveGcDescriptor(runtime, typeLayoutId)`，
+  通过 `codeRegistration->gcDescriptors[typeLayoutId]` 解析 GC descriptor，并强制同一 id 先经
+  `ZrCore_MetadataRuntime_ResolveTypeLayout()` 解析到 code-registration layout registry；空 runtime、
+  `NONE`、越界、稀疏 descriptor、descriptor id 不匹配或 layout registry 缺失均返回 null，prototype layout
+  cache 不作为 fallback。RED/GREEN：RED 为 metadata type-layout focused 测试新增 GC descriptor resolver
+  用例后编译失败；GREEN 后返回 matching descriptor，且 stale prototype cache/单独 descriptor 表不能绕过
+  runtime layout resolver。测试结果：WSL gcc/clang 均通过 metadata type-layout 5/0、metadata query 20/0、
+  AOT GC root-frame 5/0、frame setup 1/0、source contracts 19/0、value-type smoke 2/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0、generic reference sharing 4/0；Windows MSVC Debug
+  同组通过，其中 value-type smoke 1 ignored、shared-library smoke 8 ignored、descriptor diagnostics 2 ignored
+  均为既有 Unix-only 分支。产出：
+  `tests/acceptance/2026-06-25-aot-11-s4f-gc-descriptor-runtime-resolver.md`。
+  备注：本记录只关闭 code-registration GC descriptor lookup 的 metadata-runtime 入口；TypeSpec/generic layout
+  materialization、runtime layout construction、反射 consumer 迁移、GC inline-frame scanning 迁移和完整三向缓存
+  仍未关闭。
+
+- 2026-06-25 18:22:45 +08:00 · 11-S4E generic dictionary metadata-runtime type-layout resolver ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：泛型字典 TYPE_LAYOUT/SIZEOF runtime helper 改为接收 `SZrMetadataRuntime*`，
+  经 `ZrCore_MetadataRuntime_ResolveTypeLayout()` 读取 code-registration layout registry；generated C 的
+  `ZrAot_GenericSlot_TypeLayout(metadataRuntime, dict, slotIndex)` 宏和 shared-reference generic 函数签名同步携带
+  `metadataRuntime`，prototype layout cache 不再作为 fallback。RED/GREEN：RED 为 reference-sharing 测试新增
+  registry layout 与 stale prototype layout 同 id 不同 size 的断言后失败；GREEN 后 TYPE_LAYOUT/SIZEOF 返回 registry
+  layout/size，缺失 registry 时返回 null/false。测试结果：WSL gcc/clang 均通过 reference sharing 4/0、
+  generic call typed 6/0、source contracts 19/0、frame setup 1/0、metadata type-layout 3/0、
+  metadata query 20/0、shared-library smoke 8/0、value-type shared-library smoke 2/0、descriptor diagnostics 2/0；
+  Windows MSVC Debug 同组通过，其中 generic call typed 3 ignored、shared-library smoke 8 ignored、
+  value-type shared-library smoke 1 ignored、descriptor diagnostics 2 ignored 均为既有 Unix-only 分支。
+  产出：`tests/acceptance/2026-06-25-aot-11-s4e-generic-dictionary-type-layout-runtime-resolver.md`。
+  备注：本记录只关闭 08 字典 layout consumer 接入 11 的单一 layout 表；TypeSpec/generic layout materialization、
+  runtime layout construction、反射/GC consumer 统一迁移和 full-AOT 泛型闭包仍未关闭。
+
+- 2026-06-25 17:54:28 +08:00 · 11-S4D metadata runtime public type-layout resolver ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：`SZrMetadataRuntime` attach 时保存 `typeLayoutCount`，新增
+  `ZrCore_MetadataRuntime_ResolveTypeLayout()`，通过 runtime 的 code-registration layout registry
+  解析 `typeLayoutId`，拒绝空表、`NONE`、越界、稀疏空项和 `cTypeId` 不匹配，并让 TypeDef binding view
+  复用同一入口。RED/GREEN：RED 为新增 `zr_vm_metadata_runtime_type_layout_test` 后编译失败，缺少
+  `typeLayoutCount` 和 public resolver；GREEN 后 resolver 返回 registry 中的 matching layout，且不会 fallback
+  到 prototype layout cache。测试结果：WSL gcc/clang 均通过 type-layout runtime 3/0、metadata runtime query 20/0、
+  frame setup 1/0、source contracts 19/0、shared-library smoke 8/0、value-type shared-library smoke 2/0、
+  descriptor diagnostics 2/0；Windows MSVC Debug 通过 type-layout runtime 3/0、metadata runtime query 20/0、
+  frame setup 1/0、source contracts 19/0、shared-library smoke 8/0（8 ignored Unix-only 分支）、
+  value-type shared-library smoke 2/0（1 ignored Unix-only 分支）、descriptor diagnostics 2/0
+  （2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s4d-metadata-runtime-public-type-layout-resolver.md`。
+  备注：本记录只关闭 public runtime layout registry lookup；TypeSpec/generic layout、ownership offsets、
+  反射/泛型/GC 统一强制读取和 metadata policy 仍未关闭。
+
+- 2026-06-25 17:32:12 +08:00 · 11-S4C metadata runtime registry-backed TypeDef layout binding ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：`ZrCore_MetadataRuntime_ReadTypeDefLayoutBindingView()` 继续暴露 TypeDef token、
+  zrp TypeDef row、`typeLayoutId/cTypeId`、layout version/hash，但 `typeLayout` 指针现在只从
+  `codeRegistration->typeLayouts[typeLayoutId]` 读取，不再使用 prototype layout cache 作为运行期返回来源。
+  RED/GREEN：RED 为 metadata runtime query 新增 registry-backed 断言后失败，期望 code-registration registry
+  指针但实际返回 prototype layout；GREEN 后 TypeDef row 绑定到同一 generated/module layout registry。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 20/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、value-type shared-library smoke 2/0、descriptor diagnostics 2/0；Windows MSVC Debug
+  通过 metadata runtime query 20/0、frame setup 1/0、source contracts 19/0，shared-library smoke 8/0
+  （8 ignored Unix-only 分支）、value-type shared-library smoke 2/0（1 ignored Unix-only 分支）、
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s4c-metadata-runtime-registry-backed-layout-binding.md`。
+  备注：本记录只关闭 TypeDef binding view 对 code-registration layout registry 的运行期读取；
+  TypeSpec/generic layout、ownership offsets、反射/泛型/GC 统一强制读取和 metadata policy 仍未关闭。
+
+- 2026-06-25 17:17:50 +08:00 · 11-S4B code-registration type layout registry ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：ABI 9 在 `SZrAotCodeRegistration` 与 `ZrAotCompiledModule` 暴露
+  `typeLayouts/typeLayoutCount`，generated C 发射 `SZrTypeLayoutField`、`SZrTypeLayout` 和
+  `zr_aot_type_layouts[]` 稀疏 registry，并让 module descriptor 与 code registration 指向同一表。
+  runtime descriptor validation 现在拒绝 registry 指针/计数不一致和空表形态不一致。
+  RED/GREEN：RED 为 source contract 要求 `typeLayouts/typeLayoutCount` 后失败，缺少
+  `const struct SZrTypeLayout *const *typeLayouts;`；GREEN 后无 layout 模块暴露 null/0，一般值类型模块暴露
+  非空 registry 且 `layout->cTypeId` 与 GC descriptor 的 `typeLayoutId` 对齐。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 19/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、value-type shared-library smoke 2/0、descriptor diagnostics 2/0；Windows MSVC Debug
+  通过 metadata runtime query 19/0、frame setup 1/0、source contracts 19/0，shared-library smoke 8/0
+  （8 ignored Unix-only 分支）、value-type shared-library smoke 2/0（1 ignored Unix-only 分支）、
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s4b-code-registration-type-layout-registry.md`。
+  备注：本记录只关闭 generated-C code-registration layout registry 的 carrier/emission/validation；
+  TypeSpec/generic layout、ownership offsets、反射/泛型/GC 统一强制读取和 metadata policy 仍未关闭。
+
+- 2026-06-25 16:39:14 +08:00 · 11-S4A metadata runtime TypeDef layout binding view ·
+  状态：11-S4 子切片完成、11 阶段继续进行中；完整 11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：新增 `SZrMetadataRuntimeTypeDefLayoutBindingView` 与
+  `ZrCore_MetadataRuntime_ReadTypeDefLayoutBindingView()`，把 `TYPE_DEF` token 绑定到现有 type record、
+  attached zrp `TypeDefRow.typeLayoutId`、`cTypeId`、layout version/hash，并在已缓存 layout 的 `cTypeId`
+  匹配时暴露 `SZrTypeLayout` 指针。
+  RED/GREEN：RED 为 metadata runtime query 新增 TypeDef layout binding view 用例后编译失败，缺少
+  view 类型与 `ZrCore_MetadataRuntime_ReadTypeDefLayoutBindingView()`；GREEN 后空/非法输入拒绝，
+  合法 TypeDef row 绑定到 token record、cTypeId 和 matching cached layout。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 19/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 19/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s4a-metadata-runtime-typedef-layout-binding-view.md`。
+  备注：本记录只关闭 TypeDef-backed token→cTypeId/layout identity view；code-registration layout registry、
+  TypeSpec/generic layout、反射/泛型/GC 统一强制读取和 metadata policy 仍未关闭。
+
+- 2026-06-25 16:16:39 +08:00 · 11-S3M metadata runtime MethodSpec signature view ·
+  状态：11-S3 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：新增 `SZrMetadataRuntimeMethodSpecSignatureView` 与
+  `ZrCore_MetadataRuntime_ReadMethodSpecSignatureView()`，读取 `SIGNATURE` token 承载的 MethodSpec
+  direct signature record，验证 `GENERIC_INST(MEMBER_REF methodToken, args...)`，并暴露 method token/record
+  与 argument count/list offset。
+  RED/GREEN：RED 为 metadata runtime query 新增 MethodSpec signature view 用例后编译失败，缺少
+  view 类型与 `ZrCore_MetadataRuntime_ReadMethodSpecSignatureView()`；GREEN 后空/非法输入拒绝，
+  合法 MethodSpec signature view 绑定到本地 `MEMBER_DEF` method record。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 18/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 18/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s3m-metadata-runtime-methodspec-signature-view.md`。
+  备注：本记录只关闭 MethodSpec signature view 与 method record binding；method instantiation、
+  generic dictionary、token→运行期实体物化、layout 三向表和 metadata policy 仍未关闭。
+
+- 2026-06-25 16:04:29 +08:00 · 11-S3L metadata runtime generic TypeSpec argument binding view ·
+  状态：11-S3 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：新增 `SZrMetadataRuntimeTypeSpecGenericArgumentView` 与
+  `ZrCore_MetadataRuntime_ReadTypeSpecGenericArgumentView()`，按 index 读取 `GENERIC_INST`
+  argument type-node，并把直接 `TYPE_REF/TYPE_DEF` argument 绑定到现有 type record 的 token/record。
+  RED/GREEN：RED 为 metadata runtime query 新增 generic argument binding view 用例后编译失败，缺少
+  view 类型与 `ZrCore_MetadataRuntime_ReadTypeSpecGenericArgumentView()`；GREEN 后空/非法输入和越界
+  argument index 拒绝，`GENERIC_INST(TYPE_REF base, INT64, TYPE_REF arg)` 的 primitive argument 与
+  direct `TYPE_REF` argument binding 通过。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 17/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 17/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s3l-metadata-runtime-generic-typespec-argument-binding.md`。
+  备注：本记录只关闭 TypeSpec generic indexed argument view 与直接 type-token argument binding；
+  nested/recursive argument binding、MethodSpec runtime binding、token→运行期实体物化、layout 三向表和
+  metadata policy 仍未关闭。
+
+- 2026-06-25 15:48:39 +08:00 · 11-S3K metadata runtime generic TypeSpec base-token binding view ·
+  状态：11-S3 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：新增 `SZrMetadataRuntimeTypeSpecGenericBindingView` 与
+  `ZrCore_MetadataRuntime_ReadTypeSpecGenericBindingView()`，复用 TypeSpec signature view 并把
+  `GENERIC_INST` 的 base `TYPE_REF/TYPE_DEF` node 绑定到现有 type record 的 token/record。
+  RED/GREEN：RED 为 metadata runtime query 新增 base-token binding view 用例后编译失败，缺少
+  view 类型与 `ZrCore_MetadataRuntime_ReadTypeSpecGenericBindingView()`；GREEN 后空/非法输入拒绝，
+  `GENERIC_INST(TYPE_REF, INT64)` 与 `GENERIC_INST(TYPE_DEF, INT64)` 分别绑定到 module `TYPE_REF`
+  record 和本地 `TYPE_DEF` record。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 16/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 16/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s3k-metadata-runtime-generic-typespec-base-token-binding.md`。
+  备注：本记录只关闭 TypeSpec generic base-token binding view；generic argument semantic binding、
+  MethodSpec runtime binding、token→运行期实体物化、layout 三向表和 metadata policy 仍未关闭。
+
+- 2026-06-25 15:34:40 +08:00 · 11-S3J metadata runtime generic TypeSpec signature view ·
+  状态：11-S3 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：新增 `SZrMetadataRuntimeTypeSpecSignatureView` 与
+  `ZrCore_MetadataRuntime_ReadTypeSpecSignatureView()`，在 `TYPE_SPEC` token 上暴露 paired
+  signature token/hash、validated signature blob、root `GENERIC_INST` node、base type node、
+  argument count 和 argument-list blob offset。
+  RED/GREEN：RED 为 metadata runtime query 新增 generic TypeSpec signature view 用例后编译失败，缺少
+  view 类型与 `ZrCore_MetadataRuntime_ReadTypeSpecSignatureView()`；GREEN 后空/非法输入拒绝，
+  `GENERIC_INST(TYPE_REF, INT64)` TypeSpec 签名 view 通过。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 14/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 14/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s3j-metadata-runtime-generic-typespec-signature-view.md`。
+  备注：本记录只关闭 TypeSpec generic signature 的只读身份/结构 view；generic semantic binding、
+  token→运行期实体物化、layout 三向表和 metadata policy 仍未关闭。
+
+- 2026-06-25 15:18:58 +08:00 · 11-S3I metadata runtime signature type-node view ·
+  状态：11-S3 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：新增 `SZrMetadataRuntimeSignatureTypeNodeView` 与
+  `ZrCore_MetadataRuntime_ReadSignatureTypeNode()`，在 validated signature blob slice 上按 blob offset 暴露
+  type-node 的 node kind、payload、base type offset、child count、child list offset 与 next blob offset。
+  RED/GREEN：RED 为 metadata runtime query 新增 signature type-node view 用例后编译失败，缺少 view 类型与
+  `ZrCore_MetadataRuntime_ReadSignatureTypeNode()`；GREEN 后越界/空参数拒绝、method return/parameter primitive
+  node，以及 TypeSpec `GENERIC_INST` base/argument 子节点 view 通过。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 13/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 13/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s3i-metadata-runtime-signature-type-node-view.md`。
+  备注：本记录只关闭 signature type-node 只读结构 view；TypeSpec/generic 语义绑定、
+  token→运行期实体物化、layout 三向表和 metadata policy 仍未关闭。
+
+- 2026-06-25 15:03:19 +08:00 · 11-S3H metadata runtime method/field signature header view ·
+  状态：11-S3 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：新增 `SZrMetadataRuntimeSignatureView` 与
+  `ZrCore_MetadataRuntime_ReadSignatureView()`，在 validated signature blob slice 上读取 method/field 顶层
+  signature header、计数和内部 blob 偏移。
+  RED/GREEN：RED 为 metadata runtime query 新增 method/field signature view 用例后编译失败，缺少 view 类型与
+  `ZrCore_MetadataRuntime_ReadSignatureView()`；GREEN 后未 attached runtime 拒绝、method header view、
+  field header view 和 return/parameter/field type blob offset 通过。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 12/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 12/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s3h-metadata-runtime-signature-header-view.md`。
+  备注：本记录只关闭 method/field signature 顶层 header view；nested type-node AST、TypeSpec/generic 语义绑定、
+  token→运行期实体物化、layout 三向表和 metadata policy 仍未关闭。
+
+- 2026-06-25 14:51:27 +08:00 · 11-S3G metadata runtime validated signature blob view ·
+  状态：11-S3 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：新增 `ZrCore_MetadataRuntime_GetSignatureBlob()`，把 entity token 的 paired
+  `SIGNATURE` record 解析结果连接到 attached zrp metadata 的 signature blob pool slice，并复用既有结构校验。
+  RED/GREEN：RED 为 metadata runtime query 新增 validated signature blob view 用例后链接失败，缺少
+  `ZrCore_MetadataRuntime_GetSignatureBlob()`；GREEN 后未 attached runtime 拒绝、method signature blob view、
+  payload 指针/长度匹配和截断 signature 拒绝通过。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 11/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 11/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s3g-metadata-runtime-signature-blob-view.md`。
+  备注：本记录只关闭 validated signature blob view 查询；signature AST/semantic parsing、TypeSpec/generic 语义绑定、
+  token→运行期实体物化、layout 三向表和 metadata policy 仍未关闭。
+
+- 2026-06-25 14:40:17 +08:00 · 11-S3F metadata runtime zrp metadata mmap attach ·
+  状态：11-S3 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：`SZrMetadataRuntime` 新增 zrp data metadata buffer/header 载体，并提供
+  `ZrCore_MetadataRuntime_AttachZrpMetadata()` 与 `ZrCore_MetadataRuntime_GetZrpSectionView()`；runtime 会先校验
+  header/definition tables，再暴露只读 section view。
+  RED/GREEN：RED 为 metadata runtime query 新增 zrp metadata mmap attach/view 用例后编译/链接失败，缺少
+  runtime zrp metadata 字段和 attach/view API；GREEN 后 header validation、buffer/header 挂载、typeDefs
+  section view 和空 runtime 拒绝通过。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 10/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 10/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s3f-metadata-runtime-zrp-mmap-attach.md`。
+  备注：本记录只关闭 data metadata mmap attach 与 raw section view 查询；row 语义解析、signature blob
+  semantic parsing、token→运行期实体物化、layout 三向表和 metadata policy 仍未关闭。
+
+- 2026-06-25 14:24:52 +08:00 · 11-S3E metadata runtime field record lazy cache ·
+  状态：11-S3 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：`SZrMetadataRuntime` 新增 field record 单项缓存，并提供
+  `ZrCore_MetadataRuntime_ResolveFieldRecord()`；字段 token 复用 `MEMBER_DEF` / `MEMBER_REF` record，
+  resolver 从 attached metadata function 本地或 module metadata ref 表 lazy 解析字段 record，且 field cache
+  独立于 method cache。
+  RED/GREEN：RED 为 metadata runtime query 新增 field lazy/cache 用例后链接失败，缺少
+  `ZrCore_MetadataRuntime_ResolveFieldRecord()`；GREEN 后 local/imported field record、非法 token 拒绝和独立缓存命中通过。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 9/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 9/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s3e-metadata-runtime-field-record-cache.md`。
+  备注：本记录只关闭 field token record 的 lazy/cache 查询；FIELD_SIG 解析、method/field 语义区分、
+  data metadata mmap、token→运行期实体物化、layout 三向表和 metadata policy 仍未关闭。
+
+- 2026-06-25 14:10:48 +08:00 · 11-S3D metadata runtime TypeSpec type record cache ·
+  状态：11-S3 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：`ZrCore_MetadataRuntime_ResolveTypeRecord()` 现在接受本地 `TYPE_SPEC`
+  token，从 attached metadata function 的 token record 表 lazy 解析 TypeSpec record，并复用 type record
+  单项缓存覆盖二次命中。
+  RED/GREEN：RED 为 metadata runtime query 新增 TypeSpec lazy/cache 用例后返回 null；GREEN 后 local
+  TypeSpec record 和缓存命中通过。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 8/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 8/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s3d-metadata-runtime-typespec-record-cache.md`。
+  备注：本记录只关闭 TypeSpec token record 的 lazy/cache 查询；field resolve、data metadata mmap、
+  signature blob 语义解析、TypeSpec/generic 语义解析、token→运行期实体物化、layout 三向表和 metadata policy
+  仍未关闭。
+
+- 2026-06-25 14:02:23 +08:00 · 11-S3C metadata runtime signature record lazy cache ·
+  状态：11-S3 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：`SZrMetadataRuntime` 新增 signature record 单项缓存，并提供
+  `ZrCore_MetadataRuntime_ResolveSignatureRecord()`；按 entity token 先从 attached metadata function 的本地
+  signature record 查询，再从 module metadata ref 表查询；空 runtime、空 token 和 SIGNATURE token 被拒绝，
+  二次查询命中缓存。
+  RED/GREEN：RED 为 metadata runtime query 新增 signature lazy/cache 用例后链接失败，缺少
+  `ZrCore_MetadataRuntime_ResolveSignatureRecord()`；GREEN 后 local/imported signature record、非法 token 拒绝和缓存命中通过。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 7/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 7/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s3c-metadata-runtime-signature-record-cache.md`。
+  备注：本记录只关闭 entity token → SIGNATURE record 的 lazy/cache 查询；field resolve、TypeSpec、
+  data metadata mmap、signature blob 语义解析、token→运行期实体物化、layout 三向表和 metadata policy
+  仍未关闭。
+
+- 2026-06-25 13:52:15 +08:00 · 11-S3B metadata runtime type record lazy cache ·
+  状态：11-S3 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：`SZrMetadataRuntime` 新增 type record 单项缓存，并提供
+  `ZrCore_MetadataRuntime_ResolveTypeRecord()`；`TYPE_DEF` 从 attached metadata function 的本地
+  token record 表 lazy 解析，`TYPE_REF` 从 module metadata ref 表 lazy 解析；空 runtime、空 token 和非
+  type token 被拒绝，二次查询命中缓存。
+  RED/GREEN：RED 为 metadata runtime query 新增 type lazy/cache 用例后链接失败，缺少
+  `ZrCore_MetadataRuntime_ResolveTypeRecord()`；GREEN 后 local/imported type record、非法 token 拒绝和缓存命中通过。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 6/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 6/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s3b-metadata-runtime-type-record-cache.md`。
+  备注：本记录只关闭 type token record 层 lazy/cache 查询；field resolve、TypeSpec、data metadata mmap、
+  token→运行期实体物化、layout 三向表和 metadata policy 仍未关闭。
+
+- 2026-06-25 13:40:40 +08:00 · 11-S3A metadata runtime method record lazy cache ·
+  状态：11-S3 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：`SZrMetadataRuntime` 新增 method record 单项缓存，并提供
+  `ZrCore_MetadataRuntime_ResolveMethodRecord()`；`MEMBER_DEF` 从 attached metadata function 的本地
+  token record 表 lazy 解析，`MEMBER_REF` 从 module metadata ref 表 lazy 解析；空 runtime、空 token 和非
+  method token 被拒绝，二次查询命中缓存。
+  RED/GREEN：RED 为 metadata runtime query 新增 lazy/cache 用例后链接失败，缺少
+  `ZrCore_MetadataRuntime_ResolveMethodRecord()`；GREEN 后 local/imported method record、非法 token 拒绝和缓存命中通过。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 5/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 5/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s3a-metadata-runtime-method-record-cache.md`。
+  备注：本记录只关闭 method token record 层 lazy/cache 查询；type/field resolve、data metadata mmap、
+  token→运行期实体物化、layout 三向表和 metadata policy 仍未关闭。
+
+- 2026-06-25 13:19:32 +08:00 · 11-S2C module metadata runtime registration carrier ·
+  状态：11-S2 子切片完成、11 阶段继续进行中；完整 11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：新增最小 `SZrMetadataRuntime` carrier；`SZrObjectModule` 提供
+  attach/query；AOT 模块加载时把 module、metadata function、`codeRegistration` 与表计数登记到
+  metadata runtime；GC mark/rewrite 维护 metadata runtime 内的 `metadataFunction`。
+  RED/GREEN：RED 为 metadata runtime query 缺少 `metadata_runtime.h` 与 attach/query API；
+  第二个 RED 为 frame setup source contract 缺少 AOT loader 的
+  `ZrCore_Module_AttachMetadataRuntime(record.module, record.moduleFunction, record.codeRegistration)`。
+  GREEN 后模块 attach/query、loader attach、失败诊断和 GC 引用维护通过 focused 覆盖。
+  测试结果：WSL gcc/clang 均通过 metadata runtime query 4/0、frame setup 1/0、source contracts 19/0、
+  shared-library smoke 8/0、descriptor diagnostics 2/0；Windows MSVC Debug 通过 metadata runtime query 4/0、
+  frame setup 1/0、source contracts 19/0，shared-library smoke 8/0（8 ignored Unix-only 分支），
+  descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s2c-metadata-runtime-registration.md`。
+  备注：本记录只关闭 module-load metadata runtime registration carrier；data metadata mmap attach、
+  token lazy resolve/cache、token↔layout 三向表和默认最小 metadata 策略仍未关闭。
+
+- 2026-06-25 12:58:28 +08:00 · 11-S2B runtime code registration context carrier ·
+  状态：11-S2 子切片完成、11 阶段继续进行中；完整 11-S2/11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：loaded-module record、generated module context 与 generated frame 均携带
+  `codeRegistration`；MethodInfo 解析、callable 常量物化、native direct call、meta call 和 static direct call
+  现在经 `record->codeRegistration->methodInfos/functionPointers` 消费注册表；generated C frame setup 将
+  `zr_aot_context.codeRegistration` 传入 frame，保留旧 `functionThunks` 字段作为兼容视图。
+  RED/GREEN：RED 为 frame setup contract 缺少 runtime header/context/frame 的
+  `SZrAotCodeRegistration` 载体、runtime source 的 `record->codeRegistration` 消费文本，以及
+  generated frame 的 `frame.codeRegistration` 赋值；第二个 RED 暴露记录绑定仍是栈值赋值而非 record 指针语义。
+  GREEN 后运行时记录、上下文、生成帧和直接调用入口统一从 code registration carrier 读取。
+  测试结果：WSL gcc/clang 均通过 frame setup 1/0、source contracts 19/0、shared-library smoke 8/0、
+  descriptor diagnostics 2/0；Windows MSVC Debug 通过 frame setup 1/0、source contracts 19/0，
+  shared-library smoke 8/0（8 ignored Unix-only 分支），descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s2b-runtime-registration-context-carrier.md`。
+  备注：本记录只关闭运行时 record/context/frame 对 code registration 的消费载体；不关闭模块加载登记、
+  `SZrMetadataRuntime` token lazy resolve、token↔layout 三向表或完整反射/泛型/GC 统一查询。
+
+- 2026-06-25 12:41:09 +08:00 · 11-S2A generated-C code registration carrier ·
+  状态：11-S2 子切片完成、11 阶段继续进行中；完整 11-S2/11-S3/11-S4/11-S5/11-S6/11-S7
+  仍未关闭 · 完成项目：AOT ABI 升到 `ZR_VM_AOT_ABI_VERSION 8u`；新增
+  `SZrAotCodeRegistration` 和 `ZrAotCompiledModule.codeRegistration`；generated C 发射
+  `zr_aot_reflection_invokers[]` 与 `zr_aot_code_registration`，将 function/method/invoker/GC
+  descriptor 表汇入计划 §2 的代码注册表 carrier；runtime descriptor validation 会在解引用前拒绝
+  缺失/不一致的 code registration 与缺失 invoker 表。
+  RED/GREEN：RED 为 shared-library smoke 新增 `module->codeRegistration` 断言后编译失败，
+  frame/source 契约缺少 ABI v8 和注册表发射文本；补强 RED 为 descriptor diagnostics 构造
+  `codeRegistration = ZR_NULL` 的 ABI v8 模块时旧 runtime 校验前崩溃；GREEN 后 descriptor 暴露的
+  注册表与旧模块字段指向同一套表，缺失/不一致注册表会被诊断拒绝。
+  测试结果：WSL gcc/clang 均通过 frame setup 1/0、source contracts 19/0、shared-library smoke 8/0、
+  descriptor diagnostics 2/0；Windows MSVC Debug 通过 frame setup 1/0、source contracts 19/0，
+  shared-library smoke 8/0（8 ignored Unix-only 分支），descriptor diagnostics 2/0（2 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-11-s2a-code-registration-carrier.md`。
+  备注：本记录只关闭 generated-C 注册表载体与 descriptor-safety validation；不关闭模块加载登记、`SZrMetadataRuntime` token
+  lazy resolve、token↔layout 三向表或完整反射/泛型/GC 统一查询。
+
+- 2026-06-25 12:05:39 +08:00 · 10-S2A MethodInfo reflection invoker carrier ·
+  状态：10-S2 子切片完成、10 阶段继续进行中；完整 10-S2/10-S3/10-S4/10-S5 仍未完成 ·
+  完成项目：AOT ABI 升到 `ZR_VM_AOT_ABI_VERSION 7u`，新增 `FZrAotReflectionInvoker`
+  和 `SZrAotMethodInfo.invoker`；AOT C 生成物发射共享 `zr_aot_invoker_entry_thunk`，
+  当前按统一 `FZrAotEntryThunk(SZrState *)` 签名分桶，并把每个 generated MethodInfo 的
+  `.invoker` 登记到该桶。
+  RED/GREEN：RED 为 shared-library smoke 新增 `methodInfos[0]->invoker` 断言后编译失败，
+  frame setup 源契约也缺少 invoker ABI 文本；GREEN 后源契约和 descriptor runtime assertion 均通过。
+  测试结果：WSL gcc/clang 均通过 focused 组：`zr_vm_aot_c_frame_setup_contracts_test` 1/0、
+  `zr_vm_aot_c_shared_library_smoke_test` 8/0、`zr_vm_aot_c_source_contracts_test` 19/0、
+  `zr_vm_aot_c_descriptor_diagnostics_test` 1/0、`zr_vm_aot_c_return_contracts_test` 1/0；
+  Windows MSVC Debug 构建通过，frame setup 1/0、source contracts 19/0、return contracts 1/0，
+  shared-library smoke 8/0（8 ignored Unix-only 分支）、descriptor diagnostics 1/0（1 ignored Unix-only 分支）。
+  产出：`tests/acceptance/2026-06-25-aot-10-s2a-reflection-invoker-carrier.md`。
+  备注：本记录只关闭 invoker ABI carrier 与 generated-C 登记点；不关闭完整 `Method.Invoke`
+  参数解包/返回打包、token 解析、typed-target 分桶、字段/generic DESCRIPTION 元数据或注解裁剪。
+
+- 2026-06-25 11:35:46 +08:00 · 09-S4C new-owner write barrier elimination ·
+  状态：09-S4 完成、09 阶段计划切片完成 · 完成项目：AOT C 函数体新增保守线性证明，在 receiver slot
+  可追溯为本函数内新建 object/array 且未跨调用、控制流、返回或不明逃逸时，member/member-slot/index/super-array
+  写入改发 `ZrLibrary_AotRuntime_*NewOwnerNoWriteBarrier`；core object 层新增 assume-new-owner no-barrier setter，
+  通过 `skipWriteBarrier` 候选和 target object `YOUNG_MOVABLE` 运行时复核，只在该证明成立且 owner 仍为 young
+  的路径跳过 09-S4B 公共写屏障，不能证明或 owner 已晋升时继续走
+  `ZrCore_Gc_WriteBarrier`。RED/GREEN：RED 为 global source contract 找不到 no-barrier writer/API/runtime
+  helper；第二个 RED 为 guardrail 拒绝新的 no-barrier runtime boundary；补强 RED 要求 core no-barrier API 出现
+  young-owner 运行时确认。GREEN 后 source contract 锁定 writer、runtime helper、core object no-barrier route、
+  young-owner guard 与 super-array fallback，guardrail 明确允许四个新边界。测试结果：
+  WSL gcc direct global contracts 9/0、guardrail 6/0、global smoke 10/0、root-frame 5/0、constant contracts 5/0、
+  super-array contracts 1/0、super-array smoke 1/0；WSL clang direct 同组 9/0、6/0、10/0、5/0、5/0、1/0、1/0；
+  Windows MSVC Debug direct 同组 9/0、6/0、global smoke 10/0（10 ignored）、root-frame 5/0、constant contracts 5/0、
+  super-array contracts 1/0、super-array smoke 1/0（1 ignored）。产出：
+  `tests/acceptance/2026-06-25-aot-09-s4c-new-owner-write-barrier-elision.md`。备注：`LOCAL_ADDRESS` roots、
+  长时间 GC 压测、card-table 优化与 pinned-region demotion 仍为扩展项；本记录只关闭 09 计划切片。
+
+- 2026-06-25 10:56:08 +08:00 · 09-S5B FFI native-call pin scope ·
+  状态：09-S5 完成、09 阶段继续进行中，09-S4C 编译期写屏障消除仍未关闭 · 完成项目：核心新增
+  `SZrGcNativeCallPin` 与 `ZrCore_Gc_NativeCallPinObject/Value/Unpin`；libffi symbol call 在 native invoke
+  前 pin self/owner/argument GC values，cleanup 中反向 unpin；callback trampoline 用 `SZrFunctionStackAnchor`
+  在 native 回调后重新定位保存的 `stackTop`，避免 GC/栈重分配后误判 call stack corruption；新增
+  `zr_vm_ffi_native_call_pin_contract_test` 锁定 pin/unpin source contract。RED/GREEN：RED 为 root-frame
+  pin contract 缺少类型/API 编译失败，随后暴露 pin/ignore 顺序问题；完整 FFI path 还暴露 callback 裸
+  `stackTop` 对比不可靠，GREEN 后 pin/ignore 保留调用前状态且 callback 使用 stack anchor。测试结果：
+  WSL gcc direct root-frame 5/0、FFI native-call pin contract 2/0；WSL clang direct 同组 5/0、2/0；
+  Windows MSVC Debug direct 同组 5/0、2/0。产出：
+  `tests/acceptance/2026-06-25-aot-09-s5b-ffi-native-call-pin.md`。备注：当前 unpin 清理临时 native pin
+  flag 与 ignore root，不做 pinned region demotion；完整 `zr_vm_ffi_test` 相关早期 symbol/callback 路径通过，
+  后段 source-extern `pointer<T>` 未限定类型解析失败属于既有基线，未并入本切片。
+
+- 2026-06-25 10:06:27 +08:00 · 09-S5A public boxing/unboxing bridge boundary ·
+  状态：09-S5 子切片完成、完整 09-S5 继续进行中 · 完成项目：核心新增
+  `ZrCore_Bridge_BoxTyped` / `ZrCore_Bridge_UnboxTyped` 公共桥入口，并保持内部委托既有
+  `ZrCore_Execution_ToObject` / `ZrCore_Execution_ToStruct`；AOT runtime 的 `TO_OBJECT` /
+  `TO_STRUCT` 边界改走 bridge API，生成 C 继续只在 typed↔dynamic 边界触发装箱/拆箱 runtime helper；
+  镜像 AOT runtime 同步迁移。RED/GREEN：RED 为 global source contract 读取不到 bridge.h/c 且 runtime
+  仍直接调用 execution conversion；GREEN 后 source contract、guardrail 和 shared-library smoke 都确认
+  bridge API 是允许的显式 runtime boundary。测试结果：WSL gcc direct global contracts 8/0、global
+  smoke 10/0、guardrail 6/0、value-type smoke 2/0、constant contracts 5/0、root/barrier 4/0；
+  WSL clang direct 同组 8/0、10/0、6/0、2/0、5/0、4/0；Windows MSVC Debug direct 同组
+  8/0、10/0（10 ignored）、6/0、2/0（1 ignored）、5/0、4/0。产出：
+  `tests/acceptance/2026-06-25-aot-09-s5a-boxing-bridge-boundary.md`。备注：FFI pin/unpin 仍留给
+  09-S5 后续；本切片不改变装箱对象布局或现有值类型分配策略。
+
+- 2026-06-25 09:44:28 +08:00 · 09-S4B member/index heap-store public write barrier boundary ·
+  状态：09-S4 子切片完成、完整 09-S4 继续进行中 · 完成项目：generated-C member/index/super-array 写入仍走
+  AOT runtime boundary，但实际 object heap-store 落点已从内部 `ZrCore_Value_Barrier(state, ...)` 收束到
+  `ZrCore_Gc_WriteBarrier(state, ownerObject, value)`；AOT runtime 镜像副本同步迁移旧 closure/capture barrier；
+  stack inline struct store 仍由 value-type smoke 锁定为无屏障。RED/GREEN：RED 为 global source contract 缺少
+  object heap-store 公共 GC write barrier 并看到旧 object value barrier；GREEN 后 source contract、member/index
+  smoke、super-array smoke 和 core old-to-young wrapper 语义均通过。测试结果：WSL gcc direct 4/0、8/0、10/0、
+  1/0、1/0、2/0、5/0；WSL clang direct 同组 4/0、8/0、10/0、1/0、1/0、2/0、5/0；Windows MSVC Debug direct
+  同组 4/0、8/0、10/0（10 ignored）、1/0、1/0（1 ignored）、2/0（1 ignored）、5/0。备注：新分配 owner
+  的编译期屏障消除仍留给 09-S4C；`object.c` 只替换既有屏障入口，未新增职责。
+
+- 2026-06-25 09:22:37 +08:00 · 09-S4A public AOT write barrier API + closure heap-owner boundary ·
+  状态：09-S4 子切片完成、完整 09-S4 继续进行中 · 完成项目：核心 GC 新增
+  `ZrCore_Gc_WriteBarrier(state, ownerObject, value)`，AOT runtime 中闭包/capture heap-owner
+  写入边界全部改走这个白名单 API；guardrail 允许 `ZrCore_Gc_SafePoint` 与 `ZrCore_Gc_WriteBarrier`；
+  value-type generated-C smoke 明确栈上 inline struct 字段 store 不生成多余写屏障。
+  RED/GREEN：RED 为 source contract 找不到 `ZrCore_Gc_WriteBarrier` API 且 `aot_runtime.c` 仍直接调用
+  `ZrCore_Value_Barrier(state, ...)`；GREEN 后核心写屏障 API 记录 old-to-young remembered-set，
+  AOT runtime source 不再出现旧 value barrier。测试结果：WSL gcc direct root/barrier 4/0、constant
+  contracts 5/0、guardrail 6/0、value-type smoke 2/0、global smoke 10/0；WSL clang direct 同组
+  4/0、5/0、6/0、2/0、10/0；Windows MSVC Debug direct root/barrier 4/0、constant contracts 5/0、
+  guardrail 6/0、value-type smoke 2/0（1 ignored）、global smoke 10/0（10 ignored）。产出：
+  `tests/acceptance/2026-06-25-aot-09-s4a-write-barrier-api.md`。备注：member/index direct
+  generated-C 屏障和新生代 owner 编译期消除仍留给 09-S4B。
+
+- 2026-06-25 08:53:00 +08:00 · 09-S3A safepoint API + allocation/call/back-edge insertion ·
+  状态：09-S3 完成、09 阶段继续进行中；09-S4 写屏障和 09-S5 装箱/FFI pin 仍未完成 ·
+  完成项目：核心 GC 新增 `ZrCore_Gc_SafePoint(state)`，AOT C emitter 现在能写出带 marker 的
+  `ZrCore_Gc_SafePoint(state);`；generated C 在 object/array 分配后、所有函数调用 lowering 后、
+  以及只对 `targetInstructionIndex <= instructionIndex` 的循环/回边 `goto` 前插入 safepoint。
+  RED/GREEN：RED 为缺少 safepoint API 与 emitter/source marker；GREEN 后 runtime pending GC debt
+  可被 safepoint 推进，source contract 和 generated-C safepoint smoke 均通过。测试结果：WSL gcc
+  direct root-frame 3/0、control contracts 2/0、value-type smoke 2/0、iterator contracts 1/0、
+  control shared-library smoke 2/0，CTest `aot_gc_root_frame` 1/1；WSL clang direct root-frame 3/0、
+  control contracts 2/0、control shared-library smoke 2/0、value-type smoke 2/0，CTest
+  `aot_gc_root_frame` 1/1；Windows MSVC Debug direct root-frame 3/0、control contracts 2/0、
+  control shared-library smoke 2/0（Unix branch ignored）、value-type smoke 2/0（Unix branch ignored），
+  CTest `aot_gc_root_frame` 1/1。产出：
+  `tests/acceptance/2026-06-25-aot-09-s3a-safepoint-insertion.md`。备注：`zr_vm_aot_c_logical_contracts_test`
+  的 2 个失败已调查为既有过时 scalar-local source-contract 断言，与 09-S3A safepoint 插入无关；
+  `backend_aot_c_function_body.c` 暂未拆分，后续宜按 call/branch dispatch 边界处理。
+
+- 2026-06-25 08:14:05 +08:00 · 09-S2B runtime AOT root-frame stack + generated-C push/pop ·
+  状态：09-S2 默认 frame-byte-offset 根路径完成；09 阶段继续进行中 · 完成项目：核心 state
+  现在维护 AOT root-frame stack，`ZrCore_Gc_AotRootFramePush/Pop/Depth` 登记 `(frame base, root map)`；
+  GC mark/rewrite 路径会按 `SZrAotGcRootMap` 的 frame-byte-offset slots 标记并重写 AOT byte-frame
+  中的 `SZrTypeValue` 根；AOT runtime generated context 绑定 `SZrAotMethodInfo`，generated C 仅对
+  非空 `gcRootMap` 方法生成 prologue push / epilogue pop，POD/blittable 继续不生成 root-frame 调用。
+  RED/GREEN：RED 为新增 root-frame 测试缺少 carrier/API 编译失败；GREEN 后 root-stack 平衡和
+  minor-GC 保活/重写通过，frame setup 合同与 value-type generated-C smoke 通过。测试结果：WSL gcc
+  direct root-frame 2/0、frame setup 1/0、value-type smoke 2/0，CTest `aot_gc_root_frame` 1/1，
+  full `zr_vm_gc_test` 66/0；WSL clang direct root-frame 2/0、frame setup 1/0、value-type smoke 2/0，
+  CTest `aot_gc_root_frame` 1/1；Windows MSVC Debug direct root-frame 2/0、frame setup 1/0、
+  value-type smoke 2/0（Unix shared-library execution branch 1 ignored），CTest `aot_gc_root_frame`
+  1/1。产出：`tests/acceptance/2026-06-25-aot-09-s2b-runtime-root-frame-stack.md`。
+  备注：`LOCAL_ADDRESS` 根位置、安全点、写屏障、装箱和 FFI pin 仍属后续 09 切片。
+
+- 2026-06-25 07:10:49 +08:00 · 09-S2A AOT GC root map descriptor ABI + generated-C publication ·
+  状态：09-S2 子切片完成、09 阶段继续进行中；完整 09-S2 根栈登记/移动更新、09-S3 safepoint、
+  09-S4 写屏障、09-S5 装箱/FFI pin 仍未完成 · 完成项目：公共 AOT ABI 新增 root-location kind、
+  `SZrAotGcRootSlot` 和 `SZrAotGcRootMap`；generated C 现在为含 GC 字段的 inline-struct frame slots
+  发布 `zr_aot_gc_root_slots_<flatIndex>[]` / `zr_aot_gc_root_map_<flatIndex>`，并经
+  `SZrAotMethodInfo.gcRootMap` 暴露；POD/blittable struct 继续保持 `gcRootMap = ZR_NULL`。
+  RED/GREEN：RED 为新增 value-type smoke 编译生成 C 时缺少 root-map ABI 类型/枚举；GREEN 后
+  `ZrVm_GetAotCompiledModule()` 可读取 method info root map，验证 root slots 使用 frame-byte-offset
+  定位并绑定到 string-field struct 的 GC descriptor，POD 生成物不发布 root map。测试结果：WSL gcc
+  直接 frame setup 1/0、value-type smoke 2/0，相关 CTest 4/4；WSL clang 直接同两目标 1/0、2/0，
+  相关 CTest 4/4；Windows MSVC Debug 直接 frame setup 1/0、value-type smoke 2/0（Unix shared-library
+  execution 分支 1 ignored），相关 CTest 3/3。产出：
+  `tests/acceptance/2026-06-25-aot-09-s2a-gc-root-map-descriptor.md`。备注：本记录只关闭
+  root-map ABI 与 generated-C method metadata 发布，不声明 runtime 根栈 push/pop、safepoint 或移动后根重写完成。
+
+- 2026-06-25 06:26:16 +08:00 · 11-S7V / 12-S3F / 12-S4N / 08-S7K manifest generic MethodSpec binding ·
+  状态：11-S7、12-S3、12-S4 与 08-S7 子切片完成；08/11/12 阶段继续进行中 ·
+  完成项目：manifest generic preserve root 的 target 现在可以绑定 current-module typed exported method；
+  CLI AOT preserve bridge 扫描 `GENERIC_INST(MEMBER_REF methodToken, args...)` MethodSpec 形态签名，
+  将 method-spec token、method token 和 instantiation signature hash 写入 writer root；generated C manifest
+  诊断输出 MethodSpec identity，full-AOT gate 接受 MethodSpec-bound generic method root。
+  RED/GREEN：RED 为新增 `Factory.make<Foo>` 用例引用缺失 MethodSpec root 字段后编译失败；GREEN 后
+  method-spec token 为 `0x08000002`，method token 为 `0x03000001`，签名 hash 为 `0x2233445566778899`。
+  测试结果：WSL gcc `zr_vm_cli_aot_writer_options_test` 14/0；WSL gcc、WSL clang、Windows MSVC Debug 的 CTest
+  `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model` 均为 5/5。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7v-12-s3f-manifest-generic-methodspec-binding.md`。
+  备注：本记录不关闭跨模块泛型目标、annotation roots、泛型方法代码体传递闭包、默认最小 metadata 策略、
+  zrp MethodSpec table 持久导出或完整 mark-and-sweep generic closure。
+
+- 2026-06-25 06:03:45 +08:00 · 11-S7U / 12-S3E / 12-S4M / 08-S7J manifest generic synthesized TypeSpec binding ·
+  状态：11-S7、12-S3、12-S4 与 08-S7 子切片完成；08/11/12 阶段继续进行中 ·
+  完成项目：manifest generic preserve root 没有现成 `TYPE_SPEC` 时，CLI AOT preserve bridge 现在可从当前函数
+  metadata 中同名 open `TYPE_DEF` 或 `TYPE_REF` record 合成 writer-visible `TYPE_SPEC` / paired `SIGNATURE`
+  binding，并继续物化 generic instantiation identity；full-AOT writer gate 可接受这个已绑定且已物化的
+  current-module generic root。
+  RED/GREEN：RED 为新增 full-AOT `List<Foo>` 用例仅有 open `TYPE_REF(List)` metadata 时
+  `hasTypeSpecBinding` 仍为 false；GREEN 后得到 synthesized TypeSpec token `0x07000001`、
+  signature token `0x08000002`、open base token `0x05000001` 和 generic instance id `1`。
+  测试结果：WSL gcc `zr_vm_cli_aot_writer_options_test` 13/0；WSL gcc、WSL clang、Windows MSVC Debug 的
+  CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model`
+  均为 5/5。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7u-12-s3e-manifest-generic-synthesized-typespec.md`。
+  备注：本记录不关闭 MethodSpec、跨模块泛型目标、annotation roots、反射动态实例、默认最小 metadata 策略、
+  `.zro` metadata 持久化重排或完整 mark-and-sweep generic closure。
+
+- 2026-06-25 05:41:31 +08:00 · 11-S7T / 12-S3D / 12-S4L / 08-S7I current-module TypeDef generic base token ·
+  状态：11-S7、12-S3、12-S4 与 08-S7 子切片完成；08/11/12 阶段继续进行中 ·
+  完成项目：TypeSpec-bound manifest generic preserve root 物化为 generic instantiation identity 时，
+  现在可识别 `GENERIC_INST(TYPE_DEF target, args...)` 签名；若当前函数 metadata records 存在同名
+  current-module `TYPE_DEF` 签名，base token 使用 open `TYPE_DEF` token，并继续保留 TypeRef open-base
+  与 TypeSpec fallback 路径。generated C manifest 诊断可输出 `genericInstance.baseToken = 0x02000001`。
+  RED/GREEN：RED 为新增 `TYPE_DEF(List)` + `TYPE_SPEC(List<Foo>)` writer-options 用例无法建立
+  TypeSpec binding；GREEN 后该用例绑定成功并报告 `0x02000001` base token。
+  测试结果：WSL gcc `zr_vm_cli_aot_writer_options_test` 12/0；WSL gcc、WSL clang、Windows MSVC Debug 的
+  CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model`
+  均为 5/5。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7t-12-s3d-generic-instantiation-typedef-base-token.md`。
+  备注：本记录不关闭 MethodSpec、缺失 TypeSpec 合成、跨模块泛型目标、annotation roots、
+  反射动态实例或完整 mark-and-sweep generic closure。
+
+- 2026-06-25 05:28:38 +08:00 · 11-S7S / 12-S3C / 12-S4K / 08-S7H generic instantiation open base token ·
+  状态：11-S7、12-S3、12-S4 与 08-S7 子切片完成；08/11/12 阶段继续进行中 ·
+  完成项目：TypeSpec-bound manifest generic preserve root 物化为 generic instantiation identity 时，
+  若当前函数 metadata records 存在同名 `TYPE_REF` 签名，base token 现在使用 open generic `TYPE_REF`
+  token；没有匹配 TypeRef 时保留 closed `TYPE_SPEC` fallback。generated C manifest 诊断可输出
+  `genericInstance.baseToken = 0x05000001`。
+  RED/GREEN：RED 为新增 `TYPE_REF(List)` + `TYPE_SPEC(List<Foo>)` writer-options 用例仍得到
+  `0x07000001`；GREEN 后得到 `0x05000001`，旧 TypeSpec fallback 和 full-AOT generic gate 均保持通过。
+  测试结果：WSL gcc `zr_vm_cli_aot_writer_options_test` 11/0；WSL gcc、WSL clang、Windows MSVC Debug 的
+  CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model`
+  均为 5/5。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7s-12-s3c-generic-instantiation-open-base-token.md`。
+  备注：本记录不关闭 MethodSpec、缺失 TypeSpec 合成、跨模块泛型目标、annotation roots、
+  反射动态实例或完整 mark-and-sweep generic closure。
+
+- 2026-06-25 05:08:49 +08:00 · 11-S7R / 12-S8I / 12-S3B / 08-S7G full-AOT generic instantiation closure gate ·
+  状态：11-S7、12-S8、12-S3 与 08-S7 子切片完成；08/11/12 阶段继续进行中 ·
+  完成项目：AOT C writer 的 full-AOT manifest generic root 预检从 TypeSpec gate 收紧为
+  TypeSpec + generic-instantiation identity gate；TypeSpec/signature token/hash 存在但没有
+  `hasGenericInstantiationBinding` 的 root 会被拒绝，避免 TypeSpec-only root 被视为完整泛型闭包。
+  RED/GREEN：RED 为 direct writer-options 测试构造 TypeSpec-only generic root 后 writer 仍返回 true；
+  GREEN 后该路径返回 false，既有 `List<Foo>` TypeSpec-backed generic instance materialization 和未绑定 TypeSpec gate 继续通过。
+  测试结果：WSL gcc `zr_vm_cli_aot_writer_options_test` 10/0；WSL gcc、WSL clang、Windows MSVC Debug 的
+  CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model`
+  均为 5/5。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7r-12-s8i-full-aot-generic-instantiation-closure-gate.md`。
+  备注：本记录不关闭 MethodSpec、缺失 TypeSpec 合成、跨模块泛型目标、annotation roots、
+  反射动态实例或完整 mark-and-sweep generic closure。
+
+- 2026-06-25 04:50:01 +08:00 · 11-S7Q / 12-S3A / 12-S4J / 08-S7F manifest generic TypeSpec-backed instantiation root ·
+  状态：11-S7、12-S3、12-S4 与 08-S7 子切片完成；08/11/12 阶段继续进行中 ·
+  完成项目：已绑定 `TYPE_SPEC` 的 manifest generic preserve root 现在会通过 `SZrGenericInstantiationTable`
+  物化为 writer 可见的 generic instantiation identity，并在 generated C manifest 诊断输出
+  `genericInstance.baseToken`、`genericInstance.id`、`genericInstance.shareKind`。
+  RED/GREEN：RED 为 CLI writer options 测试引用缺失 generic-instantiation fields 后编译失败；GREEN 后
+  `List<Foo>` root 绑定为 TypeSpec-backed shared-reference instance id 1。
+  测试结果：WSL gcc `zr_vm_cli_aot_writer_options_test` 9/0；WSL gcc、WSL clang、Windows MSVC Debug 的
+  CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model`
+  均为 5/5。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7q-12-s3a-manifest-generic-preserve-instantiation-root.md`。
+  备注：本记录不关闭 MethodSpec、缺失 TypeSpec 合成、跨模块泛型目标、传递 generic closure、反射动态实例或默认最小 metadata 策略。
+
+- 2026-06-25 04:14:31 +08:00 · 11-S7P / 12-S8H / 08-S7E full-AOT manifest generic TypeSpec closure gate ·
+  状态：11-S7、12-S8 与 08-S7 子切片完成；08/11/12 阶段继续进行中 ·
+  完成项目：AOT C writer 在 full-AOT 模式下会拒绝未绑定 `TYPE_SPEC` 的 manifest generic preserve root，
+  防止仅有文本 target/arguments 的 root 被视为完整 AOT 闭包；hybrid 模式仍保留清单诊断输出。
+  RED/GREEN：RED 为 CLI writer options 新增 full-AOT 未绑定 `List<Foo>` generic preserve 用例后，writer 仍返回 true；
+  GREEN 后该路径返回 false，既有 hybrid unbound root 和 bound TypeSpec root 用例保持通过。
+  测试结果：WSL gcc `zr_vm_cli_aot_writer_options_test` 8/0；WSL gcc、WSL clang、Windows MSVC Debug 的
+  CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model`
+  均为 5/5。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7p-12-s8h-full-aot-generic-preserve-typespec-closure-gate.md`。
+  备注：该记录只关闭 manifest generic preserve 的 full-AOT TypeSpec 门禁；MethodSpec、TypeSpec 合成、
+  generic instantiation materialization、跨模块 generic target、注解 roots、默认最小 metadata 和完整 mark-and-sweep closure 仍未关闭。
+
+- 2026-06-25 04:00:47 +08:00 · 11-S7O / 12-S4I / 08-S7D manifest generic preserve TypeSpec binding ·
+  状态：11-S7、12-S4 与 08-S7 子切片完成；08/11/12 阶段继续进行中 ·
+  完成项目：manifest generic preserve root 现在可在当前函数 metadata 中匹配已有
+  `GENERIC_INST` `TYPE_SPEC` 签名，并把 TypeSpec token、paired signature token 和 signature hash
+  写入 writer options 与 generated-C manifest 诊断。
+  RED/GREEN：RED 为 CLI writer options 测试引用缺失 token/hash 字段后编译失败；GREEN 后
+  `List<Foo>` 绑定到 `TYPE_SPEC` `0x07000001`、`SIGNATURE` `0x08000001` 和 hash `0x123456789abcdef0`。
+  测试结果：WSL gcc `zr_vm_cli_aot_writer_options_test` 7/0；WSL gcc、WSL clang、Windows MSVC Debug 的
+  CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed|generic_instantiation|metadata_token_model`
+  均为 5/5；`git diff --check` 仅 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7o-12-s4i-manifest-generic-preserve-typespec-binding.md`。
+  备注：这是当前模块已有 TypeSpec 的窄绑定；MethodSpec、缺失 TypeSpec 合成、真实 generic instantiation roots、
+  跨模块 generic target、注解 roots、默认最小 metadata 和 dump/diff 工具仍未关闭。
+
+- 2026-06-25 03:27:16 +08:00 · 11-S7N / 12-S4H / 08-S7C manifest generic preserve writer roots ·
+  状态：11-S7、12-S4 与 08-S7 子切片完成；08/11/12 阶段继续进行中 ·
+  完成项目：`SZrAotWriterOptions` 新增 manifest generic root carrier；CLI preserve root bridge 将
+  `.zrp` `kind: "generic"` 的 target 和 `arguments` 注入 writer options；generated C 文件头输出
+  `manifest.genericRoots` 与逐参数清单。
+  RED/GREEN：RED 为 CLI writer options 测试引用缺失 generic root fields 后编译失败；GREEN 后
+  `List<Foo, Bar.Baz>` 进入 writer options，生成物包含对应 manifest generic root 记录。
+  测试结果：WSL gcc、WSL clang、Windows MSVC Debug 的 `zr_vm_cli_aot_writer_options_test` 均为 6/0；
+  三个环境的 CTest `cli_aot_writer_options|aot_c_code_stripping|aot_c_generic_call_typed` 均为 3/3；
+  schema JSON 解析通过，`git diff --check` 仅 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7n-12-s4h-manifest-generic-preserve-writer-roots.md`。
+  备注：这只是 generic preserve 到 writer/generated-C 清单的 bridge；MethodSpec/TypeSpec token binding、
+  真实 generic instantiation roots、跨模块 target、注解 roots、默认最小 metadata 和 dump/diff 工具仍未关闭。
+
+- 2026-06-25 03:02:14 +08:00 · 11-S7M / 12-S4G generic preserve argument model ·
+  状态：11-S7 与 12-S4 子切片完成；11/12 阶段继续进行中 ·
+  完成项目：`.zrp` `preserve` 的 `kind: "generic"` 新增非空 `arguments` 数组，project model
+  以 `genericArguments` / `genericArgumentCount` 承载类型实参，并在 parser/schema 中拒绝缺参数、
+  空参数、非法参数、非数组参数和非 generic rule 携带参数。
+  RED/GREEN：RED 为 manifest normalization 新增 generic argument 断言后缺 project model 字段编译失败；
+  继续补无参数/空参数/非 generic rule 携带参数 RED，旧实现会接受；GREEN 后
+  `List<Foo, Bar.Baz>` 解析成功，非法形态拒绝。
+  测试结果：WSL gcc、WSL clang、Windows MSVC Debug 的
+  `zr_vm_project_manifest_normalization_test` 均为 25/0；schema JSON 解析通过；
+  WSL gcc CTest `cli_aot_writer_options|aot_c_code_stripping` 为 2/2；`git diff --check` 仅 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7m-12-s4g-generic-preserve-argument-model.md`。
+  备注：这只是 generic preserve 参数声明模型；generic instantiation root binding、metadata token resolution、
+  跨模块 target、注解 roots、默认最小 metadata 和 dump/diff 工具仍未关闭。
+
+- 2026-06-25 02:40:15 +08:00 · 11-S7L / 12-S4F feature switch preserve root gating ·
+  状态：11-S7 与 12-S4 子切片完成；11/12 阶段继续进行中 ·
+  完成项目：新增 `.zrp` top-level `features` boolean switch map，独立 `project_features` 解析模块，
+  并让 CLI AOT preserve root 注入按 rule 的 `feature` / `featureValue` 选择是否执行。
+  RED/GREEN：RED 为 manifest normalization 缺 feature switch model、CLI writer options 缺
+  feature-conditioned root gating；GREEN 后 `EnableFastAot=true` 保留 `Widget.kept`，
+  `EnableFastAot=false` 跳过相同 preserve rule 并让 generated C 裁剪 `zr_aot_fn_2`。
+  测试结果：WSL gcc、WSL clang、Windows MSVC Debug 的
+  `zr_vm_project_manifest_normalization_test` 均为 19/0，`zr_vm_cli_aot_writer_options_test` 均为 5/0；
+  WSL gcc CTest `cli_aot_writer_options|aot_c_code_stripping` 为 2/2；schema JSON 解析通过；
+  `git diff --check` 仅 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7l-12-s4f-feature-switch-preserve-root-gating.md`。
+  备注：feature switch 目前只覆盖已支持的 method/type preserve writer roots；generic preserve、
+  metadata token resolution、跨模块 target、注解 roots、默认最小 metadata 和 dump/diff 工具仍未关闭。
+
+- 2026-06-25 02:23:14 +08:00 · 11-S7K / 12-S4E preserve feature condition model ·
+  状态：11-S7 与 12-S4 子切片完成；11/12 阶段继续进行中 ·
+  完成项目：`.zrp` `preserve` rule model 新增 `feature`、`hasFeatureValue`、`featureValue`，
+  parser/schema 接受成对的 safe dotted feature name + boolean expected value，并拒绝半声明。
+  RED/GREEN：RED 为 manifest normalization 测试引用缺失 feature fields 后编译失败；GREEN 后
+  `featureValue: true/false` 均可解析，缺 `feature` 或缺 `featureValue` 会拒绝 manifest。
+  测试结果：WSL gcc、WSL clang、Windows MSVC Debug 的
+  `zr_vm_project_manifest_normalization_test` 均为 17/0；schema JSON 解析通过；
+  WSL gcc CTest `cli_aot_writer_options|aot_c_code_stripping` 为 2/2；`git diff --check` 仅 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7k-12-s4e-preserve-feature-condition-model.md`。
+  备注：本切片只实现 feature 条件声明模型；feature 条件求值/构建配置接入、generic preserve、
+  metadata token resolution、跨模块 target、注解 roots、默认最小 metadata 和 dump/diff 工具仍未关闭。
+
+- 2026-06-25 02:09:47 +08:00 · 11-S7J / 12-S4D dotted and type-member preserve roots ·
+  状态：11-S7 与 12-S4 子切片完成；11/12 阶段继续进行中 ·
+  完成项目：`method` preserve 支持完整 dotted callable 名精确匹配；`type` preserve 的
+  `members: "methods"` / `"all"` 会扫描 entry function top-level callable bindings，并把 `<type>.`
+  前缀下的方法全部注入 writer manifest roots。
+  RED/GREEN：RED 为 dotted method 和 type-members 测试 root count 仍为 0；GREEN 后 `Widget.kept`
+  解析到 flat index 2，`type Widget methods` 解析到 flat indices 1/2，generated C 保留全部 3 个函数。
+  测试结果：WSL gcc、WSL clang、Windows MSVC Debug 的
+  `cli_project_incremental|cli_aot_writer_options|aot_c_code_stripping` CTest 均为 3/3。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7j-12-s4d-dotted-type-method-preserve-roots.md`。
+  备注：generic preserve、metadata token resolution、跨模块 method target、注解 roots、feature switch、
+  默认最小 metadata 和 dump/diff 工具仍未关闭。
+
+- 2026-06-25 01:53:48 +08:00 · 11-S7I / 12-S4C method preserve root binding ·
+  状态：11-S7 与 12-S4 子切片完成；11/12 阶段继续进行中 ·
+  完成项目：AOT writer 新增 top-level callable name 到 flat function index 的解析 API；
+  CLI AOT C helper 新增 preserve root container，并把当前模块 `.zrp` `preserve` 中的 `method`
+  target 绑定为 `SZrAotWriterOptions.manifestPreserveFunctionFlatIndices`。opt-in code stripping
+  复用既有 `MANIFEST` roots，保留 manifest 指定的 top-level callable child。
+  RED/GREEN：RED 为新增 `tests/cli/test_cli_aot_writer_options.c` 后缺失 resolver/helper 类型导致编译失败；
+  GREEN 后 `main.kept` method preserve 在 generated C 中保留 `zr_aot_fn_2`，函数裁剪统计为 `3/3/0`。
+  测试结果：WSL gcc `cli_args|cli_project_incremental|cli_aot_writer_options|aot_c_code_stripping` CTest 4/4；
+  WSL clang `cli_project_incremental|cli_aot_writer_options|aot_c_code_stripping` CTest 3/3；
+  Windows MSVC Debug 同组 3/3。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7i-12-s4c-preserve-method-root-binding.md`。
+  备注：本记录只关闭当前模块 method preserve 到 writer manifest roots 的绑定；type/generic preserve、
+  metadata token resolution、跨模块 method target、feature switch、默认最小 metadata 和 dump/diff 工具仍未关闭。
+
+- 2026-06-25 01:13:27 +08:00 · 11-S7H / 08-S7 / 12-S8G CLI AOT C emission entry ·
+  状态：11-S7 子切片完成，08-S7/12-S8 CLI full-AOT writer 入口接线完成；11/12 阶段继续进行中 ·
+  完成项目：CLI 新增 `--emit-aot-c`；project path resolver 新增 `bin/aot_c/src/<module>.c`
+  输出路径并支持依赖包 binary root；incremental manifest 升级 v3 记录 `aot_c` 路径；project compiler
+  用 `.zro` binary blob、`inputKind = ZR_AOT_INPUT_KIND_BINARY`、manifest 注入的 `requireFullAot`
+  调用 AOT C writer，并把缺失 AOT C 输出纳入 dirty check。
+  RED/GREEN：RED 为 CLI args 测试新增 `emitAotC` 断言后编译失败；GREEN 后 `--emit-aot-c` 解析/校验、
+  AOT C path resolver、full-AOT project AOT C 输出、manifest v3 增量行为均通过。
+  测试结果：WSL gcc `cli_args|cli_project_incremental` CTest 2/2；WSL clang 同组 2/2；
+  Windows MSVC Debug 同组 2/2；Windows MSVC CLI `--compile --emit-aot-c --incremental` 删除
+  `main.c` 后重新生成 `bin/aot_c/src/main.c`（114478 bytes）；`git diff --check` 退出 0，仅 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-06-25-aot-11-s7h-cli-aot-c-emission-entry.md`。
+  备注：本记录只关闭 CLI/project AOT C 发射入口；full-AOT 缺失实例诊断、manifest dynamic generic roots、
+  reflection preservation、preserve writer roots、默认最小 metadata 策略和 dump/diff 工具仍未关闭。
+
+- 2026-06-25 00:29:49 +08:00 · 11-S7G / 08-S7 / 12-S8 manifest full-AOT writer option bridge ·
+  状态：11-S7 子切片完成、08-S7/12-S8 manifest policy 注入完成；11/12 阶段继续进行中 ·
+  完成项目：新增 `ZrCli_Compiler_ApplyProjectAotWriterOptions()`，把 `SZrLibrary_Project.aotMode`
+  映射到 `SZrAotWriterOptions.requireFullAot`；`full-aot` manifest 置 true，缺省 hybrid 置 false，
+  并保持其他 writer option 字段不变。
+  RED/GREEN：RED 为 CLI project incremental 测试调用缺失 helper 后链接失败；GREEN 后
+  full-AOT 和 hybrid/default 两条 bridge 用例通过，CLI project incremental 测试 10/0。
+  测试结果：WSL gcc `zr_vm_cli_project_incremental_test` 10/0；WSL clang 同目标 10/0；
+  Windows MSVC Debug `zr_vm_cli_project_incremental_test` 10/0；Windows MSVC CLI smoke
+  `hello_world` 输出 `hello world`。产出：
+  `tests/acceptance/2026-06-25-aot-11-s7g-zrp-project-manifest-aot-mode-writer-injection.md`。
+  备注：本记录只覆盖 manifest policy 到 writer option 的注入点；CLI AOT C 发射入口、
+  full-AOT 完整闭合诊断、manifest 动态泛型实例、preserve writer roots、默认最小 metadata 策略和
+  dump/diff 工具仍未关闭。
+
+- 2026-06-25 00:08:34 +08:00 · 11-S7F / 08-S7 / 12-S8 zrp project manifest AOT mode parsing ·
+  状态：11-S7 子切片完成、08-S7/12-S8 manifest full-AOT 前置解析完成；11/12 阶段继续进行中 ·
+  完成项目：`.zrp` project loader 接受 top-level `aotMode` string，缺省 `hybrid`，显式
+  `"full-aot"` 写入 `SZrLibrary_Project.aotMode = ZR_LIBRARY_PROJECT_AOT_MODE_FULL_AOT`；
+  非法类型或未知值拒绝 manifest。`zrp.schema.json` 同步声明 `hybrid` / `full-aot` enum。
+  实现拆入 `project_aot_options.{h,c}`，避免继续扩大 `project.c`。
+  RED/GREEN：RED 为新增 AOT mode 测试后 project model 缺失 `aotMode` 字段和 AOT mode enum 导致编译失败；
+  GREEN 后缺省 hybrid、显式 full-AOT 和非法 mode 拒绝通过，manifest normalization 测试 14/0。
+  测试结果：WSL gcc `zr_vm_project_manifest_normalization_test` 14/0、`zr_vm_project_import_resolver_test` 9/0；
+  WSL clang 同两目标分别 14/0、9/0；schema JSON 解析通过；Windows MSVC 两个 focused 测试分别 14/0、9/0；
+  Windows MSVC CLI smoke `hello_world` 输出 `hello world`。产出：
+  `tests/acceptance/2026-06-25-aot-11-s7f-zrp-project-manifest-aot-mode.md`。
+  备注：本记录只覆盖 manifest declaration parser，不关闭 CLI/compiler 到
+  `SZrAotWriterOptions.requireFullAot` 的自动注入、full-AOT 闭合诊断、动态泛型实例保留、
+  默认最小 metadata 策略或 dump/diff 工具。
+
+- 2026-06-24 23:36:19 +08:00 · 11-S7E / 12-S4B zrp project manifest preserve rule parsing ·
+  状态：11-S7 子切片完成、12-S4 manifest 前置解析桥接完成；11/12 阶段继续进行中 ·
+  完成项目：`.zrp` project loader 接受 top-level `preserve` array，支持 `type`、`method`、`generic`
+  三类 declaration target 和 optional `members`（`all`/`methods`），并把结果暴露为
+  `SZrLibrary_Project.preserveRules` / `preserveRuleCount`。非法 target 形态会拒绝 manifest；
+  `zrp.schema.json` 同步声明 preserve schema。实现拆入 `project_preserve.{h,c}`，避免继续扩大 `project.c`。
+  RED/GREEN：RED 为新增 preserve 规则测试后 project model 缺失 preserve fields / enum 导致编译失败；
+  GREEN 后合法 type/all 与 method/default 两条规则解析通过，非法 target 被拒绝，manifest normalization 测试 12/0。
+  测试结果：WSL gcc `zr_vm_project_manifest_normalization_test` 12/0、`zr_vm_project_import_resolver_test` 9/0；
+  WSL clang 同两目标分别 12/0、9/0；schema JSON 解析通过；Windows MSVC 两个 focused 测试分别 12/0、9/0；
+  Windows MSVC CLI smoke `hello_world` 输出 `hello world`。产出：
+  `tests/acceptance/2026-06-24-aot-11-s7e-zrp-project-manifest-preserve-rule-parsing.md`。
+  备注：本记录只覆盖 manifest declaration parser，不关闭 preserve target 到 token/function flat index 的绑定、
+  generic 实参、writer option 自动注入、feature switch、AOT mode、默认最小 metadata 策略或 dump/diff 工具。
+
+- 2026-06-24 22:56:42 +08:00 · 11-S7D zrp project manifest legacy declared assembly mapping ·
+  状态：11-S7 子切片完成、11 阶段继续进行中；完整 11-S7 仍未完成 ·
+  完成项目：旧 `dependencies.$alias` object 现在接受 `assembly` 或 legacy `name` 声明目标 assembly
+  identity；声明值使用 assembly-name shape 校验，`assembly`/`name` 冲突拒绝，声明 identity 与目标
+  `.zrp` manifest 实际 identity 不一致拒绝。含点段 assembly 通过 alias package key 继续解析
+  `&alias` import，同时真实 assembly identity 写入 package/ref 元数据并暴露给
+  `ZrLibrary_Project_GetDependencyImportVersionRange()`。
+  RED/GREEN：RED 为新增 legacy declared assembly 用例后 10 个用例中 2 个失败：含点段 declared assembly
+  被拒绝、declared identity mismatch 被接受；补充 AssemblyRef identity 查询断言后也先失败。GREEN 后
+  manifest normalization 测试 10/0，schema JSON 解析通过。
+  测试结果：WSL gcc `zr_vm_project_manifest_normalization_test` 10/0、`zr_vm_project_import_resolver_test` 9/0；
+  WSL clang 同两目标分别 10/0、9/0；Windows MSVC CLI smoke `hello_world` 输出 `hello world`。产出：
+  `tests/acceptance/2026-06-24-aot-11-s7d-zrp-project-manifest-legacy-declared-assembly-mapping.md`。
+  备注：本记录只覆盖 legacy dependency declared assembly compatibility mapping，不关闭 preserve 规则解析、
+  AOT mode、默认最小 metadata 策略或 dump/diff 工具。
+
+- 2026-06-24 22:39:26 +08:00 · 11-S7C zrp project manifest legacy identity/schema parity ·
+  状态：11-S7 子切片完成、11 阶段继续进行中；完整 11-S7 仍未完成 ·
+  完成项目：`.zrp` project loader 对 compatibility mapping 的 top-level `name` 执行 assembly-name shape
+  校验，非法旧 `name` 拒绝；top-level `version` 的非 string/null 形态拒绝；缺省 assembly identity 字段继续
+  规范化为 version `0.0.0`、culture `neutral`、kind `library`。`zrp.schema.json` 同步收紧
+  `manifestVersion`、legacy `name`、`publicKeyToken` 与 `kind`。
+  RED/GREEN：RED 为 legacy identity 测试扩展后 7 个用例中 1 个失败：旧 `name: "app render"` 被接受；
+  GREEN 后 manifest normalization 测试 8/0，schema JSON 解析通过。
+  测试结果：WSL gcc `zr_vm_project_manifest_normalization_test` 8/0、`zr_vm_project_import_resolver_test` 9/0；
+  WSL clang 同两目标分别 8/0、9/0；Windows MSVC CLI smoke `hello_world` 输出 `hello world`。产出：
+  `tests/acceptance/2026-06-24-aot-11-s7c-zrp-project-manifest-legacy-identity-schema-parity.md`。
+  备注：本记录只覆盖 manifest Layer 1 identity/schema parity，不关闭 preserve 规则解析、AOT mode、
+  默认最小 metadata 策略或 dump/diff 工具。
+
+- 2026-06-24 22:26:53 +08:00 · 11-S7B zrp project manifest publicKeyToken normalization ·
+  状态：11-S7 子切片完成、11 阶段继续进行中；完整 11-S7 仍未完成 ·
+  完成项目：`.zrp` project loader 对 `assembly.publicKeyToken` 做十六进制校验并把 `A-F` 归一化为小写；
+  非 hex token 拒绝，`null` 仍表示无 token。
+  RED/GREEN：RED 为 publicKeyToken 测试新增后 2 个失败：大写 token 未小写化、非法 token 被接受；
+  GREEN 后 manifest normalization 测试 5/0。
+  测试结果：WSL gcc `zr_vm_project_manifest_normalization_test` 5/0、`zr_vm_project_import_resolver_test` 9/0；
+  WSL clang 同两目标分别 5/0、9/0；Windows MSVC CLI smoke `hello_world` 输出 `hello world`。产出：
+  `tests/acceptance/2026-06-24-aot-11-s7b-zrp-project-manifest-public-key-token-normalization.md`。
+  备注：本记录只覆盖 publicKeyToken identity text normalization，不关闭 strong-name 验证、runtime binding 诊断、
+  preserve 规则解析、默认最小 metadata 策略或 dump/diff 工具。
+
+- 2026-06-24 22:19:43 +08:00 · 11-S7A zrp project manifest normalization gates ·
+  状态：11-S7 子切片完成、11 阶段继续进行中；完整 11-S7 仍未完成 ·
+  完成项目：`.zrp` project loader 校验 `manifestVersion`，只接受缺省或 `1`；旧 `dependencies.$alias` 与新
+  `references.alias` 指向同一 package / assembly / version range 时去重，冲突时继续拒绝。
+  RED/GREEN：RED 为新增 project manifest normalization 测试出现 2 个失败：同值 mixed old/new reference 被拒绝、
+  unsupported `manifestVersion: 2` 被接受；GREEN 后 mixed 同值只保留一条 ref，mixed 冲突和 unsupported version 均拒绝。
+  测试结果：WSL gcc `zr_vm_project_manifest_normalization_test` 3/0、`zr_vm_project_import_resolver_test` 9/0；
+  WSL clang 同两目标分别 3/0、9/0；Windows MSVC CLI smoke `hello_world` 输出 `hello world`。产出：
+  `tests/acceptance/2026-06-24-aot-11-s7a-zrp-project-manifest-normalization-gates.md`。
+  备注：本记录只覆盖 `.zrp` manifest loader normalization gate，不关闭 preserve 规则解析、按 symbol/token 保留、
+  AOT mode、默认最小 metadata 策略或 dump/diff 工具。
+
+- 2026-06-24 21:56:34 +08:00 · 11-S1J zrp signature blob structural validator ·
+  状态：11-S1 子切片完成、11 阶段继续进行中；完整 11-S1 仍未完成 ·
+  完成项目：`ZrCore_ZrpMetadata_ValidateSignatureBlob()` 支持对 method signature、field signature 与常用
+  type node 做边界安全的结构校验，并拒绝 null/empty blob、截断 payload、未知 node、非法 root、嵌套
+  method/field signature 与尾随字节。
+  RED/GREEN：RED 为 zrp metadata format 测试要求 signature blob validator 后链接失败；GREEN 后 format
+  测试覆盖合法 method/field/generic-inst blob，以及 null、空、尾随字节、截断和未知 node 失败边界。
+  测试结果：WSL gcc `zr_vm_zrp_metadata_format_test` 11/0；WSL gcc CTest
+  `zrp_metadata_format|metadata_runtime_query|metadata_token_model` 3/3；WSL clang
+  `zr_vm_zrp_metadata_format_test` 11/0；WSL clang CTest
+  `zrp_metadata_format|metadata_runtime_query|metadata_token_model` 3/3；Windows MSVC CLI smoke
+  `hello_world` 输出 `hello world`。产出：
+  `tests/acceptance/2026-06-24-aot-11-s1j-zrp-signature-blob-structural-validator.md`。
+  备注：本记录只覆盖 signature blob 结构校验，不关闭 token/type/string 语义解析、compiler signature pool
+  导出、zrp manifest 读写或 dump/diff 工具。
+
+- 2026-06-24 21:46:03 +08:00 · 11-S1I zrp string pool view decoder ·
+  状态：11-S1 子切片完成、11 阶段继续进行中；完整 11-S1 仍未完成 ·
+  完成项目：`SZrZrpMetadataStringView` 与 `ZrCore_ZrpMetadata_GetString()` 支持从 string pool
+  按 offset 解析 NUL-terminated string view，返回不含 NUL 的 byte length，并拒绝 offset 越界、
+  缺少终止 NUL 与空输出指针。
+  RED/GREEN：RED 为 zrp metadata format 测试要求 string view type/API 后编译失败；GREEN 后 format
+  测试覆盖普通字符串、空字符串、pool 尾越界和缺失 NUL 边界。
+  测试结果：WSL gcc `zr_vm_zrp_metadata_format_test` 10/0；WSL gcc CTest
+  `zrp_metadata_format|metadata_runtime_query|metadata_token_model` 3/3；WSL clang
+  `zr_vm_zrp_metadata_format_test` 10/0；WSL clang CTest
+  `zrp_metadata_format|metadata_runtime_query|metadata_token_model` 3/3；Windows MSVC CLI smoke
+  `hello_world` 输出 `hello world`。产出：
+  `tests/acceptance/2026-06-24-aot-11-s1i-zrp-string-pool-view-decoder.md`。
+  备注：本记录只覆盖 string pool 只读 view 解码，不关闭 UTF-8 语义校验、compiler string pool 导出、
+  签名 blob 解析、zrp manifest 读写或 dump/diff 工具。
+
+- 2026-06-24 21:33:41 +08:00 · 11-S1H zrp definition table payload writer ·
+  状态：11-S1 子切片完成、11 阶段继续进行中；完整 11-S1 仍未完成 ·
+  完成项目：`ZrCore_ZrpMetadata_WriteDefinitionTablePayload()` 支持把完整 row payload 写入
+  TypeDef、MethodDef、FieldDef、GenericParam、GenericParamConstraint、TypeSpec、MethodSpec、ModuleRef
+  section，并拒绝非表 section、非空 row payload 空指针、row count/element size 与 section 目录不一致、
+  截断 buffer。
+  RED/GREEN：RED 为 zrp metadata format 测试要求 definition-table writer 后链接失败；GREEN 后 format
+  测试覆盖 TypeDef/MethodDef 写入/读回、定义表校验与失败边界。
+  测试结果：WSL gcc `zr_vm_zrp_metadata_format_test` 9/0；WSL gcc CTest
+  `zrp_metadata_format|metadata_runtime_query|metadata_token_model` 3/3；WSL clang
+  `zr_vm_zrp_metadata_format_test` 9/0；WSL clang CTest
+  `zrp_metadata_format|metadata_runtime_query|metadata_token_model` 3/3；Windows MSVC CLI smoke
+  `hello_world` 输出 `hello world`。产出：
+  `tests/acceptance/2026-06-24-aot-11-s1h-zrp-definition-table-payload-writer.md`。
+  备注：本记录只覆盖 zrp definition-table row payload 写入，不关闭 compiler 真实定义表导出、
+  字符串/签名解析、zrp manifest 读写或 dump/diff 工具。
+
+- 2026-06-24 21:25:01 +08:00 · 11-S1G zrp pool payload writer ·
+  状态：11-S1 子切片完成、11 阶段继续进行中；完整 11-S1 仍未完成 ·
+  完成项目：`ZrCore_ZrpMetadata_WritePoolPayload()` 支持把完整 payload 写入 string pool、
+  signature blob pool、constant pool 三类 byte pool，并拒绝非 pool section、非空 payload 空指针、
+  payload 长度与 section 目录不一致、截断 buffer；0 长度空 pool 可 no-op 写入。
+  RED/GREEN：RED 为 zrp metadata format 测试要求 pool writer 后链接失败；GREEN 后 format 测试覆盖三类
+  pool 写入/读回与失败边界。
+  测试结果：WSL gcc `zr_vm_zrp_metadata_format_test` 8/0；WSL gcc CTest
+  `zrp_metadata_format|metadata_runtime_query|metadata_token_model` 3/3；WSL clang
+  `zr_vm_zrp_metadata_format_test` 8/0；WSL clang CTest
+  `zrp_metadata_format|metadata_runtime_query|metadata_token_model` 3/3；Windows MSVC CLI smoke
+  `hello_world` 输出 `hello world`。产出：
+  `tests/acceptance/2026-06-24-aot-11-s1g-zrp-pool-payload-writer.md`。
+  备注：本记录只覆盖 zrp 三类 byte pool payload 写入，不关闭定义表内容导出、字符串/签名解析、
+  zrp manifest 读写或 dump/diff 工具。
+
+- 2026-06-24 21:04:24 +08:00 · 12-S7J runtime fallback warning source line ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7、12-S8 仍未完成 ·
+  完成项目：runtime fallback trim warning marker 新增 `sourceLine=<debugLine>` 字段，由
+  `backend_aot_c_runtime_fallback.c` 从 ExecIR instruction 的 `debugLine` 输出；focused fixture 覆盖
+  dynamic call 与 dynamic member/index value-access。
+  RED/GREEN：RED 为 dynamic deopt bridge smoke 要求 `sourceLine=41` 后 warning marker 断言失败；GREEN 后
+  dynamic deopt bridge smoke 4/0。
+  测试结果：`zr_vm_aot_c_dynamic_deopt_bridge_smoke_test` 4/0；`zr_vm_aot_c_generic_call_typed_test` 6/0；
+  `zr_vm_aot_c_source_contracts_test` 19/0；`zr_vm_aot_c_code_stripping_test` 3/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s7j-runtime-fallback-warning-source-line.md`。
+  备注：本记录只覆盖已有 ExecIR debug line 到 warning marker 的传播，不关闭完整 trim analyzer、
+  source range 诊断、warning 抑制、zrp metadata 裁剪或 release 符号剥离。
+
+- 2026-06-24 20:48:06 +08:00 · 12-S7I runtime fallback diagnostics module split ·
+  状态：12-S7I 支持性 refinement 完成、12 阶段继续进行中；完整 12-S7、12-S8 仍未完成 ·
+  完成项目：runtime fallback warning 统计/输出与 12-S8A-S8D full-AOT runtime closure 预检从
+  `backend_aot_c_emitter.c` 拆入 `backend_aot_c_runtime_fallback.{h,c}`；emitter 收回到 520 行，
+  新模块 294 行。
+  RED/GREEN：本次为保持行为的支持拆分，未新增 RED；GREEN 复跑 focused 与相关 AOT 回归。
+  测试结果：`zr_vm_aot_c_dynamic_deopt_bridge_smoke_test` 4/0；`zr_vm_aot_c_generic_call_typed_test` 6/0；
+  `zr_vm_aot_c_source_contracts_test` 19/0；`zr_vm_aot_c_code_stripping_test` 3/0。
+  备注：本记录只覆盖 runtime fallback diagnostics 归属整理，不关闭完整 trim analyzer、source span 诊断、
+  warning 抑制、zrp metadata 裁剪或 release 符号剥离。
+
+- 2026-06-24 20:28:06 +08:00 · 12-S7I runtime fallback trim warning reason classification ·
+  状态：12-S7 子切片 refinement 完成、12 阶段继续进行中；完整 12-S7、12-S8 仍未完成 ·
+  完成项目：runtime fallback warning 的 `reason` 字段从单一文本细化为分类枚举，当前可输出
+  `dynamic-call`、`dynamic-value-access`、`dynamic-iterator` 与 `reflection`；focused 验收覆盖 dynamic call
+  和 dynamic value-access。
+  RED/GREEN：RED 为 dynamic value-access hybrid smoke 要求 `reason=dynamic-value-access` 后失败；GREEN 后
+  dynamic deopt bridge smoke 4/0。
+  测试结果：`zr_vm_aot_c_dynamic_deopt_bridge_smoke_test` 4/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s7i-runtime-fallback-warning-reason-classification.md`。
+  备注：本记录只覆盖 warning reason 分类，不关闭完整 trim analyzer、source span 诊断、warning 抑制、
+  zrp metadata 裁剪或 release 符号剥离。
+
+- 2026-06-24 20:17:59 +08:00 · 12-S7I runtime fallback trim warning markers ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7、12-S8 仍未完成 ·
+  完成项目：AOT C writer 在 hybrid 生成文件头部输出 `trim_warnings.runtimeFallbackCount`，并为会触发
+  runtime fallback 的 dynamic/reflection boundary 输出 `trim_warning.runtimeFallback[index]` marker；当前 focused
+  验收覆盖 SemIR dynamic call deopt bridge。
+  RED/GREEN：RED 为 dynamic deopt bridge hybrid smoke 要求 warning marker 后失败；GREEN 后 hybrid 仍生成
+  dynamic deopt bridge 且 full-AOT 拒绝路径保持通过。
+  测试结果：`zr_vm_aot_c_dynamic_deopt_bridge_smoke_test` 4/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s7i-runtime-fallback-trim-warning-markers.md`。
+  备注：本记录只覆盖 runtime fallback warning marker，不关闭完整 trim analyzer、zrp section/table/pool 明细、
+  source span 诊断、release 符号剥离或 12-S8 完整闭合。
+
+- 2026-06-24 20:06:57 +08:00 · 12-S7H type-layout trim before/after statistics ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7、12-S8 仍未完成 ·
+  完成项目：AOT C writer 在生成文件头部输出
+  `code_stripping.typeLayoutsBefore`、`code_stripping.typeLayoutsAfter` 和
+  `code_stripping.typeLayoutsRemoved`，统计 function table 中 distinct inline `typeLayoutId` 引用在
+  reachability filter 前后的变化。
+  RED/GREEN：RED 为 code-stripping 用例要求 type-layout before/after/removed marker 后 3 个用例失败；
+  GREEN 后普通裁剪路径为 2→1/removed=1，export root 与 manifest root 保留路径为 2→2/removed=0。
+  测试结果：`zr_vm_aot_c_code_stripping_test` 3/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s7h-type-layout-trim-before-after-statistics.md`。
+  备注：本记录只覆盖 type-layout 引用数量裁剪前后对比，不关闭 generated layout byte delta、
+  zrp section/table/pool 明细、trim warning 或 release 符号剥离。
+
+- 2026-06-24 19:35:15 +08:00 · 12-S7G generated method metadata byte statistics ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7、12-S8 仍未完成 ·
+  完成项目：AOT C method-info emitter 为每个 generated `zr_aot_signature_<flatIndex>` +
+  `zr_aot_method_info_<flatIndex>` descriptor block 输出 `aot_size.methodMetadataBytes[flatIndex]`，
+  并在 method-info 区末尾输出 `aot_size.methodMetadataBytesTotal`。
+  RED/GREEN：RED 为 generic call typed 生成 C 用例要求 method metadata byte marker 后失败；GREEN 后
+  generic call typed source/binary/full-AOT 路径继续通过。测试结果：`zr_vm_aot_c_generic_call_typed_test` 6/0。
+  产出：`tests/acceptance/2026-06-24-aot-12-s7g-method-metadata-byte-statistics.md`。
+  备注：本记录只覆盖 generated signature/method-info descriptor metadata，不关闭 zrp section/table/pool 明细、
+  trim warning、trim 前后 metadata 对比或 release 符号剥离。
+
+- 2026-06-24 19:24:50 +08:00 · 12-S7F embedded module byte statistic ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7、12-S8 仍未完成 ·
+  完成项目：AOT C writer 在生成文件头部输出 `aot_size.embeddedModuleBytes = <bytes>`，
+  统计随 module descriptor 嵌入的 `.zro/.zrp` blob 字节数，来源为
+  `SZrAotWriterOptions.embeddedModuleBlobLength`。
+  RED/GREEN：RED 为 generic call typed binary-AOT 用例要求 embedded module byte marker 后失败；
+  GREEN 后生成 C 含该 marker，二进制输入的共享泛型 smoke 仍执行返回 `42`。
+  测试结果：`zr_vm_aot_c_generic_call_typed_test` 6/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s7f-embedded-module-byte-statistic.md`。
+  备注：本记录只覆盖 embedded module blob carrier 字节统计，不关闭 zrp section/table/pool 明细、
+  trim warning、trim 前后 metadata 对比或 release 符号剥离。
+
+- 2026-06-24 19:10:02 +08:00 · 08-S7B / 12-S8E full-AOT generic METHOD slot static closure ·
+  状态：08-S7 与 12-S8 子切片完成；08/12 阶段继续进行中，完整 full-AOT 泛型实例闭合仍未完成 ·
+  完成项目：full-AOT shared generic `CALL_TYPED` 对已静态收集 callee 直接传 `zr_aot_fn_<callee>` 给
+  `ZrLibrary_AotRuntime_CallInlineStruct()`，不再生成 callsite-local METHOD slot dictionary、
+  `ZrAot_GenericSlot_Method()` lookup 或 METHOD slot null runtime branch；hybrid 路径保持 missing-instance
+  deopt bridge。
+  RED/GREEN：RED 为 full-AOT generic call typed 仍含 METHOD slot null branch；GREEN 后该分支被移除，full-AOT
+  共享泛型调用仍编译并执行返回 `42`。测试结果：`zr_vm_aot_c_generic_call_typed_test` 6/0。
+  产出：`tests/acceptance/2026-06-24-aot-12-s8e-full-aot-generic-method-slot-closure.md`。
+  备注：本记录只覆盖已静态收集 generic callsite，不关闭 manifest 动态泛型实例、反射 `MakeGenericType` 或完整收集不全诊断。
+
+- 2026-06-24 18:52:22 +08:00 · 12-S8D full-AOT TYPEOF reflection runtime contract guard ·
+  状态：12-S8 子切片完成、12 阶段继续进行中；完整 12-S8 仍未完成 ·
+  完成项目：AOT C writer 在 `requireFullAot` 下预检 `TYPEOF` reflection runtime contract，遇到需要
+  `ZrLibrary_AotRuntime_TypeOf()` 的未注解反射边界时返回 `ZR_FALSE` 并删除半成品 C 文件。
+  RED/GREEN：RED 为 global shared-library smoke 在 full-AOT 下仍成功生成 TYPEOF 产物；GREEN 后默认 hybrid
+  TYPEOF runtime boundary 仍生成并编译，full-AOT TYPEOF 被拒绝。测试结果：
+  `zr_vm_aot_c_global_shared_library_smoke_test` 10/0。
+  产出：`tests/acceptance/2026-06-24-aot-12-s8d-full-aot-typeof-reflection-closure.md`。
+  备注：本记录只覆盖未注解 TYPEOF reflection runtime boundary，不关闭 invoker、token 解析、反射注解数据流、泛型实例或完整裁剪闭包诊断。
+
+- 2026-06-24 18:42:16 +08:00 · 12-S8C full-AOT dynamic iterator deopt closure guard ·
+  状态：12-S8 子切片完成、12 阶段继续进行中；完整 12-S8 仍未完成 ·
+  完成项目：AOT C writer 在 `requireFullAot` 下预检 SemIR/显式 dynamic iterator runtime boundary，
+  遇到 `DYN_ITER_INIT` / `DYN_ITER_MOVE_NEXT` / `SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE` 或对应 SemIR
+  dynamic iterator 行时返回 `ZR_FALSE` 并删除半成品 C 文件。
+  RED/GREEN：RED 为 iterator shared-library smoke 在 full-AOT 下仍成功生成；GREEN 后默认 hybrid iterator
+  helper 仍生成并编译，full-AOT 动态迭代被拒绝。测试结果：
+  `zr_vm_aot_c_iterator_shared_library_smoke_test` 2/0。
+  产出：`tests/acceptance/2026-06-24-aot-12-s8c-full-aot-dynamic-iterator-closure.md`。
+  备注：本记录只覆盖 dynamic iterator deopt runtime boundary，不关闭反射、泛型实例或完整裁剪闭包诊断。
+
+- 2026-06-24 18:33:16 +08:00 · 12-S8B full-AOT dynamic value-access deopt closure guard ·
+  状态：12-S8 子切片完成、12 阶段继续进行中；完整 12-S8 仍未完成 ·
+  完成项目：AOT C writer 在 `requireFullAot` 下预检 SemIR dynamic member/index value access，
+  遇到 `META_GET` / `META_SET` / `DYN_INDEX_GET` / `DYN_INDEX_SET` 这类需要 value-access deopt bridge
+  的路径时返回 `ZR_FALSE` 并删除半成品 C 文件。
+  RED/GREEN：RED 为 dynamic value-access smoke 在 full-AOT 下仍成功生成；GREEN 后默认 hybrid member/index
+  deopt bridge 仍生成并编译，full-AOT 动态成员/索引访问被拒绝。测试结果：
+  `zr_vm_aot_c_dynamic_deopt_bridge_smoke_test` 4/0。
+  产出：`tests/acceptance/2026-06-24-aot-12-s8b-full-aot-dynamic-value-access-closure.md`。
+  备注：本记录只覆盖 dynamic member/index value-access deopt bridge，不关闭 dynamic iterator、反射、泛型实例或完整裁剪闭包诊断。
+
+- 2026-06-24 18:22:58 +08:00 · 12-S8A full-AOT dynamic-call deopt closure guard ·
+  状态：12-S8 子切片完成、12 阶段继续进行中；完整 12-S8 仍未完成 ·
+  完成项目：AOT C writer 在 `requireFullAot` 下预检 SemIR/显式 dynamic call，遇到无法静态解析 callee
+  且需要 `CallDynamicDeoptBridge` 的路径时返回 `ZR_FALSE` 并删除半成品 C 文件。
+  RED/GREEN：RED 为 dynamic-deopt bridge smoke 在 full-AOT 下仍成功生成；GREEN 后默认 hybrid deopt bridge
+  仍生成，full-AOT 动态调用被拒绝。测试结果：`zr_vm_aot_c_dynamic_deopt_bridge_smoke_test` 3/0。
+  产出：`tests/acceptance/2026-06-24-aot-12-s8a-full-aot-dynamic-call-closure.md`。
+  备注：本记录只覆盖 dynamic call deopt bridge，不关闭 dynamic value access、反射、泛型实例或完整裁剪闭包诊断。
+
+- 2026-06-24 18:06:18 +08:00 · 12-S7E generated type-layout byte total ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7、12-S8 仍未完成 ·
+  完成项目：type-layout emitter 累加每个 `aot_size.typeLayoutBytes[typeLayoutId]` span，并在 layout
+  声明区末尾输出 `aot_size.typeLayoutBytesTotal = <bytes>`。
+  RED/GREEN：RED 为 value-type shared-library smoke 要求 ref/POD 生成物含 type-layout 总量统计后失败；
+  GREEN 后两类生成物均含 per-layout 与 total 统计。测试结果：
+  `zr_vm_aot_c_value_type_shared_library_smoke_test` 2/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s7e-type-layout-byte-total.md`。
+  备注：这是 generated type-layout 总量统计，不声明 trim 前后对比、metadata 体积统计、trim warning 或符号剥离完成。
+
+- 2026-06-24 17:58:34 +08:00 · 12-S7D generated type-layout byte statistics ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7、12-S8 仍未完成 ·
+  完成项目：AOT C type-layout emitter 在每个 `ZrLayout_<typeLayoutId>` 及同组 generated GC descriptor
+  block 后输出 `aot_size.typeLayoutBytes[typeLayoutId] = <bytes>`；POD layout 统计 layout block，
+  引用字段 layout 统计 layout + descriptor block。
+  RED/GREEN：RED 为 value-type shared-library smoke 要求 ref/POD 生成物含 type-layout byte 统计后失败；
+  GREEN 后两类生成物均含统计，既有 GC descriptor 行为保持。测试结果：
+  `zr_vm_aot_c_value_type_shared_library_smoke_test` 2/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s7d-type-layout-byte-statistics.md`。
+  备注：这是 type-layout/generated-descriptor 体积入口，不声明 metadata 字节统计、trim warning 或符号剥离完成。
+
+- 2026-06-24 17:50:57 +08:00 · 11-S1F zrp pool slice view API ·
+  状态：11-S1 子切片完成、11 阶段继续进行中；完整 11-S1、11-S2~11-S7 仍未完成 ·
+  完成项目：新增 `SZrZrpMetadataPoolSliceView` 与 `ZrCore_ZrpMetadata_GetPoolSlice()`，
+  支持从 string/signature blob/constant 三类 byte pool 中按 offset/length 获取只读 slice；池尾 0 长度
+  slice 合法，非池 section 与越界 slice 被拒绝并清空输出。
+  RED/GREEN：RED 为 format 测试要求 pool slice API 后编译失败；GREEN 后三类 pool payload、0 长度尾部 slice、
+  非池 section 拒绝和越界拒绝均通过。测试结果：`zr_vm_zrp_metadata_format_test` 7/0。产出：
+  `tests/acceptance/2026-06-24-aot-11-s1f-zrp-pool-slice-view.md`。
+  备注：这是池读取入口，不声明池内容生成、字符串解码、签名 blob 解析、代码注册表或 token lazy resolve 完成。
+
+- 2026-06-24 17:46:08 +08:00 · 11-S1E zrp definition-table RID/range validation ·
+  状态：11-S1 子切片完成、11 阶段继续进行中；完整 11-S1、11-S2~11-S7 仍未完成 ·
+  完成项目：`ZrCore_ZrpMetadata_ValidateDefinitionTables()` 进一步校验 owner RID 与子表 range：
+  MethodDef/FieldDef owner 必须落在 TypeDef 表内，GenericParam owner/constraint 必须存在，
+  TypeDef 的 method/field/generic-param range 不得越界。
+  RED/GREEN：RED 为新增 cross-table range 测试中越界 owner/range/constraint 仍被接受导致运行失败；
+  GREEN 后合法 payload 通过，错误 owner RID、越界 method range、越界 generic-param constraint 被拒绝。
+  测试结果：`zr_vm_zrp_metadata_format_test` 6/0。产出：
+  `tests/acceptance/2026-06-24-aot-11-s1e-zrp-definition-table-range-validation.md`。
+  备注：这是格式层 RID/range 护栏，不声明真实表导出、跨模块解析、代码注册表或 token lazy resolve 完成。
+
+- 2026-06-24 17:40:49 +08:00 · 11-S1D zrp definition-table token validation ·
+  状态：11-S1 子切片完成、11 阶段继续进行中；完整 11-S1、11-S2~11-S7 仍未完成 ·
+  完成项目：新增 `ZrCore_ZrpMetadata_ValidateDefinitionTables()`，按 section view 校验定义表行的
+  token/table tag：TypeDef、MethodDef、FieldDef、GenericParam、GenericParamConstraint、TypeSpec、
+  MethodSpec、ModuleRef 不再只依赖 row 宽度合法，还会拒绝明显错误的 token 表归属。
+  RED/GREEN：RED 为 format 测试要求定义表 token 校验 API 后链接失败；GREEN 后合法定义表 payload 通过，
+  错误 TypeDef token、MethodDef owner、MethodSpec method token 被拒绝。测试结果：
+  `zr_vm_zrp_metadata_format_test` 5/0。产出：
+  `tests/acceptance/2026-06-24-aot-11-s1d-zrp-definition-table-token-validation.md`。
+  备注：这是格式层 token/tag 护栏，不声明跨表 RID 范围、真实表导出、代码注册表或 token lazy resolve 完成。
+
+- 2026-06-24 17:34:08 +08:00 · 11-S1C zrp mmap section view API ·
+  状态：11-S1 子切片完成、11 阶段继续进行中；完整 11-S1、11-S2~11-S7 仍未完成 ·
+  完成项目：新增 `SZrZrpMetadataSectionView` 与 `ZrCore_ZrpMetadata_GetSectionView()`，
+  可从已验证 zrp metadata 只读 buffer 按 section kind 解析 payload 指针、字节长度、count 和 element size；
+  空 section 返回合法空 view，截断 buffer 或未知 section kind 被拒绝并清空输出。
+  RED/GREEN：RED 为 format 测试要求 section view API 后编译失败；GREEN 后 TypeDef/string-pool payload、
+  空 constant-pool view、截断 buffer 拒绝和非法 kind 拒绝均通过。测试结果：
+  `zr_vm_zrp_metadata_format_test` 4/0。产出：
+  `tests/acceptance/2026-06-24-aot-11-s1c-zrp-section-view.md`。
+  备注：这是 mmap section payload 访问入口，不声明真实表内容导出、zrp manifest 文件读写、代码注册表或
+  token lazy resolve 完成。
+
+- 2026-06-24 17:28:29 +08:00 · 11-S1B zrp definition table directory ABI ·
+  状态：11-S1 子切片完成、11 阶段继续进行中；完整 11-S1、11-S2~11-S7 仍未完成 ·
+  完成项目：zrp metadata header 从 4-section 扩展为 version 2 / 208 字节 / 12-section 目录，
+  固定覆盖 token records、TypeDef、MethodDef、FieldDef、GenericParam、GenericParamConstraint、
+  TypeSpec、MethodSpec、ModuleRef、string pool、signature blob pool、constant pool；新增对应紧凑定义表
+  row 类型，并让 header 校验按 section kind 拒绝错误 element size / byte length。
+  RED/GREEN：RED 为 zrp metadata format 测试要求定义表目录和 row 类型后编译失败；GREEN 后 12-section
+  header round-trip 与错误定义表宽度拒绝均通过。测试结果：`zr_vm_zrp_metadata_format_test` 3/0。产出：
+  `tests/acceptance/2026-06-24-aot-11-s1b-zrp-definition-table-directory.md`。
+  备注：这是定义表目录 ABI，不声明真实表内容导出、池内容物化、zrp manifest 文件读写、代码注册表或 token
+  lazy resolve 完成。
+
+- 2026-06-24 17:17:43 +08:00 · 12-S7C retained function body byte total ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7、12-S8 仍未完成 ·
+  完成项目：opt-in AOT C code stripping 在已发射函数体后输出
+  `code_stripping.functionBodyBytesTotal = <bytes>`，聚合所有保留函数的 generated-C body span；被裁剪函数
+  不进入总量。RED/GREEN：RED 为 code-stripping 测试要求总函数字节统计后 3 个用例失败；GREEN 后
+  普通裁剪、export root、manifest root 路径均通过。测试结果：`zr_vm_aot_c_code_stripping_test` 3/0。
+  产出：`tests/acceptance/2026-06-24-aot-12-s7c-function-body-byte-total.md`。
+  备注：这是 retained-function 总量统计，不声明裁剪前估算、类型/layout/metadata 字节统计、trim warning
+  或符号剥离完成。
+
+- 2026-06-24 17:10:37 +08:00 · 12-S7B emitted function body byte statistics ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7、12-S8 仍未完成 ·
+  完成项目：opt-in AOT C code stripping 在每个已发射函数体后输出
+  `code_stripping.functionBodyBytes[flatIndex] = <bytes>`；普通裁剪路径只统计保留的 0/1，
+  不统计被移除的 2；export root 与 manifest root 保留路径统计 0/1/2。RED/GREEN：RED 为
+  code-stripping 测试要求 body-byte 统计后 3 个用例失败；GREEN 后 3 条路径均通过。
+  测试结果：`zr_vm_aot_c_code_stripping_test` 3/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s7b-function-body-byte-statistics.md`。
+  备注：这是 generated-C 函数体级字节统计，不声明类型/layout/metadata 字节统计、trim warning 或符号剥离完成。
+
+- 2026-06-24 17:01:12 +08:00 · 12-S7A function stripping statistics ·
+  状态：12-S7 子切片完成、12 阶段继续进行中；完整 12-S7、12-S8 仍未完成 ·
+  完成项目：opt-in AOT C code stripping 在生成文件头部输出
+  `code_stripping.enabled`、`functionsBefore`、`functionsAfter`、`functionsRemoved`；
+  普通不可达 child 裁剪时统计 3→2/removed=1，export root 与 manifest root 保留时统计 3→3/removed=0。
+  RED/GREEN：RED 为 code stripping 测试要求统计注释后 3 个用例失败；GREEN 后 3 条 opt-in 裁剪路径均通过。
+  测试结果：`zr_vm_aot_c_code_stripping_test` 3/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s7a-function-stripping-statistics.md`。
+  备注：这是函数级体积统计入口，不声明 trim analyzer、类型/元数据字节统计或 release 符号剥离完成。
+
+- 2026-06-24 16:54:42 +08:00 · 09-S1B AOT GC descriptor module table publication ·
+  状态：09-S1 完成、09 阶段继续进行中；09-S2~09-S5 仍未完成 ·
+  完成项目：AOT ABI 升到 `ZR_VM_AOT_ABI_VERSION 6u`；新增公共 `SZrAotGcDescriptor`；
+  `ZrAotCompiledModule` 发布 `gcDescriptors` / `gcDescriptorCount`；AOT C type-layout emitter 改用公共
+  descriptor 类型并生成按 `typeLayoutId` 索引的稀疏 `zr_aot_gc_descriptors[]` 表；无 GC 字段模块保持
+  null/0；value-type shared-library smoke 通过 `ZrVm_GetAotCompiledModule()` 读取 string-field struct
+  descriptor 并确认 `gcFieldCount==1`。RED/GREEN：RED 为新增 smoke 编译失败，缺少
+  `SZrAotGcDescriptor` 和模块 descriptor 字段；GREEN 后 source/type-layout/frame/descriptor/value-type/shared
+  相关验证均通过。测试结果：`zr_vm_aot_c_source_contracts_test` 19/0、
+  `zr_vm_aot_c_type_layout_contracts_test` 1/0、`zr_vm_aot_c_frame_setup_contracts_test` 1/0、
+  `zr_vm_aot_c_descriptor_diagnostics_test` 1/0、`zr_vm_aot_c_value_type_shared_library_smoke_test` 2/0、
+  `zr_vm_aot_c_shared_library_smoke_test` 8/0。产出：
+  `tests/acceptance/2026-06-24-aot-09-s1b-gc-descriptor-module-table.md`。
+  备注：本切片关闭 09-S1 的 descriptor 发射、核心扫描和模块 metadata 注册面；AOT 栈根、safepoint、
+  写屏障、装箱/FFI pin 与 runtime token/layout hydration 仍按后续切片推进。
+
+- 2026-06-24 16:34:54 +08:00 · 12-S4A manifest preserve function roots ·
+  状态：12-S4 子切片完成、12 阶段继续进行中；完整 12-S4、12-S5~12-S8 仍未完成 ·
+  完成项目：`SZrAotWriterOptions` 新增已解析 manifest preserve 函数根输入
+  `manifestPreserveFunctionFlatIndices` / `manifestPreserveFunctionFlatIndexCount`；
+  `backend_aot_compute_static_callable_reachability()` 将这些 flat function index 作为
+  `MANIFEST` roots 加入 BFS，并拒绝非法或不存在的 root。opt-in C code stripping 会把 writer options 中的
+  manifest roots 传入 graph helper。RED/GREEN：RED 为 focused reachability 测试要求 manifest-root
+  helper 形态而旧实现只有 entry/export roots；GREEN 后 manifest root 保留、无效 manifest root 拒绝，
+  generated-C 合约证明 manifest 保留的 otherwise-unused 函数继续发射。测试结果：
+  `zr_vm_aot_reachability_test` 6/0、`zr_vm_aot_c_code_stripping_test` 3/0、CTest
+  `aot_c_code_stripping|aot_reachability` 2/2、`zr_vm_aot_c_source_contracts_test` 19/0、
+  `zr_vm_aot_c_shared_library_smoke_test` 8/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s4a-manifest-preserve-function-roots.md`。
+  备注：这是 manifest 规则的后端输入通道；zrp manifest 解析、按 symbol/token 保留、注解 roots、
+  feature switch、trim warning 和 full-AOT 闭合诊断仍待后续。
+
+- 2026-06-24 16:20:39 +08:00 · 12-S2E export callable roots ·
+  状态：12-S2 子切片完成、12 阶段继续进行中；完整 12-S2、12-S3~12-S8 仍未完成 ·
+  完成项目：`backend_aot_compute_static_callable_reachability()` 改为由调用方提供 root/root-reason
+  缓冲区，entry flat index 0 仍作为 `ROOT_ENTRY`，同时扫描 entry function 的
+  `SZrFunctionTopLevelCallableBinding` 并把导出 callable child 作为 `ROOT_EXPORT`。opt-in C code stripping
+  同步分配 root buffers。新增 focused reachability 合约与 generated-C 合约，证明未被 entry bytecode
+  引用但作为模块导出的 child 仍会保留并发射。RED/GREEN：RED 为新测试调用 root-buffer 版 helper
+  时旧 API/固定 root 实现编译失败；GREEN 后 export root 保留、普通 unused child 仍可裁剪。
+  测试结果：`zr_vm_aot_reachability_test` 5/0、`zr_vm_aot_c_code_stripping_test` 2/0、CTest
+  `aot_c_code_stripping|aot_reachability` 2/2、`zr_vm_aot_c_source_contracts_test` 19/0、
+  `zr_vm_aot_c_shared_library_smoke_test` 8/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s2e-export-callable-roots.md`。
+  备注：manifest roots、默认 writer 裁剪、trim 诊断、体积统计和 full-AOT 闭合诊断仍待后续。
+
+- 2026-06-24 16:10:41 +08:00 · 12-S2D opt-in AOT C code stripping emitter ·
+  状态：12-S2 子切片完成、12 阶段继续进行中；完整 12-S2、12-S3~12-S8 仍未完成 ·
+  完成项目：`SZrAotWriterOptions` 新增 `enableCodeStripping`，C emitter 在 opt-in 时调用 12-S2C
+  静态 callable graph，再用 12-S2A filter 压缩 function table，同时保留 12-S2B `indexSpace`，使 thunk 与
+  MethodInfo 表对不可达洞位输出 `ZR_NULL`。新增 `zr_vm_aot_c_code_stripping_test` 和 CTest
+  `aot_c_code_stripping`，验证 root + reachable child + unused child 生成 C 时 `zr_aot_fn_2` 不再发射。
+  RED/GREEN：RED 为测试编译失败，缺少 `enableCodeStripping`；GREEN 后 opt-in 裁剪保留 0/1、删除 2，
+  并保持稀疏表洞位。测试结果：`zr_vm_aot_c_code_stripping_test` 1/0、`zr_vm_aot_reachability_test` 4/0、
+  `zr_vm_aot_c_source_contracts_test` 19/0、`zr_vm_aot_c_shared_library_smoke_test` 8/0、CTest
+  `aot_c_code_stripping|aot_reachability` 2/2。产出：
+  `tests/acceptance/2026-06-24-aot-12-s2d-opt-in-code-stripping-emitter.md`。
+  备注：默认 writer 路径仍全量生成；export/manifest roots、trim 诊断和体积统计仍待后续。
+
+- 2026-06-24 15:50:18 +08:00 · 12-S2C static callable reachability graph helper ·
+  状态：12-S2 子切片完成、12 阶段继续进行中；完整 12-S2、12-S3~12-S8 仍未完成 ·
+  完成项目：新增 `backend_aot_reachability_function_graph.{h,c}` 与
+  `backend_aot_compute_static_callable_reachability()`，以 entry flat index 0 为根，扫描
+  `GET_CONSTANT`、`CREATE_CLOSURE`、`GET_SUB_FUNCTION` 静态 callable materialization，并写入
+  `DIRECT_CALL` 边后复用 12-S1A BFS 生成 marks。focused 测试验证 `GET_SUB_FUNCTION` 子函数会被标记、
+  未引用函数保持 `UNMARKED`，edge buffer 容量不足会被拒绝。RED/GREEN：RED 为缺少
+  `backend_aot_reachability_function_graph.h`；GREEN 后 root+child 标记、edge reason/predecessor 与容量拒绝通过。
+  测试结果：`zr_vm_aot_reachability_test` 4/0、CTest `aot_reachability` 1/1、
+  `zr_vm_aot_c_source_contracts_test` 19/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s2c-static-callable-reachability-graph.md`。
+  备注：默认 AOT C 过滤仍未启用，export/manifest roots、死函数不发 C 与体积统计仍待后续。
+
+- 2026-06-24 15:37:08 +08:00 · 12-S2B sparse AOT thunk/method-info index space ·
+  状态：12-S2 子切片完成、12 阶段继续进行中；完整 12-S2、12-S3~12-S8 仍未完成 ·
+  完成项目：`SZrAotFunctionTable` 增加 `indexSpace`，构建时记录原始 function index 空间，过滤时只压缩
+  可发射 entries；新增 `backend_aot_function_table_index_space()`。C emitter 的 forward decl、
+  `zr_aot_function_thunks[]`、`zr_aot_method_infos[]` 和 descriptor count 改为使用原始 `flatIndex` 与
+  `functionIndexSpace`，不可达洞位输出 `ZR_NULL`，为后续默认裁剪接入保留运行期索引 ABI。
+  RED/GREEN：RED 为新增 index-space 测试链接失败，以及 frame setup contract 要求 sparse emitter 文本失败；
+  GREEN 后过滤表保持 indexSpace=4，source contract 命中 `entry->flatIndex`、`functionIndexSpace` 和
+  `ZR_NULL` 洞位。测试结果：`zr_vm_aot_reachability_test` 3/0、
+  `zr_vm_aot_c_frame_setup_contracts_test` 1/0、`zr_vm_aot_c_source_contracts_test` 19/0、
+  `zr_vm_aot_c_shared_library_smoke_test` 8/0、CTest `aot_reachability` 1/1。产出：
+  `tests/acceptance/2026-06-24-aot-12-s2b-sparse-aot-index-space.md`。
+  备注：真实 reachability graph 接入、默认过滤、死函数不发 C 和体积统计仍待后续。
+
+- 2026-06-24 15:13:07 +08:00 · 12-S2A function table reachability filter helper ·
+  状态：12-S2 子切片完成、12 阶段继续进行中；完整 12-S2、12-S3~12-S8 仍未完成 ·
+  完成项目：`backend_aot_function_table.{h,c}` 新增
+  `backend_aot_filter_function_table_by_reachability()`，可用 12-S1A 的 reachability mark 对
+  `SZrAotFunctionTable` 原地压缩，跳过 `UNMARKED` 函数项，保留可达项的原始 `flatIndex`，并拒绝
+  表结构非法或 `flatIndex` 超出 mark 数组的输入。RED/GREEN：RED 为新增过滤测试后缺少
+  `backend_aot_filter_function_table_by_reachability` 链接符号；GREEN 后 4 项表压缩为 0/2 两个可达项、
+  原编号不重排，mark 数不足输入被拒绝。测试结果：`zr_vm_aot_reachability_test` 3/0、CTest
+  `aot_reachability` 1/1、`zr_vm_aot_c_source_contracts_test` 19/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s2a-function-table-reachability-filter.md`。
+  备注：默认 AOT C emitter 尚未接入该过滤结果，真实死函数不发 C、体积下降统计、manifest/root 图构建
+  与 full-AOT 闭合诊断仍待后续。
+
+- 2026-06-24 15:04:13 +08:00 · 12-S1A AOT reachability state machine + BFS ·
+  状态：12-S1 子切片完成、12 阶段进入进行中；完整 12-S1、12-S2~12-S8 仍未完成 ·
+  完成项目：新增 `backend_aot_reachability.{h,c}` 和 `zr_vm_aot_reachability_test`，实现
+  unmarked/marked_pending/processed 三态、root/direct-call/field/virtual/reflection/generic 等依赖原因、
+  调用方缓冲区驱动的 BFS 标记、首次原因/predecessor 记录和非法图拒绝。RED/GREEN：RED 为缺少
+  `backend_aot_reachability.h`；GREEN 后 root/edge 传播、manifest root reason 保留、未连接节点不标记、
+  queue 容量/edge 越界拒绝均通过。测试结果：`zr_vm_aot_reachability_test` 2/0、CTest 1/1、
+  `zr_vm_aot_c_source_contracts_test` 19/0。产出：
+  `tests/acceptance/2026-06-24-aot-12-s1a-reachability-engine.md`。
+  备注：真实函数体扫描、function table 可达过滤、体积下降与 full-AOT 闭合诊断仍待后续 12 切片。
+
+- 2026-06-24 14:53:23 +08:00 · 11-S1A zrp metadata header/section format ·
+  状态：11-S1 子切片完成、11 阶段进入进行中；完整 11-S1、11-S2~11-S7 仍未完成 ·
+  完成项目：新增 `zr_vm_core/zrp_metadata.h` / `zrp_metadata.c`，定义固定 80 字节 zrp metadata header、
+  四个 section 目录（token records、string pool、signature blob pool、constant pool），并提供
+  little-endian header init/read/write/validate API；新增 `zr_vm_zrp_metadata_format_test` 和 CTest 入口。
+  RED/GREEN：RED 为新增测试目标配置后缺少 `zr_vm_core/zrp_metadata.h`；GREEN 后 round-trip 与坏 mmap
+  view 拒绝用例通过。测试结果：`zr_vm_zrp_metadata_format_test` 2/0、
+  `zr_vm_metadata_runtime_query_test` 3/0、`zr_vm_metadata_token_model_test` 21/0；CTest 3/3。产出：
+  `tests/acceptance/2026-06-24-aot-11-s1a-zrp-metadata-header.md`。
+  备注：实际定义表/池内容导出、zrp manifest 文件读写、代码注册表与 token lazy resolve 仍待后续 11 切片。
+
+- 2026-06-24 14:37:23 +08:00 · 10-S1A MethodInfo reflection metadata level carrier ·
+  状态：10-S1 子切片完成、10 阶段进入进行中；完整 10-S1、10-S2~10-S5 仍未完成 ·
+  完成项目：AOT ABI 升到 `ZR_VM_AOT_ABI_VERSION 5u`；新增
+  `EZrAotReflectionMetadataLevel` 三态；`SZrAotMethodInfo` 增加 `reflectionMetadataLevel` 与保留字节；
+  生成 MethodInfo 默认写入 `ZR_AOT_REFLECTION_METADATA_RUNTIME_MAPPING`，共享库 descriptor 可在运行期读到该级别。
+  RED/GREEN：RED 为 MethodInfo 无反射 metadata level carrier；GREEN 后源契约、descriptor runtime assertion、
+  ABI mismatch 诊断均覆盖新字段和 ABI 版本。测试结果：
+  `zr_vm_aot_c_frame_setup_contracts_test` 1/0、`zr_vm_aot_c_shared_library_smoke_test` 8/0、
+  `zr_vm_aot_c_descriptor_diagnostics_test` 1/0。产出：
+  `tests/acceptance/2026-06-24-aot-10-s1a-reflection-metadata-level.md`。
+  备注：实体可达性分析、未反射类型元数据裁剪、体积下降对比和 `DESCRIPTION` 保留策略仍待后续 10/12。
+
+- 2026-06-24 14:20:45 +08:00 · 09-S1A GC descriptor offset-list emission + metadata scan path ·
+  状态：09-S1 子切片完成、09 阶段继续进行中；完整 09-S1、09-S2~09-S5 仍未完成 ·
+  完成项目：`ZrCore_TypeLayout_VisitGcValues()` 对带 `gcFieldOffsets` 的非 union struct 优先走
+  metadata offset 表；AOT C type-layout emitter 为含引用字段的 inline struct 生成
+  `ZrGcOffsets_<id>[]` 与 `ZrGcDescriptor_<id>`，并跳过 `gcFieldCount == 0` 的 blittable/POD struct。
+  RED/GREEN：RED 为 AOT 生成物只有 `ZrLayout_*` 和静态断言，核心 GC scan 仍只按字段表遍历；
+  GREEN 后 `zr_vm_value_type_runtime_test` 14/0、`zr_vm_aot_c_value_type_shared_library_smoke_test` 2/0、
+  `zr_vm_aot_c_type_layout_contracts_test` 1/0。产出：
+  `tests/acceptance/2026-06-24-aot-09-s1a-gc-descriptor-offsets.md`。
+  备注：生成 descriptor 目前是 AOT C 内的静态载体，尚未通过 AOT MethodInfo/模块 metadata 注册给运行期，
+  因此不关闭完整 09-S1。
+
+- 2026-06-24 14:03:46 +08:00 · 08-S7A full-AOT generic CALL_TYPED no-deopt switch ·
+  状态：08-S7 子切片完成、08 阶段继续进行中；完整 08-S7 和 12-S8 full-AOT 闭合诊断仍未完成 ·
+  完成项目：`SZrAotWriterOptions.requireFullAot` 接入 AOT C function body/value SemIR lowering；
+  默认 hybrid 模式保留 shared generic `CALL_TYPED` missing-instance interpreter deopt，显式 full-AOT
+  模式生成 `zr_aot_generic_call_typed_full_aot_no_deopt`，静态 METHOD slot 为空时直接失败而不调用
+  `CallInlineStructDynamicDeoptBridge()`。RED/GREEN：RED 为 full-AOT 选项缺失，所有 shared generic
+  callsite 都生成动态兜底；GREEN 后 `zr_vm_aot_c_generic_call_typed_test` 6/0，full-AOT 用例确认生成 C
+  不包含 missing-instance deopt marker/bridge/error label，并编译共享库执行返回与解释器一致的 `42`。
+  产出：`tests/acceptance/2026-06-24-aot-08-s7a-full-aot-generic-call-typed.md`。
+  备注：缺失实例的编译期诊断仍需要 `12` 可达性/manifest/full-AOT 闭合校验支撑，本记录不关闭完整 08-S7。
+
+- 2026-06-24 13:47:41 +08:00 · 08-S6A generic CALL_TYPED missing-instance deopt bridge ·
+  状态：08-S6 子切片完成、08 阶段继续进行中；完整 08-S6、08-S7 仍未完成 ·
+  完成项目：runtime 增加 `ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge()`，在 shared generic
+  `CALL_TYPED` METHOD slot 无法解析 AOT 入口时，按 deopt id 校验后准备 call window、复制 value
+  参数、调回解释器并把 inline struct return 写入 AOT destination；生成 C 在
+  `ZrAot_GenericSlot_Method()` 非空时继续走 `CallInlineStruct()`，为空时生成
+  `zr_aot_generic_call_typed_missing_instance_deopt` 并调用动态桥。RED/GREEN：RED 为 METHOD slot
+  缺失只能失败；GREEN 后 `zr_vm_aot_c_generic_call_typed_test` 5/0，其中新增用例把生成 C 的
+  `.staticMethod = zr_aot_fn_*` 改成 `ZR_NULL` 后重新编译共享库，AOT execution 经解释器 fallback
+  返回与解释器一致的 `42`。验证：generic call typed 5/0、dynamic deopt bridge smoke 2/0。
+  产出：`tests/acceptance/2026-06-24-aot-08-s6a-generic-call-typed-missing-instance-deopt.md`。
+  备注：这只覆盖 shared generic METHOD-slot missing-instance fallback；反射构造/运行期动态泛型实例化
+  和 full-AOT 缺失实例诊断仍开放。
+
+- 2026-06-24 13:32:21 +08:00 · 08-S5 generic CALL_TYPED monomorphized/shared dispatch ·
+  状态：08-S5 验收完成、08 阶段继续进行中；08-S6、08-S7 仍未完成 ·
+  完成项目：在 08-S5A 的 METHOD-slot lazy helper、shared METHOD-slot lookup/call 和 monomorphized
+  direct marker 基础上，AOT C value SemIR `CALL_TYPED` route 现在拿到 callee typed metadata；
+  对 `where T: class` 的源级引用泛型调用生成 callsite-local `ZR_AOT_GENERIC_SLOT_METHOD`
+  dictionary，经 `ZrAot_GenericSlot_Method()` 取得 `zr_aot_fn_*`，再传入
+  `ZrLibrary_AotRuntime_CallInlineStruct()`；非共享路径继续保持直接 `zr_aot_fn_*` 调用。
+  同时修复 typed export metadata 构建时的 current function declaration，上游 generic parameter `T`
+  能进入 callee parameter metadata。RED/GREEN：RED 为 08-S5A 后缺少源级泛型 `CALL_TYPED`
+  shared callsite route 和执行一致性；GREEN 后 `zr_vm_aot_c_generic_call_typed_test` 3/0，第三个
+  用例编译生成 C 共享库并通过 AOT execution 返回与解释器一致的 `42`。验证：
+  `zr_vm_aot_c_generic_call_typed_test` 3/0、reference sharing 2/0、monomorphization 1/0、
+  source contracts 19/0、frame setup contracts 1/0、method-info signature 1/0、type inference 全量通过、
+  CTest 泛型 AOT 三项 3/3。产出：
+  `tests/acceptance/2026-06-24-aot-08-s5-generic-call-typed.md`。备注：08-S6 dynamic-instance
+  deopt、08-S7 full-AOT missing-instance 仍开放。
+
+- 2026-06-24 12:46:24 +08:00 · 08-S5A generic CALL_TYPED METHOD-slot carrier ·
+  状态：08-S5 子切片完成、08 阶段继续进行中；08-S5B、08-S6、08-S7 仍未完成 ·
+  完成项目：runtime 增加 `ZrLibrary_AotRuntime_GenericSlot_Method()`，对
+  `ZR_AOT_GENERIC_SLOT_METHOD` 做 lazy 解析与 `FZrAotEntryThunk` cache；AOT C generic sharing
+  emitter 增加 `ZrAot_GenericSlot_Method` 宏、每共享引用实例的 METHOD slot 与静态 method target，
+  并在 `zr_fn_<base>__shared` 内生成从字典 METHOD slot 取入口并调用的形态；AOT C generic
+  monomorphization wrapper 增加 direct-call marker，锁定值类型泛型的直接特化入口形态。
+  RED/GREEN：RED 为新增 `zr_vm_aot_c_generic_call_typed_test` 后缺少 METHOD slot runtime helper；
+  GREEN 后 helper cache、monomorphized direct marker、shared METHOD slot lookup/call 和 generated C
+  shared-library compile 均通过。验证：`zr_vm_aot_c_generic_call_typed_test` 2/0、
+  `zr_vm_aot_c_generic_reference_sharing_test` 2/0、`zr_vm_aot_c_generic_monomorphization_test` 1/0、
+  source contracts 19/0、frame setup contracts 1/0、method-info signature 1/0，CTest 泛型 AOT 三项
+  3/3。产出：`tests/acceptance/2026-06-24-aot-08-s5a-generic-call-typed-method-slot.md`。
+  备注：本子切片只完成 METHOD-slot carrier 与生成契约；源级泛型 `CALL_TYPED` 双形态实际接入和
+  AOT/解释器一致性仍是 08-S5B。
+
+- 2026-06-24 12:14:13 +08:00 · 08-S4 generic reference sharing dictionary ·
+  状态：08-S4 验收完成、08 阶段继续进行中；08-S5~08-S7 未开始 ·
+  完成项目：AOT ABI 升至 v4，新增泛型字典 slot/cache/dictionary 结构，`SZrAotMethodInfo`
+  携带 `genericDictionary`；runtime 增加 TYPE_LAYOUT/SIZEOF lazy slot 解析并缓存；
+  AOT C emitter 为引用型闭泛型实例发每实例字典，按泛型基名只发一份 `zr_fn_<base>__shared`，
+  同时发 `ZrAot_GenericSlot_*` 访问宏并将当前函数首个共享字典挂入 MethodInfo。
+  RED/GREEN：RED 为新增 `zr_vm_aot_c_generic_reference_sharing_test` 后缺少
+  `SZrAotGenericDictionary` 与 lazy API；GREEN 后 `Box<RefA>`/`Box<RefB>` 两个实例共享一份
+  `zr_fn_box__shared`，字典 lazy helper 直接验证 TYPE_LAYOUT/SIZEOF cache。验证：
+  `zr_vm_aot_c_generic_reference_sharing_test` 2/0、CTest `aot_c_generic_reference_sharing` 1/1、
+  frame setup contracts 1/0、source contracts 19/0、method-info signature 1/0、generic monomorphization 1/0。
+  产出：`tests/acceptance/2026-06-24-aot-08-s4-generic-reference-sharing.md`。备注：08-S5 泛型
+  `CALL_TYPED` 单态/共享分派、08-S6 dynamic-instance deopt、08-S7 full-AOT missing-instance 仍开放。
+
+- 2026-06-24 11:38:33 +08:00 · 08-S3 generic monomorphization ·
+  状态：08-S3 验收完成、08 阶段继续进行中；08-S4~08-S7 未开始 ·
+  完成项目：新增 AOT generic monomorphization emitter，closed value-generic `Pair<int,int>`
+  生成 `ZrLayout_<id>` inline layout、`zr_aot_generic_monomorphization_table` marker 与
+  `zr_fn_pair__*` 特化 wrapper；closed generic prototype 生成 concrete field layout，typed metadata
+  精确匹配 closed layout，core inline receiver copy-back 支持 open/closed layout id 不同但实际 layout
+  兼容的构造路径。RED/GREEN：RED 依次暴露缺少 marker/layout、inline typed call failure、
+  `COPY_STACK` missing inline layout、运行结果 0；GREEN 后 generated shared library 返回 81。
+  验证：`zr_vm_aot_c_generic_monomorphization_test` 1/0、CTest `aot_c_generic_monomorphization` 1/1、
+  `zr_vm_aot_c_source_contracts_test` 19/0、`zr_vm_aot_c_typed_scalar_test` 1/0、generic numeric
+  contracts/smoke 各 1/0、parser 75/0、type inference 全量通过、CTest `generic_instantiation` /
+  `generic_constraints` 2/2。产出：
+  `tests/acceptance/2026-06-24-aot-08-s3-generic-monomorphization.md`。备注：08-S4 泛型字典、
+  08-S5 泛型 `CALL_TYPED`、08-S6 dynamic-instance deopt、08-S7 full-AOT missing-instance 仍开放。
+
+- 2026-06-24 10:28:48 +08:00 · 08-S2 generic constraints ·
+  状态：08-S2 验收完成、08 阶段进行中；08-S3~08-S7 未开始 ·
+  完成项目：确认现有约束求解覆盖 named constraints、class/struct、owner、unique/shared/weak
+  ownership；新增 `zr_vm_generic_constraints_test` 独立覆盖 `where T: new()`，默认可构造 class
+  放行、interface 报 `new() constraint`。RED/GREEN：新目标首次构建前因 CMake 尚未重配而不存在；
+  重配后测试直接 GREEN，说明生产约束逻辑已满足验收。验证：`zr_vm_generic_constraints_test` 1/0、
+  CTest `generic_constraints` 1/1、`zr_vm_parser_test` 75/0、`zr_vm_type_inference_test` 118/0。产出：
+  `tests/acceptance/2026-06-24-aot-08-s2-generic-constraints.md`。备注：本切片是 08-S2 约束验收补齐，
+  不改 AOT codegen；08-S3 才进入单态化生成。
+
+- 2026-06-24 10:18:45 +08:00 · 08-S1 generic instantiation table ·
+  状态：08-S1 完成、08 阶段进入进行中；08-S2~08-S7 未开始 ·
+  完成项目：新增 parser 级 `SZrGenericInstantiationTable` / `SZrGenericInstantiationRecord`，记录
+  `baseToken`、类型实参、`shareKind`、`cInstanceId`；按 base token + 实参类型 + resolved
+  reference/value shape 去重；按 il2cpp-style 规则判定全部 reference 共享、任一 value 单态化；
+  提供默认 `EZrValueType` shape 推断和显式 resolved class/struct shape 入口。RED/GREEN：RED 为
+  新测试目标缺少 `zr_vm_parser/generic_instantiation.h`；GREEN 为 `zr_vm_generic_instantiation_test`
+  3/0、CTest `generic_instantiation` 1/1、`zr_vm_type_inference_test` 118/0。产出：
+  `tests/acceptance/2026-06-24-aot-08-s1-generic-instantiation-table.md`。备注：本切片只完成收集表与
+  shareKind 判定；约束求解、codegen 单态化/共享字典、泛型 CALL_TYPED、动态实例 deopt 和 full-AOT
+  模式仍开放。
+
+- 2026-06-24 09:41:44 +08:00 · M1.5 / 07-S5 scalar typed direct-call aggregate guardrail ·
+  状态：验收护栏子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 generated-product guardrail，用一个 mixed scalar fixture 同时锁定 i64/u64/f64/bool
+  二参 typed→typed direct-call 的 state-free signature/call；禁止 typed destination、stack sync、runtime
+  call fallback 与 `state` 首参退化；同时按 scalar typed thunk 函数体范围禁止解释器环境符号和 `SZrTypeValue`。
+  RED/GREEN：guardrail target 先因仍只链接 core 而缺少 parser include
+  构建失败；补齐 parser/core/library 依赖后 `zr_vm_aot_c_guardrail_contracts_test` 6/0。生成物 grep 确认
+  i64/u64/f64/bool direct calls 均只传 scalar locals，且无 `SZrTypeValue *zr_aot_typed_destination`、
+  `ZR_VALUE_FAST_SET(zr_aot_typed_destination,`、`CallStaticDirect`、`CallStackValue` 或 stateful typed-thunk
+  用法；scoped thunk-body 检查确认四类 typed thunk body 都是直接 C return。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-scalar-typed-direct-call-guardrail.md`。
+  备注：07-S5 仍部分完成；full typed ABI、inline structs、in/out writeback、完整 07-S5 acceptance、
+  性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 09:26:01 +08:00 · M1.5 / 07-S5 bool state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：bool no/one/two/three-arg typed thunks 生成并调用 `zr_aot_typed_bool_fn_N(void/TZrBool, ...)`，
+  不再传 `state`；i64/u64/f64 comparison -> bool typed thunks 生成并调用 `zr_aot_typed_bool_fn_N(TZrInt64/TZrUInt64/TZrFloat64, ...)`，
+  也不再传 `state`。RED/GREEN：typed-call contracts RED 1/4 后 GREEN 4/0，bool shared-library smoke 28/0，
+  source contracts 19/0；生成物 grep 确认 bool no/two/three-arg 与 i64/u64/f64 comparison bool calls 均为 state-free。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-bool-state-free-typed-direct-call.md`。
+  备注：07-S5 仍部分完成；full typed ABI、inline structs、in/out writeback、完整 07-S5 acceptance、
+  性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 09:10:18 +08:00 · M1.5 / 07-S5 f64 state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：f64 no/one-arg pure thunks 生成并调用 `zr_aot_typed_f64_fn_N(void/TZrFloat64)`，不再传
+  `state`；纯 f64 二参/三参 add/subtract/multiply 生成并调用 `zr_aot_typed_f64_fn_N(TZrFloat64, ...)`，
+  不再传 `state`；f64 divide/modulo 继续使用 stateful ABI 以保留 zero-denominator error path。
+  RED/GREEN：typed-call contracts RED 1/4 后 GREEN 4/0，f64 shared-library smoke 19/0，source contracts
+  19/0；生成物 grep 确认 two/three-arg add state-free，two/three-arg divide stateful。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-f64-state-free-typed-direct-call.md`。
+  备注：07-S5 仍部分完成；bool ABI parity、full typed ABI、inline structs、in/out writeback、
+  完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 08:52:05 +08:00 · M1.5 / 07-S5 u64 two/three-arg state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：纯 u64 二参/三参 typed thunks（add/subtract/multiply/bitwise AND/OR/XOR）生成并调用
+  `zr_aot_typed_u64_fn_N(TZrUInt64, ...)`，不再传 `state`；u64 divide/modulo 继续使用 stateful ABI
+  以保留 divide/modulo-by-zero error path。RED/GREEN：typed-call contracts RED 1/4 后 GREEN 4/0，
+  u64 shared-library smoke 25/0，source contracts 19/0；生成物 grep 确认 two/three-arg add state-free，
+  two/three-arg divide stateful。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-u64-two-three-arg-state-free-typed-direct-call.md`。
+  备注：07-S5 仍部分完成；f64/bool ABI parity、full typed ABI、inline structs、in/out writeback、
+  完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 08:26:14 +08:00 · M1.5 / 07-S5 u64 no/one-arg state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：u64 no-arg thunks 生成 `zr_aot_typed_u64_fn_N(void)` 并以空实参调用；u64 one-arg thunks
+  生成 `zr_aot_typed_u64_fn_N(TZrUInt64)` 并以单 scalar local 调用，不再传 `state`。同时修复
+  signed-const fallback scalar-local 读取/写回，以及 forced stack-copy 保留 u64 call-arg source local。
+  RED/GREEN：typed-call contracts RED 1/4 后 GREEN 4/0，source contracts 19/0，u64 shared-library
+  smoke 25/0；生成物 grep 确认 no/one-arg state-free，two-arg 参数同步使用 u64 scalar copy。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-u64-no-one-arg-state-free-typed-direct-call.md`。
+  备注：07-S5 仍部分完成；u64 two/three-arg state-free ABI、f64/bool ABI parity、full typed ABI、
+  inline structs、in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 07:54:44 +08:00 · M1.5 / 07-S5 i64 three-arg state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：纯 signed i64 三参 typed thunks（add/sub/multiply/bitwise AND/OR/XOR）生成并调用
+  `zr_aot_typed_i64_fn_N(TZrInt64, TZrInt64, TZrInt64)`，不再传 `state`；three-arg divide/modulo
+  仍保留 stateful ABI，以保护 divide/modulo-by-zero error path。RED/GREEN：typed-call contracts
+  RED 1/4 后 GREEN 4/0，i64 three-arg shared-library smoke 8/0；生成物 grep 确认 add/bitwise OR
+  state-free，divide stateful。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-i64-three-arg-state-free-typed-direct-call.md`。
+  备注：07-S5 仍部分完成；u64/f64/bool ABI parity、full typed ABI、inline structs、in/out writeback、
+  完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 07:34:41 +08:00 · M1.5 / 07-S5 i64 no/one-arg state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：i64 no-arg thunks 生成 `zr_aot_typed_i64_fn_N(void)` 并以空实参调用；i64 one-arg thunks
+  生成 `zr_aot_typed_i64_fn_N(TZrInt64)` 并以单 scalar local 调用，不再传 `state`。RED/GREEN：
+  typed-call contracts RED 1/4 后 GREEN 4/0，arithmetic smoke 7/0，bitwise smoke 6/0，
+  typed direct-call shared-library smoke 5/0；生成物 grep 确认 no/one-arg state-free，divide 继续 stateful。
+  产出：`tests/acceptance/2026-06-24-aot-m1-5-i64-no-one-arg-state-free-typed-direct-call.md`。
+  备注：07-S5 仍部分完成；i64 three-arg state-free ABI、u64/f64/bool ABI parity、full typed ABI、inline structs、
+  in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 07:24:50 +08:00 · M1.5 / 07-S5 i64 two-arg state-free typed direct-call ABI ·
+  状态：实现子切片完成、07-S5 typed direct-call ABI 收紧部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：纯 signed i64 二参 typed thunks（add/sub/multiply/bitwise AND/OR/XOR）生成并调用
+  `zr_aot_typed_i64_fn_N(TZrInt64, TZrInt64)`，不再传 `state`；divide/modulo 仍保留 stateful ABI，
+  以保护 divide/modulo-by-zero error path。RED/GREEN：arithmetic smoke 7/0、bitwise smoke 6/0、
+  typed-call contracts 4/0、typed direct-call shared-library smoke 5/0；生成物 grep 确认 multiply/bitwise OR
+  state-free，divide stateful。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-i64-two-arg-state-free-typed-direct-call.md`。备注：07-S5 仍部分完成；
+  no/one/three-arg state-free ABI、u64/f64/bool ABI parity、full typed ABI、inline structs、in/out writeback、
+  完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 06:48:00 +08:00 · M1.5 / 07-S5 i64 bitwise binary expression return coverage ·
+  状态：覆盖子切片完成、07-S5 expression direct-return scalarization 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 `i64_bitwise_and_expr` generated-product 合同，锁定 `return left & right;` 生成 i64
+  MethodInfo signature、`hasReturnValue=1` 和 `ReturnI64(state, zr_aot_s2)`；生成物命中
+  `zr_aot_scalar_exec_i64_bitwise`，不命中 `zr_aot_bitwise_exec_binary`、
+  `SZrTypeValue *zr_aot_destination` 或 `zr_aot_value_exec_primitive_constant`。RED/GREEN：
+  覆盖 probe 直接通过，说明既有 binary bitwise scalar-local/result-local proof 已覆盖该形态，生产代码无需改动；
+  method-info signature 1/0，CTest `aot_c_method_info_signature` 1/1 passed。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-i64-bitwise-binary-expression-return.md`。备注：07-S5 仍部分完成；
+  full typed ABI、inline structs、in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 06:42:01 +08:00 · M1.5 / 07-S5 i64 bit-not expression return coverage ·
+  状态：覆盖子切片完成、07-S5 expression direct-return scalarization 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：新增 `i64_bit_not_expr` generated-product 合同，锁定 `return ~value;` 生成 i64 MethodInfo
+  signature、`hasReturnValue=1` 和 `ReturnI64(state, zr_aot_s1)`；生成物命中
+  `zr_aot_scalar_exec_i64_bit_not`，不命中 `zr_aot_bitwise_exec_unary`、
+  `SZrTypeValue *zr_aot_destination` 或 `zr_aot_value_exec_primitive_constant`。RED/GREEN：
+  覆盖 probe 直接通过，说明既有 bit-not scalar-local/result-local proof 已覆盖该形态，生产代码无需改动；
+  method-info signature 1/0，CTest `aot_c_method_info_signature` 1/1 passed。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-i64-bit-not-expression-return.md`。备注：07-S5 仍部分完成；
+  full typed ABI、inline structs、in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 06:32:09 +08:00 · M1.5 / 07-S5 i64 unary expression return scalarization ·
+  状态：子切片完成、07-S5 expression direct-return scalarization 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：script-level signed integer unary direct return（`return -value;`）现在把 `NEG_SIGNED` 识别为
+  i64 scalar-local result writer，并在可跳过 value slot 时生成 `zr_aot_scalar_exec_i64_unary` /
+  `zr_aot_sN = -zr_aot_sM`；`NEG_SIGNED` 也作为 signed i64 local consumer 参与 source constant
+  skip proof。生成 C 命中 i64 signature、`hasReturnValue=1`、`zr_aot_scalar_constant_i64_local` 和
+  `ReturnI64(state, zr_aot_s1)`；`SZrTypeValue *zr_aot_destination`、`zr_aot_value_exec_primitive_constant`
+  与旧 `zr_aot_arith_exec_signed_unary` 均无命中。RED/GREEN：
+  focused method-info signature test 先因 `i64_neg_expr` 仍命中 forbidden signed unary helper 失败 1/1；
+  严格 zero-materialization 检查又因 `SZrTypeValue *zr_aot_destination` 失败 1/1；实现后 method-info signature 1/0。
+  补充验证通过 return contracts 1/0、frame setup contracts 1/0、source contracts 19/0、typed scalar 1/0；
+  CTest `aot_c_method_info_signature` 1/1 passed。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-i64-unary-expression-return.md`。备注：07-S5 仍部分完成；
+  full typed ABI、inline structs、in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 06:04:14 +08:00 · M1.5 / 07-S5 f64 unary expression return scalarization ·
+  状态：子切片完成、07-S5 expression direct-return scalarization 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：script-level `float` unary direct return（`return -value;`）现在把 `NEG_FLOAT` 识别为 f64
+  scalar-local result writer，并在可跳过 value slot 时生成 `zr_aot_scalar_exec_f64_unary` /
+  `zr_aot_fN = -zr_aot_fM`。生成 C 命中 f64 signature、`hasReturnValue=1` 和 `ReturnF64(state, zr_aot_f1)`；
+  generic frame-slot return、expression result `SZrTypeValue *zr_aot_destination` 与旧
+  `zr_aot_arith_exec_float_unary` 均无命中。RED/GREEN：focused method-info signature test 先因 `f64_neg_expr`
+  缺失 return type 失败 1/1；一次 build+run 合并 GREEN 命令在 124s 工具超时，拆分构建后 method-info
+  signature 1/0。补充验证通过 return contracts 1/0、frame setup contracts 1/0、source contracts 19/0、
+  typed scalar 1/0；CTest `aot_c_method_info_signature` 1/1 passed。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-f64-unary-expression-return.md`。备注：07-S5 仍部分完成；
+  signed unary direct return、full typed ABI、inline structs、in/out writeback、完整 07-S5 acceptance、
+  性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 05:50:48 +08:00 · M1.5 / 07-S5 f64 comparison expression return scalarization ·
+  状态：子切片完成、07-S5 expression direct-return scalarization 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：script-level `float` comparison direct return（`return left > right;`）现在把 `LOGICAL_*_FLOAT`
+  识别为 f64 source consumer + bool scalar-local result writer。生成 C 命中 bool signature、`hasReturnValue=1`、
+  `zr_aot_scalar_exec_f64_compare` 和 `ReturnBool(state, zr_aot_b2)`；generic frame-slot return、
+  expression result `SZrTypeValue *zr_aot_destination` 与旧 `zr_aot_compare_exec_float` 均无命中。
+  RED/GREEN：focused method-info signature test 先因 `f64_bool_expr` 缺失 return type 失败 1/1；实现后
+  method-info signature 1/0。补充验证通过 return contracts 1/0、frame setup contracts 1/0、source contracts
+  19/0、typed scalar 1/0；CTest `aot_c_method_info_signature` 1/1 passed。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-f64-comparison-expression-return.md`。备注：07-S5 仍部分完成；
+  full typed ABI、inline structs、in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
+
+- 2026-06-24 05:30:05 +08:00 · M1.5 / 07-S5 expression direct-return scalarization ·
+  状态：子切片完成、07-S5 expression direct-return scalarization 部分完成、M1.5/07 部分完成、08-12 未开始 ·
+  完成项目：script-level bool/u64/f64 direct expression returns 现在从 typed expression result opcode
+  记录 scalar-local destination coverage，并让 `FUNCTION_RETURN` 使用 kind-based scalar return proof。
+  bool/u64/f64 expression cases 生成非空 return signature、`hasReturnValue=1`、对应 `baseType/staticCType`
+  和 `ReturnBool` / `ReturnU64` / `ReturnF64`；generic frame-slot return 与 expression result
+  `SZrTypeValue *zr_aot_destination` grep 均无命中。RED/GREEN：focused method-info signature test
+  先因 direct bool expression 缺失 return type 失败 1/1；实现后 method-info signature 1/0。补充验证通过
+  return contracts 1/0、frame setup contracts 1/0、source contracts 19/0、typed scalar 1/0；CTest
+  `aot_c_method_info_signature` 1/1 passed。产出：
+  `tests/acceptance/2026-06-24-aot-m1-5-expression-direct-return-scalarization.md`。备注：07-S5 仍部分完成；
+  full typed ABI、inline structs、in/out writeback、完整 07-S5 acceptance、性能/SZrValue 计数和 08-12 仍未完成。
 
 - 2026-06-24 05:06:03 +08:00 · M1.5 / 07-S5 script typed-local return route ·
   状态：子切片完成、07-S5 typed return boundary route 部分完成、M1.5/07 部分完成、08-12 未开始 ·

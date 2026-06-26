@@ -68,6 +68,20 @@ static const TZrChar *object_module_name_string(SZrState *state, const SZrObject
     return "<module>";
 }
 
+static TZrBool object_can_skip_new_owner_write_barrier_for_object(const SZrObject *object) {
+    return (TZrBool)(object != ZR_NULL &&
+                     object->super.garbageCollectMark.storageKind ==
+                             ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE);
+}
+
+static TZrBool object_can_skip_new_owner_write_barrier(const SZrTypeValue *receiver) {
+    return (TZrBool)(receiver != ZR_NULL &&
+                     (receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY) &&
+                     receiver->value.object != ZR_NULL &&
+                     receiver->value.object->garbageCollectMark.storageKind ==
+                             ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE);
+}
+
 static TZrBool object_module_guard_pending_export(SZrState *state,
                                                   SZrObject *object,
                                                   SZrString *memberName) {
@@ -817,13 +831,18 @@ static ZR_FORCE_INLINE void object_set_existing_pair_value_and_bump_member_versi
         SZrState *state,
         SZrObject *object,
         SZrHashKeyValuePair *pair,
-        const SZrTypeValue *value) {
+        const SZrTypeValue *value,
+        TZrBool skipWriteBarrier) {
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(object != ZR_NULL);
     ZR_ASSERT(pair != ZR_NULL);
     ZR_ASSERT(value != ZR_NULL);
 
-    ZrCore_Object_SetExistingPairValueUnchecked(state, object, pair, value);
+    if (skipWriteBarrier && object_can_skip_new_owner_write_barrier_for_object(object)) {
+        ZrCore_Object_SetExistingPairValueNoWriteBarrierUnchecked(state, object, pair, value);
+    } else {
+        ZrCore_Object_SetExistingPairValueUnchecked(state, object, pair, value);
+    }
     object->memberVersion++;
 }
 
@@ -1563,7 +1582,8 @@ static void object_set_value_core(SZrState *state,
                                   const SZrTypeValue *value,
                                   TZrBool objectStackRooted,
                                   TZrBool keyStackRooted,
-                                  TZrBool valueStackRooted) {
+                                  TZrBool valueStackRooted,
+                                  TZrBool skipWriteBarrier) {
     SZrTypeValue normalizedKey;
     const SZrTypeValue *storageKey = key;
     SZrHashSet *nodeMap;
@@ -1604,6 +1624,8 @@ static void object_set_value_core(SZrState *state,
         }
     }
 
+    skipWriteBarrier = (TZrBool)(skipWriteBarrier && object_can_skip_new_owner_write_barrier_for_object(object));
+
     if (!object_pin_raw_object_if_needed(
                 state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectStackRooted, &objectPinned) ||
         !object_pin_value_object_if_needed(state, value, valueStackRooted, &valuePinned)) {
@@ -1630,7 +1652,11 @@ static void object_set_value_core(SZrState *state,
     nodeMap = &object->nodeMap;
     pair = ZrCore_HashSet_Find(state, nodeMap, storageKey);
     if (pair != ZR_NULL) {
-        ZrCore_Object_SetExistingPairValueUnchecked(state, object, pair, value);
+        if (skipWriteBarrier) {
+            ZrCore_Object_SetExistingPairValueNoWriteBarrierUnchecked(state, object, pair, value);
+        } else {
+            ZrCore_Object_SetExistingPairValueUnchecked(state, object, pair, value);
+        }
         object->memberVersion++;
         object_unpin_value_object(state->global, value, valuePinned);
         object_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
@@ -1653,8 +1679,10 @@ static void object_set_value_core(SZrState *state,
         return;
     }
     ZrCore_Value_Copy(state, &pair->value, value);
-    ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->key);
-    ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->value);
+    if (!skipWriteBarrier) {
+        ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->key);
+        ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->value);
+    }
     object->memberVersion++;
     object_refresh_cached_string_lookup_pair(object, storageKey, pair);
     object_refresh_hidden_items_object_cache(state, object, storageKey, pair);
@@ -1664,7 +1692,7 @@ static void object_set_value_core(SZrState *state,
 }
 
 void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key, const SZrTypeValue *value) {
-    object_set_value_core(state, object, key, value, ZR_FALSE, ZR_FALSE, ZR_FALSE);
+    object_set_value_core(state, object, key, value, ZR_FALSE, ZR_FALSE, ZR_FALSE, ZR_FALSE);
 }
 
 void ZrCore_Object_SetExistingPairValueUnchecked(SZrState *state,
@@ -1687,10 +1715,32 @@ void ZrCore_Object_SetExistingPairValueUnchecked(SZrState *state,
     ZrCore_Object_SetExistingPairValueAfterFastMissUnchecked(state, object, pair, value);
 }
 
-void ZrCore_Object_SetExistingPairValueAfterFastMissUnchecked(SZrState *state,
-                                                              SZrObject *object,
-                                                              SZrHashKeyValuePair *pair,
-                                                              const SZrTypeValue *value) {
+static void object_set_existing_pair_value_after_fast_miss_unchecked_core(SZrState *state,
+                                                                          SZrObject *object,
+                                                                          SZrHashKeyValuePair *pair,
+                                                                          const SZrTypeValue *value,
+                                                                          TZrBool skipWriteBarrier);
+
+void ZrCore_Object_SetExistingPairValueNoWriteBarrierUnchecked(SZrState *state,
+                                                               SZrObject *object,
+                                                               SZrHashKeyValuePair *pair,
+                                                               const SZrTypeValue *value) {
+    if (state == ZR_NULL || object == ZR_NULL || pair == ZR_NULL || value == ZR_NULL) {
+        return;
+    }
+
+    if (!object_disable_raw_int_storage_for_generic_array_write(state, object)) {
+        return;
+    }
+
+    object_set_existing_pair_value_after_fast_miss_unchecked_core(state, object, pair, value, ZR_TRUE);
+}
+
+static void object_set_existing_pair_value_after_fast_miss_unchecked_core(SZrState *state,
+                                                                          SZrObject *object,
+                                                                          SZrHashKeyValuePair *pair,
+                                                                          const SZrTypeValue *value,
+                                                                          TZrBool skipWriteBarrier) {
     TZrBool shouldRefreshHiddenItemsCache;
 
     if (state == ZR_NULL || object == ZR_NULL || pair == ZR_NULL || value == ZR_NULL) {
@@ -1714,8 +1764,8 @@ void ZrCore_Object_SetExistingPairValueAfterFastMissUnchecked(SZrState *state,
         ZrCore_Value_Copy(state, &pair->value, value);
     }
 
-    if (ZrCore_Value_IsGarbageCollectable(&pair->value)) {
-        ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->value);
+    if (!skipWriteBarrier && ZrCore_Value_IsGarbageCollectable(&pair->value)) {
+        ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->value);
     }
     if (object->cachedStringLookupPair != pair) {
         object_refresh_cached_string_lookup_pair(object, &pair->key, pair);
@@ -1723,6 +1773,13 @@ void ZrCore_Object_SetExistingPairValueAfterFastMissUnchecked(SZrState *state,
     if (shouldRefreshHiddenItemsCache) {
         object_refresh_hidden_items_object_cache(state, object, &pair->key, pair);
     }
+}
+
+void ZrCore_Object_SetExistingPairValueAfterFastMissUnchecked(SZrState *state,
+                                                              SZrObject *object,
+                                                              SZrHashKeyValuePair *pair,
+                                                              const SZrTypeValue *value) {
+    object_set_existing_pair_value_after_fast_miss_unchecked_core(state, object, pair, value, ZR_FALSE);
 }
 
 #if defined(ZR_DEBUG)
@@ -2221,6 +2278,14 @@ TZrBool ZrCore_Object_TryGetMemberWithKeyFastUnchecked(struct SZrState *state,
     return ZR_FALSE;
 }
 
+static TZrBool object_set_member_with_key_unchecked_core(struct SZrState *state,
+                                                         SZrTypeValue *receiver,
+                                                         struct SZrString *memberName,
+                                                         const SZrTypeValue *memberKey,
+                                                         const SZrTypeValue *value,
+                                                         TZrBool stackOperandsGuaranteed,
+                                                         TZrBool skipWriteBarrier);
+
 TZrBool ZrCore_Object_SetMember(struct SZrState *state,
                                 SZrTypeValue *receiver,
                                 struct SZrString *memberName,
@@ -2238,6 +2303,32 @@ TZrBool ZrCore_Object_SetMember(struct SZrState *state,
 
     object_make_string_key_unchecked(state, memberName, &key);
     return ZrCore_Object_SetMemberWithKeyUnchecked(state, receiver, memberName, &key, value);
+}
+
+TZrBool ZrCore_Object_SetMemberAssumeNewOwnerNoWriteBarrier(struct SZrState *state,
+                                                            SZrTypeValue *receiver,
+                                                            struct SZrString *memberName,
+                                                            const SZrTypeValue *value) {
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if ((receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
+        receiver->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object_make_string_key_unchecked(state, memberName, &key);
+    return object_set_member_with_key_unchecked_core(
+            state,
+            receiver,
+            memberName,
+            &key,
+            value,
+            ZR_FALSE,
+            object_can_skip_new_owner_write_barrier(receiver));
 }
 
 TZrBool ZrCore_Object_GetMember(struct SZrState *state,
@@ -2476,7 +2567,8 @@ static TZrBool object_set_member_with_key_unchecked_core(struct SZrState *state,
                                                          struct SZrString *memberName,
                                                          const SZrTypeValue *memberKey,
                                                          const SZrTypeValue *value,
-                                                         TZrBool stackOperandsGuaranteed) {
+                                                         TZrBool stackOperandsGuaranteed,
+                                                         TZrBool skipWriteBarrier) {
     SZrObject *object;
     SZrObject *targetObject;
     SZrHashKeyValuePair *existingPair;
@@ -2540,7 +2632,8 @@ static TZrBool object_set_member_with_key_unchecked_core(struct SZrState *state,
             targetObject = descriptor->isStatic && prototype != ZR_NULL ? &prototype->super : object;
             targetPair = targetObject == object ? existingPair : object_get_own_pair_unchecked(state, targetObject, memberKey);
             if (targetPair != ZR_NULL) {
-                object_set_existing_pair_value_and_bump_member_version_unchecked(state, targetObject, targetPair, value);
+                object_set_existing_pair_value_and_bump_member_version_unchecked(
+                        state, targetObject, targetPair, value, skipWriteBarrier);
                 return ZR_TRUE;
             }
             object_set_value_core(state,
@@ -2549,17 +2642,20 @@ static TZrBool object_set_member_with_key_unchecked_core(struct SZrState *state,
                                   value,
                                   (TZrBool)(stackOperandsGuaranteed && targetObject == object),
                                   ZR_FALSE,
-                                  stackOperandsGuaranteed);
+                                  stackOperandsGuaranteed,
+                                  skipWriteBarrier);
             return ZR_TRUE;
         }
     }
 
     if (existingPair != ZR_NULL) {
-        object_set_existing_pair_value_and_bump_member_version_unchecked(state, object, existingPair, value);
+        object_set_existing_pair_value_and_bump_member_version_unchecked(
+                state, object, existingPair, value, skipWriteBarrier);
         return ZR_TRUE;
     }
     if (managedField != ZR_NULL) {
-        object_set_value_core(state, object, memberKey, value, stackOperandsGuaranteed, ZR_FALSE, stackOperandsGuaranteed);
+        object_set_value_core(
+                state, object, memberKey, value, stackOperandsGuaranteed, ZR_FALSE, stackOperandsGuaranteed, skipWriteBarrier);
         return ZR_TRUE;
     }
 
@@ -2571,7 +2667,8 @@ static TZrBool object_set_member_with_key_unchecked_core(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    object_set_value_core(state, object, memberKey, value, stackOperandsGuaranteed, ZR_FALSE, stackOperandsGuaranteed);
+    object_set_value_core(
+            state, object, memberKey, value, stackOperandsGuaranteed, ZR_FALSE, stackOperandsGuaranteed, skipWriteBarrier);
     return ZR_TRUE;
 }
 
@@ -2580,7 +2677,7 @@ TZrBool ZrCore_Object_SetMemberWithKeyUnchecked(struct SZrState *state,
                                                 struct SZrString *memberName,
                                                 const SZrTypeValue *memberKey,
                                                 const SZrTypeValue *value) {
-    return object_set_member_with_key_unchecked_core(state, receiver, memberName, memberKey, value, ZR_FALSE);
+    return object_set_member_with_key_unchecked_core(state, receiver, memberName, memberKey, value, ZR_FALSE, ZR_FALSE);
 }
 
 TZrBool ZrCore_Object_SetMemberWithKeyUncheckedStackOperands(struct SZrState *state,
@@ -2588,7 +2685,7 @@ TZrBool ZrCore_Object_SetMemberWithKeyUncheckedStackOperands(struct SZrState *st
                                                              struct SZrString *memberName,
                                                              const SZrTypeValue *memberKey,
                                                              const SZrTypeValue *value) {
-    return object_set_member_with_key_unchecked_core(state, receiver, memberName, memberKey, value, ZR_TRUE);
+    return object_set_member_with_key_unchecked_core(state, receiver, memberName, memberKey, value, ZR_TRUE, ZR_FALSE);
 }
 
 static TZrBool object_set_member_cached_descriptor_unchecked_core(struct SZrState *state,
@@ -2598,7 +2695,8 @@ static TZrBool object_set_member_cached_descriptor_unchecked_core(struct SZrStat
                                                                   SZrObjectPrototype *ownerPrototype,
                                                                   TZrUInt32 descriptorIndex,
                                                                   const SZrTypeValue *value,
-                                                                  TZrBool stackOperandsGuaranteed) {
+                                                                  TZrBool stackOperandsGuaranteed,
+                                                                  TZrBool skipWriteBarrier) {
     SZrObject *targetObject;
     SZrHashKeyValuePair *existingPair;
     SZrHashKeyValuePair *targetPair;
@@ -2654,7 +2752,8 @@ static TZrBool object_set_member_cached_descriptor_unchecked_core(struct SZrStat
         targetPair = targetObject == object ? object_get_own_pair_unchecked(state, object, &memberKey)
                                             : object_get_own_pair_unchecked(state, targetObject, &memberKey);
         if (targetPair != ZR_NULL) {
-            object_set_existing_pair_value_and_bump_member_version_unchecked(state, targetObject, targetPair, value);
+            object_set_existing_pair_value_and_bump_member_version_unchecked(
+                    state, targetObject, targetPair, value, skipWriteBarrier);
             return ZR_TRUE;
         }
         object_set_value_core(state,
@@ -2663,18 +2762,21 @@ static TZrBool object_set_member_cached_descriptor_unchecked_core(struct SZrStat
                               value,
                               (TZrBool)(stackOperandsGuaranteed && targetObject == object),
                               ZR_FALSE,
-                              stackOperandsGuaranteed);
+                              stackOperandsGuaranteed,
+                              skipWriteBarrier);
         return ZR_TRUE;
     }
 
     existingPair = object_get_own_pair_unchecked(state, object, &memberKey);
     managedField = object_prototype_find_managed_field(ownerPrototype, descriptor->name, ZR_TRUE);
     if (existingPair != ZR_NULL) {
-        object_set_existing_pair_value_and_bump_member_version_unchecked(state, object, existingPair, value);
+        object_set_existing_pair_value_and_bump_member_version_unchecked(
+                state, object, existingPair, value, skipWriteBarrier);
         return ZR_TRUE;
     }
     if (managedField != ZR_NULL) {
-        object_set_value_core(state, object, &memberKey, value, stackOperandsGuaranteed, ZR_FALSE, stackOperandsGuaranteed);
+        object_set_value_core(
+                state, object, &memberKey, value, stackOperandsGuaranteed, ZR_FALSE, stackOperandsGuaranteed, skipWriteBarrier);
         return ZR_TRUE;
     }
 
@@ -2687,7 +2789,8 @@ static TZrBool object_set_member_cached_descriptor_unchecked_core(struct SZrStat
         return ZR_FALSE;
     }
 
-    object_set_value_core(state, object, &memberKey, value, stackOperandsGuaranteed, ZR_FALSE, stackOperandsGuaranteed);
+    object_set_value_core(
+            state, object, &memberKey, value, stackOperandsGuaranteed, ZR_FALSE, stackOperandsGuaranteed, skipWriteBarrier);
     return ZR_TRUE;
 }
 
@@ -2706,7 +2809,7 @@ TZrBool ZrCore_Object_SetMemberCachedDescriptorUnchecked(struct SZrState *state,
     isPrototypeReceiver =
             (TZrBool)(object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE);
     return object_set_member_cached_descriptor_unchecked_core(
-            state, receiver, object, isPrototypeReceiver, ownerPrototype, descriptorIndex, value, ZR_FALSE);
+            state, receiver, object, isPrototypeReceiver, ownerPrototype, descriptorIndex, value, ZR_FALSE, ZR_FALSE);
 }
 
 TZrBool ZrCore_Object_SetMemberCachedDescriptorUncheckedStackOperands(struct SZrState *state,
@@ -2724,7 +2827,7 @@ TZrBool ZrCore_Object_SetMemberCachedDescriptorUncheckedStackOperands(struct SZr
     isPrototypeReceiver =
             (TZrBool)(object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE);
     return object_set_member_cached_descriptor_unchecked_core(
-            state, receiver, object, isPrototypeReceiver, ownerPrototype, descriptorIndex, value, ZR_TRUE);
+            state, receiver, object, isPrototypeReceiver, ownerPrototype, descriptorIndex, value, ZR_TRUE, ZR_FALSE);
 }
 
 static TZrBool object_try_set_member_with_key_fast_unchecked_core(struct SZrState *state,
@@ -2793,7 +2896,8 @@ static TZrBool object_try_set_member_with_key_fast_unchecked_core(struct SZrStat
             targetObject = descriptor->isStatic && prototype != ZR_NULL ? &prototype->super : object;
             targetPair = targetObject == object ? existingPair : object_get_own_pair_unchecked(state, targetObject, memberKey);
             if (targetPair != ZR_NULL) {
-                object_set_existing_pair_value_and_bump_member_version_unchecked(state, targetObject, targetPair, value);
+                object_set_existing_pair_value_and_bump_member_version_unchecked(
+                        state, targetObject, targetPair, value, ZR_FALSE);
                 *outHandled = ZR_TRUE;
                 return ZR_TRUE;
             }
@@ -2803,19 +2907,22 @@ static TZrBool object_try_set_member_with_key_fast_unchecked_core(struct SZrStat
                                   value,
                                   (TZrBool)(stackOperandsGuaranteed && targetObject == object),
                                   ZR_FALSE,
-                                  stackOperandsGuaranteed);
+                                  stackOperandsGuaranteed,
+                                  ZR_FALSE);
             *outHandled = ZR_TRUE;
             return ZR_TRUE;
         }
     }
 
     if (existingPair != ZR_NULL) {
-        object_set_existing_pair_value_and_bump_member_version_unchecked(state, object, existingPair, value);
+        object_set_existing_pair_value_and_bump_member_version_unchecked(
+                state, object, existingPair, value, ZR_FALSE);
         *outHandled = ZR_TRUE;
         return ZR_TRUE;
     }
     if (managedField != ZR_NULL) {
-        object_set_value_core(state, object, memberKey, value, stackOperandsGuaranteed, ZR_FALSE, stackOperandsGuaranteed);
+        object_set_value_core(
+                state, object, memberKey, value, stackOperandsGuaranteed, ZR_FALSE, stackOperandsGuaranteed, ZR_FALSE);
         *outHandled = ZR_TRUE;
         return ZR_TRUE;
     }
@@ -2830,7 +2937,8 @@ static TZrBool object_try_set_member_with_key_fast_unchecked_core(struct SZrStat
         return ZR_FALSE;
     }
 
-    object_set_value_core(state, object, memberKey, value, stackOperandsGuaranteed, ZR_FALSE, stackOperandsGuaranteed);
+    object_set_value_core(
+            state, object, memberKey, value, stackOperandsGuaranteed, ZR_FALSE, stackOperandsGuaranteed, ZR_FALSE);
     *outHandled = ZR_TRUE;
     return ZR_TRUE;
 }
@@ -3164,6 +3272,13 @@ TZrBool ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperands(struct SZrSta
     return object_try_get_by_index_readonly_inline_fast_stack_operands(state, receiver, key, result);
 }
 
+static ZR_FORCE_INLINE TZrBool object_set_by_index_unchecked_core(SZrState *state,
+                                                                  SZrTypeValue *receiver,
+                                                                  const SZrTypeValue *key,
+                                                                  const SZrTypeValue *value,
+                                                                  TZrBool stackOperandsGuaranteed,
+                                                                  TZrBool skipWriteBarrier);
+
 TZrBool ZrCore_Object_SetByIndex(struct SZrState *state,
                                  SZrTypeValue *receiver,
                                  const SZrTypeValue *key,
@@ -3178,6 +3293,23 @@ TZrBool ZrCore_Object_SetByIndex(struct SZrState *state,
     }
 
     return ZrCore_Object_SetByIndexUnchecked(state, receiver, key, value);
+}
+
+TZrBool ZrCore_Object_SetByIndexAssumeNewOwnerNoWriteBarrier(struct SZrState *state,
+                                                             SZrTypeValue *receiver,
+                                                             const SZrTypeValue *key,
+                                                             const SZrTypeValue *value) {
+    if (state == ZR_NULL || receiver == ZR_NULL || key == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if ((receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
+        receiver->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return object_set_by_index_unchecked_core(
+            state, receiver, key, value, ZR_FALSE, object_can_skip_new_owner_write_barrier(receiver));
 }
 
 TZrBool ZrCore_Object_GetByIndex(struct SZrState *state,
@@ -3200,7 +3332,8 @@ static ZR_FORCE_INLINE TZrBool object_set_by_index_unchecked_core(SZrState *stat
                                                                   SZrTypeValue *receiver,
                                                                   const SZrTypeValue *key,
                                                                   const SZrTypeValue *value,
-                                                                  TZrBool stackOperandsGuaranteed) {
+                                                                  TZrBool stackOperandsGuaranteed,
+                                                                  TZrBool skipWriteBarrier) {
     SZrObject *object;
     SZrObjectPrototype *prototype;
     SZrIndexContract *indexContract;
@@ -3342,7 +3475,8 @@ static ZR_FORCE_INLINE TZrBool object_set_by_index_unchecked_core(SZrState *stat
     }
 
     object_set_value_core(
-            state, object, key, value, stackOperandsGuaranteed, stackOperandsGuaranteed, stackOperandsGuaranteed);
+            state, object, key, value, stackOperandsGuaranteed, stackOperandsGuaranteed, stackOperandsGuaranteed,
+            skipWriteBarrier);
     return ZR_TRUE;
 }
 
@@ -3350,14 +3484,14 @@ TZrBool ZrCore_Object_SetByIndexUnchecked(struct SZrState *state,
                                           SZrTypeValue *receiver,
                                           const SZrTypeValue *key,
                                           const SZrTypeValue *value) {
-    return object_set_by_index_unchecked_core(state, receiver, key, value, ZR_FALSE);
+    return object_set_by_index_unchecked_core(state, receiver, key, value, ZR_FALSE, ZR_FALSE);
 }
 
 TZrBool ZrCore_Object_SetByIndexUncheckedStackOperands(struct SZrState *state,
                                                        SZrTypeValue *receiver,
                                                        const SZrTypeValue *key,
                                                        const SZrTypeValue *value) {
-    return object_set_by_index_unchecked_core(state, receiver, key, value, ZR_TRUE);
+    return object_set_by_index_unchecked_core(state, receiver, key, value, ZR_TRUE, ZR_FALSE);
 }
 
 TZrBool ZrCore_Object_TrySetByIndexReadonlyInlineFastStackOperands(struct SZrState *state,

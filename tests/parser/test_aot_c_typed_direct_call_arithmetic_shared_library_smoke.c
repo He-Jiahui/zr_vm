@@ -1,11 +1,11 @@
 #include "aot_c_typed_direct_call_arithmetic_smoke_support.h"
 
 static const char *const i64_two_arg_multiply_needles[] = {
-        "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);",
-        "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {",
+        "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);",
+        "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {",
         "return (TZrInt64)(zr_aot_arg0 * zr_aot_arg1);",
         "/* zr_aot_static_i64_two_arg_direct_call */",
-        "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+        "zr_aot_typed_i64_fn_1(zr_aot_s",
 };
 
 static const char *const i64_two_arg_divide_needles[] = {
@@ -27,35 +27,35 @@ static const char *const i64_two_arg_modulo_needles[] = {
 };
 
 static const char *const i64_two_arg_bitwise_and_needles[] = {
-        "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);",
-        "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {",
+        "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);",
+        "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {",
         "return (TZrInt64)(zr_aot_arg0 & zr_aot_arg1);",
         "/* zr_aot_static_i64_two_arg_direct_call */",
-        "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+        "zr_aot_typed_i64_fn_1(zr_aot_s",
 };
 
 static const char *const i64_one_arg_multiply_const_needles[] = {
-        "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0);",
-        "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0) {",
+        "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0);",
+        "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0) {",
         "return (TZrInt64)(zr_aot_arg0 * (TZrInt64)21);",
         "/* zr_aot_static_i64_one_arg_direct_call */",
-        "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+        "zr_aot_typed_i64_fn_1(zr_aot_s",
 };
 
 static const char *const i64_one_arg_subtract_const_needles[] = {
-        "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0);",
-        "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0) {",
+        "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0);",
+        "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0) {",
         "return (TZrInt64)(zr_aot_arg0 - (TZrInt64)8);",
         "/* zr_aot_static_i64_one_arg_direct_call */",
-        "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+        "zr_aot_typed_i64_fn_1(zr_aot_s",
 };
 
 static const char *const i64_one_arg_negate_needles[] = {
-        "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0);",
-        "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0) {",
+        "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0);",
+        "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0) {",
         "return (TZrInt64)(-zr_aot_arg0);",
         "/* zr_aot_static_i64_one_arg_direct_call */",
-        "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+        "zr_aot_typed_i64_fn_1(zr_aot_s",
 };
 
 static const SZrAotTypedDirectCallArithmeticSmokeCase i64_two_arg_multiply_case = {

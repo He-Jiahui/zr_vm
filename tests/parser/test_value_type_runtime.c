@@ -1,5 +1,6 @@
 #include "unity.h"
 
+#include <stddef.h>
 #include <string.h>
 
 #include "harness/runtime_support.h"
@@ -11,8 +12,11 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/type_layout.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser/compiler.h"
+
+#define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
 void setUp(void) {}
 
@@ -68,7 +72,30 @@ static TZrBool point_payload_equals(const SZrStackFramePlace *place,
                                     TZrInt64 x,
                                     TZrInt64 y) {
     return (TZrBool)(point_field_value_equals(place, xLayout, x) &&
-                     point_field_value_equals(place, yLayout, y));
+                      point_field_value_equals(place, yLayout, y));
+}
+
+typedef struct SZrTypeLayoutGcVisitRecord {
+    SZrTypeValue *values[4];
+    TZrUInt32 count;
+} SZrTypeLayoutGcVisitRecord;
+
+typedef struct SZrTypeLayoutGcOffsetStorage {
+    SZrTypeValue first;
+    TZrByte padding[8];
+    SZrTypeValue second;
+} SZrTypeLayoutGcOffsetStorage;
+
+static void record_gc_value_visit(SZrState *state, SZrTypeValue *value, TZrPtr userData) {
+    SZrTypeLayoutGcVisitRecord *record = (SZrTypeLayoutGcVisitRecord *)userData;
+
+    ZR_UNUSED_PARAMETER(state);
+    TEST_ASSERT_NOT_NULL(record);
+    TEST_ASSERT_NOT_NULL(value);
+    TEST_ASSERT_LESS_THAN_UINT32(ARRAY_COUNT(record->values), record->count);
+
+    record->values[record->count] = value;
+    record->count++;
 }
 
 static TZrBool inline_point_frame_has_expected_payloads(SZrState *state,
@@ -733,6 +760,60 @@ static void test_inline_nested_struct_field_copy_and_mutation_are_by_value(void)
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_type_layout_visit_gc_values_uses_metadata_offsets_when_available(void) {
+    static const TZrUInt32 gcOffsets[] = {
+            (TZrUInt32)offsetof(SZrTypeLayoutGcOffsetStorage, first),
+            (TZrUInt32)offsetof(SZrTypeLayoutGcOffsetStorage, second),
+    };
+    static const SZrTypeLayoutField fields[] = {
+            {
+                    (TZrUInt32)offsetof(SZrTypeLayoutGcOffsetStorage, first),
+                    (TZrUInt32)sizeof(SZrTypeValue),
+                    0u,
+                    ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT | ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE,
+                    0u,
+            },
+            {
+                    (TZrUInt32)offsetof(SZrTypeLayoutGcOffsetStorage, first),
+                    (TZrUInt32)sizeof(SZrTypeValue),
+                    0u,
+                    ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT | ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE,
+                    0u,
+            },
+    };
+    static const SZrTypeLayoutMetadata metadata = {
+            77u,
+            gcOffsets,
+            ZR_NULL,
+    };
+    SZrTypeLayoutGcOffsetStorage storage;
+    SZrTypeLayoutGcVisitRecord record;
+    SZrTypeLayout layout;
+
+    memset(&storage, 0, sizeof(storage));
+    memset(&record, 0, sizeof(record));
+    ZrCore_Value_InitAsInt(ZR_NULL, &storage.first, 11);
+    ZrCore_Value_InitAsInt(ZR_NULL, &storage.second, 22);
+
+    ZrCore_TypeLayout_InitStructWithMetadata(&layout,
+                                             (TZrUInt32)sizeof(storage),
+                                             (TZrUInt32)ZR_ALIGN_SIZE,
+                                             ZR_TYPE_LAYOUT_COPY_KIND_FIELD_COPY,
+                                             ZR_TYPE_LAYOUT_DROP_KIND_FIELD_DROP,
+                                             fields,
+                                             ARRAY_COUNT(fields),
+                                             &metadata);
+
+    TEST_ASSERT_EQUAL_UINT32(2u, layout.gcFieldCount);
+    TEST_ASSERT_EQUAL_PTR(gcOffsets, layout.gcFieldOffsets);
+
+    ZrCore_TypeLayout_VisitGcValues(ZR_NULL, &layout, &storage, record_gc_value_visit, &record);
+
+    TEST_ASSERT_EQUAL_UINT32(2u, record.count);
+    TEST_ASSERT_EQUAL_PTR(&storage.first, record.values[0]);
+    TEST_ASSERT_EQUAL_PTR(&storage.second, record.values[1]);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_inline_struct_local_field_get_set_executes_from_frame_layout);
@@ -748,5 +829,6 @@ int main(void) {
     RUN_TEST(test_inline_struct_string_field_return_is_by_value);
     RUN_TEST(test_inline_struct_constructor_copies_inline_struct_field_argument);
     RUN_TEST(test_inline_nested_struct_field_copy_and_mutation_are_by_value);
+    RUN_TEST(test_type_layout_visit_gc_values_uses_metadata_offsets_when_available);
     return UNITY_END();
 }

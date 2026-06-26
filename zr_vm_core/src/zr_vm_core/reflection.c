@@ -11,6 +11,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/runtime_decorator.h"
 #include "zr_vm_core/string.h"
@@ -1577,10 +1578,49 @@ static TZrBool reflection_should_hide_duplicate_callable_export(SZrState *state,
     return ZR_FALSE;
 }
 
+static void reflection_apply_type_layout_to_layout_object(SZrState *state,
+                                                          SZrObject *layoutObject,
+                                                          const SZrTypeLayout *typeLayout) {
+    if (state == ZR_NULL || layoutObject == ZR_NULL || typeLayout == ZR_NULL) {
+        return;
+    }
+
+    reflection_set_field_int(state, layoutObject, "fieldCount", typeLayout->fieldCount);
+    reflection_set_field_int(state, layoutObject, "size", typeLayout->byteSize);
+    reflection_set_field_int(state, layoutObject, "alignment", typeLayout->byteAlign);
+}
+
+static void reflection_apply_field_layout_to_member(SZrState *state,
+                                                    SZrObject *memberReflection,
+                                                    const SZrTypeLayoutField *registryField) {
+    SZrObject *layoutObject;
+
+    if (state == ZR_NULL || memberReflection == ZR_NULL || registryField == ZR_NULL) {
+        return;
+    }
+
+    layoutObject = reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT);
+    reflection_set_field_int(state, memberReflection, "offset", registryField->byteOffset);
+    reflection_set_field_int(state, memberReflection, "size", registryField->byteSize);
+    reflection_set_field_int(state, layoutObject, "offset", registryField->byteOffset);
+    reflection_set_field_int(state, layoutObject, "size", registryField->byteSize);
+    reflection_set_field_int(state, layoutObject, "alignment", registryField->byteSize > 0u ? registryField->byteSize : 0u);
+}
+
+static const SZrTypeLayoutField *reflection_find_registry_field_by_instance_index(const SZrTypeLayout *typeLayout,
+                                                                                  TZrUInt32 instanceFieldIndex) {
+    if (typeLayout == ZR_NULL || typeLayout->fields == ZR_NULL || instanceFieldIndex >= typeLayout->fieldCount) {
+        return ZR_NULL;
+    }
+
+    return &typeLayout->fields[instanceFieldIndex];
+}
+
 static void reflection_populate_type_layout(SZrState *state,
                                             SZrObject *typeReflection,
                                             SZrObjectPrototype *prototype,
-                                            SZrObject *nativeTypeEntry) {
+                                            SZrObject *nativeTypeEntry,
+                                            const SZrTypeLayout *typeLayout) {
     SZrObject *layoutObject;
     TZrUInt32 fieldCount = 0;
     TZrUInt32 size = 0;
@@ -1593,6 +1633,11 @@ static void reflection_populate_type_layout(SZrState *state,
 
     layoutObject = reflection_get_field_object(state, typeReflection, "layout", ZR_VALUE_TYPE_OBJECT);
     if (layoutObject == ZR_NULL) {
+        return;
+    }
+
+    if (typeLayout != ZR_NULL) {
+        reflection_apply_type_layout_to_layout_object(state, layoutObject, typeLayout);
         return;
     }
 
@@ -2287,8 +2332,11 @@ ZR_CORE_API SZrObject *ZrCore_Reflection_BuildDecoratorTargetMemberReflection(SZ
     SZrObject *moduleReflection = ZR_NULL;
     SZrObject *membersObject = ZR_NULL;
     const TZrByte *membersBase;
+    const SZrTypeLayout *typeLayout = ZR_NULL;
     const TZrChar *qualifiedTypeName;
     const TZrChar *memberNameText;
+    TZrUInt32 typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    TZrUInt32 instanceFieldIndex = 0u;
     EZrRuntimeDecoratorTargetKind targetKind;
 
     if (state == ZR_NULL || prototype == ZR_NULL || memberName == ZR_NULL) {
@@ -2316,6 +2364,9 @@ ZR_CORE_API SZrObject *ZrCore_Reflection_BuildDecoratorTargetMemberReflection(SZ
     if (prototypeInfo == ZR_NULL) {
         return ZR_NULL;
     }
+
+    typeLayout = ZrCore_MetadataRuntime_ResolveFunctionPrototypeTypeLayout(entryFunction, prototype, &typeLayoutId);
+    (void)typeLayoutId;
 
     typeReflection = reflection_build_type_reflection(state, prototype, module, entryFunction, ZR_NULL);
     if (typeReflection == ZR_NULL) {
@@ -2401,6 +2452,7 @@ ZR_CORE_API SZrObject *ZrCore_Reflection_BuildDecoratorTargetMemberReflection(SZ
         const SZrCompiledMemberInfo *member = (const SZrCompiledMemberInfo *)(membersBase +
                                                                               (sizeof(SZrCompiledMemberInfo) *
                                                                                memberIndex));
+        const SZrTypeLayoutField *registryField = ZR_NULL;
         const SZrTypeValue *memberNameValue;
         SZrString *compiledName;
         const TZrChar *compiledNameText;
@@ -2409,6 +2461,13 @@ ZR_CORE_API SZrObject *ZrCore_Reflection_BuildDecoratorTargetMemberReflection(SZ
         const TZrChar *returnTypeName;
         TZrChar qualifiedMemberName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
         SZrObject *memberReflection;
+
+        if ((member->memberType == ZR_AST_CONSTANT_STRUCT_FIELD ||
+             member->memberType == ZR_AST_CONSTANT_CLASS_FIELD) &&
+            !member->isStatic) {
+            registryField = reflection_find_registry_field_by_instance_index(typeLayout, instanceFieldIndex);
+            instanceFieldIndex++;
+        }
 
         if (member->nameStringIndex >= entryFunction->constantValueLength) {
             continue;
@@ -2467,20 +2526,26 @@ ZR_CORE_API SZrObject *ZrCore_Reflection_BuildDecoratorTargetMemberReflection(SZ
                                         memberReflection,
                                         "typeName",
                                         fieldTypeName != ZR_NULL ? fieldTypeName : "any");
-            reflection_set_field_int(state, memberReflection, "offset", member->fieldOffset);
-            reflection_set_field_int(state, memberReflection, "size", member->fieldSize);
-            reflection_set_field_int(state,
-                                     reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
-                                     "offset",
-                                     member->fieldOffset);
-            reflection_set_field_int(state,
-                                     reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
-                                     "size",
-                                     member->fieldSize);
-            reflection_set_field_int(state,
-                                     reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
-                                     "alignment",
-                                     member->fieldSize > 0 ? member->fieldSize : 0);
+            {
+                if (registryField != ZR_NULL) {
+                    reflection_apply_field_layout_to_member(state, memberReflection, registryField);
+                } else {
+                    reflection_set_field_int(state, memberReflection, "offset", member->fieldOffset);
+                    reflection_set_field_int(state, memberReflection, "size", member->fieldSize);
+                    reflection_set_field_int(state,
+                                             reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
+                                             "offset",
+                                             member->fieldOffset);
+                    reflection_set_field_int(state,
+                                             reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
+                                             "size",
+                                             member->fieldSize);
+                    reflection_set_field_int(state,
+                                             reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
+                                             "alignment",
+                                             member->fieldSize > 0 ? member->fieldSize : 0);
+                }
+            }
             reflection_set_field_int(state,
                                      reflection_get_field_object(state, memberReflection, "ownership", ZR_VALUE_TYPE_OBJECT),
                                      "qualifier",
@@ -2605,7 +2670,8 @@ static void reflection_populate_script_members(SZrState *state,
                                                SZrObject *typeReflection,
                                                SZrObject *moduleReflection,
                                                SZrFunction *entryFunction,
-                                               SZrObjectPrototype *prototype) {
+                                               SZrObjectPrototype *prototype,
+                                               const SZrTypeLayout *typeLayout) {
     const SZrCompiledPrototypeInfo *prototypeInfo;
     const TZrByte *membersBase;
     SZrObject *membersObject;
@@ -2693,9 +2759,11 @@ static void reflection_populate_script_members(SZrState *state,
         reflection_set_field_int(state, memberReflection, "declarationOrder", member->declarationOrder);
 
         if (strcmp(kind, "field") == 0) {
+            const SZrTypeLayoutField *registryField = ZR_NULL;
             if (!member->isStatic) {
                 TZrUInt32 fieldSize = member->fieldSize > 0 ? member->fieldSize : 1u;
                 TZrUInt32 fieldEnd = member->fieldOffset + fieldSize;
+                registryField = reflection_find_registry_field_by_instance_index(typeLayout, scriptFieldCount);
                 scriptFieldCount++;
                 if (!hasScriptLayout && fieldEnd > scriptSize) {
                     scriptSize = fieldEnd;
@@ -2705,20 +2773,26 @@ static void reflection_populate_script_members(SZrState *state,
                 }
             }
             reflection_set_field_string(state, memberReflection, "typeName", fieldTypeName != ZR_NULL ? fieldTypeName : "any");
-            reflection_set_field_int(state, memberReflection, "offset", member->fieldOffset);
-            reflection_set_field_int(state, memberReflection, "size", member->fieldSize);
-            reflection_set_field_int(state,
-                                     reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
-                                     "offset",
-                                     member->fieldOffset);
-            reflection_set_field_int(state,
-                                     reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
-                                     "size",
-                                     member->fieldSize);
-            reflection_set_field_int(state,
-                                     reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
-                                     "alignment",
-                                     member->fieldSize > 0 ? member->fieldSize : 0);
+            {
+                if (registryField != ZR_NULL) {
+                    reflection_apply_field_layout_to_member(state, memberReflection, registryField);
+                } else {
+                    reflection_set_field_int(state, memberReflection, "offset", member->fieldOffset);
+                    reflection_set_field_int(state, memberReflection, "size", member->fieldSize);
+                    reflection_set_field_int(state,
+                                             reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
+                                             "offset",
+                                             member->fieldOffset);
+                    reflection_set_field_int(state,
+                                             reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
+                                             "size",
+                                             member->fieldSize);
+                    reflection_set_field_int(state,
+                                             reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
+                                             "alignment",
+                                             member->fieldSize > 0 ? member->fieldSize : 0);
+                }
+            }
             reflection_set_field_int(state,
                                      reflection_get_field_object(state, memberReflection, "ownership", ZR_VALUE_TYPE_OBJECT),
                                      "qualifier",
@@ -2788,7 +2862,9 @@ static void reflection_populate_script_members(SZrState *state,
                                    memberReflection);
     }
 
-    if (layoutObject != ZR_NULL && (scriptFieldCount > 0 || scriptSize > 0 || scriptAlignment > 0)) {
+    if (typeLayout == ZR_NULL &&
+        layoutObject != ZR_NULL &&
+        (scriptFieldCount > 0 || scriptSize > 0 || scriptAlignment > 0)) {
         reflection_set_field_int(state, layoutObject, "fieldCount", scriptFieldCount);
         reflection_set_field_int(state, layoutObject, "size", scriptSize);
         reflection_set_field_int(state, layoutObject, "alignment", scriptAlignment);
@@ -3518,6 +3594,8 @@ static SZrObject *reflection_build_type_reflection(SZrState *state,
     const TZrChar *extendsTypeName = ZR_NULL;
     TZrChar qualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
     TZrChar extendsTypeNameBuffer[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
+    const SZrTypeLayout *typeLayout = ZR_NULL;
+    TZrUInt32 typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
 
     if (state == ZR_NULL || (prototype == ZR_NULL && nativeTypeEntry == ZR_NULL)) {
         return ZR_NULL;
@@ -3533,6 +3611,11 @@ static SZrObject *reflection_build_type_reflection(SZrState *state,
 
     if (prototype != ZR_NULL && (module == ZR_NULL || entryFunction == ZR_NULL)) {
         reflection_get_prototype_metadata_context(state, prototype, &module, &entryFunction);
+    }
+
+    if (prototype != ZR_NULL && entryFunction != ZR_NULL) {
+        typeLayout = ZrCore_MetadataRuntime_ResolveFunctionPrototypeTypeLayout(entryFunction, prototype, &typeLayoutId);
+        (void)typeLayoutId;
     }
 
     name = prototype != ZR_NULL && prototype->name != ZR_NULL
@@ -3604,10 +3687,10 @@ static SZrObject *reflection_build_type_reflection(SZrState *state,
                                     nativeTypeEntry,
                                     ZR_VALUE_TYPE_OBJECT);
     } else if (prototype != ZR_NULL && entryFunction != ZR_NULL) {
-        reflection_populate_script_members(state, typeReflection, moduleReflection, entryFunction, prototype);
+        reflection_populate_script_members(state, typeReflection, moduleReflection, entryFunction, prototype, typeLayout);
     }
 
-    reflection_populate_type_layout(state, typeReflection, prototype, nativeTypeEntry);
+    reflection_populate_type_layout(state, typeReflection, prototype, nativeTypeEntry, typeLayout);
 
     return typeReflection;
 }

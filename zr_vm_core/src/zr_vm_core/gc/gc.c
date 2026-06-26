@@ -4,6 +4,8 @@
 
 #include "gc/gc_internal.h"
 
+#include "zr_vm_common/zr_aot_abi.h"
+
 #if defined(ZR_PLATFORM_WIN)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -179,6 +181,47 @@ static void garbage_collector_record_step_telemetry(SZrGarbageCollector *collect
     }
 
     garbage_collector_refresh_cumulative_snapshot(collector);
+}
+
+TZrBool ZrCore_Gc_AotRootFramePush(SZrState *state,
+                                    SZrAotGcRootFrame *frame,
+                                    TZrStackValuePointer frameBase,
+                                    const struct SZrAotGcRootMap *rootMap) {
+    if (state == ZR_NULL ||
+        frame == ZR_NULL ||
+        frameBase == ZR_NULL ||
+        rootMap == ZR_NULL ||
+        rootMap->rootCount == 0u ||
+        rootMap->roots == ZR_NULL ||
+        state->aotGcRootFrameDepth == UINT32_MAX) {
+        return ZR_FALSE;
+    }
+
+    frame->rootMap = rootMap;
+    frame->frameBase = frameBase;
+    frame->previous = state->aotGcRootFrameStack;
+    state->aotGcRootFrameStack = frame;
+    state->aotGcRootFrameDepth++;
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Gc_AotRootFramePop(SZrState *state, SZrAotGcRootFrame *frame) {
+    if (state == ZR_NULL || frame == ZR_NULL || state->aotGcRootFrameStack != frame) {
+        return ZR_FALSE;
+    }
+
+    state->aotGcRootFrameStack = frame->previous;
+    if (state->aotGcRootFrameDepth > 0u) {
+        state->aotGcRootFrameDepth--;
+    }
+    frame->rootMap = ZR_NULL;
+    frame->frameBase = ZR_NULL;
+    frame->previous = ZR_NULL;
+    return ZR_TRUE;
+}
+
+TZrUInt32 ZrCore_Gc_AotRootFrameDepth(const SZrState *state) {
+    return state != ZR_NULL ? state->aotGcRootFrameDepth : 0u;
 }
 
 static TZrUInt32 garbage_collector_merge_scope_depth(TZrUInt32 currentScopeDepth, TZrUInt32 incomingScopeDepth) {
@@ -874,4 +917,95 @@ void ZrCore_GarbageCollector_CheckGc(SZrState *state) {
         ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
     }
 #endif
+}
+
+void ZrCore_Gc_SafePoint(SZrState *state) {
+    ZrCore_GarbageCollector_CheckGc(state);
+}
+
+void ZrCore_Gc_WriteBarrier(SZrState *state, SZrRawObject *ownerObject, SZrTypeValue *value) {
+    ZrCore_Value_Barrier(state, ownerObject, value);
+}
+
+static void garbage_collector_reset_native_call_pin(SZrGcNativeCallPin *pin) {
+    if (pin == ZR_NULL) {
+        return;
+    }
+
+    pin->object = ZR_NULL;
+    pin->pinKind = ZR_GARBAGE_COLLECT_PIN_KIND_NONE;
+    pin->ignoredAddedByCaller = ZR_FALSE;
+    pin->pinKindAddedByCaller = ZR_FALSE;
+}
+
+TZrBool ZrCore_Gc_NativeCallPinObject(SZrState *state, SZrRawObject *object, SZrGcNativeCallPin *pin) {
+    TZrUInt32 previousPinFlags;
+    TZrBool wasIgnored;
+    TZrBool ignoredAddedAfterPin = ZR_FALSE;
+
+    if (pin == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    garbage_collector_reset_native_call_pin(pin);
+    if (object == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    pin->object = object;
+    pin->pinKind = ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE;
+    wasIgnored = ZrCore_GarbageCollector_IsObjectIgnoredFast(state->global, object);
+    previousPinFlags = object->garbageCollectMark.pinFlags;
+    if ((previousPinFlags & ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE) == 0u) {
+        pin->pinKindAddedByCaller = ZR_TRUE;
+    }
+    ZrCore_GarbageCollector_PinObject(state, object, ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
+    if (!ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(state->global,
+                                                          state,
+                                                          object,
+                                                          &ignoredAddedAfterPin)) {
+        if (pin->pinKindAddedByCaller) {
+            object->garbageCollectMark.pinFlags &= (TZrUInt32)~((TZrUInt32)pin->pinKind);
+        }
+        garbage_collector_reset_native_call_pin(pin);
+        return ZR_FALSE;
+    }
+    pin->ignoredAddedByCaller = !wasIgnored && ignoredAddedAfterPin;
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Gc_NativeCallPinValue(SZrState *state, const SZrTypeValue *value, SZrGcNativeCallPin *pin) {
+    SZrRawObject *object;
+
+    if (pin == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    garbage_collector_reset_native_call_pin(pin);
+    if (value == ZR_NULL || !ZrCore_Value_IsGarbageCollectable(value)) {
+        return ZR_TRUE;
+    }
+
+    object = ZrCore_Value_GetRawObject(value);
+    return ZrCore_Gc_NativeCallPinObject(state, object, pin);
+}
+
+void ZrCore_Gc_NativeCallUnpin(SZrGlobalState *global, SZrGcNativeCallPin *pin) {
+    SZrRawObject *object;
+
+    if (pin == ZR_NULL || pin->object == ZR_NULL) {
+        return;
+    }
+
+    object = pin->object;
+    if (pin->pinKindAddedByCaller && pin->pinKind != ZR_GARBAGE_COLLECT_PIN_KIND_NONE) {
+        object->garbageCollectMark.pinFlags &= (TZrUInt32)~((TZrUInt32)pin->pinKind);
+    }
+    if (pin->ignoredAddedByCaller && global != ZR_NULL) {
+        ZrCore_GarbageCollector_UnignoreObject(global, object);
+    }
+
+    garbage_collector_reset_native_call_pin(pin);
 }

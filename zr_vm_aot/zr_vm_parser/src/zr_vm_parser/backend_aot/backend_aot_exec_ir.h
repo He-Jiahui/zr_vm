@@ -49,6 +49,9 @@ typedef struct SZrAotExecIrInstruction {
     TZrUInt32 operand1;
     TZrUInt32 deoptId;
     TZrUInt32 debugLine;
+    TZrUInt32 debugLineEnd;
+    TZrUInt32 debugColumn;
+    TZrUInt32 debugColumnEnd;
     TZrUInt32 callsiteKind;
 } SZrAotExecIrInstruction;
 

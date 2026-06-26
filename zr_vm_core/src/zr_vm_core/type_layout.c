@@ -84,6 +84,13 @@ static SZrTypeValue *type_layout_value_at(TZrPtr storage, TZrUInt32 byteOffset) 
     return (SZrTypeValue *)((TZrBytePtr)storage + byteOffset);
 }
 
+static TZrBool type_layout_can_visit_gc_offset_table(const SZrTypeLayout *layout) {
+    return (TZrBool)(layout != ZR_NULL &&
+                     !type_layout_is_union(layout) &&
+                     layout->gcFieldCount > 0u &&
+                     layout->gcFieldOffsets != ZR_NULL);
+}
+
 static const SZrTypeValue *type_layout_const_value_at(const void *storage, TZrUInt32 byteOffset) {
     return (const SZrTypeValue *)((const TZrByte *)storage + byteOffset);
 }
@@ -432,6 +439,20 @@ void ZrCore_TypeLayout_VisitGcValues(struct SZrState *state,
     }
 
     if (type_layout_is_union(layout) && !type_layout_read_union_tag(layout, storage, &activeTag)) {
+        return;
+    }
+
+    if (type_layout_can_visit_gc_offset_table(layout)) {
+        for (TZrUInt32 index = 0; index < layout->gcFieldCount; index++) {
+            TZrUInt32 byteOffset = layout->gcFieldOffsets[index];
+
+            if (byteOffset > layout->byteSize ||
+                sizeof(SZrTypeValue) > layout->byteSize - byteOffset) {
+                continue;
+            }
+
+            visitor(state, type_layout_value_at(storage, byteOffset), userData);
+        }
         return;
     }
 

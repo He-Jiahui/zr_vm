@@ -208,6 +208,11 @@ ZR_CORE_API void ZrCore_Object_SetExistingPairValueUnchecked(struct SZrState *st
                                                              SZrHashKeyValuePair *pair,
                                                              const SZrTypeValue *value);
 
+ZR_CORE_API void ZrCore_Object_SetExistingPairValueNoWriteBarrierUnchecked(struct SZrState *state,
+                                                                           SZrObject *object,
+                                                                           SZrHashKeyValuePair *pair,
+                                                                           const SZrTypeValue *value);
+
 ZR_CORE_API const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key);
 
 ZR_CORE_API const SZrMemberDescriptor *ZrCore_ObjectPrototype_FindMemberDescriptor(SZrObjectPrototype *prototype,
@@ -233,6 +238,11 @@ ZR_CORE_API TZrBool ZrCore_Object_SetMember(struct SZrState *state,
                                             SZrTypeValue *receiver,
                                             struct SZrString *memberName,
                                             const SZrTypeValue *value);
+
+ZR_CORE_API TZrBool ZrCore_Object_SetMemberAssumeNewOwnerNoWriteBarrier(struct SZrState *state,
+                                                                        SZrTypeValue *receiver,
+                                                                        struct SZrString *memberName,
+                                                                        const SZrTypeValue *value);
 
 ZR_CORE_API TZrBool ZrCore_Object_SetMemberCachedDescriptorUnchecked(struct SZrState *state,
                                                                      SZrTypeValue *receiver,
@@ -272,6 +282,11 @@ ZR_CORE_API TZrBool ZrCore_Object_SetByIndex(struct SZrState *state,
                                              const SZrTypeValue *key,
                                              const SZrTypeValue *value);
 
+ZR_CORE_API TZrBool ZrCore_Object_SetByIndexAssumeNewOwnerNoWriteBarrier(struct SZrState *state,
+                                                                         SZrTypeValue *receiver,
+                                                                         const SZrTypeValue *key,
+                                                                         const SZrTypeValue *value);
+
 ZR_CORE_API TZrBool ZrCore_Object_SuperArrayGetInt(struct SZrState *state,
                                                    SZrTypeValue *receiver,
                                                    const SZrTypeValue *key,
@@ -281,6 +296,11 @@ ZR_CORE_API TZrBool ZrCore_Object_SuperArraySetInt(struct SZrState *state,
                                                    SZrTypeValue *receiver,
                                                    const SZrTypeValue *key,
                                                    const SZrTypeValue *value);
+
+ZR_CORE_API TZrBool ZrCore_Object_SuperArraySetIntAssumeNewOwnerNoWriteBarrier(struct SZrState *state,
+                                                                               SZrTypeValue *receiver,
+                                                                               const SZrTypeValue *key,
+                                                                               const SZrTypeValue *value);
 
 ZR_CORE_API TZrBool ZrCore_Object_SuperArrayAddInt(struct SZrState *state,
                                                    SZrTypeValue *receiver,

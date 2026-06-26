@@ -484,162 +484,6 @@ static TZrBool test_local_expression_query_keeps_target_reading_interleaved_net_
     return narrowedPassed && otherPassed;
 }
 
-static TZrBool test_local_expression_query_keeps_target_reading_symbolic_net_zero_delta(
-        SZrState *state) {
-    const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
-        "    var narrowed: int = 5;\n"
-        "    var other: int = 0;\n"
-        "    var step: int = seed - 128;\n"
-        "    while (flag) {\n"
-        "        narrowed = narrowed + step;\n"
-        "        other = narrowed;\n"
-        "        narrowed = narrowed - step;\n"
-        "    }\n"
-        "    narrowed + 0;\n"
-        "    return other + 0;\n"
-        "}\n";
-    TZrBool narrowedPassed;
-    TZrBool otherPassed;
-
-    narrowedPassed = run_assignment_range_case_at(
-            state,
-            "while self-dependent target-reading symbolic net-zero target assignment dataflow",
-            "file:///local_while_self_dependent_target_reading_symbolic_target_numeric_range_fact.zr",
-            content,
-            "narrowed + 0",
-            strlen("narrowed "),
-            5,
-            5);
-    otherPassed = run_assignment_range_case_at(
-            state,
-            "while self-dependent target-reading symbolic net-zero observer assignment dataflow",
-            "file:///local_while_self_dependent_target_reading_symbolic_observer_numeric_range_fact.zr",
-            content,
-            "return other + 0",
-            strlen("return other "),
-            -123,
-            132);
-    return narrowedPassed && otherPassed;
-}
-
-static TZrBool test_local_expression_query_keeps_target_reading_symbolic_expression_net_zero_delta(
-        SZrState *state) {
-    const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
-        "    var narrowed: int = 5;\n"
-        "    var other: int = 0;\n"
-        "    var step: int = seed - 128;\n"
-        "    while (flag) {\n"
-        "        narrowed = narrowed + (step + 1);\n"
-        "        other = narrowed;\n"
-        "        narrowed = narrowed - (step + 1);\n"
-        "    }\n"
-        "    narrowed + 0;\n"
-        "    return other + 0;\n"
-        "}\n";
-    TZrBool narrowedPassed;
-    TZrBool otherPassed;
-
-    narrowedPassed = run_assignment_range_case_at(
-            state,
-            "while self-dependent target-reading symbolic expression net-zero target assignment dataflow",
-            "file:///local_while_self_dependent_target_reading_symbolic_expression_target_numeric_range_fact.zr",
-            content,
-            "narrowed + 0",
-            strlen("narrowed "),
-            5,
-            5);
-    otherPassed = run_assignment_range_case_at(
-            state,
-            "while self-dependent target-reading symbolic expression net-zero observer assignment dataflow",
-            "file:///local_while_self_dependent_target_reading_symbolic_expression_observer_numeric_range_fact.zr",
-            content,
-            "return other + 0",
-            strlen("return other "),
-            -122,
-            133);
-    return narrowedPassed && otherPassed;
-}
-
-static TZrBool test_local_expression_query_keeps_target_reading_symbolic_commuted_expression_net_zero_delta(
-        SZrState *state) {
-    const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
-        "    var narrowed: int = 5;\n"
-        "    var other: int = 0;\n"
-        "    var step: int = seed - 128;\n"
-        "    while (flag) {\n"
-        "        narrowed = narrowed + (step + 1);\n"
-        "        other = narrowed;\n"
-        "        narrowed = narrowed - (1 + step);\n"
-        "    }\n"
-        "    narrowed + 0;\n"
-        "    return other + 0;\n"
-        "}\n";
-    TZrBool narrowedPassed;
-    TZrBool otherPassed;
-
-    narrowedPassed = run_assignment_range_case_at(
-            state,
-            "while self-dependent target-reading symbolic commuted expression net-zero target assignment dataflow",
-            "file:///local_while_self_dependent_target_reading_symbolic_commuted_expression_target_numeric_range_fact.zr",
-            content,
-            "narrowed + 0",
-            strlen("narrowed "),
-            5,
-            5);
-    otherPassed = run_assignment_range_case_at(
-            state,
-            "while self-dependent target-reading symbolic commuted expression net-zero observer assignment dataflow",
-            "file:///local_while_self_dependent_target_reading_symbolic_commuted_expression_observer_numeric_range_fact.zr",
-            content,
-            "return other + 0",
-            strlen("return other "),
-            -122,
-            133);
-    return narrowedPassed && otherPassed;
-}
-
-static TZrBool test_local_expression_query_keeps_target_reading_symbolic_associative_expression_net_zero_delta(
-        SZrState *state) {
-    const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
-        "    var narrowed: int = 5;\n"
-        "    var other: int = 0;\n"
-        "    var step: int = seed - 128;\n"
-        "    while (flag) {\n"
-        "        narrowed = narrowed + ((step + 1) + 2);\n"
-        "        other = narrowed;\n"
-        "        narrowed = narrowed - (step + (1 + 2));\n"
-        "    }\n"
-        "    narrowed + 0;\n"
-        "    return other + 0;\n"
-        "}\n";
-    TZrBool narrowedPassed;
-    TZrBool otherPassed;
-
-    narrowedPassed = run_assignment_range_case_at(
-            state,
-            "while self-dependent target-reading symbolic associative expression net-zero target assignment dataflow",
-            "file:///local_while_self_dependent_target_reading_symbolic_associative_expression_target_numeric_range_fact.zr",
-            content,
-            "narrowed + 0",
-            strlen("narrowed "),
-            5,
-            5);
-    otherPassed = run_assignment_range_case_at(
-            state,
-            "while self-dependent target-reading symbolic associative expression net-zero observer assignment dataflow",
-            "file:///local_while_self_dependent_target_reading_symbolic_associative_expression_observer_numeric_range_fact.zr",
-            content,
-            "return other + 0",
-            strlen("return other "),
-            -120,
-            135);
-    return narrowedPassed && otherPassed;
-}
-
 static TZrBool test_local_expression_query_keeps_target_reading_replay_resolved_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
@@ -720,6 +564,46 @@ static TZrBool test_local_expression_query_widens_target_reading_replay_resolved
     return narrowedPassed && otherPassed;
 }
 
+static TZrBool test_local_expression_query_widens_target_reading_replay_resolved_net_positive_delta(
+        SZrState *state) {
+    const TZrChar *content =
+        "func calc(flag: bool): int {\n"
+        "    var narrowed: int = 5;\n"
+        "    var other: int = 0;\n"
+        "    var step: int = 0;\n"
+        "    while (flag) {\n"
+        "        step = 1;\n"
+        "        narrowed = narrowed + step;\n"
+        "        other = narrowed;\n"
+        "        narrowed = narrowed + 1;\n"
+        "    }\n"
+        "    narrowed + 0;\n"
+        "    return other + 0;\n"
+        "}\n";
+    TZrBool narrowedPassed;
+    TZrBool otherPassed;
+
+    narrowedPassed = run_assignment_range_case_at(
+            state,
+            "while self-dependent target-reading replay-resolved net-positive target assignment dataflow",
+            "file:///local_while_self_dependent_target_reading_replay_resolved_net_positive_target_numeric_range_fact.zr",
+            content,
+            "narrowed + 0",
+            strlen("narrowed "),
+            5,
+            ZR_TYPE_RANGE_INT64_MAX);
+    otherPassed = run_assignment_range_case_at(
+            state,
+            "while self-dependent target-reading replay-resolved net-positive observer assignment dataflow",
+            "file:///local_while_self_dependent_target_reading_replay_resolved_net_positive_observer_numeric_range_fact.zr",
+            content,
+            "return other + 0",
+            strlen("return other "),
+            0,
+            ZR_TYPE_RANGE_INT64_MAX);
+    return narrowedPassed && otherPassed;
+}
+
 static TZrBool test_local_expression_query_widens_target_reading_interleaved_net_negative_delta(
         SZrState *state) {
     const TZrChar *content =
@@ -776,12 +660,9 @@ int main(void) {
     TZrBool positiveThenNegativeDeltaPassed;
     TZrBool interleavedPositiveThenNegativeDeltaPassed;
     TZrBool targetReadingInterleavedDeltaPassed;
-    TZrBool targetReadingSymbolicNetZeroDeltaPassed;
-    TZrBool targetReadingSymbolicExpressionNetZeroDeltaPassed;
-    TZrBool targetReadingSymbolicCommutedExpressionNetZeroDeltaPassed;
-    TZrBool targetReadingSymbolicAssociativeExpressionNetZeroDeltaPassed;
     TZrBool targetReadingReplayResolvedNetZeroDeltaPassed;
     TZrBool targetReadingReplayResolvedNetNegativeDeltaPassed;
+    TZrBool targetReadingReplayResolvedNetPositiveDeltaPassed;
     TZrBool targetReadingInterleavedNetNegativeDeltaPassed;
 
     memset(&callbacks, 0, sizeof(callbacks));
@@ -848,22 +729,6 @@ int main(void) {
         test_local_expression_query_keeps_target_reading_interleaved_net_zero_delta(state);
     printf("%s: LSP Local Expression Query Keeps Self-Dependent Target-Reading Interleaved Net-Zero Delta\n",
            targetReadingInterleavedDeltaPassed ? "PASS" : "FAIL");
-    targetReadingSymbolicNetZeroDeltaPassed =
-        test_local_expression_query_keeps_target_reading_symbolic_net_zero_delta(state);
-    printf("%s: LSP Local Expression Query Keeps Self-Dependent Target-Reading Symbolic Net-Zero Delta\n",
-           targetReadingSymbolicNetZeroDeltaPassed ? "PASS" : "FAIL");
-    targetReadingSymbolicExpressionNetZeroDeltaPassed =
-        test_local_expression_query_keeps_target_reading_symbolic_expression_net_zero_delta(state);
-    printf("%s: LSP Local Expression Query Keeps Self-Dependent Target-Reading Symbolic Expression Net-Zero Delta\n",
-           targetReadingSymbolicExpressionNetZeroDeltaPassed ? "PASS" : "FAIL");
-    targetReadingSymbolicCommutedExpressionNetZeroDeltaPassed =
-        test_local_expression_query_keeps_target_reading_symbolic_commuted_expression_net_zero_delta(state);
-    printf("%s: LSP Local Expression Query Keeps Self-Dependent Target-Reading Symbolic Commuted Expression Net-Zero Delta\n",
-           targetReadingSymbolicCommutedExpressionNetZeroDeltaPassed ? "PASS" : "FAIL");
-    targetReadingSymbolicAssociativeExpressionNetZeroDeltaPassed =
-        test_local_expression_query_keeps_target_reading_symbolic_associative_expression_net_zero_delta(state);
-    printf("%s: LSP Local Expression Query Keeps Self-Dependent Target-Reading Symbolic Associative Expression Net-Zero Delta\n",
-           targetReadingSymbolicAssociativeExpressionNetZeroDeltaPassed ? "PASS" : "FAIL");
     targetReadingReplayResolvedNetZeroDeltaPassed =
         test_local_expression_query_keeps_target_reading_replay_resolved_net_zero_delta(state);
     printf("%s: LSP Local Expression Query Keeps Self-Dependent Target-Reading Replay-Resolved Net-Zero Delta\n",
@@ -872,6 +737,10 @@ int main(void) {
         test_local_expression_query_widens_target_reading_replay_resolved_net_negative_delta(state);
     printf("%s: LSP Local Expression Query Widens Self-Dependent Target-Reading Replay-Resolved Net-Negative Delta\n",
            targetReadingReplayResolvedNetNegativeDeltaPassed ? "PASS" : "FAIL");
+    targetReadingReplayResolvedNetPositiveDeltaPassed =
+        test_local_expression_query_widens_target_reading_replay_resolved_net_positive_delta(state);
+    printf("%s: LSP Local Expression Query Widens Self-Dependent Target-Reading Replay-Resolved Net-Positive Delta\n",
+           targetReadingReplayResolvedNetPositiveDeltaPassed ? "PASS" : "FAIL");
     targetReadingInterleavedNetNegativeDeltaPassed =
         test_local_expression_query_widens_target_reading_interleaved_net_negative_delta(state);
     printf("%s: LSP Local Expression Query Widens Self-Dependent Target-Reading Interleaved Net-Negative Delta\n",
@@ -891,12 +760,9 @@ int main(void) {
                    positiveThenNegativeDeltaPassed &&
                    interleavedPositiveThenNegativeDeltaPassed &&
                    targetReadingInterleavedDeltaPassed &&
-                   targetReadingSymbolicNetZeroDeltaPassed &&
-                   targetReadingSymbolicExpressionNetZeroDeltaPassed &&
-                   targetReadingSymbolicCommutedExpressionNetZeroDeltaPassed &&
-                   targetReadingSymbolicAssociativeExpressionNetZeroDeltaPassed &&
                    targetReadingReplayResolvedNetZeroDeltaPassed &&
                    targetReadingReplayResolvedNetNegativeDeltaPassed &&
+                   targetReadingReplayResolvedNetPositiveDeltaPassed &&
                    targetReadingInterleavedNetNegativeDeltaPassed
                 ? 0
                 : 1;

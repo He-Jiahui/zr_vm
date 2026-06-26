@@ -115,6 +115,46 @@ static void assert_script_return_signature(const char *caseName,
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void assert_script_return_signature_without(const char *caseName,
+                                                   const char *source,
+                                                   EZrValueType expectedBaseType,
+                                                   EZrStaticCType expectedStaticCType,
+                                                   const char *expectedReturnHelper,
+                                                   const char *forbiddenNeedle,
+                                                   const char *secondForbiddenNeedle) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_source(state, source, "method_info_signature.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_method_info_signature",
+                                                       caseName,
+                                                       "main",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_EnsureParentDirectory(generatedCPath));
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = caseName;
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.requireExecutableLowering = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    assert_signature_scalar_return(generatedCText, expectedBaseType, expectedStaticCType, expectedReturnHelper);
+    assert_text_does_not_contain(generatedCText, forbiddenNeedle);
+    assert_text_does_not_contain(generatedCText, secondForbiddenNeedle);
+
+    free(generatedCText);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_aot_c_method_info_infers_bool_u64_f64_script_return_signatures(void) {
     assert_script_return_signature("bool",
                                    "var left: int = 7;\n"
@@ -161,6 +201,44 @@ static void test_aot_c_method_info_infers_bool_u64_f64_script_return_signatures(
                                    ZR_VALUE_TYPE_DOUBLE,
                                    ZR_STATIC_C_TYPE_F64,
                                    "ZrLibrary_AotRuntime_ReturnF64(state, zr_aot_f");
+    assert_script_return_signature("f64_bool_expr",
+                                   "var left: float = 2.5;\n"
+                                   "var right: float = 1.25;\n"
+                                   "return left > right;\n",
+                                   ZR_VALUE_TYPE_BOOL,
+                                   ZR_STATIC_C_TYPE_BOOL,
+                                   "ZrLibrary_AotRuntime_ReturnBool(state, zr_aot_b");
+    assert_script_return_signature("f64_neg_expr",
+                                   "var value: float = 1.25;\n"
+                                   "return -value;\n",
+                                   ZR_VALUE_TYPE_DOUBLE,
+                                   ZR_STATIC_C_TYPE_F64,
+                                   "ZrLibrary_AotRuntime_ReturnF64(state, zr_aot_f");
+    assert_script_return_signature_without("i64_neg_expr",
+                                           "var value: int = 7;\n"
+                                           "return -value;\n",
+                                           ZR_VALUE_TYPE_INT64,
+                                           ZR_STATIC_C_TYPE_I64,
+                                           "ZrLibrary_AotRuntime_ReturnI64(state, zr_aot_s",
+                                           "zr_aot_arith_exec_signed_unary",
+                                           "SZrTypeValue *zr_aot_destination");
+    assert_script_return_signature_without("i64_bit_not_expr",
+                                           "var value: int = 7;\n"
+                                           "return ~value;\n",
+                                           ZR_VALUE_TYPE_INT64,
+                                           ZR_STATIC_C_TYPE_I64,
+                                           "ZrLibrary_AotRuntime_ReturnI64(state, zr_aot_s",
+                                           "zr_aot_bitwise_exec_unary",
+                                           "SZrTypeValue *zr_aot_destination");
+    assert_script_return_signature_without("i64_bitwise_and_expr",
+                                           "var left: int = 58;\n"
+                                           "var right: int = 47;\n"
+                                           "return left & right;\n",
+                                           ZR_VALUE_TYPE_INT64,
+                                           ZR_STATIC_C_TYPE_I64,
+                                           "ZrLibrary_AotRuntime_ReturnI64(state, zr_aot_s",
+                                           "zr_aot_bitwise_exec_binary",
+                                           "SZrTypeValue *zr_aot_destination");
 }
 
 void setUp(void) {}

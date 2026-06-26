@@ -9,6 +9,8 @@ TZrBool ZrParser_TypeInferenceLoopAssignment_TrySelfDependentDelta(SZrCompilerSt
                                                                    SZrString *targetName,
                                                                    TZrInt64 *outDeltaMin,
                                                                    TZrInt64 *outDeltaMax);
+TZrBool ZrParser_TypeInferenceLoopAssignment_DeltaExpressionIsSupported(SZrAstNode *node,
+                                                                        SZrString *targetName);
 SZrAstNode *ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaExpression(SZrAstNode *right,
                                                                               SZrString *targetName);
 SZrString *ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaIdentifier(SZrAstNode *right,
@@ -20,6 +22,19 @@ TZrBool ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaExpressionsEqual(
         SZrAstNode *left,
         SZrAstNode *right,
         SZrString *targetName);
+TZrBool ZrParser_TypeInferenceLoopAssignment_TryCancelledSignedAdditiveDeltaRange(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        SZrString *targetName,
+        TZrInt64 *outMin,
+        TZrInt64 *outMax);
+TZrBool ZrParser_TypeInferenceLoopAssignment_TrySignedAdditiveConstantResidual(
+        SZrAstNode *left,
+        TZrInt32 leftSign,
+        SZrAstNode *right,
+        TZrInt32 rightSign,
+        SZrString *targetName,
+        TZrInt64 *outResidual);
 TZrBool ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaUsesAnyTarget(
         SZrAstNode *right,
         SZrString *targetName,

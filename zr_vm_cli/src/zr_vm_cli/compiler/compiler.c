@@ -1,4 +1,5 @@
 #include "compiler/compiler.h"
+#include "compiler/compiler_aot.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +25,7 @@ typedef struct SZrCliModuleRecord {
     TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar zroPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar zriPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar aotCPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar sourceHash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
     TZrChar zroHash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
     TZrBool hasSourceInput;
@@ -176,6 +178,18 @@ static const TZrChar *zr_cli_compiler_string_text(SZrString *value) {
     }
 
     return ZrCore_String_GetNativeString(value);
+}
+
+TZrBool ZrCli_Compiler_ApplyProjectAotWriterOptions(const SZrCliProjectContext *project,
+                                                    SZrAotWriterOptions *options) {
+    if (project == ZR_NULL || project->libraryProject == ZR_NULL || options == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    options->requireFullAot = (TZrBool)(project->libraryProject->aotMode ==
+                                        ZR_LIBRARY_PROJECT_AOT_MODE_FULL_AOT);
+    options->stripGeneratedSymbols = options->requireFullAot;
+    return ZR_TRUE;
 }
 
 static TZrBool zr_cli_compiler_resolve_project_resource_path(const SZrCliProjectContext *project,
@@ -614,6 +628,7 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
     }
     ZrCli_Project_ResolveBinaryPath(project, record.moduleName, record.zroPath, sizeof(record.zroPath));
     ZrCli_Project_ResolveIntermediatePath(project, record.moduleName, record.zriPath, sizeof(record.zriPath));
+    ZrCli_Project_ResolveAotCPath(project, record.moduleName, record.aotCPath, sizeof(record.aotCPath));
     sourceExists = ZrLibrary_File_Exist(record.sourcePath) == ZR_LIBRARY_FILE_IS_FILE;
     binaryExists = ZrLibrary_File_Exist(record.zroPath) == ZR_LIBRARY_FILE_IS_FILE;
     if (!sourceExists && (!includeBinaryModules || !binaryExists)) {
@@ -717,6 +732,7 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
 static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
                                          SZrCliModuleRecord *record,
                                          TZrBool emitIntermediate,
+                                         TZrBool emitAotC,
                                          FZrCliProjectGlobalBootstrap bootstrap,
                                          TZrPtr bootstrapUserData) {
     SZrGlobalState *global;
@@ -781,6 +797,16 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
         if (success && !zr_cli_hash_file(record->zroPath, (TZrChar *)record->zroHash, sizeof(record->zroHash))) {
             success = ZR_FALSE;
         }
+        if (success && emitAotC) {
+            success = ZrCli_Compiler_WriteAotCFileForModule(project,
+                                                            state,
+                                                            function,
+                                                            record->moduleName,
+                                                            record->sourceHash,
+                                                            record->zroHash,
+                                                            record->zroPath,
+                                                            record->aotCPath);
+        }
     } else {
         if (!zr_cli_load_binary_function(state, record->zroPath, &function)) {
             ZrCore_Log_Error(state, "failed to load binary module: %s\n", record->zroPath);
@@ -788,6 +814,16 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
             return ZR_FALSE;
         }
         success = zr_cli_hash_file(record->zroPath, (TZrChar *)record->zroHash, sizeof(record->zroHash));
+        if (success && emitAotC) {
+            success = ZrCli_Compiler_WriteAotCFileForModule(project,
+                                                            state,
+                                                            function,
+                                                            record->moduleName,
+                                                            record->sourceHash,
+                                                            record->zroHash,
+                                                            record->zroPath,
+                                                            record->aotCPath);
+        }
     }
     if (function != ZR_NULL) {
         ZrCore_Function_Free(state, function);
@@ -815,7 +851,8 @@ static TZrBool zr_cli_module_depends_on_dirty(const SZrCliModuleCollection *coll
 }
 
 static TZrBool zr_cli_module_has_required_outputs(const SZrCliModuleRecord *record,
-                                                  TZrBool emitIntermediate) {
+                                                  TZrBool emitIntermediate,
+                                                  TZrBool emitAotC) {
     if (record == ZR_NULL || ZrLibrary_File_Exist((TZrNativeString)record->zroPath) != ZR_LIBRARY_FILE_IS_FILE) {
         return ZR_FALSE;
     }
@@ -823,6 +860,12 @@ static TZrBool zr_cli_module_has_required_outputs(const SZrCliModuleRecord *reco
     if (record->hasSourceInput &&
         emitIntermediate &&
         ZrLibrary_File_Exist((TZrNativeString)record->zriPath) != ZR_LIBRARY_FILE_IS_FILE) {
+        return ZR_FALSE;
+    }
+
+    if (emitAotC &&
+        (record->aotCPath[0] == '\0' ||
+         ZrLibrary_File_Exist((TZrNativeString)record->aotCPath) != ZR_LIBRARY_FILE_IS_FILE)) {
         return ZR_FALSE;
     }
 
@@ -840,6 +883,36 @@ static TZrBool zr_cli_reconcile_optional_intermediate_output(const SZrCliModuleR
     }
 
     return ZrCli_Project_RemoveFileIfExists(record->zriPath);
+}
+
+static TZrBool zr_cli_reconcile_optional_aot_c_output(const SZrCliModuleRecord *record,
+                                                      TZrBool emitAotC) {
+    if (record == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (emitAotC || record->aotCPath[0] == '\0') {
+        return ZR_TRUE;
+    }
+
+    return ZrCli_Project_RemoveFileIfExists(record->aotCPath);
+}
+
+static TZrBool zr_cli_reconcile_optional_outputs(SZrState *state,
+                                                 const SZrCliModuleRecord *record,
+                                                 TZrBool emitIntermediate,
+                                                 TZrBool emitAotC) {
+    if (!zr_cli_reconcile_optional_intermediate_output(record, emitIntermediate)) {
+        ZrCore_Log_Error(state, "failed to reconcile intermediate artifact: %s\n", record->zriPath);
+        return ZR_FALSE;
+    }
+
+    if (!zr_cli_reconcile_optional_aot_c_output(record, emitAotC)) {
+        ZrCore_Log_Error(state, "failed to reconcile AOT C artifact: %s\n", record->aotCPath);
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
 }
 
 static TZrBool zr_cli_manifest_entry_matches_record(const SZrCliManifestEntry *entry,
@@ -885,6 +958,7 @@ static TZrBool zr_cli_build_next_manifest(const SZrCliModuleCollection *collecti
         snprintf(entry.zroHash, sizeof(entry.zroHash), "%s", record->zroHash);
         snprintf(entry.zroPath, sizeof(entry.zroPath), "%s", record->zroPath);
         snprintf(entry.zriPath, sizeof(entry.zriPath), "%s", record->zriPath);
+        snprintf(entry.aotCPath, sizeof(entry.aotCPath), "%s", record->aotCPath);
         if (!ZrCli_Project_StringList_Copy(&entry.imports, &record->imports) ||
             !zr_cli_manifest_append_entry(manifest, &entry)) {
             ZrCli_Project_StringList_Free(&entry.imports);
@@ -965,7 +1039,7 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
 
             record->dirty = manifestEntry == ZR_NULL ||
                             !zr_cli_manifest_entry_matches_record(manifestEntry, record) ||
-                            !zr_cli_module_has_required_outputs(record, command->emitIntermediate);
+                            !zr_cli_module_has_required_outputs(record, command->emitIntermediate, command->emitAotC);
         }
     }
 
@@ -987,10 +1061,10 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
         SZrCliModuleRecord *record = &modules.records[index];
 
         if (!record->dirty) {
-            if (!zr_cli_reconcile_optional_intermediate_output(record, command->emitIntermediate)) {
-                ZrCore_Log_Error(scanGlobal->mainThreadState,
-                                 "failed to reconcile intermediate artifact: %s\n",
-                                 record->zriPath);
+            if (!zr_cli_reconcile_optional_outputs(scanGlobal->mainThreadState,
+                                                   record,
+                                                   command->emitIntermediate,
+                                                   command->emitAotC)) {
                 success = ZR_FALSE;
                 goto cleanup;
             }
@@ -1001,16 +1075,17 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
         if (!zr_cli_compile_one_module(&project,
                                        record,
                                        command->emitIntermediate,
+                                       command->emitAotC,
                                        bootstrap,
                                        userData)) {
             success = ZR_FALSE;
             goto cleanup;
         }
 
-        if (!zr_cli_reconcile_optional_intermediate_output(record, command->emitIntermediate)) {
-            ZrCore_Log_Error(scanGlobal->mainThreadState,
-                             "failed to reconcile intermediate artifact: %s\n",
-                             record->zriPath);
+        if (!zr_cli_reconcile_optional_outputs(scanGlobal->mainThreadState,
+                                               record,
+                                               command->emitIntermediate,
+                                               command->emitAotC)) {
             success = ZR_FALSE;
             goto cleanup;
         }
@@ -1027,6 +1102,7 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
 
             ZrCli_Project_RemoveFileIfExists(entry->zroPath);
             ZrCli_Project_RemoveFileIfExists(entry->zriPath);
+            ZrCli_Project_RemoveFileIfExists(entry->aotCPath);
             localSummary.removedCount++;
         }
 

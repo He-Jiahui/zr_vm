@@ -14,8 +14,10 @@ TZrBool backend_aot_try_write_c_value_semir_for_exec_instruction(FILE *file,
                                                                  SZrState *state,
                                                                  const SZrAotExecIrModule *module,
                                                                  const SZrAotExecIrFunction *functionIr,
-                                                                 TZrUInt32 execInstructionIndex,
-                                                                 TZrUInt32 calleeFunctionIndex,
-                                                                 TZrBool allowTypedReturn);
+                                                                  TZrUInt32 execInstructionIndex,
+                                                                  const SZrFunction *calleeFunction,
+                                                                  TZrUInt32 calleeFunctionIndex,
+                                                                  TZrBool requireFullAot,
+                                                                  TZrBool allowTypedReturn);
 
 #endif

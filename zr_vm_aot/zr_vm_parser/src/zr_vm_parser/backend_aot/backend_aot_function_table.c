@@ -1,6 +1,7 @@
 #include "backend_aot_function_table.h"
 
 #include "backend_aot_internal.h"
+#include "backend_aot_reachability.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 
@@ -120,6 +121,7 @@ TZrBool backend_aot_build_function_table(SZrState *state,
     outTable->entries = ZR_NULL;
     outTable->count = ZR_AOT_COUNT_NONE;
     outTable->capacity = ZR_AOT_COUNT_NONE;
+    outTable->indexSpace = ZR_AOT_COUNT_NONE;
 
     ZrCore_Function_RebindConstantFunctionValuesToChildren((SZrFunction *)function);
     capacity = backend_aot_count_function_graph_capacity(state, function);
@@ -139,6 +141,7 @@ TZrBool backend_aot_build_function_table(SZrState *state,
     backend_aot_flatten_function_graph(state, function, outTable->entries, capacity, &writeIndex);
     outTable->count = writeIndex;
     outTable->capacity = capacity;
+    outTable->indexSpace = writeIndex;
     return ZR_TRUE;
 }
 
@@ -174,6 +177,68 @@ void backend_aot_release_function_table(SZrState *state, SZrAotFunctionTable *ta
     table->entries = ZR_NULL;
     table->count = ZR_AOT_COUNT_NONE;
     table->capacity = ZR_AOT_COUNT_NONE;
+    table->indexSpace = ZR_AOT_COUNT_NONE;
+}
+
+TZrBool backend_aot_filter_function_table_by_reachability(SZrAotFunctionTable *table,
+                                                           const SZrAotReachabilityMark *marks,
+                                                           TZrUInt32 markCount) {
+    TZrUInt32 writeIndex = 0u;
+
+    if (table == ZR_NULL || table->entries == ZR_NULL || marks == ZR_NULL || table->count > table->capacity) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 readIndex = 0u; readIndex < table->count; readIndex++) {
+        const SZrAotFunctionEntry *entry = &table->entries[readIndex];
+        if (entry->flatIndex >= markCount) {
+            return ZR_FALSE;
+        }
+    }
+
+    for (TZrUInt32 readIndex = 0u; readIndex < table->count; readIndex++) {
+        SZrAotFunctionEntry *entry = &table->entries[readIndex];
+        if (marks[entry->flatIndex].state == ZR_AOT_REACHABILITY_STATE_UNMARKED) {
+            continue;
+        }
+        if (writeIndex != readIndex) {
+            table->entries[writeIndex] = *entry;
+        }
+        writeIndex++;
+    }
+
+    table->count = writeIndex;
+    return ZR_TRUE;
+}
+
+TZrUInt32 backend_aot_function_table_index_space(const SZrAotFunctionTable *table) {
+    TZrUInt32 indexSpace = 0u;
+
+    if (table == ZR_NULL || table->entries == ZR_NULL || table->count > table->capacity) {
+        return ZR_AOT_COUNT_NONE;
+    }
+
+    if (table->indexSpace > 0u) {
+        for (TZrUInt32 index = 0u; index < table->count; index++) {
+            const SZrAotFunctionEntry *entry = &table->entries[index];
+            if (entry->flatIndex == ZR_AOT_INVALID_FUNCTION_INDEX || entry->flatIndex >= table->indexSpace) {
+                return ZR_AOT_COUNT_NONE;
+            }
+        }
+        return table->indexSpace;
+    }
+
+    for (TZrUInt32 index = 0u; index < table->count; index++) {
+        const SZrAotFunctionEntry *entry = &table->entries[index];
+        if (entry->flatIndex == ZR_AOT_INVALID_FUNCTION_INDEX) {
+            return ZR_AOT_COUNT_NONE;
+        }
+        if (entry->flatIndex >= indexSpace) {
+            indexSpace = entry->flatIndex + 1u;
+        }
+    }
+
+    return indexSpace;
 }
 
 TZrBool backend_aot_resolve_callable_constant_function_index(const SZrAotFunctionTable *table,

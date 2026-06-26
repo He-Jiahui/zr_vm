@@ -16,6 +16,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *stat
     const TZrChar *inputHash;
     TZrUInt32 inputKind;
     TZrBool requireExecutableLowering;
+    TZrBool stripGeneratedSymbols;
 
     if (state == ZR_NULL || function == ZR_NULL || filename == ZR_NULL) {
         return ZR_FALSE;
@@ -43,6 +44,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *stat
     inputKind = backend_aot_option_input_kind(options);
     inputHash = backend_aot_option_input_hash(options, sourceHash, zroHash);
     requireExecutableLowering = options != ZR_NULL && options->requireExecutableLowering;
+    stripGeneratedSymbols = backend_aot_option_strip_generated_symbols(options);
 
     if (requireExecutableLowering || backend_aot_report_first_unsupported_instruction("aot_llvm", moduleName, &functionTable)) {
         for (TZrUInt32 functionIndex = 0; functionIndex < functionTable.count; functionIndex++) {
@@ -60,14 +62,25 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *stat
 
     fprintf(file, "; ZR AOT LLVM Backend\n");
     fprintf(file, "; SemIR overlay + generated exec thunks.\n");
+    fprintf(file, "; symbol_stripping.generatedSymbols = %u\n", stripGeneratedSymbols ? 1u : 0u);
     backend_aot_llvm_write_module_prelude(file, &module, moduleName, inputHash, options);
 
     for (TZrUInt32 functionIndex = 0; functionIndex < functionTable.count; functionIndex++) {
-        backend_aot_write_llvm_function_body(file, state, &functionTable, &functionTable.entries[functionIndex]);
+        backend_aot_write_llvm_function_body(file,
+                                             state,
+                                             &functionTable,
+                                             &functionTable.entries[functionIndex],
+                                             stripGeneratedSymbols);
     }
 
-    backend_aot_llvm_write_function_thunk_table(file, &functionTable);
-    backend_aot_llvm_write_module_exports(file, moduleName, inputKind, inputHash, &functionTable, options);
+    backend_aot_llvm_write_function_thunk_table(file, &functionTable, stripGeneratedSymbols);
+    backend_aot_llvm_write_module_exports(file,
+                                          moduleName,
+                                          inputKind,
+                                          inputHash,
+                                          &functionTable,
+                                          options,
+                                          stripGeneratedSymbols);
 
     fclose(file);
     backend_aot_release_function_table(state, &functionTable);

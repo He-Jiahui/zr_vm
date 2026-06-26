@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_common/zr_runtime_sentinel_conf.h"
 
 static TZrBool garbage_collector_trace_rewrite_slots_enabled(void) {
@@ -1221,6 +1222,27 @@ typedef struct SZrGcInlineFrameRewriteWork {
     TZrSize work;
 } SZrGcInlineFrameRewriteWork;
 
+static const SZrTypeLayout *garbage_collector_resolve_metadata_frame_type_layout(
+        const SZrFunction *function,
+        TZrUInt32 typeLayoutId,
+        TZrPtr userData) {
+    const SZrTypeLayout *layout = ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(function, typeLayoutId);
+    const SZrFunction *registryFunction = function;
+
+    if (layout != ZR_NULL) {
+        return layout;
+    }
+    if (registryFunction != ZR_NULL &&
+        registryFunction->metadataCodeRegistration == ZR_NULL &&
+        registryFunction->prototypeContextFunction != ZR_NULL) {
+        registryFunction = registryFunction->prototypeContextFunction;
+    }
+    if (registryFunction != ZR_NULL && registryFunction->metadataCodeRegistration != ZR_NULL) {
+        return ZR_NULL;
+    }
+    return ZrCore_Function_ResolvePrototypeFrameTypeLayout(function, typeLayoutId, userData);
+}
+
 static TZrBool garbage_collector_function_has_frame_gc_layouts(SZrState *threadState,
                                                                const SZrFunction *function) {
     TZrBool hasGcLayout = ZR_FALSE;
@@ -1246,9 +1268,8 @@ static TZrBool garbage_collector_function_has_frame_gc_layouts(SZrState *threadS
         }
 
         hasGcLayout = ZR_TRUE;
-        if (ZrCore_Function_ResolvePrototypeFrameTypeLayout(function,
-                                                            slotLayout->typeLayoutId,
-                                                            threadState) == ZR_NULL) {
+        if (garbage_collector_resolve_metadata_frame_type_layout(function, slotLayout->typeLayoutId, threadState) ==
+            ZR_NULL) {
             return ZR_FALSE;
         }
     }
@@ -1265,6 +1286,63 @@ static void garbage_collector_rewrite_inline_frame_value(SZrState *state, SZrTyp
     }
 }
 
+static SZrTypeValue *garbage_collector_aot_root_frame_value(SZrState *threadState,
+                                                            const SZrAotGcRootFrame *frame,
+                                                            const SZrAotGcRootSlot *root) {
+    TZrByte *stackBegin;
+    TZrByte *stackEnd;
+    TZrByte *rootAddress;
+
+    if (threadState == ZR_NULL ||
+        frame == ZR_NULL ||
+        frame->frameBase == ZR_NULL ||
+        root == ZR_NULL ||
+        root->locationKind != (TZrUInt8)ZR_AOT_GC_ROOT_LOCATION_FRAME_BYTE_OFFSET ||
+        threadState->stackBase.valuePointer == ZR_NULL ||
+        threadState->stackTail.valuePointer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    stackBegin = (TZrByte *)threadState->stackBase.valuePointer;
+    stackEnd = (TZrByte *)threadState->stackTail.valuePointer;
+    rootAddress = (TZrByte *)frame->frameBase + root->frameByteOffset;
+    if (rootAddress < stackBegin ||
+        rootAddress > stackEnd ||
+        (TZrSize)(stackEnd - rootAddress) < sizeof(SZrTypeValue)) {
+        return ZR_NULL;
+    }
+
+    return (SZrTypeValue *)rootAddress;
+}
+
+static TZrSize garbage_collector_rewrite_aot_root_frames(SZrState *threadState) {
+    TZrSize work = 0;
+    SZrAotGcRootFrame *frame;
+
+    if (threadState == ZR_NULL) {
+        return 0;
+    }
+
+    frame = threadState->aotGcRootFrameStack;
+    while (frame != ZR_NULL) {
+        const SZrAotGcRootMap *rootMap = frame->rootMap;
+
+        if (rootMap != ZR_NULL && rootMap->roots != ZR_NULL) {
+            for (TZrUInt32 rootIndex = 0u; rootIndex < rootMap->rootCount; rootIndex++) {
+                SZrTypeValue *value = garbage_collector_aot_root_frame_value(threadState,
+                                                                              frame,
+                                                                              &rootMap->roots[rootIndex]);
+                if (value != ZR_NULL && garbage_collector_rewrite_value_if_forwarded(value)) {
+                    work++;
+                }
+            }
+        }
+        frame = frame->previous;
+    }
+
+    return work;
+}
+
 static TZrBool garbage_collector_rewrite_resolved_inline_frame_values(SZrState *threadState,
                                                                       const SZrFunction *function,
                                                                       TZrStackValuePointer frameBase,
@@ -1278,7 +1356,7 @@ static TZrBool garbage_collector_rewrite_resolved_inline_frame_values(SZrState *
     if (!ZrCore_Function_VisitFrameGcValues(threadState,
                                             function,
                                             frameBase,
-                                            ZrCore_Function_ResolvePrototypeFrameTypeLayout,
+                                            garbage_collector_resolve_metadata_frame_type_layout,
                                             threadState,
                                             garbage_collector_rewrite_inline_frame_value,
                                             &rewriteWork)) {
@@ -1714,6 +1792,10 @@ static TZrSize garbage_collector_rewrite_object_graph(SZrState *state, SZrRawObj
 
                 work += garbage_collector_rewrite_string_slot(&module->moduleName);
                 work += garbage_collector_rewrite_string_slot(&module->fullPath);
+                if (module->hasMetadataRuntime) {
+                    garbage_collector_rewrite_raw_object_slot(
+                            (SZrRawObject **)&module->metadataRuntime.metadataFunction);
+                }
                 work += garbage_collector_rewrite_hash_set(&module->proNodeMap);
                 for (TZrUInt32 descriptorIndex = 0; descriptorIndex < module->exportDescriptorLength; descriptorIndex++) {
                     work += garbage_collector_rewrite_string_slot(&module->exportDescriptors[descriptorIndex].name);
@@ -1776,6 +1858,7 @@ static TZrSize garbage_collector_rewrite_object_graph(SZrState *state, SZrRawObj
             SZrState *threadState = (SZrState *)object;
 
             work += garbage_collector_rewrite_thread_frame_slots(threadState);
+            work += garbage_collector_rewrite_aot_root_frames(threadState);
             work += garbage_collector_rewrite_call_info_functions(state, threadState);
 
             if (threadState->hasCurrentException &&

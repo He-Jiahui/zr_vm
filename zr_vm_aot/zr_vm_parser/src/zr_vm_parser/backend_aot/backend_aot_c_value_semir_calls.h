@@ -14,7 +14,11 @@ void backend_aot_write_c_value_semir_return_typed(FILE *file,
 TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(FILE *file,
                                                            const SZrAotExecIrFrameLayout *frameLayout,
                                                            const SZrAotExecIrInstruction *instruction,
-                                                           TZrUInt32 calleeFunctionIndex);
+                                                           const SZrFunction *calleeFunction,
+                                                           TZrUInt32 callerFunctionIndex,
+                                                           TZrUInt32 execInstructionIndex,
+                                                           TZrUInt32 calleeFunctionIndex,
+                                                           TZrBool requireFullAot);
 TZrBool backend_aot_try_write_c_value_semir_return_typed_exec(FILE *file,
                                                              const SZrAotExecIrFrameLayout *frameLayout,
                                                              const SZrAotExecIrInstruction *instruction,

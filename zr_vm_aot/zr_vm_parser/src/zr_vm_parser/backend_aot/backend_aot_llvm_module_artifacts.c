@@ -1,8 +1,11 @@
 #include "backend_aot_llvm_module_artifacts.h"
 
+#include "backend_aot_llvm_text_emit.h"
 #include "zr_vm_common/zr_aot_abi.h"
 
-void backend_aot_llvm_write_function_thunk_table(FILE *file, const SZrAotFunctionTable *functionTable) {
+void backend_aot_llvm_write_function_thunk_table(FILE *file,
+                                                 const SZrAotFunctionTable *functionTable,
+                                                 TZrBool stripGeneratedSymbols) {
     TZrUInt32 functionIndex;
 
     if (file == ZR_NULL || functionTable == ZR_NULL) {
@@ -14,13 +17,22 @@ void backend_aot_llvm_write_function_thunk_table(FILE *file, const SZrAotFunctio
         if (functionIndex > 0) {
             fprintf(file, ", ");
         }
-        fprintf(file, "ptr @zr_aot_fn_%u", (unsigned)functionIndex);
+        {
+            TZrChar functionSymbol[64];
+            backend_aot_llvm_format_function_symbol(functionSymbol,
+                                                    sizeof(functionSymbol),
+                                                    functionIndex,
+                                                    stripGeneratedSymbols);
+            fprintf(file, "ptr @%s", functionSymbol);
+        }
     }
     fprintf(file, "]\n");
     fprintf(file, "\n");
 }
 
-static void backend_aot_llvm_write_entry_thunk(FILE *file, const SZrAotFunctionTable *functionTable) {
+static void backend_aot_llvm_write_entry_thunk(FILE *file,
+                                               const SZrAotFunctionTable *functionTable,
+                                               TZrBool stripGeneratedSymbols) {
     if (file == ZR_NULL || functionTable == ZR_NULL) {
         return;
     }
@@ -28,7 +40,12 @@ static void backend_aot_llvm_write_entry_thunk(FILE *file, const SZrAotFunctionT
     fprintf(file, "define i64 @zr_aot_entry(ptr %%state) {\n");
     fprintf(file, "entry:\n");
     if (functionTable->count > 0) {
-        fprintf(file, "  %%ret = call i64 @zr_aot_fn_%u(ptr %%state)\n", (unsigned)ZR_AOT_FUNCTION_TREE_ROOT_INDEX);
+        TZrChar functionSymbol[64];
+        backend_aot_llvm_format_function_symbol(functionSymbol,
+                                                sizeof(functionSymbol),
+                                                ZR_AOT_FUNCTION_TREE_ROOT_INDEX,
+                                                stripGeneratedSymbols);
+        fprintf(file, "  %%ret = call i64 @%s(ptr %%state)\n", functionSymbol);
     } else {
         fprintf(file,
                 "  %%ret = call i64 @ZrLibrary_AotRuntime_ReportUnsupportedInstruction(ptr %%state, i32 0, i32 0, i32 0)\n");
@@ -43,12 +60,13 @@ void backend_aot_llvm_write_module_exports(FILE *file,
                                            TZrUInt32 inputKind,
                                            const TZrChar *inputHash,
                                            const SZrAotFunctionTable *functionTable,
-                                           const SZrAotWriterOptions *options) {
+                                           const SZrAotWriterOptions *options,
+                                           TZrBool stripGeneratedSymbols) {
     if (file == ZR_NULL || moduleName == ZR_NULL || inputHash == ZR_NULL || functionTable == ZR_NULL) {
         return;
     }
 
-    backend_aot_llvm_write_entry_thunk(file, functionTable);
+    backend_aot_llvm_write_entry_thunk(file, functionTable, stripGeneratedSymbols);
     fprintf(file, "@zr_aot_module = private constant %%ZrAotCompiledModule {\n");
     fprintf(file, "  i32 %u,\n", (unsigned)ZR_VM_AOT_ABI_VERSION);
     fprintf(file, "  i32 %u,\n", (unsigned)ZR_AOT_BACKEND_KIND_LLVM);
@@ -66,7 +84,16 @@ void backend_aot_llvm_write_module_exports(FILE *file,
             (unsigned long long)((options != ZR_NULL) ? options->embeddedModuleBlobLength : 0));
     fprintf(file, "  ptr @zr_aot_function_thunks,\n");
     fprintf(file, "  i32 %u,\n", (unsigned)functionTable->count);
-    fprintf(file, "  ptr @zr_aot_entry\n");
+    fprintf(file, "  ptr @zr_aot_entry,\n");
+    fprintf(file, "  ptr null,\n");
+    fprintf(file, "  i32 0,\n");
+    fprintf(file, "  ptr null,\n");
+    fprintf(file, "  i32 0,\n");
+    fprintf(file, "  ptr null,\n");
+    fprintf(file, "  i32 0,\n");
+    fprintf(file, "  ptr null,\n");
+    fprintf(file, "  i32 0,\n");
+    fprintf(file, "  ptr null\n");
     fprintf(file, "}\n");
     fprintf(file, "\n");
     fprintf(file, "; export-symbol: ZrVm_GetAotCompiledModule\n");

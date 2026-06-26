@@ -75,11 +75,14 @@ static void backend_aot_write_c_direct_integer_zero_guard(FILE *file,
 }
 
 static void backend_aot_write_c_direct_signed_binary(FILE *file,
+                                                     const SZrAotExecIrFunction *functionIr,
                                                      const char *expressionText,
                                                      TZrUInt32 destinationSlot,
                                                      TZrUInt32 leftSlot,
                                                      TZrUInt32 rightSlot,
                                                      EZrAotTypedArithmeticZeroGuard zeroGuard) {
+    TZrBool useScalarDestination = backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot);
+
     if (file == ZR_NULL || expressionText == ZR_NULL) {
         return;
     }
@@ -92,6 +95,7 @@ static void backend_aot_write_c_direct_signed_binary(FILE *file,
             "        const SZrTypeValue *zr_aot_right = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
             "        TZrInt64 zr_aot_left_scalar;\n"
             "        TZrInt64 zr_aot_right_scalar;\n"
+            "        TZrInt64 zr_aot_result;\n"
             "        if (zr_aot_destination == ZR_NULL || zr_aot_left == ZR_NULL || zr_aot_right == ZR_NULL) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
@@ -105,22 +109,33 @@ static void backend_aot_write_c_direct_signed_binary(FILE *file,
             (unsigned)rightSlot);
     backend_aot_write_c_direct_integer_zero_guard(file, "zr_aot_right_scalar", zeroGuard);
     fprintf(file,
+            "        zr_aot_result = %s;\n",
+            expressionText);
+    if (useScalarDestination) {
+        fprintf(file,
+                "        zr_aot_s%u = zr_aot_result;\n",
+                (unsigned)destinationSlot);
+    }
+    fprintf(file,
             "        ZR_VALUE_FAST_SET(zr_aot_destination,\n"
             "                          nativeInt64,\n"
-            "                          %s,\n"
+            "                          zr_aot_result,\n"
             "                          ZR_VALUE_TYPE_INT64);\n"
-            "    }\n",
-            expressionText);
+            "    }\n");
 }
 
 static void backend_aot_write_c_direct_signed_const_binary(FILE *file,
+                                                           const SZrAotExecIrFunction *functionIr,
                                                            const SZrFunction *function,
                                                            const char *expressionText,
                                                            TZrUInt32 destinationSlot,
                                                            TZrUInt32 leftSlot,
                                                            TZrUInt32 constantIndex,
+                                                           TZrUInt32 execInstructionIndex,
                                                            EZrAotTypedArithmeticZeroGuard zeroGuard) {
     const SZrTypeValue *constantValue;
+    TZrBool useScalarLeft;
+    TZrBool useScalarDestination;
     char rightLiteral[64];
 
     if (file == ZR_NULL || expressionText == ZR_NULL) {
@@ -133,31 +148,61 @@ static void backend_aot_write_c_direct_signed_const_binary(FILE *file,
         return;
     }
 
-    fprintf(file,
-            "    {\n"
-            "        /* zr_aot_arith_exec_signed_const */\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_left = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        TZrInt64 zr_aot_left_scalar;\n"
-            "        TZrInt64 zr_aot_right_literal = %s;\n"
-            "        if (zr_aot_destination == ZR_NULL || zr_aot_left == ZR_NULL) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_left->type)) {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        zr_aot_left_scalar = zr_aot_left->value.nativeObject.nativeInt64;\n",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            rightLiteral);
+    useScalarLeft = (TZrBool)(backend_aot_c_scalar_locals_has_i64_slot(functionIr, leftSlot) &&
+                              backend_aot_c_scalar_locals_i64_written_before(
+                                      functionIr, leftSlot, execInstructionIndex));
+    useScalarDestination = backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot);
+
+    if (useScalarLeft) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_arith_exec_signed_const */\n"
+                "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+                "        TZrInt64 zr_aot_left_scalar;\n"
+                "        TZrInt64 zr_aot_right_literal = %s;\n"
+                "        TZrInt64 zr_aot_result;\n"
+                "        if (zr_aot_destination == ZR_NULL) {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n"
+                "        zr_aot_left_scalar = zr_aot_s%u;\n",
+                (unsigned)destinationSlot,
+                rightLiteral,
+                (unsigned)leftSlot);
+    } else {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_arith_exec_signed_const */\n"
+                "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+                "        const SZrTypeValue *zr_aot_left = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+                "        TZrInt64 zr_aot_left_scalar;\n"
+                "        TZrInt64 zr_aot_right_literal = %s;\n"
+                "        TZrInt64 zr_aot_result;\n"
+                "        if (zr_aot_destination == ZR_NULL || zr_aot_left == ZR_NULL) {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n"
+                "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_left->type)) {\n"
+                "            ZR_AOT_C_FAIL();\n"
+                "        }\n"
+                "        zr_aot_left_scalar = zr_aot_left->value.nativeObject.nativeInt64;\n",
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                rightLiteral);
+    }
     backend_aot_write_c_direct_integer_zero_guard(file, "zr_aot_right_literal", zeroGuard);
+    fprintf(file,
+            "        zr_aot_result = %s;\n",
+            expressionText);
+    if (useScalarDestination) {
+        fprintf(file,
+                "        zr_aot_s%u = zr_aot_result;\n",
+                (unsigned)destinationSlot);
+    }
     fprintf(file,
             "        ZR_VALUE_FAST_SET(zr_aot_destination,\n"
             "                          nativeInt64,\n"
-            "                          %s,\n"
+            "                          zr_aot_result,\n"
             "                          ZR_VALUE_TYPE_INT64);\n"
-            "    }\n",
-            expressionText);
+            "    }\n");
 }
 
 static void backend_aot_write_c_direct_unsigned_binary(FILE *file,
@@ -482,10 +527,12 @@ static void backend_aot_write_c_direct_float_comparison(FILE *file,
 }
 
 void backend_aot_write_c_direct_add_signed(FILE *file,
+                                           const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 leftSlot,
                                            TZrUInt32 rightSlot) {
     backend_aot_write_c_direct_signed_binary(file,
+                                             functionIr,
                                              "zr_aot_left_scalar + zr_aot_right_scalar",
                                              destinationSlot,
                                              leftSlot,
@@ -506,16 +553,20 @@ void backend_aot_write_c_direct_add_unsigned(FILE *file,
 }
 
 void backend_aot_write_c_direct_add_signed_const(FILE *file,
+                                                 const SZrAotExecIrFunction *functionIr,
                                                  const SZrFunction *function,
                                                  TZrUInt32 destinationSlot,
                                                  TZrUInt32 leftSlot,
-                                                 TZrUInt32 constantIndex) {
+                                                 TZrUInt32 constantIndex,
+                                                 TZrUInt32 execInstructionIndex) {
     backend_aot_write_c_direct_signed_const_binary(file,
+                                                   functionIr,
                                                    function,
                                                    "zr_aot_left_scalar + zr_aot_right_literal",
                                                    destinationSlot,
                                                    leftSlot,
                                                    constantIndex,
+                                                   execInstructionIndex,
                                                    ZR_AOT_TYPED_ARITHMETIC_ZERO_GUARD_NONE);
 }
 
@@ -534,10 +585,12 @@ void backend_aot_write_c_direct_add_unsigned_const(FILE *file,
 }
 
 void backend_aot_write_c_direct_sub_signed(FILE *file,
+                                           const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 leftSlot,
                                            TZrUInt32 rightSlot) {
     backend_aot_write_c_direct_signed_binary(file,
+                                             functionIr,
                                              "zr_aot_left_scalar - zr_aot_right_scalar",
                                              destinationSlot,
                                              leftSlot,
@@ -558,16 +611,20 @@ void backend_aot_write_c_direct_sub_unsigned(FILE *file,
 }
 
 void backend_aot_write_c_direct_sub_signed_const(FILE *file,
+                                                 const SZrAotExecIrFunction *functionIr,
                                                  const SZrFunction *function,
                                                  TZrUInt32 destinationSlot,
                                                  TZrUInt32 leftSlot,
-                                                 TZrUInt32 constantIndex) {
+                                                 TZrUInt32 constantIndex,
+                                                 TZrUInt32 execInstructionIndex) {
     backend_aot_write_c_direct_signed_const_binary(file,
+                                                   functionIr,
                                                    function,
                                                    "zr_aot_left_scalar - zr_aot_right_literal",
                                                    destinationSlot,
                                                    leftSlot,
                                                    constantIndex,
+                                                   execInstructionIndex,
                                                    ZR_AOT_TYPED_ARITHMETIC_ZERO_GUARD_NONE);
 }
 
@@ -586,10 +643,12 @@ void backend_aot_write_c_direct_sub_unsigned_const(FILE *file,
 }
 
 void backend_aot_write_c_direct_mul_signed(FILE *file,
+                                           const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 leftSlot,
                                            TZrUInt32 rightSlot) {
     backend_aot_write_c_direct_signed_binary(file,
+                                             functionIr,
                                              "zr_aot_left_scalar * zr_aot_right_scalar",
                                              destinationSlot,
                                              leftSlot,
@@ -610,16 +669,20 @@ void backend_aot_write_c_direct_mul_unsigned(FILE *file,
 }
 
 void backend_aot_write_c_direct_mul_signed_const(FILE *file,
+                                                 const SZrAotExecIrFunction *functionIr,
                                                  const SZrFunction *function,
                                                  TZrUInt32 destinationSlot,
                                                  TZrUInt32 leftSlot,
-                                                 TZrUInt32 constantIndex) {
+                                                 TZrUInt32 constantIndex,
+                                                 TZrUInt32 execInstructionIndex) {
     backend_aot_write_c_direct_signed_const_binary(file,
+                                                   functionIr,
                                                    function,
                                                    "zr_aot_left_scalar * zr_aot_right_literal",
                                                    destinationSlot,
                                                    leftSlot,
                                                    constantIndex,
+                                                   execInstructionIndex,
                                                    ZR_AOT_TYPED_ARITHMETIC_ZERO_GUARD_NONE);
 }
 
@@ -638,10 +701,12 @@ void backend_aot_write_c_direct_mul_unsigned_const(FILE *file,
 }
 
 void backend_aot_write_c_direct_div_signed(FILE *file,
+                                           const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 leftSlot,
                                            TZrUInt32 rightSlot) {
     backend_aot_write_c_direct_signed_binary(file,
+                                             functionIr,
                                              "zr_aot_left_scalar / zr_aot_right_scalar",
                                              destinationSlot,
                                              leftSlot,
@@ -662,16 +727,20 @@ void backend_aot_write_c_direct_div_unsigned(FILE *file,
 }
 
 void backend_aot_write_c_direct_div_signed_const(FILE *file,
+                                                 const SZrAotExecIrFunction *functionIr,
                                                  const SZrFunction *function,
                                                  TZrUInt32 destinationSlot,
                                                  TZrUInt32 leftSlot,
-                                                 TZrUInt32 constantIndex) {
+                                                 TZrUInt32 constantIndex,
+                                                 TZrUInt32 execInstructionIndex) {
     backend_aot_write_c_direct_signed_const_binary(file,
+                                                   functionIr,
                                                    function,
                                                    "zr_aot_left_scalar / zr_aot_right_literal",
                                                    destinationSlot,
                                                    leftSlot,
                                                    constantIndex,
+                                                   execInstructionIndex,
                                                    ZR_AOT_TYPED_ARITHMETIC_ZERO_GUARD_DIVIDE);
 }
 
@@ -690,6 +759,7 @@ void backend_aot_write_c_direct_div_unsigned_const(FILE *file,
 }
 
 void backend_aot_write_c_direct_mod_signed(FILE *file,
+                                           const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 leftSlot,
                                            TZrUInt32 rightSlot) {
@@ -697,6 +767,7 @@ void backend_aot_write_c_direct_mod_signed(FILE *file,
         fprintf(file, "    /* zr_aot_arith_exec_signed_mod */\n");
     }
     backend_aot_write_c_direct_signed_binary(file,
+                                             functionIr,
                                              "zr_aot_left_scalar % zr_aot_right_scalar",
                                              destinationSlot,
                                              leftSlot,
@@ -720,19 +791,23 @@ void backend_aot_write_c_direct_mod_unsigned(FILE *file,
 }
 
 void backend_aot_write_c_direct_mod_signed_const(FILE *file,
+                                                 const SZrAotExecIrFunction *functionIr,
                                                  const SZrFunction *function,
                                                  TZrUInt32 destinationSlot,
                                                  TZrUInt32 leftSlot,
-                                                 TZrUInt32 constantIndex) {
+                                                 TZrUInt32 constantIndex,
+                                                 TZrUInt32 execInstructionIndex) {
     if (file != ZR_NULL) {
         fprintf(file, "    /* zr_aot_arith_exec_signed_mod */\n");
     }
     backend_aot_write_c_direct_signed_const_binary(file,
+                                                   functionIr,
                                                    function,
                                                    "zr_aot_left_scalar % zr_aot_right_literal",
                                                    destinationSlot,
                                                    leftSlot,
                                                    constantIndex,
+                                                   execInstructionIndex,
                                                    ZR_AOT_TYPED_ARITHMETIC_ZERO_GUARD_MODULO);
 }
 
@@ -860,7 +935,25 @@ void backend_aot_write_c_direct_div_float(FILE *file,
 void backend_aot_write_c_direct_neg_signed(FILE *file,
                                            const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
-                                           TZrUInt32 sourceSlot) {
+                                           TZrUInt32 sourceSlot,
+                                           TZrUInt32 execInstructionIndex) {
+    if (file != ZR_NULL &&
+        backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot) &&
+        backend_aot_c_scalar_locals_has_i64_slot(functionIr, sourceSlot) &&
+        backend_aot_c_scalar_locals_i64_written_before(functionIr, sourceSlot, execInstructionIndex) &&
+        backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(functionIr, destinationSlot, execInstructionIndex)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_i64_unary dstSlot=%u sourceSlot=%u */\n"
+                "        zr_aot_s%u = -zr_aot_s%u;\n"
+                "    }\n",
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot,
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot);
+        return;
+    }
+
     backend_aot_write_c_direct_signed_unary(file,
                                             functionIr,
                                             "-zr_aot_source_scalar",
@@ -871,7 +964,25 @@ void backend_aot_write_c_direct_neg_signed(FILE *file,
 void backend_aot_write_c_direct_neg_float(FILE *file,
                                           const SZrAotExecIrFunction *functionIr,
                                           TZrUInt32 destinationSlot,
-                                          TZrUInt32 sourceSlot) {
+                                          TZrUInt32 sourceSlot,
+                                          TZrUInt32 execInstructionIndex) {
+    if (file != ZR_NULL &&
+        backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot) &&
+        backend_aot_c_scalar_locals_has_f64_slot(functionIr, sourceSlot) &&
+        backend_aot_c_scalar_locals_f64_written_before(functionIr, sourceSlot, execInstructionIndex) &&
+        backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(functionIr, destinationSlot, execInstructionIndex)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_exec_f64_unary dstSlot=%u sourceSlot=%u */\n"
+                "        zr_aot_f%u = -zr_aot_f%u;\n"
+                "    }\n",
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot,
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot);
+        return;
+    }
+
     backend_aot_write_c_direct_float_unary(file,
                                            functionIr,
                                            "-zr_aot_source_scalar",

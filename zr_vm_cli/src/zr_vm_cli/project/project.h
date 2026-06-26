@@ -28,6 +28,7 @@ typedef struct SZrCliManifestEntry {
     TZrChar zroHash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
     TZrChar zroPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar zriPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar aotCPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     SZrCliStringList imports;
 } SZrCliManifestEntry;
 
@@ -63,6 +64,10 @@ TZrBool ZrCli_Project_ResolveIntermediatePath(const SZrCliProjectContext *contex
                                               const TZrChar *moduleName,
                                               TZrChar *buffer,
                                               TZrSize bufferSize);
+TZrBool ZrCli_Project_ResolveAotCPath(const SZrCliProjectContext *context,
+                                      const TZrChar *moduleName,
+                                      TZrChar *buffer,
+                                      TZrSize bufferSize);
 TZrBool ZrCli_Project_OpenFileIo(SZrState *state, const TZrChar *path, TZrBool isBinary, SZrIo *io);
 
 TZrBool ZrCli_Project_EnsureParentDirectory(const TZrChar *filePath);

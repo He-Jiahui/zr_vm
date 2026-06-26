@@ -103,6 +103,50 @@ static SZrFunction *create_try_throw_end_try_catch_end_finally_function(SZrState
     return function;
 }
 
+static TZrInstruction create_dynamic_no_arg_call_instruction(TZrUInt16 destinationSlot, TZrUInt16 functionSlot) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS);
+    instruction.instruction.operandExtra = destinationSlot;
+    instruction.instruction.operand.operand1[0] = functionSlot;
+    return instruction;
+}
+
+static TZrInstruction create_jump_offset_instruction(TZrInt32 offset) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(JUMP);
+    instruction.instruction.operand.operand2[0] = offset;
+    return instruction;
+}
+
+static SZrFunction *create_safepoint_boundary_function(SZrState *state) {
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(TZrInstruction) * 4u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->instructionsList);
+    function->instructionsList[0] = create_slot_instruction(ZR_INSTRUCTION_ENUM(CREATE_OBJECT), 0u);
+    function->instructionsList[1] = create_dynamic_no_arg_call_instruction(1u, 0u);
+    function->instructionsList[2] = create_jump_offset_instruction(-3);
+    function->instructionsList[3] = create_return_instruction(1u, 1u);
+    function->instructionsLength = 4u;
+
+    function->stackSize = 2u;
+    function->parameterCount = 0u;
+    function->hasVariableArguments = ZR_FALSE;
+    function->closureValueLength = 0u;
+    return function;
+}
+
 static char *read_text_file_owned_or_fail(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -126,6 +170,79 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
     return buffer;
 }
 #endif
+
+static void test_aot_c_generated_source_inserts_gc_safepoints_at_all_boundaries(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C safepoint smoke currently validates the Unix toolchain path");
+#else
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+    char command[4096];
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_safepoint_boundary_function(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_safepoint_smoke";
+    options.sourceHash = "safepoint-smoke";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "safepoint-smoke";
+    options.requireExecutableLowering = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_control_shared_library",
+                                                       "src",
+                                                       "aot_c_safepoint_smoke",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_control_shared_library",
+                                                       "lib",
+                                                       "libaot_c_safepoint_smoke",
+                                                       ".so",
+                                                       sharedLibraryPath,
+                                                       sizeof(sharedLibraryPath)));
+
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_create_object"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_dynamic_function_call"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_gc_safepoint_allocation"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_gc_safepoint_call"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_gc_safepoint_back_edge"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Gc_SafePoint(state);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "goto zr_aot_fn_0_ins_0;"));
+    free(generatedCText);
+
+    snprintf(command,
+             sizeof(command),
+             "\"%s\" -std=c11 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "-I\"%s/zr_vm_common/include\" "
+             "-I\"%s/zr_vm_core/include\" "
+             "-I\"%s/zr_vm_library/include\" "
+             "\"%s\" "
+             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
+             "-lzr_vm_library -lzr_vm_core "
+             "-o \"%s\"",
+             ZR_VM_TESTS_C_COMPILER,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             generatedCPath,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             sharedLibraryPath);
+    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
 
 static void test_aot_c_generated_shared_library_compiles_direct_try_end_try_lowering(void) {
 #if !defined(ZR_PLATFORM_UNIX)
@@ -218,6 +335,7 @@ static void test_aot_c_generated_shared_library_compiles_direct_try_end_try_lowe
 
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_aot_c_generated_source_inserts_gc_safepoints_at_all_boundaries);
     RUN_TEST(test_aot_c_generated_shared_library_compiles_direct_try_end_try_lowering);
     return UNITY_END();
 }

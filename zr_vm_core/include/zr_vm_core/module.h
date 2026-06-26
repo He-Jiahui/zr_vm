@@ -7,6 +7,7 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/io.h"
+#include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
 
@@ -47,6 +48,8 @@ struct ZR_STRUCT_ALIGN SZrObjectModule {
     TZrUInt16 reserved1;
     SZrModuleExportDescriptor *exportDescriptors;
     TZrUInt32 exportDescriptorLength;
+    TZrBool hasMetadataRuntime;
+    SZrMetadataRuntime metadataRuntime;
 };
 
 typedef struct SZrObjectModule SZrObjectModule;
@@ -93,6 +96,10 @@ ZR_CORE_API void ZrCore_Module_SetExportDescriptorReady(struct SZrObjectModule *
                                                         TZrBool isReady);
 ZR_CORE_API void ZrCore_Module_SetInitializationState(struct SZrObjectModule *module,
                                                       EZrModuleInitializationState state);
+ZR_CORE_API SZrMetadataRuntime *ZrCore_Module_AttachMetadataRuntime(struct SZrObjectModule *module,
+                                                                    struct SZrFunction *metadataFunction,
+                                                                    const SZrAotCodeRegistration *codeRegistration);
+ZR_CORE_API SZrMetadataRuntime *ZrCore_Module_GetMetadataRuntime(struct SZrObjectModule *module);
 
 // 内部模块导入 helper
 ZR_CORE_API struct SZrObjectModule *ZrCore_Module_ImportByPath(struct SZrState *state, struct SZrString *path);

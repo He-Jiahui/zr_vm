@@ -282,7 +282,7 @@ static ZR_FORCE_INLINE TZrBool object_try_set_existing_string_pair_plain_value_a
         pair->value = *value;
     }
     if (value->isGarbageCollectable) {
-        ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->value);
+        ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->value);
     }
     object_cache_string_lookup_pair_mru(object, pair);
     return ZR_TRUE;

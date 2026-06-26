@@ -4,11 +4,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(ZR_PLATFORM_UNIX)
+#include <dlfcn.h>
+#endif
+
 #include "harness/path_support.h"
 #include "harness/runtime_support.h"
+#include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_common/zr_hash_conf.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/type_layout.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/aot_runtime.h"
 #include "zr_vm_library/project.h"
@@ -41,6 +47,18 @@ static int run_command_expect_success(const char *command) {
         printf("Command failed with status %d:\n%s\n", result, command);
     }
     return result;
+}
+
+static void *load_symbol(void *library, const char *symbolName) {
+    void *symbol;
+
+    dlerror();
+    symbol = dlsym(library, symbolName);
+    if (symbol == NULL) {
+        const char *error = dlerror();
+        printf("dlsym(%s) failed: %s\n", symbolName, error != NULL ? error : "<unknown>");
+    }
+    return symbol;
 }
 #endif
 
@@ -228,6 +246,8 @@ static void test_aot_c_generated_shared_library_executes_string_field_value_type
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_field_value_slot_store"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_TypeLayout_CopyInline(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_TryCopyInlineFrameReturnValue"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static const TZrUInt32 zr_aot_type_layout_tokens[]"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Gc_WriteBarrier("));
     TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT value SemIR field"));
     TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT dynamic value access"));
     free(generatedCText);
@@ -277,8 +297,330 @@ static void test_aot_c_generated_shared_library_executes_string_field_value_type
 #endif
 }
 
+static void test_aot_c_generated_union_type_layout_token_uses_local_type_def(void) {
+    const char *source =
+            "pub union Shape {\n"
+            "    Empty;\n"
+            "    Circle(radius: float);\n"
+            "}\n"
+            "pub identity(shape: Shape): Shape {\n"
+            "    var local: Shape = shape;\n"
+            "    return local;\n"
+            "}\n"
+            "var shape: Shape = Shape.Circle(1.0);\n";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+    char *tokenTable;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_source(state, source, "aot_c_union_type_layout_token.zr");
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_value_type_shared_library",
+                                                       "type_layout_token/src",
+                                                       "union_shape",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_union_type_layout_token";
+    options.sourceHash = "aot-c-union-type-layout-token";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-union-type-layout-token";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static const SZrTypeLayout ZrTypeLayout_"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "    .kind = 2u,\n"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static const SZrTypeLayout *const zr_aot_type_layouts[]"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "&ZrTypeLayout_"));
+    tokenTable = strstr(generatedCText, "static const TZrUInt32 zr_aot_type_layout_tokens[]");
+    TEST_ASSERT_NOT_NULL(tokenTable);
+    TEST_ASSERT_NOT_NULL(strstr(tokenTable, "0x02000001u"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "debug.typeLayoutToken"));
+    free(generatedCText);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_generated_type_layout_gc_descriptors_are_ref_exact_and_skip_pod(void) {
+    const char *refSource =
+            "struct Label {\n"
+            "    pub var text: string;\n"
+            "    pub var count: int;\n"
+            "    pub @constructor(text: string, count: int) {\n"
+            "        this.text = text;\n"
+            "        this.count = count;\n"
+            "    }\n"
+            "}\n"
+            "var label: Label = $Label(\"live\", 3);\n"
+            "return label.text;";
+    const char *podSource =
+            "struct Point {\n"
+            "    pub var x: int;\n"
+            "    pub var y: int;\n"
+            "    pub @constructor(x: int, y: int) {\n"
+            "        this.x = x;\n"
+            "        this.y = y;\n"
+            "    }\n"
+            "}\n"
+            "var point: Point = $Point(1, 2);\n"
+            "return point.x + point.y;";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *refFunction;
+    SZrFunction *podFunction;
+    SZrAotWriterOptions options;
+    TZrChar refGeneratedCPath[ZR_TESTS_PATH_MAX];
+    TZrChar podGeneratedCPath[ZR_TESTS_PATH_MAX];
+#if defined(ZR_PLATFORM_UNIX)
+    TZrChar refSharedLibraryPath[ZR_TESTS_PATH_MAX];
+#endif
+    char *refGeneratedCText;
+    char *podGeneratedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    refFunction = compile_source(state, refSource, "aot_c_gc_descriptor_ref.zr");
+    TEST_ASSERT_NOT_NULL(refFunction);
+    podFunction = compile_source(state, podSource, "aot_c_gc_descriptor_pod.zr");
+    TEST_ASSERT_NOT_NULL(podFunction);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_value_type_shared_library",
+                                                       "gc_descriptor/src",
+                                                       "ref_struct",
+                                                       ".c",
+                                                       refGeneratedCPath,
+                                                       sizeof(refGeneratedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_value_type_shared_library",
+                                                       "gc_descriptor/src",
+                                                       "pod_struct",
+                                                       ".c",
+                                                       podGeneratedCPath,
+                                                       sizeof(podGeneratedCPath)));
+#if defined(ZR_PLATFORM_UNIX)
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_value_type_shared_library",
+                                                       "gc_descriptor/lib",
+                                                       "libref_struct",
+                                                       ".so",
+                                                       refSharedLibraryPath,
+                                                       sizeof(refSharedLibraryPath)));
+#endif
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_gc_descriptor_ref";
+    options.sourceHash = "aot-c-gc-descriptor-ref";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-gc-descriptor-ref";
+    options.requireExecutableLowering = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, refFunction, refGeneratedCPath, &options));
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_gc_descriptor_pod";
+    options.sourceHash = "aot-c-gc-descriptor-pod";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-gc-descriptor-pod";
+    options.requireExecutableLowering = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, podFunction, podGeneratedCPath, &options));
+
+    refGeneratedCText = read_text_file_owned_or_fail(refGeneratedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "/* zr_aot_gc_descriptor_offsets layout="));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, " count=1 */"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "static const TZrUInt32 ZrGcOffsets_"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText,
+                                "static const SZrAotGcDescriptor ZrGcDescriptor_"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "    1u,\n    ZrGcOffsets_"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText,
+                                "static const SZrAotGcDescriptor *const zr_aot_gc_descriptors[]"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "&ZrGcDescriptor_"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "static const SZrTypeLayoutField ZrTypeLayoutFields_"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "static const SZrTypeLayout ZrTypeLayout_"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "static const SZrTypeLayout *const zr_aot_type_layouts[]"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "static const TZrUInt32 zr_aot_type_layout_tokens[]"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "&ZrTypeLayout_"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "    .typeLayouts = zr_aot_type_layouts,"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "    .typeLayoutTokens = zr_aot_type_layout_tokens,"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "static const SZrAotGcRootSlot zr_aot_gc_root_slots_"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "static const SZrAotGcRootMap zr_aot_gc_root_map_"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "ZR_AOT_GC_ROOT_LOCATION_FRAME_BYTE_OFFSET"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "    .gcRootMap = &zr_aot_gc_root_map_"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "SZrAotGcRootFrame zr_aot_gc_root_frame;"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "ZrCore_Gc_AotRootFramePush(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "zr_aot_context.methodInfo->gcRootMap"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "ZrCore_Gc_AotRootFramePop(state, &zr_aot_gc_root_frame);"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "/* aot_size.typeLayoutBytes["));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "/* aot_size.typeLayoutBytesTotal = "));
+    TEST_ASSERT_NULL(strstr(refGeneratedCText, "zr_aot_gc_descriptor_offsets_failed"));
+    free(refGeneratedCText);
+
+#if defined(ZR_PLATFORM_UNIX)
+    {
+        char command[4096];
+        void *library;
+        void *symbol;
+        FZrVmGetAotCompiledModule getModule;
+        const ZrAotCompiledModule *module;
+        const SZrAotGcDescriptor *descriptor = ZR_NULL;
+        const SZrTypeLayout *layout = ZR_NULL;
+        const SZrAotMethodInfo *methodInfo;
+        TZrUInt32 descriptorIndex;
+        TZrUInt32 rootIndex;
+        TZrBool foundDescriptorRoot = ZR_FALSE;
+
+        snprintf(command,
+                 sizeof(command),
+                 "\"%s\" -std=c11 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+                 "-I\"%s/zr_vm_common/include\" "
+                 "-I\"%s/zr_vm_core/include\" "
+                 "-I\"%s/zr_vm_library/include\" "
+                 "\"%s\" "
+                 "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
+                 "-lzr_vm_library -lzr_vm_core "
+                 "-o \"%s\"",
+                 ZR_VM_TESTS_C_COMPILER,
+                 ZR_VM_TESTS_REPO_ROOT,
+                 ZR_VM_TESTS_REPO_ROOT,
+                 ZR_VM_TESTS_REPO_ROOT,
+                 refGeneratedCPath,
+                 ZR_VM_TESTS_BUILD_LIB_DIR,
+                 ZR_VM_TESTS_BUILD_LIB_DIR,
+                 refSharedLibraryPath);
+        TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+
+        library = dlopen(refSharedLibraryPath, RTLD_NOW | RTLD_LOCAL);
+        if (library == NULL) {
+            printf("dlopen(%s) failed: %s\n", refSharedLibraryPath, dlerror());
+        }
+        TEST_ASSERT_NOT_NULL(library);
+
+        symbol = load_symbol(library, "ZrVm_GetAotCompiledModule");
+        TEST_ASSERT_NOT_NULL(symbol);
+        memcpy(&getModule, &symbol, sizeof(getModule));
+        module = getModule();
+        TEST_ASSERT_NOT_NULL(module);
+        TEST_ASSERT_NOT_NULL(module->codeRegistration);
+        TEST_ASSERT_NOT_NULL(module->typeLayouts);
+        TEST_ASSERT_GREATER_THAN_UINT32(0u, module->typeLayoutCount);
+        TEST_ASSERT_EQUAL_PTR(module->typeLayouts, module->codeRegistration->typeLayouts);
+        TEST_ASSERT_EQUAL_UINT32(module->typeLayoutCount, module->codeRegistration->typeLayoutCount);
+        TEST_ASSERT_NOT_NULL(module->typeLayoutTokens);
+        TEST_ASSERT_EQUAL_UINT32(module->typeLayoutCount, module->typeLayoutTokenCount);
+        TEST_ASSERT_EQUAL_PTR(module->typeLayoutTokens, module->codeRegistration->typeLayoutTokens);
+        TEST_ASSERT_EQUAL_UINT32(module->typeLayoutTokenCount, module->codeRegistration->typeLayoutTokenCount);
+        TEST_ASSERT_NOT_NULL(module->gcDescriptors);
+        TEST_ASSERT_GREATER_THAN_UINT32(0u, module->gcDescriptorCount);
+
+        for (descriptorIndex = 0u; descriptorIndex < module->gcDescriptorCount; descriptorIndex++) {
+            if (module->gcDescriptors[descriptorIndex] != ZR_NULL) {
+                descriptor = module->gcDescriptors[descriptorIndex];
+                break;
+            }
+        }
+        TEST_ASSERT_NOT_NULL(descriptor);
+        TEST_ASSERT_EQUAL_UINT32(descriptorIndex, descriptor->typeLayoutId);
+        TEST_ASSERT_EQUAL_UINT32(1u, descriptor->gcFieldCount);
+        TEST_ASSERT_NOT_NULL(descriptor->gcFieldOffsets);
+        TEST_ASSERT_TRUE(descriptorIndex < module->typeLayoutCount);
+        layout = module->typeLayouts[descriptorIndex];
+        TEST_ASSERT_NOT_NULL(layout);
+        TEST_ASSERT_EQUAL_UINT32(descriptor->typeLayoutId, layout->cTypeId);
+        TEST_ASSERT_EQUAL_UINT32(descriptor->gcFieldCount, layout->gcFieldCount);
+        TEST_ASSERT_NOT_NULL(layout->gcFieldOffsets);
+        TEST_ASSERT_EQUAL_UINT32(descriptor->gcFieldOffsets[0], layout->gcFieldOffsets[0]);
+        TEST_ASSERT_NOT_NULL(module->methodInfos);
+        methodInfo = module->methodInfos[0];
+        TEST_ASSERT_NOT_NULL(methodInfo);
+        TEST_ASSERT_NOT_NULL(methodInfo->gcRootMap);
+        TEST_ASSERT_GREATER_THAN_UINT32(0u, methodInfo->gcRootMap->rootCount);
+        TEST_ASSERT_NOT_NULL(methodInfo->gcRootMap->roots);
+        for (rootIndex = 0u; rootIndex < methodInfo->gcRootMap->rootCount; rootIndex++) {
+            const SZrAotGcRootSlot *root = &methodInfo->gcRootMap->roots[rootIndex];
+
+            TEST_ASSERT_EQUAL_UINT32(ZR_AOT_GC_ROOT_LOCATION_FRAME_BYTE_OFFSET, root->locationKind);
+            if (root->typeLayoutId == descriptor->typeLayoutId) {
+                TEST_ASSERT_EQUAL_UINT32(descriptor->gcFieldOffsets[0], root->fieldByteOffset);
+                foundDescriptorRoot = ZR_TRUE;
+            }
+        }
+        TEST_ASSERT_TRUE(foundDescriptorRoot);
+
+        dlclose(library);
+    }
+#endif
+
+    podGeneratedCText = read_text_file_owned_or_fail(podGeneratedCPath);
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "/* zr_aot_gc_descriptor_offsets layout="));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "static const TZrUInt32 ZrGcOffsets_"));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "static const TZrUInt32 ZrOwnershipOffsets_"));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "static const SZrAotGcDescriptor ZrGcDescriptor_"));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "static const SZrAotGcDescriptor *const zr_aot_gc_descriptors[]"));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "zr_aot_gc_root_map_"));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "zr_aot_gc_root_slots_"));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "ZrCore_Gc_AotRootFramePush(state,"));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "ZrCore_Gc_AotRootFramePop(state, &zr_aot_gc_root_frame);"));
+    TEST_ASSERT_NOT_NULL(strstr(podGeneratedCText, "    .gcRootMap = ZR_NULL,"));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "zr_aot_gc_descriptor_offsets_failed"));
+    TEST_ASSERT_NOT_NULL(strstr(podGeneratedCText, "/* aot_size.typeLayoutBytes["));
+    TEST_ASSERT_NOT_NULL(strstr(podGeneratedCText, "/* aot_size.typeLayoutBytesTotal = "));
+    free(podGeneratedCText);
+
+    ZrCore_Function_Free(state, refFunction);
+    ZrCore_Function_Free(state, podFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_generated_type_layout_emits_ownership_offsets_for_owner_fields(void) {
+    const char *source =
+            "struct Holder {\n"
+            "    pub var handle: Unique<string>;\n"
+            "    pub var count: int;\n"
+            "}\n"
+            "var holder: Holder;\n";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_source(state, source, "aot_c_owner_field_layout.zr");
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_value_type_shared_library",
+                                                       "ownership_offsets/src",
+                                                       "owner_struct",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_owner_field_layout";
+    options.sourceHash = "aot-c-owner-field-layout";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-owner-field-layout";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static const TZrUInt32 ZrOwnershipOffsets_"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_ownership_offsets layout="));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, " count=1 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "    .ownershipFieldCount = 1u,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "    .ownershipFieldOffsets = ZrOwnershipOffsets_"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_ownership_offsets_failed"));
+    free(generatedCText);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_string_field_value_type_copy_and_return);
+    RUN_TEST(test_aot_c_generated_union_type_layout_token_uses_local_type_def);
+    RUN_TEST(test_aot_c_generated_type_layout_gc_descriptors_are_ref_exact_and_skip_pod);
+    RUN_TEST(test_aot_c_generated_type_layout_emits_ownership_offsets_for_owner_fields);
     return UNITY_END();
 }

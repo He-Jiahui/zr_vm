@@ -20,6 +20,7 @@ typedef struct SZrAotLlvmLoweringContext {
     const TZrChar *failLabel;
     TZrUInt32 instructionCount;
     TZrBool publishExports;
+    TZrBool stripGeneratedSymbols;
 } SZrAotLlvmLoweringContext;
 
 typedef struct SZrAotLlvmInstructionContext {

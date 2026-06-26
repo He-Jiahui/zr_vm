@@ -215,9 +215,11 @@ TZrBool backend_aot_try_write_c_value_semir_for_exec_instruction(FILE *file,
                                                                  SZrState *state,
                                                                  const SZrAotExecIrModule *module,
                                                                  const SZrAotExecIrFunction *functionIr,
-                                                                 TZrUInt32 execInstructionIndex,
-                                                                 TZrUInt32 calleeFunctionIndex,
-                                                                 TZrBool allowTypedReturn) {
+                                                                  TZrUInt32 execInstructionIndex,
+                                                                  const SZrFunction *calleeFunction,
+                                                                  TZrUInt32 calleeFunctionIndex,
+                                                                  TZrBool requireFullAot,
+                                                                  TZrBool allowTypedReturn) {
     TZrUInt32 instructionIndex;
 
     if (file == ZR_NULL || module == ZR_NULL || functionIr == ZR_NULL) {
@@ -257,7 +259,14 @@ TZrBool backend_aot_try_write_c_value_semir_for_exec_instruction(FILE *file,
                 break;
             case ZR_SEMIR_OPCODE_CALL_TYPED:
                 if (backend_aot_try_write_c_value_semir_call_typed_exec(
-                            file, &functionIr->frameLayout, instruction, calleeFunctionIndex)) {
+                            file,
+                            &functionIr->frameLayout,
+                            instruction,
+                            calleeFunction,
+                            functionIr->flatIndex,
+                            execInstructionIndex,
+                            calleeFunctionIndex,
+                            requireFullAot)) {
                     return ZR_TRUE;
                 }
                 break;

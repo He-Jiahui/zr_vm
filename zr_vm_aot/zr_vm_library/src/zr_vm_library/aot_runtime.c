@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "zr_vm_core/call_info.h"
+#include "zr_vm_core/bridge.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/execution_control.h"
@@ -1676,7 +1677,7 @@ static TZrBool aot_runtime_project_closure_into_vm_shim(SZrState *state,
         }
 
         ZrCore_Value_Copy(state, destinationCaptureValue, sourceCaptureValue);
-        ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(destinationCapture), sourceCaptureValue);
+        ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(destinationCapture), sourceCaptureValue);
     }
 
     *outClosure = closure;
@@ -1703,7 +1704,7 @@ static TZrBool aot_runtime_bind_native_closure_capture(SZrState *state,
     if (captureOwner != ZR_NULL) {
         ZrCore_RawObject_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(destinationClosure), captureOwner);
     } else {
-        ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(destinationClosure), captureValue);
+        ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(destinationClosure), captureValue);
     }
     return ZR_TRUE;
 }
@@ -2087,6 +2088,64 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
     if (!aot_runtime_descriptor_has_true_aot_payload(descriptor)) {
         aot_runtime_close_library(handle);
         aot_runtime_fail(state, runtimeState, "AOT descriptor validation failed for module '%s'", normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if (descriptor->codeRegistration == ZR_NULL) {
+        aot_runtime_close_library(handle);
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': codeRegistration=null",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if (descriptor->codeRegistration->functionPointers != descriptor->functionThunks ||
+        descriptor->codeRegistration->functionCount != descriptor->functionThunkCount ||
+        descriptor->codeRegistration->methodInfos != descriptor->methodInfos ||
+        descriptor->codeRegistration->methodInfoCount != descriptor->methodInfoCount ||
+        descriptor->codeRegistration->typeLayouts != descriptor->typeLayouts ||
+        descriptor->codeRegistration->typeLayoutCount != descriptor->typeLayoutCount ||
+        descriptor->codeRegistration->typeLayoutTokens != descriptor->typeLayoutTokens ||
+        descriptor->codeRegistration->typeLayoutTokenCount != descriptor->typeLayoutTokenCount ||
+        descriptor->codeRegistration->gcDescriptors != descriptor->gcDescriptors ||
+        descriptor->codeRegistration->gcDescriptorCount != descriptor->gcDescriptorCount) {
+        aot_runtime_close_library(handle);
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': codeRegistration table mismatch",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if ((descriptor->typeLayoutCount > 0u && descriptor->typeLayouts == ZR_NULL) ||
+        (descriptor->typeLayoutCount == 0u && descriptor->typeLayouts != ZR_NULL)) {
+        aot_runtime_close_library(handle);
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': typeLayout table mismatch",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if (descriptor->typeLayoutTokenCount != descriptor->typeLayoutCount ||
+        (descriptor->typeLayoutTokenCount > 0u && descriptor->typeLayoutTokens == ZR_NULL) ||
+        (descriptor->typeLayoutTokenCount == 0u && descriptor->typeLayoutTokens != ZR_NULL)) {
+        aot_runtime_close_library(handle);
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': typeLayout token table mismatch",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if (descriptor->codeRegistration->invokers == ZR_NULL ||
+        descriptor->codeRegistration->invokerCount == 0u) {
+        aot_runtime_close_library(handle);
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': codeRegistration invokers missing",
+                         normalizedModule);
         return ZR_FALSE;
     }
 
@@ -2734,7 +2793,7 @@ TZrBool ZrLibrary_AotRuntime_SetClosureValue(SZrState *state,
 
     ZrCore_Value_Copy(state, targetValue, sourceValue);
     if (barrierObject != ZR_NULL) {
-        ZrCore_Value_Barrier(state, barrierObject, sourceValue);
+        ZrCore_Gc_WriteBarrier(state, barrierObject, sourceValue);
     }
     return ZR_TRUE;
 }
@@ -2904,11 +2963,11 @@ TZrBool ZrLibrary_AotRuntime_ToObject(SZrState *state,
     sourceValue = ZrCore_Stack_GetValue(sourcePointer);
     typeNameValue = &function->constantValueList[typeNameConstantIndex];
     if (destinationValue == ZR_NULL || sourceValue == ZR_NULL ||
-        !ZrCore_Execution_ToObject(state,
-                                   frame != ZR_NULL ? frame->callInfo : state->callInfoList,
-                                   destinationValue,
-                                   sourceValue,
-                                   typeNameValue)) {
+        !ZrCore_Bridge_BoxTyped(state,
+                                frame != ZR_NULL ? frame->callInfo : state->callInfoList,
+                                destinationValue,
+                                sourceValue,
+                                typeNameValue)) {
         aot_runtime_fail(state, runtimeState, "TO_OBJECT: failed to materialize object conversion");
         return ZR_FALSE;
     }
@@ -2941,11 +3000,11 @@ TZrBool ZrLibrary_AotRuntime_ToStruct(SZrState *state,
     sourceValue = ZrCore_Stack_GetValue(sourcePointer);
     typeNameValue = &function->constantValueList[typeNameConstantIndex];
     if (destinationValue == ZR_NULL || sourceValue == ZR_NULL ||
-        !ZrCore_Execution_ToStruct(state,
-                                   frame != ZR_NULL ? frame->callInfo : state->callInfoList,
-                                   destinationValue,
-                                   sourceValue,
-                                   typeNameValue)) {
+        !ZrCore_Bridge_UnboxTyped(state,
+                                  frame != ZR_NULL ? frame->callInfo : state->callInfoList,
+                                  destinationValue,
+                                  sourceValue,
+                                  typeNameValue)) {
         aot_runtime_fail(state, runtimeState, "TO_STRUCT: failed to materialize struct conversion");
         return ZR_FALSE;
     }
@@ -5646,6 +5705,36 @@ TZrBool ZrLibrary_AotRuntime_SetMember(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_AotRuntime_SetMemberNewOwnerNoWriteBarrier(SZrState *state,
+                                                             ZrAotGeneratedFrame *frame,
+                                                             TZrUInt32 sourceSlot,
+                                                             TZrUInt32 receiverSlot,
+                                                             TZrUInt32 memberId) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverSlot);
+    SZrString *memberSymbol = ZR_NULL;
+    SZrTypeValue *receiverValue;
+    SZrTypeValue *sourceValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || sourcePointer == ZR_NULL || receiverPointer == ZR_NULL ||
+        !aot_runtime_resolve_member_symbol(aot_runtime_frame_function(frame), memberId, &memberSymbol)) {
+        aot_runtime_fail(state, runtimeState, "SET_MEMBER: invalid member id");
+        return ZR_FALSE;
+    }
+
+    receiverValue = ZrCore_Stack_GetValue(receiverPointer);
+    sourceValue = ZrCore_Stack_GetValue(sourcePointer);
+    if (receiverValue == ZR_NULL || sourceValue == ZR_NULL ||
+        !ZrCore_Object_SetMemberAssumeNewOwnerNoWriteBarrier(state, receiverValue, memberSymbol, sourceValue)) {
+        aot_runtime_fail(state, runtimeState, "SET_MEMBER: receiver must be a writable object member");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_AotRuntime_GetMemberSlot(SZrState *state,
                                            ZrAotGeneratedFrame *frame,
                                            TZrUInt32 destinationSlot,
@@ -5704,6 +5793,40 @@ TZrBool ZrLibrary_AotRuntime_SetMemberSlot(SZrState *state,
     sourceValue = ZrCore_Stack_GetValue(sourcePointer);
     if (receiverValue == ZR_NULL || sourceValue == ZR_NULL ||
         !ZrCore_Object_SetMember(state, receiverValue, memberSymbol, sourceValue)) {
+        aot_runtime_fail(state, runtimeState, "SET_MEMBER_SLOT: receiver must be a writable object member");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_SetMemberSlotNewOwnerNoWriteBarrier(SZrState *state,
+                                                                 ZrAotGeneratedFrame *frame,
+                                                                 TZrUInt32 sourceSlot,
+                                                                 TZrUInt32 receiverSlot,
+                                                                 TZrUInt32 cacheIndex) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverSlot);
+    SZrString *memberSymbol = ZR_NULL;
+    SZrTypeValue *receiverValue;
+    SZrTypeValue *sourceValue;
+    const SZrFunction *function = aot_runtime_frame_function(frame);
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || sourcePointer == ZR_NULL || receiverPointer == ZR_NULL ||
+        !aot_runtime_resolve_cached_member_symbol(function,
+                                                  cacheIndex,
+                                                  ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET,
+                                                  &memberSymbol)) {
+        aot_runtime_fail(state, runtimeState, "SET_MEMBER_SLOT: invalid cached member");
+        return ZR_FALSE;
+    }
+
+    receiverValue = ZrCore_Stack_GetValue(receiverPointer);
+    sourceValue = ZrCore_Stack_GetValue(sourcePointer);
+    if (receiverValue == ZR_NULL || sourceValue == ZR_NULL ||
+        !ZrCore_Object_SetMemberAssumeNewOwnerNoWriteBarrier(state, receiverValue, memberSymbol, sourceValue)) {
         aot_runtime_fail(state, runtimeState, "SET_MEMBER_SLOT: receiver must be a writable object member");
         return ZR_FALSE;
     }
@@ -5842,6 +5965,68 @@ TZrBool ZrLibrary_AotRuntime_SetByIndex(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_AotRuntime_SetByIndexNewOwnerNoWriteBarrier(SZrState *state,
+                                                              ZrAotGeneratedFrame *frame,
+                                                              TZrUInt32 sourceSlot,
+                                                              TZrUInt32 receiverSlot,
+                                                              TZrUInt32 keySlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverSlot);
+    TZrStackValuePointer keyPointer = aot_runtime_frame_slot(frame, keySlot);
+    SZrTypeValue *receiverValue;
+    SZrTypeValue *keyValue;
+    SZrTypeValue *sourceValue;
+    SZrTypeValue stableReceiver;
+    SZrTypeValue stableKey;
+    SZrTypeValue stableValue;
+    SZrCallInfo *callInfo;
+    TZrBool resolved;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || sourcePointer == ZR_NULL || receiverPointer == ZR_NULL || keyPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SET_BY_INDEX: invalid slot");
+        return ZR_FALSE;
+    }
+
+    receiverValue = ZrCore_Stack_GetValue(receiverPointer);
+    keyValue = ZrCore_Stack_GetValue(keyPointer);
+    sourceValue = ZrCore_Stack_GetValue(sourcePointer);
+    if (receiverValue == ZR_NULL || keyValue == ZR_NULL || sourceValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SET_BY_INDEX: invalid slot value");
+        return ZR_FALSE;
+    }
+    if (receiverValue->type != ZR_VALUE_TYPE_OBJECT && receiverValue->type != ZR_VALUE_TYPE_ARRAY) {
+        aot_runtime_fail(state, runtimeState, "SET_BY_INDEX: receiver must be an object or array");
+        return ZR_FALSE;
+    }
+
+    stableReceiver = *receiverValue;
+    stableKey = *keyValue;
+    stableValue = *sourceValue;
+    callInfo = frame->callInfo != ZR_NULL ? frame->callInfo : state->callInfoList;
+    if (callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL ||
+        callInfo->functionTop.valuePointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SET_BY_INDEX: missing active call frame");
+        return ZR_FALSE;
+    }
+
+    state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+    resolved = ZrCore_Object_SetByIndexAssumeNewOwnerNoWriteBarrier(state, &stableReceiver, &stableKey, &stableValue);
+    if (!aot_runtime_refresh_frame_from_callinfo(state, frame, callInfo)) {
+        aot_runtime_fail(state, runtimeState, "SET_BY_INDEX: failed to refresh frame after index write");
+        return ZR_FALSE;
+    }
+
+    if (!resolved) {
+        aot_runtime_fail(state, runtimeState, "SET_BY_INDEX: receiver must be an object or array");
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_AotRuntime_SuperArrayGetInt(SZrState *state,
                                               ZrAotGeneratedFrame *frame,
                                               TZrUInt32 destinationSlot,
@@ -5910,6 +6095,43 @@ TZrBool ZrLibrary_AotRuntime_SuperArraySetInt(SZrState *state,
     }
 
     if (!ZrCore_Object_SuperArraySetInt(state, receiverValue, keyValue, sourceValue)) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "SUPER_ARRAY_SET_INT: receiver must be an array-like object with int index");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_SuperArraySetIntNewOwnerNoWriteBarrier(SZrState *state,
+                                                                    ZrAotGeneratedFrame *frame,
+                                                                    TZrUInt32 sourceSlot,
+                                                                    TZrUInt32 receiverSlot,
+                                                                    TZrUInt32 keySlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverSlot);
+    TZrStackValuePointer keyPointer = aot_runtime_frame_slot(frame, keySlot);
+    SZrTypeValue *receiverValue;
+    SZrTypeValue *keyValue;
+    SZrTypeValue *sourceValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || sourcePointer == ZR_NULL || receiverPointer == ZR_NULL || keyPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_SET_INT: invalid slot");
+        return ZR_FALSE;
+    }
+
+    receiverValue = ZrCore_Stack_GetValue(receiverPointer);
+    keyValue = ZrCore_Stack_GetValue(keyPointer);
+    sourceValue = ZrCore_Stack_GetValue(sourcePointer);
+    if (receiverValue == ZR_NULL || keyValue == ZR_NULL || sourceValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_SET_INT: invalid slot value");
+        return ZR_FALSE;
+    }
+
+    if (!ZrCore_Object_SuperArraySetIntAssumeNewOwnerNoWriteBarrier(state, receiverValue, keyValue, sourceValue)) {
         aot_runtime_fail(state,
                          runtimeState,
                          "SUPER_ARRAY_SET_INT: receiver must be an array-like object with int index");

@@ -1,13 +1,13 @@
 #include "aot_c_typed_direct_call_bitwise_smoke_support.h"
 
 #define ZR_AOT_BITWISE_TWO_ARG_DECL \
-    "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);"
+    "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);"
 #define ZR_AOT_BITWISE_TWO_ARG_DEF \
-    "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {"
+    "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {"
 #define ZR_AOT_BITWISE_ONE_ARG_DECL \
-    "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0);"
+    "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0);"
 #define ZR_AOT_BITWISE_ONE_ARG_DEF \
-    "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0) {"
+    "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0) {"
 
 static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_bitwise_or_typed_thunk(void) {
     const SZrAotTypedDirectCallBitwiseSmokeCase testCase = {
@@ -30,7 +30,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_bitw
             ZR_AOT_BITWISE_TWO_ARG_DEF,
             "return (TZrInt64)(zr_aot_arg0 | zr_aot_arg1);",
             "/* zr_aot_static_i64_two_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+            "zr_aot_typed_i64_fn_1(zr_aot_s",
             "/* zr_aot_static_i64_two_arg_direct_call_sync_stack_slot */",
             42
     };
@@ -59,7 +59,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_bitw
             ZR_AOT_BITWISE_TWO_ARG_DEF,
             "return (TZrInt64)(zr_aot_arg0 ^ zr_aot_arg1);",
             "/* zr_aot_static_i64_two_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+            "zr_aot_typed_i64_fn_1(zr_aot_s",
             "/* zr_aot_static_i64_two_arg_direct_call_sync_stack_slot */",
             42
     };
@@ -87,7 +87,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_bitw
             ZR_AOT_BITWISE_ONE_ARG_DEF,
             "return (TZrInt64)(~zr_aot_arg0);",
             "/* zr_aot_static_i64_one_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+            "zr_aot_typed_i64_fn_1(zr_aot_s",
             "/* zr_aot_static_i64_one_arg_direct_call_sync_stack_slot */",
             42
     };
@@ -115,7 +115,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_bitw
             ZR_AOT_BITWISE_ONE_ARG_DEF,
             "return (TZrInt64)(zr_aot_arg0 & (TZrInt64)47);",
             "/* zr_aot_static_i64_one_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+            "zr_aot_typed_i64_fn_1(zr_aot_s",
             "/* zr_aot_static_i64_one_arg_direct_call_sync_stack_slot */",
             42
     };
@@ -143,7 +143,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_bitw
             ZR_AOT_BITWISE_ONE_ARG_DEF,
             "return (TZrInt64)(zr_aot_arg0 | (TZrInt64)10);",
             "/* zr_aot_static_i64_one_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+            "zr_aot_typed_i64_fn_1(zr_aot_s",
             "/* zr_aot_static_i64_one_arg_direct_call_sync_stack_slot */",
             42
     };
@@ -171,7 +171,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_bitw
             ZR_AOT_BITWISE_ONE_ARG_DEF,
             "return (TZrInt64)(zr_aot_arg0 ^ (TZrInt64)6);",
             "/* zr_aot_static_i64_one_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+            "zr_aot_typed_i64_fn_1(zr_aot_s",
             "/* zr_aot_static_i64_one_arg_direct_call_sync_stack_slot */",
             42
     };

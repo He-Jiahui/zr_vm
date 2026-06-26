@@ -59,6 +59,40 @@ typedef struct SZrLibrary_ProjectResource {
     TZrBool compress;
 } SZrLibrary_ProjectResource;
 
+typedef struct SZrLibrary_ProjectFeatureSwitch {
+    SZrString *name;
+    TZrBool value;
+} SZrLibrary_ProjectFeatureSwitch;
+
+typedef enum EZrLibrary_ProjectAotMode {
+    ZR_LIBRARY_PROJECT_AOT_MODE_HYBRID = 0,
+    ZR_LIBRARY_PROJECT_AOT_MODE_FULL_AOT = 1
+} EZrLibrary_ProjectAotMode;
+
+typedef enum EZrLibrary_ProjectPreserveRuleKind {
+    ZR_LIBRARY_PROJECT_PRESERVE_RULE_TYPE = 1,
+    ZR_LIBRARY_PROJECT_PRESERVE_RULE_METHOD = 2,
+    ZR_LIBRARY_PROJECT_PRESERVE_RULE_GENERIC = 3
+} EZrLibrary_ProjectPreserveRuleKind;
+
+typedef enum EZrLibrary_ProjectPreserveMembers {
+    ZR_LIBRARY_PROJECT_PRESERVE_MEMBERS_DEFAULT = 0,
+    ZR_LIBRARY_PROJECT_PRESERVE_MEMBERS_ALL = 1,
+    ZR_LIBRARY_PROJECT_PRESERVE_MEMBERS_METHODS = 2
+} EZrLibrary_ProjectPreserveMembers;
+
+typedef struct SZrLibrary_ProjectPreserveRule {
+    EZrLibrary_ProjectPreserveRuleKind kind;
+    SZrString *target;
+    EZrLibrary_ProjectPreserveMembers members;
+    SZrString **genericArguments;
+    TZrSize genericArgumentCount;
+    TZrSize genericArgumentCapacity;
+    SZrString *feature;
+    TZrBool hasFeatureValue;
+    TZrBool featureValue;
+} SZrLibrary_ProjectPreserveRule;
+
 struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     TZrUInt64 signature;
     SZrString *file;
@@ -82,11 +116,18 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     SZrString *dependency;
     SZrString *local;
     TZrPtr aotRuntime;
+    EZrLibrary_ProjectAotMode aotMode;
     SZrLibrary_ProjectPathAlias *pathAliases;
     TZrSize pathAliasCount;
     SZrLibrary_ProjectResource *resources;
     TZrSize resourceCount;
     TZrSize resourceCapacity;
+    SZrLibrary_ProjectFeatureSwitch *featureSwitches;
+    TZrSize featureSwitchCount;
+    TZrSize featureSwitchCapacity;
+    SZrLibrary_ProjectPreserveRule *preserveRules;
+    TZrSize preserveRuleCount;
+    TZrSize preserveRuleCapacity;
     SZrLibrary_ProjectDependencyPackage *dependencyPackages;
     TZrSize dependencyPackageCount;
     TZrSize dependencyPackageCapacity;

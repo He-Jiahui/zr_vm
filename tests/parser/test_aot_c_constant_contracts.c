@@ -322,7 +322,20 @@ static void test_aot_c_source_lowers_closure_value_access_to_runtime_boundary(vo
             "aot_runtime_resolve_current_closure_capture(state, frame, closureIndex",
             "ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(destinationPointer), closureValue);",
             "ZrCore_Value_Copy(state, targetValue, sourceValue);",
-            "ZrCore_Value_Barrier(state, barrierObject, sourceValue);",
+            "ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(destinationCapture), sourceCaptureValue);",
+            "ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(destinationClosure), captureValue);",
+            "ZrCore_Gc_WriteBarrier(state, barrierObject, sourceValue);",
+    };
+    static const char *const gcHeaderNeedles[] = {
+            "ZrCore_Gc_WriteBarrier(struct SZrState *state,",
+            "SZrRawObject *ownerObject",
+            "SZrTypeValue *value",
+    };
+    static const char *const gcSourceNeedles[] = {
+            "void ZrCore_Gc_WriteBarrier(SZrState *state,",
+            "SZrRawObject *ownerObject",
+            "SZrTypeValue *value",
+            "ZrCore_Value_Barrier(state, ownerObject, value);",
     };
     static const char *const valueLoweringNeedles[] = {
             "backend_aot_write_c_get_closure_value(",
@@ -353,6 +366,9 @@ static void test_aot_c_source_lowers_closure_value_access_to_runtime_boundary(vo
             "ZrCore_Value_Copy(state, zr_aot_closure_value, zr_aot_source);",
             "ZrCore_Value_Barrier(state, zr_aot_barrier_object, zr_aot_source);",
     };
+    static const char *const forbiddenRuntimeSourceNeedles[] = {
+            "ZrCore_Value_Barrier(state,",
+    };
     static const char *const forbiddenFunctionBodyNeedles[] = {
             "ZrLibrary_AotRuntime_GetClosureValue(state, &frame",
             "ZrLibrary_AotRuntime_SetClosureValue(state, &frame",
@@ -361,6 +377,8 @@ static void test_aot_c_source_lowers_closure_value_access_to_runtime_boundary(vo
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
     char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    char *gcHeaderText = read_repo_text_file_owned("zr_vm_core/include/zr_vm_core/gc.h");
+    char *gcSourceText = read_repo_text_file_owned("zr_vm_core/src/zr_vm_core/gc/gc.c");
     char *valueLoweringText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
@@ -369,14 +387,21 @@ static void test_aot_c_source_lowers_closure_value_access_to_runtime_boundary(vo
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(runtimeHeaderText);
     TEST_ASSERT_NOT_NULL(runtimeSourceText);
+    TEST_ASSERT_NOT_NULL(gcHeaderText);
+    TEST_ASSERT_NOT_NULL(gcSourceText);
     TEST_ASSERT_NOT_NULL(valueLoweringText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
     assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
+    assert_text_contains_all(gcHeaderText, gcHeaderNeedles, ARRAY_COUNT(gcHeaderNeedles));
+    assert_text_contains_all(gcSourceText, gcSourceNeedles, ARRAY_COUNT(gcSourceNeedles));
     assert_text_contains_all(valueLoweringText, valueLoweringNeedles, ARRAY_COUNT(valueLoweringNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
+    assert_text_contains_none(runtimeSourceText,
+                              forbiddenRuntimeSourceNeedles,
+                              ARRAY_COUNT(forbiddenRuntimeSourceNeedles));
     assert_text_contains_none(valueLoweringText, forbiddenValueLoweringNeedles, ARRAY_COUNT(forbiddenValueLoweringNeedles));
     assert_text_contains_none(functionBodyText,
                               forbiddenFunctionBodyNeedles,
@@ -385,6 +410,8 @@ static void test_aot_c_source_lowers_closure_value_access_to_runtime_boundary(vo
     free(headerText);
     free(runtimeHeaderText);
     free(runtimeSourceText);
+    free(gcHeaderText);
+    free(gcSourceText);
     free(valueLoweringText);
     free(functionBodyText);
 }

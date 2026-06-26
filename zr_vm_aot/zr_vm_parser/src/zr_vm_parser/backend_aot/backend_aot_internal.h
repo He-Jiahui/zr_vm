@@ -33,6 +33,12 @@ TZrUInt32 backend_aot_option_input_kind(const SZrAotWriterOptions *options);
 const TZrChar *backend_aot_option_input_hash(const SZrAotWriterOptions *options,
                                              const TZrChar *sourceHash,
                                              const TZrChar *zroHash);
+TZrBool backend_aot_option_require_full_aot(const SZrAotWriterOptions *options);
+TZrBool backend_aot_option_enable_code_stripping(const SZrAotWriterOptions *options);
+TZrBool backend_aot_option_strip_generated_symbols(const SZrAotWriterOptions *options);
+TZrUInt8 backend_aot_option_reflection_metadata_level(const SZrAotWriterOptions *options);
+TZrBool backend_aot_option_suppress_runtime_fallback_warnings(const SZrAotWriterOptions *options);
+TZrUInt32 backend_aot_option_runtime_fallback_warning_suppression_mask(const SZrAotWriterOptions *options);
 ZR_PARSER_API TZrUInt32 backend_aot_c_step_flags_for_instruction(const SZrFunction *function,
                                                                  const TZrInstruction *instruction);
 TZrUInt32 backend_aot_get_callsite_cache_argument_count(const SZrFunction *function,

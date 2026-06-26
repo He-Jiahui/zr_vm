@@ -201,11 +201,12 @@ static void test_aot_c_generated_shared_library_executes_static_i64_no_arg_local
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state);"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state) {"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrInt64 zr_aot_typed_i64_fn_1(void);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrInt64 zr_aot_typed_i64_fn_1(void) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrInt64)42;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_no_arg_direct_call */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1()"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_no_arg_direct_call_sync_stack_slot */"));
     TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
@@ -348,12 +349,13 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_type
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0);"));
+                                "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0) {"));
+                                "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return zr_aot_arg0;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_one_arg_direct_call */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state, zr_aot_s"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(zr_aot_s"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state, zr_aot_s"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_one_arg_direct_call_sync_stack_slot */"));
     TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
@@ -496,12 +498,13 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_add_
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0);"));
+                                "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0) {"));
+                                "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrInt64)(zr_aot_arg0 + (TZrInt64)1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_one_arg_direct_call */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state, zr_aot_s"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(zr_aot_s"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state, zr_aot_s"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_one_arg_direct_call_sync_stack_slot */"));
     TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
@@ -646,13 +649,14 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_type
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(
             generatedCText,
-            "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);"));
+            "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);"));
     TEST_ASSERT_NOT_NULL(strstr(
             generatedCText,
-            "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {"));
+            "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrInt64)(zr_aot_arg0 + zr_aot_arg1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_two_arg_direct_call */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state, zr_aot_s"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(zr_aot_s"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state, zr_aot_s"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_two_arg_direct_call_sync_stack_slot */"));
     TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
@@ -797,13 +801,14 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_subt
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(
             generatedCText,
-            "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);"));
+            "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);"));
     TEST_ASSERT_NOT_NULL(strstr(
             generatedCText,
-            "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {"));
+            "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrInt64)(zr_aot_arg0 - zr_aot_arg1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_two_arg_direct_call */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state, zr_aot_s"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(zr_aot_s"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state, zr_aot_s"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_two_arg_direct_call_sync_stack_slot */"));
     TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));

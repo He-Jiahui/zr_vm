@@ -646,6 +646,9 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
     ZrFfiMarshalledValue *marshalledValues = ZR_NULL;
     void **ffiArguments = ZR_NULL;
     SZrTypeValue **callbackArguments = ZR_NULL;
+    SZrGcNativeCallPin selfPin = {0};
+    SZrGcNativeCallPin ownerPin = {0};
+    SZrGcNativeCallPin *argumentPins = ZR_NULL;
     unsigned char *returnStorage = ZR_NULL;
     TZrBool callSucceeded = ZR_FALSE;
 #endif
@@ -694,16 +697,28 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
         marshalledValues = (ZrFfiMarshalledValue *) calloc(argumentCount, sizeof(ZrFfiMarshalledValue));
         ffiArguments = (void **) calloc(argumentCount, sizeof(void *));
         callbackArguments = (SZrTypeValue **) calloc(argumentCount, sizeof(SZrTypeValue *));
+        argumentPins = (SZrGcNativeCallPin *) calloc(argumentCount, sizeof(SZrGcNativeCallPin));
     }
     if ((argumentCount > 0 &&
-         (marshalledValues == ZR_NULL || ffiArguments == ZR_NULL || callbackArguments == ZR_NULL))) {
+         (marshalledValues == ZR_NULL || ffiArguments == ZR_NULL || callbackArguments == ZR_NULL ||
+          argumentPins == ZR_NULL))) {
         zr_ffi_raise_error(state, ZR_FFI_ERROR_MARSHAL, "out of memory while preparing ffi arguments");
+        goto cleanup;
+    }
+    if (!ZrCore_Gc_NativeCallPinObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(selfObject), &selfPin) ||
+        !ZrCore_Gc_NativeCallPinValue(state, ownerValue, &ownerPin)) {
+        zr_ffi_raise_error(state, ZR_FFI_ERROR_NATIVE_CALL, "failed to pin symbol handle for ffi call");
         goto cleanup;
     }
     for (index = 0; index < argumentCount; index++) {
         const SZrTypeValue *argumentValue = zr_ffi_array_get(state, argumentsArray, index);
         ZrFfiTypeLayout *parameterType = symbolData->signature->parameters[index].type;
         ZrFfiMarshalledValue *marshalledValue = &marshalledValues[index];
+        if (!ZrCore_Gc_NativeCallPinValue(state, argumentValue, &argumentPins[index])) {
+            zr_ffi_raise_error(state, ZR_FFI_ERROR_NATIVE_CALL, "failed to pin argument %llu for ffi call",
+                               (unsigned long long)(index + 1));
+            goto cleanup;
+        }
         if (parameterType->kind == ZR_FFI_TYPE_FUNCTION) {
             SZrObject *callbackObject = ZR_NULL;
             ZrFfiCallbackData *callbackData = ZR_NULL;
@@ -782,9 +797,17 @@ cleanup:
             free(marshalledValues[index].ownedAllocation);
         }
     }
+    if (argumentPins != ZR_NULL) {
+        for (index = argumentCount; index > 0; index--) {
+            ZrCore_Gc_NativeCallUnpin(state->global, &argumentPins[index - 1u]);
+        }
+    }
+    ZrCore_Gc_NativeCallUnpin(state->global, &ownerPin);
+    ZrCore_Gc_NativeCallUnpin(state->global, &selfPin);
     free(marshalledValues);
     free(ffiArguments);
     free(callbackArguments);
+    free(argumentPins);
     free(returnStorage);
     return callSucceeded;
 #endif

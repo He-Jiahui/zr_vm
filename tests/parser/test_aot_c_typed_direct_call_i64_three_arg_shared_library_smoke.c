@@ -1,9 +1,17 @@
 #include "aot_c_typed_direct_call_i64_smoke_support.h"
 
-#define ZR_AOT_I64_THREE_ARG_DECL \
+#define ZR_AOT_I64_THREE_ARG_STATE_FREE_DECL \
+    "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1, TZrInt64 zr_aot_arg2);"
+#define ZR_AOT_I64_THREE_ARG_STATE_FREE_DEF \
+    "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1, TZrInt64 zr_aot_arg2) {"
+#define ZR_AOT_I64_THREE_ARG_STATE_FREE_CALL \
+    "zr_aot_typed_i64_fn_1(zr_aot_s"
+#define ZR_AOT_I64_THREE_ARG_STATEFUL_DECL \
     "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1, TZrInt64 zr_aot_arg2);"
-#define ZR_AOT_I64_THREE_ARG_DEF \
+#define ZR_AOT_I64_THREE_ARG_STATEFUL_DEF \
     "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1, TZrInt64 zr_aot_arg2) {"
+#define ZR_AOT_I64_THREE_ARG_STATEFUL_CALL \
+    "zr_aot_typed_i64_fn_1(state, zr_aot_s"
 
 static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_add_typed_thunk(void) {
     const SZrAotTypedDirectCallI64SmokeCase testCase = {
@@ -23,12 +31,12 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_ad
             "}",
             "runtime_static_i64_three_arg_project",
             "static_i64_three_arg_typed_call_smoke",
-            ZR_AOT_I64_THREE_ARG_DECL,
-            ZR_AOT_I64_THREE_ARG_DEF,
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_DECL,
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_DEF,
             "return (TZrInt64)(zr_aot_arg0 + zr_aot_arg1 + zr_aot_arg2);",
             "/* zr_aot_static_i64_three_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
-            "/* zr_aot_static_i64_three_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_CALL,
+            ZR_AOT_I64_THREE_ARG_STATEFUL_CALL,
             42
     };
 
@@ -53,12 +61,12 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_mu
             "}",
             "runtime_static_i64_three_arg_multiply_project",
             "static_i64_three_arg_multiply_typed_call_smoke",
-            ZR_AOT_I64_THREE_ARG_DECL,
-            ZR_AOT_I64_THREE_ARG_DEF,
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_DECL,
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_DEF,
             "return (TZrInt64)(zr_aot_arg0 * zr_aot_arg1 * zr_aot_arg2);",
             "/* zr_aot_static_i64_three_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
-            "/* zr_aot_static_i64_three_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_CALL,
+            ZR_AOT_I64_THREE_ARG_STATEFUL_CALL,
             42
     };
 
@@ -83,12 +91,12 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_su
             "}",
             "runtime_static_i64_three_arg_subtract_project",
             "static_i64_three_arg_subtract_typed_call_smoke",
-            ZR_AOT_I64_THREE_ARG_DECL,
-            ZR_AOT_I64_THREE_ARG_DEF,
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_DECL,
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_DEF,
             "return (TZrInt64)(zr_aot_arg0 - zr_aot_arg1 - zr_aot_arg2);",
             "/* zr_aot_static_i64_three_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
-            "/* zr_aot_static_i64_three_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_CALL,
+            ZR_AOT_I64_THREE_ARG_STATEFUL_CALL,
             42
     };
 
@@ -113,11 +121,11 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_di
             "}",
             "runtime_static_i64_three_arg_divide_project",
             "static_i64_three_arg_divide_typed_call_smoke",
-            ZR_AOT_I64_THREE_ARG_DECL,
-            ZR_AOT_I64_THREE_ARG_DEF,
+            ZR_AOT_I64_THREE_ARG_STATEFUL_DECL,
+            ZR_AOT_I64_THREE_ARG_STATEFUL_DEF,
             "return (TZrInt64)(zr_aot_arg0 / zr_aot_arg1 / zr_aot_arg2);",
             "/* zr_aot_static_i64_three_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+            ZR_AOT_I64_THREE_ARG_STATEFUL_CALL,
             "/* zr_aot_static_i64_three_arg_direct_call_sync_stack_slot */",
             8
     };
@@ -143,11 +151,11 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_mo
             "}",
             "runtime_static_i64_three_arg_modulo_project",
             "static_i64_three_arg_modulo_typed_call_smoke",
-            ZR_AOT_I64_THREE_ARG_DECL,
-            ZR_AOT_I64_THREE_ARG_DEF,
+            ZR_AOT_I64_THREE_ARG_STATEFUL_DECL,
+            ZR_AOT_I64_THREE_ARG_STATEFUL_DEF,
             "return (TZrInt64)(zr_aot_arg0 % zr_aot_arg1 % zr_aot_arg2);",
             "/* zr_aot_static_i64_three_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+            ZR_AOT_I64_THREE_ARG_STATEFUL_CALL,
             "/* zr_aot_static_i64_three_arg_direct_call_sync_stack_slot */",
             42
     };
@@ -173,12 +181,12 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_bi
             "}",
             "runtime_static_i64_three_arg_bitwise_and_project",
             "static_i64_three_arg_bitwise_and_typed_call_smoke",
-            ZR_AOT_I64_THREE_ARG_DECL,
-            ZR_AOT_I64_THREE_ARG_DEF,
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_DECL,
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_DEF,
             "return (TZrInt64)(zr_aot_arg0 & zr_aot_arg1 & zr_aot_arg2);",
             "/* zr_aot_static_i64_three_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
-            "/* zr_aot_static_i64_three_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_CALL,
+            ZR_AOT_I64_THREE_ARG_STATEFUL_CALL,
             42
     };
 
@@ -203,12 +211,12 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_bi
             "}",
             "runtime_static_i64_three_arg_bitwise_or_project",
             "static_i64_three_arg_bitwise_or_typed_call_smoke",
-            ZR_AOT_I64_THREE_ARG_DECL,
-            ZR_AOT_I64_THREE_ARG_DEF,
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_DECL,
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_DEF,
             "return (TZrInt64)(zr_aot_arg0 | zr_aot_arg1 | zr_aot_arg2);",
             "/* zr_aot_static_i64_three_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
-            "/* zr_aot_static_i64_three_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_CALL,
+            ZR_AOT_I64_THREE_ARG_STATEFUL_CALL,
             42
     };
 
@@ -233,12 +241,12 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_bi
             "}",
             "runtime_static_i64_three_arg_bitwise_xor_project",
             "static_i64_three_arg_bitwise_xor_typed_call_smoke",
-            ZR_AOT_I64_THREE_ARG_DECL,
-            ZR_AOT_I64_THREE_ARG_DEF,
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_DECL,
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_DEF,
             "return (TZrInt64)(zr_aot_arg0 ^ zr_aot_arg1 ^ zr_aot_arg2);",
             "/* zr_aot_static_i64_three_arg_direct_call */",
-            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
-            "/* zr_aot_static_i64_three_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_I64_THREE_ARG_STATE_FREE_CALL,
+            ZR_AOT_I64_THREE_ARG_STATEFUL_CALL,
             42
     };
 

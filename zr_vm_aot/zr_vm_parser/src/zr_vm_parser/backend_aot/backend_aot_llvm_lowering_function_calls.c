@@ -103,7 +103,10 @@ TZrBool backend_aot_llvm_lower_function_call_family(const SZrAotLlvmLoweringCont
                                                  prepareOkLabel,
                                                  context->failLabel);
         fprintf(context->file, "%s:\n", prepareOkLabel);
-        snprintf(calleeName, sizeof(calleeName), "zr_aot_fn_%u", (unsigned)calleeFlatIndex);
+        backend_aot_llvm_format_function_symbol(calleeName,
+                                                sizeof(calleeName),
+                                                calleeFlatIndex,
+                                                context->stripGeneratedSymbols);
         backend_aot_llvm_write_nonzero_call_text(context->file,
                                                  context->tempCounter,
                                                  calleeName,

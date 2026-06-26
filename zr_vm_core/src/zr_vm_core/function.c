@@ -248,6 +248,9 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->prototypeFrameTypeLayoutFieldCount = 0;
     function->prototypeFrameTypeLayoutFieldCapacity = 0;
     function->prototypeContextFunction = ZR_NULL;
+    function->metadataCodeRegistration = ZR_NULL;
+    function->metadataTypeLayoutCount = 0;
+    function->metadataGcDescriptorCount = 0;
     function->moduleMetadataBindings = ZR_NULL;
     function->moduleMetadataBindingLength = 0;
     function->moduleMetadataBindingCapacity = 0;
@@ -1082,6 +1085,9 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->prototypeFrameTypeLayoutFieldCount = 0;
     function->prototypeFrameTypeLayoutFieldCapacity = 0;
     function->prototypeContextFunction = ZR_NULL;
+    function->metadataCodeRegistration = ZR_NULL;
+    function->metadataTypeLayoutCount = 0;
+    function->metadataGcDescriptorCount = 0;
     function->moduleMetadataBindings = ZR_NULL;
     function->moduleMetadataBindingLength = 0;
     function->moduleMetadataBindingCapacity = 0;
@@ -2581,7 +2587,8 @@ TZrBool ZrCore_Function_TryCopyInlineReceiverParameterBack(SZrState *state,
     TZrUInt32 destinationStackSlot;
     const SZrFunctionFrameSlotLayout *receiverLayout;
     const SZrFunctionFrameSlotLayout *destinationLayout;
-    const SZrTypeLayout *typeLayout;
+    const SZrTypeLayout *receiverTypeLayout;
+    const SZrTypeLayout *destinationTypeLayout;
     SZrTypeValue materializedValue;
     SZrTypeValue *denseDestination;
     SZrTypeValue *frameDestination = ZR_NULL;
@@ -2624,11 +2631,16 @@ TZrBool ZrCore_Function_TryCopyInlineReceiverParameterBack(SZrState *state,
     }
 
     if (destinationLayout != ZR_NULL &&
-        destinationLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
-        receiverLayout->typeLayoutId == destinationLayout->typeLayoutId) {
-        typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(calleeFunction, receiverLayout->typeLayoutId, state);
+        destinationLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+        receiverTypeLayout =
+                ZrCore_Function_ResolvePrototypeFrameTypeLayout(calleeFunction, receiverLayout->typeLayoutId, state);
+        destinationTypeLayout =
+                ZrCore_Function_ResolvePrototypeFrameTypeLayout(callerFunction, destinationLayout->typeLayoutId, state);
+        if (!function_type_layouts_are_return_copy_compatible(receiverTypeLayout, destinationTypeLayout)) {
+            return ZR_FALSE;
+        }
         TZrBool copied = ZrCore_Function_CopyFrameSlotInline(state,
-                                                             typeLayout,
+                                                             receiverTypeLayout,
                                                              callerFunction,
                                                              callerFrameBase,
                                                              destinationStackSlot,
@@ -2682,7 +2694,8 @@ void ZrCore_Function_TryCopyInlineConstructorReceiverBack(SZrState *state,
     TZrMemoryOffset callerArgumentStartSlot;
     const SZrFunctionFrameSlotLayout *receiverLayout;
     const SZrFunctionFrameSlotLayout *destinationLayout;
-    const SZrTypeLayout *typeLayout;
+    const SZrTypeLayout *receiverTypeLayout;
+    const SZrTypeLayout *destinationTypeLayout;
 
     if (state == ZR_NULL || callInfo == ZR_NULL || callInfo->previous == ZR_NULL) {
         return;
@@ -2720,11 +2733,16 @@ void ZrCore_Function_TryCopyInlineConstructorReceiverBack(SZrState *state,
         return;
     }
 
-    if (destinationLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
-        receiverLayout->typeLayoutId == destinationLayout->typeLayoutId) {
-        typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(calleeFunction, receiverLayout->typeLayoutId, state);
+    if (destinationLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+        receiverTypeLayout =
+                ZrCore_Function_ResolvePrototypeFrameTypeLayout(calleeFunction, receiverLayout->typeLayoutId, state);
+        destinationTypeLayout =
+                ZrCore_Function_ResolvePrototypeFrameTypeLayout(callerFunction, destinationLayout->typeLayoutId, state);
+        if (!function_type_layouts_are_return_copy_compatible(receiverTypeLayout, destinationTypeLayout)) {
+            return;
+        }
         (void)ZrCore_Function_CopyFrameSlotInline(state,
-                                                  typeLayout,
+                                                  receiverTypeLayout,
                                                   callerFunction,
                                                   callerFrameBase,
                                                   (TZrUInt32)callerArgumentStartSlot,

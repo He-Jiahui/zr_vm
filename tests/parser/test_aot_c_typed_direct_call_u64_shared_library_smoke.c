@@ -1,5 +1,36 @@
 #include "aot_c_typed_direct_call_u64_smoke_support.h"
 
+#define ZR_AOT_U64_NO_ARG_STATE_FREE_DECL "static TZrUInt64 zr_aot_typed_u64_fn_1(void);"
+#define ZR_AOT_U64_NO_ARG_STATE_FREE_DEF "static TZrUInt64 zr_aot_typed_u64_fn_1(void) {"
+#define ZR_AOT_U64_NO_ARG_STATE_FREE_CALL "zr_aot_typed_u64_fn_1()"
+#define ZR_AOT_U64_NO_ARG_STATEFUL_CALL "zr_aot_typed_u64_fn_1(state)"
+#define ZR_AOT_U64_ONE_ARG_STATE_FREE_DECL \
+    "static TZrUInt64 zr_aot_typed_u64_fn_1(TZrUInt64 zr_aot_arg0);"
+#define ZR_AOT_U64_ONE_ARG_STATE_FREE_DEF \
+    "static TZrUInt64 zr_aot_typed_u64_fn_1(TZrUInt64 zr_aot_arg0) {"
+#define ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL "zr_aot_typed_u64_fn_1(zr_aot_u"
+#define ZR_AOT_U64_ONE_ARG_STATEFUL_CALL "zr_aot_typed_u64_fn_1(state, zr_aot_u"
+#define ZR_AOT_U64_TWO_ARG_STATE_FREE_DECL \
+    "static TZrUInt64 zr_aot_typed_u64_fn_1(TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);"
+#define ZR_AOT_U64_TWO_ARG_STATE_FREE_DEF \
+    "static TZrUInt64 zr_aot_typed_u64_fn_1(TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {"
+#define ZR_AOT_U64_TWO_ARG_STATEFUL_DECL \
+    "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);"
+#define ZR_AOT_U64_TWO_ARG_STATEFUL_DEF \
+    "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {"
+#define ZR_AOT_U64_TWO_ARG_STATE_FREE_CALL "zr_aot_typed_u64_fn_1(zr_aot_u"
+#define ZR_AOT_U64_TWO_ARG_STATEFUL_CALL "zr_aot_typed_u64_fn_1(state, zr_aot_u"
+#define ZR_AOT_U64_THREE_ARG_STATE_FREE_DECL \
+    "static TZrUInt64 zr_aot_typed_u64_fn_1(TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);"
+#define ZR_AOT_U64_THREE_ARG_STATE_FREE_DEF \
+    "static TZrUInt64 zr_aot_typed_u64_fn_1(TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {"
+#define ZR_AOT_U64_THREE_ARG_STATEFUL_DECL \
+    "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);"
+#define ZR_AOT_U64_THREE_ARG_STATEFUL_DEF \
+    "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {"
+#define ZR_AOT_U64_THREE_ARG_STATE_FREE_CALL "zr_aot_typed_u64_fn_1(zr_aot_u"
+#define ZR_AOT_U64_THREE_ARG_STATEFUL_CALL "zr_aot_typed_u64_fn_1(state, zr_aot_u"
+
 static void test_aot_c_generated_shared_library_executes_static_u64_no_arg_typed_thunk(void) {
     const SZrAotTypedDirectCallU64SmokeCase testCase = {
             "func answer(): uint {\n"
@@ -10,12 +41,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_no_arg_typed
             "aot-runtime-static-u64-no-arg-typed-call-smoke",
             "runtime_static_u64_no_arg_project",
             "static_u64_no_arg_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state) {",
+            ZR_AOT_U64_NO_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_NO_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)37;",
             "/* zr_aot_static_u64_no_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state)",
-            "/* zr_aot_static_u64_no_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_NO_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_NO_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -33,12 +64,12 @@ static void test_aot_c_generated_shared_library_returns_static_u64_no_arg_result
             "aot-runtime-static-u64-return-boundary-smoke",
             "runtime_static_u64_return_boundary_project",
             "static_u64_return_boundary_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state) {",
+            ZR_AOT_U64_NO_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_NO_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)42;",
             "/* zr_aot_static_u64_no_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state)",
-            "/* zr_aot_static_u64_no_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_NO_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_NO_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -61,12 +92,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_type
             "aot-runtime-static-u64-one-arg-typed-call-smoke",
             "runtime_static_u64_one_arg_project",
             "static_u64_one_arg_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0) {",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DEF,
             "return zr_aot_arg0;",
             "/* zr_aot_static_u64_one_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_one_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -84,12 +115,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_add_
             "aot-runtime-static-u64-one-arg-add-const-typed-call-smoke",
             "runtime_static_u64_one_arg_add_const_project",
             "static_u64_one_arg_add_const_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0) {",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 + (TZrUInt64)1);",
             "/* zr_aot_static_u64_one_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_one_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -107,12 +138,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_subt
             "aot-runtime-static-u64-one-arg-subtract-const-typed-call-smoke",
             "runtime_static_u64_one_arg_subtract_const_project",
             "static_u64_one_arg_subtract_const_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0) {",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 - (TZrUInt64)8);",
             "/* zr_aot_static_u64_one_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_one_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -130,12 +161,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_mult
             "aot-runtime-static-u64-one-arg-multiply-const-typed-call-smoke",
             "runtime_static_u64_one_arg_multiply_const_project",
             "static_u64_one_arg_multiply_const_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0) {",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 * (TZrUInt64)21);",
             "/* zr_aot_static_u64_one_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_one_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -153,12 +184,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_bitw
             "aot-runtime-static-u64-one-arg-bitwise-and-const-typed-call-smoke",
             "runtime_static_u64_one_arg_bitwise_and_const_project",
             "static_u64_one_arg_bitwise_and_const_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0) {",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 & (TZrUInt64)58);",
             "/* zr_aot_static_u64_one_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_one_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -176,12 +207,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_bitw
             "aot-runtime-static-u64-one-arg-bitwise-or-const-typed-call-smoke",
             "runtime_static_u64_one_arg_bitwise_or_const_project",
             "static_u64_one_arg_bitwise_or_const_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0) {",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 | (TZrUInt64)10);",
             "/* zr_aot_static_u64_one_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_one_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -199,12 +230,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_bitw
             "aot-runtime-static-u64-one-arg-bitwise-xor-const-typed-call-smoke",
             "runtime_static_u64_one_arg_bitwise_xor_const_project",
             "static_u64_one_arg_bitwise_xor_const_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0) {",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 ^ (TZrUInt64)21);",
             "/* zr_aot_static_u64_one_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_one_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -223,12 +254,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_type
             "aot-runtime-static-u64-two-arg-typed-call-smoke",
             "runtime_static_u64_two_arg_project",
             "static_u64_two_arg_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 + zr_aot_arg1);",
             "/* zr_aot_static_u64_two_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_two_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -247,12 +278,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_mult
             "aot-runtime-static-u64-two-arg-multiply-typed-call-smoke",
             "runtime_static_u64_two_arg_multiply_project",
             "static_u64_two_arg_multiply_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 * zr_aot_arg1);",
             "/* zr_aot_static_u64_two_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_two_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -271,11 +302,11 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_divi
             "aot-runtime-static-u64-two-arg-divide-typed-call-smoke",
             "runtime_static_u64_two_arg_divide_project",
             "static_u64_two_arg_divide_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            ZR_AOT_U64_TWO_ARG_STATEFUL_DECL,
+            ZR_AOT_U64_TWO_ARG_STATEFUL_DEF,
             "return (TZrUInt64)(zr_aot_arg0 / zr_aot_arg1);",
             "/* zr_aot_static_u64_two_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             "/* zr_aot_static_u64_two_arg_direct_call_sync_stack_slot */",
             42,
     };
@@ -295,11 +326,11 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_modu
             "aot-runtime-static-u64-two-arg-modulo-typed-call-smoke",
             "runtime_static_u64_two_arg_modulo_project",
             "static_u64_two_arg_modulo_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            ZR_AOT_U64_TWO_ARG_STATEFUL_DECL,
+            ZR_AOT_U64_TWO_ARG_STATEFUL_DEF,
             "return (TZrUInt64)(zr_aot_arg0 % zr_aot_arg1);",
             "/* zr_aot_static_u64_two_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             "/* zr_aot_static_u64_two_arg_direct_call_sync_stack_slot */",
             42,
     };
@@ -319,12 +350,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_subt
             "aot-runtime-static-u64-two-arg-subtract-typed-call-smoke",
             "runtime_static_u64_two_arg_subtract_project",
             "static_u64_two_arg_subtract_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 - zr_aot_arg1);",
             "/* zr_aot_static_u64_two_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_two_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -343,12 +374,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_bitw
             "aot-runtime-static-u64-two-arg-bitwise-and-typed-call-smoke",
             "runtime_static_u64_two_arg_bitwise_and_project",
             "static_u64_two_arg_bitwise_and_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 & zr_aot_arg1);",
             "/* zr_aot_static_u64_two_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_two_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -367,12 +398,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_bitw
             "aot-runtime-static-u64-two-arg-bitwise-or-typed-call-smoke",
             "runtime_static_u64_two_arg_bitwise_or_project",
             "static_u64_two_arg_bitwise_or_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 | zr_aot_arg1);",
             "/* zr_aot_static_u64_two_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_two_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -391,12 +422,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_bitw
             "aot-runtime-static-u64-two-arg-bitwise-xor-typed-call-smoke",
             "runtime_static_u64_two_arg_bitwise_xor_project",
             "static_u64_two_arg_bitwise_xor_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {",
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 ^ zr_aot_arg1);",
             "/* zr_aot_static_u64_two_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_two_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_TWO_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -416,12 +447,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_ad
             "aot-runtime-static-u64-three-arg-add-typed-call-smoke",
             "runtime_static_u64_three_arg_add_project",
             "static_u64_three_arg_add_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 + zr_aot_arg1 + zr_aot_arg2);",
             "/* zr_aot_static_u64_three_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -441,12 +472,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_mu
             "aot-runtime-static-u64-three-arg-multiply-typed-call-smoke",
             "runtime_static_u64_three_arg_multiply_project",
             "static_u64_three_arg_multiply_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 * zr_aot_arg1 * zr_aot_arg2);",
             "/* zr_aot_static_u64_three_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -466,12 +497,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_su
             "aot-runtime-static-u64-three-arg-subtract-typed-call-smoke",
             "runtime_static_u64_three_arg_subtract_project",
             "static_u64_three_arg_subtract_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 - zr_aot_arg1 - zr_aot_arg2);",
             "/* zr_aot_static_u64_three_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -491,11 +522,11 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_di
             "aot-runtime-static-u64-three-arg-divide-typed-call-smoke",
             "runtime_static_u64_three_arg_divide_project",
             "static_u64_three_arg_divide_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            ZR_AOT_U64_THREE_ARG_STATEFUL_DECL,
+            ZR_AOT_U64_THREE_ARG_STATEFUL_DEF,
             "return (TZrUInt64)(zr_aot_arg0 / zr_aot_arg1 / zr_aot_arg2);",
             "/* zr_aot_static_u64_three_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
             42,
     };
@@ -516,11 +547,11 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_mo
             "aot-runtime-static-u64-three-arg-modulo-typed-call-smoke",
             "runtime_static_u64_three_arg_modulo_project",
             "static_u64_three_arg_modulo_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            ZR_AOT_U64_THREE_ARG_STATEFUL_DECL,
+            ZR_AOT_U64_THREE_ARG_STATEFUL_DEF,
             "return (TZrUInt64)(zr_aot_arg0 % zr_aot_arg1 % zr_aot_arg2);",
             "/* zr_aot_static_u64_three_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
+            ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
             42,
     };
@@ -541,12 +572,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_bi
             "aot-runtime-static-u64-three-arg-bitwise-and-typed-call-smoke",
             "runtime_static_u64_three_arg_bitwise_and_project",
             "static_u64_three_arg_bitwise_and_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 & zr_aot_arg1 & zr_aot_arg2);",
             "/* zr_aot_static_u64_three_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -566,12 +597,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_bi
             "aot-runtime-static-u64-three-arg-bitwise-or-typed-call-smoke",
             "runtime_static_u64_three_arg_bitwise_or_project",
             "static_u64_three_arg_bitwise_or_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 | zr_aot_arg1 | zr_aot_arg2);",
             "/* zr_aot_static_u64_three_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             42,
     };
 
@@ -591,12 +622,12 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_bi
             "aot-runtime-static-u64-three-arg-bitwise-xor-typed-call-smoke",
             "runtime_static_u64_three_arg_bitwise_xor_project",
             "static_u64_three_arg_bitwise_xor_typed_call_smoke",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2);",
-            "static TZrUInt64 zr_aot_typed_u64_fn_1(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1, TZrUInt64 zr_aot_arg2) {",
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_DECL,
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_DEF,
             "return (TZrUInt64)(zr_aot_arg0 ^ zr_aot_arg1 ^ zr_aot_arg2);",
             "/* zr_aot_static_u64_three_arg_direct_call */",
-            "zr_aot_typed_u64_fn_1(state, zr_aot_u",
-            "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
+            ZR_AOT_U64_THREE_ARG_STATE_FREE_CALL,
+            ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             42,
     };
 

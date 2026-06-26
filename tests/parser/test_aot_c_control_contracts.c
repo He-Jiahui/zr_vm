@@ -199,8 +199,109 @@ static void test_aot_c_source_lowers_exception_control_to_direct_core_calls(void
     free(runtimeText);
 }
 
+static void test_aot_c_source_inserts_gc_safepoints_at_controlled_boundaries(void) {
+    static const char *const gcHeaderNeedles[] = {
+            "ZrCore_Gc_SafePoint(struct SZrState *state);",
+    };
+    static const char *const gcSourceNeedles[] = {
+            "void ZrCore_Gc_SafePoint(SZrState *state)",
+            "ZrCore_GarbageCollector_CheckGc(state);",
+    };
+    static const char *const emitterHeaderNeedles[] = {
+            "backend_aot_write_c_gc_safepoint(FILE *file,",
+            "const char *indent",
+            "const char *marker",
+            "TZrBool isBackEdge",
+    };
+    static const char *const controlNeedles[] = {
+            "backend_aot_write_c_gc_safepoint(FILE *file,",
+            "/* %s */",
+            "ZrCore_Gc_SafePoint(state);",
+            "zr_aot_gc_safepoint_back_edge",
+            "if (isBackEdge) {",
+            "backend_aot_write_c_gc_safepoint(file, \"            \", \"zr_aot_gc_safepoint_back_edge\");",
+            "goto zr_aot_fn_%u_ins_%u;",
+    };
+    static const char *const valuesNeedles[] = {
+            "zr_aot_value_exec_create_object",
+            "ZrLibrary_AotRuntime_CreateObject(state, &frame, %u)",
+            "backend_aot_write_c_gc_safepoint(file, \"        \", \"zr_aot_gc_safepoint_allocation\");",
+            "zr_aot_value_exec_create_array",
+            "ZrLibrary_AotRuntime_CreateArray(state, &frame, %u)",
+    };
+    static const char *const logicalNeedles[] = {
+            "backend_aot_write_c_direct_jump_if(FILE *file,",
+            "TZrBool isBackEdge",
+            "backend_aot_write_c_gc_safepoint(file, \"            \", \"zr_aot_gc_safepoint_back_edge\");",
+    };
+    static const char *const iteratorNeedles[] = {
+            "backend_aot_write_c_direct_iter_move_next_jump_if_false(FILE *file,",
+            "TZrBool isBackEdge",
+            "backend_aot_write_c_gc_safepoint(file, \"            \", \"zr_aot_gc_safepoint_back_edge\");",
+    };
+    static const char *const functionBodyNeedles[] = {
+            "static TZrBool backend_aot_target_is_back_edge(TZrUInt32 instructionIndex,",
+            "return (TZrBool)(targetInstructionIndex <= instructionIndex);",
+            "backend_aot_target_is_back_edge(instructionIndex,",
+            "backend_aot_write_c_direct_jump(file,",
+            "backend_aot_write_c_direct_jump_if(file,",
+            "backend_aot_write_c_direct_jump_if_bool_false(",
+            "backend_aot_write_c_direct_jump_if_greater_signed(",
+            "backend_aot_write_c_direct_jump_if_less_equal_signed(",
+            "backend_aot_write_c_direct_jump_if_not_equal_signed(",
+            "backend_aot_write_c_direct_jump_if_not_equal_signed_const(",
+            "backend_aot_write_c_direct_iter_move_next_jump_if_false(",
+            "backend_aot_write_c_dynamic_function_call(file, functionIr, destinationSlot, operandA1, 0, ZR_RUNTIME_SEMIR_DEOPT_ID_NONE);",
+            "backend_aot_try_write_c_static_direct_typed_function_call(file,",
+            "backend_aot_write_c_direct_function_call(file, functionIr, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_gc_safepoint(file, \"    \", \"zr_aot_gc_safepoint_call\");",
+    };
+    char *gcHeaderText = read_repo_text_file_owned("zr_vm_core/include/zr_vm_core/gc.h");
+    char *gcSourceText = read_repo_text_file_owned("zr_vm_core/src/zr_vm_core/gc/gc.c");
+    char *emitterHeaderText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+    char *controlText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c");
+    char *valuesText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
+    char *logicalText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_logical.c");
+    char *iteratorText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_iterators.c");
+    char *functionBodyText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+
+    TEST_ASSERT_NOT_NULL(gcHeaderText);
+    TEST_ASSERT_NOT_NULL(gcSourceText);
+    TEST_ASSERT_NOT_NULL(emitterHeaderText);
+    TEST_ASSERT_NOT_NULL(controlText);
+    TEST_ASSERT_NOT_NULL(valuesText);
+    TEST_ASSERT_NOT_NULL(logicalText);
+    TEST_ASSERT_NOT_NULL(iteratorText);
+    TEST_ASSERT_NOT_NULL(functionBodyText);
+
+    assert_text_contains_all(gcHeaderText, gcHeaderNeedles, ARRAY_COUNT(gcHeaderNeedles));
+    assert_text_contains_all(gcSourceText, gcSourceNeedles, ARRAY_COUNT(gcSourceNeedles));
+    assert_text_contains_all(emitterHeaderText, emitterHeaderNeedles, ARRAY_COUNT(emitterHeaderNeedles));
+    assert_text_contains_all(controlText, controlNeedles, ARRAY_COUNT(controlNeedles));
+    assert_text_contains_all(valuesText, valuesNeedles, ARRAY_COUNT(valuesNeedles));
+    assert_text_contains_all(logicalText, logicalNeedles, ARRAY_COUNT(logicalNeedles));
+    assert_text_contains_all(iteratorText, iteratorNeedles, ARRAY_COUNT(iteratorNeedles));
+    assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
+
+    free(gcHeaderText);
+    free(gcSourceText);
+    free(emitterHeaderText);
+    free(controlText);
+    free(valuesText);
+    free(logicalText);
+    free(iteratorText);
+    free(functionBodyText);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_source_lowers_exception_control_to_direct_core_calls);
+    RUN_TEST(test_aot_c_source_inserts_gc_safepoints_at_controlled_boundaries);
     return UNITY_END();
 }

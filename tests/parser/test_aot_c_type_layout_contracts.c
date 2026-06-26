@@ -90,6 +90,10 @@ static void assert_text_contains_all(const char *text, const char *const *needle
 static void test_aot_c_type_layouts_emit_generated_struct_static_asserts(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_type_layout_declarations(",
+            "backend_aot_c_type_layout_resolve_from_table(",
+            "backend_aot_c_type_layout_gc_descriptor_index_space(",
+            "backend_aot_write_c_type_layout_gc_descriptor_table(",
+            "backend_aot_write_c_type_layout_token_table(",
             "SZrState *state",
             "const SZrAotFunctionTable *table",
     };
@@ -104,29 +108,64 @@ static void test_aot_c_type_layouts_emit_generated_struct_static_asserts(void) {
             "_Static_assert(sizeof(ZrLayout_%u) == %u",
             "_Static_assert(_Alignof(ZrLayout_%u) == %u",
             "_Static_assert(offsetof(ZrLayout_%u, zr_field_%u) == %u",
+            "backend_aot_c_type_layout_write_gc_descriptor(",
+            "backend_aot_c_type_layout_has_gc_descriptor(",
+            "backend_aot_c_type_layout_gc_descriptor_index_space(",
+            "/* zr_aot_gc_descriptor_offsets layout=%u count=%u */",
+            "static const TZrUInt32 ZrGcOffsets_%u[]",
+            "static const SZrAotGcDescriptor ZrGcDescriptor_%u",
+            "ZrGcOffsets_%u,",
+            "backend_aot_c_type_layout_can_emit_ownership_offsets(",
+            "static const TZrUInt32 ZrOwnershipOffsets_%u[]",
+            ".ownershipFieldOffsets = ZrOwnershipOffsets_%u,",
+            "static const SZrAotGcDescriptor *const zr_aot_gc_descriptors[]",
+            "&ZrGcDescriptor_%u,",
+            "zr_aot_gc_descriptor_offsets_failed",
+            "typeLayout->gcFieldCount == 0u",
+    };
+    static const char *const tokenNeedles[] = {
+            "#include \"backend_aot_c_type_layouts.h\"",
+            "#include \"zr_vm_core/metadata_token.h\"",
+            "backend_aot_c_type_layout_token_from_table(",
+            "backend_aot_c_type_layout_type_name_from_table(",
+            "backend_aot_c_type_layout_type_def_token_from_table(",
+            "ZR_METADATA_TOKEN_TABLE(record->token) != ZR_METADATA_TABLE_TYPE_DEF",
+            "ZR_METADATA_SIGNATURE_NODE_TYPE_DEF",
+            "backend_aot_c_type_layout_resolve_from_table(state, table, typeLayoutId)",
+            "static const TZrUInt32 zr_aot_type_layout_tokens[]",
+            "0x%08xu",
     };
     static const char *const emitterNeedles[] = {
             "#include \"backend_aot_c_type_layouts.h\"",
             "#include <stddef.h>",
+            "TZrUInt32 gcDescriptorIndexSpace;",
+            "gcDescriptorIndexSpace = backend_aot_c_type_layout_gc_descriptor_index_space(state, &functionTable);",
             "backend_aot_write_c_type_layout_declarations(file, state, &functionTable);",
+            "backend_aot_write_c_type_layout_gc_descriptor_table(file, state, &functionTable, gcDescriptorIndexSpace);",
+            "gcDescriptorIndexSpace > 0u ? \"zr_aot_gc_descriptors\" : \"ZR_NULL\"",
     };
     char *headerText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h");
     char *sourceText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c");
+    char *tokenText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c");
     char *emitterText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(sourceText);
+    TEST_ASSERT_NOT_NULL(tokenText);
     TEST_ASSERT_NOT_NULL(emitterText);
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
     assert_text_contains_all(sourceText, sourceNeedles, ARRAY_COUNT(sourceNeedles));
+    assert_text_contains_all(tokenText, tokenNeedles, ARRAY_COUNT(tokenNeedles));
     assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
 
     free(headerText);
     free(sourceText);
+    free(tokenText);
     free(emitterText);
 }
 

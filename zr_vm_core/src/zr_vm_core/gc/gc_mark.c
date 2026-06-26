@@ -4,6 +4,8 @@
 
 #include "gc/gc_internal.h"
 
+#include "zr_vm_common/zr_aot_abi.h"
+
 static ZR_FORCE_INLINE void garbage_collector_mark_known_string_object_major_fast(SZrRawObject *object) {
     if (object == ZR_NULL ||
         object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
@@ -507,6 +509,27 @@ typedef struct SZrGcInlineFrameMarkWork {
     TZrSize work;
 } SZrGcInlineFrameMarkWork;
 
+static const SZrTypeLayout *garbage_collector_resolve_metadata_frame_type_layout(
+        const SZrFunction *function,
+        TZrUInt32 typeLayoutId,
+        TZrPtr userData) {
+    const SZrTypeLayout *layout = ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(function, typeLayoutId);
+    const SZrFunction *registryFunction = function;
+
+    if (layout != ZR_NULL) {
+        return layout;
+    }
+    if (registryFunction != ZR_NULL &&
+        registryFunction->metadataCodeRegistration == ZR_NULL &&
+        registryFunction->prototypeContextFunction != ZR_NULL) {
+        registryFunction = registryFunction->prototypeContextFunction;
+    }
+    if (registryFunction != ZR_NULL && registryFunction->metadataCodeRegistration != ZR_NULL) {
+        return ZR_NULL;
+    }
+    return ZrCore_Function_ResolvePrototypeFrameTypeLayout(function, typeLayoutId, userData);
+}
+
 static SZrFunction *garbage_collector_call_info_metadata_function(SZrState *threadState,
                                                                   const SZrCallInfo *callInfo) {
     if (threadState == ZR_NULL || callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
@@ -541,9 +564,8 @@ static TZrBool garbage_collector_function_has_frame_gc_layouts(SZrState *threadS
         }
 
         hasGcLayout = ZR_TRUE;
-        if (ZrCore_Function_ResolvePrototypeFrameTypeLayout(function,
-                                                            slotLayout->typeLayoutId,
-                                                            threadState) == ZR_NULL) {
+        if (garbage_collector_resolve_metadata_frame_type_layout(function, slotLayout->typeLayoutId, threadState) ==
+            ZR_NULL) {
             return ZR_FALSE;
         }
     }
@@ -562,6 +584,64 @@ static void garbage_collector_mark_inline_frame_value(SZrState *state, SZrTypeVa
     if (markWork != ZR_NULL) {
         markWork->work++;
     }
+}
+
+static SZrTypeValue *garbage_collector_aot_root_frame_value(SZrState *threadState,
+                                                            const SZrAotGcRootFrame *frame,
+                                                            const SZrAotGcRootSlot *root) {
+    TZrByte *stackBegin;
+    TZrByte *stackEnd;
+    TZrByte *rootAddress;
+
+    if (threadState == ZR_NULL ||
+        frame == ZR_NULL ||
+        frame->frameBase == ZR_NULL ||
+        root == ZR_NULL ||
+        root->locationKind != (TZrUInt8)ZR_AOT_GC_ROOT_LOCATION_FRAME_BYTE_OFFSET ||
+        threadState->stackBase.valuePointer == ZR_NULL ||
+        threadState->stackTail.valuePointer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    stackBegin = (TZrByte *)threadState->stackBase.valuePointer;
+    stackEnd = (TZrByte *)threadState->stackTail.valuePointer;
+    rootAddress = (TZrByte *)frame->frameBase + root->frameByteOffset;
+    if (rootAddress < stackBegin ||
+        rootAddress > stackEnd ||
+        (TZrSize)(stackEnd - rootAddress) < sizeof(SZrTypeValue)) {
+        return ZR_NULL;
+    }
+
+    return (SZrTypeValue *)rootAddress;
+}
+
+static TZrSize garbage_collector_mark_aot_root_frames(SZrState *state, SZrState *threadState) {
+    TZrSize work = 0;
+    const SZrAotGcRootFrame *frame;
+
+    if (threadState == ZR_NULL) {
+        return 0;
+    }
+
+    frame = threadState->aotGcRootFrameStack;
+    while (frame != ZR_NULL) {
+        const SZrAotGcRootMap *rootMap = frame->rootMap;
+
+        if (rootMap != ZR_NULL && rootMap->roots != ZR_NULL) {
+            for (TZrUInt32 rootIndex = 0u; rootIndex < rootMap->rootCount; rootIndex++) {
+                SZrTypeValue *value = garbage_collector_aot_root_frame_value(threadState,
+                                                                              frame,
+                                                                              &rootMap->roots[rootIndex]);
+                if (value != ZR_NULL) {
+                    garbage_collector_mark_value(state, value);
+                    work++;
+                }
+            }
+        }
+        frame = frame->previous;
+    }
+
+    return work;
 }
 
 static TZrBool garbage_collector_stack_slot_intersects_resolved_inline_frame(SZrState *threadState,
@@ -603,7 +683,7 @@ static TZrBool garbage_collector_mark_resolved_inline_frame_values(SZrState *sta
     if (!ZrCore_Function_VisitFrameGcValues(state,
                                             function,
                                             frameBase,
-                                            ZrCore_Function_ResolvePrototypeFrameTypeLayout,
+                                            garbage_collector_resolve_metadata_frame_type_layout,
                                             threadState,
                                             garbage_collector_mark_inline_frame_value,
                                             &markWork)) {
@@ -821,6 +901,11 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                 }
                 if (module->fullPath != ZR_NULL) {
                     garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(module->fullPath));
+                    work++;
+                }
+                if (module->hasMetadataRuntime && module->metadataRuntime.metadataFunction != ZR_NULL) {
+                    garbage_collector_mark_object(state,
+                                                  ZR_CAST_RAW_OBJECT_AS_SUPER(module->metadataRuntime.metadataFunction));
                     work++;
                 }
                 if (module->proNodeMap.isValid) {
@@ -1091,6 +1176,7 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                 stackPtr++;
                 work++;
             }
+            work += garbage_collector_mark_aot_root_frames(state, threadState);
 
             closureValue = threadState->stackClosureValueList;
             while (closureValue != ZR_NULL) {

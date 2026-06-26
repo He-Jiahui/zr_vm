@@ -79,6 +79,8 @@ void ZrCore_State_Init(SZrState *state, SZrGlobalState *global) {
     state->global = global;
     // stack
     state->stackBase.valuePointer = ZR_NULL;
+    state->aotGcRootFrameStack = ZR_NULL;
+    state->aotGcRootFrameDepth = 0u;
     // call info
     state->callInfoList = ZR_NULL;
     state->callInfoListLength = 0;
@@ -223,6 +225,8 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
     state->currentExceptionStatus = ZR_THREAD_STATUS_FINE;
     state->hasCurrentException = ZR_FALSE;
     state->exceptionHandlerStackLength = 0;
+    state->aotGcRootFrameStack = ZR_NULL;
+    state->aotGcRootFrameDepth = 0u;
     state->pendingControl.kind = ZR_VM_PENDING_CONTROL_NONE;
     state->pendingControl.callInfo = ZR_NULL;
     state->pendingControl.targetInstructionOffset = 0;

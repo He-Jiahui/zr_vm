@@ -80,7 +80,8 @@ TZrBool backend_aot_can_write_c_static_direct_u64_two_arg_call(
         TZrUInt32 execInstructionIndex,
         TZrUInt32 calleeFunctionIndex,
         TZrUInt32 *outFirstArgumentSlot,
-        TZrUInt32 *outSecondArgumentSlot) {
+        TZrUInt32 *outSecondArgumentSlot,
+        TZrBool *outPassStateToThunk) {
     const SZrAotFunctionEntry *calleeEntry;
     const TZrUInt32 firstArgumentSlot = functionSlot + 1u;
     const TZrUInt32 secondArgumentSlot = functionSlot + 2u;
@@ -88,6 +89,7 @@ TZrBool backend_aot_can_write_c_static_direct_u64_two_arg_call(
     if (argumentCount != 2u ||
         outFirstArgumentSlot == ZR_NULL ||
         outSecondArgumentSlot == ZR_NULL ||
+        outPassStateToThunk == ZR_NULL ||
         !backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot) ||
         !backend_aot_c_scalar_locals_has_u64_slot(functionIr, firstArgumentSlot) ||
         !backend_aot_c_scalar_locals_has_u64_slot(functionIr, secondArgumentSlot) ||
@@ -105,6 +107,7 @@ TZrBool backend_aot_can_write_c_static_direct_u64_two_arg_call(
 
     *outFirstArgumentSlot = firstArgumentSlot;
     *outSecondArgumentSlot = secondArgumentSlot;
+    *outPassStateToThunk = (TZrBool)!backend_aot_c_can_emit_typed_u64_two_arg_state_free_thunk(calleeEntry->function);
     return ZR_TRUE;
 }
 
@@ -155,7 +158,8 @@ TZrBool backend_aot_can_write_c_static_direct_u64_three_arg_call(
         TZrUInt32 calleeFunctionIndex,
         TZrUInt32 *outFirstArgumentSlot,
         TZrUInt32 *outSecondArgumentSlot,
-        TZrUInt32 *outThirdArgumentSlot) {
+        TZrUInt32 *outThirdArgumentSlot,
+        TZrBool *outPassStateToThunk) {
     const SZrAotFunctionEntry *calleeEntry;
     const TZrUInt32 firstArgumentSlot = functionSlot + 1u;
     const TZrUInt32 secondArgumentSlot = functionSlot + 2u;
@@ -165,6 +169,7 @@ TZrBool backend_aot_can_write_c_static_direct_u64_three_arg_call(
         outFirstArgumentSlot == ZR_NULL ||
         outSecondArgumentSlot == ZR_NULL ||
         outThirdArgumentSlot == ZR_NULL ||
+        outPassStateToThunk == ZR_NULL ||
         !backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot) ||
         !backend_aot_c_scalar_locals_has_u64_slot(functionIr, firstArgumentSlot) ||
         !backend_aot_c_scalar_locals_has_u64_slot(functionIr, secondArgumentSlot) ||
@@ -185,5 +190,6 @@ TZrBool backend_aot_can_write_c_static_direct_u64_three_arg_call(
     *outFirstArgumentSlot = firstArgumentSlot;
     *outSecondArgumentSlot = secondArgumentSlot;
     *outThirdArgumentSlot = thirdArgumentSlot;
+    *outPassStateToThunk = (TZrBool)!backend_aot_c_can_emit_typed_u64_three_arg_state_free_thunk(calleeEntry->function);
     return ZR_TRUE;
 }

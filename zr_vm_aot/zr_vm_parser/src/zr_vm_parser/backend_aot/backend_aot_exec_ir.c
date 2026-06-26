@@ -1,5 +1,6 @@
 #include "backend_aot_exec_ir.h"
 
+#include "backend_aot_exec_ir_source_location.h"
 #include "backend_aot_function_table.h"
 #include "backend_aot_internal.h"
 
@@ -16,8 +17,6 @@ static TZrUInt32 backend_aot_exec_ir_runtime_contracts_for_opcode(TZrUInt32 opco
 static TZrUInt32 backend_aot_exec_ir_callsite_kind_for_instruction(const SZrFunction *function,
                                                                    TZrUInt32 execInstructionIndex,
                                                                    TZrUInt16 opcode);
-static TZrUInt32 backend_aot_exec_ir_debug_line_for_instruction(const SZrFunction *function,
-                                                                TZrUInt32 execInstructionIndex);
 static TZrUInt32 backend_aot_exec_ir_terminator_kind_for_instruction(TZrUInt16 opcode);
 static TZrBool backend_aot_exec_ir_instruction_ends_block(TZrUInt16 opcode);
 static TZrBool backend_aot_exec_ir_branch_target(const SZrFunction *function,
@@ -318,38 +317,6 @@ static TZrUInt32 backend_aot_exec_ir_callsite_kind_for_instruction(const SZrFunc
         default:
             return ZR_AOT_EXEC_IR_CALLSITE_KIND_NONE;
     }
-}
-
-static TZrUInt32 backend_aot_exec_ir_debug_line_for_instruction(const SZrFunction *function,
-                                                                TZrUInt32 execInstructionIndex) {
-    TZrUInt32 bestLine = 0;
-
-    if (function == ZR_NULL) {
-        return 0;
-    }
-
-    if (function->lineInSourceList != ZR_NULL && execInstructionIndex < function->instructionsLength) {
-        bestLine = function->lineInSourceList[execInstructionIndex];
-        if (bestLine > 0) {
-            return bestLine;
-        }
-    }
-
-    if (function->executionLocationInfoList != ZR_NULL && function->executionLocationInfoLength > 0) {
-        for (TZrUInt32 index = 0; index < function->executionLocationInfoLength; index++) {
-            const SZrFunctionExecutionLocationInfo *info = &function->executionLocationInfoList[index];
-            if ((TZrUInt32)info->currentInstructionOffset > execInstructionIndex) {
-                break;
-            }
-            bestLine = info->lineInSource;
-        }
-    }
-
-    if (bestLine == 0) {
-        bestLine = function->lineInSourceStart;
-    }
-
-    return bestLine;
 }
 
 static TZrUInt32 backend_aot_exec_ir_terminator_kind_for_instruction(TZrUInt16 opcode) {
@@ -773,6 +740,16 @@ static TZrBool backend_aot_exec_ir_build_function(SZrState *state,
         destinationInstruction->deoptId = sourceInstruction->deoptId;
         destinationInstruction->debugLine =
                 backend_aot_exec_ir_debug_line_for_instruction(entry->function, execInstructionIndex);
+        destinationInstruction->debugLineEnd =
+                backend_aot_exec_ir_debug_line_end_for_instruction(entry->function,
+                                                                   execInstructionIndex,
+                                                                   destinationInstruction->debugLine);
+        destinationInstruction->debugColumn =
+                backend_aot_exec_ir_debug_column_for_instruction(entry->function, execInstructionIndex);
+        destinationInstruction->debugColumnEnd =
+                backend_aot_exec_ir_debug_column_end_for_instruction(entry->function,
+                                                                     execInstructionIndex,
+                                                                     destinationInstruction->debugColumn);
         destinationInstruction->callsiteKind =
                 backend_aot_exec_ir_callsite_kind_for_instruction(entry->function, execInstructionIndex, execOpcode);
 

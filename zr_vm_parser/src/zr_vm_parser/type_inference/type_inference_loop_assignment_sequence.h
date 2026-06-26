@@ -3,12 +3,29 @@
 
 #include "type_inference_loop_assignment_join_internal.h"
 
+#define ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_SEQUENCE_SYMBOLIC_TERM_LIMIT 8
+
+typedef struct SZrTypeInferenceLoopAssignmentSequenceSymbolicTerm {
+    SZrAstNode *node;
+    SZrAstNode *coefficientNode;
+    TZrInt32 sign;
+    TZrBool hasCoefficientRange;
+    TZrInt64 coefficientMin;
+    TZrInt64 coefficientMax;
+} SZrTypeInferenceLoopAssignmentSequenceSymbolicTerm;
+
 typedef struct SZrTypeInferenceLoopAssignmentSequenceDeltaTracker {
     TZrInt64 deltaMin;
     TZrInt64 deltaMax;
     TZrBool canTrackSymbolicDelta;
     SZrAstNode *symbolicDeltaExpression;
     TZrInt64 symbolicDeltaBalance;
+    TZrBool hasSymbolicConstantResidualDelta;
+    TZrInt64 symbolicConstantResidualDelta;
+    TZrSize symbolicResidualTermCount;
+    TZrInt64 symbolicResidualIntegerLiteralSum;
+    SZrTypeInferenceLoopAssignmentSequenceSymbolicTerm
+            symbolicResidualTerms[ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_SEQUENCE_SYMBOLIC_TERM_LIMIT];
 } SZrTypeInferenceLoopAssignmentSequenceDeltaTracker;
 
 TZrBool ZrParser_TypeInferenceLoopAssignment_SequenceStepStarts(
@@ -29,6 +46,12 @@ TZrBool ZrParser_TypeInferenceLoopAssignment_SequenceStepIsInterleavable(
 TZrBool ZrParser_TypeInferenceLoopAssignment_SequenceStepReadsName(
         const SZrTypeInferenceLoopAssignmentStep *step,
         SZrString *sequenceName);
+
+TZrBool ZrParser_TypeInferenceLoopAssignment_SequenceFutureWritesExpressionDependency(
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        TZrSize currentIndex,
+        SZrString *sequenceName,
+        SZrAstNode *expression);
 
 void ZrParser_TypeInferenceLoopAssignment_SequenceDeltaTrackerInit(
         SZrTypeInferenceLoopAssignmentSequenceDeltaTracker *tracker);

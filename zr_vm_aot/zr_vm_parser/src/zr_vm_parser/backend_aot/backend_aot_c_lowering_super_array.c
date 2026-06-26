@@ -36,6 +36,24 @@ void backend_aot_write_c_direct_super_array_set_int(FILE *file,
             (unsigned)keySlot);
 }
 
+void backend_aot_write_c_direct_super_array_set_int_new_owner_no_write_barrier(FILE *file,
+                                                                               TZrUInt32 sourceSlot,
+                                                                               TZrUInt32 receiverSlot,
+                                                                               TZrUInt32 keySlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    do {\n"
+            "        /* zr_aot_value_exec_super_array_set_int_new_owner_no_write_barrier */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArraySetIntNewOwnerNoWriteBarrier(state, &frame, %u, %u, %u));\n"
+            "    } while (0);\n",
+            (unsigned)sourceSlot,
+            (unsigned)receiverSlot,
+            (unsigned)keySlot);
+}
+
 void backend_aot_write_c_direct_super_array_add_int(FILE *file,
                                                     TZrUInt32 destinationSlot,
                                                     TZrUInt32 receiverSlot,

@@ -1988,6 +1988,19 @@ TZrBool ZrCore_Object_SuperArraySetInt(struct SZrState *state,
     return applicable ? ZR_TRUE : ZrCore_Object_SetByIndex(state, receiver, key, value);
 }
 
+TZrBool ZrCore_Object_SuperArraySetIntAssumeNewOwnerNoWriteBarrier(struct SZrState *state,
+                                                                   SZrTypeValue *receiver,
+                                                                   const SZrTypeValue *key,
+                                                                   const SZrTypeValue *value) {
+    TZrBool applicable = ZR_FALSE;
+
+    if (!ZrCore_Object_SuperArrayTrySetIntFast(state, receiver, key, value, &applicable)) {
+        return ZR_FALSE;
+    }
+
+    return applicable ? ZR_TRUE : ZrCore_Object_SetByIndexAssumeNewOwnerNoWriteBarrier(state, receiver, key, value);
+}
+
 TZrBool ZrCore_Object_SuperArrayAddInt(struct SZrState *state,
                                        SZrTypeValue *receiver,
                                        const SZrTypeValue *value,

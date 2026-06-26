@@ -24,22 +24,30 @@ TZrBool backend_aot_c_can_emit_typed_i64_one_arg_thunk(const SZrFunction *functi
 }
 
 TZrBool backend_aot_c_can_emit_typed_i64_two_arg_thunk(const SZrFunction *function) {
+    return (TZrBool)(backend_aot_c_can_emit_typed_i64_two_arg_state_free_thunk(function) ||
+                     backend_aot_c_try_get_i64_arg0_arg1_divide_return(function) ||
+                     backend_aot_c_try_get_i64_arg0_arg1_modulo_return(function));
+}
+
+TZrBool backend_aot_c_can_emit_typed_i64_two_arg_state_free_thunk(const SZrFunction *function) {
     return (TZrBool)(backend_aot_c_try_get_i64_arg0_arg1_add_return(function) ||
                      backend_aot_c_try_get_i64_arg0_arg1_subtract_return(function) ||
                      backend_aot_c_try_get_i64_arg0_arg1_multiply_return(function) ||
-                     backend_aot_c_try_get_i64_arg0_arg1_divide_return(function) ||
-                     backend_aot_c_try_get_i64_arg0_arg1_modulo_return(function) ||
                      backend_aot_c_try_get_i64_arg0_arg1_bitwise_and_return(function) ||
                      backend_aot_c_try_get_i64_arg0_arg1_bitwise_or_return(function) ||
                      backend_aot_c_try_get_i64_arg0_arg1_bitwise_xor_return(function));
 }
 
 TZrBool backend_aot_c_can_emit_typed_i64_three_arg_thunk(const SZrFunction *function) {
+    return (TZrBool)(backend_aot_c_can_emit_typed_i64_three_arg_state_free_thunk(function) ||
+                     backend_aot_c_try_get_i64_arg0_arg1_arg2_divide_return(function) ||
+                     backend_aot_c_try_get_i64_arg0_arg1_arg2_modulo_return(function));
+}
+
+TZrBool backend_aot_c_can_emit_typed_i64_three_arg_state_free_thunk(const SZrFunction *function) {
     return (TZrBool)(backend_aot_c_try_get_i64_arg0_arg1_arg2_add_return(function) ||
                      backend_aot_c_try_get_i64_arg0_arg1_arg2_subtract_return(function) ||
                      backend_aot_c_try_get_i64_arg0_arg1_arg2_multiply_return(function) ||
-                     backend_aot_c_try_get_i64_arg0_arg1_arg2_divide_return(function) ||
-                     backend_aot_c_try_get_i64_arg0_arg1_arg2_modulo_return(function) ||
                      backend_aot_c_try_get_i64_arg0_arg1_arg2_bitwise_and_return(function) ||
                      backend_aot_c_try_get_i64_arg0_arg1_arg2_bitwise_or_return(function) ||
                      backend_aot_c_try_get_i64_arg0_arg1_arg2_bitwise_xor_return(function));
@@ -49,8 +57,7 @@ static void backend_aot_c_write_i64_no_arg_thunk_definition(FILE *file,
                                                             TZrUInt32 flatIndex,
                                                             TZrInt64 returnValue) {
     fprintf(file,
-            "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state) {\n"
-            "    (void)state;\n"
+            "static TZrInt64 zr_aot_typed_i64_fn_%u(void) {\n"
             "    return (TZrInt64)%lld;\n"
             "}\n",
             (unsigned)flatIndex,
@@ -63,8 +70,7 @@ static void backend_aot_c_write_i64_one_arg_thunk_definition(FILE *file,
                                                              TZrBool hasReturnValue,
                                                              TZrInt64 returnValue) {
     fprintf(file,
-            "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0) {\n"
-            "    (void)state;\n",
+            "static TZrInt64 zr_aot_typed_i64_fn_%u(TZrInt64 zr_aot_arg0) {\n",
             (unsigned)flatIndex);
     if (hasReturnValue) {
         fprintf(file, returnExpressionFormat, (long long)returnValue);
@@ -78,8 +84,7 @@ static void backend_aot_c_write_i64_two_arg_thunk_definition(FILE *file,
                                                              TZrUInt32 flatIndex,
                                                              const char *returnExpression) {
     fprintf(file,
-            "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrInt64 zr_aot_typed_i64_fn_%u(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
             "%s"
             "}\n",
             (unsigned)flatIndex,
@@ -114,8 +119,7 @@ static void backend_aot_c_write_i64_three_arg_thunk_definition(FILE *file,
                                                                TZrUInt32 flatIndex,
                                                                const char *returnExpression) {
     fprintf(file,
-            "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1, TZrInt64 zr_aot_arg2) {\n"
-            "    (void)state;\n"
+            "static TZrInt64 zr_aot_typed_i64_fn_%u(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1, TZrInt64 zr_aot_arg2) {\n"
             "%s"
             "}\n",
             (unsigned)flatIndex,
@@ -157,15 +161,23 @@ void backend_aot_write_c_typed_i64_thunk_forward_decls(FILE *file, const SZrAotF
         const SZrAotFunctionEntry *entry = &table->entries[index];
         if (backend_aot_c_can_emit_typed_i64_no_arg_thunk(entry->function)) {
             fprintf(file,
-                    "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state);\n",
+                    "static TZrInt64 zr_aot_typed_i64_fn_%u(void);\n",
                     (unsigned)entry->flatIndex);
         } else if (backend_aot_c_can_emit_typed_i64_one_arg_thunk(entry->function)) {
             fprintf(file,
-                    "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0);\n",
+                    "static TZrInt64 zr_aot_typed_i64_fn_%u(TZrInt64 zr_aot_arg0);\n",
+                    (unsigned)entry->flatIndex);
+        } else if (backend_aot_c_can_emit_typed_i64_two_arg_state_free_thunk(entry->function)) {
+            fprintf(file,
+                    "static TZrInt64 zr_aot_typed_i64_fn_%u(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);\n",
                     (unsigned)entry->flatIndex);
         } else if (backend_aot_c_can_emit_typed_i64_two_arg_thunk(entry->function)) {
             fprintf(file,
                     "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);\n",
+                    (unsigned)entry->flatIndex);
+        } else if (backend_aot_c_can_emit_typed_i64_three_arg_state_free_thunk(entry->function)) {
+            fprintf(file,
+                    "static TZrInt64 zr_aot_typed_i64_fn_%u(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1, TZrInt64 zr_aot_arg2);\n",
                     (unsigned)entry->flatIndex);
         } else if (backend_aot_c_can_emit_typed_i64_three_arg_thunk(entry->function)) {
             fprintf(file,

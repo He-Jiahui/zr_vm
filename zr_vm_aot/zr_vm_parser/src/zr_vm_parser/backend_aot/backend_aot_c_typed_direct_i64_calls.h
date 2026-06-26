@@ -27,7 +27,8 @@ TZrBool backend_aot_can_write_c_static_direct_i64_two_arg_call(
         TZrUInt32 execInstructionIndex,
         TZrUInt32 calleeFunctionIndex,
         TZrUInt32 *outFirstArgumentSlot,
-        TZrUInt32 *outSecondArgumentSlot);
+        TZrUInt32 *outSecondArgumentSlot,
+        TZrBool *outPassStateToThunk);
 TZrBool backend_aot_can_write_c_static_direct_i64_three_arg_call(
         const SZrAotFunctionTable *functionTable,
         const SZrAotExecIrFunction *functionIr,
@@ -38,6 +39,7 @@ TZrBool backend_aot_can_write_c_static_direct_i64_three_arg_call(
         TZrUInt32 calleeFunctionIndex,
         TZrUInt32 *outFirstArgumentSlot,
         TZrUInt32 *outSecondArgumentSlot,
-        TZrUInt32 *outThirdArgumentSlot);
+        TZrUInt32 *outThirdArgumentSlot,
+        TZrBool *outPassStateToThunk);
 
 #endif

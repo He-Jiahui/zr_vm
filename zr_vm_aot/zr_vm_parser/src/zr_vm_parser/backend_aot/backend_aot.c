@@ -363,6 +363,38 @@ const TZrChar *backend_aot_option_input_hash(const SZrAotWriterOptions *options,
     return sourceHash;
 }
 
+TZrBool backend_aot_option_require_full_aot(const SZrAotWriterOptions *options) {
+    return (TZrBool)(options != ZR_NULL && options->requireFullAot);
+}
+
+TZrBool backend_aot_option_enable_code_stripping(const SZrAotWriterOptions *options) {
+    return (TZrBool)(options != ZR_NULL && options->enableCodeStripping);
+}
+
+TZrBool backend_aot_option_strip_generated_symbols(const SZrAotWriterOptions *options) {
+    return (TZrBool)(options != ZR_NULL && options->stripGeneratedSymbols);
+}
+
+TZrUInt8 backend_aot_option_reflection_metadata_level(const SZrAotWriterOptions *options) {
+    return backend_aot_option_enable_code_stripping(options)
+                   ? (TZrUInt8)ZR_AOT_REFLECTION_METADATA_NONE
+                   : (TZrUInt8)ZR_AOT_REFLECTION_METADATA_RUNTIME_MAPPING;
+}
+
+TZrBool backend_aot_option_suppress_runtime_fallback_warnings(const SZrAotWriterOptions *options) {
+    return (TZrBool)(options != ZR_NULL && options->suppressRuntimeFallbackWarnings);
+}
+
+TZrUInt32 backend_aot_option_runtime_fallback_warning_suppression_mask(const SZrAotWriterOptions *options) {
+    if (options == ZR_NULL) {
+        return ZR_AOT_RUNTIME_FALLBACK_WARNING_NONE;
+    }
+    if (options->suppressRuntimeFallbackWarnings) {
+        return ZR_AOT_RUNTIME_FALLBACK_WARNING_ALL;
+    }
+    return options->suppressRuntimeFallbackWarningReasonMask & ZR_AOT_RUNTIME_FALLBACK_WARNING_ALL;
+}
+
 static TZrBool backend_aot_constant_int_is_known_non_zero(const SZrFunction *function, TZrUInt32 constantIndex) {
     const SZrTypeValue *constantValue;
 

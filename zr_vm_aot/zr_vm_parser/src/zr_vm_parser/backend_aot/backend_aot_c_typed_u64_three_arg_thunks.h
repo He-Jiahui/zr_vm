@@ -6,7 +6,9 @@
 #include "backend_aot_function_table.h"
 
 TZrBool backend_aot_c_can_emit_typed_u64_three_arg_thunk(const SZrFunction *function);
+TZrBool backend_aot_c_can_emit_typed_u64_three_arg_state_free_thunk(const SZrFunction *function);
 void backend_aot_c_write_u64_three_arg_thunk_forward_decl(FILE *file, TZrUInt32 flatIndex);
+void backend_aot_c_write_u64_three_arg_state_free_thunk_forward_decl(FILE *file, TZrUInt32 flatIndex);
 TZrBool backend_aot_c_try_write_u64_three_arg_thunk_definition(FILE *file, const SZrAotFunctionEntry *entry);
 
 #endif

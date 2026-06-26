@@ -320,10 +320,33 @@ static void test_aot_c_generated_source_compiles_and_exports_module_descriptor(v
     TEST_ASSERT_NOT_NULL(module->functionThunks);
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32(1u, module->functionThunkCount);
     TEST_ASSERT_NOT_NULL(module->entryThunk);
+    TEST_ASSERT_NOT_NULL(module->codeRegistration);
+    TEST_ASSERT_EQUAL_UINT32(module->functionThunkCount, module->codeRegistration->functionCount);
+    TEST_ASSERT_EQUAL_PTR(module->functionThunks, module->codeRegistration->functionPointers);
     TEST_ASSERT_NOT_NULL(module->methodInfos);
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32(1u, module->methodInfoCount);
+    TEST_ASSERT_EQUAL_UINT32(module->methodInfoCount, module->codeRegistration->methodInfoCount);
+    TEST_ASSERT_EQUAL_PTR(module->methodInfos, module->codeRegistration->methodInfos);
+    TEST_ASSERT_NOT_NULL(module->codeRegistration->invokers);
+    TEST_ASSERT_EQUAL_UINT32(1u, module->codeRegistration->invokerCount);
     TEST_ASSERT_NOT_NULL(module->methodInfos[0]);
     TEST_ASSERT_NOT_NULL(module->methodInfos[0]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[0]->invoker);
+    TEST_ASSERT_EQUAL_PTR(module->codeRegistration->invokers[0], module->methodInfos[0]->invoker);
+    TEST_ASSERT_EQUAL_UINT8(ZR_AOT_REFLECTION_METADATA_RUNTIME_MAPPING,
+                            module->methodInfos[0]->reflectionMetadataLevel);
+    TEST_ASSERT_NULL(module->typeLayouts);
+    TEST_ASSERT_EQUAL_UINT32(0u, module->typeLayoutCount);
+    TEST_ASSERT_NULL(module->codeRegistration->typeLayouts);
+    TEST_ASSERT_EQUAL_UINT32(0u, module->codeRegistration->typeLayoutCount);
+    TEST_ASSERT_NULL(module->typeLayoutTokens);
+    TEST_ASSERT_EQUAL_UINT32(0u, module->typeLayoutTokenCount);
+    TEST_ASSERT_NULL(module->codeRegistration->typeLayoutTokens);
+    TEST_ASSERT_EQUAL_UINT32(0u, module->codeRegistration->typeLayoutTokenCount);
+    TEST_ASSERT_NULL(module->gcDescriptors);
+    TEST_ASSERT_EQUAL_UINT32(0u, module->gcDescriptorCount);
+    TEST_ASSERT_NULL(module->codeRegistration->gcDescriptors);
+    TEST_ASSERT_EQUAL_UINT32(0u, module->codeRegistration->gcDescriptorCount);
 
     dlclose(library);
     ZrCore_Function_Free(state, function);
@@ -835,7 +858,7 @@ static void test_aot_c_generated_shared_library_executes_numeric_arithmetic_dire
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_arith_exec"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_exec_i64_binary"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, " + "));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, " - "));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, " * "));

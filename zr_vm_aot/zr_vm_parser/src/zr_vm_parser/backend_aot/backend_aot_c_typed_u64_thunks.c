@@ -635,11 +635,15 @@ TZrBool backend_aot_c_can_emit_typed_u64_one_arg_thunk(const SZrFunction *functi
 }
 
 TZrBool backend_aot_c_can_emit_typed_u64_two_arg_thunk(const SZrFunction *function) {
-    return (TZrBool)(backend_aot_c_try_get_u64_arg0_arg1_add_return(function) ||
-                     backend_aot_c_try_get_u64_arg0_arg1_multiply_return(function) ||
+    return (TZrBool)(backend_aot_c_can_emit_typed_u64_two_arg_state_free_thunk(function) ||
                      backend_aot_c_try_get_u64_arg0_arg1_divide_return(function) ||
-                     backend_aot_c_try_get_u64_arg0_arg1_modulo_return(function) ||
+                     backend_aot_c_try_get_u64_arg0_arg1_modulo_return(function));
+}
+
+TZrBool backend_aot_c_can_emit_typed_u64_two_arg_state_free_thunk(const SZrFunction *function) {
+    return (TZrBool)(backend_aot_c_try_get_u64_arg0_arg1_add_return(function) ||
                      backend_aot_c_try_get_u64_arg0_arg1_subtract_return(function) ||
+                     backend_aot_c_try_get_u64_arg0_arg1_multiply_return(function) ||
                      backend_aot_c_try_get_u64_arg0_arg1_bitwise_and_return(function) ||
                      backend_aot_c_try_get_u64_arg0_arg1_bitwise_or_return(function) ||
                      backend_aot_c_try_get_u64_arg0_arg1_bitwise_xor_return(function));
@@ -649,8 +653,7 @@ static void backend_aot_c_write_u64_no_arg_thunk_definition(FILE *file,
                                                             TZrUInt32 flatIndex,
                                                             TZrUInt64 returnValue) {
     fprintf(file,
-            "static TZrUInt64 zr_aot_typed_u64_fn_%u(struct SZrState *state) {\n"
-            "    (void)state;\n"
+            "static TZrUInt64 zr_aot_typed_u64_fn_%u(void) {\n"
             "    return (TZrUInt64)%llu;\n"
             "}\n",
             (unsigned)flatIndex,
@@ -663,8 +666,7 @@ static void backend_aot_c_write_u64_one_arg_thunk_definition(FILE *file,
                                                              TZrBool hasReturnValue,
                                                              TZrUInt64 returnValue) {
     fprintf(file,
-            "static TZrUInt64 zr_aot_typed_u64_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0) {\n"
-            "    (void)state;\n",
+            "static TZrUInt64 zr_aot_typed_u64_fn_%u(TZrUInt64 zr_aot_arg0) {\n",
             (unsigned)flatIndex);
     if (hasReturnValue) {
         fprintf(file, returnExpressionFormat, (unsigned long long)returnValue);
@@ -678,8 +680,7 @@ static void backend_aot_c_write_u64_two_arg_thunk_definition(FILE *file,
                                                              TZrUInt32 flatIndex,
                                                              const char *returnExpression) {
     fprintf(file,
-            "static TZrUInt64 zr_aot_typed_u64_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
-            "    (void)state;\n"
+            "static TZrUInt64 zr_aot_typed_u64_fn_%u(TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1) {\n"
             "%s"
             "}\n",
             (unsigned)flatIndex,
@@ -721,16 +722,22 @@ void backend_aot_write_c_typed_u64_thunk_forward_decls(FILE *file, const SZrAotF
         const SZrAotFunctionEntry *entry = &table->entries[index];
         if (backend_aot_c_can_emit_typed_u64_no_arg_thunk(entry->function)) {
             fprintf(file,
-                    "static TZrUInt64 zr_aot_typed_u64_fn_%u(struct SZrState *state);\n",
+                    "static TZrUInt64 zr_aot_typed_u64_fn_%u(void);\n",
                     (unsigned)entry->flatIndex);
         } else if (backend_aot_c_can_emit_typed_u64_one_arg_thunk(entry->function)) {
             fprintf(file,
-                    "static TZrUInt64 zr_aot_typed_u64_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0);\n",
+                    "static TZrUInt64 zr_aot_typed_u64_fn_%u(TZrUInt64 zr_aot_arg0);\n",
+                    (unsigned)entry->flatIndex);
+        } else if (backend_aot_c_can_emit_typed_u64_two_arg_state_free_thunk(entry->function)) {
+            fprintf(file,
+                    "static TZrUInt64 zr_aot_typed_u64_fn_%u(TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);\n",
                     (unsigned)entry->flatIndex);
         } else if (backend_aot_c_can_emit_typed_u64_two_arg_thunk(entry->function)) {
             fprintf(file,
                     "static TZrUInt64 zr_aot_typed_u64_fn_%u(struct SZrState *state, TZrUInt64 zr_aot_arg0, TZrUInt64 zr_aot_arg1);\n",
                     (unsigned)entry->flatIndex);
+        } else if (backend_aot_c_can_emit_typed_u64_three_arg_state_free_thunk(entry->function)) {
+            backend_aot_c_write_u64_three_arg_state_free_thunk_forward_decl(file, entry->flatIndex);
         } else if (backend_aot_c_can_emit_typed_u64_three_arg_thunk(entry->function)) {
             backend_aot_c_write_u64_three_arg_thunk_forward_decl(file, entry->flatIndex);
         }

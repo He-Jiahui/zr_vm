@@ -312,6 +312,7 @@ void backend_aot_llvm_write_module_prelude(FILE *file,
     fprintf(file,
             "%%ZrAotGeneratedFrame = type { ptr, ptr, ptr, ptr, i32, i32, i32, i32, i32, i32, i8, ptr, ptr, ptr, i32, ptr, i32 }\n");
     fprintf(file, "%%ZrAotGeneratedDirectCall = type { ptr, ptr, ptr, i32, i32, i32, i32, i32, i1, i1 }\n");
-    fprintf(file, "%%ZrAotCompiledModule = type { i32, i32, ptr, i32, ptr, ptr, ptr, i64, ptr, i32, ptr }\n");
+    fprintf(file,
+            "%%ZrAotCompiledModule = type { i32, i32, ptr, i32, ptr, ptr, ptr, i64, ptr, i32, ptr, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr }\n");
     fprintf(file, "\n");
 }

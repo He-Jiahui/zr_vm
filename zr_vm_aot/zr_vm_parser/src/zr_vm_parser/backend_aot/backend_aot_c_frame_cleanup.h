@@ -6,6 +6,7 @@
 #include "backend_aot_internal.h"
 
 TZrBool backend_aot_c_frame_cleanup_would_emit(const SZrAotExecIrFrameLayout *frameLayout);
+void backend_aot_write_c_frame_root_cleanup(FILE *file);
 void backend_aot_write_c_frame_cleanup(FILE *file, const SZrAotExecIrFrameLayout *frameLayout);
 
 #endif

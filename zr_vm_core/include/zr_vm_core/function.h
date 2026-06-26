@@ -18,6 +18,7 @@ struct SZrObject;
 struct SZrObjectPrototype;
 struct SZrClosure;
 struct SZrTypeLayoutField;
+struct SZrAotCodeRegistration;
 
 typedef enum EZrFunctionMemberEntryKind {
     ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL = 0,
@@ -588,6 +589,9 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 prototypeFrameTypeLayoutFieldCount;
     TZrUInt32 prototypeFrameTypeLayoutFieldCapacity;
     struct SZrFunction *prototypeContextFunction;
+    const struct SZrAotCodeRegistration *metadataCodeRegistration;
+    TZrUInt32 metadataTypeLayoutCount;
+    TZrUInt32 metadataGcDescriptorCount;
     SZrMetadataTokenBinding *moduleMetadataBindings;
     TZrUInt32 moduleMetadataBindingLength;
     TZrUInt32 moduleMetadataBindingCapacity;
