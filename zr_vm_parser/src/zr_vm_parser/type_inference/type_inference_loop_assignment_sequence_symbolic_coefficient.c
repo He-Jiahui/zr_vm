@@ -139,6 +139,38 @@ static TZrBool loop_assignment_sequence_symbolic_coefficient_is_positive_singlet
            minValue > 0;
 }
 
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_positive_scale_identifier(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    TZrInt64 minValue = 0;
+    TZrInt64 maxValue = 0;
+
+    return ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsIdentifier(node) &&
+           ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicInferInt64Range(
+                   cs,
+                   node,
+                   &minValue,
+                   &maxValue) &&
+           maxValue >= minValue &&
+           minValue > 0;
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_scale_extension_identifier(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    TZrInt64 minValue = 0;
+    TZrInt64 maxValue = 0;
+
+    return ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsIdentifier(node) &&
+           ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicInferInt64Range(
+                   cs,
+                   node,
+                   &minValue,
+                   &maxValue) &&
+           maxValue >= minValue &&
+           (minValue != 0 || maxValue != 0);
+}
+
 static TZrBool loop_assignment_sequence_symbolic_coefficient_is_negative_scale_identifier(
         SZrCompilerState *cs,
         SZrAstNode *node) {
@@ -153,6 +185,25 @@ static TZrBool loop_assignment_sequence_symbolic_coefficient_is_negative_scale_i
                    &maxValue) &&
            maxValue >= minValue &&
            maxValue < 0;
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_supported_scale_extension_identifier(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    TZrInt64 minValue = 0;
+    TZrInt64 maxValue = 0;
+
+    return ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsIdentifier(node) &&
+           ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicInferInt64Range(
+                   cs,
+                   node,
+                   &minValue,
+                   &maxValue) &&
+           maxValue >= minValue &&
+           (minValue > 0 ||
+            (minValue == 0 && maxValue > 0) ||
+            (minValue < 0 && maxValue == 0) ||
+            maxValue < 0);
 }
 
 static TZrBool loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_positive_scale_identifier(
@@ -171,6 +222,17 @@ static TZrBool loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_p
            maxValue > 0;
 }
 
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_positive_possible_scale_identifier(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    return loop_assignment_sequence_symbolic_coefficient_is_positive_scale_identifier(
+                   cs,
+                   node) ||
+           loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_positive_scale_identifier(
+                   cs,
+                   node);
+}
+
 static TZrBool loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_negative_scale_identifier(
         SZrCompilerState *cs,
         SZrAstNode *node) {
@@ -187,7 +249,48 @@ static TZrBool loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_n
            maxValue == 0;
 }
 
-static TZrBool loop_assignment_sequence_symbolic_coefficient_is_positive_bounded_scale_product(
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_positive_possible_or_zero_inclusive_negative_scale_identifier(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    return loop_assignment_sequence_symbolic_coefficient_is_positive_possible_scale_identifier(
+                   cs,
+                   node) ||
+           loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_negative_scale_identifier(
+                   cs,
+                   node);
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_nonzero_non_crossing_scale_identifier(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    return loop_assignment_sequence_symbolic_coefficient_is_positive_possible_or_zero_inclusive_negative_scale_identifier(
+                   cs,
+                   node) ||
+           loop_assignment_sequence_symbolic_coefficient_is_negative_scale_identifier(
+                   cs,
+                   node);
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_extra_extra_scale_identifier(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    return loop_assignment_sequence_symbolic_coefficient_is_nonzero_non_crossing_scale_identifier(
+                   cs,
+                   node) ||
+           loop_assignment_sequence_symbolic_coefficient_is_sign_crossing_scale_identifier(
+                   cs,
+                   node);
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_deeper_scale_extension_identifier(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    return loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_scale_extension_identifier(
+            cs,
+            node);
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_direct_positive_bounded_scale_product(
         SZrCompilerState *cs,
         SZrAstNode *node) {
     SZrAstNode *left;
@@ -197,6 +300,9 @@ static TZrBool loop_assignment_sequence_symbolic_coefficient_is_positive_bounded
     TZrBool hasDoubleZeroInclusiveNegativeScale;
     TZrBool hasDoubleNegativeScaleProduct;
     TZrBool hasDoubleSignCrossingScaleProduct;
+    TZrBool hasMixedZeroInclusivePositiveSignCrossingScaleProduct;
+    TZrBool hasMixedZeroInclusiveNegativeSignCrossingScaleProduct;
+    TZrBool hasMixedZeroInclusivePositiveNegativeScaleProduct;
 
     if (!ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsBinaryMultiply(node)) {
         return ZR_FALSE;
@@ -248,12 +354,390 @@ static TZrBool loop_assignment_sequence_symbolic_coefficient_is_positive_bounded
             loop_assignment_sequence_symbolic_coefficient_is_sign_crossing_scale_identifier(
                     cs,
                     right);
+    hasMixedZeroInclusivePositiveSignCrossingScaleProduct =
+            (loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_positive_scale_identifier(
+                     cs,
+                     left) &&
+             loop_assignment_sequence_symbolic_coefficient_is_sign_crossing_scale_identifier(
+                     cs,
+                     right)) ||
+            (loop_assignment_sequence_symbolic_coefficient_is_sign_crossing_scale_identifier(
+                     cs,
+                     left) &&
+             loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_positive_scale_identifier(
+                     cs,
+                     right));
+    hasMixedZeroInclusiveNegativeSignCrossingScaleProduct =
+            (loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_negative_scale_identifier(
+                     cs,
+                     left) &&
+             loop_assignment_sequence_symbolic_coefficient_is_sign_crossing_scale_identifier(
+                     cs,
+                     right)) ||
+            (loop_assignment_sequence_symbolic_coefficient_is_sign_crossing_scale_identifier(
+                     cs,
+                     left) &&
+             loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_negative_scale_identifier(
+                     cs,
+                     right));
+    hasMixedZeroInclusivePositiveNegativeScaleProduct =
+            (loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_positive_scale_identifier(
+                     cs,
+                     left) &&
+             loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_negative_scale_identifier(
+                     cs,
+                     right)) ||
+            (loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_negative_scale_identifier(
+                     cs,
+                     left) &&
+             loop_assignment_sequence_symbolic_coefficient_is_zero_inclusive_positive_scale_identifier(
+                     cs,
+                     right));
 
     return hasPositiveSingletonScale ||
            hasDoubleZeroInclusivePositiveScale ||
            hasDoubleZeroInclusiveNegativeScale ||
            hasDoubleNegativeScaleProduct ||
-           hasDoubleSignCrossingScaleProduct;
+           hasDoubleSignCrossingScaleProduct ||
+           hasMixedZeroInclusivePositiveSignCrossingScaleProduct ||
+           hasMixedZeroInclusiveNegativeSignCrossingScaleProduct ||
+           hasMixedZeroInclusivePositiveNegativeScaleProduct;
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_extension(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        TZrSize remainingScaleExtensions) {
+    SZrAstNode *left;
+    SZrAstNode *right;
+
+    if (loop_assignment_sequence_symbolic_coefficient_is_direct_positive_bounded_scale_product(
+                cs,
+                node)) {
+        return ZR_TRUE;
+    }
+    if (remainingScaleExtensions == 0 ||
+        !ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsBinaryMultiply(node)) {
+        return ZR_FALSE;
+    }
+
+    left = node->data.binaryExpression.left;
+    right = node->data.binaryExpression.right;
+    return (loop_assignment_sequence_symbolic_coefficient_is_supported_scale_extension_identifier(
+                    cs,
+                    left) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_extension(
+                    cs,
+                    right,
+                    remainingScaleExtensions - 1)) ||
+           (loop_assignment_sequence_symbolic_coefficient_is_supported_scale_extension_identifier(
+                    cs,
+                    right) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_extension(
+                    cs,
+                    left,
+                    remainingScaleExtensions - 1));
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extension(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    SZrAstNode *left;
+    SZrAstNode *right;
+
+    if (!ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsBinaryMultiply(node)) {
+        return ZR_FALSE;
+    }
+
+    left = node->data.binaryExpression.left;
+    right = node->data.binaryExpression.right;
+    return (loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_scale_extension_identifier(
+                    cs,
+                    left) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_extension(
+                    cs,
+                    right,
+                    1)) ||
+           (loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_scale_extension_identifier(
+                    cs,
+                    right) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_extension(
+                    cs,
+                    left,
+                    1));
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_deeper_extension(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    SZrAstNode *left;
+    SZrAstNode *right;
+
+    if (!ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsBinaryMultiply(node)) {
+        return ZR_FALSE;
+    }
+
+    left = node->data.binaryExpression.left;
+    right = node->data.binaryExpression.right;
+    return (loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_deeper_scale_extension_identifier(
+                    cs,
+                    left) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extension(
+                    cs,
+                    right)) ||
+           (loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_deeper_scale_extension_identifier(
+                    cs,
+                    right) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extension(
+                    cs,
+                    left));
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_deeper_extension(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    SZrAstNode *left;
+    SZrAstNode *right;
+
+    if (!ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsBinaryMultiply(node)) {
+        return ZR_FALSE;
+    }
+
+    left = node->data.binaryExpression.left;
+    right = node->data.binaryExpression.right;
+    return (loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_scale_extension_identifier(
+                   cs,
+                   left) &&
+           loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_deeper_extension(
+                   cs,
+                   right)) ||
+          (loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_scale_extension_identifier(
+                   cs,
+                   right) &&
+           loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_deeper_extension(
+                   cs,
+                    left));
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    SZrAstNode *left;
+    SZrAstNode *right;
+
+    if (!ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsBinaryMultiply(node)) {
+        return ZR_FALSE;
+    }
+
+    left = node->data.binaryExpression.left;
+    right = node->data.binaryExpression.right;
+    return (loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_extra_extra_scale_identifier(
+                    cs,
+                    left) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_deeper_extension(
+                    cs,
+                    right)) ||
+           (loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_extra_extra_scale_identifier(
+                    cs,
+                    right) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_deeper_extension(
+                    cs,
+                    left));
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_positive_singleton_extra_extra_extra_deeper_extension(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    SZrAstNode *left;
+    SZrAstNode *right;
+
+    if (!ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsBinaryMultiply(node)) {
+        return ZR_FALSE;
+    }
+
+    left = node->data.binaryExpression.left;
+    right = node->data.binaryExpression.right;
+    return (loop_assignment_sequence_symbolic_coefficient_is_positive_singleton_scale_identifier(
+                    cs,
+                    left) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+                    cs,
+                    right)) ||
+           (loop_assignment_sequence_symbolic_coefficient_is_positive_singleton_scale_identifier(
+                    cs,
+                    right) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+                    cs,
+                    left));
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_positive_extra_extra_extra_deeper_extension(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    SZrAstNode *left;
+    SZrAstNode *right;
+
+    if (!ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsBinaryMultiply(node)) {
+        return ZR_FALSE;
+    }
+
+    left = node->data.binaryExpression.left;
+    right = node->data.binaryExpression.right;
+    return (loop_assignment_sequence_symbolic_coefficient_is_positive_scale_identifier(
+                    cs,
+                    left) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+                    cs,
+                    right)) ||
+           (loop_assignment_sequence_symbolic_coefficient_is_positive_scale_identifier(
+                    cs,
+                    right) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+                    cs,
+                    left));
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_positive_possible_extra_extra_extra_deeper_extension(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    SZrAstNode *left;
+    SZrAstNode *right;
+
+    if (!ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsBinaryMultiply(node)) {
+        return ZR_FALSE;
+    }
+
+    left = node->data.binaryExpression.left;
+    right = node->data.binaryExpression.right;
+    return (loop_assignment_sequence_symbolic_coefficient_is_positive_possible_scale_identifier(
+                    cs,
+                    left) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+                    cs,
+                    right)) ||
+           (loop_assignment_sequence_symbolic_coefficient_is_positive_possible_scale_identifier(
+                    cs,
+                    right) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+                    cs,
+                    left));
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_positive_possible_or_zero_inclusive_negative_extra_extra_extra_deeper_extension(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    SZrAstNode *left;
+    SZrAstNode *right;
+
+    if (!ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsBinaryMultiply(node)) {
+        return ZR_FALSE;
+    }
+
+    left = node->data.binaryExpression.left;
+    right = node->data.binaryExpression.right;
+    return (loop_assignment_sequence_symbolic_coefficient_is_positive_possible_or_zero_inclusive_negative_scale_identifier(
+                    cs,
+                    left) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+                    cs,
+                    right)) ||
+           (loop_assignment_sequence_symbolic_coefficient_is_positive_possible_or_zero_inclusive_negative_scale_identifier(
+                    cs,
+                    right) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+                    cs,
+                    left));
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_non_crossing_extra_extra_extra_deeper_extension(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    SZrAstNode *left;
+    SZrAstNode *right;
+
+    if (!ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsBinaryMultiply(node)) {
+        return ZR_FALSE;
+    }
+
+    left = node->data.binaryExpression.left;
+    right = node->data.binaryExpression.right;
+    return (loop_assignment_sequence_symbolic_coefficient_is_nonzero_non_crossing_scale_identifier(
+                    cs,
+                    left) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+                    cs,
+                    right)) ||
+           (loop_assignment_sequence_symbolic_coefficient_is_nonzero_non_crossing_scale_identifier(
+                    cs,
+                    right) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+                    cs,
+                    left));
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_extra_deeper_extension(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    SZrAstNode *left;
+    SZrAstNode *right;
+
+    if (!ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsBinaryMultiply(node)) {
+        return ZR_FALSE;
+    }
+
+    left = node->data.binaryExpression.left;
+    right = node->data.binaryExpression.right;
+    return (loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_extra_extra_scale_identifier(
+                    cs,
+                    left) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+                    cs,
+                    right)) ||
+           (loop_assignment_sequence_symbolic_coefficient_is_nonzero_possible_extra_extra_scale_identifier(
+                    cs,
+                    right) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+                    cs,
+                    left));
+}
+
+static TZrBool loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    return loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_extension(
+                   cs,
+                   node,
+                   1) ||
+           loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extension(
+                   cs,
+                   node) ||
+          loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_deeper_extension(
+                  cs,
+                  node) ||
+          loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_deeper_extension(
+                  cs,
+                  node) ||
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_deeper_extension(
+                    cs,
+                    node) ||
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_positive_singleton_extra_extra_extra_deeper_extension(
+                    cs,
+                    node) ||
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_positive_extra_extra_extra_deeper_extension(
+                    cs,
+                    node) ||
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_positive_possible_extra_extra_extra_deeper_extension(
+                    cs,
+                    node) ||
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_positive_possible_or_zero_inclusive_negative_extra_extra_extra_deeper_extension(
+                    cs,
+                    node) ||
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_non_crossing_extra_extra_extra_deeper_extension(
+                    cs,
+                    node) ||
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product_with_nonzero_possible_extra_extra_extra_deeper_extension(
+                    cs,
+                    node);
 }
 
 TZrBool ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsSupportedCrossingCoefficient(
@@ -280,7 +764,7 @@ TZrBool ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicNodeIsSupportedCros
     }
 
     return (loop_assignment_sequence_symbolic_coefficient_is_crossing_identifier(cs, left) &&
-            loop_assignment_sequence_symbolic_coefficient_is_positive_bounded_scale_product(cs, right)) ||
-           (loop_assignment_sequence_symbolic_coefficient_is_positive_bounded_scale_product(cs, left) &&
+            loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product(cs, right)) ||
+           (loop_assignment_sequence_symbolic_coefficient_is_bounded_scale_product(cs, left) &&
             loop_assignment_sequence_symbolic_coefficient_is_crossing_identifier(cs, right));
 }

@@ -15,7 +15,10 @@ typedef enum EZrCliPrimaryMode {
     ZR_CLI_PRIMARY_MODE_POSITIONAL_PROJECT = 3,
     ZR_CLI_PRIMARY_MODE_COMPILE = 4,
     ZR_CLI_PRIMARY_MODE_INLINE = 5,
-    ZR_CLI_PRIMARY_MODE_PROJECT = 6
+    ZR_CLI_PRIMARY_MODE_PROJECT = 6,
+    ZR_CLI_PRIMARY_MODE_DUMP_ZRP_METADATA = 7,
+    ZR_CLI_PRIMARY_MODE_DIFF_ZRP_METADATA = 8,
+    ZR_CLI_PRIMARY_MODE_CHECK_ZRP_METADATA_VERSION = 9
 } EZrCliPrimaryMode;
 
 static void zr_cli_write_error(TZrChar *buffer, TZrSize bufferSize, const TZrChar *format, ...) {
@@ -42,6 +45,10 @@ static void zr_cli_command_init(SZrCliCommand *command) {
     command->inlineCode = ZR_NULL;
     command->inlineModeAlias = ZR_NULL;
     command->moduleName = ZR_NULL;
+    command->zrpMetadataPath = ZR_NULL;
+    command->zrpMetadataBeforePath = ZR_NULL;
+    command->zrpMetadataAfterPath = ZR_NULL;
+    command->zrpMetadataVersionCheckPath = ZR_NULL;
     command->programArgs = ZR_NULL;
     command->programArgCount = 0;
     command->debugAddress = ZR_NULL;
@@ -128,6 +135,9 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  %s\n"
             "  %s <project.zrp> [run-options] [-- <args...>]\n"
             "  %s --compile <project.zrp> [compile-options] [--run [run-options]] [-- <args...>]\n"
+            "  %s --dump-zrp-metadata <file>\n"
+            "  %s --diff-zrp-metadata <before> <after>\n"
+            "  %s --check-zrp-metadata-version <file>\n"
             "  %s -e <code> [-- <args...>]\n"
             "  %s -c <code> [-- <args...>]\n"
             "  %s --project <project.zrp> -m <module> [run-options] [-- <args...>]\n"
@@ -138,6 +148,9 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  no arguments                      Start the REPL.\n"
             "  <project.zrp>                    Run the project entry from the .zrp file.\n"
             "  --compile <project.zrp>          Compile reachable project-local modules.\n"
+            "  --dump-zrp-metadata <file>       Print zrp metadata section bytes and counts.\n"
+            "  --diff-zrp-metadata <a> <b>      Print zrp metadata section byte/count deltas.\n"
+            "  --check-zrp-metadata-version <f> Check the zrp metadata header version and shape.\n"
             "  -e <code>, -c <code>             Execute inline source with a bare global runtime.\n"
             "  --project <project.zrp> -m <m>   Run a specific module entry inside the project.\n"
             "\n"
@@ -167,8 +180,17 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  %s\n"
             "  %s demo.zrp --execution-mode binary -- arg1 -x\n"
             "  %s --compile demo.zrp --run -- arg1 -x\n"
+            "  %s --dump-zrp-metadata module.zrp\n"
+            "  %s --diff-zrp-metadata before.zrp after.zrp\n"
+            "  %s --check-zrp-metadata-version module.zrp\n"
             "  %s -e \"return 1;\" -- foo bar\n"
             "  %s --project demo.zrp -m tools.seed --execution-mode binary -- foo bar\n",
+            name,
+            name,
+            name,
+            name,
+            name,
+            name,
             name,
             name,
             name,
@@ -197,6 +219,9 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  %s\n"
              "  %s <project.zrp> [run-options] [-- <args...>]\n"
              "  %s --compile <project.zrp> [compile-options] [--run [run-options]] [-- <args...>]\n"
+             "  %s --dump-zrp-metadata <file>\n"
+             "  %s --diff-zrp-metadata <before> <after>\n"
+             "  %s --check-zrp-metadata-version <file>\n"
              "  %s -e <code> [-- <args...>]\n"
              "  %s -c <code> [-- <args...>]\n"
              "  %s --project <project.zrp> -m <module> [run-options] [-- <args...>]\n"
@@ -207,6 +232,9 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  no arguments                      Start the REPL.\n"
              "  <project.zrp>                    Run the project entry from the .zrp file.\n"
              "  --compile <project.zrp>          Compile reachable project-local modules.\n"
+             "  --dump-zrp-metadata <file>       Print zrp metadata section bytes and counts.\n"
+             "  --diff-zrp-metadata <a> <b>      Print zrp metadata section byte/count deltas.\n"
+             "  --check-zrp-metadata-version <f> Check the zrp metadata header version and shape.\n"
              "  -e <code>, -c <code>             Execute inline source with a bare global runtime.\n"
              "  --project <project.zrp> -m <m>   Run a specific module entry inside the project.\n"
              "\n"
@@ -236,8 +264,17 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  %s\n"
              "  %s demo.zrp --execution-mode binary -- arg1 -x\n"
              "  %s --compile demo.zrp --run -- arg1 -x\n"
+             "  %s --dump-zrp-metadata module.zrp\n"
+             "  %s --diff-zrp-metadata before.zrp after.zrp\n"
+             "  %s --check-zrp-metadata-version module.zrp\n"
              "  %s -e \"return 1;\" -- foo bar\n"
              "  %s --project demo.zrp -m tools.seed --execution-mode binary -- foo bar\n",
+             name,
+             name,
+             name,
+             name,
+             name,
+             name,
              name,
              name,
              name,
@@ -291,6 +328,10 @@ TZrBool ZrCli_Command_Parse(int argc,
     const TZrChar *compilePath = ZR_NULL;
     const TZrChar *explicitProjectPath = ZR_NULL;
     const TZrChar *positionalPath = ZR_NULL;
+    const TZrChar *zrpMetadataPath = ZR_NULL;
+    const TZrChar *zrpMetadataBeforePath = ZR_NULL;
+    const TZrChar *zrpMetadataAfterPath = ZR_NULL;
+    const TZrChar *zrpMetadataVersionCheckPath = ZR_NULL;
     int index;
 
     if (outCommand == ZR_NULL) {
@@ -367,6 +408,65 @@ TZrBool ZrCli_Command_Parse(int argc,
 
             explicitProjectSeen = ZR_TRUE;
             explicitProjectPath = argv[++index];
+            continue;
+        }
+
+        if (strcmp(argument, "--dump-zrp-metadata") == 0) {
+            if (!zr_cli_command_set_primary_mode(&primaryMode,
+                                                 ZR_CLI_PRIMARY_MODE_DUMP_ZRP_METADATA,
+                                                 "--dump-zrp-metadata",
+                                                 errorBuffer,
+                                                 errorBufferSize)) {
+                return ZR_FALSE;
+            }
+            if (index + 1 >= argc || argv[index + 1][0] == '-') {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Missing <file> after --dump-zrp-metadata");
+                return ZR_FALSE;
+            }
+
+            zrpMetadataPath = argv[++index];
+            continue;
+        }
+
+        if (strcmp(argument, "--diff-zrp-metadata") == 0) {
+            if (!zr_cli_command_set_primary_mode(&primaryMode,
+                                                 ZR_CLI_PRIMARY_MODE_DIFF_ZRP_METADATA,
+                                                 "--diff-zrp-metadata",
+                                                 errorBuffer,
+                                                 errorBufferSize)) {
+                return ZR_FALSE;
+            }
+            if (index + 1 >= argc || argv[index + 1][0] == '-') {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Missing <before> after --diff-zrp-metadata");
+                return ZR_FALSE;
+            }
+            zrpMetadataBeforePath = argv[++index];
+            if (index + 1 >= argc || argv[index + 1][0] == '-') {
+                zr_cli_write_error(errorBuffer,
+                                   errorBufferSize,
+                                   "Missing <after> after --diff-zrp-metadata <before>");
+                return ZR_FALSE;
+            }
+            zrpMetadataAfterPath = argv[++index];
+            continue;
+        }
+
+        if (strcmp(argument, "--check-zrp-metadata-version") == 0) {
+            if (!zr_cli_command_set_primary_mode(&primaryMode,
+                                                 ZR_CLI_PRIMARY_MODE_CHECK_ZRP_METADATA_VERSION,
+                                                 "--check-zrp-metadata-version",
+                                                 errorBuffer,
+                                                 errorBufferSize)) {
+                return ZR_FALSE;
+            }
+            if (index + 1 >= argc || argv[index + 1][0] == '-') {
+                zr_cli_write_error(errorBuffer,
+                                   errorBufferSize,
+                                   "Missing <file> after --check-zrp-metadata-version");
+                return ZR_FALSE;
+            }
+
+            zrpMetadataVersionCheckPath = argv[++index];
             continue;
         }
 
@@ -651,6 +751,54 @@ TZrBool ZrCli_Command_Parse(int argc,
         return ZR_FALSE;
     }
 
+    if (primaryMode == ZR_CLI_PRIMARY_MODE_DUMP_ZRP_METADATA &&
+        (interactiveRequested || outCommand->emitIntermediate || outCommand->emitZrm || outCommand->emitAotC ||
+         outCommand->incremental || outCommand->runAfterCompile ||
+         outCommand->emitExecutedVia ||
+         outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
+         outCommand->profileEnabled || outCommand->coverageEnabled || outCommand->dumpBytecodeEnabled ||
+         outCommand->heapSummaryEnabled ||
+         outCommand->debugAddress != ZR_NULL || outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP ||
+         outCommand->moduleName != ZR_NULL || outCommand->programArgCount > 0 ||
+         compileSeen || explicitProjectSeen || positionalSeen)) {
+        zr_cli_write_error(errorBuffer,
+                           errorBufferSize,
+                           "--dump-zrp-metadata cannot be combined with run, compile, debug, or output modifiers");
+        return ZR_FALSE;
+    }
+
+    if (primaryMode == ZR_CLI_PRIMARY_MODE_DIFF_ZRP_METADATA &&
+        (interactiveRequested || outCommand->emitIntermediate || outCommand->emitZrm || outCommand->emitAotC ||
+         outCommand->incremental || outCommand->runAfterCompile ||
+         outCommand->emitExecutedVia ||
+         outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
+         outCommand->profileEnabled || outCommand->coverageEnabled || outCommand->dumpBytecodeEnabled ||
+         outCommand->heapSummaryEnabled ||
+         outCommand->debugAddress != ZR_NULL || outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP ||
+         outCommand->moduleName != ZR_NULL || outCommand->programArgCount > 0 ||
+         compileSeen || explicitProjectSeen || positionalSeen)) {
+        zr_cli_write_error(errorBuffer,
+                           errorBufferSize,
+                           "--diff-zrp-metadata cannot be combined with run, compile, debug, or output modifiers");
+        return ZR_FALSE;
+    }
+
+    if (primaryMode == ZR_CLI_PRIMARY_MODE_CHECK_ZRP_METADATA_VERSION &&
+        (interactiveRequested || outCommand->emitIntermediate || outCommand->emitZrm || outCommand->emitAotC ||
+         outCommand->incremental || outCommand->runAfterCompile ||
+         outCommand->emitExecutedVia ||
+         outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
+         outCommand->profileEnabled || outCommand->coverageEnabled || outCommand->dumpBytecodeEnabled ||
+         outCommand->heapSummaryEnabled ||
+         outCommand->debugAddress != ZR_NULL || outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP ||
+         outCommand->moduleName != ZR_NULL || outCommand->programArgCount > 0 ||
+         compileSeen || explicitProjectSeen || positionalSeen)) {
+        zr_cli_write_error(errorBuffer,
+                           errorBufferSize,
+                           "--check-zrp-metadata-version cannot be combined with run, compile, debug, or output modifiers");
+        return ZR_FALSE;
+    }
+
     if (compileSeen && !outCommand->runAfterCompile &&
         (outCommand->emitExecutedVia || outCommand->debugEnabled ||
          outCommand->profileEnabled || outCommand->coverageEnabled || outCommand->dumpBytecodeEnabled ||
@@ -679,6 +827,22 @@ TZrBool ZrCli_Command_Parse(int argc,
                 outCommand->interactiveAfterRun = ZR_TRUE;
             }
             outCommand->mode = ZR_CLI_MODE_RUN_INLINE;
+            return ZR_TRUE;
+
+        case ZR_CLI_PRIMARY_MODE_DUMP_ZRP_METADATA:
+            outCommand->mode = ZR_CLI_MODE_DUMP_ZRP_METADATA;
+            outCommand->zrpMetadataPath = zrpMetadataPath;
+            return ZR_TRUE;
+
+        case ZR_CLI_PRIMARY_MODE_DIFF_ZRP_METADATA:
+            outCommand->mode = ZR_CLI_MODE_DIFF_ZRP_METADATA;
+            outCommand->zrpMetadataBeforePath = zrpMetadataBeforePath;
+            outCommand->zrpMetadataAfterPath = zrpMetadataAfterPath;
+            return ZR_TRUE;
+
+        case ZR_CLI_PRIMARY_MODE_CHECK_ZRP_METADATA_VERSION:
+            outCommand->mode = ZR_CLI_MODE_CHECK_ZRP_METADATA_VERSION;
+            outCommand->zrpMetadataVersionCheckPath = zrpMetadataVersionCheckPath;
             return ZR_TRUE;
 
         case ZR_CLI_PRIMARY_MODE_COMPILE:

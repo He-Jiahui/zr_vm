@@ -13,6 +13,7 @@
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_common/zr_hash_conf.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/aot_runtime.h"
@@ -74,6 +75,46 @@ static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
 }
 
+static TZrInstruction create_get_constant_instruction(TZrUInt16 destinationSlot, TZrInt32 constantIndex) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(GET_CONSTANT);
+    instruction.instruction.operandExtra = destinationSlot;
+    instruction.instruction.operand.operand2[0] = constantIndex;
+    return instruction;
+}
+
+static TZrInstruction create_generic_logical_not_instruction(TZrUInt16 destinationSlot, TZrUInt16 sourceSlot) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(LOGICAL_NOT);
+    instruction.instruction.operandExtra = destinationSlot;
+    instruction.instruction.operand.operand1[0] = sourceSlot;
+    return instruction;
+}
+
+static TZrInstruction create_jump_if_bool_false_instruction(TZrUInt16 conditionSlot, TZrInt32 offset) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE);
+    instruction.instruction.operandExtra = conditionSlot;
+    instruction.instruction.operand.operand2[0] = offset;
+    return instruction;
+}
+
+static TZrInstruction create_return_instruction(TZrUInt16 returnCount, TZrUInt16 sourceSlot) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(FUNCTION_RETURN);
+    instruction.instruction.operandExtra = returnCount;
+    instruction.instruction.operand.operand1[0] = sourceSlot;
+    return instruction;
+}
+
 static char *read_text_file_owned_or_fail(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -95,6 +136,44 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
     buffer[fileSize] = '\0';
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
     return buffer;
+}
+
+static SZrFunction *create_generic_logical_not_bool_source_function(SZrState *state) {
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(TZrInstruction) * 7u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->instructionsList);
+    function->instructionsList[0] = create_get_constant_instruction(0u, 0);
+    function->instructionsList[1] = create_generic_logical_not_instruction(1u, 0u);
+    function->instructionsList[2] = create_jump_if_bool_false_instruction(1u, 2);
+    function->instructionsList[3] = create_get_constant_instruction(2u, 1);
+    function->instructionsList[4] = create_return_instruction(1u, 2u);
+    function->instructionsList[5] = create_get_constant_instruction(2u, 2);
+    function->instructionsList[6] = create_return_instruction(1u, 2u);
+    function->instructionsLength = 7u;
+
+    function->constantValueList = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrTypeValue) * 3u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->constantValueList);
+    function->constantValueLength = 3u;
+    ZrCore_Value_InitAsBool(state, &function->constantValueList[0], ZR_TRUE);
+    ZrCore_Value_InitAsInt(state, &function->constantValueList[1], 66);
+    ZrCore_Value_InitAsInt(state, &function->constantValueList[2], 7);
+
+    function->stackSize = 3u;
+    function->parameterCount = 0u;
+    function->hasVariableArguments = ZR_FALSE;
+    function->closureValueLength = 0u;
+    return function;
 }
 
 static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
@@ -221,11 +300,15 @@ static void test_aot_c_generated_shared_library_executes_generic_truthiness_boun
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_jump_if"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrBool zr_aot_truthy = ZR_FALSE;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_jump_if_i64_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_s3 == (TZrInt64)0) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(state, &frame"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(state, &frame"));
+                                "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(state, &frame, 3, 4)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_b3 = (TZrBool)(!zr_aot_b4);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "TZrBool zr_aot_truthy = ZR_FALSE;"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(state, &frame"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_b5 = (TZrBool)(!zr_aot_b6);"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_LogicalNot(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_IsTruthy(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_IS_TYPE_NULL(zr_aot_source->type)"));
@@ -383,6 +466,8 @@ static void test_aot_c_generated_shared_library_executes_generic_primitive_equal
                                 "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(state, &frame"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_sync_bool_local_boundary"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "zr_aot_destination->value.nativeObject.nativeBool = ZR_TRUE;"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_LogicalEqual(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Value_Equal("));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_bool_sync"));
@@ -546,6 +631,34 @@ static void test_aot_c_generated_shared_library_executes_bool_short_circuit_logi
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_jump_if_bool_false"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_bool_not_scalar_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_bool_compare_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_bool dstSlot=15 srcSlot=16"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b15 = (TZrBool)(zr_aot_b16 != 0u);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_destination = &frame.slotBase[15].value;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrBool zr_aot_b14 = ZR_FALSE;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_bool_no_arg_direct_call */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b14) {"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_condition = &frame.slotBase[14].value;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_s14"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, 14"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "zr_aot_direct_stack_copy_sync_bool_local_boundary */\n"
+                            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, 14"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CopyStack(state, &frame, 7, 1));\n"
+                            "        /* zr_aot_direct_stack_copy_sync_bool_local_boundary */\n"
+                            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, 7"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CopyStack(state, &frame, 16, 1));\n"
+                            "        /* zr_aot_direct_stack_copy_sync_bool_local_boundary */\n"
+                            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, 16"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_s3 ="));
+    TEST_ASSERT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_s5 ="));
+    TEST_ASSERT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_s15 ="));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_s6 ="));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_s16 ="));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b15) {"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_condition = &frame.slotBase[15].value;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=15 srcSlot=16"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_bool_not_exec"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_bool_compare_exec"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_LogicalAnd(state, &frame"));
@@ -584,6 +697,286 @@ static void test_aot_c_generated_shared_library_executes_bool_short_circuit_logi
                              ZrLibrary_AotRuntime_GetLastError(state->global));
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
     TEST_ASSERT_EQUAL_INT64(13, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C,
+                          ZrLibrary_AotRuntime_GetExecutedVia(state->global));
+
+    state->global->userData = ZR_NULL;
+    ZrLibrary_Project_Free(state, project);
+    free(embeddedBlob);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
+static void test_aot_c_generated_shared_library_elides_frame_for_bool_local_logical_pipeline(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C bool local logical frame-elision smoke currently validates the Unix dlopen toolchain path");
+#else
+    const char *source =
+            "var left: int = 7;\n"
+            "var right: int = 3;\n"
+            "var greater: bool = left > right;\n"
+            "var less: bool = left < right;\n"
+            "var same: bool = greater == !less;\n"
+            "return same;\n";
+    const char *projectJson =
+            "{"
+            "\"name\":\"aot-runtime-bool-local-frame-elision-smoke\","
+            "\"source\":\"src\","
+            "\"binary\":\"bin\","
+            "\"entry\":\"main\""
+            "}";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrLibrary_Project *project;
+    SZrBinaryWriterOptions binaryOptions;
+    SZrAotWriterOptions aotOptions;
+    SZrTypeValue result;
+    TZrBytePtr embeddedBlob = ZR_NULL;
+    TZrSize embeddedBlobLength = 0;
+    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar zroPath[ZR_TESTS_PATH_MAX];
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+    char command[4096];
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_source(state, source, "main.zr");
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "bool_local_frame_elision_project",
+                                                       "runtime_bool_local_frame_elision_smoke",
+                                                       ".zrp",
+                                                       projectPath,
+                                                       sizeof(projectPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "bool_local_frame_elision_project/src",
+                                                       "main",
+                                                       ".zr",
+                                                       sourcePath,
+                                                       sizeof(sourcePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "bool_local_frame_elision_project/bin",
+                                                       "main",
+                                                       ".zro",
+                                                       zroPath,
+                                                       sizeof(zroPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "bool_local_frame_elision_project/bin/aot_c/src",
+                                                       "main",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "bool_local_frame_elision_project/bin/aot_c/lib",
+                                                       "zrvm_aot_main",
+                                                       ".so",
+                                                       sharedLibraryPath,
+                                                       sizeof(sharedLibraryPath)));
+
+    write_text_file_or_fail(projectPath, projectJson);
+    write_text_file_or_fail(sourcePath, source);
+
+    memset(&binaryOptions, 0, sizeof(binaryOptions));
+    binaryOptions.moduleName = "main";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
+    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
+    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(zroPath, &embeddedBlob, &embeddedBlobLength));
+    TEST_ASSERT_NOT_NULL(embeddedBlob);
+    TEST_ASSERT_GREATER_THAN_UINT64(0u, embeddedBlobLength);
+
+    memset(&aotOptions, 0, sizeof(aotOptions));
+    aotOptions.moduleName = "main";
+    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
+    aotOptions.inputHash = zroHash;
+    aotOptions.embeddedModuleBlob = embeddedBlob;
+    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
+    aotOptions.requireExecutableLowering = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_bool_not_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_bool_compare_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_return_bool_local"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_generated_frame_setup */"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrAotGeneratedFrame frame = {0};"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Stack_GetValue("));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET("));
+    free(generatedCText);
+
+    snprintf(command,
+             sizeof(command),
+             "\"%s\" -std=c11 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "-I\"%s/zr_vm_common/include\" "
+             "-I\"%s/zr_vm_core/include\" "
+             "-I\"%s/zr_vm_library/include\" "
+             "\"%s\" "
+             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
+             "-lzr_vm_library -lzr_vm_core "
+             "-o \"%s\"",
+             ZR_VM_TESTS_C_COMPILER,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             generatedCPath,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             sharedLibraryPath);
+    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
+    TEST_ASSERT_NOT_NULL(project);
+    state->global->userData = project;
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
+                                                          ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
+                                                          ZR_TRUE));
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result),
+                             ZrLibrary_AotRuntime_GetLastError(state->global));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_BOOL(result.type));
+    TEST_ASSERT_TRUE(result.value.nativeObject.nativeBool);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C,
+                          ZrLibrary_AotRuntime_GetExecutedVia(state->global));
+
+    state->global->userData = ZR_NULL;
+    ZrLibrary_Project_Free(state, project);
+    free(embeddedBlob);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
+static void test_aot_c_generated_shared_library_executes_generic_logical_not_bool_source_local_branch(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C generic LOGICAL_NOT bool-source shared-library smoke currently validates the Unix dlopen toolchain path");
+#else
+    const char *projectJson =
+            "{"
+            "\"name\":\"aot-runtime-generic-logical-not-bool-source-smoke\","
+            "\"source\":\"src\","
+            "\"binary\":\"bin\","
+            "\"entry\":\"main\""
+            "}";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrLibrary_Project *project;
+    SZrBinaryWriterOptions binaryOptions;
+    SZrAotWriterOptions aotOptions;
+    SZrTypeValue result;
+    TZrBytePtr embeddedBlob = ZR_NULL;
+    TZrSize embeddedBlobLength = 0;
+    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar zroPath[ZR_TESTS_PATH_MAX];
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+    char command[4096];
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_generic_logical_not_bool_source_function(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_logical_not_bool_source_project",
+                                                       "runtime_generic_logical_not_bool_source_smoke",
+                                                       ".zrp",
+                                                       projectPath,
+                                                       sizeof(projectPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_logical_not_bool_source_project/src",
+                                                       "main",
+                                                       ".zr",
+                                                       sourcePath,
+                                                       sizeof(sourcePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_logical_not_bool_source_project/bin",
+                                                       "main",
+                                                       ".zro",
+                                                       zroPath,
+                                                       sizeof(zroPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_logical_not_bool_source_project/bin/aot_c/src",
+                                                       "main",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_logical_not_bool_source_project/bin/aot_c/lib",
+                                                       "zrvm_aot_main",
+                                                       ".so",
+                                                       sharedLibraryPath,
+                                                       sizeof(sharedLibraryPath)));
+
+    write_text_file_or_fail(projectPath, projectJson);
+    write_text_file_or_fail(sourcePath, "return 7;\n");
+
+    memset(&binaryOptions, 0, sizeof(binaryOptions));
+    binaryOptions.moduleName = "main";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
+    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
+    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(zroPath, &embeddedBlob, &embeddedBlobLength));
+    TEST_ASSERT_NOT_NULL(embeddedBlob);
+    TEST_ASSERT_GREATER_THAN_UINT64(0u, embeddedBlobLength);
+
+    memset(&aotOptions, 0, sizeof(aotOptions));
+    aotOptions.moduleName = "main";
+    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
+    aotOptions.inputHash = zroHash;
+    aotOptions.embeddedModuleBlob = embeddedBlob;
+    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
+    aotOptions.requireExecutableLowering = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b1 = (TZrBool)(!zr_aot_b0);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_jump_if_bool_false_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b1) {"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(state, &frame, 1, 0)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, 1"));
+    free(generatedCText);
+
+    snprintf(command,
+             sizeof(command),
+             "\"%s\" -std=c11 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "-I\"%s/zr_vm_common/include\" "
+             "-I\"%s/zr_vm_core/include\" "
+             "-I\"%s/zr_vm_library/include\" "
+             "\"%s\" "
+             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
+             "-lzr_vm_library -lzr_vm_core "
+             "-o \"%s\"",
+             ZR_VM_TESTS_C_COMPILER,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             generatedCPath,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             sharedLibraryPath);
+    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
+    TEST_ASSERT_NOT_NULL(project);
+    state->global->userData = project;
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
+                                                          ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
+                                                          ZR_TRUE));
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result),
+                             ZrLibrary_AotRuntime_GetLastError(state->global));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+    TEST_ASSERT_EQUAL_INT64(7, result.value.nativeObject.nativeInt64);
     TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C,
                           ZrLibrary_AotRuntime_GetExecutedVia(state->global));
 
@@ -700,6 +1093,8 @@ static void test_aot_c_generated_shared_library_executes_string_equality_direct_
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_String_GetNativeString(zr_aot_left_string)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
                                 "memcmp(zr_aot_left_bytes, zr_aot_right_bytes, zr_aot_left_length) == 0"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "(TZrBool)((!zr_aot_equal) != 0u)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "!zr_aot_equal != 0u"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_LogicalEqualString(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_LogicalNotEqualString(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_String_Equal("));
@@ -753,6 +1148,8 @@ int main(void) {
     RUN_TEST(test_aot_c_generated_shared_library_executes_generic_truthiness_boundary_helpers);
     RUN_TEST(test_aot_c_generated_shared_library_executes_generic_primitive_equality_boundary_helpers);
     RUN_TEST(test_aot_c_generated_shared_library_executes_bool_short_circuit_logical_expressions);
+    RUN_TEST(test_aot_c_generated_shared_library_elides_frame_for_bool_local_logical_pipeline);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_generic_logical_not_bool_source_local_branch);
     RUN_TEST(test_aot_c_generated_shared_library_executes_string_equality_direct_expressions);
     return UNITY_END();
 }

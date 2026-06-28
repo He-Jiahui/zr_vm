@@ -107,6 +107,37 @@ typedef struct SZrMetadataRuntimeFieldDefLayoutBindingView {
     const SZrTypeLayout *ownerTypeLayout;
 } SZrMetadataRuntimeFieldDefLayoutBindingView;
 
+typedef enum EZrMetadataRuntimeBindingCompatibilityStatus {
+    ZR_METADATA_RUNTIME_BINDING_STATUS_COMPATIBLE = 0,
+    ZR_METADATA_RUNTIME_BINDING_STATUS_INVALID_ARGUMENT = 1,
+    ZR_METADATA_RUNTIME_BINDING_STATUS_MODULE_VERSION_MISMATCH = 2,
+    ZR_METADATA_RUNTIME_BINDING_STATUS_MODULE_SIGNATURE_HASH_MISMATCH = 3,
+    ZR_METADATA_RUNTIME_BINDING_STATUS_METADATA_TOKEN_MISMATCH = 4,
+    ZR_METADATA_RUNTIME_BINDING_STATUS_SIGNATURE_TOKEN_MISMATCH = 5,
+    ZR_METADATA_RUNTIME_BINDING_STATUS_SIGNATURE_HASH_MISMATCH = 6,
+    ZR_METADATA_RUNTIME_BINDING_STATUS_LAYOUT_VERSION_MISMATCH = 7,
+    ZR_METADATA_RUNTIME_BINDING_STATUS_LAYOUT_HASH_MISMATCH = 8
+} EZrMetadataRuntimeBindingCompatibilityStatus;
+
+typedef struct SZrMetadataRuntimeBindingCompatibilityReport {
+    EZrMetadataRuntimeBindingCompatibilityStatus status;
+    TZrMetadataToken expectedMetadataToken;
+    TZrMetadataToken actualMetadataToken;
+    TZrMetadataToken expectedSignatureToken;
+    TZrMetadataToken actualSignatureToken;
+    TZrUInt64 expectedSignatureHash;
+    TZrUInt64 actualSignatureHash;
+    TZrUInt64 expectedModuleSignatureHash;
+    TZrUInt64 actualModuleSignatureHash;
+    TZrUInt32 expectedLayoutVersion;
+    TZrUInt32 actualLayoutVersion;
+    TZrUInt64 expectedLayoutHash;
+    TZrUInt64 actualLayoutHash;
+    struct SZrString *expectedMinVersionInclusive;
+    struct SZrString *expectedMaxVersionExclusive;
+    struct SZrString *actualModuleVersion;
+} SZrMetadataRuntimeBindingCompatibilityReport;
+
 enum {
     ZR_METADATA_RUNTIME_TYPE_LAYOUT_CACHE_CAPACITY = 8u
 };
@@ -221,5 +252,18 @@ ZR_CORE_API const SZrMetadataTokenRecord *ZrCore_MetadataRuntime_ResolveTypeReco
 ZR_CORE_API const SZrMetadataTokenRecord *ZrCore_MetadataRuntime_ResolveSignatureRecord(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken entityToken);
+ZR_CORE_API EZrMetadataRuntimeBindingCompatibilityStatus
+ZrCore_MetadataRuntime_CheckTokenBindingCompatibility(
+        const SZrMetadataTokenBinding *binding,
+        const SZrMetadataTokenRecord *refRecord,
+        struct SZrString *actualModuleVersion,
+        SZrMetadataRuntimeBindingCompatibilityReport *outReport);
+ZR_CORE_API EZrMetadataRuntimeBindingCompatibilityStatus
+ZrCore_MetadataRuntime_CheckFunctionTokenBindingsCompatibility(
+        const struct SZrFunction *function,
+        struct SZrString *actualModuleVersion,
+        const SZrMetadataTokenBinding **outBinding,
+        const SZrMetadataTokenRecord **outRefRecord,
+        SZrMetadataRuntimeBindingCompatibilityReport *outReport);
 
 #endif // ZR_VM_CORE_METADATA_RUNTIME_H

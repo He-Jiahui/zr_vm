@@ -11,6 +11,13 @@ static unsigned long long backend_aot_zrp_section_bytes(const SZrZrpMetadataSect
     return (unsigned long long)section->byteLength;
 }
 
+static unsigned long long backend_aot_zrp_section_count(const SZrZrpMetadataSection *section) {
+    if (section == ZR_NULL) {
+        return 0u;
+    }
+    return (unsigned long long)section->count;
+}
+
 void backend_aot_collect_zrp_metadata_size_stats(const SZrAotWriterOptions *options,
                                                  SZrAotZrpMetadataSizeStats *stats) {
     backend_aot_collect_zrp_metadata_size_stats_from_blob(
@@ -45,6 +52,18 @@ void backend_aot_collect_zrp_metadata_size_stats_from_blob(const TZrByte *blob,
         stats->stringPoolBytes = backend_aot_zrp_section_bytes(&header.stringPool);
         stats->signatureBlobPoolBytes = backend_aot_zrp_section_bytes(&header.signatureBlobPool);
         stats->constantPoolBytes = backend_aot_zrp_section_bytes(&header.constantPool);
+        stats->tokenRecordCount = backend_aot_zrp_section_count(&header.tokenRecords);
+        stats->typeDefCount = backend_aot_zrp_section_count(&header.typeDefs);
+        stats->methodDefCount = backend_aot_zrp_section_count(&header.methodDefs);
+        stats->fieldDefCount = backend_aot_zrp_section_count(&header.fieldDefs);
+        stats->genericParamCount = backend_aot_zrp_section_count(&header.genericParams);
+        stats->genericParamConstraintCount = backend_aot_zrp_section_count(&header.genericParamConstraints);
+        stats->typeSpecCount = backend_aot_zrp_section_count(&header.typeSpecs);
+        stats->methodSpecCount = backend_aot_zrp_section_count(&header.methodSpecs);
+        stats->moduleRefCount = backend_aot_zrp_section_count(&header.moduleRefs);
+        stats->stringPoolCount = backend_aot_zrp_section_count(&header.stringPool);
+        stats->signatureBlobPoolCount = backend_aot_zrp_section_count(&header.signatureBlobPool);
+        stats->constantPoolCount = backend_aot_zrp_section_count(&header.constantPool);
     }
 
     stats->definitionTableBytes = stats->typeDefBytes +
@@ -93,6 +112,26 @@ void backend_aot_write_zrp_metadata_size_stats(FILE *file, const SZrAotZrpMetada
     backend_aot_write_zrp_metadata_size_stat(file,
                                              "zrpMetadataSectionBytes.constantPool",
                                              stats->constantPoolBytes);
+    backend_aot_write_zrp_metadata_size_stat(file, "zrpMetadataSectionCounts.tokenRecords", stats->tokenRecordCount);
+    backend_aot_write_zrp_metadata_size_stat(file, "zrpMetadataSectionCounts.typeDefs", stats->typeDefCount);
+    backend_aot_write_zrp_metadata_size_stat(file, "zrpMetadataSectionCounts.methodDefs", stats->methodDefCount);
+    backend_aot_write_zrp_metadata_size_stat(file, "zrpMetadataSectionCounts.fieldDefs", stats->fieldDefCount);
+    backend_aot_write_zrp_metadata_size_stat(file,
+                                             "zrpMetadataSectionCounts.genericParams",
+                                             stats->genericParamCount);
+    backend_aot_write_zrp_metadata_size_stat(file,
+                                             "zrpMetadataSectionCounts.genericParamConstraints",
+                                             stats->genericParamConstraintCount);
+    backend_aot_write_zrp_metadata_size_stat(file, "zrpMetadataSectionCounts.typeSpecs", stats->typeSpecCount);
+    backend_aot_write_zrp_metadata_size_stat(file, "zrpMetadataSectionCounts.methodSpecs", stats->methodSpecCount);
+    backend_aot_write_zrp_metadata_size_stat(file, "zrpMetadataSectionCounts.moduleRefs", stats->moduleRefCount);
+    backend_aot_write_zrp_metadata_size_stat(file, "zrpMetadataSectionCounts.stringPool", stats->stringPoolCount);
+    backend_aot_write_zrp_metadata_size_stat(file,
+                                             "zrpMetadataSectionCounts.signatureBlobPool",
+                                             stats->signatureBlobPoolCount);
+    backend_aot_write_zrp_metadata_size_stat(file,
+                                             "zrpMetadataSectionCounts.constantPool",
+                                             stats->constantPoolCount);
 }
 
 static void backend_aot_write_code_stripping_zrp_metadata_delta_stat(FILE *file,
@@ -108,6 +147,116 @@ static void backend_aot_write_code_stripping_zrp_metadata_delta_stat(FILE *file,
     fprintf(file, "/* code_stripping.%sBefore = %llu */\n", name, bytesBefore);
     fprintf(file, "/* code_stripping.%sAfter = %llu */\n", name, bytesAfter);
     fprintf(file, "/* code_stripping.%sRemoved = %llu */\n", name, bytesRemoved);
+}
+
+static void backend_aot_write_code_stripping_zrp_metadata_section_delta_stats(
+        FILE *file,
+        const SZrAotZrpMetadataSizeStats *beforeStats,
+        const SZrAotZrpMetadataSizeStats *afterStats) {
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionBytes.tokenRecords",
+                                                             beforeStats->tokenRecordBytes,
+                                                             afterStats->tokenRecordBytes);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionBytes.typeDefs",
+                                                             beforeStats->typeDefBytes,
+                                                             afterStats->typeDefBytes);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionBytes.methodDefs",
+                                                             beforeStats->methodDefBytes,
+                                                             afterStats->methodDefBytes);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionBytes.fieldDefs",
+                                                             beforeStats->fieldDefBytes,
+                                                             afterStats->fieldDefBytes);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionBytes.genericParams",
+                                                             beforeStats->genericParamBytes,
+                                                             afterStats->genericParamBytes);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(
+            file,
+            "zrpMetadataSectionBytes.genericParamConstraints",
+            beforeStats->genericParamConstraintBytes,
+            afterStats->genericParamConstraintBytes);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionBytes.typeSpecs",
+                                                             beforeStats->typeSpecBytes,
+                                                             afterStats->typeSpecBytes);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionBytes.methodSpecs",
+                                                             beforeStats->methodSpecBytes,
+                                                             afterStats->methodSpecBytes);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionBytes.moduleRefs",
+                                                             beforeStats->moduleRefBytes,
+                                                             afterStats->moduleRefBytes);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionBytes.stringPool",
+                                                             beforeStats->stringPoolBytes,
+                                                             afterStats->stringPoolBytes);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionBytes.signatureBlobPool",
+                                                             beforeStats->signatureBlobPoolBytes,
+                                                             afterStats->signatureBlobPoolBytes);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionBytes.constantPool",
+                                                             beforeStats->constantPoolBytes,
+                                                             afterStats->constantPoolBytes);
+}
+
+static void backend_aot_write_code_stripping_zrp_metadata_section_count_delta_stats(
+        FILE *file,
+        const SZrAotZrpMetadataSizeStats *beforeStats,
+        const SZrAotZrpMetadataSizeStats *afterStats) {
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionCounts.tokenRecords",
+                                                             beforeStats->tokenRecordCount,
+                                                             afterStats->tokenRecordCount);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionCounts.typeDefs",
+                                                             beforeStats->typeDefCount,
+                                                             afterStats->typeDefCount);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionCounts.methodDefs",
+                                                             beforeStats->methodDefCount,
+                                                             afterStats->methodDefCount);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionCounts.fieldDefs",
+                                                             beforeStats->fieldDefCount,
+                                                             afterStats->fieldDefCount);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionCounts.genericParams",
+                                                             beforeStats->genericParamCount,
+                                                             afterStats->genericParamCount);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(
+            file,
+            "zrpMetadataSectionCounts.genericParamConstraints",
+            beforeStats->genericParamConstraintCount,
+            afterStats->genericParamConstraintCount);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionCounts.typeSpecs",
+                                                             beforeStats->typeSpecCount,
+                                                             afterStats->typeSpecCount);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionCounts.methodSpecs",
+                                                             beforeStats->methodSpecCount,
+                                                             afterStats->methodSpecCount);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionCounts.moduleRefs",
+                                                             beforeStats->moduleRefCount,
+                                                             afterStats->moduleRefCount);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionCounts.stringPool",
+                                                             beforeStats->stringPoolCount,
+                                                             afterStats->stringPoolCount);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionCounts.signatureBlobPool",
+                                                             beforeStats->signatureBlobPoolCount,
+                                                             afterStats->signatureBlobPoolCount);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionCounts.constantPool",
+                                                             beforeStats->constantPoolCount,
+                                                             afterStats->constantPoolCount);
 }
 
 void backend_aot_write_code_stripping_zrp_metadata_size_deltas(
@@ -134,4 +283,6 @@ void backend_aot_write_code_stripping_zrp_metadata_size_deltas(
                                                              "zrpMetadataPoolBytes",
                                                              beforeStats->poolBytes,
                                                              afterStats->poolBytes);
+    backend_aot_write_code_stripping_zrp_metadata_section_delta_stats(file, beforeStats, afterStats);
+    backend_aot_write_code_stripping_zrp_metadata_section_count_delta_stats(file, beforeStats, afterStats);
 }

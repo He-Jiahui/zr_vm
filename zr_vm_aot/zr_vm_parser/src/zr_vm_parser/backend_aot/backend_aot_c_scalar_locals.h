@@ -13,6 +13,9 @@ TZrBool backend_aot_c_scalar_locals_has_u64_slot(const SZrAotExecIrFunction *fun
 TZrBool backend_aot_c_scalar_locals_bool_written_before(const SZrAotExecIrFunction *functionIr,
                                                         TZrUInt32 slot,
                                                         TZrUInt32 execInstructionIndex);
+TZrBool backend_aot_c_scalar_locals_bool_value_written_before(const SZrAotExecIrFunction *functionIr,
+                                                              TZrUInt32 slot,
+                                                              TZrUInt32 execInstructionIndex);
 TZrBool backend_aot_c_scalar_locals_f64_written_before(const SZrAotExecIrFunction *functionIr,
                                                        TZrUInt32 slot,
                                                        TZrUInt32 execInstructionIndex);
@@ -50,6 +53,9 @@ TZrBool backend_aot_c_scalar_locals_reset2_can_skip_value_slots(const SZrAotExec
                                                                 TZrUInt32 firstSlot,
                                                                 TZrUInt32 secondSlot,
                                                                 TZrUInt32 execInstructionIndex);
+TZrBool backend_aot_c_scalar_locals_bool_constant_can_skip_value_slot(const SZrAotExecIrFunction *functionIr,
+                                                                      TZrUInt32 slot,
+                                                                      TZrUInt32 execInstructionIndex);
 TZrBool backend_aot_c_scalar_locals_i64_constant_can_skip_value_slot(const SZrAotExecIrFunction *functionIr,
                                                                      TZrUInt32 slot,
                                                                      TZrUInt32 execInstructionIndex);

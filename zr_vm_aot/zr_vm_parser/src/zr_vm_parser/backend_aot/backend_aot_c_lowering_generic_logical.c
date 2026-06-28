@@ -118,7 +118,7 @@ static TZrBool backend_aot_c_write_string_bool_scalar_local(FILE *file,
             "        }\n");
     backend_aot_c_write_string_equality(file);
     fprintf(file,
-            "        zr_aot_b%u = (TZrBool)(%s != 0u);\n"
+            "        zr_aot_b%u = (TZrBool)((%s) != 0u);\n"
             "    }\n",
             (unsigned)destinationSlot,
             resultExpression);
@@ -135,7 +135,7 @@ static void backend_aot_c_write_bool_local_sync(FILE *file,
     }
 
     fprintf(file,
-            "        zr_aot_b%u = (TZrBool)(%s != 0u);\n",
+            "        zr_aot_b%u = (TZrBool)((%s) != 0u);\n",
             (unsigned)destinationSlot,
             resultExpression);
 }
@@ -154,12 +154,161 @@ static void backend_aot_c_write_bool_local_sync_from_slot(FILE *file,
             (unsigned)destinationSlot);
 }
 
+static TZrBool backend_aot_c_generic_logical_not_destination_is_next_bool_branch(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 execInstructionIndex) {
+    const SZrFunction *function;
+    const TZrInstruction *nextInstruction;
+
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    if (function->instructionsList == ZR_NULL ||
+        execInstructionIndex + 1u >= function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    nextInstruction = &function->instructionsList[execInstructionIndex + 1u];
+    return (TZrBool)(nextInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE) &&
+                     nextInstruction->instruction.operandExtra == destinationSlot);
+}
+
+static TZrBool backend_aot_c_write_generic_logical_not_scalar_local(FILE *file,
+                                                                    const SZrAotExecIrFunction *functionIr,
+                                                                    TZrUInt32 destinationSlot,
+                                                                    TZrUInt32 sourceSlot,
+                                                                    TZrUInt32 execInstructionIndex) {
+    if (file == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_generic_logical_not_destination_is_next_bool_branch(
+                functionIr, destinationSlot, execInstructionIndex) ||
+        !backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(functionIr, destinationSlot, execInstructionIndex) ||
+        !backend_aot_c_scalar_locals_bool_value_written_before(functionIr, sourceSlot, execInstructionIndex)) {
+        return ZR_FALSE;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* zr_aot_generic_logical_not */\n"
+            "        /* zr_aot_generic_logical_not_scalar_local */\n"
+            "        zr_aot_b%u = (TZrBool)(!zr_aot_b%u);\n"
+            "    }\n",
+            (unsigned)destinationSlot,
+            (unsigned)sourceSlot);
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_c_write_generic_bool_compare_scalar_local(FILE *file,
+                                                                     const SZrAotExecIrFunction *functionIr,
+                                                                     TZrUInt32 destinationSlot,
+                                                                     TZrUInt32 leftSlot,
+                                                                     TZrUInt32 rightSlot,
+                                                                     TZrUInt32 execInstructionIndex,
+                                                                     const char *markerText,
+                                                                     const char *operatorText) {
+    if (file == ZR_NULL || markerText == ZR_NULL || operatorText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(functionIr, destinationSlot, execInstructionIndex) ||
+        !backend_aot_c_scalar_locals_bool_value_written_before(functionIr, leftSlot, execInstructionIndex) ||
+        !backend_aot_c_scalar_locals_bool_value_written_before(functionIr, rightSlot, execInstructionIndex)) {
+        return ZR_FALSE;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* %s */\n"
+            "        /* zr_aot_generic_bool_compare_scalar_local */\n"
+            "        zr_aot_b%u = (TZrBool)((zr_aot_b%u %s zr_aot_b%u) != 0u);\n"
+            "    }\n",
+            markerText,
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            operatorText,
+            (unsigned)rightSlot);
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_c_write_generic_jump_if_scalar_local(FILE *file,
+                                                                const SZrAotExecIrFunction *functionIr,
+                                                                TZrUInt32 functionIndex,
+                                                                TZrUInt32 conditionSlot,
+                                                                TZrUInt32 execInstructionIndex,
+                                                                TZrUInt32 targetInstructionIndex,
+                                                                TZrBool isBackEdge) {
+    if (file == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (backend_aot_c_scalar_locals_bool_value_written_before(functionIr, conditionSlot, execInstructionIndex)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_jump_if */\n"
+                "        /* zr_aot_generic_jump_if_bool_scalar_local */\n"
+                "        if (!zr_aot_b%u) {\n",
+                (unsigned)conditionSlot);
+    } else if (backend_aot_c_scalar_locals_has_i64_slot(functionIr, conditionSlot) &&
+               backend_aot_c_scalar_locals_i64_written_before(functionIr, conditionSlot, execInstructionIndex)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_jump_if */\n"
+                "        /* zr_aot_generic_jump_if_i64_scalar_local */\n"
+                "        if (zr_aot_s%u == (TZrInt64)0) {\n",
+                (unsigned)conditionSlot);
+    } else if (backend_aot_c_scalar_locals_has_u64_slot(functionIr, conditionSlot) &&
+               backend_aot_c_scalar_locals_u64_written_before(functionIr, conditionSlot, execInstructionIndex)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_jump_if */\n"
+                "        /* zr_aot_generic_jump_if_u64_scalar_local */\n"
+                "        if (zr_aot_u%u == (TZrUInt64)0u) {\n",
+                (unsigned)conditionSlot);
+    } else if (backend_aot_c_scalar_locals_has_f64_slot(functionIr, conditionSlot) &&
+               backend_aot_c_scalar_locals_f64_written_before(functionIr, conditionSlot, execInstructionIndex)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_jump_if */\n"
+                "        /* zr_aot_generic_jump_if_f64_scalar_local */\n"
+                "        if (zr_aot_f%u == (TZrFloat64)0.0) {\n",
+                (unsigned)conditionSlot);
+    } else {
+        return ZR_FALSE;
+    }
+
+    if (isBackEdge) {
+        backend_aot_write_c_gc_safepoint(file, "            ", "zr_aot_gc_safepoint_back_edge");
+    }
+    fprintf(file,
+            "            goto zr_aot_fn_%u_ins_%u;\n"
+            "        }\n"
+            "    }\n",
+            (unsigned)functionIndex,
+            (unsigned)targetInstructionIndex);
+    return ZR_TRUE;
+}
+
 void backend_aot_write_c_direct_logical_equal(FILE *file,
                                               const SZrAotExecIrFunction *functionIr,
                                               TZrUInt32 destinationSlot,
                                               TZrUInt32 leftSlot,
-                                              TZrUInt32 rightSlot) {
+                                              TZrUInt32 rightSlot,
+                                              TZrUInt32 execInstructionIndex) {
     if (file == ZR_NULL) {
+        return;
+    }
+    if (backend_aot_c_write_generic_bool_compare_scalar_local(
+                file,
+                functionIr,
+                destinationSlot,
+                leftSlot,
+                rightSlot,
+                execInstructionIndex,
+                "zr_aot_generic_logical_equal",
+                "==")) {
         return;
     }
 
@@ -178,8 +327,20 @@ void backend_aot_write_c_direct_logical_not_equal(FILE *file,
                                                   const SZrAotExecIrFunction *functionIr,
                                                   TZrUInt32 destinationSlot,
                                                   TZrUInt32 leftSlot,
-                                                  TZrUInt32 rightSlot) {
+                                                  TZrUInt32 rightSlot,
+                                                  TZrUInt32 execInstructionIndex) {
     if (file == ZR_NULL) {
+        return;
+    }
+    if (backend_aot_c_write_generic_bool_compare_scalar_local(
+                file,
+                functionIr,
+                destinationSlot,
+                leftSlot,
+                rightSlot,
+                execInstructionIndex,
+                "zr_aot_generic_logical_not_equal",
+                "!=")) {
         return;
     }
 
@@ -341,8 +502,13 @@ void backend_aot_write_c_direct_logical_or(FILE *file,
 void backend_aot_write_c_direct_logical_not(FILE *file,
                                             const SZrAotExecIrFunction *functionIr,
                                             TZrUInt32 destinationSlot,
-                                            TZrUInt32 sourceSlot) {
+                                            TZrUInt32 sourceSlot,
+                                            TZrUInt32 execInstructionIndex) {
     if (file == ZR_NULL) {
+        return;
+    }
+    if (backend_aot_c_write_generic_logical_not_scalar_local(
+                file, functionIr, destinationSlot, sourceSlot, execInstructionIndex)) {
         return;
     }
 
@@ -357,11 +523,22 @@ void backend_aot_write_c_direct_logical_not(FILE *file,
 }
 
 void backend_aot_write_c_direct_jump_if(FILE *file,
+                                        const SZrAotExecIrFunction *functionIr,
                                         TZrUInt32 functionIndex,
                                         TZrUInt32 conditionSlot,
+                                        TZrUInt32 execInstructionIndex,
                                         TZrUInt32 targetInstructionIndex,
                                         TZrBool isBackEdge) {
     if (file == ZR_NULL) {
+        return;
+    }
+    if (backend_aot_c_write_generic_jump_if_scalar_local(file,
+                                                         functionIr,
+                                                         functionIndex,
+                                                         conditionSlot,
+                                                         execInstructionIndex,
+                                                         targetInstructionIndex,
+                                                         isBackEdge)) {
         return;
     }
 

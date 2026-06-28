@@ -1025,6 +1025,18 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallStackValue(struct SZrState *stat
                                                            TZrUInt32 argumentCount,
                                                            const TZrChar *errorLabel);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CanUseTypedDirectCall(struct SZrState *state,
+                                                                  ZrAotGeneratedFrame *frame,
+                                                                  TZrUInt32 calleeFunctionIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_DeoptTypedDirectCall(struct SZrState *state,
+                                                                 ZrAotGeneratedFrame *frame,
+                                                                 TZrUInt32 destinationSlot,
+                                                                 TZrUInt32 functionSlot,
+                                                                 TZrUInt32 argumentCount,
+                                                                 TZrUInt32 calleeFunctionIndex,
+                                                                 const TZrChar *errorLabel);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallDynamicDeoptBridge(struct SZrState *state,
                                                                     ZrAotGeneratedFrame *frame,
                                                                     TZrUInt32 destinationSlot,

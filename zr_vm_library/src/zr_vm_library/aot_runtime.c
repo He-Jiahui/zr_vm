@@ -17,6 +17,7 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/math.h"
+#include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/ownership.h"
@@ -141,6 +142,14 @@ static TZrBool aot_runtime_build_generated_slot_count_table(SZrGlobalState *glob
                                                             SZrFunction *const *functionTable,
                                                             TZrUInt32 functionCount,
                                                             TZrUInt32 **outSlotCounts);
+static const TZrChar *aot_runtime_metadata_binding_status_name(
+        EZrMetadataRuntimeBindingCompatibilityStatus status);
+static TZrBool aot_runtime_validate_metadata_bindings(SZrState *state,
+                                                      SZrLibraryAotRuntimeState *runtimeState,
+                                                      const TZrChar *moduleName,
+                                                      const SZrFunction *moduleFunction,
+                                                      SZrFunction *const *functionTable,
+                                                      TZrUInt32 functionCount);
 static SZrTypeValue *aot_runtime_get_closure_capture_from_value(SZrState *state,
                                                                 const SZrTypeValue *closureContainerValue,
                                                                 TZrUInt32 captureIndex);
@@ -1048,6 +1057,95 @@ static TZrBool aot_runtime_build_generated_slot_count_table(SZrGlobalState *glob
     }
 
     *outSlotCounts = slotCounts;
+    return ZR_TRUE;
+}
+
+static const TZrChar *aot_runtime_metadata_binding_status_name(
+        EZrMetadataRuntimeBindingCompatibilityStatus status) {
+    switch (status) {
+        case ZR_METADATA_RUNTIME_BINDING_STATUS_COMPATIBLE:
+            return "COMPATIBLE";
+        case ZR_METADATA_RUNTIME_BINDING_STATUS_INVALID_ARGUMENT:
+            return "INVALID_ARGUMENT";
+        case ZR_METADATA_RUNTIME_BINDING_STATUS_MODULE_VERSION_MISMATCH:
+            return "MODULE_VERSION_MISMATCH";
+        case ZR_METADATA_RUNTIME_BINDING_STATUS_MODULE_SIGNATURE_HASH_MISMATCH:
+            return "MODULE_SIGNATURE_HASH_MISMATCH";
+        case ZR_METADATA_RUNTIME_BINDING_STATUS_METADATA_TOKEN_MISMATCH:
+            return "METADATA_TOKEN_MISMATCH";
+        case ZR_METADATA_RUNTIME_BINDING_STATUS_SIGNATURE_TOKEN_MISMATCH:
+            return "SIGNATURE_TOKEN_MISMATCH";
+        case ZR_METADATA_RUNTIME_BINDING_STATUS_SIGNATURE_HASH_MISMATCH:
+            return "SIGNATURE_HASH_MISMATCH";
+        case ZR_METADATA_RUNTIME_BINDING_STATUS_LAYOUT_VERSION_MISMATCH:
+            return "LAYOUT_VERSION_MISMATCH";
+        case ZR_METADATA_RUNTIME_BINDING_STATUS_LAYOUT_HASH_MISMATCH:
+            return "LAYOUT_HASH_MISMATCH";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+static TZrBool aot_runtime_validate_metadata_bindings(SZrState *state,
+                                                      SZrLibraryAotRuntimeState *runtimeState,
+                                                      const TZrChar *moduleName,
+                                                      const SZrFunction *moduleFunction,
+                                                      SZrFunction *const *functionTable,
+                                                      TZrUInt32 functionCount) {
+    SZrString *actualModuleVersion = moduleFunction != ZR_NULL ? moduleFunction->moduleVersion : ZR_NULL;
+
+    if (functionCount > 0 && functionTable == ZR_NULL) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT metadata binding compatibility failed for module '%s': missing function table",
+                         moduleName != ZR_NULL ? moduleName : "<unknown>");
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 functionIndex = 0; functionIndex < functionCount; functionIndex++) {
+        const SZrMetadataTokenBinding *binding = ZR_NULL;
+        SZrMetadataRuntimeBindingCompatibilityReport report;
+        EZrMetadataRuntimeBindingCompatibilityStatus status;
+
+        memset(&report, 0, sizeof(report));
+        status = ZrCore_MetadataRuntime_CheckFunctionTokenBindingsCompatibility(functionTable[functionIndex],
+                                                                               actualModuleVersion,
+                                                                               &binding,
+                                                                               ZR_NULL,
+                                                                               &report);
+        if (status == ZR_METADATA_RUNTIME_BINDING_STATUS_COMPATIBLE) {
+            continue;
+        }
+
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT metadata binding compatibility failed for module '%s': "
+                         "function=%u status=%s refToken=0x%08x "
+                         "expectedMetadataToken=0x%08x actualMetadataToken=0x%08x "
+                         "expectedSignatureToken=0x%08x actualSignatureToken=0x%08x "
+                         "expectedSignatureHash=0x%016llx actualSignatureHash=0x%016llx "
+                         "expectedModuleSignatureHash=0x%016llx actualModuleSignatureHash=0x%016llx "
+                         "expectedLayoutVersion=%u actualLayoutVersion=%u "
+                         "expectedLayoutHash=0x%016llx actualLayoutHash=0x%016llx",
+                         moduleName != ZR_NULL ? moduleName : "<unknown>",
+                         (unsigned)functionIndex,
+                         aot_runtime_metadata_binding_status_name(status),
+                         (unsigned)(binding != ZR_NULL ? binding->refToken : 0u),
+                         (unsigned)report.expectedMetadataToken,
+                         (unsigned)report.actualMetadataToken,
+                         (unsigned)report.expectedSignatureToken,
+                         (unsigned)report.actualSignatureToken,
+                         (unsigned long long)report.expectedSignatureHash,
+                         (unsigned long long)report.actualSignatureHash,
+                         (unsigned long long)report.expectedModuleSignatureHash,
+                         (unsigned long long)report.actualModuleSignatureHash,
+                         (unsigned)report.expectedLayoutVersion,
+                         (unsigned)report.actualLayoutVersion,
+                         (unsigned long long)report.expectedLayoutHash,
+                         (unsigned long long)report.actualLayoutHash);
+        return ZR_FALSE;
+    }
+
     return ZR_TRUE;
 }
 
@@ -2375,6 +2473,25 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
     }
     for (TZrUInt32 functionIndex = 0; functionIndex < functionCount; functionIndex++) {
         ZrCore_MetadataRuntime_AttachFunction(metadataRuntime, functionTable[functionIndex]);
+    }
+    if (!aot_runtime_validate_metadata_bindings(state,
+                                                runtimeState,
+                                                normalizedModule,
+                                                record.moduleFunction,
+                                                functionTable,
+                                                functionCount)) {
+        aot_runtime_close_library(handle);
+        aot_runtime_free_string(global, record.moduleName);
+        aot_runtime_free_string(global, record.sourcePath);
+        aot_runtime_free_string(global, record.zroPath);
+        aot_runtime_free_string(global, record.libraryPath);
+        if (generatedFrameSlotCounts != ZR_NULL) {
+            aot_runtime_reallocate(global, generatedFrameSlotCounts, sizeof(*generatedFrameSlotCounts) * functionCount, 0);
+        }
+        if (functionTable != ZR_NULL) {
+            aot_runtime_reallocate(global, functionTable, sizeof(*functionTable) * functionCapacity, 0);
+        }
+        return ZR_FALSE;
     }
     ZrCore_Reflection_AttachModuleRuntimeMetadata(state, record.module, record.moduleFunction);
     ZrCore_Module_CreatePrototypesFromConstants(state, record.module, record.moduleFunction);

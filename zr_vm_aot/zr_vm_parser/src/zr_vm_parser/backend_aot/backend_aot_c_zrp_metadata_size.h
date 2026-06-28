@@ -21,6 +21,18 @@ typedef struct SZrAotZrpMetadataSizeStats {
     unsigned long long constantPoolBytes;
     unsigned long long definitionTableBytes;
     unsigned long long poolBytes;
+    unsigned long long tokenRecordCount;
+    unsigned long long typeDefCount;
+    unsigned long long methodDefCount;
+    unsigned long long fieldDefCount;
+    unsigned long long genericParamCount;
+    unsigned long long genericParamConstraintCount;
+    unsigned long long typeSpecCount;
+    unsigned long long methodSpecCount;
+    unsigned long long moduleRefCount;
+    unsigned long long stringPoolCount;
+    unsigned long long signatureBlobPoolCount;
+    unsigned long long constantPoolCount;
 } SZrAotZrpMetadataSizeStats;
 
 void backend_aot_collect_zrp_metadata_size_stats(const SZrAotWriterOptions *options,

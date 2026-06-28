@@ -123,7 +123,6 @@ static void test_aot_c_source_lowers_quickened_dynamic_calls_to_direct_core_call
             "backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot)",
             "zr_aot_direct_dynamic_function_call_sync_u64_local_boundary",
-            "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u)",
             "zr_aot_direct_dynamic_function_call_sync_f64_local_boundary",
             "ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u)",
     };
@@ -158,10 +157,7 @@ static void test_aot_c_source_lowers_quickened_dynamic_calls_to_direct_core_call
             "backend_aot_write_c_dynamic_function_call(FILE *file,",
             "backend_aot_write_c_core_function_call(FILE *file,",
             "ZrLibrary_AotRuntime_CallStackValue(state,",
-            "ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u)",
             "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u)",
-            "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u)",
-            "ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u)",
             "ZrLibrary_AotRuntime_Call(state, &frame",
             "SZrFunctionStackAnchor zr_aot_call_anchor;",
             "SZrFunctionStackAnchor zr_aot_destination_anchor;",
@@ -220,7 +216,6 @@ static void test_aot_c_source_lowers_generic_function_calls_to_direct_core_calls
             "backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot)",
             "zr_aot_direct_function_call_sync_u64_local_boundary",
-            "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u)",
             "zr_aot_direct_function_call_sync_f64_local_boundary",
             "ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u)",
             "\"zr_aot_direct_function_call\"",
@@ -230,10 +225,7 @@ static void test_aot_c_source_lowers_generic_function_calls_to_direct_core_calls
             "backend_aot_write_c_direct_function_call(FILE *file,",
             "backend_aot_write_c_core_function_call(FILE *file,",
             "ZrLibrary_AotRuntime_CallStackValue(state,",
-            "ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u)",
             "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u)",
-            "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u)",
-            "ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u)",
             "ZrLibrary_AotRuntime_PrepareDirectCall",
             "SZrFunctionStackAnchor zr_aot_call_anchor;",
             "SZrFunctionStackAnchor zr_aot_destination_anchor;",
@@ -319,10 +311,7 @@ static void test_aot_c_source_lowers_static_direct_calls_to_direct_core_calls(vo
             "backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot)",
-            "ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u)",
             "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u)",
-            "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u)",
-            "ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u)",
             "const SZrTypeValue *zr_aot_direct_call_result = ZrCore_Stack_GetValue(frame.slotBase + %u);",
             "zr_aot_direct_call_result->value.nativeObject.nativeInt64",
             "zr_aot_direct_call_result->value.nativeObject.nativeBool",
@@ -433,6 +422,102 @@ static void test_aot_c_source_makes_meta_calls_explicit_boundary(void) {
     free(functionBodyText);
 }
 
+static void test_aot_c_source_wraps_i64_typed_direct_calls_with_metadata_guard(void) {
+    static const char *const runtimeHeaderNeedles[] = {
+            "ZrLibrary_AotRuntime_CanUseTypedDirectCall(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_DeoptTypedDirectCall(struct SZrState *state,",
+    };
+    static const char *const runtimeSourceNeedles[] = {
+            "ZrLibrary_AotRuntime_CanUseTypedDirectCall(SZrState *state,",
+            "ZrCore_MetadataRuntime_CheckFunctionTokenBindingsCompatibility(",
+            "ZrLibrary_AotRuntime_DeoptTypedDirectCall(SZrState *state,",
+            "ZrLibrary_AotRuntime_CallStackValue(state,",
+    };
+    static const char *const callLoweringNeedles[] = {
+            "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, %u)",
+            "ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,",
+            "zr_aot_static_i64_one_arg_direct_call_metadata_guard",
+            "zr_aot_static_i64_two_arg_direct_call_metadata_guard",
+            "ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u)",
+    };
+    char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
+    char *runtimeSourceText = read_repo_text_file_owned(
+            "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c");
+    char *callLoweringText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
+
+    TEST_ASSERT_NOT_NULL(runtimeHeaderText);
+    TEST_ASSERT_NOT_NULL(runtimeSourceText);
+    TEST_ASSERT_NOT_NULL(callLoweringText);
+
+    assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
+    assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
+    assert_text_contains_all(callLoweringText, callLoweringNeedles, ARRAY_COUNT(callLoweringNeedles));
+
+    free(runtimeHeaderText);
+    free(runtimeSourceText);
+    free(callLoweringText);
+}
+
+static void test_aot_c_source_wraps_u64_typed_direct_calls_with_metadata_guard(void) {
+    static const char *const callLoweringNeedles[] = {
+            "zr_aot_static_u64_one_arg_direct_call_metadata_guard",
+            "zr_aot_static_u64_two_arg_direct_call_metadata_guard",
+            "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, %u)",
+            "ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,",
+            "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u)",
+    };
+    char *callLoweringText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
+
+    TEST_ASSERT_NOT_NULL(callLoweringText);
+
+    assert_text_contains_all(callLoweringText, callLoweringNeedles, ARRAY_COUNT(callLoweringNeedles));
+
+    free(callLoweringText);
+}
+
+static void test_aot_c_source_wraps_f64_typed_direct_calls_with_metadata_guard(void) {
+    static const char *const callLoweringNeedles[] = {
+            "zr_aot_static_f64_one_arg_direct_call_metadata_guard",
+            "zr_aot_static_f64_two_arg_direct_call_metadata_guard",
+            "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, %u)",
+            "ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,",
+            "ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u)",
+    };
+    char *callLoweringText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
+
+    TEST_ASSERT_NOT_NULL(callLoweringText);
+
+    assert_text_contains_all(callLoweringText, callLoweringNeedles, ARRAY_COUNT(callLoweringNeedles));
+
+    free(callLoweringText);
+}
+
+static void test_aot_c_source_wraps_bool_typed_direct_calls_with_metadata_guard(void) {
+    static const char *const boolCallLoweringNeedles[] = {
+            "zr_aot_static_bool_one_arg_direct_call_metadata_guard",
+            "zr_aot_static_bool_two_arg_direct_call_metadata_guard",
+            "zr_aot_static_i64_bool_two_arg_direct_call_metadata_guard",
+            "zr_aot_static_u64_bool_two_arg_direct_call_metadata_guard",
+            "zr_aot_static_f64_bool_two_arg_direct_call_metadata_guard",
+            "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, %u)",
+            "ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,",
+            "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u)",
+    };
+    char *boolCallLoweringText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_bool_calls.c");
+
+    TEST_ASSERT_NOT_NULL(boolCallLoweringText);
+
+    assert_text_contains_all(boolCallLoweringText,
+                             boolCallLoweringNeedles,
+                             ARRAY_COUNT(boolCallLoweringNeedles));
+
+    free(boolCallLoweringText);
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -443,5 +528,9 @@ int main(void) {
     RUN_TEST(test_aot_c_source_lowers_generic_function_calls_to_direct_core_calls);
     RUN_TEST(test_aot_c_source_lowers_static_direct_calls_to_direct_core_calls);
     RUN_TEST(test_aot_c_source_makes_meta_calls_explicit_boundary);
+    RUN_TEST(test_aot_c_source_wraps_i64_typed_direct_calls_with_metadata_guard);
+    RUN_TEST(test_aot_c_source_wraps_u64_typed_direct_calls_with_metadata_guard);
+    RUN_TEST(test_aot_c_source_wraps_f64_typed_direct_calls_with_metadata_guard);
+    RUN_TEST(test_aot_c_source_wraps_bool_typed_direct_calls_with_metadata_guard);
     return UNITY_END();
 }

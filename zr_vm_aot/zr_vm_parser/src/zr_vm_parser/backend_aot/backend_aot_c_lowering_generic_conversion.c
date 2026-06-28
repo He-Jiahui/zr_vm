@@ -49,11 +49,75 @@ static void backend_aot_write_c_generic_conversion_sync_locals(FILE *file,
     }
 }
 
+static TZrBool backend_aot_write_c_scalar_to_bool(FILE *file,
+                                                  const SZrAotExecIrFunction *functionIr,
+                                                  TZrUInt32 destinationSlot,
+                                                  TZrUInt32 sourceSlot,
+                                                  TZrUInt32 execInstructionIndex) {
+    TZrBool useWrittenBoolSource;
+    TZrBool useWrittenI64Source;
+    TZrBool useWrittenU64Source;
+    TZrBool useWrittenF64Source;
+
+    if (file == ZR_NULL ||
+        !backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot) ||
+        !backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
+                functionIr, destinationSlot, execInstructionIndex)) {
+        return ZR_FALSE;
+    }
+
+    useWrittenBoolSource = (TZrBool)(backend_aot_c_scalar_locals_has_bool_slot(functionIr, sourceSlot) &&
+                                     backend_aot_c_scalar_locals_bool_written_before(functionIr, sourceSlot, execInstructionIndex));
+    useWrittenI64Source = (TZrBool)(backend_aot_c_scalar_locals_has_i64_slot(functionIr, sourceSlot) &&
+                                    backend_aot_c_scalar_locals_i64_written_before(functionIr, sourceSlot, execInstructionIndex));
+    useWrittenU64Source = (TZrBool)(backend_aot_c_scalar_locals_has_u64_slot(functionIr, sourceSlot) &&
+                                    backend_aot_c_scalar_locals_u64_written_before(functionIr, sourceSlot, execInstructionIndex));
+    useWrittenF64Source = (TZrBool)(backend_aot_c_scalar_locals_has_f64_slot(functionIr, sourceSlot) &&
+                                    backend_aot_c_scalar_locals_f64_written_before(functionIr, sourceSlot, execInstructionIndex));
+    if (!useWrittenBoolSource && !useWrittenI64Source && !useWrittenU64Source && !useWrittenF64Source) {
+        return ZR_FALSE;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* zr_aot_scalar_exec_to_bool dstSlot=%u srcSlot=%u */\n",
+            (unsigned)destinationSlot,
+            (unsigned)sourceSlot);
+    if (useWrittenBoolSource) {
+        fprintf(file,
+                "        zr_aot_b%u = (TZrBool)(zr_aot_b%u != 0u);\n",
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot);
+    } else if (useWrittenI64Source) {
+        fprintf(file,
+                "        zr_aot_b%u = (TZrBool)(zr_aot_s%u != (TZrInt64)0);\n",
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot);
+    } else if (useWrittenU64Source) {
+        fprintf(file,
+                "        zr_aot_b%u = (TZrBool)(zr_aot_u%u != (TZrUInt64)0u);\n",
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot);
+    } else {
+        fprintf(file,
+                "        zr_aot_b%u = (TZrBool)(zr_aot_f%u != 0.0);\n",
+                (unsigned)destinationSlot,
+                (unsigned)sourceSlot);
+    }
+    fprintf(file, "    }\n");
+    return ZR_TRUE;
+}
+
 void backend_aot_write_c_direct_to_bool(FILE *file,
                                         const SZrAotExecIrFunction *functionIr,
                                         TZrUInt32 destinationSlot,
-                                        TZrUInt32 sourceSlot) {
+                                        TZrUInt32 sourceSlot,
+                                        TZrUInt32 execInstructionIndex) {
     if (file == ZR_NULL) {
+        return;
+    }
+
+    if (backend_aot_write_c_scalar_to_bool(file, functionIr, destinationSlot, sourceSlot, execInstructionIndex)) {
         return;
     }
 

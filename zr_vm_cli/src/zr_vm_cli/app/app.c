@@ -2,6 +2,7 @@
 
 #include "command/command.h"
 #include "compiler/compiler.h"
+#include "metadata/zrp_metadata_dump.h"
 #include "repl/repl.h"
 #include "runtime/runtime.h"
 #include "zr_vm_cli/conf.h"
@@ -45,6 +46,18 @@ int ZrCli_App_Run(int argc, char **argv) {
 
         case ZR_CLI_MODE_RUN_INLINE:
             return zr_cli_app_maybe_run_interactive_tail(&command, ZrCli_Runtime_RunInline(&command));
+
+        case ZR_CLI_MODE_DUMP_ZRP_METADATA:
+            return ZrCli_ZrpMetadataDump_RunPath(command.zrpMetadataPath, stdout, stderr);
+
+        case ZR_CLI_MODE_DIFF_ZRP_METADATA:
+            return ZrCli_ZrpMetadataDump_RunDiffPath(command.zrpMetadataBeforePath,
+                                                    command.zrpMetadataAfterPath,
+                                                    stdout,
+                                                    stderr);
+
+        case ZR_CLI_MODE_CHECK_ZRP_METADATA_VERSION:
+            return ZrCli_ZrpMetadataDump_RunVersionCheckPath(command.zrpMetadataVersionCheckPath, stdout, stderr);
 
         case ZR_CLI_MODE_COMPILE_PROJECT: {
             int compileResult = ZrCli_Compiler_CompileProject(&command);

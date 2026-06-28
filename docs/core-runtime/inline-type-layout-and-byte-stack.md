@@ -18,6 +18,9 @@ related_code:
   - zr_vm_core/include/zr_vm_core/metadata_runtime.h
   - zr_vm_core/src/zr_vm_core/metadata_runtime.c
   - zr_vm_core/src/zr_vm_core/metadata_runtime_layout_binding.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c
+  - zr_vm_library/include/zr_vm_library/aot_runtime.h
+  - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c
   - zr_vm_core/src/zr_vm_core/function_precall_internal.h
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
@@ -56,6 +59,10 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_bool_calls.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c
@@ -88,6 +95,9 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/metadata_runtime.h
   - zr_vm_core/src/zr_vm_core/metadata_runtime.c
   - zr_vm_core/src/zr_vm_core/metadata_runtime_layout_binding.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c
+  - zr_vm_library/include/zr_vm_library/aot_runtime.h
+  - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c
   - zr_vm_core/src/zr_vm_core/function_precall_internal.h
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
@@ -124,6 +134,10 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_bool_calls.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c
@@ -142,6 +156,9 @@ tests:
   - tests/core/test_object_call_known_native_fast_path.c
   - tests/core/test_native_inline_span_dispatch.c
   - tests/gc/gc_tests.c
+  - tests/module/test_metadata_runtime_binding_compatibility.c
+  - tests/module/test_aot_runtime_typed_direct_call_compatibility.c
+  - tests/parser/test_aot_c_metadata_binding_loader.c
   - tests/module/test_metadata_runtime_typespec_layout.c
   - tests/module/test_metadata_runtime_type_layout.c
   - tests/parser/test_compiler_features.c
@@ -149,6 +166,12 @@ tests:
   - tests/parser/test_value_type_runtime.c
   - tests/parser/test_aot_c_type_layout_contracts.c
   - tests/parser/test_aot_c_source_contracts.c
+  - tests/parser/test_aot_c_call_contracts.c
+  - tests/parser/test_aot_c_value_semir_contracts.c
+  - tests/parser/test_aot_c_typed_direct_call_shared_library_smoke.c
+  - tests/parser/test_aot_c_typed_direct_call_u64_shared_library_smoke.c
+  - tests/parser/test_aot_c_typed_direct_call_f64_shared_library_smoke.c
+  - tests/parser/test_aot_c_typed_direct_call_bool_shared_library_smoke.c
   - tests/parser/test_aot_c_code_stripping.c
   - tests/parser/test_aot_c_value_type_shared_library_smoke.c
   - tests/parser/test_aot_c_generic_call_typed.c
@@ -174,6 +197,14 @@ tests:
   - tests/acceptance/2026-06-26-aot-11-s4p-generated-type-layout-token-population.md
   - tests/acceptance/2026-06-26-aot-11-s4q-generated-typespec-type-layout-token-population.md
   - tests/acceptance/2026-06-26-aot-11-s4r-generated-ownership-offset-table.md
+  - tests/acceptance/2026-06-27-aot-11-s6a-runtime-binding-compatibility.md
+  - tests/acceptance/2026-06-28-aot-11-s6b-function-binding-compatibility-scan.md
+  - tests/acceptance/2026-06-28-aot-11-s6c-dynamic-loader-binding-reject.md
+  - tests/acceptance/2026-06-28-aot-11-s6d-i64-typed-direct-call-deopt.md
+  - tests/acceptance/2026-06-28-aot-11-s6e-u64-typed-direct-call-deopt.md
+  - tests/acceptance/2026-06-28-aot-11-s6f-f64-typed-direct-call-deopt.md
+  - tests/acceptance/2026-06-28-aot-11-s6g-bool-typed-direct-call-deopt.md
+  - tests/acceptance/2026-06-28-aot-11-s6h-inline-struct-typed-call-deopt.md
   - tests/acceptance/2026-06-26-aot-12-s7l-type-layout-payload-byte-trim-delta.md
 doc_type: module-detail
 ---
@@ -228,6 +259,8 @@ The fields are serialized into `function->prototypeData`, imported back into par
 For AOT-loaded functions that have an attached code registration, GC inline-frame mark/rewrite now resolves the same `typeLayoutId` through `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout`. That path reads the code-registration layout registry attached to the function or its prototype-context entry function, so AOT GC consumers use the same metadata runtime layout table as generic dictionary and GC descriptor lookup. When an AOT registry is present but a registry layout is missing, GC does not fall back to the prototype layout cache. When no AOT registry is attached, ordinary VM/interpreter inline-frame GC keeps using `ZrCore_Function_ResolvePrototypeFrameTypeLayout`.
 
 `metadata_runtime_layout_binding.c` keeps the row-to-layout binding views separate from the main metadata runtime cache code. TypeDef and FieldDef binding views resolve their rows through the attached zrp metadata and the code-registration layout registry. TypeSpec binding now follows the same rule: a `TYPE_SPEC` token must match its zrp TypeSpec row and paired signature record, then the row's `typeLayoutId` resolves through `ZrCore_MetadataRuntime_ResolveTypeLayout`. `ZrCore_MetadataRuntime_ResolveTypeTokenLayout` wraps the TypeDef and TypeSpec binding views with a public token-level resolver. `ZrCore_MetadataRuntime_ResolveTypeLayoutToken` first checks bounded cache entries and, when present, `codeRegistration->typeLayoutTokens[typeLayoutId]`; accepted table entries must be TypeDef or TypeSpec tokens whose registry-backed layout resolves. If the table has no usable entry, it scans TypeDef/TypeSpec rows to reverse a registry-backed layout id back to its metadata token. `ZrCore_MetadataRuntime_ResolveCTypeIdToken` exposes the same reverse path under the current `cTypeId == typeLayoutId` registry invariant. Generated C now emits the token-table carrier as `zr_aot_type_layout_tokens[]`; entries for uniquely matched local TypeDef-backed named struct/union layouts carry real `TYPE_DEF` tokens, and current-function generated generic layouts whose type name structurally matches a unique `TYPE_SPEC` canonical signature carry real `TYPE_SPEC` tokens. Missing metadata, ambiguous matches, cross-module records, and unsupported signature shapes stay `0u`. Both directions share a bounded 8-entry cache on `SZrMetadataRuntime`, so TypeDef and TypeSpec token/layout hits can coexist instead of replacing only the latest hit. Missing registry layout data does not fall back to prototype layout cache. This is still a read-only binding/cache/carrier path; runtime construction of generic layouts and ownership-offset tables remains later work.
+
+`metadata_runtime_binding_compatibility.c` keeps ABI drift checks out of the layout binding/cache module. `ZrCore_MetadataRuntime_CheckTokenBindingCompatibility` compares a recorded module version range from `SZrMetadataTokenRecord` with expected/resolved identity from `SZrMetadataTokenBinding`: module signature hash, metadata token, signature token/hash, and layout version/hash. `ZrCore_MetadataRuntime_CheckFunctionTokenBindingsCompatibility` scans a function's attached module metadata bindings, resolves the ref record from local metadata first and module metadata second, then returns the first incompatible binding with the same status/report payload. The root AOT runtime loader now consumes that function scan after loading embedded/zro metadata and attaching the module metadata runtime: incompatible bindings reject dynamic module load before reflection/prototype materialization or runtime-record storage, and the error records the status plus token/hash/layout details. The current i64/u64/f64/bool scalar typed direct-call paths also ask the AOT runtime to scan both caller and callee bindings before invoking a direct thunk; on mismatch the generated guard deopts through the stack-call path and syncs the signed/unsigned/float/bool scalar result back into the generated local. Value SemIR inline-struct `CALL_TYPED` now uses the same caller/callee guard before `CallInlineStruct()` and falls back through `CallInlineStructDynamicDeoptBridge()` so interpreter execution can copy inline return bytes back into the generated destination slot. Cross-module token resolve integration and broader ABI-drift injection remain later AOT metadata work.
 
 The resolver succeeds only when it can prove the inline representation is safe:
 

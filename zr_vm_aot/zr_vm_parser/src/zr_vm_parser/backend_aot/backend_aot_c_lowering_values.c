@@ -249,7 +249,22 @@ void backend_aot_write_c_direct_primitive_constant(FILE *file,
         return;
     }
 
-    if (ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type) &&
+    if (ZR_VALUE_IS_TYPE_BOOL(constantValue->type) &&
+        backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot)) {
+        const char *boolExpression = constantValue->value.nativeObject.nativeBool ? "ZR_TRUE" : "ZR_FALSE";
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_constant_bool_local */\n"
+                "        zr_aot_b%u = %s;\n"
+                "    }\n",
+                (unsigned)destinationSlot,
+                boolExpression);
+        wroteScalarLocal = ZR_TRUE;
+        if (backend_aot_c_scalar_locals_bool_constant_can_skip_value_slot(
+                    functionIr, destinationSlot, execInstructionIndex)) {
+            return;
+        }
+    } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type) &&
         backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot)) {
         snprintf(dataExpression,
                  sizeof(dataExpression),
@@ -325,8 +340,10 @@ void backend_aot_write_c_direct_primitive_constant(FILE *file,
                                                              "nativeBool",
                                                              boolExpression,
                                                              "ZR_VALUE_TYPE_BOOL");
-        backend_aot_c_write_direct_primitive_constant_local_mirror(
-                file, functionIr, destinationSlot, constantValue, boolExpression);
+        if (!wroteScalarLocal) {
+            backend_aot_c_write_direct_primitive_constant_local_mirror(
+                    file, functionIr, destinationSlot, constantValue, boolExpression);
+        }
     } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type)) {
         backend_aot_c_write_direct_plain_value_replace_guard(file);
         if (!wroteScalarLocal) {
@@ -605,7 +622,8 @@ void backend_aot_write_c_unsupported_create_closure_materialization(FILE *file,
 static void backend_aot_write_c_direct_stack_copy_scalar_local_sync(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
-        TZrUInt32 destinationSlot) {
+        TZrUInt32 destinationSlot,
+        TZrUInt32 sourceSlot) {
     TZrBool syncBool;
     TZrBool syncI64;
     TZrBool syncU64;
@@ -615,10 +633,14 @@ static void backend_aot_write_c_direct_stack_copy_scalar_local_sync(
         return;
     }
 
-    syncBool = backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot);
-    syncI64 = backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot);
-    syncU64 = backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot);
-    syncF64 = backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot);
+    syncBool = (TZrBool)(backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot) &&
+                         backend_aot_c_scalar_locals_has_bool_slot(functionIr, sourceSlot));
+    syncI64 = (TZrBool)(backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot) &&
+                        backend_aot_c_scalar_locals_has_i64_slot(functionIr, sourceSlot));
+    syncU64 = (TZrBool)(backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot) &&
+                        backend_aot_c_scalar_locals_has_u64_slot(functionIr, sourceSlot));
+    syncF64 = (TZrBool)(backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot) &&
+                        backend_aot_c_scalar_locals_has_f64_slot(functionIr, sourceSlot));
     if (!syncBool && !syncI64 && !syncU64 && !syncF64) {
         return;
     }
@@ -656,7 +678,8 @@ static void backend_aot_write_c_direct_stack_copy_scalar_local_sync(
 void backend_aot_write_c_direct_stack_copy(FILE *file,
                                            const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
-                                           TZrUInt32 sourceSlot) {
+                                           TZrUInt32 sourceSlot,
+                                           TZrBool skipScalarLocalSync) {
     if (file == ZR_NULL) {
         return;
     }
@@ -667,7 +690,9 @@ void backend_aot_write_c_direct_stack_copy(FILE *file,
             "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CopyStack(state, &frame, %u, %u));\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot);
-    backend_aot_write_c_direct_stack_copy_scalar_local_sync(file, functionIr, destinationSlot);
+    if (!skipScalarLocalSync) {
+        backend_aot_write_c_direct_stack_copy_scalar_local_sync(file, functionIr, destinationSlot, sourceSlot);
+    }
     fprintf(file, "    } while (0);\n");
 }
 

@@ -648,7 +648,10 @@ static void test_aot_c_reference_generic_call_typed_full_aot_omits_missing_insta
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_generic_call_typed_full_aot_no_deopt */"));
     TEST_ASSERT_NULL(strstr(generatedCText, "if (zr_aot_generic_call_typed_method == ZR_NULL)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_generic_call_typed_missing_instance_deopt deopt="));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_value_exec_call_typed_metadata_guard */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "\"typed inline struct direct call metadata drift\""));
     TEST_ASSERT_NULL(strstr(generatedCText, "\"generic call typed missing AOT instance\""));
     free(generatedCText);
 

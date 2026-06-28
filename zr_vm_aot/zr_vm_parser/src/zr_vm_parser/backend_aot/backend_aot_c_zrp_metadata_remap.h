@@ -23,6 +23,13 @@ TZrBool backend_aot_c_zrp_remap_token_record(SZrMetadataTokenRecord *record,
                                              TZrUInt32 fieldCount,
                                              const SZrAotFunctionTable *functionTable,
                                              TZrUInt32 retainedMethodDefCount);
+TZrBool backend_aot_c_zrp_remap_export_member_token(TZrMetadataToken *token,
+                                                    const SZrZrpMetadataMethodDefRow *methodRows,
+                                                    TZrUInt32 methodCount,
+                                                    const SZrZrpMetadataFieldDefRow *fieldRows,
+                                                    TZrUInt32 fieldCount,
+                                                    const SZrAotFunctionTable *functionTable,
+                                                    TZrUInt32 retainedMethodDefCount);
 TZrUInt32 backend_aot_c_zrp_count_retained_token_records(const SZrMetadataTokenRecord *records,
                                                          TZrUInt32 count,
                                                          const SZrZrpMetadataMethodDefRow *methodRows,

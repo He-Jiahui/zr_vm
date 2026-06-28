@@ -1,87 +1,15 @@
 #include "backend_aot_c_zrp_metadata_prune.h"
 
 #include "backend_aot_c_zrp_metadata_remap.h"
+#include "backend_aot_c_zrp_metadata_sections.h"
 #include "backend_aot_c_zrp_metadata_signature.h"
+#include "backend_aot_c_zrp_metadata_string_pool.h"
 #include "backend_aot_internal.h"
 
 #include "zr_vm_core/zrp_metadata.h"
 
 #include <stdlib.h>
 #include <string.h>
-
-static const SZrZrpMetadataSection *backend_aot_c_zrp_metadata_section(
-        const SZrZrpMetadataHeader *header,
-        EZrZrpMetadataSectionKind sectionKind) {
-    if (header == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    switch (sectionKind) {
-        case ZR_ZRP_METADATA_SECTION_TOKEN_RECORDS:
-            return &header->tokenRecords;
-        case ZR_ZRP_METADATA_SECTION_TYPE_DEFS:
-            return &header->typeDefs;
-        case ZR_ZRP_METADATA_SECTION_METHOD_DEFS:
-            return &header->methodDefs;
-        case ZR_ZRP_METADATA_SECTION_FIELD_DEFS:
-            return &header->fieldDefs;
-        case ZR_ZRP_METADATA_SECTION_GENERIC_PARAMS:
-            return &header->genericParams;
-        case ZR_ZRP_METADATA_SECTION_GENERIC_PARAM_CONSTRAINTS:
-            return &header->genericParamConstraints;
-        case ZR_ZRP_METADATA_SECTION_TYPE_SPECS:
-            return &header->typeSpecs;
-        case ZR_ZRP_METADATA_SECTION_METHOD_SPECS:
-            return &header->methodSpecs;
-        case ZR_ZRP_METADATA_SECTION_MODULE_REFS:
-            return &header->moduleRefs;
-        case ZR_ZRP_METADATA_SECTION_STRING_POOL:
-            return &header->stringPool;
-        case ZR_ZRP_METADATA_SECTION_SIGNATURE_BLOB_POOL:
-            return &header->signatureBlobPool;
-        case ZR_ZRP_METADATA_SECTION_CONSTANT_POOL:
-            return &header->constantPool;
-        default:
-            return ZR_NULL;
-    }
-}
-
-static SZrZrpMetadataSection *backend_aot_c_zrp_metadata_mutable_section(
-        SZrZrpMetadataHeader *header,
-        EZrZrpMetadataSectionKind sectionKind) {
-    if (header == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    switch (sectionKind) {
-        case ZR_ZRP_METADATA_SECTION_TOKEN_RECORDS:
-            return &header->tokenRecords;
-        case ZR_ZRP_METADATA_SECTION_TYPE_DEFS:
-            return &header->typeDefs;
-        case ZR_ZRP_METADATA_SECTION_METHOD_DEFS:
-            return &header->methodDefs;
-        case ZR_ZRP_METADATA_SECTION_FIELD_DEFS:
-            return &header->fieldDefs;
-        case ZR_ZRP_METADATA_SECTION_GENERIC_PARAMS:
-            return &header->genericParams;
-        case ZR_ZRP_METADATA_SECTION_GENERIC_PARAM_CONSTRAINTS:
-            return &header->genericParamConstraints;
-        case ZR_ZRP_METADATA_SECTION_TYPE_SPECS:
-            return &header->typeSpecs;
-        case ZR_ZRP_METADATA_SECTION_METHOD_SPECS:
-            return &header->methodSpecs;
-        case ZR_ZRP_METADATA_SECTION_MODULE_REFS:
-            return &header->moduleRefs;
-        case ZR_ZRP_METADATA_SECTION_STRING_POOL:
-            return &header->stringPool;
-        case ZR_ZRP_METADATA_SECTION_SIGNATURE_BLOB_POOL:
-            return &header->signatureBlobPool;
-        case ZR_ZRP_METADATA_SECTION_CONSTANT_POOL:
-            return &header->constantPool;
-        default:
-            return ZR_NULL;
-    }
-}
 
 static TZrBool backend_aot_c_zrp_section_has_rows(const SZrZrpMetadataSection *section) {
     return (TZrBool)(section != ZR_NULL && section->byteLength > 0u && section->count > 0u);
@@ -97,34 +25,15 @@ static TZrBool backend_aot_c_zrp_can_prune_method_defs(const SZrZrpMetadataHeade
     return ZR_TRUE;
 }
 
-static void backend_aot_c_zrp_set_section_layout(SZrZrpMetadataSection *section,
-                                                 TZrUInt32 *offset,
-                                                 TZrUInt32 byteLength,
-                                                 TZrUInt32 count,
-                                                 TZrUInt32 elementSize) {
-    if (section == ZR_NULL || offset == ZR_NULL) {
-        return;
-    }
-
-    if (byteLength == 0u) {
-        memset(section, 0, sizeof(*section));
-        return;
-    }
-
-    section->offset = *offset;
-    section->byteLength = byteLength;
-    section->count = count;
-    section->elementSize = elementSize;
-    *offset += byteLength;
-}
-
 static TZrBool backend_aot_c_zrp_build_pruned_header(const SZrZrpMetadataHeader *sourceHeader,
                                                      TZrUInt32 retainedTokenRecordCount,
                                                      TZrUInt32 retainedMethodDefCount,
                                                      TZrUInt32 retainedGenericParamCount,
                                                      TZrUInt32 retainedGenericParamConstraintCount,
                                                      TZrUInt32 retainedMethodSpecCount,
+                                                     TZrUInt32 retainedStringPoolBytes,
                                                      TZrUInt32 retainedSignatureBlobBytes,
+                                                     TZrUInt32 retainedConstantPoolBytes,
                                                      SZrZrpMetadataHeader *outHeader,
                                                      TZrSize *outLength) {
     TZrUInt32 offset = ZR_ZRP_METADATA_HEADER_SIZE;
@@ -173,10 +82,18 @@ static TZrBool backend_aot_c_zrp_build_pruned_header(const SZrZrpMetadataHeader 
             count = retainedMethodSpecCount;
             elementSize = retainedMethodSpecCount > 0u ? (TZrUInt32)sizeof(SZrZrpMetadataMethodSpecRow) : 0u;
             byteLength = retainedMethodSpecCount * (TZrUInt32)sizeof(SZrZrpMetadataMethodSpecRow);
+        } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_STRING_POOL) {
+            count = retainedStringPoolBytes;
+            elementSize = retainedStringPoolBytes > 0u ? 1u : 0u;
+            byteLength = retainedStringPoolBytes;
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_SIGNATURE_BLOB_POOL) {
             count = retainedSignatureBlobBytes;
             elementSize = retainedSignatureBlobBytes > 0u ? 1u : 0u;
             byteLength = retainedSignatureBlobBytes;
+        } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_CONSTANT_POOL) {
+            count = retainedConstantPoolBytes;
+            elementSize = retainedConstantPoolBytes > 0u ? 1u : 0u;
+            byteLength = retainedConstantPoolBytes;
         }
 
         backend_aot_c_zrp_set_section_layout(targetSection, &offset, byteLength, count, elementSize);
@@ -244,7 +161,8 @@ static TZrBool backend_aot_c_zrp_copy_type_defs(TZrByte *targetBlob,
                                                 TZrUInt32 genericParamCount,
                                                 const SZrAotFunctionTable *functionTable,
                                                 TZrUInt32 retainedMethodDefCount,
-                                                const SZrAotCZrpSignatureBlobRemap *signatureRemap) {
+                                                const SZrAotCZrpSignatureBlobRemap *signatureRemap,
+                                                const SZrAotCZrpStringPoolRemap *stringRemap) {
     SZrZrpMetadataTypeDefRow *targetRows;
 
     if (targetHeader->typeDefs.byteLength == 0u) {
@@ -270,7 +188,8 @@ static TZrBool backend_aot_c_zrp_copy_type_defs(TZrByte *targetBlob,
                                                      fieldCount,
                                                      functionTable,
                                                      retainedMethodDefCount);
-        if (!backend_aot_c_zrp_remap_signature_blob_offset(&targetRows[index].signatureBlobOffset,
+        if (!backend_aot_c_zrp_remap_type_def_string_offsets(&targetRows[index], stringRemap) ||
+            !backend_aot_c_zrp_remap_signature_blob_offset(&targetRows[index].signatureBlobOffset,
                                                            targetRows[index].signatureBlobLength,
                                                            signatureRemap)) {
             return ZR_FALSE;
@@ -290,7 +209,8 @@ static TZrBool backend_aot_c_zrp_copy_method_defs(TZrByte *targetBlob,
                                                   TZrUInt32 genericParamCount,
                                                   const SZrAotFunctionTable *functionTable,
                                                   TZrUInt32 retainedMethodDefCount,
-                                                  const SZrAotCZrpSignatureBlobRemap *signatureRemap) {
+                                                  const SZrAotCZrpSignatureBlobRemap *signatureRemap,
+                                                  const SZrAotCZrpStringPoolRemap *stringRemap) {
     SZrZrpMetadataMethodDefRow *targetRows;
     TZrUInt32 writeIndex = 0u;
 
@@ -316,7 +236,8 @@ static TZrBool backend_aot_c_zrp_copy_method_defs(TZrByte *targetBlob,
                                                      fieldCount,
                                                      functionTable,
                                                      retainedMethodDefCount);
-        if (!backend_aot_c_zrp_remap_signature_blob_offset(&targetRows[writeIndex].signatureBlobOffset,
+        if (!backend_aot_c_zrp_remap_method_def_string_offsets(&targetRows[writeIndex], stringRemap) ||
+            !backend_aot_c_zrp_remap_signature_blob_offset(&targetRows[writeIndex].signatureBlobOffset,
                                                            targetRows[writeIndex].signatureBlobLength,
                                                            signatureRemap)) {
             return ZR_FALSE;
@@ -332,7 +253,8 @@ static TZrBool backend_aot_c_zrp_copy_field_defs(TZrByte *targetBlob,
                                                  const SZrZrpMetadataFieldDefRow *fieldRows,
                                                  TZrUInt32 fieldCount,
                                                  TZrUInt32 retainedMethodDefCount,
-                                                 const SZrAotCZrpSignatureBlobRemap *signatureRemap) {
+                                                 const SZrAotCZrpSignatureBlobRemap *signatureRemap,
+                                                 const SZrAotCZrpStringPoolRemap *stringRemap) {
     SZrZrpMetadataFieldDefRow *targetRows;
 
     if (targetHeader->fieldDefs.byteLength == 0u) {
@@ -343,7 +265,8 @@ static TZrBool backend_aot_c_zrp_copy_field_defs(TZrByte *targetBlob,
     for (TZrUInt32 index = 0u; index < fieldCount; index++) {
         targetRows[index] = fieldRows[index];
         targetRows[index].token = backend_aot_c_zrp_compacted_field_def_token(retainedMethodDefCount, index);
-        if (!backend_aot_c_zrp_remap_signature_blob_offset(&targetRows[index].signatureBlobOffset,
+        if (!backend_aot_c_zrp_remap_field_def_string_offsets(&targetRows[index], stringRemap) ||
+            !backend_aot_c_zrp_remap_signature_blob_offset(&targetRows[index].signatureBlobOffset,
                                                            targetRows[index].signatureBlobLength,
                                                            signatureRemap)) {
             return ZR_FALSE;
@@ -353,23 +276,24 @@ static TZrBool backend_aot_c_zrp_copy_field_defs(TZrByte *targetBlob,
     return ZR_TRUE;
 }
 
-static void backend_aot_c_zrp_copy_generic_params(TZrByte *targetBlob,
-                                                  const SZrZrpMetadataHeader *targetHeader,
-                                                  const SZrZrpMetadataGenericParamRow *genericParamRows,
-                                                  TZrUInt32 genericParamCount,
-                                                  const SZrZrpMetadataGenericParamConstraintRow *constraintRows,
-                                                  TZrUInt32 constraintCount,
-                                                  const SZrZrpMetadataMethodDefRow *methodRows,
-                                                  TZrUInt32 methodCount,
-                                                  const SZrZrpMetadataFieldDefRow *fieldRows,
-                                                  TZrUInt32 fieldCount,
-                                                  const SZrAotFunctionTable *functionTable,
-                                                  TZrUInt32 retainedMethodDefCount) {
+static TZrBool backend_aot_c_zrp_copy_generic_params(TZrByte *targetBlob,
+                                                     const SZrZrpMetadataHeader *targetHeader,
+                                                     const SZrZrpMetadataGenericParamRow *genericParamRows,
+                                                     TZrUInt32 genericParamCount,
+                                                     const SZrZrpMetadataGenericParamConstraintRow *constraintRows,
+                                                     TZrUInt32 constraintCount,
+                                                     const SZrZrpMetadataMethodDefRow *methodRows,
+                                                     TZrUInt32 methodCount,
+                                                     const SZrZrpMetadataFieldDefRow *fieldRows,
+                                                     TZrUInt32 fieldCount,
+                                                     const SZrAotFunctionTable *functionTable,
+                                                     TZrUInt32 retainedMethodDefCount,
+                                                     const SZrAotCZrpStringPoolRemap *stringRemap) {
     SZrZrpMetadataGenericParamRow *targetRows;
     TZrUInt32 writeIndex = 0u;
 
     if (targetHeader->genericParams.byteLength == 0u) {
-        return;
+        return ZR_TRUE;
     }
 
     targetRows = (SZrZrpMetadataGenericParamRow *)(void *)(targetBlob + targetHeader->genericParams.offset);
@@ -396,9 +320,14 @@ static void backend_aot_c_zrp_copy_generic_params(TZrByte *targetBlob,
                                                                 fieldCount,
                                                                 functionTable,
                                                                 retainedMethodDefCount);
+        if (!backend_aot_c_zrp_remap_generic_param_string_offsets(&row, stringRemap)) {
+            return ZR_FALSE;
+        }
         targetRows[writeIndex] = row;
         writeIndex++;
     }
+
+    return ZR_TRUE;
 }
 
 static TZrBool backend_aot_c_zrp_copy_generic_param_constraints(
@@ -523,19 +452,28 @@ static TZrBool backend_aot_c_zrp_copy_method_specs(TZrByte *targetBlob,
     return ZR_TRUE;
 }
 
-static void backend_aot_c_zrp_copy_section_if_needed(TZrByte *targetBlob,
-                                                     const TZrByte *sourceBlob,
-                                                     const SZrZrpMetadataHeader *sourceHeader,
-                                                     const SZrZrpMetadataHeader *targetHeader,
-                                                     EZrZrpMetadataSectionKind sectionKind) {
-    const SZrZrpMetadataSection *sourceSection = backend_aot_c_zrp_metadata_section(sourceHeader, sectionKind);
-    const SZrZrpMetadataSection *targetSection = backend_aot_c_zrp_metadata_section(targetHeader, sectionKind);
+static TZrBool backend_aot_c_zrp_copy_module_refs(TZrByte *targetBlob,
+                                                  const TZrByte *sourceBlob,
+                                                  const SZrZrpMetadataHeader *sourceHeader,
+                                                  const SZrZrpMetadataHeader *targetHeader,
+                                                  const SZrAotCZrpStringPoolRemap *stringRemap) {
+    SZrZrpMetadataModuleRefRow *targetRows;
 
-    if (sourceSection == ZR_NULL || targetSection == ZR_NULL || targetSection->byteLength == 0u) {
-        return;
+    if (targetHeader->moduleRefs.byteLength == 0u) {
+        return ZR_TRUE;
     }
 
-    memcpy(targetBlob + targetSection->offset, sourceBlob + sourceSection->offset, targetSection->byteLength);
+    memcpy(targetBlob + targetHeader->moduleRefs.offset,
+           sourceBlob + sourceHeader->moduleRefs.offset,
+           targetHeader->moduleRefs.byteLength);
+    targetRows = (SZrZrpMetadataModuleRefRow *)(void *)(targetBlob + targetHeader->moduleRefs.offset);
+    for (TZrUInt32 index = 0u; index < targetHeader->moduleRefs.count; index++) {
+        if (!backend_aot_c_zrp_remap_module_ref_string_offsets(&targetRows[index], stringRemap)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
 }
 
 static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOptions *options,
@@ -551,6 +489,8 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
     SZrZrpMetadataSectionView genericParamConstraintView;
     SZrZrpMetadataSectionView typeSpecView;
     SZrZrpMetadataSectionView methodSpecView;
+    SZrZrpMetadataSectionView moduleRefView;
+    SZrZrpMetadataSectionView stringPoolView;
     SZrZrpMetadataSectionView signatureBlobView;
     const SZrMetadataTokenRecord *tokenRecords;
     const SZrZrpMetadataTypeDefRow *typeRows;
@@ -560,13 +500,17 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
     const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraints;
     const SZrZrpMetadataTypeSpecRow *typeSpecs;
     const SZrZrpMetadataMethodSpecRow *methodSpecs;
+    const SZrZrpMetadataModuleRefRow *moduleRefs;
     SZrAotCZrpSignatureBlobRemap signatureRemap;
+    SZrAotCZrpStringPoolRemap stringRemap;
     TZrUInt32 signatureRemapCapacity;
+    TZrUInt32 stringRemapCapacity;
     TZrUInt32 retainedTokenRecordCount;
     TZrUInt32 retainedMethodDefCount;
     TZrUInt32 retainedGenericParamCount;
     TZrUInt32 retainedGenericParamConstraintCount;
     TZrUInt32 retainedMethodSpecCount;
+    TZrUInt32 retainedConstantPoolBytes = 0u;
     TZrSize prunedLength = 0u;
     TZrByte *prunedBlob;
 
@@ -620,6 +564,16 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         !ZrCore_ZrpMetadata_GetSectionView(options->embeddedModuleBlob,
                                            options->embeddedModuleBlobLength,
                                            &sourceHeader,
+                                           ZR_ZRP_METADATA_SECTION_MODULE_REFS,
+                                           &moduleRefView) ||
+        !ZrCore_ZrpMetadata_GetSectionView(options->embeddedModuleBlob,
+                                           options->embeddedModuleBlobLength,
+                                           &sourceHeader,
+                                           ZR_ZRP_METADATA_SECTION_STRING_POOL,
+                                           &stringPoolView) ||
+        !ZrCore_ZrpMetadata_GetSectionView(options->embeddedModuleBlob,
+                                           options->embeddedModuleBlobLength,
+                                           &sourceHeader,
                                            ZR_ZRP_METADATA_SECTION_SIGNATURE_BLOB_POOL,
                                            &signatureBlobView)) {
         return ZR_TRUE;
@@ -634,6 +588,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
             (const SZrZrpMetadataGenericParamConstraintRow *)(const void *)genericParamConstraintView.data;
     typeSpecs = (const SZrZrpMetadataTypeSpecRow *)(const void *)typeSpecView.data;
     methodSpecs = (const SZrZrpMetadataMethodSpecRow *)(const void *)methodSpecView.data;
+    moduleRefs = (const SZrZrpMetadataModuleRefRow *)(const void *)moduleRefView.data;
     retainedMethodDefCount =
             backend_aot_c_zrp_count_retained_method_defs(methodRows, methodView.count, functionTable);
     retainedTokenRecordCount =
@@ -674,9 +629,6 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                           fieldView.count,
                                                           functionTable,
                                                           retainedMethodDefCount);
-    if (retainedMethodDefCount == methodView.count) {
-        return ZR_TRUE;
-    }
 
     signatureRemapCapacity = tokenRecordView.count +
                              typeView.count +
@@ -713,30 +665,84 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         return ZR_FALSE;
     }
 
+    stringRemapCapacity = (typeView.count * 2u) +
+                          methodView.count +
+                          fieldView.count +
+                          genericParamView.count +
+                          (moduleRefView.count * 2u);
+    if (!backend_aot_c_zrp_string_pool_remap_init(&stringRemap,
+                                                  stringRemapCapacity,
+                                                  (TZrUInt32)stringPoolView.byteLength)) {
+        backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_zrp_build_string_pool_remap(&stringRemap,
+                                                   stringPoolView.data,
+                                                   (TZrUInt32)stringPoolView.byteLength,
+                                                   typeRows,
+                                                   typeView.count,
+                                                   methodRows,
+                                                   methodView.count,
+                                                   fieldRows,
+                                                   fieldView.count,
+                                                   genericParamRows,
+                                                   genericParamView.count,
+                                                   moduleRefs,
+                                                   moduleRefView.count,
+                                                   functionTable,
+                                                   retainedMethodDefCount)) {
+        backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+        backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        return ZR_FALSE;
+    }
+
+    if (retainedTokenRecordCount == tokenRecordView.count &&
+        retainedMethodDefCount == methodView.count &&
+        retainedGenericParamCount == genericParamView.count &&
+        retainedGenericParamConstraintCount == genericParamConstraintView.count &&
+        retainedMethodSpecCount == methodSpecView.count &&
+        retainedConstantPoolBytes == sourceHeader.constantPool.byteLength &&
+        backend_aot_c_zrp_signature_blob_remap_is_identity(&signatureRemap) &&
+        backend_aot_c_zrp_string_pool_remap_is_identity(&stringRemap)) {
+        backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+        backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        return ZR_TRUE;
+    }
+
     if (!backend_aot_c_zrp_build_pruned_header(&sourceHeader,
                                                retainedTokenRecordCount,
                                                retainedMethodDefCount,
                                                retainedGenericParamCount,
                                                retainedGenericParamConstraintCount,
                                                retainedMethodSpecCount,
+                                               stringRemap.byteLength,
                                                signatureRemap.byteLength,
+                                               retainedConstantPoolBytes,
                                                &targetHeader,
                                                &prunedLength)) {
+        backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
         return ZR_FALSE;
     }
 
     prunedBlob = (TZrByte *)malloc(prunedLength);
     if (prunedBlob == ZR_NULL) {
+        backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
         return ZR_FALSE;
     }
     memset(prunedBlob, 0, prunedLength);
     if (!ZrCore_ZrpMetadata_WriteHeader(prunedBlob, prunedLength, &targetHeader)) {
         free(prunedBlob);
+        backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
         return ZR_FALSE;
     }
+    backend_aot_c_zrp_copy_string_pool(prunedBlob,
+                                       options->embeddedModuleBlob,
+                                       &sourceHeader,
+                                       &targetHeader,
+                                       &stringRemap);
     backend_aot_c_zrp_copy_signature_blob_pool(prunedBlob,
                                                options->embeddedModuleBlob,
                                                &sourceHeader,
@@ -754,6 +760,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                                         retainedMethodDefCount,
                                                                         &signatureRemap)) {
         free(prunedBlob);
+        backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
         return ZR_FALSE;
     }
@@ -772,6 +779,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                       retainedMethodDefCount,
                                                       &signatureRemap)) {
                 free(prunedBlob);
+                backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
@@ -788,8 +796,10 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                   genericParamView.count,
                                                   functionTable,
                                                   retainedMethodDefCount,
-                                                  &signatureRemap)) {
+                                                  &signatureRemap,
+                                                  &stringRemap)) {
                 free(prunedBlob);
+                backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
@@ -804,8 +814,10 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                     genericParamView.count,
                                                     functionTable,
                                                     retainedMethodDefCount,
-                                                    &signatureRemap)) {
+                                                    &signatureRemap,
+                                                    &stringRemap)) {
                 free(prunedBlob);
+                backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
@@ -815,24 +827,32 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                    fieldRows,
                                                    fieldView.count,
                                                    retainedMethodDefCount,
-                                                   &signatureRemap)) {
+                                                   &signatureRemap,
+                                                   &stringRemap)) {
                 free(prunedBlob);
+                backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_GENERIC_PARAMS) {
-            backend_aot_c_zrp_copy_generic_params(prunedBlob,
-                                                  &targetHeader,
-                                                  genericParamRows,
-                                                  genericParamView.count,
-                                                  genericParamConstraints,
-                                                  genericParamConstraintView.count,
-                                                  methodRows,
-                                                  methodView.count,
-                                                  fieldRows,
-                                                  fieldView.count,
-                                                  functionTable,
-                                                  retainedMethodDefCount);
+            if (!backend_aot_c_zrp_copy_generic_params(prunedBlob,
+                                                       &targetHeader,
+                                                       genericParamRows,
+                                                       genericParamView.count,
+                                                       genericParamConstraints,
+                                                       genericParamConstraintView.count,
+                                                       methodRows,
+                                                       methodView.count,
+                                                       fieldRows,
+                                                       fieldView.count,
+                                                       functionTable,
+                                                       retainedMethodDefCount,
+                                                       &stringRemap)) {
+                free(prunedBlob);
+                backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+                backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+                return ZR_FALSE;
+            }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_GENERIC_PARAM_CONSTRAINTS) {
             if (!backend_aot_c_zrp_copy_generic_param_constraints(prunedBlob,
                                                                   &targetHeader,
@@ -848,6 +868,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                                   retainedMethodDefCount,
                                                                   &signatureRemap)) {
                 free(prunedBlob);
+                backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
@@ -858,6 +879,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                    typeSpecView.count,
                                                    &signatureRemap)) {
                 free(prunedBlob);
+                backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
@@ -874,9 +896,23 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                      retainedMethodDefCount,
                                                      &signatureRemap)) {
                 free(prunedBlob);
+                backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
+        } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_MODULE_REFS) {
+            if (!backend_aot_c_zrp_copy_module_refs(prunedBlob,
+                                                    options->embeddedModuleBlob,
+                                                    &sourceHeader,
+                                                    &targetHeader,
+                                                    &stringRemap)) {
+                free(prunedBlob);
+                backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+                backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+                return ZR_FALSE;
+            }
+        } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_STRING_POOL) {
+            /* Already copied from compacted string remap before row rewrites. */
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_SIGNATURE_BLOB_POOL) {
             /* Already copied before row rewrites so signature hashes can be recomputed from final bytes. */
         } else {
@@ -891,6 +927,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
     outMetadata->blob = prunedBlob;
     outMetadata->length = prunedLength;
     outMetadata->ownedBlob = prunedBlob;
+    backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
     backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
     return ZR_TRUE;
 }

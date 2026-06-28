@@ -18,6 +18,8 @@ related_code:
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/include/zr_vm_core/object.h
   - zr_vm_core/include/zr_vm_core/metadata_token.h
+  - zr_vm_core/include/zr_vm_core/metadata_runtime.h
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_numeric.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_arithmetic.c
@@ -34,7 +36,12 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_logical.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_iterators.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_access_boundaries.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_bool_calls.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_internal.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
@@ -49,9 +56,15 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_super_array.c
   - zr_vm_library/include/zr_vm_library/aot_runtime.h
+  - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
   - zr_vm_aot/zr_vm_library/include/zr_vm_library/aot_runtime.h
   - zr_vm_aot/zr_vm_library/src/zr_vm_library/aot_runtime.c
+  - zr_vm_cli/src/zr_vm_cli/command/command.h
+  - zr_vm_cli/src/zr_vm_cli/command/command.c
+  - zr_vm_cli/src/zr_vm_cli/app/app.c
+  - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.h
+  - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_internal.h
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
@@ -65,8 +78,21 @@ related_code:
   - tests/parser/test_aot_c_generic_call_typed.c
   - tests/parser/test_aot_c_code_stripping.c
   - tests/parser/test_aot_c_zrp_metadata_pruning.c
+  - tests/parser/test_aot_c_zrp_metadata_export_token_remap.c
+  - tests/parser/test_aot_c_zrp_metadata_size_deltas.c
+  - tests/module/test_metadata_runtime_binding_compatibility.c
+  - tests/module/test_aot_runtime_typed_direct_call_compatibility.c
+  - tests/parser/test_aot_c_metadata_binding_loader.c
+  - tests/cli/test_cli_args.c
+  - tests/cli/test_cli_zrp_metadata_dump.c
   - tests/parser/test_aot_c_source_contracts.c
   - tests/parser/test_aot_c_frame_setup_contracts.c
+  - tests/parser/test_aot_c_call_contracts.c
+  - tests/parser/test_aot_c_value_semir_contracts.c
+  - tests/parser/test_aot_c_typed_direct_call_shared_library_smoke.c
+  - tests/parser/test_aot_c_typed_direct_call_u64_shared_library_smoke.c
+  - tests/parser/test_aot_c_typed_direct_call_f64_shared_library_smoke.c
+  - tests/parser/test_aot_c_typed_direct_call_bool_shared_library_smoke.c
   - tests/parser/test_aot_c_global_shared_library_smoke.c
   - tests/parser/test_aot_c_super_array_contracts.c
   - tests/parser/test_aot_c_super_array_shared_library_smoke.c
@@ -164,6 +190,646 @@ references:
 ## 状态与产出记录
 
 > 落地每个阶段或切片时在此追加：时间戳 · 里程碑/切片号 · 状态 · 完成项目 · RED/GREEN · 测试结果 · 备注。
+
+- 2026-06-28 17:12:40 +08:00 · 07-S2/S4 generic JUMP_IF numeric-source local branch ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 尚未达成；08-12 继续按各自计划推进 · 完成项目：generic `JUMP_IF` lowering 现在在
+  bool-source local 分支后继续尝试已证明的 i64/u64/f64 scalar-local 条件；匹配时分别生成
+  `if (zr_aot_sS == (TZrInt64)0) { goto ...; }`、`if (zr_aot_uS == (TZrUInt64)0u) { goto ...; }`、
+  `if (zr_aot_fS == (TZrFloat64)0.0) { goto ...; }`，否则保留 `GenericPrimitiveIsTruthy`
+  fallback。frame descriptor 用同一 bool/i64/u64/f64 condition proof 接受 local-only 分支。
+  RED/GREEN：RED 由 logical contracts 和扩展后的手写 IR generic JUMP_IF smoke 捕获旧 runtime path；
+  GREEN 后 WSL GCC logical contracts 4/0、generic JUMP_IF bool/numeric local smoke 2/0、
+  control contracts 2/0、frame setup contracts 1/0、generic bool equality local smoke 1/0、logical shared smoke 6/0；
+  WSL Clang 同组 4/0、2/0、2/0、1/0、1/0、6/0；Windows MSVC Debug logical contracts 4/0、
+  control contracts 2/0、frame setup contracts 1/0，Unix-only generic JUMP_IF bool/numeric smoke 为
+  0 failures / 2 ignored，generic bool equality smoke 为 0 failures / 1 ignored，logical shared smoke 为
+  0 failures / 6 ignored。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-generic-jump-if-numeric-source-local-branch.md`。
+  备注：不声明 07-S2/S4 全量完成；generic/dynamic/string truthiness boundaries、value-copy 迁移、
+  GC roots/exports/frame cleanup、byte-frame 更广收窄和性能计数仍待后续。
+
+- 2026-06-28 16:49:34 +08:00 · 07-S2/S4 generic JUMP_IF bool-source local branch ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 尚未达成；08-12 继续按各自计划推进 · 完成项目：generic `JUMP_IF` lowering 现在先尝试
+  bool-source scalar-local 分支，只有 condition slot 有严格 bool-value written-before 证明时才生成
+  `if (!zr_aot_bS) { goto ...; }`；否则保留 `GenericPrimitiveIsTruthy` runtime fallback。
+  frame descriptor、scalar-local 声明和 bool consumer/mention 扫描同步使用该严格 bool condition 证明，
+  动态/int/object/string truthiness 仍走 runtime helper。RED/GREEN：RED 由 logical contracts 和新增手写 IR
+  generic JUMP_IF bool local smoke 捕获旧 runtime path；GREEN 后 WSL GCC logical contracts 4/0、control contracts 2/0、
+  frame setup contracts 1/0、generic JUMP_IF bool local smoke 1/0、generic bool equality local smoke 1/0、
+  logical shared smoke 6/0；WSL Clang 同组 4/0、2/0、1/0、1/0、1/0、6/0；Windows MSVC Debug logical contracts 4/0、
+  control contracts 2/0、frame setup contracts 1/0，Unix-only generic JUMP_IF bool local smoke 为 0 failures / 1 ignored，
+  generic bool equality smoke 为 0 failures / 1 ignored，logical shared smoke 为 0 failures / 6 ignored。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-generic-jump-if-bool-source-local-branch.md`。
+  备注：不声明 07-S2/S4 全量完成；generic/dynamic/string truthiness boundaries、value-copy 迁移、
+  GC roots/exports/frame cleanup、byte-frame 更广收窄和性能计数仍待后续。
+
+- 2026-06-28 16:07:34 +08:00 · 07-S2/S4 generic LOGICAL_EQUAL/LOGICAL_NOT_EQUAL bool-source local branch ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 尚未达成；08-12 继续按各自计划推进 · 完成项目：generic `LOGICAL_EQUAL` / `LOGICAL_NOT_EQUAL`
+  lowering 现在先尝试 bool-source scalar-local 比较，只有 destination bool result 可跳过 value slot、
+  两个 source slot 都有严格 bool-value written-before 证明且结果可由 bool branch 本地消费时才生成
+  `zr_aot_bD = (TZrBool)((zr_aot_bL ==|!= zr_aot_bR) != 0u);` 与 `if (!zr_aot_bD)`；否则保留
+  runtime fallback。frame descriptor、value-slot 强制读取判断、scalar-local consumer 扫描和跨基本块
+  bool 写入证明同步使用该严格 bool-source 证明，source-level mixed/dynamic equality 仍走 runtime helper。
+  RED/GREEN：RED 由 logical contracts 和新增手写 IR generic bool equality local smoke 捕获旧 runtime path；
+  GREEN 后 WSL GCC logical contracts 4/0、frame setup contracts 1/0、generic bool equality local smoke 1/0、
+  logical shared smoke 6/0；WSL Clang 同组 4/0、1/0、1/0、6/0；Windows MSVC Debug logical contracts 4/0、
+  frame setup contracts 1/0，Unix-only generic bool equality smoke 为 0 failures / 1 ignored，
+  logical shared smoke 为 0 failures / 6 ignored。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-generic-bool-equality-local-branch.md`。
+  备注：不声明 07-S2/S4 全量完成；generic/dynamic/string boundaries、value-copy 迁移、
+  GC roots/exports/frame cleanup、byte-frame 更广收窄和性能计数仍待后续。
+
+- 2026-06-28 15:17:03 +08:00 · 07-S2/S4 generic LOGICAL_NOT bool-source local branch ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 尚未达成；08-12 继续按各自计划推进 · 完成项目：generic `LOGICAL_NOT` lowering 现在先尝试
+  bool-source scalar-local 分支，只有下一条 `JUMP_IF_BOOL_FALSE` 读取同一 destination、bool result 可跳过
+  value slot、且 source slot 有严格 bool-value written-before 证明时才生成
+  `zr_aot_bD = (TZrBool)(!zr_aot_bS);` 与 `if (!zr_aot_bD)`；否则保留 runtime fallback。
+  frame descriptor、value-slot 强制读取判断和 scalar-local consumer 扫描同步使用该严格 bool source 证明，
+  int truthiness 的 `!zero()` / `!one()` 仍走 `GenericPrimitiveLogicalNot` / `GenericPrimitiveIsTruthy`。
+  RED/GREEN：RED 由新增手写 IR bool-source smoke 捕获旧 runtime path，并由 truthiness negative 断言防止
+  int source 被误优化；GREEN 后 WSL GCC logical contracts 4/0、frame setup contracts 1/0、logical shared smoke 6/0；
+  WSL Clang 同组 4/0、1/0、6/0；Windows MSVC Debug logical contracts 4/0、frame setup contracts 1/0，
+  Unix-only logical shared smoke 为 0 failures / 6 ignored。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-generic-logical-not-bool-source-local-branch.md`。
+  备注：不声明 07-S2/S4 全量完成；generic/dynamic/string boundaries、value-copy 迁移、
+  GC roots/exports/frame cleanup、byte-frame 更广收窄和性能计数仍待后续。
+
+- 2026-06-28 13:44:34 +08:00 · 07-S2/S4 generic TO_BOOL scalar-source local-only ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 尚未达成；08-12 继续按各自计划推进 · 完成项目：generic `TO_BOOL` lowering 现在先尝试
+  scalar source local-only 路径，只有 destination bool result 可跳过 value slot 且 source slot 已写入
+  bool/i64/u64/f64 local 时才生成 `zr_aot_scalar_exec_to_bool`；否则保留 runtime fallback。
+  frame descriptor 将 `TO_BOOL` 纳入本地化证明，scalar-local consumer 扫描也把 `TO_BOOL` 作为四类
+  scalar source consumer，使 `<bool> truthSource` 直接从 `zr_aot_s1` 生成 `zr_aot_b4`，不再写
+  `frame.slotBase[1].value` 或 `frame.slotBase[4].value`。RED/GREEN：RED 由 generic primitive conversion
+  smoke 新增 generated-C 断言捕获旧 `ConvertGenericToBool(state, &frame, 4, 1)` 和 frame slot 写；
+  GREEN 后 WSL GCC source contracts 22/0、frame setup contracts 1/0、shared-library smoke 13/0；
+  WSL Clang 同组 22/0、1/0、13/0；Windows MSVC Debug source contracts 22/0、frame setup contracts 1/0，
+  Unix-only shared smoke 为 0 failures / 13 ignored。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-generic-to-bool-scalar-source-local.md`。
+  备注：不声明 07-S2/S4 全量完成；value-level stack-copy 全面迁移、generic/dynamic/string boundaries、
+  GC roots/exports/frame cleanup、byte-frame 更广收窄和性能计数仍待后续。
+
+- 2026-06-28 13:14:53 +08:00 · 07-S2/S4 stack-copy scalar declaration consumer narrowing ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 尚未达成；08-12 继续按各自计划推进 · 完成项目：stack-copy scalar local 声明传播先采用
+  SemIR destination kind，再按后续实际消费者收窄，不再把 source slot 的全局 bitset 原样传播到 destination。
+  bool logical fixture 中 slot 3/5/15 只声明 bool local，不再被 slot 6/16 的整数返回路径污染为 i64；
+  真实返回槽 `s6/s16` 仍声明并用于 direct i64 return。新增 operand consumer kind helper 使 generic
+  `TO_INT`/`TO_UINT`/`TO_FLOAT` stack-copy source 保留 candidate source kind，避免 conversion result kind
+  误收窄破坏 unsigned mixed-literal frame-free 路径。RED/GREEN：RED 由新增 generated-C anti-needle 捕获
+  `TZrInt64 zr_aot_s3` 触发；GREEN 后 WSL GCC logical smoke 5/0、source contracts 22/0、shared-library
+  smoke 13/0、frame setup contracts 1/0；WSL Clang 同组 5/0、22/0、13/0、1/0；Windows MSVC Debug
+  source contracts 22/0、frame setup contracts 1/0，Unix-only logical/shared smoke 为 0 failures / 5 ignored
+  与 0 failures / 13 ignored。
+  产出：`tests/acceptance/2026-06-28-aot-07-s2-s4-stack-copy-declaration-consumer-narrowing.md`。
+  备注：不声明 07-S2/S4 全量完成；value-level stack-copy 全面迁移、generic/dynamic/string boundaries、
+  GC roots/exports/frame cleanup、byte-frame 更广收窄和性能计数仍待后续。
+
+- 2026-06-28 12:33:55 +08:00 · 07-S2/S4 callable stack-copy scalar-sync elision ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 尚未达成；08-12 继续按各自计划推进 · 完成项目：direct stack-copy 发射器新增
+  `skipScalarLocalSync`，当 destination 是下一条调用的 callable slot 时保留 `CopyStack`，
+  但跳过 bool/i64/u64/f64 local sync，避免把 closure/callable frame 槽误同步为 scalar local。
+  `yes() && no()` 中 slot 7/16 的 callable copy 不再在 direct call 前生成
+  `zr_aot_direct_stack_copy_sync_bool_local_boundary`；direct-call fallback 的 call-result sync 保留。
+  RED/GREEN：RED 由新增 generated-C 断言捕获 `CopyStack(..., 7/16, 1)` 后紧跟 `SyncBoolLocal`
+  触发；GREEN 后 WSL GCC logical smoke 5/0、source contracts 22/0；WSL Clang 同组 5/0、22/0；
+  Windows MSVC Debug source contracts 22/0，Unix-only logical smoke 为 0 failures / 5 ignored。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-callable-stack-copy-sync-elision.md`。
+  备注：不声明 07-S2/S4 全量完成；callable/closure value materialization、
+  value-level stack-copy 全面迁移、generic/dynamic/string boundaries、GC roots/exports/frame cleanup、
+  byte-frame 更广收窄和性能计数仍待后续。
+
+- 2026-06-28 12:16:07 +08:00 · 07-S2/S4 bool condition-copy local-only value-slot elision ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 尚未达成；08-12 继续按各自计划推进 · 完成项目：stack-copy destination 紧邻
+  `JUMP_IF_BOOL_FALSE` 时不再强制写 value slot；value-slot 强制边界保留为下一条调用参数和后续真实
+  bool value operand。`yes() && no()` 的 `dstSlot=15 srcSlot=16` 现在生成
+  `zr_aot_b15 = (TZrBool)(zr_aot_b16 != 0u);`，下一条分支生成 `if (!zr_aot_b15)`，
+  复制处不再写 `frame.slotBase[15].value`。RED/GREEN：RED 由新增 generated-C 断言缺少
+  bool local-only assignment 触发；GREEN 后 WSL GCC logical smoke 5/0、source contracts 22/0；
+  WSL Clang 同组 5/0、22/0；Windows MSVC Debug source contracts 22/0，Unix-only logical smoke 为
+  0 failures / 5 ignored。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-bool-condition-copy-local-only.md`。
+  备注：不声明 07-S2/S4 全量完成；value-level stack-copy 全面迁移、
+  generic/dynamic/string boundaries、GC roots/exports/frame cleanup、byte-frame 更广收窄和性能计数仍待后续。
+
+- 2026-06-28 12:01:38 +08:00 · 07-S2/S4 bool call-result branch local ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 尚未达成；08-12 继续按各自计划推进 · 完成项目：call-result destination 纳入
+  scalar-local declaration collection，no-arg typed bool direct call 的 slot 14 可声明并写入
+  `zr_aot_b14`，后续短路分支生成 `if (!zr_aot_b14)`，不再读取 `frame.slotBase[14].value`。
+  value-level stack-copy fallback 的 `Sync*Local` 现在要求 source/destination 都有相同 scalar kind，
+  避免 callable 临时 slot 把 bool/i64 sync 污染到 call-result slot。RED/GREEN：RED 由新增
+  generated-C 断言缺少 `TZrBool zr_aot_b14 = ZR_FALSE;` 触发；GREEN 后 WSL GCC logical smoke
+  5/0、source contracts 22/0；WSL Clang 同组 5/0、22/0；Windows MSVC Debug source contracts 22/0，
+  Unix-only logical smoke 为 0 failures / 5 ignored。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-bool-call-result-branch-local.md`。
+  备注：不声明 07-S2/S4 全量完成；value-level stack-copy 全面迁移、generic/dynamic/string boundaries、
+  GC roots/exports/frame cleanup、byte-frame 更广收窄和性能计数仍待后续。
+
+- 2026-06-28 11:25:49 +08:00 · 07-S2/S4 bool condition-copy branch local ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 尚未达成；08-12 继续按各自计划推进 · 完成项目：stack-copy write tracking 在 source kind
+  无法证明时回退 declared destination kind，匹配 value-level `CopyStack` 后的 `Sync*Local` 边界。
+  `yes() && no()` 中 `dstSlot=15 srcSlot=16` 后续 `JUMP_IF_BOOL_FALSE` 现在生成
+  `if (!zr_aot_b15)`，不再读取 `frame.slotBase[15].value`；logical smoke 和 source contracts 锁定该路径。
+  RED/GREEN：RED 由新增 generated-C 断言缺少 `if (!zr_aot_b15)` 触发；GREEN 后 WSL GCC logical smoke
+  5/0、source contracts 22/0；WSL Clang 同组 5/0、22/0；Windows MSVC Debug source contracts 22/0，
+  Unix-only logical smoke 为 0 failures / 5 ignored。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-bool-condition-copy-branch-local.md`。
+  备注：不声明 07-S2/S4 全量完成；value-level stack-copy 全面迁移、generic/dynamic/string boundaries、
+  GC roots/exports/frame cleanup、byte-frame 更广收窄和性能计数仍待后续。
+
+- 2026-06-28 11:05:55 +08:00 · 07-S2/S4 string logical bool sync parentheses ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 尚未达成；08-12 继续按各自计划推进 · 完成项目：generic/string logical bool sync 模板现在发
+  `(TZrBool)((%s) != 0u)`，修正 string `!=` 生成 `!zr_aot_equal != 0u` 触发的 Clang
+  `logical-not-parentheses` 警告。string equality smoke 要求 `(TZrBool)((!zr_aot_equal) != 0u)` 并禁止旧形态；
+  source contracts 锁定新模板。RED/GREEN：RED 由新 generated-C 断言失败触发；GREEN 后 WSL GCC logical smoke
+  5/0、source contracts 22/0；WSL Clang 同组 5/0、22/0 且旧 warning 消失；Windows MSVC Debug
+  source contracts 22/0，Unix-only logical smoke 为 0 failures / 5 ignored。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-string-logical-bool-sync-parentheses.md`。
+  备注：不声明 07-S2/S4 全量完成；generic/dynamic/string boundaries、GC roots/exports/frame cleanup、
+  byte-frame 更广收窄和性能计数仍待后续。
+
+- 2026-06-28 10:55:19 +08:00 · 07-S2/S4 call-boundary bool frame semantics ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 尚未达成；08-12 继续按各自计划推进 · 完成项目：stack-call argument slot 现在被识别为
+  value-frame 读取，bool 常量实参不会被错误 local-only elide；scalar-local write tracking 改为 exact
+  current kind 并在 reset/call-result/stack-copy 上更新真实 kind；forced condition-copy 可从上一条 typed
+  bool call result 选择 bool scalar source，`dstSlot=15 srcSlot=16` 生成 bool frame write 而不是 stale i64
+  copy。RED/GREEN：RED 由 logical shared-library smoke 的 generic equality 错值、bool short-circuit 失败和新增
+  generated-C 断言触发；GREEN 后 WSL GCC logical smoke 5/0、shared-library smoke 13/0、source contracts
+  21/0、frame setup contracts 1/0；WSL Clang 同组 5/0、13/0、21/0、1/0；Windows MSVC Debug source/frame
+  contracts 21/0、1/0，Unix-only logical/shared smoke 为 0 failures / 5 ignored 与 0 failures / 13 ignored。
+  产出：`tests/acceptance/2026-06-28-aot-07-s2-s4-call-boundary-bool-frame-semantics.md`。
+  备注：不声明 07-S2/S4 全量完成；string equality Clang warning、generic/dynamic/string boundaries、
+  GC roots/exports/frame cleanup、byte-frame 更广收窄和性能计数仍待后续。
+
+- 2026-06-28 10:06:29 +08:00 · 07-S2/S4 signed branch constant frame elision ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 尚未达成；08-12 继续按各自计划推进 · 完成项目：typed signed branch loop 中只作为
+  比较 operand 的 `CONST i64=0` 现在通过 scalar-local proof 生成 `zr_aot_s3 = (TZrInt64)0;`
+  和 `if (zr_aot_s1 <= zr_aot_s3)`，不再写/读 `frame.slotBase[3].value`。
+  `backend_aot_c_scalar_locals` 将 signed branch opcodes 纳入后续标量消费者、i64 read
+  和 operand-local proof；shared-library branch smoke 禁止 `zr_aot_value_exec_primitive_constant`
+  与 slot 3 value materialization，source contracts 锁定 signed branch scalar consumer 路径。
+  RED/GREEN：RED 由新增 generated-C branch 断言失败触发；GREEN 后 WSL GCC shared-library smoke
+  13/0、source contracts 21/0、frame setup contracts 1/0；WSL Clang 同组 13/0、21/0、1/0；
+  Windows MSVC Debug 编译三组目标并通过 source contracts 21/0、frame setup contracts 1/0，
+  shared-library smoke 为 0 failures / 13 ignored Unix-only。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-signed-branch-constant-frame-elision.md`。
+  备注：不声明 07-S2/S4 全量完成；generic/dynamic/string branch、runtime boundary、GC roots/
+  exports/frame cleanup、byte-frame 更广收窄、性能计数和完整 typed 函数体零 frame 仍待后续。
+
+- 2026-06-28 09:53:59 +08:00 · 07-S2/S4 conversion temporary result frame elision ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 仍未关闭 · 完成项目：bool->u64/f64 generic conversion 的临时 result slot 被后续
+  scalar stack-copy 消费后可保持 local-only，不再写 `frame.slotBase[6].value` /
+  `frame.slotBase[7].value`。`result_scan_live_value_block()` 复用任意 scalar overwrite
+  判断，在旧值未被读取且同一 slot 被后续 scalar kind 重写时结束旧 result 生命周期。RED/GREEN：
+  RED 由新增 slot 6/7 value-slot 禁止断言触发；GREEN 后 WSL gcc shared-library smoke 13/0、
+  source contracts 21/0、frame setup contracts 1/0；WSL clang 同组 13/0、21/0、1/0；
+  MSVC Debug source contracts 21/0、frame setup contracts 1/0、shared-library smoke
+  0 failures / 13 ignored Unix-only。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-conversion-temp-result-frame-elision.md`。
+  备注：不声明 07-S2/S4 全量完成；真实变量 slot、generic boundary、GC roots/exports/
+  frame cleanup、byte-frame 更广收窄和性能计数仍待后续切片。
+
+- 2026-06-28 09:38:30 +08:00 · 07-S2/S4 bool generic conversion source frame elision ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 仍未关闭 · 完成项目：typed generic conversion 现在可从 bool scalar local 直接生成
+  `<int>`、`<uint>`、`<float>` 转换，不再要求 source bool slot 物化到 `frame.slotBase`。
+  `TO_UINT`/`TO_FLOAT` frame descriptor local-only 证明接受 bool-written source，scalar locals
+  将 `TO_INT`/`TO_UINT`/`TO_FLOAT` 识别为 bool consumers，并修正 conversion/unary 的
+  slot-mention 判断，避免默认未用 operand 把 slot 0 误判为 frame 读。shared-library generic
+  conversion smoke 现在要求 bool constant `flag` 只保留 `zr_aot_b0 = ZR_TRUE;`，并验证
+  bool->u64/f64 生成 `zr_aot_b0 ? ...` 表达式且不含 `frame.slotBase[0].value`。RED/GREEN：
+  RED 先命中 bool->u64/f64 frame-source fallback，随后命中 bool constant slot 0 仍因 operand
+  mention 误判而物化；GREEN 后 WSL gcc shared-library smoke 13/0、source contracts 21/0、
+  frame setup contracts 1/0；WSL clang 同组 13/0、21/0、1/0；MSVC Debug source contracts
+  21/0、frame setup contracts 1/0、shared-library smoke 0 failures / 13 ignored Unix-only。
+  产出：`tests/acceptance/2026-06-28-aot-07-s2-s4-bool-generic-conversion-source-frame-elision.md`。
+  备注：不声明 07-S2/S4 全量完成；destination value slot、generic boundary、GC roots/exports/
+  frame cleanup、byte-frame 更广收窄和性能计数仍待后续切片。
+
+- 2026-06-28 08:54:52 +08:00 · 07-S2/S4 bool constant frame elision ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 仍未关闭 · 完成项目：bool `GET_CONSTANT` immediate 现在复用 scalar-local
+  reachable-consumer proof，可在后续 consumer/return 都本地化时只生成
+  `zr_aot_scalar_constant_bool_local` 和 `zr_aot_bN = ZR_TRUE|ZR_FALSE`，并让 frame
+  descriptor 判定省略 generated frame。新增 bool constant return shared-library smoke
+  覆盖 `var flag: bool = true; return flag;`，要求 generated C 直接 bool return 且不含
+  frame setup、`ZrAotGeneratedFrame frame`、`frame.slotBase`、`ZrCore_Stack_GetValue`、
+  `ZR_VALUE_FAST_SET` 或 `zr_aot_value_exec_primitive_constant`。另新增 f64 compare
+  frame-free 执行护栏，锁定 `zr_aot_scalar_exec_f64_compare`、bool local compare 和
+  direct bool return；该用例确认既有实现已满足目标，不包含新的生产修复。同时把 generated typed
+  bool NOT 表达式改成显式括号，消除 Clang `!x != 0u` 警告。RED/GREEN：RED 由新增
+  bool constant smoke 缺少 local-only bool constant 并仍写 value slot 触发；GREEN 后 WSL
+  gcc shared-library smoke 13/0、source contracts 21/0、frame setup contracts 1/0、float
+  shared-library smoke 2/0；WSL clang 同组 13/0、21/0、1/0、float smoke 2/0；MSVC Debug
+  source contracts 21/0、frame setup contracts 1/0、shared-library smoke 0 failures /
+  13 ignored Unix-only、float smoke 0 failures / 2 ignored Unix-only。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-bool-constant-frame-elision.md`。
+  备注：不声明 07-S2/S4 全量完成；dynamic/generic/string 边界、GC roots/exports/
+  frame cleanup、byte-frame 更广收窄和性能计数仍待后续切片。
+
+- 2026-06-28 08:12:21 +08:00 · 07-S2/S4 signed load-const/load-stack-const scalar frame elision ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 仍未关闭 · 完成项目：AOT scalar-local 证明补齐 signed fused
+  load-const/load-stack-const/load-stack-load-const 算术族的 i64 result/consumer 识别；
+  fused consumer 只读取真实 source slot，`GET_CONSTANT` 目的槽在后续 scalar consumer 或
+  fused constant materialization slot 场景下声明为 scalar local。新增 load-const scalar
+  smoke 构造 `GET_CONSTANT`、`ADD_SIGNED_LOAD_CONST`、`GET_STACK`、
+  `SUB_SIGNED_LOAD_STACK_CONST`、`ADD_SIGNED_LOAD_STACK_LOAD_CONST` 与 direct return 链路，
+  要求 generated C 只含 scalar locals、literal assignment、scalar stack-copy 和
+  `zr_aot_direct_return_i64_local`，不含 frame setup、`ZrAotGeneratedFrame frame`、
+  `frame.slotBase`、`ZrCore_Stack_GetValue` 或 `ZR_VALUE_FAST_SET`。RED/GREEN：旧证明缺少
+  fused load-const 常量物化槽覆盖；GREEN 后 WSL gcc/clang load-const scalar smoke 1/0、
+  source contracts 21/0、frame setup contracts 1/0；MSVC Debug source contracts 21/0、
+  frame setup contracts 1/0、load-const scalar smoke 0 failures / 1 ignored Unix-only。
+  `git diff --check` 通过，仅 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-load-const-stack-const-frame-elision.md`。
+  备注：不声明 07-S2/S4 全量完成；dynamic/generic/string 边界、GC roots/exports/
+  frame cleanup、byte-frame 更广收窄和性能计数仍待后续切片。
+
+- 2026-06-28 07:09:58 +08:00 · 07-S2/S4 f64 mod frame-elision execution guardrail ·
+  状态：07-S2/S4 验收护栏子切片完成；07/M1.5 继续进行中，完整 typed 函数体零
+  `SZrValue`/frame write 仍未关闭 · 完成项目：float modulo shared-library smoke 升级为
+  项目级 AOT runtime 执行验收，写入 `.zrp/.zr/.zro`，嵌入 binary input，生成共享库并执行
+  `return left % right`，要求返回 double 1.5。generated C 约束锁定
+  `zr_aot_scalar_exec_f64_binary`、`fmod(`、`zr_aot_direct_return_f64_local`，并禁止 frame setup、
+  `ZrAotGeneratedFrame frame`、`ZrCore_Stack_GetValue`、`ZR_VALUE_FAST_SET` 和
+  `ZrLibrary_AotRuntime_ModFloat(state, &frame)`。RED/GREEN：旧生成物曾显示 frame/result
+  materialization；当前代码重新生成后直接 GREEN，说明前序 scalar/result/frame-descriptor 工作
+  已覆盖 f64 modulo 纯标量 frame-elision，本切片只补产品级执行验收。测试：WSL gcc/clang
+  float shared-library smoke 1/0；MSVC Debug 0 failures / 1 ignored Unix-only；`git diff --check`
+  通过，仅 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-f64-mod-frame-elision-execution.md`。
+  备注：不声明 07-S2/S4 全量完成；f64 更广算术/比较、load-const/load-stack const、
+  dynamic/generic/string 边界、GC roots/exports/frame cleanup、byte-frame 更广收窄和性能计数
+  仍待后续切片。
+
+- 2026-06-28 07:01:28 +08:00 · 07-S2/S4 unsigned mixed-literal conversion frame elision ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 仍未关闭 · 完成项目：新增 unsigned const、unsigned-to-signed conversion、unsigned
+  mixed-literal shared-library smoke，要求 `uint` 常量流水线和 `uint seed + int literal`
+  生成 C 只走 scalar u64/i64 locals、scalar conversion 与 direct return，不生成 frame setup、
+  `ZrAotGeneratedFrame frame`、`ZrCore_Stack_GetValue` 或 `ZR_VALUE_FAST_SET`。`TO_INT`
+  local-only 转换现在可消费已写入的 u64/i64/f64/bool scalar source，frame descriptor 将
+  转换族纳入 local-only 证明；stack-copy descriptor 判定与正文发射器对齐 source static/local
+  类型回退，修复 mixed-literal `GET_STACK dst=2 src=0` 因目的类型误判而保守要求 frame。
+  RED/GREEN：RED 显示 mixed-literal generated C 仍有 frame setup；诊断定位 descriptor
+  reject 于 early stack-copy。GREEN 后 WSL gcc/clang frame setup contracts 1/0、shared-library
+  smoke 12/0；MSVC Debug frame setup contracts 1/0、shared-library smoke 0 failures /
+  12 ignored Unix-only。`git diff --check` 通过，仅 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-unsigned-mixed-literal-conversion-frame-elision.md`。
+  备注：不声明 07-S2/S4 全量完成；f64 const/reset、load-const/load-stack const、
+  dynamic/generic/string 边界、GC roots/exports/frame cleanup、byte-frame 更广收窄和性能计数
+  仍待后续切片。
+
+- 2026-06-28 06:07:24 +08:00 · 07-S2/S4 signed-const scalar reset frame elision ·
+  状态：07-S2/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 仍未关闭 · 完成项目：新增 signed-const scalar shared-library smoke，证明纯 `int`
+  右常量算术流水线生成并执行结果 42，同时 generated C 只有 `zr_aot_scalar_exec_i64_binary`、
+  `zr_aot_direct_return_i64_local` 与 scalar reset skip 标记，不再生成 frame setup、
+  `ZrAotGeneratedFrame frame`、`ZrCore_Stack_GetValue` 或 `ZR_VALUE_FAST_SET`。
+  reset liveness 现在按 opcode 家族选择 i64/u64/f64/bool reader，signed-const 通用
+  operand/source mention 也统一只看左操作数槽，避免 `operand1[1]` 常量池索引被误判为
+  栈槽。RED/GREEN：RED 显示 `ResetStackNull2(state, &frame, 2, 3)` 与
+  `ResetStackNull(state, &frame, 4/5)` 仍强制 frame；GREEN 后 WSL gcc/clang frame setup
+  contracts 1/0、shared-library smoke 9/0，MSVC Debug frame setup contracts 1/0、
+  shared-library smoke 9/0/9 ignored Unix-only。`ctest -R 'aot_c_(frame_setup|shared_library)'`
+  未发现注册测试，直接二进制为权威验证；`git diff --check` 通过，仅 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-s4-signed-const-scalar-reset-frame-elision.md`。
+  备注：不声明 07-S2/S4 全量完成；unsigned/f64 const/reset、load-const/load-stack const、
+  dynamic/generic/string 边界、GC roots/exports/frame cleanup、byte-frame 更广收窄和性能计数
+  仍待后续切片。
+
+- 2026-06-28 05:40:17 +08:00 · 07-S3/S4 bool logical frame-descriptor elision ·
+  状态：07-S3/S4 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 仍未关闭 · 完成项目：frame descriptor 现在按 bool local proof 识别
+  `LOGICAL_AND`/`LOGICAL_OR`/`LOGICAL_EQUAL_BOOL`/`LOGICAL_NOT_EQUAL_BOOL`/
+  `LOGICAL_NOT_BOOL`，typed return descriptor-free 判定与 bool/u64/f64 inferred return
+  生成器对齐，并取消 typed `LOGICAL_NOT_BOOL` 已可本地消费时对前置 bool stack copy 的
+  无条件 value-slot 强制写入。新增 shared-library smoke 证明 bool logical pipeline 生成
+  `zr_aot_bool_not_scalar_local`、`zr_aot_bool_compare_scalar_local`、`zr_aot_direct_return_bool_local`，
+  且不生成 `ZrAotGeneratedFrame frame`、frame setup、`ZrCore_Stack_GetValue` 或 `ZR_VALUE_FAST_SET`。
+  RED/GREEN：RED 覆盖 source contract 缺少 bool logical proof、产品 smoke 仍含 frame setup、
+  以及 descriptor-free 后残留 `frame.slotBase` 导致 gcc `frame undeclared`；GREEN 后 WSL
+  gcc/clang frame setup contracts 1/0、logical shared-library smoke 5/0，MSVC Debug frame
+  setup contracts 1/0、logical smoke 0 failures / 5 ignored Unix-only。`ctest -R
+  'aot_c_(frame_setup|logical)'` 未发现注册测试，直接二进制为权威验证；`git diff --check`
+  touched files 通过。产出：
+  `tests/acceptance/2026-06-28-aot-07-s3-s4-bool-logical-frame-descriptor-elision.md`。
+  备注：不声明 07-S3/S4 全量完成；dynamic/generic/string logical、GC roots、exports、
+  frame cleanup、inline value layouts、byte-frame 更广收窄和性能计数仍待后续切片。
+
+- 2026-06-28 05:04:55 +08:00 · 07-S2 signed binary scalar-operands consumer alignment ·
+  状态：07-S2 子切片完成；07/M1.5 继续进行中，完整 typed 函数体零 `SZrValue`/frame
+  write 仍未关闭 · 完成项目：signed i64 binary emitter 对已写入 scalar locals 的左右源槽
+  发射 `zr_aot_arith_exec_signed_scalar_operands`，static numeric no-arg typed direct-call
+  smoke 中 `ADD_SIGNED` 不再回读未 materialize 的 `frame.slotBase[7/9]`，而是直接消费
+  `zr_aot_s7/zr_aot_s9`。RED/GREEN：RED 为 WSL gcc shared-library smoke 5 tests /
+  1 failure；GREEN 后 source contracts 21/0、shared-library smoke 5/0、typed scalar 1/0。
+  测试结果：WSL gcc/clang direct 同组 21/0、5/0、1/0 + focused CTest 3/3；Windows
+  MSVC Debug direct source contracts 21/0、Unix-only smoke/typed scalar ignored + focused
+  CTest 3/3。产出：
+  `tests/acceptance/2026-06-28-aot-07-s2-signed-binary-scalar-operands.md`。
+  备注：本条同时关闭 11-S6H 验证期间发现的既有 scalar no-arg typed direct-call smoke
+  runtime blocker，但不声明 11-S6 cross-module token resolve 或完整 ABI drift injection 完成。
+
+- 2026-06-28 04:22:47 +08:00 · 11-S6H inline-struct CALL_TYPED metadata guard/deopt ·
+  状态：11-S6 inline-struct typed-call deopt 子切片完成；11 阶段继续进行中，cross-module
+  token resolve 与完整 ABI drift injection 仍未关闭 · 完成项目：value SemIR inline-struct
+  `CALL_TYPED` ordinary direct call、shared generic METHOD-slot call 和 full-AOT collected shared
+  callsite 现在生成 metadata guard；兼容时保留 `CallInlineStruct()`，不兼容时经
+  `CallInlineStructDynamicDeoptBridge()` 降级并复制 inline return bytes。RED/GREEN：RED 由
+  value SemIR source contract 要求 guard marker 后，WSL gcc 失败 4 tests / 1 failure；GREEN 后
+  runtime guard 3/0、value SemIR contracts 4/0、generic CALL_TYPED 7/0。测试结果：WSL gcc direct
+  3/0、4/0、7/0 + CTest 2/2；WSL clang direct 3/0、4/0、7/0 + CTest 2/2；Windows
+  MSVC Debug direct 3/0、4/0、7/0（3 ignored）+ CTest 2/2。产出：
+  `tests/acceptance/2026-06-28-aot-11-s6h-inline-struct-typed-call-deopt.md`。
+  备注：本切片不声明 cross-module token resolve 或完整 ABI drift injection 完成；验证期间暴露的
+  scalar no-arg typed direct-call runtime failure 已由后续 07-S2 signed binary scalar-operands
+  consumer alignment 修复，不计入 11-S6H 验收。
+
+- 2026-06-28 03:43:43 +08:00 · 11-S6G bool typed direct-call metadata guard/deopt ·
+  状态：11-S6 typed direct-call deopt 子切片完成；11 阶段继续进行中，inline-struct
+  typed boundary、跨模块 token resolve 仍未关闭 · 完成项目：bool no/one/two/three-arg typed
+  direct-call 与 i64/u64/f64 comparison -> bool direct-call 生成 metadata guard，兼容时保持
+  bool direct thunk，不兼容时经 `CallStackValue()` 降级并同步 bool scalar local。RED/GREEN：
+  RED 由新 source contract 要求 bool guard marker 后，WSL gcc call contracts 失败
+  8 tests / 1 failure；GREEN 后 runtime guard 3/0、call contracts 8/0、typed call contracts 4/0、
+  bool typed direct-call smoke 28/0。测试结果：WSL gcc direct 3/0、8/0、4/0、28/0 + CTest
+  1/1；WSL clang direct 3/0、8/0、4/0、28/0 + CTest 1/1；Windows MSVC Debug direct 3/0、8/0、
+  4/0、0 failures / 28 ignored + CTest 1/1。产出：
+  `tests/acceptance/2026-06-28-aot-11-s6g-bool-typed-direct-call-deopt.md`。
+  备注：本切片不声明 inline struct writeback、跨模块 token resolve 或完整 ABI drift injection 完成。
+
+- 2026-06-28 03:14:20 +08:00 · 11-S6F f64 typed direct-call metadata guard/deopt ·
+  状态：11-S6 typed direct-call deopt 子切片完成；11 阶段继续进行中，bool/inline-struct
+  typed boundary、跨模块 token resolve 仍未关闭 · 完成项目：f64 no/one/two/three-arg typed
+  direct-call 生成 metadata guard，兼容时保持 float direct thunk，不兼容时经 `CallStackValue()`
+  降级并同步 f64 scalar local。RED/GREEN：RED 由新 source contract 要求 f64 guard marker 后，
+  WSL gcc call contracts 失败 7 tests / 1 failure；GREEN 后 runtime guard 3/0、call contracts
+  7/0、f64 typed direct-call smoke 19/0。测试结果：WSL gcc direct 3/0、7/0、19/0 + CTest
+  1/1；WSL clang direct 3/0、7/0、19/0 + CTest 1/1；Windows MSVC Debug direct 3/0、7/0、
+  0 failures / 19 ignored + CTest 1/1。产出：
+  `tests/acceptance/2026-06-28-aot-11-s6f-f64-typed-direct-call-deopt.md`。
+  备注：本切片不声明 bool typed boundary、inline struct writeback、跨模块 token resolve
+  或完整 ABI drift injection 完成。
+
+- 2026-06-28 02:54:58 +08:00 · 11-S6E u64 typed direct-call metadata guard/deopt ·
+  状态：11-S6 typed direct-call deopt 子切片完成；11 阶段继续进行中，bool/f64/inline-struct
+  typed boundary、跨模块 token resolve 仍未关闭 · 完成项目：u64 no/one/two/three-arg typed
+  direct-call 生成 metadata guard，兼容时保持 unsigned direct thunk，不兼容时经
+  `CallStackValue()` 降级并同步 u64 scalar local。RED/GREEN：RED 由新 source contract 要求
+  u64 guard marker 后，WSL gcc call contracts 失败 6 tests / 1 failure；GREEN 后 runtime guard
+  3/0、call contracts 6/0、u64 typed direct-call smoke 25/0。测试结果：WSL gcc direct
+  3/0、6/0、25/0 + CTest 1/1；WSL clang direct 3/0、6/0、25/0 + CTest 1/1；Windows MSVC
+  Debug direct 3/0、6/0、0 failures / 25 ignored + CTest 1/1。产出：
+  `tests/acceptance/2026-06-28-aot-11-s6e-u64-typed-direct-call-deopt.md`。
+  备注：本切片不声明 bool/f64 typed boundary、inline struct writeback、跨模块 token resolve
+  或完整 ABI drift injection 完成。
+
+- 2026-06-28 02:16:03 +08:00 · 11-S6D i64 typed direct-call metadata guard/deopt ·
+  状态：11-S6 typed direct-call deopt 子切片完成；11 阶段继续进行中，bool/u64/f64/inline-struct
+  typed boundary、跨模块 token resolve 仍未关闭 · 完成项目：runtime 新增 typed direct-call
+  caller/callee binding guard 与 deopt helper；i64 no/one/two/three-arg typed direct-call 生成
+  metadata guard，兼容时保持 direct thunk，不兼容时经 `CallStackValue()` 降级并同步 i64 scalar local。
+  RED/GREEN：RED 由新 runtime guard test 引用缺失 API 触发 WSL gcc 隐式声明/链接失败；GREEN 后
+  runtime guard 3/0、call contracts 5/0、i64 typed direct-call smoke 继续 5/0。测试结果：WSL gcc
+  direct 3/0、5/0、5/0 + CTest 1/1；WSL clang direct 3/0、5/0、5/0 + CTest 1/1；Windows MSVC
+  Debug direct 3/0、5/0、0 failures / 5 ignored + CTest 1/1。产出：
+  `tests/acceptance/2026-06-28-aot-11-s6d-i64-typed-direct-call-deopt.md`。
+  备注：本切片不声明 bool/u64/f64 typed boundary、inline struct writeback、跨模块 token resolve
+  或完整 ABI drift injection 完成。
+
+- 2026-06-28 01:18:38 +08:00 · 11-S6C dynamic AOT module-load binding reject ·
+  状态：11-S6 dynamic loader reject 子切片完成；11 阶段继续进行中，typed boundary deopt 与跨模块
+  token resolve 仍未关闭 · 完成项目：root AOT runtime loader 在加载 embedded/zro metadata function、
+  构建 function table 并 attach metadata runtime 后扫描 `moduleMetadataBindings`，不兼容时拒绝加载并输出
+  status/token/hash/layout 诊断。RED/GREEN：RED 由新 loader test 注入 signature hash drift 后旧 loader
+  仍成功，失败为 `Expected FALSE Was TRUE`；GREEN 后错误包含 `SIGNATURE_HASH_MISMATCH`，且既有
+  shared-library smoke 空 binding 正常路径仍 8/0。测试结果：WSL gcc direct 1/0 + CTest 1/1，
+  WSL clang direct 1/0 + CTest 1/1，Windows MSVC Debug 构建通过、direct 1 ignored、CTest 1/1。
+  产出：`tests/acceptance/2026-06-28-aot-11-s6c-dynamic-loader-binding-reject.md`。
+  备注：本切片不声明 typed deopt、跨模块 token resolve 或更广 no-crash ABI drift injection 完成。
+
+- 2026-06-28 00:56:57 +08:00 · 11-S6B function token binding compatibility scan ·
+  状态：11-S6 支撑子切片完成；11 阶段继续进行中，完整 11-S6 dynamic 拒绝/typed deopt 仍未关闭 ·
+  完成项目：新增 function-level runtime binding compatibility scan API，按 function 的
+  `moduleMetadataBindings` 顺序复用单 binding predicate，返回首个不兼容 binding/ref record/report；
+  支持先查 function-local record、再查 module metadata record。RED/GREEN：RED 先由新测试引用缺失
+  function scan API 触发 WSL gcc 链接失败；GREEN 后 compatibility test 覆盖 15 个用例。测试结果：
+  WSL gcc、WSL clang、Windows MSVC Debug 均通过直接测试 15/0 与 CTest
+  `metadata_runtime_binding_compatibility` 1/1。产出：
+  `tests/acceptance/2026-06-28-aot-11-s6b-function-binding-compatibility-scan.md`。
+  备注：本切片只关闭 function scan/report 支撑层；runtime loader reject、typed boundary deopt 与跨模块
+  token resolve 接线仍待后续。
+
+- 2026-06-27 09:04:36 +08:00 · 11-S6A runtime metadata token binding compatibility ·
+  状态：11-S6 支撑子切片完成；11 阶段继续进行中，完整 11-S6 dynamic 拒绝/typed deopt 仍未关闭 ·
+  完成项目：新增 runtime token binding compatibility status/report/API，统一检查 version range、
+  module signature hash、metadata/signature token、signature hash 与 layoutVersion/layoutHash 漂移；
+  补充 focused metadata runtime test target/CTest。RED/GREEN：RED 先由新测试引用缺失 status/report/API
+  触发 WSL gcc 编译失败；GREEN 后 compatibility test 覆盖 12 类状态分支。测试结果：WSL gcc、
+  WSL clang、Windows MSVC Debug 均通过直接测试 12/0 与 CTest
+  `metadata_runtime_binding_compatibility` 1/1。产出：
+  `tests/acceptance/2026-06-27-aot-11-s6a-runtime-binding-compatibility.md`。
+  备注：本切片只关闭可复用 predicate；runtime loader reject、typed boundary deopt 与跨模块 token
+  resolve 接线仍待后续。
+
+- 2026-06-27 08:35:30 +08:00 · 11-S7Y / 12-S7ZS zrp metadata version check ·
+  状态：11-S7/12-S7 支撑子切片完成；11/12 阶段继续进行中 · 完成项目：
+  CLI 新增 `--check-zrp-metadata-version <file>` 只读工具，解析层保存 version-check 路径并拒绝与
+  run/compile/debug/output modifiers 混用；dump runner 读取 zrp metadata header 前缀，输出
+  `zrp.metadata.versionCheck.status` 以及 actual/expected magic、version、headerBytes、sectionCount。
+  当前 header shape 经完整 header 校验后输出 `ok`，版本或头形状不匹配输出 `unsupported` 并失败返回。
+  RED/GREEN：RED 先由 CLI args 测试要求 version-check mode/path 后旧 command 结构缺 enum/字段而
+  编译失败，随后 metadata dump 测试因缺 version-check API 链接失败；GREEN 后 `cli_args` 与
+  `cli_zrp_metadata_dump` 通过。测试结果：WSL gcc、WSL clang 与 Windows MSVC Debug 均构建
+  `zr_vm_cli_executable`；同组可执行测试通过，focused CTest `cli_args|cli_zrp_metadata_dump`
+  三套环境均为 2/2；WSL gcc 与 Windows MSVC help 输出覆盖新增帮助文本。产出：
+  `tests/acceptance/2026-06-27-aot-11-s7y-zrp-metadata-version-check.md`。
+  备注：本切片只关闭 standalone zrp metadata header version/shape check；11-S6 运行时 ABI 漂移
+  deopt/拒绝、cross-module export-token rewrite、field/default-value backed constant-pool remap 和完整
+  metadata sweep/pruning 仍待后续。
+
+- 2026-06-27 08:14:35 +08:00 · 11-S7X / 12-S7ZR zrp metadata diff summary ·
+  状态：11-S7/12-S7 支撑子切片完成；11/12 阶段继续进行中 · 完成项目：
+  CLI 新增 `--diff-zrp-metadata <before> <after>` 只读工具，解析层保存 before/after 路径并拒绝与
+  run/compile/debug/output modifiers 混用；dump runner 读取并校验两个 zrp metadata header，输出
+  version/headerBytes/sectionCount before/after 与 12 个 section 的
+  `bytes/count before/after/removed` diff summary。RED/GREEN：RED 先由 CLI args 测试要求 diff mode/path
+  后旧 command 结构缺 enum/字段而编译失败，随后 diff summary 目标因缺 API 链接失败；GREEN 后
+  `cli_args` 与 `cli_zrp_metadata_dump` 通过。测试结果：WSL gcc、WSL clang 与 Windows MSVC Debug
+  均构建 `zr_vm_cli_executable`；同组可执行测试通过，focused CTest `cli_args|cli_zrp_metadata_dump`
+  三套环境均为 2/2；WSL gcc `zr_vm_cli --help` 覆盖新增帮助文本。产出：
+  `tests/acceptance/2026-06-27-aot-11-s7x-zrp-metadata-diff-summary.md`。
+  备注：本切片只关闭 standalone section byte/count diff summary；版本检查、cross-module export-token
+  rewrite、field/default-value backed constant-pool remap 和完整 metadata sweep/pruning 仍待后续。
+
+- 2026-06-27 07:48:22 +08:00 · 11-S7W / 12-S7ZQ zrp metadata dump summary ·
+  状态：11-S7/12-S7 支撑子切片完成；11/12 阶段继续进行中 · 完成项目：
+  CLI 新增 `--dump-zrp-metadata <file>` 只读工具，解析层保存 `zrpMetadataPath` 并拒绝与
+  run/compile/debug/output modifiers 混用；dump runner 校验 zrp metadata header，输出
+  `zrp.metadata.version/headerBytes/sectionCount` 与 12 个 section 的
+  `bytes/count/elementSize/offset` summary。RED/GREEN：RED 先由 CLI args 测试要求 dump mode/path
+  后旧 command 结构缺 enum/字段而编译失败，随后 dump summary 目标因缺实现文件配置失败；
+  GREEN 后 `cli_args` 与 `cli_zrp_metadata_dump` 通过。测试结果：WSL gcc、WSL clang 与 Windows
+  MSVC Debug 均构建 `zr_vm_cli_executable`；同组可执行测试通过，focused CTest
+  `cli_args|cli_zrp_metadata_dump` 三套环境均为 2/2。产出：
+  `tests/acceptance/2026-06-27-aot-11-s7w-zrp-metadata-dump-summary.md`。
+  备注：本切片只关闭 standalone section summary dump；metadata diff、版本检查、cross-module
+  export-token rewrite、field/default-value backed constant-pool remap 和完整 metadata sweep/pruning
+  仍待后续。
+
+- 2026-06-27 07:20:00 +08:00 · 12-S7ZP / 11-S7 zrp section count delta markers ·
+  状态：12-S7/11-S7 支撑子切片完成；11/12 阶段继续进行中 · 完成项目：
+  zrp metadata stats 现在从 header section directory 采样每个 section 的 count，并输出
+  `aot_size.zrpMetadataSectionCounts.<section>` 与
+  `code_stripping.zrpMetadataSectionCounts.<section>Before/After/Removed`，让 generated C
+  同时具备 bytes 与 row/count 两个 diff 维度。RED/GREEN：RED 为新增 direct size-delta
+  count marker 后，旧 stats 结构缺少 count 字段导致 WSL gcc 编译失败；GREEN 后 size-delta 2/0、
+  source contracts 21/0、code stripping 5/0、direct zrp pruning 5/0、pool pruning 4/0、
+  export-token remap 2/0。
+  测试结果：WSL gcc、WSL clang、Windows MSVC Debug 同组可执行测试通过，三套 focused CTest
+  `aot_c_zrp_metadata_size_deltas|aot_c_zrp_metadata_export_token_remap|aot_c_zrp_metadata_pruning|aot_c_zrp_metadata_pool_pruning|aot_c_code_stripping`
+  均为 5/5。产出：
+  `tests/acceptance/2026-06-27-aot-12-s7zp-zrp-section-count-delta-markers.md`。
+  备注：完整 trim analyzer、attribute/annotation suppression/promotion、cross-module export-token
+  publication/rewrite、field/default-value backed constant-pool remap 和独立 dump/diff 工具仍待后续。
+
+- 2026-06-27 06:51:55 +08:00 · 12-S7ZO / 11-S7 zrp section-level trim delta markers ·
+  状态：12-S7/11-S7 支撑子切片完成；11/12 阶段继续进行中 · 完成项目：
+  zrp metadata size-delta writer 现在输出 12 个 section 的 before/after/removed marker，
+  让 token records、8 类 definition tables、string/signature/constant pools 的裁剪变化可从 generated C
+  直接 diff。RED/GREEN：RED 为新增 direct size-delta 测试缺 marker 失败 1/1；GREEN 后
+  size-delta 1/0、source contracts 21/0、code stripping 5/0、direct zrp pruning 5/0、
+  pool pruning 4/0、export-token remap 2/0。
+  测试结果：WSL gcc、WSL clang、Windows MSVC Debug 同组可执行测试通过，三套 focused CTest
+  `aot_c_zrp_metadata_size_deltas|aot_c_zrp_metadata_export_token_remap|aot_c_zrp_metadata_pruning|aot_c_zrp_metadata_pool_pruning|aot_c_code_stripping`
+  均为 5/5。产出：
+  `tests/acceptance/2026-06-27-aot-12-s7zo-zrp-section-delta-markers.md`。
+  备注：完整 trim analyzer、attribute/annotation suppression/promotion、cross-module export-token
+  publication/rewrite、field/default-value backed constant-pool remap 和独立 dump/diff 工具仍待后续。
+
+- 2026-06-27 06:30:32 +08:00 · 12-S7ZN / 11-S7 export member-token remap surface ·
+  状态：12-S7/11-S7 支撑子切片完成；12 阶段继续进行中 · 完成项目：
+  zrp metadata remap 模块公开 `backend_aot_c_zrp_remap_export_member_token()`，可把
+  pruning 前的 exported `MEMBER_DEF` token 映射到裁剪后的 MethodDef/FieldDef compacted RID；
+  保留方法旧 token 得到新 RID，字段 token 排在 retained MethodDef 后，已删除方法 token
+  返回 false 供后续跨模块 export manifest/table 写回时拒绝或诊断。
+  RED/GREEN：RED 为 direct pruning 测试先要求导出方法旧 RID2 在 RID1/RID3 删除后映射到
+  compacted RID1，旧实现缺 helper，WSL gcc 链接失败；GREEN 后新增独立
+  export-token remap 测试 2/0，direct zrp pruning 5/0、pool pruning 4/0、code stripping 5/0、
+  source contracts 21/0。
+  测试结果：WSL gcc、WSL clang、Windows MSVC Debug 同组通过，focused CTest
+  `aot_c_zrp_metadata_export_token_remap|aot_c_zrp_metadata_pruning|aot_c_zrp_metadata_pool_pruning|aot_c_code_stripping`
+  4/4。产出：
+  `tests/acceptance/2026-06-27-aot-12-s7zn-export-member-token-remap.md`。
+  备注：完整 trim analyzer、attribute/annotation suppression/promotion、cross-module export-token
+  publication/rewrite、field/default-value backed constant-pool remap 和 dump/diff 仍待后续。
+
+- 2026-06-27 05:57:45 +08:00 · 12-S7ZM / 11-S7 zrp pool compaction without MethodDef pruning ·
+  状态：12-S7/11-S7 支撑子切片完成；12 阶段继续进行中 · 完成项目：
+  emitted zrp metadata pruning 的 skip gate 从 MethodDef-count early return 改为 post-remap
+  identity check；即使所有 MethodDef 都保留，只要 string/signature/constant pool 需要收缩，
+  仍会生成 compacted owned blob。
+  RED/GREEN：RED 为 no-MethodDef-prune duplicate string fixture 要求 retained TypeDef/FieldDef
+  共享 `Shared` 字符串后，旧实现 `ownedBlob` 为空，pool pruning 失败 1/4；GREEN 后
+  pool pruning 4/0、direct zrp pruning 5/0、code stripping 5/0、source contracts 21/0。
+  测试结果：WSL gcc/clang 同组通过，focused CTest
+  `aot_c_zrp_metadata_pool_pruning|aot_c_code_stripping` 2/2；Windows MSVC Debug 同组通过，
+  focused CTest 2/2。产出：
+  `tests/acceptance/2026-06-27-aot-12-s7zm-zrp-pool-compaction-without-method-pruning.md`。
+  备注：完整 trim analyzer、attribute/annotation suppression/promotion、cross-module/export token、
+  field/default-value backed constant-pool remap 和 dump/diff 仍待后续。
+
+- 2026-06-27 05:46:58 +08:00 · 12-S7ZL / 11-S7 zrp string-pool duplicate slice compaction ·
+  状态：12-S7/11-S7 支撑子切片完成；12 阶段继续进行中 · 完成项目：
+  zrp emitted metadata string-pool remap 现在按内容合并 retained duplicate slices；不同旧 offset
+  中相同的 NUL-terminated 字符串只写入一份 emitted payload，同时保留每个旧 offset 的 remap entry，
+  让 TypeDef/MethodDef/FieldDef/GenericParam/ModuleRef offset rewrite 仍可解析。
+  RED/GREEN：RED 为 direct pool-pruning duplicate string fixture 要求 retained TypeDef/FieldDef
+  共享 `Shared` 字符串后，旧 offset-only remap 失败 1/3（Expected 540 Was 547）；GREEN 后
+  pool pruning 3/0、direct zrp pruning 5/0、code stripping 5/0、source contracts 21/0。
+  测试结果：WSL gcc/clang 同组通过，focused CTest
+  `aot_c_zrp_metadata_pool_pruning|aot_c_code_stripping` 2/2；Windows MSVC Debug 同组通过，
+  focused CTest 2/2。产出：
+  `tests/acceptance/2026-06-27-aot-12-s7zl-zrp-string-pool-duplicate-slice-compaction.md`。
+  备注：完整 trim analyzer、attribute/annotation suppression/promotion、cross-module/export token、
+  field/default-value backed constant-pool remap 和 dump/diff 仍待后续。
+
+- 2026-06-27 05:31:19 +08:00 · 12-S7ZK trim warning sourceFile quoted escaping ·
+  状态：12-S7 子切片完成；12 阶段继续进行中 · 完成项目：runtime fallback trim warning
+  comment 的 `sourceFile` 字段现在以 quoted/escaped 形式输出，例如
+  `sourceFile="dynamic_deopt_bridge.zr"`；带反斜杠和双引号的路径会写成
+  `sourceFile="src\\quoted \"module\".zr"`，避免源文件名中的空格、引号或反斜杠破坏诊断解析。
+  RED/GREEN：RED 为 dynamic deopt bridge smoke 要求 quoted/escaped `sourceFile` 后失败 4/7；
+  GREEN 后 dynamic deopt bridge smoke 7/0、source contracts 21/0、code stripping 5/0。
+  测试结果：WSL gcc/clang 同组通过，CTest `aot_c_code_stripping` 1/1；Windows MSVC Debug
+  dynamic deopt bridge smoke 0 failures/7 ignored、source contracts 21/0、code stripping 5/0，
+  CTest `aot_c_code_stripping` 1/1；`git diff --check` 退出 0，仅 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-06-27-aot-12-s7zk-trim-warning-source-file-escaping.md`。
+  备注：完整 trim analyzer、`@requires_unreferenced_code`、reflection data-flow annotation、
+  annotation-based suppression/promotion、cross-module/export token 和 dump/diff 仍待后续。
+
+- 2026-06-27 05:19:43 +08:00 · 12-S7ZJ trim warning reasonFlag marker ·
+  状态：12-S7 子切片完成；12 阶段继续进行中 · 完成项目：runtime fallback trim warning
+  comment 在 textual `reason=...` 外新增 `reasonFlag=<mask>`，数值复用
+  `ZR_AOT_RUNTIME_FALLBACK_WARNING_*` suppression mask 映射，使单条 warning 可直接和 reason-mask
+  suppression/统计对齐。dynamic-call 输出 `reasonFlag=1`，dynamic-value-access 输出 `reasonFlag=2`。
+  RED/GREEN：RED 为 dynamic deopt bridge smoke 要求 `reasonFlag=... reason=...` 后失败 3/6；
+  GREEN 后 dynamic deopt bridge smoke 6/0、source contracts 21/0、code stripping 5/0。
+  测试结果：WSL gcc/clang 同组通过；Windows MSVC Debug dynamic deopt bridge smoke 0 failures/6 ignored、
+  source contracts 21/0、code stripping 5/0，CTest `aot_c_code_stripping` 1/1。产出：
+  `tests/acceptance/2026-06-27-aot-12-s7zj-trim-warning-reason-flag.md`。
+  备注：完整 trim analyzer、`@requires_unreferenced_code`、reflection data-flow annotation、annotation-based
+  suppression/promotion、cross-module/export token 和 dump/diff 仍待后续。
+
+- 2026-06-27 05:07:26 +08:00 · 12-S7ZI / 11-S7 zrp constant-pool orphan sweep ·
+  状态：12-S7 与 11-S7 交叉子切片完成；11/12 阶段继续进行中 · 完成项目：
+  emitted zrp metadata pruning 在当前无 constant-pool offset row 字段的 ABI 下，将 constantPool 视为
+  无 retained 引用的 orphan payload；pruned header rebuild 现在接受 retained constant-pool byte 数，
+  当前 MethodDef pruning 路径写入 0，使 after-trim constantPool section 为空。code stripping
+  MethodDef pruning fixture 同步要求 after-trim constantPool 5->0，并把该 5 bytes 计入 pool/metadata
+  removed delta。
+  RED/GREEN：RED 为 direct pool-pruning fixture 要求孤立 constant pool 清空后失败 1/2（Expected 488 Was 493）；
+  GREEN 后 pool pruning 2/0、zrp pruning 5/0、code stripping 5/0。
+  测试结果：WSL gcc/clang pool pruning 2/0、direct zrp pruning 5/0、code stripping 5/0、
+  source contracts 21/0、frame setup 1/0、typed scalar 1/0、shared-library smoke 8/0，focused CTest 4/4；
+  Windows MSVC Debug 同组 pool/code/source/frame 通过，typed scalar 0 failures/1 ignored、shared-library smoke
+  0 failures/8 ignored，focused CTest 4/4。WSL clang 仍有既有 generated generic-conversion
+  `-Wlogical-not-parentheses` warning。产出：
+  `tests/acceptance/2026-06-27-aot-12-s7zi-zrp-constant-pool-orphan-sweep.md`。
+  备注：完整 trim analyzer、attribute/annotation promotion/suppression、cross-module/export token、
+  dump/diff，以及未来如有 constant literal/default-value row 字段时的 retained constant slice remap 仍待后续。
+
+- 2026-06-27 04:42:55 +08:00 · 12-S7ZH / 11-S7 zrp string-pool sweep/compaction ·
+  状态：12-S7 与 11-S7 交叉子切片完成；11/12 阶段继续进行中 · 完成项目：
+  emitted zrp metadata pruning 现在会为 retained TypeDef、retained MethodDef、FieldDef、retained GenericParam
+  与 ModuleRef row 引用的 NUL-terminated strings 构建 compacted string pool，并在 blob rebuild 时重写这些 row
+  的 string offsets。新增 `backend_aot_c_zrp_metadata_string_pool.{h,c}` 承载 string slice collection、dedupe、
+  pool copy 和 offset remap；新增 `backend_aot_c_zrp_metadata_sections.{h,c}` 承载共享 section helper。
+  RED/GREEN：RED 为 direct pool-pruning fixture 要求 string pool 40->25、MethodDef name offset 重映射后失败 1/1；
+  GREEN 后 pool pruning 1/0、zrp pruning 5/0、code stripping 5/0，并由 source contract 锁定 section/string-pool
+  module 边界。测试结果：WSL gcc/clang pool pruning 1/0、direct zrp pruning 5/0、code stripping 5/0、
+  source contracts 21/0、frame setup 1/0、typed scalar 1/0、shared-library smoke 8/0，focused CTest 4/4；
+  Windows MSVC Debug pool pruning 1/0、direct zrp pruning 5/0、code stripping 5/0、source contracts 21/0、
+  frame setup 1/0、typed scalar 0 failures/1 ignored、shared-library smoke 0 failures/8 ignored，focused CTest 4/4。
+  WSL clang 仍有既有 generated generic-conversion `-Wlogical-not-parentheses` warning。产出：
+  `tests/acceptance/2026-06-27-aot-12-s7zh-zrp-string-pool-compaction.md`。
+  备注：完整 trim analyzer、attribute/annotation promotion/suppression、cross-module/export token、constant pool sweep
+  和 dump/diff 仍待后续。
 
 - 2026-06-27 03:49:57 +08:00 · 12-S7ZG / 11-S7 zrp MethodSpec signature-pool rewrite/compaction ·
   状态：12-S7 与 11-S7 交叉子切片完成；11/12 阶段继续进行中 · 完成项目：

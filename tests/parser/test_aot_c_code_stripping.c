@@ -419,7 +419,11 @@ static TZrSize build_zrp_metadata_size_fixture(TZrByte *buffer,
                              signatureBlobPoolBytes,
                              signatureBlobPoolBytes,
                              1u);
-    set_zrp_metadata_section(&header.constantPool, &offset, constantPoolBytes, constantPoolBytes, 1u);
+    set_zrp_metadata_section(&header.constantPool,
+                             &offset,
+                             constantPoolBytes,
+                             constantPoolBytes,
+                             1u);
 
     memset(buffer, 0, bufferLength);
     TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteHeader(buffer, offset, &header));
@@ -445,19 +449,23 @@ static TZrSize build_zrp_metadata_method_def_trim_fixture(TZrByte *buffer,
                                                           TZrSize *outTypeDefBytes,
                                                           TZrSize *outMethodDefBytesBeforeTrim,
                                                           TZrSize *outMethodDefBytesAfterTrim,
-                                                          TZrSize *outStringPoolBytes,
+                                                          TZrSize *outStringPoolBytesBeforeTrim,
+                                                          TZrSize *outStringPoolBytesAfterTrim,
                                                           TZrSize *outSignatureBlobPoolBytesBeforeTrim,
                                                           TZrSize *outSignatureBlobPoolBytesAfterTrim,
-                                                          TZrSize *outConstantPoolBytes) {
+                                                          TZrSize *outConstantPoolBytesBeforeTrim,
+                                                          TZrSize *outConstantPoolBytesAfterTrim) {
     const TZrUInt32 tokenRecordBytes = (TZrUInt32)sizeof(SZrMetadataTokenRecord);
     const TZrUInt32 typeDefBytes = (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow);
     const TZrUInt32 methodDefRowBytes = (TZrUInt32)sizeof(SZrZrpMetadataMethodDefRow);
     const TZrUInt32 methodDefBytesBeforeTrim = methodDefRowBytes * 2u;
     const TZrUInt32 methodDefBytesAfterTrim = methodDefRowBytes;
-    const TZrUInt32 stringPoolBytes = 6u;
+    const TZrUInt32 stringPoolBytesBeforeTrim = 6u;
+    const TZrUInt32 stringPoolBytesAfterTrim = 1u;
     const TZrUInt32 signatureBlobPoolBytesBeforeTrim = 7u;
     const TZrUInt32 signatureBlobPoolBytesAfterTrim = 0u;
-    const TZrUInt32 constantPoolBytes = 5u;
+    const TZrUInt32 constantPoolBytesBeforeTrim = 5u;
+    const TZrUInt32 constantPoolBytesAfterTrim = 0u;
     SZrZrpMetadataHeader header;
     SZrZrpMetadataTypeDefRow *typeDefs;
     SZrZrpMetadataMethodDefRow *methodDefs;
@@ -468,9 +476,9 @@ static TZrSize build_zrp_metadata_method_def_trim_fixture(TZrByte *buffer,
                                            tokenRecordBytes +
                                            typeDefBytes +
                                            methodDefBytesBeforeTrim +
-                                           stringPoolBytes +
+                                           stringPoolBytesBeforeTrim +
                                            signatureBlobPoolBytesBeforeTrim +
-                                           constantPoolBytes);
+                                           constantPoolBytesBeforeTrim);
 
     ZrCore_ZrpMetadata_InitHeader(&header);
     set_zrp_metadata_section(&header.tokenRecords,
@@ -494,13 +502,21 @@ static TZrSize build_zrp_metadata_method_def_trim_fixture(TZrByte *buffer,
     set_zrp_metadata_section(&header.typeSpecs, &offset, 0u, 0u, 0u);
     set_zrp_metadata_section(&header.methodSpecs, &offset, 0u, 0u, 0u);
     set_zrp_metadata_section(&header.moduleRefs, &offset, 0u, 0u, 0u);
-    set_zrp_metadata_section(&header.stringPool, &offset, stringPoolBytes, stringPoolBytes, 1u);
+    set_zrp_metadata_section(&header.stringPool,
+                             &offset,
+                             stringPoolBytesBeforeTrim,
+                             stringPoolBytesBeforeTrim,
+                             1u);
     set_zrp_metadata_section(&header.signatureBlobPool,
                              &offset,
                              signatureBlobPoolBytesBeforeTrim,
                              signatureBlobPoolBytesBeforeTrim,
                              1u);
-    set_zrp_metadata_section(&header.constantPool, &offset, constantPoolBytes, constantPoolBytes, 1u);
+    set_zrp_metadata_section(&header.constantPool,
+                             &offset,
+                             constantPoolBytesBeforeTrim,
+                             constantPoolBytesBeforeTrim,
+                             1u);
 
     memset(buffer, 0, bufferLength);
     TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteHeader(buffer, offset, &header));
@@ -517,19 +533,29 @@ static TZrSize build_zrp_metadata_method_def_trim_fixture(TZrByte *buffer,
     methodDefs[1].functionIndex = 2u;
 
     *outMetadataBytesAfterTrim =
-            (TZrSize)(offset - methodDefRowBytes - signatureBlobPoolBytesBeforeTrim + signatureBlobPoolBytesAfterTrim);
+            (TZrSize)(offset -
+                      methodDefRowBytes -
+                      (stringPoolBytesBeforeTrim - stringPoolBytesAfterTrim) -
+                      signatureBlobPoolBytesBeforeTrim +
+                      signatureBlobPoolBytesAfterTrim -
+                      constantPoolBytesBeforeTrim +
+                      constantPoolBytesAfterTrim);
     *outTokenRecordBytes = tokenRecordBytes;
     *outDefinitionTableBytesBeforeTrim = (TZrSize)typeDefBytes + methodDefBytesBeforeTrim;
     *outDefinitionTableBytesAfterTrim = (TZrSize)typeDefBytes + methodDefBytesAfterTrim;
-    *outPoolBytesBeforeTrim = (TZrSize)stringPoolBytes + signatureBlobPoolBytesBeforeTrim + constantPoolBytes;
-    *outPoolBytesAfterTrim = (TZrSize)stringPoolBytes + signatureBlobPoolBytesAfterTrim + constantPoolBytes;
+    *outPoolBytesBeforeTrim =
+            (TZrSize)stringPoolBytesBeforeTrim + signatureBlobPoolBytesBeforeTrim + constantPoolBytesBeforeTrim;
+    *outPoolBytesAfterTrim =
+            (TZrSize)stringPoolBytesAfterTrim + signatureBlobPoolBytesAfterTrim + constantPoolBytesAfterTrim;
     *outTypeDefBytes = typeDefBytes;
     *outMethodDefBytesBeforeTrim = methodDefBytesBeforeTrim;
     *outMethodDefBytesAfterTrim = methodDefBytesAfterTrim;
-    *outStringPoolBytes = stringPoolBytes;
+    *outStringPoolBytesBeforeTrim = stringPoolBytesBeforeTrim;
+    *outStringPoolBytesAfterTrim = stringPoolBytesAfterTrim;
     *outSignatureBlobPoolBytesBeforeTrim = signatureBlobPoolBytesBeforeTrim;
     *outSignatureBlobPoolBytesAfterTrim = signatureBlobPoolBytesAfterTrim;
-    *outConstantPoolBytes = constantPoolBytes;
+    *outConstantPoolBytesBeforeTrim = constantPoolBytesBeforeTrim;
+    *outConstantPoolBytesAfterTrim = constantPoolBytesAfterTrim;
     return offset;
 }
 
@@ -862,10 +888,12 @@ static void test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functio
     TZrSize typeDefBytes;
     TZrSize methodDefBytesBeforeTrim;
     TZrSize methodDefBytesAfterTrim;
-    TZrSize stringPoolBytes;
+    TZrSize stringPoolBytesBeforeTrim;
+    TZrSize stringPoolBytesAfterTrim;
     TZrSize signatureBlobPoolBytesBeforeTrim;
     TZrSize signatureBlobPoolBytesAfterTrim;
-    TZrSize constantPoolBytes;
+    TZrSize constantPoolBytesBeforeTrim;
+    TZrSize constantPoolBytesAfterTrim;
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
     SZrAotWriterOptions options;
@@ -888,10 +916,12 @@ static void test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functio
                                                        &typeDefBytes,
                                                        &methodDefBytesBeforeTrim,
                                                        &methodDefBytesAfterTrim,
-                                                       &stringPoolBytes,
+                                                       &stringPoolBytesBeforeTrim,
+                                                       &stringPoolBytesAfterTrim,
                                                        &signatureBlobPoolBytesBeforeTrim,
                                                        &signatureBlobPoolBytesAfterTrim,
-                                                       &constantPoolBytes);
+                                                       &constantPoolBytesBeforeTrim,
+                                                       &constantPoolBytesAfterTrim);
 
     memset(&options, 0, sizeof(options));
     options.moduleName = "aot_c_code_stripping_zrp_metadata_prune";
@@ -938,13 +968,13 @@ static void test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functio
                                     (unsigned long long)methodDefBytesAfterTrim);
     assert_zrp_metadata_size_marker(generatedCText,
                                     "zrpMetadataSectionBytes.stringPool",
-                                    (unsigned long long)stringPoolBytes);
+                                    (unsigned long long)stringPoolBytesAfterTrim);
     assert_zrp_metadata_size_marker(generatedCText,
                                     "zrpMetadataSectionBytes.signatureBlobPool",
                                     (unsigned long long)signatureBlobPoolBytesAfterTrim);
     assert_zrp_metadata_size_marker(generatedCText,
                                     "zrpMetadataSectionBytes.constantPool",
-                                    (unsigned long long)constantPoolBytes);
+                                    (unsigned long long)constantPoolBytesAfterTrim);
     assert_code_stripping_zrp_metadata_size_marker(generatedCText,
                                                    "zrpMetadataBytesBefore",
                                                    (unsigned long long)metadataBytesBeforeTrim);
@@ -975,11 +1005,15 @@ static void test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functio
                                                    "zrpMetadataPoolBytesRemoved",
                                                    (unsigned long long)(poolBytesBeforeTrim - poolBytesAfterTrim));
     TEST_ASSERT_EQUAL_UINT64((methodDefBytesBeforeTrim - methodDefBytesAfterTrim) +
-                                     (signatureBlobPoolBytesBeforeTrim - signatureBlobPoolBytesAfterTrim),
+                                     (stringPoolBytesBeforeTrim - stringPoolBytesAfterTrim) +
+                                     (signatureBlobPoolBytesBeforeTrim - signatureBlobPoolBytesAfterTrim) +
+                                     (constantPoolBytesBeforeTrim - constantPoolBytesAfterTrim),
                              metadataBytesBeforeTrim - metadataBytesAfterTrim);
     TEST_ASSERT_EQUAL_UINT64(methodDefBytesBeforeTrim - methodDefBytesAfterTrim,
                              definitionTableBytesBeforeTrim - definitionTableBytesAfterTrim);
-    TEST_ASSERT_EQUAL_UINT64(signatureBlobPoolBytesBeforeTrim - signatureBlobPoolBytesAfterTrim,
+    TEST_ASSERT_EQUAL_UINT64((stringPoolBytesBeforeTrim - stringPoolBytesAfterTrim) +
+                                     (signatureBlobPoolBytesBeforeTrim - signatureBlobPoolBytesAfterTrim) +
+                                     (constantPoolBytesBeforeTrim - constantPoolBytesAfterTrim),
                              poolBytesBeforeTrim - poolBytesAfterTrim);
 
     free(generatedCText);

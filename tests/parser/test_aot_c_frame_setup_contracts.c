@@ -327,6 +327,15 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "TZrBool needsGcRootFrame",
             "backend_aot_c_method_metadata_count_gc_roots(state, functionIr) > 0u",
             "backend_aot_c_function_body_needs_frame_descriptor(",
+            "backend_aot_instruction_reads_bool_value_operand(const SZrAotExecIrFunction *functionIr,",
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):",
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL):",
+            "backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(\n"
+            "                                       functionIr,",
+            "backend_aot_c_scalar_locals_bool_written_before(\n"
+            "                                       functionIr,",
+            "backend_aot_stack_copy_destination_has_upcoming_bool_value_operand(\n"
+            "                                                 functionIr,",
             "TZrBool needsFrameCleanup",
             "TZrBool needsSkipDropSlot",
             "needsSkipDropSlot = needsFrameCleanup;",
@@ -339,15 +348,79 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "zr_aot_has_gc_root_frame = ZR_FALSE;",
     };
     static const char *const frameDescriptorSourceNeedles[] = {
+            "backend_aot_c_frame_descriptor_bool_logical_can_use_local_only(",
+            "backend_aot_c_frame_descriptor_conversion_can_use_local_only(",
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_AND):",
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_OR):",
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_BOOL):",
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_BOOL):",
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL):",
+            "case ZR_INSTRUCTION_ENUM(TO_INT):",
+            "case ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED):",
+            "case ZR_INSTRUCTION_ENUM(TO_UINT):",
+            "backend_aot_c_scalar_locals_bool_constant_can_skip_value_slot(",
+            "backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(functionIr, destinationSlot, instructionIndex)",
+            "backend_aot_c_scalar_locals_bool_written_before(functionIr, operandA1, instructionIndex)",
+            "backend_aot_c_scalar_locals_bool_written_before(functionIr, operandB1, instructionIndex)",
+            "backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(",
+            "backend_aot_c_scalar_locals_u64_written_before(",
+            "backend_aot_c_scalar_locals_f64_written_before(",
             "case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):",
             "backend_aot_c_scalar_locals_can_direct_return_i64_local(\n"
             "                                     functionIr, operandA1, instructionIndex)",
             "backend_aot_c_scalar_locals_can_direct_return_bool_local(\n"
             "                                     functionIr, operandA1, instructionIndex)",
+            "backend_aot_c_scalar_locals_can_infer_return_bool_local(\n"
+            "                                     functionIr, operandA1, instructionIndex)",
             "backend_aot_c_scalar_locals_can_direct_return_u64_local(\n"
+            "                                     functionIr, operandA1, instructionIndex)",
+            "backend_aot_c_scalar_locals_can_infer_return_u64_local(\n"
             "                                     functionIr, operandA1, instructionIndex)",
             "backend_aot_c_scalar_locals_can_direct_return_f64_local(\n"
             "                                     functionIr, operandA1, instructionIndex)",
+            "backend_aot_c_scalar_locals_can_infer_return_f64_local(\n"
+            "                                     functionIr, operandA1, instructionIndex)",
+    };
+    static const char *const scalarLocalsSourceNeedles[] = {
+            "backend_aot_c_scalar_locals_instruction_reads_slot_as_any_local(",
+            "backend_aot_c_scalar_locals_instruction_is_i64_local_consumer(opcode) &&",
+            "backend_aot_c_scalar_locals_i64_consumer_reads_slot(",
+            "backend_aot_c_scalar_locals_instruction_is_u64_local_consumer(opcode) &&",
+            "backend_aot_c_scalar_locals_u64_consumer_reads_slot(functionIr, instruction, slot)",
+            "backend_aot_c_scalar_locals_signed_consumer_reads_slot(instruction, slot)",
+            "case ZR_INSTRUCTION_OP_ADD_SIGNED_CONST:",
+            "case ZR_INSTRUCTION_OP_SUB_SIGNED_CONST:",
+            "case ZR_INSTRUCTION_OP_MUL_SIGNED_CONST:",
+            "case ZR_INSTRUCTION_OP_DIV_SIGNED_CONST:",
+            "case ZR_INSTRUCTION_OP_MOD_SIGNED_CONST:",
+            "case ZR_INSTRUCTION_OP_ADD_SIGNED_LOAD_CONST:",
+            "case ZR_INSTRUCTION_OP_SUB_SIGNED_LOAD_CONST:",
+            "case ZR_INSTRUCTION_OP_MUL_SIGNED_LOAD_CONST:",
+            "case ZR_INSTRUCTION_OP_DIV_SIGNED_LOAD_CONST:",
+            "case ZR_INSTRUCTION_OP_MOD_SIGNED_LOAD_CONST:",
+            "case ZR_INSTRUCTION_OP_ADD_SIGNED_LOAD_STACK_CONST:",
+            "case ZR_INSTRUCTION_OP_SUB_SIGNED_LOAD_STACK_CONST:",
+            "case ZR_INSTRUCTION_OP_MUL_SIGNED_LOAD_STACK_CONST:",
+            "case ZR_INSTRUCTION_OP_DIV_SIGNED_LOAD_STACK_CONST:",
+            "case ZR_INSTRUCTION_OP_MOD_SIGNED_LOAD_STACK_CONST:",
+            "case ZR_INSTRUCTION_OP_ADD_SIGNED_LOAD_STACK_LOAD_CONST:",
+            "backend_aot_c_scalar_locals_slot_has_later_scalar_consumer(",
+            "backend_aot_c_scalar_locals_slot_is_later_materialized_signed_constant(",
+            "return (TZrBool)(leftSlot == slot);",
+            "return (TZrBool)(instruction->instruction.operand.operand0[0] == slot);",
+            "backend_aot_c_scalar_locals_instruction_mentions_slot_as_source_operand(",
+            "backend_aot_c_scalar_locals_instruction_is_signed_local_consumer(opcode)",
+    };
+    static const char *const scalarStackCopySourceNeedles[] = {
+            "TZrBool backend_aot_c_scalar_stack_copy_can_use_local_only(",
+            "TZrBool backend_aot_try_write_c_scalar_stack_copy(",
+            "sourceStaticCType = backend_aot_c_scalar_stack_copy_static_type_for_slot(functionIr->function, sourceSlot);",
+            "sourceLocalStaticCType = backend_aot_c_scalar_stack_copy_static_type_from_locals(functionIr, sourceSlot);",
+            "if (sourceStaticCType != ZR_STATIC_C_TYPE_DYNAMIC &&",
+            "if (sourceLocalStaticCType != ZR_STATIC_C_TYPE_DYNAMIC &&",
+            "backend_aot_c_scalar_stack_copy_source_local_is_available(functionIr,",
+            "backend_aot_c_scalar_stack_copy_destination_local_is_available(",
+            "functionIr, destinationSlot, sourceLocalStaticCType)",
     };
     static const char *const emitterSourceNeedles[] = {
             "backend_aot_write_c_signature_type(FILE *file,",
@@ -498,6 +571,10 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *frameDescriptorSourceText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_descriptor.c");
+    char *scalarLocalsText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
+    char *scalarStackCopyText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c");
     char *emitterSourceText =
             read_repo_text_file_owned("zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *methodMetadataSourceText = read_repo_text_file_owned(
@@ -513,6 +590,8 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
     TEST_ASSERT_NOT_NULL(frameCleanupSourceText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
     TEST_ASSERT_NOT_NULL(frameDescriptorSourceText);
+    TEST_ASSERT_NOT_NULL(scalarLocalsText);
+    TEST_ASSERT_NOT_NULL(scalarStackCopyText);
     TEST_ASSERT_NOT_NULL(emitterSourceText);
     TEST_ASSERT_NOT_NULL(methodMetadataSourceText);
 
@@ -530,6 +609,10 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
     assert_text_contains_all(frameDescriptorSourceText,
                              frameDescriptorSourceNeedles,
                              ARRAY_COUNT(frameDescriptorSourceNeedles));
+    assert_text_contains_all(scalarLocalsText, scalarLocalsSourceNeedles, ARRAY_COUNT(scalarLocalsSourceNeedles));
+    assert_text_contains_all(scalarStackCopyText,
+                             scalarStackCopySourceNeedles,
+                             ARRAY_COUNT(scalarStackCopySourceNeedles));
     assert_text_contains_all_in_either(emitterSourceText,
                                        methodMetadataSourceText,
                                        emitterSourceNeedles,
@@ -549,6 +632,8 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
     free(frameCleanupSourceText);
     free(functionBodyText);
     free(frameDescriptorSourceText);
+    free(scalarLocalsText);
+    free(scalarStackCopyText);
     free(emitterSourceText);
     free(methodMetadataSourceText);
 }

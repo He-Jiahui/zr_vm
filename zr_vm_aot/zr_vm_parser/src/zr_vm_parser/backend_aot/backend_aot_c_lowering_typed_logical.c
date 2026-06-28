@@ -118,7 +118,7 @@ void backend_aot_write_c_direct_logical_not_bool(FILE *file,
         fprintf(file,
                 "    {\n"
                 "        /* zr_aot_bool_not_scalar_local */\n"
-                "        zr_aot_b%u = (TZrBool)(!zr_aot_b%u != 0u);\n"
+                "        zr_aot_b%u = (TZrBool)((!zr_aot_b%u) != 0u);\n"
                 "    }\n",
                 (unsigned)destinationSlot,
                 (unsigned)sourceSlot);
@@ -147,7 +147,7 @@ void backend_aot_write_c_direct_logical_not_bool(FILE *file,
             (unsigned)sourceSlot);
     if (syncBoolLocal) {
         fprintf(file,
-                "        zr_aot_b%u = (TZrBool)(!zr_aot_source_bool != 0u);\n",
+                "        zr_aot_b%u = (TZrBool)((!zr_aot_source_bool) != 0u);\n",
                 (unsigned)destinationSlot);
     }
     fprintf(file, "    }\n");

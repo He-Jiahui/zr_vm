@@ -42,9 +42,10 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_bool_no_arg_function_call(file,
-                                                                   destinationSlot,
-                                                                   calleeFunctionIndex,
-                                                                   syncBoolStackSlot);
+                                                                    destinationSlot,
+                                                                    functionSlot,
+                                                                    calleeFunctionIndex,
+                                                                    syncBoolStackSlot);
         return ZR_TRUE;
     }
 
@@ -59,9 +60,10 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_bool_one_arg_function_call(file,
-                                                                    destinationSlot,
-                                                                    calleeFunctionIndex,
-                                                                    typedArgumentSlot,
+                                                                     destinationSlot,
+                                                                     functionSlot,
+                                                                     calleeFunctionIndex,
+                                                                     typedArgumentSlot,
                                                                     syncBoolStackSlot);
         return ZR_TRUE;
     }
@@ -78,9 +80,10 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_bool_two_arg_function_call(file,
-                                                                    destinationSlot,
-                                                                    calleeFunctionIndex,
-                                                                    typedFirstArgumentSlot,
+                                                                     destinationSlot,
+                                                                     functionSlot,
+                                                                     calleeFunctionIndex,
+                                                                     typedFirstArgumentSlot,
                                                                     typedSecondArgumentSlot,
                                                                     syncBoolStackSlot);
         return ZR_TRUE;
@@ -99,9 +102,10 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_bool_three_arg_function_call(file,
-                                                                      destinationSlot,
-                                                                      calleeFunctionIndex,
-                                                                      typedFirstArgumentSlot,
+                                                                       destinationSlot,
+                                                                       functionSlot,
+                                                                       calleeFunctionIndex,
+                                                                       typedFirstArgumentSlot,
                                                                       typedSecondArgumentSlot,
                                                                       typedThirdArgumentSlot,
                                                                       syncBoolStackSlot);
@@ -120,9 +124,10 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_i64_bool_two_arg_function_call(file,
-                                                                        destinationSlot,
-                                                                        calleeFunctionIndex,
-                                                                        typedFirstArgumentSlot,
+                                                                         destinationSlot,
+                                                                         functionSlot,
+                                                                         calleeFunctionIndex,
+                                                                         typedFirstArgumentSlot,
                                                                         typedSecondArgumentSlot,
                                                                         syncBoolStackSlot);
         return ZR_TRUE;
@@ -140,9 +145,10 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_u64_bool_two_arg_function_call(file,
-                                                                        destinationSlot,
-                                                                        calleeFunctionIndex,
-                                                                        typedFirstArgumentSlot,
+                                                                         destinationSlot,
+                                                                         functionSlot,
+                                                                         calleeFunctionIndex,
+                                                                         typedFirstArgumentSlot,
                                                                         typedSecondArgumentSlot,
                                                                         syncBoolStackSlot);
         return ZR_TRUE;
@@ -160,9 +166,10 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_f64_bool_two_arg_function_call(file,
-                                                                        destinationSlot,
-                                                                        calleeFunctionIndex,
-                                                                        typedFirstArgumentSlot,
+                                                                         destinationSlot,
+                                                                         functionSlot,
+                                                                         calleeFunctionIndex,
+                                                                         typedFirstArgumentSlot,
                                                                         typedSecondArgumentSlot,
                                                                         syncBoolStackSlot);
         return ZR_TRUE;
@@ -177,6 +184,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_u64_no_arg_function_call(file,
                                                                   destinationSlot,
+                                                                  functionSlot,
                                                                   calleeFunctionIndex,
                                                                   syncU64StackSlot);
         return ZR_TRUE;
@@ -194,6 +202,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_u64_one_arg_function_call(file,
                                                                    destinationSlot,
+                                                                   functionSlot,
                                                                    calleeFunctionIndex,
                                                                    typedArgumentSlot,
                                                                    syncU64StackSlot);
@@ -214,6 +223,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_u64_two_arg_function_call(file,
                                                                    destinationSlot,
+                                                                   functionSlot,
                                                                    calleeFunctionIndex,
                                                                    typedFirstArgumentSlot,
                                                                    typedSecondArgumentSlot,
@@ -237,6 +247,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_u64_three_arg_function_call(file,
                                                                      destinationSlot,
+                                                                     functionSlot,
                                                                      calleeFunctionIndex,
                                                                      typedFirstArgumentSlot,
                                                                      typedSecondArgumentSlot,
@@ -254,9 +265,10 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         syncF64StackSlot = (TZrBool)!backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_f64_no_arg_function_call(file,
-                                                                  destinationSlot,
-                                                                  calleeFunctionIndex,
-                                                                  syncF64StackSlot);
+                                                                   destinationSlot,
+                                                                   functionSlot,
+                                                                   calleeFunctionIndex,
+                                                                   syncF64StackSlot);
         return ZR_TRUE;
     }
 
@@ -271,10 +283,11 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         syncF64StackSlot = (TZrBool)!backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_f64_one_arg_function_call(file,
-                                                                   destinationSlot,
-                                                                   calleeFunctionIndex,
-                                                                   typedArgumentSlot,
-                                                                   syncF64StackSlot);
+                                                                    destinationSlot,
+                                                                    functionSlot,
+                                                                    calleeFunctionIndex,
+                                                                    typedArgumentSlot,
+                                                                    syncF64StackSlot);
         return ZR_TRUE;
     }
 
@@ -291,10 +304,11 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         syncF64StackSlot = (TZrBool)!backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_f64_two_arg_function_call(file,
-                                                                   destinationSlot,
-                                                                   calleeFunctionIndex,
-                                                                   typedFirstArgumentSlot,
-                                                                   typedSecondArgumentSlot,
+                                                                    destinationSlot,
+                                                                    functionSlot,
+                                                                    calleeFunctionIndex,
+                                                                    typedFirstArgumentSlot,
+                                                                    typedSecondArgumentSlot,
                                                                    syncF64StackSlot,
                                                                    typedF64TwoArgCallPassState);
         return ZR_TRUE;
@@ -314,10 +328,11 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         syncF64StackSlot = (TZrBool)!backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_f64_three_arg_function_call(file,
-                                                                     destinationSlot,
-                                                                     calleeFunctionIndex,
-                                                                     typedFirstArgumentSlot,
-                                                                     typedSecondArgumentSlot,
+                                                                      destinationSlot,
+                                                                      functionSlot,
+                                                                      calleeFunctionIndex,
+                                                                      typedFirstArgumentSlot,
+                                                                      typedSecondArgumentSlot,
                                                                      typedThirdArgumentSlot,
                                                                      syncF64StackSlot,
                                                                      typedF64ThreeArgCallPassState);
@@ -340,6 +355,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                 &typedI64ThreeArgCallPassState)) {
         backend_aot_write_c_static_direct_i64_three_arg_function_call(file,
                                                                      destinationSlot,
+                                                                     functionSlot,
                                                                      calleeFunctionIndex,
                                                                      typedFirstArgumentSlot,
                                                                      typedSecondArgumentSlot,
@@ -361,6 +377,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                               &typedI64TwoArgCallPassState)) {
         backend_aot_write_c_static_direct_i64_two_arg_function_call(file,
                                                                    destinationSlot,
+                                                                   functionSlot,
                                                                    calleeFunctionIndex,
                                                                    typedFirstArgumentSlot,
                                                                    typedSecondArgumentSlot,
@@ -379,6 +396,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                               &typedArgumentSlot)) {
         backend_aot_write_c_static_direct_i64_one_arg_function_call(file,
                                                                    destinationSlot,
+                                                                   functionSlot,
                                                                    calleeFunctionIndex,
                                                                    typedArgumentSlot,
                                                                    syncI64StackSlot);
@@ -393,9 +411,10 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         TZrBool syncStackSlot = (TZrBool)!backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_f64_no_arg_function_call(file,
-                                                                  destinationSlot,
-                                                                  calleeFunctionIndex,
-                                                                  syncStackSlot);
+                                                                   destinationSlot,
+                                                                   functionSlot,
+                                                                   calleeFunctionIndex,
+                                                                   syncStackSlot);
         return ZR_TRUE;
     }
 
@@ -406,6 +425,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                              calleeFunctionIndex)) {
         backend_aot_write_c_static_direct_i64_no_arg_function_call(file,
                                                                   destinationSlot,
+                                                                  functionSlot,
                                                                   calleeFunctionIndex,
                                                                   syncI64StackSlot);
         return ZR_TRUE;
@@ -419,6 +439,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
         const SZrAotFunctionTable *functionTable,
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 destinationSlot,
+        TZrUInt32 functionSlot,
         TZrUInt32 execInstructionIndex,
         TZrUInt32 calleeFunctionIndex) {
     if (file == ZR_NULL || calleeFunctionIndex == ZR_AOT_INVALID_FUNCTION_INDEX) {
@@ -433,9 +454,10 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
         TZrBool syncStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_bool_no_arg_function_call(file,
-                                                                   destinationSlot,
-                                                                   calleeFunctionIndex,
-                                                                   syncStackSlot);
+                                                                    destinationSlot,
+                                                                    functionSlot,
+                                                                    calleeFunctionIndex,
+                                                                    syncStackSlot);
         return ZR_TRUE;
     }
 
@@ -448,6 +470,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_u64_no_arg_function_call(file,
                                                                   destinationSlot,
+                                                                  functionSlot,
                                                                   calleeFunctionIndex,
                                                                   syncStackSlot);
         return ZR_TRUE;
@@ -461,9 +484,10 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
         TZrBool syncStackSlot = (TZrBool)!backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_f64_no_arg_function_call(file,
-                                                                  destinationSlot,
-                                                                  calleeFunctionIndex,
-                                                                  syncStackSlot);
+                                                                   destinationSlot,
+                                                                   functionSlot,
+                                                                   calleeFunctionIndex,
+                                                                   syncStackSlot);
         return ZR_TRUE;
     }
 
@@ -476,6 +500,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
                 functionIr, destinationSlot, execInstructionIndex);
         backend_aot_write_c_static_direct_i64_no_arg_function_call(file,
                                                                   destinationSlot,
+                                                                  functionSlot,
                                                                   calleeFunctionIndex,
                                                                   syncStackSlot);
         return ZR_TRUE;

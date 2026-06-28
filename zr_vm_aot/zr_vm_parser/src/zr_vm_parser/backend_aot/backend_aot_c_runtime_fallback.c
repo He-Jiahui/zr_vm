@@ -255,6 +255,41 @@ static const TZrChar *backend_aot_c_runtime_fallback_source_file(const SZrAotFun
     return sourceFile != ZR_NULL && sourceFile[0] != '\0' ? sourceFile : "<unknown>";
 }
 
+static void backend_aot_c_write_trim_warning_quoted_text(FILE *file, const TZrChar *text) {
+    const unsigned char *cursor;
+
+    fputc('"', file);
+    if (text != ZR_NULL) {
+        for (cursor = (const unsigned char *)text; *cursor != '\0'; cursor++) {
+            switch (*cursor) {
+                case '\\':
+                    fputs("\\\\", file);
+                    break;
+                case '"':
+                    fputs("\\\"", file);
+                    break;
+                case '\n':
+                    fputs("\\n", file);
+                    break;
+                case '\r':
+                    fputs("\\r", file);
+                    break;
+                case '\t':
+                    fputs("\\t", file);
+                    break;
+                default:
+                    if (*cursor < 0x20u || *cursor == 0x7Fu) {
+                        fprintf(file, "\\x%02X", (unsigned)*cursor);
+                    } else {
+                        fputc((int)*cursor, file);
+                    }
+                    break;
+            }
+        }
+    }
+    fputc('"', file);
+}
+
 static EZrAotRuntimeFallbackReason backend_aot_c_runtime_fallback_reason_for_instruction(
         SZrState *state,
         const SZrAotFunctionTable *functionTable,
@@ -474,20 +509,24 @@ void backend_aot_write_c_trim_warnings(FILE *file,
                                                                          functionIr,
                                                                          instructionIndex,
                                                                          sourceColumn);
+                TZrUInt32 reasonFlag = backend_aot_c_runtime_fallback_warning_flag_for_reason(reason);
                 const TZrChar *sourceFile = backend_aot_c_runtime_fallback_source_file(entry);
                 if (backend_aot_c_runtime_fallback_reason_is_suppressed(reason, suppressedReasonMask)) {
                     continue;
                 }
                 fprintf(file,
-                        "/* trim_warning.runtimeFallback[%u] function=%u instruction=%u sourceFile=%s sourceLine=%u sourceLineEnd=%u sourceColumn=%u sourceColumnEnd=%u reason=%s */\n",
+                        "/* trim_warning.runtimeFallback[%u] function=%u instruction=%u sourceFile=",
                         (unsigned)warningIndex,
                         (unsigned)entry->flatIndex,
-                        (unsigned)instructionIndex,
-                        sourceFile,
+                        (unsigned)instructionIndex);
+                backend_aot_c_write_trim_warning_quoted_text(file, sourceFile);
+                fprintf(file,
+                        " sourceLine=%u sourceLineEnd=%u sourceColumn=%u sourceColumnEnd=%u reasonFlag=%u reason=%s */\n",
                         (unsigned)sourceLine,
                         (unsigned)sourceLineEnd,
                         (unsigned)sourceColumn,
                         (unsigned)sourceColumnEnd,
+                        (unsigned)reasonFlag,
                         backend_aot_c_runtime_fallback_reason_text(reason));
                 warningIndex++;
             }

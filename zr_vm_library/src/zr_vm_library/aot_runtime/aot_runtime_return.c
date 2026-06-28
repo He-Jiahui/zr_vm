@@ -7,6 +7,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/execution_control.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/type_layout.h"
@@ -189,6 +190,59 @@ TZrBool ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(SZrState *state,
     }
 
     return ZR_TRUE;
+}
+
+static TZrBool aot_runtime_typed_direct_function_bindings_compatible(const SZrFunction *function) {
+    EZrMetadataRuntimeBindingCompatibilityStatus status;
+
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    status = ZrCore_MetadataRuntime_CheckFunctionTokenBindingsCompatibility(function,
+                                                                           function->moduleVersion,
+                                                                           ZR_NULL,
+                                                                           ZR_NULL,
+                                                                           ZR_NULL);
+    return (TZrBool)(status == ZR_METADATA_RUNTIME_BINDING_STATUS_COMPATIBLE);
+}
+
+TZrBool ZrLibrary_AotRuntime_CanUseTypedDirectCall(SZrState *state,
+                                                   ZrAotGeneratedFrame *frame,
+                                                   TZrUInt32 calleeFunctionIndex) {
+    SZrFunction *calleeFunction;
+
+    (void)state;
+    if (frame == ZR_NULL || frame->function == ZR_NULL || frame->functionTable == ZR_NULL ||
+        calleeFunctionIndex >= frame->functionCount) {
+        return ZR_FALSE;
+    }
+
+    calleeFunction = frame->functionTable[calleeFunctionIndex];
+    if (!aot_runtime_typed_direct_function_bindings_compatible(frame->function)) {
+        return ZR_FALSE;
+    }
+
+    return aot_runtime_typed_direct_function_bindings_compatible(calleeFunction);
+}
+
+TZrBool ZrLibrary_AotRuntime_DeoptTypedDirectCall(SZrState *state,
+                                                  ZrAotGeneratedFrame *frame,
+                                                  TZrUInt32 destinationSlot,
+                                                  TZrUInt32 functionSlot,
+                                                  TZrUInt32 argumentCount,
+                                                  TZrUInt32 calleeFunctionIndex,
+                                                  const TZrChar *errorLabel) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    const TZrChar *label = errorLabel != ZR_NULL ? errorLabel : "typed direct call";
+
+    runtimeState = state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (frame == ZR_NULL || frame->functionTable == ZR_NULL || calleeFunctionIndex >= frame->functionCount) {
+        aot_runtime_fail(state, runtimeState, "generated AOT %s deopt failed", label);
+        return ZR_FALSE;
+    }
+
+    return ZrLibrary_AotRuntime_CallStackValue(state, frame, destinationSlot, functionSlot, argumentCount, label);
 }
 
 TZrBool ZrLibrary_AotRuntime_CallStackValue(SZrState *state,

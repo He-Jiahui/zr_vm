@@ -17,9 +17,10 @@ related_code:
   - zr_vm_core/src/zr_vm_core/zrp_metadata.c           # 11-S1A..11-S1J header read/write/validate + section/pool/string view + definition-table/range validation + pool/table payload writer + signature blob structural validator
   - zr_vm_core/include/zr_vm_core/function.h           # SZrFunctionMetadata / ModuleEffect; 11-S4G function-level code-registration layout registry binding for GC inline-frame consumers
   - zr_vm_core/include/zr_vm_core/type_layout.h        # cTypeId / SZrTypeLayoutMetadata
-  - zr_vm_core/include/zr_vm_core/metadata_runtime.h   # 11-S2C minimal metadata runtime registration carrier; 11-S3A..11-S3M method/field/type/signature/TypeSpec record cache API + zrp metadata mmap attach/query + validated signature blob/header/type-node/generic TypeSpec signature/base-token/argument binding view + MethodSpec signature view; 11-S4A/11-S4C TypeDef token/cTypeId/layout binding view backed by code-registration layout registry; 11-S4D public typeLayoutId -> SZrTypeLayout resolver; 11-S4E generic dictionary consumer input; 11-S4F public typeLayoutId -> SZrAotGcDescriptor resolver; 11-S4G function-level layout resolver for GC inline-frame consumers; 11-S4H function+prototype -> registry-backed type layout resolver for reflection consumers; 11-S4I FieldDef token/row/offset/layout binding view; 11-S4J TypeSpec token/generic-binding/layout binding view; 11-S4K TypeDef/TypeSpec token -> layout cache resolver; 11-S4L typeLayoutId -> TypeDef/TypeSpec token reverse resolver; 11-S4M bounded multi-entry type-layout cache; 11-S4N cTypeId -> token resolver; 11-S4O code-registration type-layout token count mirror
+  - zr_vm_core/include/zr_vm_core/metadata_runtime.h   # 11-S2C minimal metadata runtime registration carrier; 11-S3A..11-S3M method/field/type/signature/TypeSpec record cache API + zrp metadata mmap attach/query + validated signature blob/header/type-node/generic TypeSpec signature/base-token/argument binding view + MethodSpec signature view; 11-S4A/11-S4C TypeDef token/cTypeId/layout binding view backed by code-registration layout registry; 11-S4D public typeLayoutId -> SZrTypeLayout resolver; 11-S4E generic dictionary consumer input; 11-S4F public typeLayoutId -> SZrAotGcDescriptor resolver; 11-S4G function-level layout resolver for GC inline-frame consumers; 11-S4H function+prototype -> registry-backed type layout resolver for reflection consumers; 11-S4I FieldDef token/row/offset/layout binding view; 11-S4J TypeSpec token/generic-binding/layout binding view; 11-S4K TypeDef/TypeSpec token -> layout cache resolver; 11-S4L typeLayoutId -> TypeDef/TypeSpec token reverse resolver; 11-S4M bounded multi-entry type-layout cache; 11-S4N cTypeId -> token resolver; 11-S4O code-registration type-layout token count mirror; 11-S6A token binding compatibility status/report API; 11-S6B function-level binding scan API
   - zr_vm_core/src/zr_vm_core/metadata_runtime.c       # 11-S3A..11-S3M ResolveMethodRecord/ResolveFieldRecord/ResolveTypeRecord/ResolveSignatureRecord lazy token record lookup/cache, local TypeSpec records, zrp section-view attach/query, signature blob validation, method/field signature header view parsing, nested type-node view parsing, generic TypeSpec signature view parsing, generic base-token binding, indexed generic argument binding, and MethodSpec signature view parsing; 11-S4D public type-layout resolver; 11-S4E/11-S4F generic dictionary and GC descriptor consumers reuse the same resolver; 11-S4G/11-S4H function/prototype-context layout resolver for attached AOT code-registration functions
   - zr_vm_core/src/zr_vm_core/metadata_runtime_layout_binding.c # 11-S4A..11-S4O split layout-binding implementation for TypeDef/TypeSpec/FieldDef row lookup, registry-backed binding views, TypeDef/TypeSpec token -> layout cache resolver, typeLayoutId/cTypeId -> token reverse lookup, bounded multi-entry cache, and code-registration token-table consumption
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c # 11-S6A runtime ABI drift predicate for module version range + token/signature/module/layout compatibility; 11-S6B function binding scan over attached module metadata bindings
   - zr_vm_core/include/zr_vm_core/module.h             # 11-S2C module metadata runtime attach/query surface; 11-S4D typeLayoutCount runtime mirror
   - zr_vm_core/src/zr_vm_core/module/module.c          # 11-S2C module metadata runtime attach/query implementation; 11-S4D codeRegistration typeLayoutCount attach; 11-S4G function attach during module metadata runtime attach; 11-S4O typeLayoutTokenCount attach
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c             # 11-S2C module metadataRuntime.metadataFunction mark; 11-S4G mark inline-frame resolver prefers metadata runtime for attached AOT functions
@@ -28,37 +29,63 @@ related_code:
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h     # 11-S2A SZrAotCodeRegistration ABI + module carrier; 11-S4B code registration type-layout registry ABI; 11-S4F GC descriptor registry consumer source; 11-S4O type-layout token carrier ABI
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c # 12-S7Y default-min reflection metadata policy option helper
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_internal.h # 12-S7Y reflection metadata policy option API
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h # 11-S6D..11-S6G i64/u64/f64/bool typed direct-call writer prototypes carry function-slot metadata for deopt fallback
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c # 11-S2A generated-C code registration emission; 11-S4B type-layout registry pointer/count emission; 11-S4O type-layout token table pointer/count emission; 12-S7K zrp metadata size attribution consumer; 12-S7Y metadata policy marker/plumbing; 12-S7Z emitted zrp metadata pruning plumbing
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.h # 12-S7T zrp metadata size accounting API; 12-S7Z pruned-blob stats input
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.c # 12-S7T zrp metadata header sampling; 12-S7Z blob-based after-stats sampling
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.h # 12-S7Z emitted zrp metadata pruning API; 12-S7ZA token-record MethodDef remap surface; 12-S7ZB FieldDef shared MEMBER_DEF remap; 12-S7ZC GenericParam owner/range remap; 12-S7ZD remap module split surface; 12-S7ZG signature blob pool compaction orchestration
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c # 12-S7Z compacted blob rebuild orchestration; 12-S7ZD delegates token/range remap helpers; 12-S7ZE GenericParamConstraint section copy/compaction orchestration; 12-S7ZF MethodSpec section copy/compaction orchestration; 12-S7ZG signature blob pool compaction/rewrite orchestration
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.h # 12-S7ZD private zrp metadata token/range remap API; 12-S7ZE GenericParamConstraint remap/count/range API; 12-S7ZF MethodSpec remap/count API
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c # 12-S7ZA..S7ZC MethodDef/FieldDef/GenericParam token/range remap implementation; 12-S7ZE GenericParamConstraint cascade implementation; 12-S7ZF MethodSpec method-token cascade implementation
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.h # 12-S7ZG signature blob remap/compaction API
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c # 12-S7ZG retained signature blob slice collection, MethodSpec signature rewrite, offset remap, and hash recomputation
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c # 11-S6D no-arg i64 typed direct call passes function slot to guard/deopt writer
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c # 11-S6D..11-S6F i64/u64/f64 typed direct-call generated metadata guard and stack-call deopt fallback
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_bool_calls.c # 11-S6G bool-result typed direct-call generated metadata guard and stack-call deopt fallback
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.h # 11-S6D typed direct-call dispatch signature carries function slot for deopt fallback
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.c # 11-S6D..11-S6G typed direct-call dispatch threads function slot into i64/u64/f64/bool guard/deopt writers
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c # 11-S6H inline-struct CALL_TYPED generated metadata guard and dynamic deopt bridge fallback
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.h # 12-S7T zrp metadata size accounting API; 12-S7Z pruned-blob stats input; 12-S7ZO section-level trim delta marker surface; 12-S7ZP section count marker fields
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.c # 12-S7T zrp metadata header sampling; 12-S7Z blob-based after-stats sampling; 12-S7ZO per-section trim delta marker writing; 12-S7ZP per-section count stats/delta marker writing
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.h # 12-S7Z emitted zrp metadata pruning API; 12-S7ZA token-record MethodDef remap surface; 12-S7ZB FieldDef shared MEMBER_DEF remap; 12-S7ZC GenericParam owner/range remap; 12-S7ZD remap module split surface; 12-S7ZG signature blob pool compaction orchestration; 12-S7ZH string-pool compaction orchestration; 12-S7ZI constant-pool orphan sweep API surface
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c # 12-S7Z compacted blob rebuild orchestration; 12-S7ZD delegates token/range remap helpers; 12-S7ZE GenericParamConstraint section copy/compaction orchestration; 12-S7ZF MethodSpec section copy/compaction orchestration; 12-S7ZG signature blob pool compaction/rewrite orchestration; 12-S7ZH delegates shared section helpers and string-pool remap/copy; 12-S7ZI zero-retained constant-pool layout; 12-S7ZM post-remap identity skip so pool compaction runs without MethodDef pruning
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.h # 12-S7ZD private zrp metadata token/range remap API; 12-S7ZE GenericParamConstraint remap/count/range API; 12-S7ZF MethodSpec remap/count API; 12-S7ZN export member-token remap surface
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c # 12-S7ZA..S7ZC MethodDef/FieldDef/GenericParam token/range remap implementation; 12-S7ZE GenericParamConstraint cascade implementation; 12-S7ZF MethodSpec method-token cascade implementation; 12-S7ZN exported MethodDef/FieldDef member token remap helper
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.h # 12-S7ZH shared zrp metadata section lookup/layout/copy API
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c # 12-S7ZH shared section switch, layout writer, and raw-section copy helper
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.h # 12-S7ZG signature blob remap/compaction API; 12-S7ZM signature remap identity API
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c # 12-S7ZG retained signature blob slice collection, MethodSpec signature rewrite, offset remap, and hash recomputation; 12-S7ZM signature remap identity helper
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.h # 12-S7ZH string-pool remap/compaction API; 12-S7ZL duplicate retained string-slice remap support; 12-S7ZM string remap identity API
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c # 12-S7ZH retained string slice collection, compacted string-pool copy, and row string-offset remap; 12-S7ZL content-level duplicate slice interning; 12-S7ZM string remap identity helper
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h # 11-S4B generated-C SZrTypeLayout descriptor + registry writer surface; 11-S4O token table writer surface; 11-S4P/11-S4Q generated layout resolver surface
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c # 11-S4B generated-C SZrTypeLayoutField/SZrTypeLayout descriptors + sparse cTypeId/typeLayoutId registry; 11-S4P struct/union descriptor emission and registry resolver; 11-S4R generated ownership offset arrays
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c # 11-S4P/11-S4Q generated-C TypeDef/TypeSpec-backed typeLayout token population
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c # 11-S2A shared invoker table emission; 12-S7Y policy-driven MethodInfo reflection level emission
-  - zr_vm_library/include/zr_vm_library/aot_runtime.h    # 11-S2B generated frame/context codeRegistration carrier; 11-S4E generic TYPE_LAYOUT/SIZEOF slot API takes SZrMetadataRuntime
+  - zr_vm_library/include/zr_vm_library/aot_runtime.h    # 11-S2B generated frame/context codeRegistration carrier; 11-S4E generic TYPE_LAYOUT/SIZEOF slot API takes SZrMetadataRuntime; 11-S6D..11-S6H typed direct-call guard/deopt runtime API
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_generic_dictionary.c # 11-S4E generic dictionary TYPE_LAYOUT/SIZEOF resolves via metadata runtime layout resolver
-  - zr_vm_library/src/zr_vm_library/aot_runtime.c        # 11-S2A descriptor/codeRegistration validation; 11-S2B runtime record/context registration consumption; 11-S2C metadata runtime attach; 11-S4B type-layout registry validation; 11-S4G loaded function table attaches function-level metadata registry; 11-S4O type-layout token table validation
+  - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c # 11-S6D..11-S6H typed direct-call metadata compatibility guard plus scalar stack-call and inline-struct dynamic deopt helpers
+  - zr_vm_library/src/zr_vm_library/aot_runtime.c        # 11-S2A descriptor/codeRegistration validation; 11-S2B runtime record/context registration consumption; 11-S2C metadata runtime attach; 11-S4B type-layout registry validation; 11-S4G loaded function table attaches function-level metadata registry; 11-S4O type-layout token table validation; 11-S6C dynamic AOT module-load binding compatibility reject
   - zr_vm_aot/zr_vm_library/src/zr_vm_library/aot_runtime.c # 11-S2A mirrored descriptor/codeRegistration validation; 11-S4B mirrored type-layout registry validation; 11-S4O mirrored type-layout token table validation
   - tests/module/test_metadata_runtime_query.c         # 11-S2C module metadata runtime registration query; 11-S3A..11-S3M method/field/type/signature/TypeSpec token lazy/cache query + zrp metadata mmap attach/view + signature blob/header/type-node/generic TypeSpec signature/base-token/argument binding view + MethodSpec signature view query; 11-S4A/11-S4C TypeDef layout binding view + code-registration registry source proof; 11-S4D attach typeLayoutCount mirror check; 11-S4I FieldDef layout binding view and no-prototype-fallback regression
+  - tests/module/test_metadata_runtime_binding_compatibility.c # 11-S6A/S6B token binding ABI drift predicate and function scan coverage for version range, module/member signature, token identity, layout identity, AssemblyRef->Module mapping, invalid binding, and first incompatible binding
+  - tests/module/test_aot_runtime_typed_direct_call_compatibility.c # 11-S6D..11-S6H typed direct-call runtime guard coverage for caller/callee binding drift
+  - tests/parser/test_aot_c_metadata_binding_loader.c # 11-S6C dynamic AOT module loader reject coverage for embedded/zro module metadata binding drift
   - tests/module/test_metadata_runtime_typespec_layout.c # 11-S4J focused TypeSpec layout binding view and no-prototype-fallback regression; 11-S4K TypeDef/TypeSpec token -> layout cache coverage; 11-S4L typeLayoutId -> token reverse lookup coverage; 11-S4M multi-entry cache coverage; 11-S4N cTypeId -> token coverage; 11-S4O code-registration token table coverage
   - tests/module/test_metadata_runtime_type_layout.c   # 11-S4D focused public typeLayoutId -> SZrTypeLayout resolver coverage; 11-S4F focused public typeLayoutId -> SZrAotGcDescriptor resolver coverage; 11-S4G function-level layout resolver coverage; 11-S4H prototype layout resolver + reflection consumer source contract
   - tests/gc/gc_tests.c                               # 11-S4G non-AOT inline-frame GC fallback regression
   - tests/parser/test_aot_c_frame_setup_contracts.c    # 11-S2A..11-S2C ABI/emitter/runtime source contract; 11-S4B type-layout registry ABI/emitter source contract; 11-S4O type-layout token carrier ABI/emitter source contract
+  - tests/parser/test_aot_c_call_contracts.c           # 11-S6D..11-S6G generated-source contract for i64/u64/f64/bool typed direct-call metadata guard/deopt fallback
+  - tests/parser/test_aot_c_value_semir_contracts.c    # 11-S6H inline-struct CALL_TYPED generated-source contract for metadata guard/dynamic deopt fallback
+  - tests/parser/test_aot_c_typed_direct_call_shared_library_smoke.c # 11-S6D i64 typed direct-call shared-library regression for guarded direct-call path
+  - tests/parser/test_aot_c_typed_direct_call_u64_shared_library_smoke.c # 11-S6E u64 typed direct-call shared-library regression for guarded direct-call path
+  - tests/parser/test_aot_c_typed_direct_call_f64_shared_library_smoke.c # 11-S6F f64 typed direct-call shared-library regression for guarded direct-call path
+  - tests/parser/test_aot_c_typed_direct_call_bool_shared_library_smoke.c # 11-S6G bool typed direct-call shared-library regression for guarded direct-call path
   - tests/parser/test_aot_c_type_layout_contracts.c    # 11-S4B/11-S4P/11-S4R generated type-layout descriptor/token/ownership-offset writer source contracts
   - tests/parser/test_aot_c_generic_reference_sharing.c # 08-S4 generic dictionary acceptance; 11-S4E metadata-runtime-backed TYPE_LAYOUT/SIZEOF resolver regression
-  - tests/parser/test_aot_c_source_contracts.c         # 11-S2A public ABI source contract; 11-S4B public type-layout registry source contract; 11-S4O/11-S4P public token table source contract; 12-S7ZE GenericParamConstraint remap module contract; 12-S7ZF MethodSpec remap module contract; 12-S7ZG signature blob remap module contract
-  - tests/parser/test_aot_c_shared_library_smoke.c     # 11-S2A runtime descriptor/codeRegistration assertion; 11-S4B empty registry assertion; 11-S4O empty token table assertion
+  - tests/parser/test_aot_c_source_contracts.c         # 11-S2A public ABI source contract; 11-S4B public type-layout registry source contract; 11-S4O/11-S4P public token table source contract; 12-S7ZE GenericParamConstraint remap module contract; 12-S7ZF MethodSpec remap module contract; 12-S7ZG signature blob remap module contract; 12-S7ZH section/string-pool module contract; 12-S7ZO section-level delta marker source contract; 12-S7ZP section-count marker source contract
+  - tests/parser/test_aot_c_shared_library_smoke.c     # 11-S2A runtime descriptor/codeRegistration assertion; 11-S4B empty registry assertion; 11-S4O empty token table assertion; 11-S6C normal empty-binding loader regression
   - tests/parser/test_aot_c_value_type_shared_library_smoke.c # 11-S4B generated type-layout registry + GC descriptor alignment assertion; 11-S4O generated token table shape assertion; 11-S4P TypeDef-backed nonzero union token assertion; 11-S4R generated ownership-offset table assertion
-  - tests/parser/test_aot_c_generic_call_typed.c       # 08-S5 generic call typed coverage; 11-S4Q TypeSpec-backed generated type-layout token assertion
-  - tests/parser/test_aot_c_code_stripping.c           # 12-S7K generated-C zrp metadata section/table/pool byte statistics; 12-S7Y default-min MethodInfo reflection metadata policy; 12-S7Z zrp MethodDef metadata pruning; 12-S7ZG signature blob pool after-trim delta
+  - tests/parser/test_aot_c_generic_call_typed.c       # 08-S5 generic call typed coverage; 11-S4Q TypeSpec-backed generated type-layout token assertion; 11-S6H shared/full-AOT inline-struct CALL_TYPED metadata guard assertion
+  - tests/parser/test_aot_c_code_stripping.c           # 12-S7K generated-C zrp metadata section/table/pool byte statistics; 12-S7Y default-min MethodInfo reflection metadata policy; 12-S7Z zrp MethodDef metadata pruning; 12-S7ZG signature blob pool after-trim delta; 12-S7ZH string pool after-trim delta; 12-S7ZI constant pool after-trim delta
   - tests/parser/test_aot_c_zrp_metadata_pruning.c     # 12-S7ZA direct zrp MethodDef/token-record pruning; 12-S7ZB FieldDef shared MEMBER_DEF remap; 12-S7ZC GenericParam owner/range remap; 12-S7ZE GenericParamConstraint cascade remap; 12-S7ZF MethodSpec method-token cascade remap; 12-S7ZG MethodSpec signature blob rewrite/compaction
-  - tests/CMakeLists.txt                               # 12-S7ZA/12-S7ZG Windows shared-DLL direct zrp pruning test links private pruning/remap/signature modules
+  - tests/parser/test_aot_c_zrp_metadata_export_token_remap.c # 12-S7ZN direct exported MethodDef/FieldDef member token remap coverage
+  - tests/parser/test_aot_c_zrp_metadata_size_deltas.c # 12-S7ZO direct section-level zrp metadata before/after/removed marker coverage; 12-S7ZP direct section count marker coverage
+  - tests/parser/test_aot_c_zrp_metadata_pool_pruning.c # 12-S7ZH direct zrp string-pool compaction/remap; 12-S7ZI direct zrp orphan constant-pool sweep; 12-S7ZL retained duplicate string-slice compaction; 12-S7ZM no-MethodDef-prune pool compaction trigger
+  - tests/cli/test_cli_args.c                         # 11-S7W/11-S7X/11-S7Y CLI dump/diff/version-check mode parse/exclusivity coverage
+  - tests/cli/test_cli_zrp_metadata_dump.c            # 11-S7W/11-S7X/11-S7Y zrp metadata dump/diff/version-check summary/path coverage
+  - tests/CMakeLists.txt                               # 11-S6A/S6B metadata runtime binding compatibility test target/CTest; 11-S6C AOT metadata binding loader target/CTest; 11-S6D AOT runtime typed direct-call compatibility target/CTest; 11-S7W/11-S7X/11-S7Y CLI zrp metadata dump/diff/version-check target; 12-S7ZA/12-S7ZH/12-S7ZN/12-S7ZO/12-S7ZP Windows shared-DLL direct zrp pruning/remap/size tests link private pruning/remap/section/signature/string-pool/size modules
   - tests/parser/test_aot_c_descriptor_diagnostics.c   # 11-S2A missing codeRegistration diagnostic
   - zr_vm_library/include/zr_vm_library/project.h      # 11-S7A..11-S7F/11-S7K..11-S7M project manifest normalized dependency/reference + identity + preserve + AOT mode/feature switch/generic preserve argument model
   - zr_vm_library/src/zr_vm_library/project/project.c  # 11-S7A..11-S7F/11-S7L manifestVersion + old dependencies/new references normalization + assembly identity gates + preserve/AOT/feature parser dispatch
@@ -70,9 +97,14 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c       # 11-S7G project aotMode -> requireFullAot injection helper
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.h   # 11-S7H..11-S7V AOT C emission + preserve root bridge API
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c   # 11-S7H..11-S7V binary embedded blob + method/type/generic preserve bridge + feature-conditioned root gating + generic TypeSpec synthesis/open-base generic-instantiation/MethodSpec binding
+  - zr_vm_cli/src/zr_vm_cli/command/command.h        # 11-S7W/11-S7X/11-S7Y CLI zrp metadata dump/diff/version-check mode carriers
+  - zr_vm_cli/src/zr_vm_cli/command/command.c        # 11-S7W `--dump-zrp-metadata <file>`, 11-S7X `--diff-zrp-metadata <before> <after>`, and 11-S7Y `--check-zrp-metadata-version <file>` parse/exclusivity/help surface
+  - zr_vm_cli/src/zr_vm_cli/app/app.c                # 11-S7W/11-S7X/11-S7Y CLI app dispatch to zrp metadata dump/diff/version-check runners
+  - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.h # 11-S7W/11-S7X/11-S7Y zrp metadata dump summary, diff summary, and version-check API
+  - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.c # 11-S7W read-only zrp metadata section summary; 11-S7X before/after section byte/count diff summary; 11-S7Y header magic/version/header-size/section-count compatibility check implementation
   - zr_vm_language_server_extension/schemas/zrp.schema.json # 11-S7C..11-S7F/11-S7K..11-S7M manifest schema parity for identity/dependency/preserve/aotMode/feature/generic fields
   - zr_vm_parser/include/zr_vm_parser/writer.h        # 11-S7I top-level callable flat-index resolve API；11-S7N..11-S7V manifest generic writer root carrier + TypeSpec/generic-instantiation/MethodSpec binding fields
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c # 11-S7I callable binding -> AOT flat index resolver；11-S7N/11-S7O manifest generic root diagnostics + TypeSpec token/hash comments；11-S7P full-AOT unbound generic TypeSpec gate；11-S7Q generic instantiation diagnostics；11-S7R full-AOT generic-instantiation gate；11-S7V MethodSpec diagnostics/full-AOT closure alternative；12-S7K zrp metadata size markers；12-S7Y metadata policy marker；12-S7Z..12-S7ZG emitted zrp metadata pruning
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c # 11-S7I callable binding -> AOT flat index resolver；11-S7N/11-S7O manifest generic root diagnostics + TypeSpec token/hash comments；11-S7P full-AOT unbound generic TypeSpec gate；11-S7Q generic instantiation diagnostics；11-S7R full-AOT generic-instantiation gate；11-S7V MethodSpec diagnostics/full-AOT closure alternative；12-S7K zrp metadata size markers；12-S7Y metadata policy marker；12-S7Z..12-S7ZI emitted zrp metadata pruning
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_callable_provenance.h
   - tests/module/test_zrp_metadata_format.c            # 11-S1A..11-S1J round-trip + mmap-view + pool/table payload write + string view + definition table directory/view/token/range/signature-blob validation
@@ -359,8 +391,9 @@ metadataToken  ⇄  cTypeId  ⇄  struct ZrLayout_<cTypeId>
 
 ## 6. 版本检查运行实现（落地 SZrMetadataTokenBinding 既有字段）
 
-现有 `SZrMetadataTokenBinding` 已有 `requestedModuleVersion/min/maxModuleVersion/layoutVersion/
-layoutHash/signatureHash`，但无运行期校验流程。补：
+现有 `SZrMetadataTokenRecord` 已有 `requestedModuleVersion/min/maxModuleVersion`，
+`SZrMetadataTokenBinding` 已有 expected/resolved `layoutVersion/layoutHash/signatureHash/
+moduleSignatureHash/token`，但无统一运行期校验流程。补：
 
 - 模块加载/跨模块 token 解析时校验：版本落在 `[min, max)`、`layoutHash`/`signatureHash` 匹配。
 - 不匹配处置（对标 mono AOT out_of_date）：dynamic 模块 → 拒绝加载/报错；typed 调用边界 → deopt 到
@@ -387,8 +420,8 @@ layoutHash/signatureHash`，但无运行期校验流程。补：
 | 11-S3 | `SZrMetadataRuntime` token lazy 解析 + 缓存（§3） | 🚧 2026-06-25 部分完成：11-S3A 已提供 `ZrCore_MetadataRuntime_ResolveMethodRecord()`，可从 attached metadata function 的本地 `MEMBER_DEF` 与 module `MEMBER_REF` token record 表 lazy 解析 method token，并用单项 cache 覆盖二次命中；11-S3B 已提供 `ZrCore_MetadataRuntime_ResolveTypeRecord()`，可从本地 `TYPE_DEF` 与 module `TYPE_REF` token record 表 lazy 解析 type token，并用独立单项 cache 覆盖二次命中；11-S3C 已提供 `ZrCore_MetadataRuntime_ResolveSignatureRecord()`，可按 entity token lazy 解析本地或 module `SIGNATURE` record 并缓存最近一次命中；11-S3D 已让本地 `TYPE_SPEC` record 进入 `ResolveTypeRecord()` 与同一个 type record cache；11-S3E 已提供 `ZrCore_MetadataRuntime_ResolveFieldRecord()`，按 `MEMBER_DEF` / `MEMBER_REF` record 解析字段 token 并使用独立 field cache；11-S3F 已提供 zrp data metadata mmap buffer/header attach 与 section-view 查询；11-S3G 已提供 entity token 到 validated signature blob pool slice 的查询；11-S3H 已提供 method/field signature 顶层 header view；11-S3I 已提供 nested signature type-node view（node/payload/base/child/next offsets）；11-S3J 已提供 generic TypeSpec signature view（TypeSpec/signature identity + GENERIC_INST base/argument offsets）；11-S3K 已提供 generic TypeSpec base-token binding view（base `TYPE_REF/TYPE_DEF` node 匹配现有 type record signature blob 并暴露 base token/record）；11-S3L 已提供 indexed generic argument binding view（argument type-node + direct `TYPE_REF/TYPE_DEF` argument token/record binding）；11-S3M 已提供 MethodSpec signature view（`SIGNATURE` token + `GENERIC_INST(MEMBER_REF methodToken, args...)` + method record binding）；recursive generic argument semantic binding、method instantiation materialization、row-to-entity materialization、token→运行期实体物化和完整缓存仍待后续 |
 | 11-S4 | token↔cTypeId↔ZrLayout 三向表（§4） | 🚧 2026-06-26 部分完成：11-S4A 已提供 TypeDef token→zrp TypeDef row→typeLayoutId/cTypeId 的 runtime binding view；11-S4B 已把 generated-C code registration 扩展为 `typeLayouts/typeLayoutCount` registry，发射 `SZrTypeLayoutField`/`SZrTypeLayout` 静态描述符和稀疏 `zr_aot_type_layouts[]`，并让 runtime validation 校验 descriptor/codeRegistration registry 一致性；11-S4C 已让 TypeDef layout binding view 的 `typeLayout` 指针来自 `codeRegistration->typeLayouts[typeLayoutId]`，不再使用 prototype layout cache 作为运行期返回来源；11-S4D 已提供 `ZrCore_MetadataRuntime_ResolveTypeLayout()` 公共 runtime layout resolver，并让 TypeDef binding view 复用同一入口；11-S4E 已让泛型字典 TYPE_LAYOUT/SIZEOF slot 经 `SZrMetadataRuntime` 复用同一 resolver，不再 fallback 到 prototype layout cache；11-S4F 已提供 `ZrCore_MetadataRuntime_ResolveGcDescriptor()`，让 GC descriptor lookup 先经同一 runtime layout resolver 校验 layout registry；11-S4G 已让 GC inline-frame mark/rewrite 对 attached AOT registry 使用 metadata runtime layout resolver，并为非 AOT 函数保留 prototype fallback；11-S4H 已提供 function+prototype→registry-backed `SZrTypeLayout` resolver，并让反射 type/member layout 消费端在 attached registry 下读取 `SZrTypeLayout`；11-S4I 已提供 FieldDef token→zrp FieldDef row→owner/field layout 的 binding view，读取 FieldDef `byteOffset/typeLayoutId` 并强制 owner/field layout 都来自 code-registration registry；11-S4J 已提供 TypeSpec token→zrp TypeSpec row→generic base binding→registry layout 的 binding view，校验 row 与 signature/type record identity 一致并拒绝 prototype cache fallback；11-S4K 已提供 `ZrCore_MetadataRuntime_ResolveTypeTokenLayout()`，按 TypeDef/TypeSpec token 解析 registry-backed layout，并缓存 token→layoutId/layout 命中；11-S4L 已提供 `ZrCore_MetadataRuntime_ResolveTypeLayoutToken()`，从 typeLayoutId 反查 TypeDef/TypeSpec token；11-S4M 已将 token/layout 命中扩展为 bounded 8-entry multi-entry cache，可同时保留 TypeDef 与 TypeSpec 的正向/反向命中；11-S4N 已提供 `ZrCore_MetadataRuntime_ResolveCTypeIdToken()`，按当前 cTypeId==typeLayoutId 不变量复用同一 cache/反查路径；11-S4O 已提供 code-registration `typeLayoutTokens/typeLayoutTokenCount` ABI carrier、generated-C token 表发射、runtime shape validation 和 table-first resolver 消费路径；11-S4P 已为唯一匹配本地 TypeDef 的 generated struct/union layout 写入真实 `TYPE_DEF` token，并为 union layout 发射 runtime descriptor；11-S4Q 已为同函数 metadata record stream 中可由 canonical signature 匹配的 generated generic/TypeSpec layout 写入真实 `TYPE_SPEC` token（例如 `Pair<int, int>` → `0x07000001u`），仍对缺 metadata、多重匹配、跨模块/unsupported signature 形态保守写 0。持久 cTypeId→token 索引内容、完整 TypeSpec/generic layout materialization、ownership offset 表和运行期 layout 构建仍待后续 |
 | 11-S5 | 泛型参数标准化编码（GENERIC_INST/MethodSpec/约束）（§5） | 与 08 实例化去重键一致；解释器/AOT 同解 |
-| 11-S6 | 版本检查运行实现 + 不匹配 deopt/拒绝（§6） | 注入 ABI 漂移：dynamic 拒绝、typed deopt，无崩溃 |
-| 11-S7 | 元数据策略（默认最小）+ zrp manifest + 工具（§7/§8） | 🚧 2026-06-27 部分完成：11-S7A 已完成 `.zrp` project manifest normalization 的 `manifestVersion` 门禁，以及旧 `dependencies.$alias` 与新 `references.alias` 同值去重/冲突拒绝；11-S7B 已完成 assembly `publicKeyToken` 十六进制校验与小写归一化；11-S7C 已完成 legacy top-level `name`/`version` assembly identity shape gate 与 schema parity；11-S7D 已完成 legacy `dependencies.$alias.{assembly|name}` 声明 assembly 映射、目标 manifest identity mismatch 拒绝、alias package key 保持与 AssemblyRef identity 查询暴露；11-S7E 已完成 `.zrp` manifest `preserve` 规则的 declaration-level 解析、project model 暴露与 schema parity；11-S7F 已完成 `.zrp` manifest `aotMode` declaration-level 解析、project model 暴露与 schema parity；11-S7G 已完成 project `aotMode` 到 `SZrAotWriterOptions.requireFullAot` 的 CLI/compiler helper 注入；11-S7H 已完成 CLI `--emit-aot-c` AOT C 发射入口、binary input embedded blob 和 manifest v3 `aot_c` path tracking；11-S7I 已完成 `preserve` 的 `method` target 到 entry function top-level callable flat index 的绑定，并注入 writer manifest roots；11-S7J 已支持 dotted method target 精确匹配 callable name，并把 `type` preserve 的 `members: "methods"` / `"all"` 展开为同名前缀 callable roots；11-S7K 已为 `preserve` 规则添加 `feature` + boolean `featureValue` 条件声明模型、互相依赖校验与 schema parity；11-S7L 已新增 `.zrp` top-level `features` boolean switch map，并让 CLI AOT preserve root 注入按 feature 条件匹配启停；11-S7M 已为 `generic` preserve 添加非空 `arguments` 声明模型、project model 承载和 schema parity；11-S7N 已把 generic preserve target+arguments 注入 AOT writer options 并在 generated C 清单中输出；11-S7O 已把当前模块已有 `GENERIC_INST` `TYPE_SPEC` 记录绑定回 generic preserve root 的 TypeSpec/signature token/hash；11-S7P 已让 full-AOT writer 拒绝未绑定 TypeSpec 的 manifest generic preserve root；11-S7Q 已把 TypeSpec-backed generic preserve root 物化为 generic instantiation identity 并输出 base token / instance id / share kind；11-S7R 已让 full-AOT writer 拒绝 TypeSpec-only generic preserve root，要求 generic instantiation identity 同步存在；11-S7S 已让 current-module TypeSpec-backed generic instantiation 在存在同名 `TYPE_REF` metadata 时使用 open generic base token，并保留 closed TypeSpec 回退；11-S7T 已支持 `GENERIC_INST(TYPE_DEF target, args...)` TypeSpec binding，并让 current-module TypeDef base token 进入 generic instantiation identity；11-S7U 已在 manifest generic root 缺失 TypeSpec 但存在同名 open `TYPE_DEF`/`TYPE_REF` metadata 时合成 current-function TypeSpec/signature binding并继续物化 generic instantiation identity；11-S7V 已把 manifest generic method root 绑定到现有 current-module `GENERIC_INST(MEMBER_REF methodToken, args...)` MethodSpec 形态签名并输出 MethodSpec identity；12-S7Y 已接入 generated MethodInfo 默认最小策略，opt-in code stripping 下输出 `reflectionMetadataLevel = NONE` 与 `metadata_policy.reflectionLevel` marker，默认/非裁剪仍保留 `RUNTIME_MAPPING`；12-S7Z..12-S7ZG 已逐步启用 emitted zrp metadata 的 MethodDef、token-record、FieldDef、GenericParam、GenericParamConstraint、MethodSpec method-token 剪枝级联，以及 retained signature blob pool compaction、offset remap、hash recomputation 和 MethodSpec signature rewrite；跨模块 target、导出 token、非 signature pool sweep/compaction、完整 zrp metadata sweep/pruning 和 dump/diff 工具仍待后续 |
+| 11-S6 | 版本检查运行实现 + 不匹配 deopt/拒绝（§6） | 🚧 2026-06-28 部分完成：11-S6A 已提供 `ZrCore_MetadataRuntime_CheckTokenBindingCompatibility()`，统一检查 token binding 的版本区间、module signature hash、metadata/signature token、signature hash、layoutVersion/layoutHash，并返回可供 dynamic 拒绝或 typed deopt 消费的 status/report；11-S6B 已提供 `ZrCore_MetadataRuntime_CheckFunctionTokenBindingsCompatibility()`，可扫描 attached function 的 `moduleMetadataBindings` 并返回首个不兼容 binding/ref record/report；11-S6C 已将 function scan 接入 root AOT dynamic module loader，在 embedded/zro metadata binding 不兼容时拒绝加载并输出状态名/token/hash/layout 诊断；11-S6D 已为 i64 scalar typed direct-call 生成 runtime metadata guard，caller/callee binding 不兼容时经 `ZrLibrary_AotRuntime_DeoptTypedDirectCall()` 退回 `CallStackValue()` 并同步 i64 scalar local；11-S6E 已将同一 guard/deopt 形态扩展到 u64 scalar typed direct-call，兼容时保留 unsigned direct thunk，不兼容时同步 u64 scalar local；11-S6F 已将同一 guard/deopt 形态扩展到 f64 scalar typed direct-call，兼容时保留 float direct thunk，不兼容时同步 f64 scalar local；11-S6G 已将同一 guard/deopt 形态扩展到 bool-result typed direct-call，覆盖 bool/bool 与 i64/u64/f64 比较返回 bool，兼容时保留 bool direct thunk，不兼容时同步 bool scalar local；11-S6H 已将同一 guard/deopt 形态扩展到 value SemIR inline-struct `CALL_TYPED`，覆盖 ordinary direct call、shared generic METHOD-slot call 和 full-AOT collected shared callsite，兼容时保留 `CallInlineStruct()`，不兼容时经 `CallInlineStructDynamicDeoptBridge()` 回解释器并复制 inline return bytes；跨模块 token resolve 集成和更完整 no-crash drift 注入仍待后续 |
+| 11-S7 | 元数据策略（默认最小）+ zrp manifest + 工具（§7/§8） | 🚧 2026-06-27 部分完成：11-S7A 已完成 `.zrp` project manifest normalization 的 `manifestVersion` 门禁，以及旧 `dependencies.$alias` 与新 `references.alias` 同值去重/冲突拒绝；11-S7B 已完成 assembly `publicKeyToken` 十六进制校验与小写归一化；11-S7C 已完成 legacy top-level `name`/`version` assembly identity shape gate 与 schema parity；11-S7D 已完成 legacy `dependencies.$alias.{assembly|name}` 声明 assembly 映射、目标 manifest identity mismatch 拒绝、alias package key 保持与 AssemblyRef identity 查询暴露；11-S7E 已完成 `.zrp` manifest `preserve` 规则的 declaration-level 解析、project model 暴露与 schema parity；11-S7F 已完成 `.zrp` manifest `aotMode` declaration-level 解析、project model 暴露与 schema parity；11-S7G 已完成 project `aotMode` 到 `SZrAotWriterOptions.requireFullAot` 的 CLI/compiler helper 注入；11-S7H 已完成 CLI `--emit-aot-c` AOT C 发射入口、binary input embedded blob 和 manifest v3 `aot_c` path tracking；11-S7I 已完成 `preserve` 的 `method` target 到 entry function top-level callable flat index 的绑定，并注入 writer manifest roots；11-S7J 已支持 dotted method target 精确匹配 callable name，并把 `type` preserve 的 `members: "methods"` / `"all"` 展开为同名前缀 callable roots；11-S7K 已为 `preserve` 规则添加 `feature` + boolean `featureValue` 条件声明模型、互相依赖校验与 schema parity；11-S7L 已新增 `.zrp` top-level `features` boolean switch map，并让 CLI AOT preserve root 注入按 feature 条件匹配启停；11-S7M 已为 `generic` preserve 添加非空 `arguments` 声明模型、project model 承载和 schema parity；11-S7N 已把 generic preserve target+arguments 注入 AOT writer options 并在 generated C 清单中输出；11-S7O 已把当前模块已有 `GENERIC_INST` `TYPE_SPEC` 记录绑定回 generic preserve root 的 TypeSpec/signature token/hash；11-S7P 已让 full-AOT writer 拒绝未绑定 TypeSpec 的 manifest generic preserve root；11-S7Q 已把 TypeSpec-backed generic preserve root 物化为 generic instantiation identity 并输出 base token / instance id / share kind；11-S7R 已让 full-AOT writer 拒绝 TypeSpec-only generic preserve root，要求 generic instantiation identity 同步存在；11-S7S 已让 current-module TypeSpec-backed generic instantiation 在存在同名 `TYPE_REF` metadata 时使用 open generic base token，并保留 closed TypeSpec 回退；11-S7T 已支持 `GENERIC_INST(TYPE_DEF target, args...)` TypeSpec binding，并让 current-module TypeDef base token 进入 generic instantiation identity；11-S7U 已在 manifest generic root 缺失 TypeSpec 但存在同名 open `TYPE_DEF`/`TYPE_REF` metadata 时合成 current-function TypeSpec/signature binding并继续物化 generic instantiation identity；11-S7V 已把 manifest generic method root 绑定到现有 current-module `GENERIC_INST(MEMBER_REF methodToken, args...)` MethodSpec 形态签名并输出 MethodSpec identity；11-S7W 已提供 CLI `--dump-zrp-metadata <file>` 只读工具，可输出 zrp metadata version/headerBytes/sectionCount 以及 12 个 section 的 bytes/count/elementSize/offset summary；11-S7X 已提供 CLI `--diff-zrp-metadata <before> <after>` 只读工具，可输出 zrp metadata version/headerBytes/sectionCount before/after 与 12 个 section 的 bytes/count before/after/removed diff summary；12-S7Y 已接入 generated MethodInfo 默认最小策略，opt-in code stripping 下输出 `reflectionMetadataLevel = NONE` 与 `metadata_policy.reflectionLevel` marker，默认/非裁剪仍保留 `RUNTIME_MAPPING`；12-S7Z..12-S7ZN 已逐步启用 emitted zrp metadata 的 MethodDef、token-record、FieldDef、GenericParam、GenericParamConstraint、MethodSpec method-token 剪枝级联，retained signature blob pool compaction/offset remap/hash recomputation/MethodSpec signature rewrite，string-pool retained-slice sweep、row offset remap 与 duplicate retained slice interning，当前 orphan constant-pool sweep，让 pool compaction 在 MethodDef count 不变时仍可触发，并提供 exported MethodDef/FieldDef member token 的 compacted-token remap surface；跨模块 target、cross-module export-token publication/rewrite、field/default-value backed constant-pool remap、完整 zrp metadata sweep/pruning 和版本检查仍待后续 |
 
 ## 10. 不变量校验
 
@@ -399,6 +432,363 @@ layoutHash/signatureHash`，但无运行期校验流程。补：
 ## 状态与产出记录
 
 > 落地每个阶段或切片时在此追加：时间戳 · 切片号 · 状态 · 完成项目 · RED/GREEN · 测试结果 · 备注。
+
+- 2026-06-28 04:22:47 +08:00 · 11-S6H inline-struct CALL_TYPED metadata guard/deopt ·
+  状态：11-S6 inline-struct typed-call deopt 子切片完成；完整 11-S6 仍进行中，cross-module
+  token resolve 与更完整 no-crash ABI drift injection 仍未关闭。
+  完成项目：value SemIR inline-struct `CALL_TYPED` 直接调用现在统一发射
+  `zr_aot_value_exec_call_typed_metadata_guard`，在 ordinary direct call、shared generic
+  METHOD-slot call 和 full-AOT collected shared callsite 进入 `CallInlineStruct()` 前调用
+  `ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, callee)`；binding drift 时发射
+  `zr_aot_value_exec_call_typed_metadata_deopt` 并经
+  `ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge()` 回解释器，将 inline return bytes
+  复制回 generated destination slot。full-AOT shared generic 测试收窄为继续禁止 missing-instance
+  deopt，同时要求 metadata drift guard/deopt surface。
+  RED/GREEN：RED 由 value SemIR source contract 要求 guard marker 后，WSL gcc 失败
+  4 tests / 1 failure，缺失 `zr_aot_value_exec_call_typed_metadata_guard`；GREEN 后 runtime
+  guard、value SemIR contracts 和 generic CALL_TYPED 通过。
+  验证：WSL gcc runtime guard 3/0、value SemIR contracts 4/0、generic CALL_TYPED 7/0、
+  focused CTest 2/2；WSL clang 同组 3/0、4/0、7/0、CTest 2/2；Windows MSVC Debug
+  同组 3/0、4/0、generic CALL_TYPED 7/0（3 个既有 Unix-only shared-library case ignored）、
+  CTest 2/2。
+  产出：`tests/acceptance/2026-06-28-aot-11-s6h-inline-struct-typed-call-deopt.md`。
+  备注：本切片不声明 cross-module token resolve 或完整 ABI drift injection 完成；验证时
+  `test_aot_c_call_shared_library_smoke` 暴露的既有 scalar no-arg typed direct-call runtime
+  failure 已由后续 07-S2 signed binary scalar-operands consumer alignment 修复，不计入
+  11-S6H 验收。
+
+- 2026-06-28 03:43:43 +08:00 · 11-S6G bool typed direct-call metadata guard/deopt ·
+  状态：11-S6 typed direct-call deopt 子切片完成；完整 11-S6 仍进行中，inline-struct
+  typed boundary、跨模块 token resolve 集成和更完整 no-crash ABI drift 注入仍待后续。
+  完成项目：bool no/one/two/three-arg typed direct-call writer、以及 i64/u64/f64 comparison -> bool
+  two-arg writer 现在携带 caller function slot，生成
+  `zr_aot_static_bool_*_direct_call_metadata_guard` 与
+  `zr_aot_static_{i64,u64,f64}_bool_two_arg_direct_call_metadata_guard`；兼容时保持 bool direct thunk，
+  不兼容时复用 `ZrLibrary_AotRuntime_DeoptTypedDirectCall()` -> `CallStackValue()`，
+  再用 `ZrLibrary_AotRuntime_SyncBoolLocal()` 同步 bool scalar local。call contract 同时锁定
+  i64/u64/f64/bool guard/deopt source shape。
+  RED/GREEN：RED 由新 source contract 要求 bool metadata guard marker 后，WSL gcc call contracts
+  失败 8 tests / 1 failure，缺失 `zr_aot_static_bool_one_arg_direct_call_metadata_guard`。
+  GREEN 后 runtime guard 3/0、call contracts 8/0、typed call contracts 4/0、bool typed direct-call
+  shared-library smoke 28/0。
+  验证：WSL gcc direct runtime guard 3/0、call contracts 8/0、typed call contracts 4/0、
+  bool typed direct-call smoke 28/0，focused CTest `aot_runtime_typed_direct_call_compatibility` 1/1；
+  WSL clang 同四项 direct 3/0、8/0、4/0、28/0 且 CTest 1/1；Windows MSVC Debug direct
+  runtime guard 3/0、call contracts 8/0、typed call contracts 4/0、bool typed direct-call smoke
+  0 failures / 28 ignored（既有 Unix shared-library 分支），CTest 1/1。
+  产出：`tests/acceptance/2026-06-28-aot-11-s6g-bool-typed-direct-call-deopt.md`。
+  备注：本切片只关闭 bool-result scalar typed direct-call 的 runtime guard/deopt fallback；没有声明
+  inline struct writeback、跨模块 token resolve 或完整 ABI drift injection 完成。
+
+- 2026-06-28 03:14:20 +08:00 · 11-S6F f64 typed direct-call metadata guard/deopt ·
+  状态：11-S6 typed direct-call deopt 子切片完成；完整 11-S6 仍进行中，bool/inline-struct
+  typed boundary、跨模块 token resolve 集成和更完整 no-crash ABI drift 注入仍待后续。
+  完成项目：f64 no/one/two/three-arg typed direct-call writer 现在携带 caller function slot，生成
+  `zr_aot_static_f64_*_direct_call_metadata_guard`；兼容时保持原有 float direct thunk 和 stateful
+  divide/modulo 路径，不兼容时复用 `ZrLibrary_AotRuntime_DeoptTypedDirectCall()` -> `CallStackValue()`，
+  再用 `ZrLibrary_AotRuntime_SyncFloatLocal()` 同步 f64 scalar local。call contract 同时锁定
+  i64/u64/f64 guard/deopt source shape，并移除 broad call-lowering contract 对 f64 scalar sync 文本的
+  全文件禁用，避免误拒 typed deopt fallback 的合法同步。
+  RED/GREEN：RED 先由 `test_aot_c_source_wraps_f64_typed_direct_calls_with_metadata_guard`
+  要求 f64 metadata guard marker 后，WSL gcc call contracts 失败 7 tests / 1 failure，缺失
+  `zr_aot_static_f64_one_arg_direct_call_metadata_guard`。GREEN 后 runtime guard 3/0、call
+  contracts 7/0、f64 typed direct-call shared-library smoke 19/0。
+  验证：WSL gcc direct runtime guard 3/0、call contracts 7/0、f64 typed direct-call smoke 19/0，
+  focused CTest `aot_runtime_typed_direct_call_compatibility` 1/1；WSL clang 同三项 direct
+  3/0、7/0、19/0 且 CTest 1/1；Windows MSVC Debug direct runtime guard 3/0、call contracts 7/0、
+  f64 typed direct-call smoke 0 failures / 19 ignored（既有 Unix shared-library 分支），CTest 1/1。
+  产出：`tests/acceptance/2026-06-28-aot-11-s6f-f64-typed-direct-call-deopt.md`。
+  备注：本切片只关闭 f64 scalar typed direct-call 的 runtime guard/deopt fallback；没有声明
+  bool typed boundary、inline struct writeback、跨模块 token resolve 或完整 ABI drift injection 完成。
+
+- 2026-06-28 02:54:58 +08:00 · 11-S6E u64 typed direct-call metadata guard/deopt ·
+  状态：11-S6 typed direct-call deopt 子切片完成；完整 11-S6 仍进行中，bool/f64/inline-struct
+  typed boundary、跨模块 token resolve 集成和更完整 no-crash ABI drift 注入仍待后续。
+  完成项目：u64 no/one/two/three-arg typed direct-call writer 现在携带 caller function slot，生成
+  `zr_aot_static_u64_*_direct_call_metadata_guard`；兼容时保持原有 unsigned direct thunk 和 stateful
+  divide/modulo 路径，不兼容时复用 `ZrLibrary_AotRuntime_DeoptTypedDirectCall()` -> `CallStackValue()`，
+  再用 `ZrLibrary_AotRuntime_SyncUnsignedIntLocal()` 同步 u64 scalar local。call contract 同时锁定
+  i64/u64 guard/deopt source shape，并移除 broad call-lowering contract 对 signed/unsigned scalar sync
+  文本的全文件禁用，避免误拒 typed deopt fallback 的合法同步。
+  RED/GREEN：RED 先由 `test_aot_c_source_wraps_u64_typed_direct_calls_with_metadata_guard`
+  要求 u64 metadata guard marker 后，WSL gcc call contracts 失败 6 tests / 1 failure，缺失
+  `zr_aot_static_u64_one_arg_direct_call_metadata_guard`。GREEN 后 runtime guard 3/0、call
+  contracts 6/0、u64 typed direct-call shared-library smoke 25/0。
+  验证：WSL gcc direct runtime guard 3/0、call contracts 6/0、u64 typed direct-call smoke 25/0，
+  focused CTest `aot_runtime_typed_direct_call_compatibility` 1/1；WSL clang 同三项 direct
+  3/0、6/0、25/0 且 CTest 1/1；Windows MSVC Debug direct runtime guard 3/0、call contracts 6/0、
+  u64 typed direct-call smoke 0 failures / 25 ignored（既有 Unix shared-library 分支），CTest 1/1。
+  产出：`tests/acceptance/2026-06-28-aot-11-s6e-u64-typed-direct-call-deopt.md`。
+  备注：本切片只关闭 u64 scalar typed direct-call 的 runtime guard/deopt fallback；没有声明
+  bool/f64 typed boundary、inline struct writeback、跨模块 token resolve 或完整 ABI drift injection 完成。
+
+- 2026-06-28 02:16:03 +08:00 · 11-S6D i64 typed direct-call metadata guard/deopt ·
+  状态：11-S6 typed direct-call deopt 子切片完成；完整 11-S6 仍进行中，bool/u64/f64/inline-struct
+  typed boundary、跨模块 token resolve 集成和更完整 no-crash ABI drift 注入仍待后续。
+  完成项目：新增 `ZrLibrary_AotRuntime_CanUseTypedDirectCall()` 与
+  `ZrLibrary_AotRuntime_DeoptTypedDirectCall()`，在直接调用前检查 caller/callee function 的
+  `moduleMetadataBindings`；i64 no/one/two/three-arg typed direct-call writer 生成
+  `zr_aot_static_i64_*_direct_call_metadata_guard`，兼容时保持 state-free direct thunk 调用，不兼容时走
+  `DeoptTypedDirectCall()` -> `CallStackValue()` 并通过 `SyncSignedIntLocal()` 把解释器结果同步回
+  i64 scalar local。
+  RED/GREEN：RED 先由 `tests/module/test_aot_runtime_typed_direct_call_compatibility.c`
+  引用缺失的 typed direct-call guard API，WSL gcc 出现隐式声明并链接失败。GREEN 后 runtime guard
+  覆盖空 caller/callee binding 兼容、caller drift 降级、callee drift 降级 3/0；source contract
+  锁定 runtime helper、metadata predicate、deopt bridge 和 i64 generated guard markers 5/0；既有
+  i64 typed direct-call shared-library smoke 继续 5/0。
+  验证：WSL gcc direct runtime guard 3/0、call contracts 5/0、typed direct-call smoke 5/0，
+  focused CTest `aot_runtime_typed_direct_call_compatibility` 1/1；WSL clang 同三项 direct
+  3/0、5/0、5/0 且 CTest 1/1；Windows MSVC Debug direct runtime guard 3/0、call contracts 5/0、
+  typed direct-call smoke 0 failures / 5 ignored（既有 Unix shared-library 分支），CTest 1/1。
+  Clang/MSVC 仍输出既有 project const qualifier 与 `aot_runtime.c` unreachable/size_t 警告。
+  产出：`tests/acceptance/2026-06-28-aot-11-s6d-i64-typed-direct-call-deopt.md`。
+  备注：本切片只关闭 i64 scalar typed direct-call 的 runtime guard/deopt fallback；没有声明
+  bool/u64/f64 typed boundary、inline struct writeback、跨模块 token resolve 或完整 ABI drift injection 完成。
+
+- 2026-06-28 01:18:38 +08:00 · 11-S6C dynamic AOT module-load binding reject ·
+  状态：11-S6 dynamic loader reject 子切片完成；完整 11-S6 仍进行中，typed 调用边界
+  deopt、跨模块 token resolve 集成和更完整 no-crash ABI drift 注入仍待后续。
+  完成项目：`zr_vm_library/src/zr_vm_library/aot_runtime.c` 在 AOT module load 期间加载
+  embedded/zro metadata function、构建 function table 并 attach metadata runtime 后，调用
+  `ZrCore_MetadataRuntime_CheckFunctionTokenBindingsCompatibility()` 扫描每个 function 的
+  `moduleMetadataBindings`；首个不兼容 binding 会拒绝加载，关闭 dynamic library，避免 materialize
+  reflection/prototype 或写入 runtime record，并在 last-error 中输出 status 名称、function index、
+  ref token、metadata/signature token、signature hash、module signature hash 和 layout version/hash。
+  RED/GREEN：RED 新增 `tests/parser/test_aot_c_metadata_binding_loader.c`，先注入 embedded `.zro`
+  会保留的 signature-hash drift，旧 loader 仍返回成功，WSL gcc 失败为 `Expected FALSE Was TRUE`。
+  GREEN 后同测试确认 loader 返回失败，错误文本包含 `AOT metadata binding compatibility failed`、
+  `module 'main'` 与 `SIGNATURE_HASH_MISMATCH`；既有 shared-library smoke 的空 binding 正常路径仍 8/0。
+  验证：WSL gcc direct loader reject 1/0、CTest `aot_c_metadata_binding_loader` 1/1，并通过
+  `zr_vm_aot_c_shared_library_smoke_test` 8/0；WSL clang direct loader reject 1/0、同 CTest 1/1；
+  Windows MSVC Debug 构建通过，direct test 0 failures / 1 ignored（既有 Unix shared-library 分支），
+  同 CTest 1/1。MSVC 仍输出既有 `aot_runtime.c` size_t 转换和 unreachable-code 警告。
+  产出：`tests/acceptance/2026-06-28-aot-11-s6c-dynamic-loader-binding-reject.md`。
+  备注：本切片只关闭 root AOT runtime dynamic module-load reject；`zr_vm_aot/.../aot_runtime.c`
+  静态副本当前没有对应 core metadata-runtime 头/实现链路，未强行接入新依赖。typed-boundary deopt、
+  跨模块 token resolve 和更广 no-crash ABI drift injection 仍未完成。
+
+- 2026-06-28 00:56:57 +08:00 · 11-S6B function token binding compatibility scan ·
+  状态：11-S6 支撑子切片完成；完整 11-S6 仍进行中，dynamic 模块加载拒绝、typed 调用边界
+  deopt、跨模块 token resolve 集成和无崩溃端到端漂移注入仍待后续。
+  完成项目：新增 `ZrCore_MetadataRuntime_CheckFunctionTokenBindingsCompatibility()`，按
+  `SZrFunction.moduleMetadataBindings` 顺序扫描 binding，复用 11-S6A 单 binding predicate，
+  返回首个不兼容 binding、对应的 local/module ref record 和完整 report。扫描入口会先查
+  function-local metadata token records，再查 module metadata token records，使 AssemblyRef/module-ref
+  的 version range 能参与运行期漂移判定；空 binding 表返回 compatible 并清空输出指针。
+  RED/GREEN：RED 为测试先引用缺失的 function-level API，WSL gcc 链接失败。GREEN 后 focused test
+  新增 3 个扫描用例，覆盖首个不兼容 binding 选择、module ref record version range 使用，以及空表
+  输出清理；同文件累计 15/0。
+  验证：WSL gcc、WSL clang、Windows MSVC Debug 均构建并直接运行
+  `zr_vm_metadata_runtime_binding_compatibility_test`，结果 15/0；三套环境 focused CTest
+  `metadata_runtime_binding_compatibility` 均 1/1。WSL gcc/clang 构建输出仍有既有 computed-goto
+  extension 警告，MSVC 构建输出仍有既有 execution/object/reflection 警告；本切片新增实现未引入新告警。
+  产出：`tests/acceptance/2026-06-28-aot-11-s6b-function-binding-compatibility-scan.md`。
+  备注：本切片只关闭 function-level scan/report 支撑层；不声明 11-S6 的 dynamic loader reject、
+  typed deopt、跨模块 token resolve 连接或端到端 ABI drift 注入完成。
+
+- 2026-06-27 09:04:36 +08:00 · 11-S6A runtime metadata token binding compatibility ·
+  状态：11-S6 支撑子切片完成；完整 11-S6 仍进行中，dynamic 模块加载拒绝、typed 调用边界
+  deopt、跨模块 token resolve 集成和无崩溃端到端漂移注入仍待后续。
+  完成项目：新增 `ZrCore_MetadataRuntime_CheckTokenBindingCompatibility()`，将
+  `SZrMetadataTokenRecord` 的 module version `[min,max)` 区间与 `SZrMetadataTokenBinding`
+  的 expected/resolved module signature hash、metadata token、signature token、signature hash、
+  layoutVersion/layoutHash 统一成运行期 ABI 漂移判定入口。新增
+  `SZrMetadataRuntimeBindingCompatibilityReport`，保留 expected/actual 字段和 version 指针，
+  供后续 loader reject、typed deopt 或诊断复用。版本语义与现有 import signature guard 保持一致：
+  actual/min/max 均为合法三段 semver 时严格比较，缺失或旧格式版本按兼容处理。
+  RED/GREEN：RED 先由 `tests/module/test_metadata_runtime_binding_compatibility.c` 引用缺失的
+  status/report/API 触发 WSL gcc 编译失败。GREEN 后 focused test 覆盖 compatible、version mismatch、
+  legacy version compatible、module signature mismatch、AssemblyRef->Module 合法映射、metadata token mismatch、signature token mismatch、
+  signature hash mismatch、layout version/hash mismatch、missing layout side mismatch 和 null binding invalid
+  argument，共 12/0。
+  验证：WSL gcc、WSL clang、Windows MSVC Debug 均构建并直接运行
+  `zr_vm_metadata_runtime_binding_compatibility_test`，结果 12/0；三套环境 focused CTest
+  `metadata_runtime_binding_compatibility` 均 1/1。WSL gcc/clang 构建输出仍有既有 computed-goto
+  extension 警告，MSVC 构建输出仍有既有 execution/metadata/object 警告；本切片新增文件未引入新告警。
+  产出：`tests/acceptance/2026-06-27-aot-11-s6a-runtime-binding-compatibility.md`。
+  备注：本切片只关闭 runtime binding ABI 漂移 predicate；不声明 11-S6 的 dynamic 拒绝、
+  typed deopt、跨模块 token resolve 连接或端到端 ABI drift 注入完成。
+
+- 2026-06-27 08:35:30 +08:00 · 11-S7Y zrp metadata version check / 12-S7ZS support ·
+  状态：11-S7 工具子切片完成；完整 11-S7 仍未关闭，跨模块 target、cross-module
+  export-token publication/rewrite、field/default-value backed constant-pool remap、完整
+  metadata sweep/pruning 和 11-S6 运行时 ABI 漂移版本检查仍待后续。
+  完成项目：CLI 新增 `--check-zrp-metadata-version <file>` 只读模式，解析层保存
+  `zrpMetadataVersionCheckPath`，更新 help，并拒绝与 run/compile/debug/output modifiers 混用；
+  app 层分发到 `ZrCli_ZrpMetadataDump_RunVersionCheckPath()`。metadata dump 模块新增
+  `ZrCli_ZrpMetadataDump_WriteVersionCheck()`，先读取 zrp header 前 16 字节，再输出
+  `zrp.metadata.versionCheck.status`、actual/expected magic、version、headerBytes 和
+  sectionCount；当前 header shape 通过完整 `SZrZrpMetadataHeader` 校验时报 `ok`，不匹配时报
+  `unsupported` 并返回失败。
+  RED/GREEN：RED 先由 `tests/cli/test_cli_args.c` 要求 version-check mode/path 后，旧 CLI
+  command 结构缺少 enum/字段而编译失败；随后由 `tests/cli/test_cli_zrp_metadata_dump.c`
+  要求 version-check summary/path API 后链接失败。GREEN 后 `cli_args` 与
+  `cli_zrp_metadata_dump` 均通过。
+  验证：WSL gcc、WSL clang 与 Windows MSVC Debug 均构建 `zr_vm_cli_executable`，并通过
+  `zr_vm_cli_args_test`、`zr_vm_cli_zrp_metadata_dump_test`；focused CTest
+  `cli_args|cli_zrp_metadata_dump` 三套环境均为 2/2。WSL gcc 与 Windows MSVC help 输出均确认
+  新增 `--check-zrp-metadata-version`。
+  产出：`tests/acceptance/2026-06-27-aot-11-s7y-zrp-metadata-version-check.md`。
+  备注：本切片只提供 standalone zrp metadata header version/shape 检查；不声明 11-S6 runtime
+  binding 的 ABI 漂移 deopt/拒绝路径、cross-module export-token rewrite、retained constant
+  default-value remap 或完整 metadata sweep/pruning 完成。
+
+- 2026-06-27 08:14:35 +08:00 · 11-S7X zrp metadata diff summary / 12-S7ZR support ·
+  状态：11-S7 工具子切片完成；完整 11-S7 仍未关闭，跨模块 target、cross-module
+  export-token publication/rewrite、field/default-value backed constant-pool remap、完整
+  metadata sweep/pruning 和版本检查仍待后续。
+  完成项目：CLI 新增 `--diff-zrp-metadata <before> <after>` 只读模式，解析层保存
+  `zrpMetadataBeforePath`/`zrpMetadataAfterPath`，更新 help，并拒绝与 run/compile/debug/output
+  modifiers 混用；app 层分发到 `ZrCli_ZrpMetadataDump_RunDiffPath()`。metadata dump 模块新增
+  `ZrCli_ZrpMetadataDump_WriteDiffSummary()`，在校验两个 `SZrZrpMetadataHeader` 后输出
+  version/headerBytes/sectionCount before/after，以及 12 个 zrp metadata section 的
+  bytes/count before/after/removed、elementSize 与 offset 对照。
+  RED/GREEN：RED 先由 `tests/cli/test_cli_args.c` 要求 diff mode/before/after path 后，旧 CLI
+  command 结构缺少 enum/字段而编译失败；随后由 `tests/cli/test_cli_zrp_metadata_dump.c`
+  要求 diff summary/path API 后链接失败。GREEN 后 `cli_args` 与 `cli_zrp_metadata_dump` 均通过。
+  验证：WSL gcc、WSL clang 与 Windows MSVC Debug 均构建 `zr_vm_cli_executable`，并通过
+  `zr_vm_cli_args_test`、`zr_vm_cli_zrp_metadata_dump_test`；focused CTest
+  `cli_args|cli_zrp_metadata_dump` 三套环境均为 2/2。WSL gcc 还运行了 `zr_vm_cli --help`
+  确认新增 diff mode 出现在帮助文本中。
+  产出：`tests/acceptance/2026-06-27-aot-11-s7x-zrp-metadata-diff-summary.md`。
+  备注：本切片只提供 standalone section byte/count diff summary；不声明版本兼容检查、
+  cross-module export-token rewrite、retained constant default-value remap 或完整 metadata
+  sweep/pruning 完成。
+
+- 2026-06-27 07:48:22 +08:00 · 11-S7W zrp metadata dump summary / 12-S7ZQ support ·
+  状态：11-S7 工具子切片完成；完整 11-S7 仍未关闭，跨模块 target、cross-module
+  export-token publication/rewrite、field/default-value backed constant-pool remap、dump diff
+  和版本检查仍待后续。
+  完成项目：CLI 新增 `--dump-zrp-metadata <file>` 只读模式，解析层保存
+  `zrpMetadataPath` 并拒绝与 run/compile/debug/output modifiers 混用；app 层分发到
+  `ZrCli_ZrpMetadataDump_RunPath()`。新 metadata dump 模块读取 `.zrp` 文件、校验
+  `SZrZrpMetadataHeader`，输出 `zrp.metadata.version/headerBytes/sectionCount` 以及
+  `zrp.metadata.section.<section> bytes=<n> count=<n> elementSize=<n> offset=<n>`，覆盖 12 个
+  zrp metadata sections。
+  RED/GREEN：RED 先由 `tests/cli/test_cli_args.c` 要求 dump mode/path 后，旧 CLI command
+  结构缺少 enum/字段而编译失败；随后新增 dump summary 目标后 CMake 因缺少
+  `zrp_metadata_dump.c` 失败。GREEN 后 `cli_args` 与 `cli_zrp_metadata_dump` 均通过。
+  验证：WSL gcc、WSL clang 与 Windows MSVC Debug 均构建 `zr_vm_cli_executable`，并通过
+  `zr_vm_cli_args_test`、`zr_vm_cli_zrp_metadata_dump_test`；focused CTest
+  `cli_args|cli_zrp_metadata_dump` 三套环境均为 2/2。
+  产出：`tests/acceptance/2026-06-27-aot-11-s7w-zrp-metadata-dump-summary.md`。
+  备注：本切片只提供 section summary dump；不声明 metadata diff、版本兼容检查、跨模块
+  export-token rewrite 或完整 metadata sweep/pruning 完成。
+
+- 2026-06-27 07:20:00 +08:00 · 11-S7 support / 12-S7ZP zrp section count delta markers ·
+  状态：11-S7 metadata pruning/dump-diff 支撑子切片完成；完整 11-S7 仍未关闭，跨模块 target、
+  cross-module export-token publication/rewrite、annotation promotion、field/default-value backed
+  constant-pool remap 和 dump/diff 工具仍待后续。
+  完成项目：zrp metadata size accounting 模块现在从 header section directory 采样 count，
+  并输出 `aot_size.zrpMetadataSectionCounts.<section>` 与
+  `code_stripping.zrpMetadataSectionCounts.<section>Before/After/Removed`。这为 metadata
+  sweep/dump-diff 增加 row/count 维度，且不改变 `.zrp` ABI。
+  RED/GREEN：RED 为 direct size-delta 测试新增 section count marker 后，旧 stats 结构缺少
+  count 字段导致 WSL gcc 编译失败；GREEN 后 size-delta 2/0、source contracts 21/0、
+  code stripping 5/0、direct zrp pruning 5/0、pool pruning 4/0、export-token remap 2/0。
+  验证：WSL gcc、WSL clang 与 Windows MSVC Debug 同组可执行测试均通过；focused CTest
+  `aot_c_zrp_metadata_size_deltas|aot_c_zrp_metadata_export_token_remap|aot_c_zrp_metadata_pruning|aot_c_zrp_metadata_pool_pruning|aot_c_code_stripping`
+  三套环境均为 5/5。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zp-zrp-section-count-delta-markers.md`。
+  备注：本切片是 metadata sweep/dump-diff 前的 section-count carrier；未改变 `.zrp` ABI，
+  也不声明跨模块 metadata publication 或默认保留策略完成。
+
+- 2026-06-27 06:51:55 +08:00 · 11-S7 support / 12-S7ZO zrp section-level trim delta markers ·
+  状态：11-S7 metadata pruning/dump-diff 支撑子切片完成；完整 11-S7 仍未关闭，跨模块 target、
+  cross-module export-token publication/rewrite、annotation promotion、field/default-value backed
+  constant-pool remap 和 dump/diff 工具仍待后续。
+  完成项目：zrp metadata size accounting 模块现在为裁剪前后每个 section 输出
+  `code_stripping.zrpMetadataSectionBytes.<section>Before/After/Removed`，使 emitted `.zrp`
+  metadata pruning 的 token records、definition tables 与三类 pools 变化都能被生成 C 直接审计。
+  RED/GREEN：RED 为新增 direct size-delta 测试后缺少 section marker 而失败 1/1；GREEN 后
+  size-delta 1/0、source contracts 21/0、code stripping 5/0、direct zrp pruning 5/0、
+  pool pruning 4/0、export-token remap 2/0。
+  验证：WSL gcc、WSL clang 与 Windows MSVC Debug 同组可执行测试均通过；focused CTest
+  `aot_c_zrp_metadata_size_deltas|aot_c_zrp_metadata_export_token_remap|aot_c_zrp_metadata_pruning|aot_c_zrp_metadata_pool_pruning|aot_c_code_stripping`
+  三套环境均为 5/5。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zo-zrp-section-delta-markers.md`。
+  备注：本切片是 metadata sweep/dump-diff 前的 section-level delta carrier；未改变 `.zrp` ABI，
+  也不声明跨模块 metadata publication 或默认保留策略完成。
+
+- 2026-06-27 06:30:32 +08:00 · 11-S7 support / 12-S7ZN export member-token remap surface ·
+  状态：11-S7 metadata pruning/export-token 支撑子切片完成；完整 11-S7 仍未关闭，跨模块 target、
+  cross-module export-token publication/rewrite、annotation promotion、field/default-value backed
+  constant-pool remap 和 dump/diff 工具仍待后续。
+  完成项目：zrp metadata remap 模块公开 `backend_aot_c_zrp_remap_export_member_token()`，
+  让 `.zrp` export manifest/table 后续可在 MethodDef pruning 之后把 exported `MEMBER_DEF`
+  token 同步映射到 compacted RID；保留方法 token 进入新 MethodDef RID，字段 token 按
+  retained MethodDef count 后移，已删除方法 token 返回 false 供上层拒绝或诊断。
+  RED/GREEN：RED 为 direct pruning 测试先要求导出方法旧 RID2 在 RID1/RID3 删除后映射到
+  compacted RID1，旧实现缺 helper，WSL gcc 链接失败；GREEN 后独立 export-token remap
+  测试 2/0，direct zrp pruning 5/0、pool pruning 4/0、code stripping 5/0、source contracts 21/0。
+  验证：WSL gcc、WSL clang 与 Windows MSVC Debug 同组通过，focused CTest
+  `aot_c_zrp_metadata_export_token_remap|aot_c_zrp_metadata_pruning|aot_c_zrp_metadata_pool_pruning|aot_c_code_stripping`
+  4/4。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zn-export-member-token-remap.md`。
+  备注：本切片只提供 pruning 后导出 member token remap surface；真实跨模块 manifest/table
+  写回、版本校验闭环和 dump/diff 对比仍按 11-S7 后续推进。
+
+- 2026-06-27 05:57:45 +08:00 · 11-S7 support / 12-S7ZM zrp pool compaction without MethodDef pruning ·
+  状态：11-S7 metadata pruning 支撑子切片完成；完整 11-S7 仍未关闭，跨模块 target、
+  导出 token、annotation promotion、field/default-value backed constant-pool remap 和 dump/diff 工具仍待后续。
+  完成项目：zrp metadata prune orchestration 的 skip gate 现在从 early MethodDef-count gate 改为
+  post-remap identity gate；identity 检查由 signature/string remap 模块提供。即使没有 MethodDef row
+  被删除，只要 string/signature/constant pool 需要收缩，也会生成 owned compacted blob。
+  RED/GREEN：RED 为 direct pool-pruning no-MethodDef-prune fixture 要求 duplicate retained
+  string compaction 后，旧实现 `ownedBlob` 为空，focused WSL gcc pool pruning 失败 1/4；
+  GREEN 后 pool pruning 4/0、zrp pruning 5/0、code stripping 5/0。
+  验证：同 12-S7ZM focused gcc/clang/MSVC set（pool pruning/zrp pruning/code stripping/source +
+  focused CTest 2/2）。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zm-zrp-pool-compaction-without-method-pruning.md`。
+  备注：这仍不是完整 11-S7 metadata sweep；后续仍需 cross-module/export token、annotation-driven
+  metadata policy、constant literal/default-value retained pool remap 和 dump/diff 闭环。
+
+- 2026-06-27 05:46:58 +08:00 · 11-S7 support / 12-S7ZL zrp string-pool duplicate slice compaction ·
+  状态：11-S7 metadata pruning 支撑子切片完成；完整 11-S7 仍未关闭，跨模块 target、
+  导出 token、annotation promotion、field/default-value backed constant-pool remap 和 dump/diff 工具仍待后续。
+  完成项目：string-pool remap 支撑模块现在在保留每个旧 offset 可重写性的同时，按 retained
+  string slice 内容进行 interning；不同 old offset 中完全相同的 NUL-terminated payload 会共用同一
+  emitted string-pool offset，避免裁剪后仍携带重复 string payload。
+  RED/GREEN：RED 为 direct pool-pruning duplicate string fixture 要求 retained TypeDef/FieldDef
+  共享 `Shared` 字符串后，旧实现仍按 old offset 写两份，focused WSL gcc pool pruning 失败 1/3
+  （Expected 540 Was 547）；GREEN 后 pool pruning 3/0、zrp pruning 5/0、code stripping 5/0。
+  验证：同 12-S7ZL focused gcc/clang/MSVC set（pool pruning/zrp pruning/code stripping/source +
+  focused CTest 2/2）。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zl-zrp-string-pool-duplicate-slice-compaction.md`。
+  备注：这仍不是完整 11-S7 metadata sweep；后续仍需 cross-module/export token、annotation-driven
+  metadata policy、constant literal/default-value retained pool remap 和 dump/diff 闭环。
+
+- 2026-06-27 05:07:26 +08:00 · 11-S7 support / 12-S7ZI zrp constant-pool orphan sweep ·
+  状态：11-S7 metadata pruning 支撑子切片完成；完整 11-S7 仍未关闭，跨模块 target、
+  导出 token、annotation promotion 和 dump/diff 工具仍待后续。
+  完成项目：在现有 zrp metadata row ABI 尚未提供 constant-pool offset/length 字段时，
+  emitted zrp pruning 将 constantPool payload 归类为无 retained row 引用的 orphan section；pruned header
+  rebuild 增加 retained constant-pool byte 输入并在当前 MethodDef pruning 路径写入 0，生成空
+  constantPool section。code stripping 集成统计同步把 after-trim constantPool 从 5 bytes 降为 0，
+  并计入 pool/metadata removed delta。
+  RED/GREEN：RED 为 direct pool-pruning fixture 要求 orphan constant pool 被清空后，旧实现仍保留原
+  5 bytes，focused WSL gcc pool pruning 失败 1/2（Expected 488 Was 493）；GREEN 后 pool pruning 2/0、
+  zrp pruning 5/0、code stripping 5/0。
+  验证：同 12-S7ZI focused gcc/clang/MSVC set（pool pruning/zrp pruning/code stripping/source/frame/typed/shared +
+  focused CTest 4/4；Windows typed/shared 为既有 ignored 形态；clang 仍有既有 generated generic-conversion warning）。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zi-zrp-constant-pool-orphan-sweep.md`。
+  备注：这仍不是完整 11-S7 metadata sweep；如果后续持久化 constant literal/default-value row 引用，
+  仍需增加 retained constant slice remap/compaction、cross-module/export token、annotation/dump-diff 闭环。
+
+- 2026-06-27 04:42:55 +08:00 · 11-S7 support / 12-S7ZH zrp string-pool sweep/compaction ·
+  状态：11-S7 metadata pruning 支撑子切片完成；完整 11-S7 仍未关闭，跨模块 target、
+  导出 token、constant pool sweep/compaction、annotation promotion 和 dump/diff 工具仍待后续。
+  完成项目：emitted zrp metadata pruning 新增 string-pool remap 模块，收集 retained TypeDef、retained MethodDef、
+  FieldDef、retained GenericParam 与 ModuleRef row 引用的 NUL-terminated string slices，按旧 offset 去重后复制为
+  compacted string pool，并在 TypeDef/MethodDef/FieldDef/GenericParam/ModuleRef row copy 时重写 string offsets；
+  新增 section helper 模块承载 zrp section lookup/layout/raw-copy 共享逻辑，避免 pruning orchestration 继续膨胀。
+  RED/GREEN：RED 为新 direct string-pool fixture 要求 string pool 40->25、保留 MethodDef name offset 重映射、
+  removed/unused strings 被剔除后，旧实现仍保留原池，focused WSL gcc pool pruning 失败 1/1；GREEN 后
+  pool pruning 1/0、zrp pruning 5/0、code stripping 5/0，source contract 锁定 section/string-pool helper API。
+  验证：同 12-S7ZH focused gcc/clang/MSVC set（pool pruning/zrp pruning/code stripping/source/frame/typed/shared +
+  focused CTest 4/4；Windows typed/shared 为既有 ignored 形态）。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zh-zrp-string-pool-compaction.md`。
+  备注：这仍不是完整 11-S7 metadata sweep；constant pool、cross-module/export token、annotation/dump-diff 后续再闭环。
 
 - 2026-06-27 03:49:57 +08:00 · 11-S7 support / 12-S7ZG zrp MethodSpec signature-pool rewrite/compaction ·
   状态：11-S7 metadata pruning 支撑子切片完成；完整 11-S7 仍未关闭，跨模块 target、

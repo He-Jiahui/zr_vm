@@ -194,19 +194,76 @@ static TZrBool backend_aot_c_scalar_stack_copy_destination_local_is_available(
     }
 }
 
+static TZrBool backend_aot_c_scalar_stack_copy_instruction_is_call_result_write(EZrInstructionCode opcode) {
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
+        case ZR_INSTRUCTION_ENUM(DYN_CALL):
+        case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED):
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool backend_aot_c_scalar_stack_copy_source_is_previous_call_result(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 execInstructionIndex) {
+    const TZrInstruction *instruction;
+
+    if (functionIr == ZR_NULL ||
+        functionIr->function == ZR_NULL ||
+        functionIr->function->instructionsList == ZR_NULL ||
+        execInstructionIndex == 0u ||
+        execInstructionIndex > functionIr->function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    instruction = &functionIr->function->instructionsList[execInstructionIndex - 1u];
+    return (TZrBool)(instruction->instruction.operandExtra == sourceSlot &&
+                     backend_aot_c_scalar_stack_copy_instruction_is_call_result_write(
+                             (EZrInstructionCode)instruction->instruction.operationCode));
+}
+
 static TZrBool backend_aot_c_scalar_stack_copy_try_prefer_available_source_type(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 destinationSlot,
         TZrUInt32 sourceSlot,
         TZrUInt32 execInstructionIndex,
         EZrStaticCType candidateType,
+        TZrBool forceValueSlotWrite,
         EZrStaticCType *ioStaticCType,
         TZrBool *outHasSourceLocal) {
+    TZrBool hasSourceLocal;
+
     if (ioStaticCType == ZR_NULL ||
-        outHasSourceLocal == ZR_NULL ||
-        *ioStaticCType == candidateType ||
-        !backend_aot_c_scalar_stack_copy_source_local_is_available(
-                functionIr, sourceSlot, execInstructionIndex, candidateType) ||
+        outHasSourceLocal == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    hasSourceLocal = backend_aot_c_scalar_stack_copy_source_local_is_available(
+            functionIr, sourceSlot, execInstructionIndex, candidateType);
+    if (!hasSourceLocal &&
+        !(forceValueSlotWrite &&
+          candidateType == ZR_STATIC_C_TYPE_BOOL &&
+          backend_aot_c_scalar_locals_has_bool_slot(functionIr, sourceSlot) &&
+          backend_aot_c_scalar_stack_copy_source_is_previous_call_result(
+                  functionIr, sourceSlot, execInstructionIndex))) {
+        return ZR_FALSE;
+    }
+
+    if (*ioStaticCType == candidateType) {
+        *outHasSourceLocal = ZR_TRUE;
+        return ZR_TRUE;
+    }
+
+    if (!forceValueSlotWrite &&
         !backend_aot_c_scalar_stack_copy_destination_local_is_available(
                 functionIr, destinationSlot, candidateType)) {
         return ZR_FALSE;
@@ -222,6 +279,7 @@ static TZrBool backend_aot_c_scalar_stack_copy_prefer_available_source_type(
         TZrUInt32 destinationSlot,
         TZrUInt32 sourceSlot,
         TZrUInt32 execInstructionIndex,
+        TZrBool forceValueSlotWrite,
         EZrStaticCType *ioStaticCType,
         TZrBool *outHasSourceLocal) {
     if (backend_aot_c_scalar_stack_copy_try_prefer_available_source_type(functionIr,
@@ -229,6 +287,7 @@ static TZrBool backend_aot_c_scalar_stack_copy_prefer_available_source_type(
                                                                          sourceSlot,
                                                                          execInstructionIndex,
                                                                          ZR_STATIC_C_TYPE_BOOL,
+                                                                         forceValueSlotWrite,
                                                                          ioStaticCType,
                                                                          outHasSourceLocal)) {
         return ZR_TRUE;
@@ -238,6 +297,7 @@ static TZrBool backend_aot_c_scalar_stack_copy_prefer_available_source_type(
                                                                          sourceSlot,
                                                                          execInstructionIndex,
                                                                          ZR_STATIC_C_TYPE_U64,
+                                                                         forceValueSlotWrite,
                                                                          ioStaticCType,
                                                                          outHasSourceLocal)) {
         return ZR_TRUE;
@@ -247,6 +307,7 @@ static TZrBool backend_aot_c_scalar_stack_copy_prefer_available_source_type(
                                                                          sourceSlot,
                                                                          execInstructionIndex,
                                                                          ZR_STATIC_C_TYPE_I64,
+                                                                         forceValueSlotWrite,
                                                                          ioStaticCType,
                                                                          outHasSourceLocal)) {
         return ZR_TRUE;
@@ -256,6 +317,7 @@ static TZrBool backend_aot_c_scalar_stack_copy_prefer_available_source_type(
                                                                            sourceSlot,
                                                                            execInstructionIndex,
                                                                            ZR_STATIC_C_TYPE_F64,
+                                                                           forceValueSlotWrite,
                                                                            ioStaticCType,
                                                                            outHasSourceLocal);
 }
@@ -499,20 +561,24 @@ TZrBool backend_aot_c_scalar_stack_copy_can_use_local_only(const SZrAotExecIrFun
                                                            TZrUInt32 sourceSlot,
                                                            TZrUInt32 execInstructionIndex) {
     EZrStaticCType staticCType;
+    EZrStaticCType sourceStaticCType;
+    EZrStaticCType sourceLocalStaticCType;
 
     if (functionIr == ZR_NULL || functionIr->function == ZR_NULL) {
         return ZR_FALSE;
     }
 
+    sourceStaticCType = backend_aot_c_scalar_stack_copy_static_type_for_slot(functionIr->function, sourceSlot);
+    sourceLocalStaticCType = backend_aot_c_scalar_stack_copy_static_type_from_locals(functionIr, sourceSlot);
     staticCType = backend_aot_c_scalar_stack_copy_static_type_for_slot(functionIr->function, destinationSlot);
     if (staticCType == ZR_STATIC_C_TYPE_DYNAMIC) {
-        staticCType = backend_aot_c_scalar_stack_copy_static_type_for_slot(functionIr->function, sourceSlot);
+        staticCType = sourceStaticCType;
     }
     if (staticCType == ZR_STATIC_C_TYPE_DYNAMIC) {
         staticCType = backend_aot_c_scalar_stack_copy_static_type_from_locals(functionIr, destinationSlot);
     }
     if (staticCType == ZR_STATIC_C_TYPE_DYNAMIC) {
-        staticCType = backend_aot_c_scalar_stack_copy_static_type_from_locals(functionIr, sourceSlot);
+        staticCType = sourceLocalStaticCType;
     }
 
     switch (staticCType) {
@@ -520,13 +586,40 @@ TZrBool backend_aot_c_scalar_stack_copy_can_use_local_only(const SZrAotExecIrFun
         case ZR_STATIC_C_TYPE_I64:
         case ZR_STATIC_C_TYPE_U64:
         case ZR_STATIC_C_TYPE_F64:
-            return (TZrBool)(backend_aot_c_scalar_stack_copy_source_local_is_available(
-                                     functionIr, sourceSlot, execInstructionIndex, staticCType) &&
-                             backend_aot_c_scalar_stack_copy_destination_local_is_available(
-                                     functionIr, destinationSlot, staticCType));
+            if (backend_aot_c_scalar_stack_copy_source_local_is_available(
+                        functionIr, sourceSlot, execInstructionIndex, staticCType) &&
+                backend_aot_c_scalar_stack_copy_destination_local_is_available(
+                        functionIr, destinationSlot, staticCType)) {
+                return ZR_TRUE;
+            }
+            break;
         default:
-            return ZR_FALSE;
+            break;
     }
+
+    if (sourceStaticCType != ZR_STATIC_C_TYPE_DYNAMIC &&
+        sourceStaticCType != staticCType &&
+        backend_aot_c_scalar_stack_copy_source_local_is_available(functionIr,
+                                                                  sourceSlot,
+                                                                  execInstructionIndex,
+                                                                  sourceStaticCType) &&
+        backend_aot_c_scalar_stack_copy_destination_local_is_available(
+                functionIr, destinationSlot, sourceStaticCType)) {
+        return ZR_TRUE;
+    }
+
+    if (sourceLocalStaticCType != ZR_STATIC_C_TYPE_DYNAMIC &&
+        sourceLocalStaticCType != staticCType &&
+        backend_aot_c_scalar_stack_copy_source_local_is_available(functionIr,
+                                                                  sourceSlot,
+                                                                  execInstructionIndex,
+                                                                  sourceLocalStaticCType) &&
+        backend_aot_c_scalar_stack_copy_destination_local_is_available(
+                functionIr, destinationSlot, sourceLocalStaticCType)) {
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
 }
 
 TZrBool backend_aot_try_write_c_scalar_stack_copy(FILE *file,
@@ -566,6 +659,7 @@ TZrBool backend_aot_try_write_c_scalar_stack_copy(FILE *file,
                                                                           destinationSlot,
                                                                           sourceSlot,
                                                                           execInstructionIndex,
+                                                                          forceValueSlotWrite,
                                                                           &staticCType,
                                                                           &hasSourceLocal);
     }

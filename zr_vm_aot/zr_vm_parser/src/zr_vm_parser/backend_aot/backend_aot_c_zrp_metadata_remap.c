@@ -143,6 +143,26 @@ static TZrBool backend_aot_c_zrp_remap_member_def_token(TZrMetadataToken *token,
     return ZR_FALSE;
 }
 
+TZrBool backend_aot_c_zrp_remap_export_member_token(TZrMetadataToken *token,
+                                                    const SZrZrpMetadataMethodDefRow *methodRows,
+                                                    TZrUInt32 methodCount,
+                                                    const SZrZrpMetadataFieldDefRow *fieldRows,
+                                                    TZrUInt32 fieldCount,
+                                                    const SZrAotFunctionTable *functionTable,
+                                                    TZrUInt32 retainedMethodDefCount) {
+    if (token == ZR_NULL || !backend_aot_c_zrp_token_is_member_def(*token)) {
+        return ZR_FALSE;
+    }
+
+    return backend_aot_c_zrp_remap_member_def_token(token,
+                                                    methodRows,
+                                                    methodCount,
+                                                    fieldRows,
+                                                    fieldCount,
+                                                    functionTable,
+                                                    retainedMethodDefCount);
+}
+
 TZrBool backend_aot_c_zrp_remap_token_record(SZrMetadataTokenRecord *record,
                                              const SZrZrpMetadataMethodDefRow *methodRows,
                                              TZrUInt32 methodCount,

@@ -12,7 +12,10 @@ typedef enum EZrCliMode {
     ZR_CLI_MODE_RUN_PROJECT = 3,
     ZR_CLI_MODE_COMPILE_PROJECT = 4,
     ZR_CLI_MODE_RUN_INLINE = 5,
-    ZR_CLI_MODE_RUN_PROJECT_MODULE = 6
+    ZR_CLI_MODE_RUN_PROJECT_MODULE = 6,
+    ZR_CLI_MODE_DUMP_ZRP_METADATA = 7,
+    ZR_CLI_MODE_DIFF_ZRP_METADATA = 8,
+    ZR_CLI_MODE_CHECK_ZRP_METADATA_VERSION = 9
 } EZrCliMode;
 
 typedef enum EZrCliExecutionMode {
@@ -27,6 +30,10 @@ typedef struct SZrCliCommand {
     const TZrChar *inlineCode;
     const TZrChar *inlineModeAlias;
     const TZrChar *moduleName;
+    const TZrChar *zrpMetadataPath;
+    const TZrChar *zrpMetadataBeforePath;
+    const TZrChar *zrpMetadataAfterPath;
+    const TZrChar *zrpMetadataVersionCheckPath;
     const TZrChar *const *programArgs;
     TZrSize programArgCount;
     const TZrChar *debugAddress;

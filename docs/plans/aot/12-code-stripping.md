@@ -16,14 +16,18 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c                  # shared AOT writer option normalization；12-S7Y default-min reflection metadata policy
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_internal.h         # shared AOT writer option normalization API；12-S7Y reflection metadata policy option helper
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c        # 12-S2B 稀疏 thunk/method-info 发射调度；12-S2D/S2E opt-in 裁剪接入与 root buffer；12-S4A manifest roots；12-S4C top-level callable flat-index resolver；12-S4H/S4I/S4J generic root diagnostics + TypeSpec token/hash/generic instance identity；12-S7A/S7B/S7C 函数裁剪统计；12-S7F embedded module byte statistic；12-S7H type-layout trim before/after 统计；12-S7I/S8 runtime fallback diagnostics 调度；12-S7K zrp metadata section/table/pool byte statistics；12-S7L type-layout payload byte trim delta；12-S7M runtime fallback warning suppression；12-S7O runtime fallback warning reason-mask suppression；12-S7R generated-C type-layout byte trim delta；12-S7S zrp metadata byte trim delta carrier；12-S7T delegates zrp metadata size accounting；12-S7U symbol-stripping option marker/plumbing；12-S7V method metadata generated-C byte trim delta；12-S7Y metadata policy marker/plumbing；12-S7Z emitted zrp metadata pruning plumbing；12-S8H/S8I full-AOT manifest generic TypeSpec/generic-instantiation gate
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.h # 12-S7T zrp metadata size/delta accounting API；12-S7Z blob-based after-stats sampling
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.c # 12-S7T zrp metadata header sampling + size/delta marker writing；12-S7Z pruned-blob stats
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.h # 12-S7Z emitted zrp metadata pruning API; 12-S7ZA token-record MethodDef remap surface; 12-S7ZB FieldDef shared MEMBER_DEF remap; 12-S7ZC GenericParam owner/range remap; 12-S7ZD remap module split surface; 12-S7ZG signature blob pool compaction orchestration
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c # 12-S7Z compacted blob rebuild orchestration; 12-S7ZD delegates token/range remap helpers; 12-S7ZE GenericParamConstraint section copy/compaction orchestration; 12-S7ZF MethodSpec section copy/compaction orchestration; 12-S7ZG signature blob pool compaction/rewrite orchestration
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.h # 12-S7ZD private zrp metadata token/range remap API; 12-S7ZE GenericParamConstraint remap/count/range API; 12-S7ZF MethodSpec remap/count API
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c # 12-S7ZA..S7ZC MethodDef/FieldDef/GenericParam token/range remap implementation; 12-S7ZE GenericParamConstraint cascade implementation; 12-S7ZF MethodSpec method-token cascade implementation
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.h # 12-S7ZG signature blob remap/compaction API
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c # 12-S7ZG retained signature blob slice collection, MethodSpec signature rewrite, offset remap, and hash recomputation
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.h # 12-S7T zrp metadata size/delta accounting API；12-S7Z blob-based after-stats sampling；12-S7ZO section-level trim delta marker surface；12-S7ZP section count marker fields
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.c # 12-S7T zrp metadata header sampling + size/delta marker writing；12-S7Z pruned-blob stats；12-S7ZO per-section before/after/removed marker writing；12-S7ZP per-section count stats/delta marker writing
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.h # 12-S7Z emitted zrp metadata pruning API; 12-S7ZA token-record MethodDef remap surface; 12-S7ZB FieldDef shared MEMBER_DEF remap; 12-S7ZC GenericParam owner/range remap; 12-S7ZD remap module split surface; 12-S7ZG signature blob pool compaction orchestration; 12-S7ZH string-pool compaction orchestration; 12-S7ZI constant-pool orphan sweep API surface
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c # 12-S7Z compacted blob rebuild orchestration; 12-S7ZD delegates token/range remap helpers; 12-S7ZE GenericParamConstraint section copy/compaction orchestration; 12-S7ZF MethodSpec section copy/compaction orchestration; 12-S7ZG signature blob pool compaction/rewrite orchestration; 12-S7ZH delegates shared section helpers and string-pool remap/copy; 12-S7ZI zero-retained constant-pool layout; 12-S7ZM post-remap identity skip so pool compaction runs without MethodDef pruning
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.h # 12-S7ZD private zrp metadata token/range remap API; 12-S7ZE GenericParamConstraint remap/count/range API; 12-S7ZF MethodSpec remap/count API; 12-S7ZN export member-token remap surface
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c # 12-S7ZA..S7ZC MethodDef/FieldDef/GenericParam token/range remap implementation; 12-S7ZE GenericParamConstraint cascade implementation; 12-S7ZF MethodSpec method-token cascade implementation; 12-S7ZN exported MethodDef/FieldDef member token remap helper
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.h # 12-S7ZH shared zrp metadata section lookup/layout/copy API
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c # 12-S7ZH shared section switch, layout writer, and raw-section copy helper
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.h # 12-S7ZG signature blob remap/compaction API; 12-S7ZM signature remap identity API
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c # 12-S7ZG retained signature blob slice collection, MethodSpec signature rewrite, offset remap, and hash recomputation; 12-S7ZM signature remap identity helper
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.h # 12-S7ZH string-pool remap/compaction API; 12-S7ZL duplicate retained string-slice remap support; 12-S7ZM string remap identity API
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c # 12-S7ZH retained string slice collection, compacted string-pool copy, and row string-offset remap; 12-S7ZL content-level duplicate slice interning; 12-S7ZM string remap identity helper
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_monomorphization.h # 12-S7U generated-symbol stripping option API
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_monomorphization.c # 12-S7U stable-ID private helper symbols for monomorphized generic value forms
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_sharing.h # 12-S7U generated-symbol stripping option API
@@ -44,7 +48,7 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.h # 12-S7P source-location derivation API
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c # 12-S7P ExecIR debug line/column span derivation
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_runtime_fallback.h # 12-S7I/S8A-S8D runtime fallback warning/full-AOT closure diagnostics API；12-S7O reason-mask suppression API
-  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_runtime_fallback.c # 12-S7I runtime fallback warning reason scan；12-S7N sourceLineEnd marker；12-S7O reason-mask suppression filter；12-S7P sourceColumn/sourceColumnEnd marker；12-S7Q sourceFile attribution；12-S8A/S8B/S8C dynamic deopt 与 12-S8D reflection full-AOT 闭合预检
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_runtime_fallback.c # 12-S7I runtime fallback warning reason scan；12-S7N sourceLineEnd marker；12-S7O reason-mask suppression filter；12-S7P sourceColumn/sourceColumnEnd marker；12-S7Q sourceFile attribution；12-S7ZJ reasonFlag marker；12-S7ZK quoted/escaped sourceFile marker；12-S8A/S8B/S8C dynamic deopt 与 12-S8D reflection full-AOT 闭合预检
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c # 12-S8E full-AOT generic METHOD slot static closure
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c   # 12-S7D/S7E type-layout/generated descriptor byte span + total；12-S7H distinct referenced inline type-layout count；12-S7L referenced inline type-layout payload bytes；12-S7R generated-C type-layout byte span sampling helper
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_callable_provenance.h
@@ -61,16 +65,26 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c # 11-S7G/12-S8F project aotMode -> requireFullAot injection helper；12-S7X full-AOT -> stripGeneratedSymbols injection
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.h # 11-S7H/12-S4C/12-S4D/12-S4H..12-S4N/12-S8G AOT C emission + preserve writer root bridge API
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c # 11-S7H/12-S4C/12-S4D/12-S4F/12-S4H..12-S4N/12-S8G embedded blob + method/type/generic preserve root injection + feature-conditioned root gating + generic TypeSpec synthesis/open-base generic-instantiation/MethodSpec binding
+  - zr_vm_cli/src/zr_vm_cli/command/command.h # 11-S7W/11-S7X/11-S7Y/12-S7ZQ/12-S7ZR/12-S7ZS CLI zrp metadata dump/diff/version-check mode carriers
+  - zr_vm_cli/src/zr_vm_cli/command/command.c # 11-S7W/12-S7ZQ `--dump-zrp-metadata <file>`, 11-S7X/12-S7ZR `--diff-zrp-metadata <before> <after>`, and 11-S7Y/12-S7ZS `--check-zrp-metadata-version <file>` parse/exclusivity/help surface
+  - zr_vm_cli/src/zr_vm_cli/app/app.c # 11-S7W/11-S7X/11-S7Y/12-S7ZQ/12-S7ZR/12-S7ZS CLI app dispatch to zrp metadata dump/diff/version-check runners
+  - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.h # 11-S7W/11-S7X/11-S7Y/12-S7ZQ/12-S7ZR/12-S7ZS zrp metadata section summary, diff summary, and version-check API
+  - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.c # 11-S7W/12-S7ZQ read-only zrp metadata section summary; 11-S7X/12-S7ZR before/after section byte/count diff summary; 11-S7Y/12-S7ZS header magic/version/header-size/section-count compatibility check implementation
   - zr_vm_language_server_extension/schemas/zrp.schema.json # 11-S7E/12-S4B preserve schema parity；11-S7F aotMode schema parity；11-S7K/12-S4E feature condition schema parity；11-S7L/12-S4F feature switch schema parity；11-S7M/12-S4G generic argument schema parity
   - zr_vm_parser/src/zr_vm_parser/compiler/   # 编译流程入口
   - tests/library/test_project_manifest_normalization.c # 11-S7E/12-S4B zrp preserve declaration parser gates；11-S7F aotMode gates；11-S7K/12-S4E preserve feature condition gates；11-S7L/12-S4F feature switch gates；11-S7M/12-S4G generic preserve argument gates
   - tests/parser/test_aot_reachability.c      # 12-S1A/12-S2A/12-S2B/12-S2C/12-S2E/12-S4A focused reachability contracts
-  - tests/parser/test_aot_c_code_stripping.c  # 12-S2D opt-in generated C filtering contract；12-S2E export root preservation；12-S4A manifest preservation；12-S7A/S7B/S7C 函数统计；12-S7H type-layout trim before/after stats；12-S7K zrp metadata section/table/pool byte statistics；12-S7L type-layout payload byte trim delta；12-S7R generated type-layout byte trim delta；12-S7S zrp metadata byte trim delta；12-S7V generated method metadata byte trim delta；12-S7Y stripped output reflection metadata level policy；12-S7Z zrp MethodDef metadata pruning；12-S7ZG signature blob pool after-trim delta
+  - tests/parser/test_aot_c_code_stripping.c  # 12-S2D opt-in generated C filtering contract；12-S2E export root preservation；12-S4A manifest preservation；12-S7A/S7B/S7C 函数统计；12-S7H type-layout trim before/after stats；12-S7K zrp metadata section/table/pool byte statistics；12-S7L type-layout payload byte trim delta；12-S7R generated type-layout byte trim delta；12-S7S zrp metadata byte trim delta；12-S7V generated method metadata byte trim delta；12-S7Y stripped output reflection metadata level policy；12-S7Z zrp MethodDef metadata pruning；12-S7ZG signature blob pool after-trim delta；12-S7ZH string pool after-trim delta；12-S7ZI constant pool after-trim delta
   - tests/parser/test_aot_c_zrp_metadata_pruning.c # 12-S7ZA direct zrp MethodDef/token-record pruning; 12-S7ZB FieldDef shared MEMBER_DEF remap; 12-S7ZC GenericParam owner/range remap; 12-S7ZE GenericParamConstraint cascade remap; 12-S7ZF MethodSpec method-token cascade remap; 12-S7ZG MethodSpec signature blob rewrite/compaction
-  - tests/parser/test_aot_c_source_contracts.c # 12-S7T zrp metadata size accounting module boundary；12-S7U public symbol-stripping option/emitter plumbing；12-S7V method metadata byte-delta source contract；12-S7Y metadata policy source contract；12-S7Z..12-S7ZG emitted zrp pruning/remap/signature module contracts
-  - tests/CMakeLists.txt # 12-S7ZA/12-S7ZG Windows shared-DLL direct zrp pruning test links private pruning/remap/signature modules
+  - tests/parser/test_aot_c_zrp_metadata_export_token_remap.c # 12-S7ZN direct exported MethodDef/FieldDef member token remap coverage
+  - tests/parser/test_aot_c_zrp_metadata_size_deltas.c # 12-S7ZO direct section-level zrp metadata before/after/removed marker coverage; 12-S7ZP direct section count marker coverage
+  - tests/parser/test_aot_c_zrp_metadata_pool_pruning.c # 12-S7ZH direct zrp string-pool compaction/remap; 12-S7ZI direct zrp orphan constant-pool sweep; 12-S7ZL retained duplicate string-slice compaction; 12-S7ZM no-MethodDef-prune pool compaction trigger
+  - tests/parser/test_aot_c_source_contracts.c # 12-S7T zrp metadata size accounting module boundary；12-S7U public symbol-stripping option/emitter plumbing；12-S7V method metadata byte-delta source contract；12-S7Y metadata policy source contract；12-S7Z..12-S7ZI emitted zrp pruning/remap/signature/string-pool module contracts；12-S7ZN export-token remap helper source contract；12-S7ZO section-level delta marker source contract；12-S7ZP section-count marker source contract
+  - tests/cli/test_cli_args.c # 11-S7W/11-S7X/11-S7Y/12-S7ZQ/12-S7ZR/12-S7ZS CLI dump/diff/version-check mode parse/exclusivity coverage
+  - tests/cli/test_cli_zrp_metadata_dump.c # 11-S7W/11-S7X/11-S7Y/12-S7ZQ/12-S7ZR/12-S7ZS zrp metadata dump/diff/version-check summary/path coverage
+  - tests/CMakeLists.txt # 11-S7W/11-S7X/11-S7Y/12-S7ZQ/12-S7ZR/12-S7ZS CLI zrp metadata dump/diff/version-check target; 12-S7ZA/12-S7ZH/12-S7ZN/12-S7ZO/12-S7ZP Windows shared-DLL direct zrp pruning/remap/size tests link private pruning/remap/section/signature/string-pool/size modules
   - tests/parser/test_aot_c_value_type_shared_library_smoke.c # 12-S7D/S7E generated type-layout byte statistics
-  - tests/parser/test_aot_c_dynamic_deopt_bridge_smoke.c # 12-S7I/S7J runtime fallback trim warning reason/sourceLine；12-S7M warning suppression；12-S7N sourceLineEnd；12-S7O reason-mask suppression；12-S7P sourceColumn/sourceColumnEnd；12-S7Q sourceFile attribution；12-S8A/S8B full-AOT dynamic call/value-access deopt bridge 拒绝
+  - tests/parser/test_aot_c_dynamic_deopt_bridge_smoke.c # 12-S7I/S7J runtime fallback trim warning reason/sourceLine；12-S7M warning suppression；12-S7N sourceLineEnd；12-S7O reason-mask suppression；12-S7P sourceColumn/sourceColumnEnd；12-S7Q sourceFile attribution；12-S7ZJ warning reasonFlag marker；12-S7ZK quoted/escaped sourceFile marker；12-S8A/S8B full-AOT dynamic call/value-access deopt bridge 拒绝
   - tests/parser/test_aot_c_iterator_shared_library_smoke.c # 12-S8C full-AOT dynamic iterator deopt 拒绝
   - tests/parser/test_aot_c_global_shared_library_smoke.c # 12-S8D full-AOT TYPEOF reflection runtime contract 拒绝
   - tests/parser/test_aot_c_generic_call_typed.c # 12-S7F embedded module byte statistic；12-S7G generated method metadata byte statistics；12-S7U release generated-symbol stripping fixture；12-S8E full-AOT generic METHOD slot runtime branch closure
@@ -181,7 +195,7 @@ preserve {
 | 12-S4 | manifest 保留规则 + feature switch（§3） | 🚧 2026-06-25 部分完成：12-S4A 已提供已解析 manifest 函数 root 输入通道，`SZrAotWriterOptions` 可携带需要保留的 function flat index，reachability 以 `MANIFEST` reason 保留；12-S4B/11-S7E 已在 `.zrp` project manifest parser 中接受 declaration-level `preserve` array，并把 `type`/`method`/`generic` target 与 optional members 暴露到 project model；12-S4C/11-S7I 已把当前模块的 `method` preserve target 绑定到 entry function top-level callable flat index，并注入 writer manifest roots；12-S4D/11-S7J 已支持 dotted method target 精确匹配 callable name，并把 `type` preserve 的 `members: "methods"` / `"all"` 展开为同名前缀 callable roots；12-S4E/11-S7K 已为 preserve rule 添加 `feature` + boolean `featureValue` 条件声明模型、互相依赖校验与 schema parity；12-S4F/11-S7L 已解析 top-level `features` boolean switch map，并让当前 method/type preserve root 注入按 feature 条件匹配启停；12-S4G/11-S7M 已为 `generic` preserve 添加非空 `arguments` 声明模型与 schema parity；12-S4H/11-S7N 已把 generic preserve target+arguments 注入 AOT writer options 并在 generated C 清单中输出；12-S4I/11-S7O 已在当前函数 metadata 里匹配已有 `TYPE_SPEC` generic signature 并把 TypeSpec/signature token/hash 带到 generic root 诊断；12-S4J/11-S7Q/12-S3A 已把已绑定 TypeSpec 的 generic preserve root 物化为 generic instantiation identity；12-S4K/11-S7S/12-S3C 已在当前模块存在同名 `TYPE_REF` metadata 时把 manifest generic root 的实例化身份绑定到 open generic base token；12-S4L/11-S7T/12-S3D 已支持 `GENERIC_INST(TYPE_DEF target, args...)` manifest generic TypeSpec 绑定并使用 current-module TypeDef base token；12-S4M/11-S7U/12-S3E 已在缺失 TypeSpec 时从同名 open `TYPE_DEF`/`TYPE_REF` metadata 合成 current-function TypeSpec/signature binding；12-S4N/11-S7V/12-S3F 已把 generic method preserve root 绑定到 current-module MethodSpec 形态签名并输出诊断；跨模块 method/generic binding 与注解 roots 仍待后续 |
 | 12-S5 | 反射数据流分析 + 注解标记（§4，衔接 10-S5） | 注解反射目标保留；未注解给警告 |
 | 12-S6 | 元数据/反射级别按可达性收窄（衔接 10/11）（§5） | 默认产物最小；token 通道仍可用 |
-| 12-S7 | trim 警告 + 体积统计；符号剥离选项（§6/§5） | 🚧 2026-06-27 部分完成：12-S7A 已在 opt-in AOT C 生成物中发布函数裁剪统计 `functionsBefore/After/Removed`，12-S7B 已为每个已发射函数输出 generated-C function body byte span，12-S7C 已输出 retained function body byte total，12-S7D 已为 generated type layout / GC descriptor block 输出 `aot_size.typeLayoutBytes[typeLayoutId]`，12-S7E 已输出 `aot_size.typeLayoutBytesTotal`，12-S7F 已输出随 AOT C module descriptor 嵌入的 `aot_size.embeddedModuleBytes`，12-S7G 已输出 generated method signature/info metadata 的 per-method 与 total byte span，12-S7H 已输出 opt-in code stripping 前后 distinct inline type-layout reference 计数，12-S7I 已输出 hybrid runtime fallback trim warning marker 并区分 dynamic-call / dynamic-value-access reason，12-S7J 已为 runtime fallback warning marker 输出 ExecIR `sourceLine`，12-S7K 已输出有效 zrp embedded metadata 的 total/token-record/definition-table/pool 字节统计与 12 个 section 明细，12-S7L 已输出 referenced inline type-layout payload bytes 的 before/after/removed 裁剪差值，12-S7M 已提供 writer-level runtime fallback warning suppression 并输出 suppressed count，12-S7N 已为 visible runtime fallback warning 输出 `sourceLineEnd` line-span marker，12-S7O 已提供 runtime fallback warning reason-mask suppression 并保持 visible/suppressed count 分离，12-S7P 已为 visible runtime fallback warning 输出 `sourceColumn/sourceColumnEnd` 并拆出 ExecIR source-location 推导模块，12-S7Q 已为 visible runtime fallback warning 输出 `sourceFile`，12-S7R 已输出 referenced inline type-layout 的 generated-C byte span before/after/removed 裁剪差值并校验 after 等于 `aot_size.typeLayoutBytesTotal`，12-S7S 已输出 zrp metadata total/token-record/definition-table/pool byte before/after/removed 裁剪差值载体（当前未重写 metadata，removed 为 0），12-S7T 已把 zrp metadata size/delta accounting 从 `backend_aot_c_emitter.c` 拆入 `backend_aot_c_zrp_metadata_size.{h,c}`，12-S7U 已提供 writer-level `stripGeneratedSymbols` option、`symbol_stripping.generatedSymbols` marker，并在启用时把泛型单态化/shared 私有 helper symbol 与 shared `debugName` 从类型名剥离为稳定 ID，12-S7V 已输出 generated method metadata 的 generated-C byte span before/after/removed 裁剪差值并校验 after 等于 `aot_size.methodMetadataBytesTotal`，12-S7W 已将 writer-level `stripGeneratedSymbols` 扩展到 LLVM 后端，默认保持 `@zr_aot_fn_<flatIndex>`，启用后 generated private function definition、thunk table、entry thunk 和静态 direct-call reference 改为 `@zr_fn_g<flatIndex>`，同时保留公开 `@ZrVm_GetAotCompiledModule`，12-S7X 已把 CLI/project `aotMode: "full-aot"` 默认映射到 `stripGeneratedSymbols`，让 full-AOT `--emit-aot-c` 产物默认启用生成符号剥离，hybrid/default 继续保留可读符号，12-S7Y 已在 opt-in code stripping 下把 generated MethodInfo `reflectionMetadataLevel` 降为 `ZR_AOT_REFLECTION_METADATA_NONE`，默认/非裁剪产物仍为 `RUNTIME_MAPPING`，并输出 `metadata_policy.reflectionLevel` marker；12-S7Z..12-S7ZG 已逐步启用 emitted zrp metadata 的 MethodDef、token-record、FieldDef、GenericParam、GenericParamConstraint、MethodSpec method-token 剪枝级联，以及 retained signature blob pool compaction、offset remap、hash recomputation 和 MethodSpec signature rewrite；完整 trim analyzer、attribute/annotation 抑制策略、非 signature pool sweep/compaction、export token 和完整 metadata sweep/pruning/dump-diff 仍待后续 |
+| 12-S7 | trim 警告 + 体积统计；符号剥离选项（§6/§5） | 🚧 2026-06-27 部分完成：12-S7A 已在 opt-in AOT C 生成物中发布函数裁剪统计 `functionsBefore/After/Removed`，12-S7B 已为每个已发射函数输出 generated-C function body byte span，12-S7C 已输出 retained function body byte total，12-S7D 已为 generated type layout / GC descriptor block 输出 `aot_size.typeLayoutBytes[typeLayoutId]`，12-S7E 已输出 `aot_size.typeLayoutBytesTotal`，12-S7F 已输出随 AOT C module descriptor 嵌入的 `aot_size.embeddedModuleBytes`，12-S7G 已输出 generated method signature/info metadata 的 per-method 与 total byte span，12-S7H 已输出 opt-in code stripping 前后 distinct inline type-layout reference 计数，12-S7I 已输出 hybrid runtime fallback trim warning marker 并区分 dynamic-call / dynamic-value-access reason，12-S7J 已为 runtime fallback warning marker 输出 ExecIR `sourceLine`，12-S7K 已输出有效 zrp embedded metadata 的 total/token-record/definition-table/pool 字节统计与 12 个 section 明细，12-S7L 已输出 referenced inline type-layout payload bytes 的 before/after/removed 裁剪差值，12-S7M 已提供 writer-level runtime fallback warning suppression 并输出 suppressed count，12-S7N 已为 visible runtime fallback warning 输出 `sourceLineEnd` line-span marker，12-S7O 已提供 runtime fallback warning reason-mask suppression 并保持 visible/suppressed count 分离，12-S7P 已为 visible runtime fallback warning 输出 `sourceColumn/sourceColumnEnd` 并拆出 ExecIR source-location 推导模块，12-S7Q 已为 visible runtime fallback warning 输出 `sourceFile`，12-S7ZK 已把该 `sourceFile` 输出收紧为 quoted/escaped marker，12-S7R 已输出 referenced inline type-layout 的 generated-C byte span before/after/removed 裁剪差值并校验 after 等于 `aot_size.typeLayoutBytesTotal`，12-S7S 已输出 zrp metadata total/token-record/definition-table/pool byte before/after/removed 裁剪差值载体（当前未重写 metadata，removed 为 0），12-S7T 已把 zrp metadata size/delta accounting 从 `backend_aot_c_emitter.c` 拆入 `backend_aot_c_zrp_metadata_size.{h,c}`，12-S7U 已提供 writer-level `stripGeneratedSymbols` option、`symbol_stripping.generatedSymbols` marker，并在启用时把泛型单态化/shared 私有 helper symbol 与 shared `debugName` 从类型名剥离为稳定 ID，12-S7V 已输出 generated method metadata 的 generated-C byte span before/after/removed 裁剪差值并校验 after 等于 `aot_size.methodMetadataBytesTotal`，12-S7W 已将 writer-level `stripGeneratedSymbols` 扩展到 LLVM 后端，默认保持 `@zr_aot_fn_<flatIndex>`，启用后 generated private function definition、thunk table、entry thunk 和静态 direct-call reference 改为 `@zr_fn_g<flatIndex>`，同时保留公开 `@ZrVm_GetAotCompiledModule`，12-S7X 已把 CLI/project `aotMode: "full-aot"` 默认映射到 `stripGeneratedSymbols`，让 full-AOT `--emit-aot-c` 产物默认启用生成符号剥离，hybrid/default 继续保留可读符号，12-S7Y 已在 opt-in code stripping 下把 generated MethodInfo `reflectionMetadataLevel` 降为 `ZR_AOT_REFLECTION_METADATA_NONE`，默认/非裁剪产物仍为 `RUNTIME_MAPPING`，并输出 `metadata_policy.reflectionLevel` marker；12-S7Z..12-S7ZN 已逐步启用 emitted zrp metadata 的 MethodDef、token-record、FieldDef、GenericParam、GenericParamConstraint、MethodSpec method-token 剪枝级联，retained signature blob pool compaction/offset remap/hash recomputation/MethodSpec signature rewrite，string-pool retained-slice sweep、row offset remap 与 duplicate retained slice interning，当前 orphan constant-pool sweep，让 pool compaction 在 MethodDef count 不变时仍可触发，并提供 exported MethodDef/FieldDef member token 的 compacted-token remap surface；12-S7ZR/11-S7X 已提供 standalone `--diff-zrp-metadata <before> <after>` zrp metadata section byte/count diff summary；完整 trim analyzer、attribute/annotation 抑制策略、field/default-value backed constant-pool remap、cross-module export-token publication/rewrite、完整 metadata sweep/pruning 和版本检查仍待后续 |
 | 12-S8 | full-AOT 闭合校验（§7） | 🚧 2026-06-25 部分完成：12-S8A 已在 `requireFullAot` 下预检 SemIR/显式 dynamic call 需要 deopt bridge 且无法静态解析 callee 的路径，12-S8B 已拒绝 SemIR dynamic member/index value-access deopt bridge，12-S8C 已拒绝 SemIR/显式 dynamic iterator deopt runtime boundary，12-S8D 已拒绝 `TYPEOF` reflection runtime contract，12-S8E 已让已静态收集 shared generic `CALL_TYPED` 在 full-AOT 下直接调用 AOT method entry 且不保留 METHOD slot null runtime branch；11-S7F 已提供 `.zrp` `aotMode: "full-aot"` project model；11-S7G/12-S8F 已提供 manifest 到 `requireFullAot` 的 CLI/compiler option 注入 helper；11-S7H/12-S8G 已提供 CLI AOT C 发射入口接线并让 full-AOT manifest policy 触发 writer 预检；12-S8H/11-S7P/08-S7E 已让 full-AOT writer 拒绝未绑定 TypeSpec 的 manifest generic preserve root；12-S8I/11-S7R/08-S7G/12-S3B 已让 full-AOT writer 继续拒绝 TypeSpec-only generic root，要求 generic instantiation identity；manifest 动态泛型实例、注解驱动反射保留和完整诊断仍待后续 |
 
 ## 9. 不变量校验
@@ -193,6 +207,237 @@ preserve {
 ## 状态与产出记录
 
 > 落地每个阶段或切片时在此追加：时间戳 · 切片号 · 状态 · 完成项目 · RED/GREEN · 测试结果 · 备注。
+
+- 2026-06-27 08:35:30 +08:00 · 12-S7ZS / 11-S7Y zrp metadata version check ·
+  状态：12-S7/11-S7 支撑子切片完成；完整 12-S7 仍未关闭，完整 trim analyzer、
+  attribute/annotation 抑制、field/default-value backed constant-pool remap、cross-module
+  export-token publication/rewrite、完整 metadata sweep/pruning 和 11-S6 运行时 ABI 漂移版本检查仍待后续。
+  完成项目：新增 CLI `--check-zrp-metadata-version <file>` 只读工具，读取 `.zrp` metadata header
+  前缀并输出 actual/expected magic、version、headerBytes、sectionCount；当前 header shape 经
+  完整 header 校验后输出 `status=ok`，版本或头形状不匹配输出 `status=unsupported` 并返回失败。
+  解析层禁止该模式与 run/compile/debug/output modifiers 混用。
+  RED/GREEN：RED 先由 CLI args 测试要求 version-check mode/path 后旧 command 结构缺 enum/字段而
+  编译失败；随后 zrp metadata dump 测试要求 version-check summary/path API 后链接失败。GREEN 后
+  `cli_args` 与 `cli_zrp_metadata_dump` 通过。
+  验证：WSL gcc、WSL clang 与 Windows MSVC Debug 均构建 `zr_vm_cli_executable`；同组可执行测试通过；
+  focused CTest `cli_args|cli_zrp_metadata_dump` 三套环境均为 2/2。WSL gcc 与 Windows MSVC help
+  输出覆盖新增帮助文本。
+  产出：`tests/acceptance/2026-06-27-aot-11-s7y-zrp-metadata-version-check.md`。
+  备注：本切片只提供 standalone metadata header version/shape check，不声明完整 trim analyzer、
+  annotation-driven policy、cross-module export-token rewrite、constant literal/default-value remap、
+  11-S6 runtime ABI 漂移 deopt 或完整 metadata sweep/pruning 完成。
+
+- 2026-06-27 08:14:35 +08:00 · 12-S7ZR / 11-S7X zrp metadata diff summary ·
+  状态：12-S7/11-S7 支撑子切片完成；完整 12-S7 仍未关闭，完整 trim analyzer、
+  attribute/annotation 抑制、field/default-value backed constant-pool remap、cross-module
+  export-token publication/rewrite、完整 metadata sweep/pruning 和版本检查仍待后续。
+  完成项目：新增 CLI `--diff-zrp-metadata <before> <after>` 只读工具，读取并校验两个
+  `.zrp` metadata header，输出 version/headerBytes/sectionCount 的 before/after，以及
+  12 个 section 的 bytes/count before/after/removed diff summary；增长场景 removed 计数归零，
+  避免无符号下溢。解析层禁止该模式与 run/compile/debug/output modifiers 混用。
+  RED/GREEN：RED 先由 CLI args 测试要求 diff mode 和 before/after path 后旧 command
+  结构缺 enum/字段而编译失败；随后 zrp metadata dump 测试要求 diff summary/path API 后链接失败。
+  GREEN 后 `cli_args` 与 `cli_zrp_metadata_dump` 通过。
+  验证：WSL gcc、WSL clang 与 Windows MSVC Debug 均构建 `zr_vm_cli_executable`；同组可执行测试通过；
+  focused CTest `cli_args|cli_zrp_metadata_dump` 三套环境均为 2/2。WSL gcc 还运行
+  `zr_vm_cli --help` 覆盖新增帮助文本。
+  产出：`tests/acceptance/2026-06-27-aot-11-s7x-zrp-metadata-diff-summary.md`。
+  备注：本切片只提供 standalone metadata diff summary，不声明完整 trim analyzer、annotation-driven
+  policy、cross-module export-token rewrite、constant literal/default-value remap、版本兼容检查或
+  完整 metadata sweep/pruning 完成。
+
+- 2026-06-27 07:48:22 +08:00 · 12-S7ZQ / 11-S7W zrp metadata dump summary ·
+  状态：12-S7/11-S7 支撑子切片完成；完整 12-S7 仍未关闭，完整 trim analyzer、
+  attribute/annotation 抑制、field/default-value backed constant-pool remap、cross-module
+  export-token publication/rewrite、dump diff 和版本检查仍待后续。
+  完成项目：新增 CLI `--dump-zrp-metadata <file>` 只读工具，读取并校验 `.zrp` metadata
+  header，输出 version/headerBytes/sectionCount 与 12 个 section 的
+  bytes/count/elementSize/offset summary；解析层禁止它与 run/compile/debug/output modifiers 混用。
+  RED/GREEN：RED 先由 CLI args 测试要求 dump mode/path 后旧 command 结构缺 enum/字段而编译失败；
+  随后新增 dump summary 目标后 CMake 因缺少 `zrp_metadata_dump.c` 失败。GREEN 后
+  `cli_args` 与 `cli_zrp_metadata_dump` 通过。
+  验证：WSL gcc、WSL clang 与 Windows MSVC Debug 均构建 `zr_vm_cli_executable`；同组可执行测试通过；
+  focused CTest `cli_args|cli_zrp_metadata_dump` 三套环境均为 2/2。
+  产出：`tests/acceptance/2026-06-27-aot-11-s7w-zrp-metadata-dump-summary.md`。
+  备注：本切片只提供 standalone dump summary，不声明 metadata diff、版本兼容检查、完整
+  trim analyzer 或 metadata sweep/pruning 完成。
+
+- 2026-06-27 07:20:00 +08:00 · 12-S7ZP zrp section count delta markers ·
+  状态：12-S7 子切片完成；完整 12-S7 仍未关闭，完整 trim analyzer、attribute/annotation 抑制、
+  field/default-value backed constant-pool remap、cross-module export-token publication/rewrite
+  和 dump/diff 仍待后续。
+  完成项目：`SZrAotZrpMetadataSizeStats` 现在采样每个 `.zrp` metadata section 的 row/count；
+  `backend_aot_write_zrp_metadata_size_stats()` 输出 `aot_size.zrpMetadataSectionCounts.<section>`，
+  `backend_aot_write_code_stripping_zrp_metadata_size_deltas()` 输出
+  `code_stripping.zrpMetadataSectionCounts.<section>Before/After/Removed`，为后续 dump/diff
+  同时提供字节维度与 row/count 维度。
+  RED/GREEN：RED 为 direct size-delta 测试新增 count marker 后，旧 stats 结构没有 section count
+  字段，WSL gcc 编译失败；GREEN 后 size-delta 2/0、source contracts 21/0、code stripping 5/0、
+  direct zrp pruning 5/0、pool pruning 4/0、export-token remap 2/0。
+  验证：WSL gcc、WSL clang 与 Windows MSVC Debug 同组可执行测试均通过；三套环境 focused CTest
+  `aot_c_zrp_metadata_size_deltas|aot_c_zrp_metadata_export_token_remap|aot_c_zrp_metadata_pruning|aot_c_zrp_metadata_pool_pruning|aot_c_code_stripping`
+  均为 5/5。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zp-zrp-section-count-delta-markers.md`。
+  备注：本切片只补 generated-C 注释级 section count 可观测性，不改变 `.zrp` ABI，也不声明
+  annotation-driven policy、cross-module export-token rewrite、constant literal/default-value remap
+  或独立 dump/diff 工具完成。
+
+- 2026-06-27 06:51:55 +08:00 · 12-S7ZO zrp section-level trim delta markers ·
+  状态：12-S7 子切片完成；完整 12-S7 仍未关闭，完整 trim analyzer、attribute/annotation 抑制、
+  field/default-value backed constant-pool remap、cross-module export-token publication/rewrite
+  和 dump/diff 仍待后续。
+  完成项目：`backend_aot_write_code_stripping_zrp_metadata_size_deltas()` 在既有 zrp metadata
+  总量、token-record、definition-table、pool delta marker 外，新增 12 个 section 的
+  `code_stripping.zrpMetadataSectionBytes.<section>Before/After/Removed` marker，覆盖
+  tokenRecords、TypeDef/MethodDef/FieldDef、GenericParam/Constraint、TypeSpec/MethodSpec、
+  ModuleRef、string/signature/constant pool，便于后续 dump/diff 工具直接定位裁剪收益来源。
+  RED/GREEN：RED 为新增 `zr_vm_aot_c_zrp_metadata_size_deltas_test` 后，旧实现缺少
+  `zrpMetadataSectionBytes.tokenRecordsBefore` 等 marker，WSL gcc 失败 1/1；GREEN 后
+  size-delta 1/0、source contracts 21/0、code stripping 5/0、direct zrp pruning 5/0、
+  pool pruning 4/0、export-token remap 2/0。
+  验证：WSL gcc、WSL clang 与 Windows MSVC Debug 同组可执行测试均通过；三套环境 focused CTest
+  `aot_c_zrp_metadata_size_deltas|aot_c_zrp_metadata_export_token_remap|aot_c_zrp_metadata_pruning|aot_c_zrp_metadata_pool_pruning|aot_c_code_stripping`
+  均为 5/5。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zo-zrp-section-delta-markers.md`。
+  备注：本切片只补 generated-C 注释级 section delta 可观测性，不声明完整 trim analyzer、
+  annotation-driven policy、cross-module export-token rewrite、constant literal/default-value
+  remap 或独立 dump/diff 工具完成。
+
+- 2026-06-27 06:30:32 +08:00 · 12-S7ZN export member-token remap surface ·
+  状态：12-S7 子切片完成；完整 12-S7 仍未关闭，完整 trim analyzer、attribute/annotation 抑制、
+  field/default-value backed constant-pool remap、cross-module export-token publication/rewrite
+  和 dump/diff 仍待后续。
+  完成项目：`backend_aot_c_zrp_metadata_remap.{h,c}` 新增
+  `backend_aot_c_zrp_remap_export_member_token()`，复用现有 MethodDef/FieldDef compacting
+  规则，把保留的 exported `MEMBER_DEF` token 映射到裁剪后 RID，并拒绝已经被 MethodDef
+  pruning 删除的导出方法 token；字段导出 token 会排在 retained MethodDef 之后重新编号。
+  RED/GREEN：RED 为 direct pruning 测试先要求导出方法旧 RID2 在 RID1/RID3 删除后映射到
+  compacted RID1，旧实现缺少 helper，WSL gcc 链接失败；GREEN 后独立
+  `test_aot_c_zrp_metadata_export_token_remap.c` 覆盖 retained MethodDef export token 与
+  FieldDef export token remap，export-token remap 2/0、direct zrp pruning 5/0、pool pruning
+  4/0、code stripping 5/0、source contracts 21/0。
+  验证：WSL gcc、WSL clang 与 Windows MSVC Debug 同组通过，focused CTest
+  `aot_c_zrp_metadata_export_token_remap|aot_c_zrp_metadata_pruning|aot_c_zrp_metadata_pool_pruning|aot_c_code_stripping`
+  4/4。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zn-export-member-token-remap.md`。
+  备注：本切片只提供 emitted zrp metadata pruning 后的 exported member token remap surface；
+  尚未把该 remap 写回跨模块 `.zrp` export manifest/table，也不声明完整 metadata sweep、
+  annotation-driven policy、constant literal/default-value remap 或 dump/diff 完成。
+
+- 2026-06-27 05:57:45 +08:00 · 12-S7ZM zrp pool compaction without MethodDef pruning ·
+  状态：12-S7 子切片完成；完整 12-S7 仍未关闭，完整 trim analyzer、attribute/annotation 抑制、
+  export token、field/default-value backed constant-pool remap 和 dump/diff 仍待后续。
+  完成项目：emitted zrp metadata pruner 不再只因 `retainedMethodDefCount == methodDefCount`
+  就跳过 blob rebuild；现在先构建 signature/string remap，并通过各 remap 模块的 identity helper
+  判断是否可跳过，仅在 token/table counts、constant-pool retained bytes、signature remap 和 string
+  remap 都是 identity 时跳过。这样没有 MethodDef 删除时，
+  string/signature pool compaction 仍能生效。
+  RED/GREEN：RED 为 direct pool-pruning fixture 保留两个 MethodDef 但要求 duplicate retained
+  string compaction 后，旧实现 `ownedBlob` 为空，focused WSL gcc pool pruning 失败 1/4；
+  GREEN 后 pool pruning 4/0、direct zrp pruning 5/0、code stripping 5/0、source contracts 21/0。
+  验证：WSL gcc 与 WSL clang 同组通过，focused CTest
+  `aot_c_zrp_metadata_pool_pruning|aot_c_code_stripping` 2/2；Windows MSVC Debug 同组通过，
+  focused CTest 2/2。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zm-zrp-pool-compaction-without-method-pruning.md`。
+  备注：本切片只修正 zrp pool compaction 的触发条件，不声明完整 metadata sweep、constant
+  literal/default-value remap、export token 或 trim analyzer 完成。
+
+- 2026-06-27 05:46:58 +08:00 · 12-S7ZL zrp string-pool duplicate slice compaction ·
+  状态：12-S7 子切片完成；完整 12-S7 仍未关闭，完整 trim analyzer、attribute/annotation 抑制、
+  export token、field/default-value backed constant-pool remap 和 dump/diff 仍待后续。
+  完成项目：`backend_aot_c_zrp_metadata_string_pool.c` 的 string remap 现在按内容合并 retained
+  NUL-terminated string slices：当两个保留 row 指向不同旧 offset 但字节内容完全相同时，只写入一份
+  emitted string-pool payload；每个旧 offset 仍有 remap entry，因此 TypeDef/MethodDef/FieldDef/
+  GenericParam/ModuleRef 的 offset rewrite 仍可解析原始旧 offset。
+  RED/GREEN：RED 为 `test_aot_c_zrp_metadata_pool_pruning.c` 新增 duplicate retained string fixture
+  后，旧 offset-only remap 使 focused WSL gcc pool pruning 失败 1/3（Expected 540 Was 547）；
+  GREEN 后 pool pruning 3/0、direct zrp pruning 5/0、code stripping 5/0、source contracts 21/0。
+  验证：WSL gcc 与 WSL clang 同组通过，focused CTest
+  `aot_c_zrp_metadata_pool_pruning|aot_c_code_stripping` 2/2；Windows MSVC Debug 同组通过，
+  focused CTest 2/2。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zl-zrp-string-pool-duplicate-slice-compaction.md`。
+  备注：本切片只把已有 string-pool sweep 从 old-offset dedupe 收紧到 content-level duplicate
+  slice interning；不声明完整 metadata sweep、constant literal/default-value remap、export token 或
+  trim analyzer 完成。
+
+- 2026-06-27 05:31:19 +08:00 · 12-S7ZK trim warning sourceFile quoted escaping ·
+  状态：12-S7 子切片完成；完整 12-S7 仍未关闭，完整 trim analyzer、attribute/annotation 抑制、
+  export token 和 dump/diff 仍待后续。
+  完成项目：runtime fallback trim warning comment 的 `sourceFile` 字段现在输出为 quoted/escaped
+  marker：普通文件为 `sourceFile="dynamic_deopt_bridge.zr"`，路径中的反斜杠、双引号和控制字符会
+  分别写为 `\\`、`\"`、`\n`/`\r`/`\t` 或 `\xNN`，避免带空格、引号或反斜杠的源文件名破坏
+  后续机器解析。
+  RED/GREEN：RED 为 `test_aot_c_dynamic_deopt_bridge_smoke.c` 把既有 warning 期望改为 quoted
+  `sourceFile`，并新增 `src\quoted "module".zr` 转义 fixture 后，旧 `%s` 原样输出导致 focused WSL gcc
+  dynamic deopt bridge smoke 失败 4/7；GREEN 后 dynamic deopt bridge smoke 7/0、source contracts 21/0、
+  code stripping 5/0。
+  验证：WSL gcc dynamic deopt bridge smoke 7/0、source contracts 21/0、code stripping 5/0、CTest
+  `aot_c_code_stripping` 1/1；WSL clang 同组通过；Windows MSVC Debug dynamic deopt bridge smoke
+  0 failures/7 ignored、source contracts 21/0、code stripping 5/0、CTest `aot_c_code_stripping` 1/1。
+  `git diff --check` 退出 0，仅报告既有 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zk-trim-warning-source-file-escaping.md`。
+  备注：本切片只让已有 warning 的 source file 字段可可靠解析；`@requires_unreferenced_code`、
+  reflection data-flow annotation、annotation-based warning suppression/promotion 和完整 analyzer 仍待后续。
+
+- 2026-06-27 05:19:43 +08:00 · 12-S7ZJ trim warning reasonFlag marker ·
+  状态：12-S7 子切片完成；完整 12-S7 仍未关闭，完整 trim analyzer、attribute/annotation 抑制、
+  export token 和 dump/diff 仍待后续。
+  完成项目：runtime fallback trim warning comment 现在在 textual `reason=...` 之外同步输出
+  `reasonFlag=<mask>`，该值复用 `ZR_AOT_RUNTIME_FALLBACK_WARNING_*` suppression mask 映射，便于
+  诊断消费端把单条 warning 与 reason-mask suppression/统计精确对应。dynamic-call warning 输出
+  `reasonFlag=1`，dynamic-value-access warning 输出 `reasonFlag=2`。
+  RED/GREEN：RED 为 `test_aot_c_dynamic_deopt_bridge_smoke.c` 将现有 warning 字符串期望升级为
+  `reasonFlag=... reason=...` 后，旧生成器缺少字段，focused WSL gcc dynamic deopt bridge smoke
+  失败 3/6；GREEN 后 dynamic deopt bridge smoke 6/0、source contracts 21/0、code stripping 5/0。
+  验证：WSL gcc dynamic deopt bridge smoke 6/0、source contracts 21/0、code stripping 5/0；WSL clang
+  同组通过；Windows MSVC Debug dynamic deopt bridge smoke 0 failures/6 ignored、source contracts 21/0、
+  code stripping 5/0，CTest `aot_c_code_stripping` 1/1。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zj-trim-warning-reason-flag.md`。
+  备注：本切片只增强已有 runtime-fallback warning 的 reason 可消费性；`@requires_unreferenced_code`、
+  reflection data-flow annotation、warning suppression annotation 和完整 analyzer 仍待后续。
+
+- 2026-06-27 05:07:26 +08:00 · 12-S7ZI zrp constant-pool orphan sweep ·
+  状态：12-S7 子切片完成；完整 12-S7 仍未关闭，trim analyzer、attribute/annotation 抑制、
+  export token 和 dump/diff 仍待后续。
+  完成项目：在当前 11-S1 zrp row ABI 没有 constant-pool offset 字段的前提下，emitted zrp
+  MethodDef pruning 会把 constantPool section 视为无 retained 引用的 orphan payload；pruned header
+  rebuild 新增 retained constant-pool byte 参数并在当前路径传入 0，使 after-trim `constantPool`
+  的 byteLength/count/elementSize 均为 0，raw section copy 自动 no-op。code stripping MethodDef
+  pruning 集成 fixture 同步校验 after-trim constantPool 从 5 bytes 降到 0，并把这 5 bytes 计入
+  pool/metadata removed delta。
+  RED/GREEN：RED 为 `test_aot_c_zrp_metadata_pool_pruning.c` 新增 orphan constant-pool fixture 后，
+  旧实现仍保留 5 bytes，focused WSL gcc pool pruning 失败 1/2（Expected 488 Was 493）；GREEN 后
+  pool pruning 2/0、direct zrp pruning 5/0、code stripping 5/0。
+  验证：WSL gcc pool pruning 2/0、direct zrp pruning 5/0、code stripping 5/0、source contracts 21/0、
+  frame setup 1/0、typed scalar 1/0、shared-library smoke 8/0，focused CTest 4/4；WSL clang 同组通过，
+  仍仅有既有 generated generic-conversion `-Wlogical-not-parentheses` warning；Windows MSVC Debug
+  pool pruning 2/0、direct zrp pruning 5/0、code stripping 5/0、source contracts 21/0、frame setup 1/0、
+  typed scalar 0 failures/1 ignored、shared-library smoke 0 failures/8 ignored，focused CTest 4/4。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zi-zrp-constant-pool-orphan-sweep.md`。
+  备注：本切片只关闭当前无 constant 引用 row 模型下的 orphan payload sweep；若后续 ABI 增加
+  constantPool offset/length 字段，还需要新增 retained constant slice remap/compaction。
+
+- 2026-06-27 04:42:55 +08:00 · 12-S7ZH zrp string-pool sweep/compaction ·
+  状态：12-S7 子切片完成；完整 12-S7 仍未关闭，trim analyzer、attribute/annotation 抑制、
+  constant pool sweep/compaction、export token 和 dump/diff 仍待后续。
+  完成项目：新增 `backend_aot_c_zrp_metadata_string_pool.{h,c}`，把 retained TypeDef、retained MethodDef、
+  FieldDef、retained GenericParam 与 ModuleRef row 引用的 NUL-terminated string slices 收集、按旧 offset 去重、
+  compacted string pool copy 和 row string-offset remap 从 prune orchestration 中拆出；新增
+  `backend_aot_c_zrp_metadata_sections.{h,c}` 承载共享 section lookup/layout/copy helper，让
+  `backend_aot_c_zrp_metadata_prune.c` 继续聚焦剪枝编排。code stripping MethodDef pruning 集成 fixture
+  同步校验 after-trim stringPool 从 6 bytes 降到 1 byte，pool delta 同时统计 string 与 signature pool 移除量。
+  RED/GREEN：RED 为新 `test_aot_c_zrp_metadata_pool_pruning.c` 要求 MethodDef 裁剪后 string pool
+  40->25、保留 MethodDef name offset 重映射、移除 method/unused string 后，旧实现仍保留原池，
+  focused WSL gcc pool pruning 失败 1/1；GREEN 后 pool pruning 1/0、zrp pruning 5/0、code stripping 5/0，
+  source contracts 21/0，并由 source contract 锁定 section/string-pool helper 边界。
+  验证：WSL gcc pool pruning 1/0、direct zrp pruning 5/0、code stripping 5/0、source contracts 21/0、
+  frame setup 1/0、typed scalar 1/0、shared-library smoke 8/0，focused CTest 4/4；WSL clang 同组通过，
+  仍仅有既有 generated generic-conversion `-Wlogical-not-parentheses` warning；Windows MSVC Debug
+  pool pruning 1/0、direct zrp pruning 5/0、code stripping 5/0、source contracts 21/0、frame setup 1/0、
+  typed scalar 0 failures/1 ignored、shared-library smoke 0 failures/8 ignored，focused CTest 4/4。
+  产出：`tests/acceptance/2026-06-27-aot-12-s7zh-zrp-string-pool-compaction.md`。
+  备注：本切片完成当前 retained-row 集合的 string-pool compaction/remap；constant pool、跨模块/export token、
+  annotation promotion/suppression、完整 trim analyzer 和 dump/diff 后续再闭环。
 
 - 2026-06-27 03:49:57 +08:00 · 12-S7ZG zrp MethodSpec signature-pool rewrite/compaction ·
   状态：12-S7 子切片完成；完整 12-S7 仍未关闭，trim analyzer、attribute/annotation 抑制、

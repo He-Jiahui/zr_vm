@@ -69,6 +69,19 @@ void backend_aot_c_zrp_signature_blob_remap_destroy(SZrAotCZrpSignatureBlobRemap
     memset(remap, 0, sizeof(*remap));
 }
 
+TZrBool backend_aot_c_zrp_signature_blob_remap_is_identity(const SZrAotCZrpSignatureBlobRemap *remap) {
+    if (remap == ZR_NULL || remap->byteLength != remap->sourceByteLength) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0u; index < remap->count; index++) {
+        if (remap->entries[index].oldOffset != remap->entries[index].newOffset) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool backend_aot_c_zrp_signature_blob_range_is_valid(const SZrAotCZrpSignatureBlobRemap *remap,
                                                                TZrUInt32 oldOffset,
                                                                TZrUInt32 byteLength) {

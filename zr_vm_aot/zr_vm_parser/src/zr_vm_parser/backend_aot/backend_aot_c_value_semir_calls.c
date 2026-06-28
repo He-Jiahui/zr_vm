@@ -104,6 +104,95 @@ static TZrBool backend_aot_c_value_call_should_use_shared_method_slot(
     return hasReferenceArgument;
 }
 
+static void backend_aot_write_c_value_call_typed_metadata_guard(FILE *file,
+                                                                const char *indent,
+                                                                TZrUInt32 calleeFunctionIndex) {
+    fprintf(file,
+            "%s/* zr_aot_value_exec_call_typed_metadata_guard */\n"
+            "%sif (ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, %u)) {\n",
+            indent,
+            indent,
+            (unsigned)calleeFunctionIndex);
+}
+
+static void backend_aot_write_c_value_call_typed_inline_struct_direct(
+        FILE *file,
+        const char *indent,
+        const SZrAotExecIrInstruction *instruction,
+        TZrUInt32 argumentCount,
+        TZrUInt32 calleeFunctionIndex,
+        const SZrAotExecIrFrameSlotLayout *destinationLayout,
+        const char *calleeThunkExpression) {
+    fprintf(file,
+            "%sZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallInlineStruct(state,\n"
+            "%s                                                       &frame,\n"
+            "%s                                                       %u,\n"
+            "%s                                                       %u,\n"
+            "%s                                                       %u,\n"
+            "%s                                                       %u,\n"
+            "%s                                                       %u,\n"
+            "%s                                                       %u,\n"
+            "%s                                                       %u,\n"
+            "%s                                                       %s));\n",
+            indent,
+            indent,
+            indent,
+            (unsigned)instruction->destinationSlot,
+            indent,
+            (unsigned)instruction->operand0,
+            indent,
+            (unsigned)argumentCount,
+            indent,
+            (unsigned)calleeFunctionIndex,
+            indent,
+            (unsigned)destinationLayout->typeLayoutId,
+            indent,
+            (unsigned)destinationLayout->byteOffset,
+            indent,
+            (unsigned)destinationLayout->byteSize,
+            indent,
+            calleeThunkExpression);
+}
+
+static void backend_aot_write_c_value_call_typed_inline_struct_metadata_deopt(
+        FILE *file,
+        const char *indent,
+        const SZrAotExecIrInstruction *instruction,
+        TZrUInt32 argumentCount,
+        const SZrAotExecIrFrameSlotLayout *destinationLayout) {
+    fprintf(file,
+            "%s/* zr_aot_value_exec_call_typed_metadata_deopt deopt=%u */\n"
+            "%sZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge(state,\n"
+            "%s                                                                                 &frame,\n"
+            "%s                                                                                 %u,\n"
+            "%s                                                                                 %u,\n"
+            "%s                                                                                 %u,\n"
+            "%s                                                                                 %u,\n"
+            "%s                                                                                 %u,\n"
+            "%s                                                                                 %u,\n"
+            "%s                                                                                 %u,\n"
+            "%s                                                                                 \"typed inline struct direct call metadata drift\"));\n",
+            indent,
+            (unsigned)instruction->deoptId,
+            indent,
+            indent,
+            indent,
+            (unsigned)instruction->destinationSlot,
+            indent,
+            (unsigned)instruction->operand0,
+            indent,
+            (unsigned)argumentCount,
+            indent,
+            (unsigned)destinationLayout->typeLayoutId,
+            indent,
+            (unsigned)destinationLayout->byteOffset,
+            indent,
+            (unsigned)destinationLayout->byteSize,
+            indent,
+            (unsigned)instruction->deoptId,
+            indent);
+}
+
 void backend_aot_write_c_value_semir_call_typed(
         FILE *file,
         const SZrAotExecIrFrameLayout *frameLayout,
@@ -177,32 +266,35 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
 
     if (backend_aot_c_value_call_should_use_shared_method_slot(frameLayout, instruction, calleeFunction)) {
         if (requireFullAot) {
+            char calleeThunkExpression[32];
+
+            snprintf(calleeThunkExpression,
+                     sizeof(calleeThunkExpression),
+                     "zr_aot_fn_%u",
+                     (unsigned)calleeFunctionIndex);
             fprintf(file,
                     "    /* zr_aot_value_exec_call_typed dstSlot=%u calleeSlot=%u argCount=%u callee=%u */\n"
                     "    /* zr_aot_generic_call_typed_shared_callsite */\n"
-                    "    /* zr_aot_generic_call_typed_full_aot_no_deopt */\n"
-                    "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallInlineStruct(state,\n"
-                    "                                                           &frame,\n"
-                    "                                                           %u,\n"
-                    "                                                           %u,\n"
-                    "                                                           %u,\n"
-                    "                                                           %u,\n"
-                    "                                                           %u,\n"
-                    "                                                           %u,\n"
-                    "                                                           %u,\n"
-                    "                                                           zr_aot_fn_%u));\n",
+                    "    /* zr_aot_generic_call_typed_full_aot_no_deopt */\n",
                     (unsigned)instruction->destinationSlot,
                     (unsigned)instruction->operand0,
                     (unsigned)argumentCount,
-                    (unsigned)calleeFunctionIndex,
-                    (unsigned)instruction->destinationSlot,
-                    (unsigned)instruction->operand0,
-                    (unsigned)argumentCount,
-                    (unsigned)calleeFunctionIndex,
-                    (unsigned)destinationLayout->typeLayoutId,
-                    (unsigned)destinationLayout->byteOffset,
-                    (unsigned)destinationLayout->byteSize,
                     (unsigned)calleeFunctionIndex);
+            backend_aot_write_c_value_call_typed_metadata_guard(file, "    ", calleeFunctionIndex);
+            backend_aot_write_c_value_call_typed_inline_struct_direct(file,
+                                                                      "        ",
+                                                                      instruction,
+                                                                      argumentCount,
+                                                                      calleeFunctionIndex,
+                                                                      destinationLayout,
+                                                                      calleeThunkExpression);
+            fprintf(file, "    } else {\n");
+            backend_aot_write_c_value_call_typed_inline_struct_metadata_deopt(file,
+                                                                              "        ",
+                                                                              instruction,
+                                                                              argumentCount,
+                                                                              destinationLayout);
+            fprintf(file, "    }\n");
             return ZR_TRUE;
         }
 
@@ -221,17 +313,41 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
                 "        };\n"
                 "        FZrAotEntryThunk zr_aot_generic_call_typed_method =\n"
                 "                ZrAot_GenericSlot_Method(&zr_aot_generic_call_typed_%u_%u, 0u);\n"
-                "        if (zr_aot_generic_call_typed_method != ZR_NULL) {\n"
-                "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallInlineStruct(state,\n"
-                "                                                                   &frame,\n"
-                "                                                                   %u,\n"
-                "                                                                   %u,\n"
-                "                                                                   %u,\n"
-                "                                                                   %u,\n"
-                "                                                                   %u,\n"
-                "                                                                   %u,\n"
-                "                                                                   %u,\n"
-                "                                                                   zr_aot_generic_call_typed_method));\n"
+                "        if (zr_aot_generic_call_typed_method != ZR_NULL) {\n",
+                (unsigned)instruction->destinationSlot,
+                (unsigned)instruction->operand0,
+                (unsigned)argumentCount,
+                (unsigned)calleeFunctionIndex,
+                (unsigned)callerFunctionIndex,
+                (unsigned)execInstructionIndex,
+                (unsigned)calleeFunctionIndex,
+                (unsigned)calleeFunctionIndex,
+                (unsigned)callerFunctionIndex,
+                (unsigned)execInstructionIndex,
+                (unsigned)callerFunctionIndex,
+                (unsigned)execInstructionIndex,
+                (unsigned)callerFunctionIndex,
+                (unsigned)execInstructionIndex,
+                (unsigned)callerFunctionIndex,
+                (unsigned)execInstructionIndex,
+                (unsigned)callerFunctionIndex,
+                (unsigned)execInstructionIndex);
+        backend_aot_write_c_value_call_typed_metadata_guard(file, "            ", calleeFunctionIndex);
+        backend_aot_write_c_value_call_typed_inline_struct_direct(file,
+                                                                  "                ",
+                                                                  instruction,
+                                                                  argumentCount,
+                                                                  calleeFunctionIndex,
+                                                                  destinationLayout,
+                                                                  "zr_aot_generic_call_typed_method");
+        fprintf(file, "            } else {\n");
+        backend_aot_write_c_value_call_typed_inline_struct_metadata_deopt(file,
+                                                                          "                ",
+                                                                          instruction,
+                                                                          argumentCount,
+                                                                          destinationLayout);
+        fprintf(file, "            }\n");
+        fprintf(file,
                 "        } else {\n"
                 "            /* zr_aot_generic_call_typed_missing_instance_deopt deopt=%u */\n"
                 "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge(state,\n"
@@ -246,31 +362,6 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
                 "                                                                                     \"generic call typed missing AOT instance\"));\n"
                 "        }\n"
                 "    }\n",
-                (unsigned)instruction->destinationSlot,
-                (unsigned)instruction->operand0,
-                (unsigned)argumentCount,
-                (unsigned)calleeFunctionIndex,
-                (unsigned)callerFunctionIndex,
-                (unsigned)execInstructionIndex,
-                (unsigned)calleeFunctionIndex,
-                (unsigned)calleeFunctionIndex,
-                (unsigned)callerFunctionIndex,
-                (unsigned)execInstructionIndex,
-                (unsigned)callerFunctionIndex,
-                (unsigned)execInstructionIndex,
-                (unsigned)callerFunctionIndex,
-                (unsigned)execInstructionIndex,
-                (unsigned)callerFunctionIndex,
-                (unsigned)execInstructionIndex,
-                (unsigned)callerFunctionIndex,
-                (unsigned)execInstructionIndex,
-                (unsigned)instruction->destinationSlot,
-                (unsigned)instruction->operand0,
-                (unsigned)argumentCount,
-                (unsigned)calleeFunctionIndex,
-                (unsigned)destinationLayout->typeLayoutId,
-                (unsigned)destinationLayout->byteOffset,
-                (unsigned)destinationLayout->byteSize,
                 (unsigned)instruction->deoptId,
                 (unsigned)instruction->destinationSlot,
                 (unsigned)instruction->operand0,
@@ -282,33 +373,38 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
         return ZR_TRUE;
     }
 
-    fprintf(file,
-            "    /* zr_aot_value_exec_call_typed dstSlot=%u calleeSlot=%u argCount=%u callee=%u */\n"
-            "    {\n"
-            "        /* PostCall routes the callee inline source through ZrCore_Function_TryCopyInlineFrameReturnValue(state, ...). */\n"
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallInlineStruct(state,\n"
-            "                                                               &frame,\n"
-            "                                                               %u,\n"
-            "                                                               %u,\n"
-            "                                                               %u,\n"
-            "                                                               %u,\n"
-            "                                                               %u,\n"
-            "                                                               %u,\n"
-            "                                                               %u,\n"
-            "                                                               zr_aot_fn_%u));\n"
-            "    }\n",
-            (unsigned)instruction->destinationSlot,
-            (unsigned)instruction->operand0,
-            (unsigned)argumentCount,
-            (unsigned)calleeFunctionIndex,
-            (unsigned)instruction->destinationSlot,
-            (unsigned)instruction->operand0,
-            (unsigned)argumentCount,
-            (unsigned)calleeFunctionIndex,
-            (unsigned)destinationLayout->typeLayoutId,
-            (unsigned)destinationLayout->byteOffset,
-            (unsigned)destinationLayout->byteSize,
-            (unsigned)calleeFunctionIndex);
+    {
+        char calleeThunkExpression[32];
+
+        snprintf(calleeThunkExpression,
+                 sizeof(calleeThunkExpression),
+                 "zr_aot_fn_%u",
+                 (unsigned)calleeFunctionIndex);
+        fprintf(file,
+                "    /* zr_aot_value_exec_call_typed dstSlot=%u calleeSlot=%u argCount=%u callee=%u */\n"
+                "    {\n"
+                "        /* PostCall routes the callee inline source through ZrCore_Function_TryCopyInlineFrameReturnValue(state, ...). */\n",
+                (unsigned)instruction->destinationSlot,
+                (unsigned)instruction->operand0,
+                (unsigned)argumentCount,
+                (unsigned)calleeFunctionIndex);
+        backend_aot_write_c_value_call_typed_metadata_guard(file, "        ", calleeFunctionIndex);
+        backend_aot_write_c_value_call_typed_inline_struct_direct(file,
+                                                                  "            ",
+                                                                  instruction,
+                                                                  argumentCount,
+                                                                  calleeFunctionIndex,
+                                                                  destinationLayout,
+                                                                  calleeThunkExpression);
+        fprintf(file, "        } else {\n");
+        backend_aot_write_c_value_call_typed_inline_struct_metadata_deopt(file,
+                                                                          "            ",
+                                                                          instruction,
+                                                                          argumentCount,
+                                                                          destinationLayout);
+        fprintf(file, "        }\n"
+                      "    }\n");
+    }
     return ZR_TRUE;
 }
 

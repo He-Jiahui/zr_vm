@@ -24,6 +24,7 @@ TZrBool backend_aot_c_zrp_signature_blob_remap_init(SZrAotCZrpSignatureBlobRemap
                                                     TZrUInt32 capacity,
                                                     TZrUInt32 sourceByteLength);
 void backend_aot_c_zrp_signature_blob_remap_destroy(SZrAotCZrpSignatureBlobRemap *remap);
+TZrBool backend_aot_c_zrp_signature_blob_remap_is_identity(const SZrAotCZrpSignatureBlobRemap *remap);
 
 TZrBool backend_aot_c_zrp_build_signature_blob_remap(
         SZrAotCZrpSignatureBlobRemap *signatureRemap,

@@ -622,11 +622,68 @@ static int test_heap_summary_run_flags_parse_and_require_run_path(void) {
     return 0;
 }
 
+static int test_zrp_metadata_dump_mode_parse(void) {
+    char *argv[] = {"zr_vm_cli", "--dump-zrp-metadata", "module.zrp"};
+    char error[256];
+    SZrCliCommand command;
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(3, argv, &command, error, sizeof(error)),
+                    "parse zrp metadata dump mode");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_DUMP_ZRP_METADATA,
+                      command.mode,
+                      "mode should be zrp metadata dump");
+    CLI_ASSERT_STR_EQ("module.zrp", command.zrpMetadataPath, "zrp metadata path should match");
+    CLI_ASSERT_TRUE(command.projectPath == ZR_NULL, "dump mode should not set project path");
+    return 0;
+}
+
+static int test_zrp_metadata_diff_mode_parse(void) {
+    char *argv[] = {"zr_vm_cli", "--diff-zrp-metadata", "before.zrp", "after.zrp"};
+    char error[256];
+    SZrCliCommand command;
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(4, argv, &command, error, sizeof(error)),
+                    "parse zrp metadata diff mode");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_DIFF_ZRP_METADATA,
+                      command.mode,
+                      "mode should be zrp metadata diff");
+    CLI_ASSERT_STR_EQ("before.zrp", command.zrpMetadataBeforePath, "zrp metadata before path should match");
+    CLI_ASSERT_STR_EQ("after.zrp", command.zrpMetadataAfterPath, "zrp metadata after path should match");
+    CLI_ASSERT_TRUE(command.projectPath == ZR_NULL, "diff mode should not set project path");
+    CLI_ASSERT_TRUE(command.zrpMetadataPath == ZR_NULL, "diff mode should not set dump path");
+    return 0;
+}
+
+static int test_zrp_metadata_version_check_mode_parse(void) {
+    char *argv[] = {"zr_vm_cli", "--check-zrp-metadata-version", "module.zrp"};
+    char error[256];
+    SZrCliCommand command;
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(3, argv, &command, error, sizeof(error)),
+                    "parse zrp metadata version check mode");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_CHECK_ZRP_METADATA_VERSION,
+                      command.mode,
+                      "mode should be zrp metadata version check");
+    CLI_ASSERT_STR_EQ("module.zrp",
+                      command.zrpMetadataVersionCheckPath,
+                      "zrp metadata version check path should match");
+    CLI_ASSERT_TRUE(command.projectPath == ZR_NULL, "version check mode should not set project path");
+    CLI_ASSERT_TRUE(command.zrpMetadataPath == ZR_NULL, "version check mode should not set dump path");
+    CLI_ASSERT_TRUE(command.zrpMetadataBeforePath == ZR_NULL, "version check mode should not set diff before path");
+    CLI_ASSERT_TRUE(command.zrpMetadataAfterPath == ZR_NULL, "version check mode should not set diff after path");
+    return 0;
+}
+
 static int test_unknown_and_duplicate_modes_fail(void) {
     char *argv1[] = {"zr_vm_cli", "--wat"};
     char *argv2[] = {"zr_vm_cli", "--compile", "a.zrp", "--compile", "b.zrp"};
     char *argv3[] = {"zr_vm_cli", "a.zrp", "b.zrp"};
     char *argv4[] = {"zr_vm_cli", "-e", "return 1;", "-c", "return 2;"};
+    char *argv5[] = {"zr_vm_cli", "--dump-zrp-metadata"};
+    char *argv6[] = {"zr_vm_cli", "--diff-zrp-metadata", "before.zrp"};
+    char *argv7[] = {"zr_vm_cli", "--diff-zrp-metadata", "before.zrp", "after.zrp", "-i"};
+    char *argv8[] = {"zr_vm_cli", "--check-zrp-metadata-version"};
+    char *argv9[] = {"zr_vm_cli", "--check-zrp-metadata-version", "module.zrp", "--heap-summary"};
     char error[256];
     SZrCliCommand command;
 
@@ -645,6 +702,26 @@ static int test_unknown_and_duplicate_modes_fail(void) {
                     "multiple inline modes should fail");
     CLI_ASSERT_TRUE(strstr(error, "Duplicate") != ZR_NULL || strstr(error, "cannot be combined") != ZR_NULL,
                     "duplicate inline mode should mention conflict");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(2, argv5, &command, error, sizeof(error)),
+                    "dump mode without path should fail");
+    CLI_ASSERT_TRUE(strstr(error, "Missing <file> after --dump-zrp-metadata") != ZR_NULL,
+                    "dump mode missing path should mention option");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(3, argv6, &command, error, sizeof(error)),
+                    "diff mode without after path should fail");
+    CLI_ASSERT_TRUE(strstr(error, "Missing <after> after --diff-zrp-metadata <before>") != ZR_NULL,
+                    "diff mode missing after path should mention option");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(5, argv7, &command, error, sizeof(error)),
+                    "diff mode with modifiers should fail");
+    CLI_ASSERT_TRUE(strstr(error, "--diff-zrp-metadata cannot be combined") != ZR_NULL,
+                    "diff mode should reject modifiers");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(2, argv8, &command, error, sizeof(error)),
+                    "version check mode without path should fail");
+    CLI_ASSERT_TRUE(strstr(error, "Missing <file> after --check-zrp-metadata-version") != ZR_NULL,
+                    "version check mode missing path should mention option");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(4, argv9, &command, error, sizeof(error)),
+                    "version check mode with modifiers should fail");
+    CLI_ASSERT_TRUE(strstr(error, "--check-zrp-metadata-version cannot be combined") != ZR_NULL,
+                    "version check mode should reject modifiers");
     return 0;
 }
 
@@ -716,6 +793,15 @@ int main(void) {
         return 1;
     }
     if (test_heap_summary_run_flags_parse_and_require_run_path() != 0) {
+        return 1;
+    }
+    if (test_zrp_metadata_dump_mode_parse() != 0) {
+        return 1;
+    }
+    if (test_zrp_metadata_diff_mode_parse() != 0) {
+        return 1;
+    }
+    if (test_zrp_metadata_version_check_mode_parse() != 0) {
         return 1;
     }
     if (test_unknown_and_duplicate_modes_fail() != 0) {
