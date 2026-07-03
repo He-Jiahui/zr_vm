@@ -164,6 +164,20 @@ static void metadata_runtime_fill_binding_report(
     report->actualLayoutHash = binding->resolvedLayoutHash;
 }
 
+static void metadata_runtime_fill_manifest_export_report(
+        SZrMetadataRuntimeBindingCompatibilityReport *report,
+        const SZrMetadataTokenBinding *binding,
+        const SZrMetadataTokenRecord *refRecord,
+        SZrString *actualModuleVersion,
+        TZrMetadataToken expectedExportToken,
+        EZrMetadataRuntimeBindingCompatibilityStatus status) {
+    metadata_runtime_fill_binding_report(report, binding, refRecord, actualModuleVersion, status);
+    if (report != ZR_NULL) {
+        report->expectedMetadataToken = expectedExportToken;
+        report->actualMetadataToken = binding != ZR_NULL ? binding->resolvedMetadataToken : 0u;
+    }
+}
+
 static TZrBool metadata_runtime_layout_identity_is_present(const SZrMetadataTokenBinding *binding) {
     return binding != ZR_NULL &&
            (binding->expectedLayoutVersion != 0u ||
@@ -238,6 +252,81 @@ EZrMetadataRuntimeBindingCompatibilityStatus ZrCore_MetadataRuntime_CheckTokenBi
     return status;
 }
 
+static TZrMetadataToken metadata_runtime_manifest_export_view_token(
+        const SZrMetadataRuntimeManifestExportView *view) {
+    if (view == ZR_NULL) {
+        return 0u;
+    }
+
+    switch (view->kind) {
+        case ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_TYPE:
+            return view->typeToken;
+
+        case ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_METHOD:
+        case ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_FIELD:
+            return view->memberToken;
+
+        default:
+            return 0u;
+    }
+}
+
+EZrMetadataRuntimeBindingCompatibilityStatus
+ZrCore_MetadataRuntime_CheckManifestExportBindingCompatibility(
+        SZrMetadataRuntime *runtime,
+        TZrUInt32 exportKind,
+        const TZrChar *exportTarget,
+        const SZrMetadataTokenBinding *binding,
+        const SZrMetadataTokenRecord *refRecord,
+        SZrString *actualModuleVersion,
+        SZrMetadataRuntimeManifestExportView *outExportView,
+        SZrMetadataRuntimeBindingCompatibilityReport *outReport) {
+    EZrMetadataRuntimeBindingCompatibilityStatus status;
+    SZrMetadataRuntimeManifestExportView localExportView;
+    TZrMetadataToken expectedExportToken;
+
+    if (!ZrCore_MetadataRuntime_ReadManifestExportView(runtime,
+                                                       exportKind,
+                                                       exportTarget,
+                                                       &localExportView)) {
+        if (outExportView != ZR_NULL) {
+            ZrCore_Memory_RawSet(outExportView, 0, sizeof(*outExportView));
+        }
+        metadata_runtime_fill_binding_report(outReport,
+                                             binding,
+                                             refRecord,
+                                             actualModuleVersion,
+                                             ZR_METADATA_RUNTIME_BINDING_STATUS_MANIFEST_EXPORT_NOT_FOUND);
+        return ZR_METADATA_RUNTIME_BINDING_STATUS_MANIFEST_EXPORT_NOT_FOUND;
+    }
+
+    if (outExportView != ZR_NULL) {
+        *outExportView = localExportView;
+    }
+
+    status = ZrCore_MetadataRuntime_CheckTokenBindingCompatibility(binding,
+                                                                  refRecord,
+                                                                  actualModuleVersion,
+                                                                  outReport);
+    if (status != ZR_METADATA_RUNTIME_BINDING_STATUS_COMPATIBLE) {
+        return status;
+    }
+
+    expectedExportToken = metadata_runtime_manifest_export_view_token(&localExportView);
+    if (binding == ZR_NULL || binding->resolvedMetadataToken != expectedExportToken) {
+        metadata_runtime_fill_manifest_export_report(
+                outReport,
+                binding,
+                refRecord,
+                actualModuleVersion,
+                expectedExportToken,
+                ZR_METADATA_RUNTIME_BINDING_STATUS_MANIFEST_EXPORT_TOKEN_MISMATCH);
+        return ZR_METADATA_RUNTIME_BINDING_STATUS_MANIFEST_EXPORT_TOKEN_MISMATCH;
+    }
+
+    return ZR_METADATA_RUNTIME_BINDING_STATUS_COMPATIBLE;
+}
+
 static const SZrMetadataTokenRecord *metadata_runtime_find_binding_ref_record(
         const SZrFunction *function,
         const SZrMetadataTokenBinding *binding) {
@@ -277,14 +366,19 @@ EZrMetadataRuntimeBindingCompatibilityStatus ZrCore_MetadataRuntime_CheckFunctio
                                              ZR_METADATA_RUNTIME_BINDING_STATUS_INVALID_ARGUMENT);
         return ZR_METADATA_RUNTIME_BINDING_STATUS_INVALID_ARGUMENT;
     }
+    if (function->moduleMetadataBindingLength > 0u && function->moduleMetadataBindings == ZR_NULL) {
+        metadata_runtime_fill_binding_report(outReport,
+                                             ZR_NULL,
+                                             ZR_NULL,
+                                             actualModuleVersion,
+                                             ZR_METADATA_RUNTIME_BINDING_STATUS_INVALID_ARGUMENT);
+        return ZR_METADATA_RUNTIME_BINDING_STATUS_INVALID_ARGUMENT;
+    }
 
     for (TZrUInt32 index = 0u; index < function->moduleMetadataBindingLength; ++index) {
         const SZrMetadataTokenBinding *binding;
         const SZrMetadataTokenRecord *refRecord;
 
-        if (function->moduleMetadataBindings == ZR_NULL) {
-            break;
-        }
         binding = &function->moduleMetadataBindings[index];
         refRecord = metadata_runtime_find_binding_ref_record(function, binding);
         status = ZrCore_MetadataRuntime_CheckTokenBindingCompatibility(binding,

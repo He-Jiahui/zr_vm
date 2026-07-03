@@ -4,6 +4,7 @@
 #include "type_inference_loop_assignment_join_internal.h"
 #include "type_inference_loop_assignment_nested_if.h"
 #include "type_inference_loop_assignment_nested_loop.h"
+#include "type_inference_loop_assignment_prefix_reader.h"
 #include "type_inference_loop_assignment_self_dependency.h"
 #include "type_inference_loop_assignment_sequence.h"
 #include "type_inference_loop_assignment_syntax.h"
@@ -767,7 +768,12 @@ static TZrBool type_inference_loop_assignment_plan_validate(
                        index)))) ||
             (!step->hasSelfDependentDelta &&
              !step->resolveSelfDependentDeltaOnReplay &&
-             !type_inference_loop_assignment_rhs_is_supported(step->right, plan, index))) {
+             !type_inference_loop_assignment_rhs_is_supported(step->right, plan, index) &&
+              !ZrParser_TypeInferenceLoopAssignment_PrefixReaderRhsIsSupported(
+                      cs,
+                      plan,
+                      step,
+                      index))) {
             return ZR_FALSE;
         }
     }

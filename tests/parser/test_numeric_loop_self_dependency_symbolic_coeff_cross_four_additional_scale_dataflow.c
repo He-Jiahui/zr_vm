@@ -125,13 +125,16 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
             "    other = narrowed;\n"
             "    narrowed = narrowed + step;\n"
             "}\n"
-            "narrowed + 0;\n";
+            "narrowed + 0;\n"
+            "other + 0;\n";
     SZrString *sourceName;
     SZrAstNode *ast;
     SZrAstNode *whileStatement;
     SZrAstNode *targetExpression;
+    SZrAstNode *observerExpression;
     SZrInferredType whileType;
     SZrInferredType targetResult;
+    SZrInferredType observerResult;
 
     sourceName = ZrCore_String_Create(
             g_state,
@@ -140,6 +143,7 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
     ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
     whileStatement = statement_at(ast, 0);
     targetExpression = expression_statement_expression(statement_at(ast, 1));
+    observerExpression = expression_statement_expression(statement_at(ast, 2));
     register_bool_variable(cs, "flag");
     register_int64_range_variable(cs, "narrowed", 5, 5);
     register_int64_range_variable(cs, "other", 0, 0);
@@ -154,10 +158,12 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
 
     ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Init(g_state, &targetResult, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &observerResult, ZR_VALUE_TYPE_OBJECT);
 
     TEST_ASSERT_NOT_NULL(whileStatement);
     TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
     TEST_ASSERT_NOT_NULL(targetExpression);
+    TEST_ASSERT_NOT_NULL(observerExpression);
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
     assert_int64_range_result_and_fact(
             cs,
@@ -165,7 +171,14 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
             &targetResult,
             5,
             ZR_TYPE_RANGE_INT64_MAX);
+    assert_int64_range_result_and_fact(
+            cs,
+            observerExpression,
+            &observerResult,
+            0,
+            ZR_TYPE_RANGE_INT64_MAX);
 
+    ZrParser_InferredType_Free(g_state, &observerResult);
     ZrParser_InferredType_Free(g_state, &targetResult);
     ZrParser_InferredType_Free(g_state, &whileType);
     ZrParser_Ast_Free(g_state, ast);
@@ -182,13 +195,16 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
             "    other = narrowed;\n"
             "    narrowed = narrowed + (step + step + step);\n"
             "}\n"
-            "narrowed + 0;\n";
+            "narrowed + 0;\n"
+            "other + 0;\n";
     SZrString *sourceName;
     SZrAstNode *ast;
     SZrAstNode *whileStatement;
     SZrAstNode *targetExpression;
+    SZrAstNode *observerExpression;
     SZrInferredType whileType;
     SZrInferredType targetResult;
+    SZrInferredType observerResult;
 
     sourceName = ZrCore_String_Create(
             g_state,
@@ -197,6 +213,7 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
     ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
     whileStatement = statement_at(ast, 0);
     targetExpression = expression_statement_expression(statement_at(ast, 1));
+    observerExpression = expression_statement_expression(statement_at(ast, 2));
     register_bool_variable(cs, "flag");
     register_int64_range_variable(cs, "narrowed", 5, 5);
     register_int64_range_variable(cs, "other", 0, 0);
@@ -211,10 +228,12 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
 
     ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Init(g_state, &targetResult, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &observerResult, ZR_VALUE_TYPE_OBJECT);
 
     TEST_ASSERT_NOT_NULL(whileStatement);
     TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
     TEST_ASSERT_NOT_NULL(targetExpression);
+    TEST_ASSERT_NOT_NULL(observerExpression);
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
     assert_int64_range_result_and_fact(
             cs,
@@ -222,7 +241,14 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
             &targetResult,
             5,
             ZR_TYPE_RANGE_INT64_MAX);
+    assert_int64_range_result_and_fact(
+            cs,
+            observerExpression,
+            &observerResult,
+            -4,
+            ZR_TYPE_RANGE_INT64_MAX);
 
+    ZrParser_InferredType_Free(g_state, &observerResult);
     ZrParser_InferredType_Free(g_state, &targetResult);
     ZrParser_InferredType_Free(g_state, &whileType);
     ZrParser_Ast_Free(g_state, ast);
@@ -239,13 +265,16 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
             "    other = narrowed;\n"
             "    narrowed = narrowed + step;\n"
             "}\n"
-            "narrowed + 0;\n";
+            "narrowed + 0;\n"
+            "other + 0;\n";
     SZrString *sourceName;
     SZrAstNode *ast;
     SZrAstNode *whileStatement;
     SZrAstNode *targetExpression;
+    SZrAstNode *observerExpression;
     SZrInferredType whileType;
     SZrInferredType targetResult;
+    SZrInferredType observerResult;
 
     sourceName = ZrCore_String_Create(
             g_state,
@@ -254,6 +283,7 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
     ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
     whileStatement = statement_at(ast, 0);
     targetExpression = expression_statement_expression(statement_at(ast, 1));
+    observerExpression = expression_statement_expression(statement_at(ast, 2));
     register_bool_variable(cs, "flag");
     register_int64_range_variable(cs, "narrowed", 5, 5);
     register_int64_range_variable(cs, "other", 0, 0);
@@ -268,10 +298,12 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
 
     ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Init(g_state, &targetResult, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &observerResult, ZR_VALUE_TYPE_OBJECT);
 
     TEST_ASSERT_NOT_NULL(whileStatement);
     TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
     TEST_ASSERT_NOT_NULL(targetExpression);
+    TEST_ASSERT_NOT_NULL(observerExpression);
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
     assert_int64_range_result_and_fact(
             cs,
@@ -279,7 +311,14 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
             &targetResult,
             5,
             ZR_TYPE_RANGE_INT64_MAX);
+    assert_int64_range_result_and_fact(
+            cs,
+            observerExpression,
+            &observerResult,
+            0,
+            ZR_TYPE_RANGE_INT64_MAX);
 
+    ZrParser_InferredType_Free(g_state, &observerResult);
     ZrParser_InferredType_Free(g_state, &targetResult);
     ZrParser_InferredType_Free(g_state, &whileType);
     ZrParser_Ast_Free(g_state, ast);
@@ -296,13 +335,16 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
             "    other = narrowed;\n"
             "    narrowed = narrowed + step;\n"
             "}\n"
-            "narrowed + 0;\n";
+            "narrowed + 0;\n"
+            "other + 0;\n";
     SZrString *sourceName;
     SZrAstNode *ast;
     SZrAstNode *whileStatement;
     SZrAstNode *targetExpression;
+    SZrAstNode *observerExpression;
     SZrInferredType whileType;
     SZrInferredType targetResult;
+    SZrInferredType observerResult;
 
     sourceName = ZrCore_String_Create(
             g_state,
@@ -311,6 +353,7 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
     ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
     whileStatement = statement_at(ast, 0);
     targetExpression = expression_statement_expression(statement_at(ast, 1));
+    observerExpression = expression_statement_expression(statement_at(ast, 2));
     register_bool_variable(cs, "flag");
     register_int64_range_variable(cs, "narrowed", 5, 5);
     register_int64_range_variable(cs, "other", 0, 0);
@@ -325,10 +368,12 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
 
     ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Init(g_state, &targetResult, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &observerResult, ZR_VALUE_TYPE_OBJECT);
 
     TEST_ASSERT_NOT_NULL(whileStatement);
     TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
     TEST_ASSERT_NOT_NULL(targetExpression);
+    TEST_ASSERT_NOT_NULL(observerExpression);
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
     assert_int64_range_result_and_fact(
             cs,
@@ -336,7 +381,14 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
             &targetResult,
             5,
             ZR_TYPE_RANGE_INT64_MAX);
+    assert_int64_range_result_and_fact(
+            cs,
+            observerExpression,
+            &observerResult,
+            0,
+            ZR_TYPE_RANGE_INT64_MAX);
 
+    ZrParser_InferredType_Free(g_state, &observerResult);
     ZrParser_InferredType_Free(g_state, &targetResult);
     ZrParser_InferredType_Free(g_state, &whileType);
     ZrParser_Ast_Free(g_state, ast);
@@ -353,13 +405,16 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
             "    other = narrowed;\n"
             "    narrowed = narrowed + (step + step);\n"
             "}\n"
-            "narrowed + 0;\n";
+            "narrowed + 0;\n"
+            "other + 0;\n";
     SZrString *sourceName;
     SZrAstNode *ast;
     SZrAstNode *whileStatement;
     SZrAstNode *targetExpression;
+    SZrAstNode *observerExpression;
     SZrInferredType whileType;
     SZrInferredType targetResult;
+    SZrInferredType observerResult;
 
     sourceName = ZrCore_String_Create(
             g_state,
@@ -368,6 +423,7 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
     ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
     whileStatement = statement_at(ast, 0);
     targetExpression = expression_statement_expression(statement_at(ast, 1));
+    observerExpression = expression_statement_expression(statement_at(ast, 2));
     register_bool_variable(cs, "flag");
     register_int64_range_variable(cs, "narrowed", 5, 5);
     register_int64_range_variable(cs, "other", 0, 0);
@@ -382,10 +438,12 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
 
     ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Init(g_state, &targetResult, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &observerResult, ZR_VALUE_TYPE_OBJECT);
 
     TEST_ASSERT_NOT_NULL(whileStatement);
     TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
     TEST_ASSERT_NOT_NULL(targetExpression);
+    TEST_ASSERT_NOT_NULL(observerExpression);
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
     assert_int64_range_result_and_fact(
             cs,
@@ -393,7 +451,14 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
             &targetResult,
             5,
             ZR_TYPE_RANGE_INT64_MAX);
+    assert_int64_range_result_and_fact(
+            cs,
+            observerExpression,
+            &observerResult,
+            -1,
+            ZR_TYPE_RANGE_INT64_MAX);
 
+    ZrParser_InferredType_Free(g_state, &observerResult);
     ZrParser_InferredType_Free(g_state, &targetResult);
     ZrParser_InferredType_Free(g_state, &whileType);
     ZrParser_Ast_Free(g_state, ast);
@@ -513,6 +578,408 @@ static void test_while_self_dependent_target_reading_symbolic_deeper_four_additi
     destroy_compiler_state(cs);
 }
 
+static void test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_then_positive_delta_widens_upward(void) {
+    SZrCompilerState *cs = create_compiler_state();
+    const char *sourceNameText =
+            "numeric_while_self_dependent_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_then_positive_delta_dataflow_test.zr";
+    const char *source =
+            "while (flag) {\n"
+            "    narrowed = narrowed + (step * (factor * (scale * (outer * (span * (cover * (mask * gate)))))));\n"
+            "    other = narrowed;\n"
+            "    narrowed = narrowed + step;\n"
+            "}\n"
+            "narrowed + 0;\n";
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *whileStatement;
+    SZrAstNode *targetExpression;
+    SZrInferredType whileType;
+    SZrInferredType targetResult;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            (TZrNativeString)sourceNameText,
+            strlen(sourceNameText));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    whileStatement = statement_at(ast, 0);
+    targetExpression = expression_statement_expression(statement_at(ast, 1));
+    register_bool_variable(cs, "flag");
+    register_int64_range_variable(cs, "narrowed", 5, 5);
+    register_int64_range_variable(cs, "other", 0, 0);
+    register_int64_range_variable(cs, "step", 1, 3);
+    register_int64_range_variable(cs, "factor", -1, 1);
+    register_int64_range_variable(cs, "scale", 0, 0);
+    register_int64_range_variable(cs, "outer", 1, 1);
+    register_int64_range_variable(cs, "span", 1, 1);
+    register_int64_range_variable(cs, "cover", 1, 1);
+    register_int64_range_variable(cs, "mask", -1, 1);
+    register_int64_range_variable(cs, "gate", 1, 1);
+
+    ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &targetResult, ZR_VALUE_TYPE_OBJECT);
+
+    TEST_ASSERT_NOT_NULL(whileStatement);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
+    TEST_ASSERT_NOT_NULL(targetExpression);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
+    assert_int64_range_result_and_fact(
+            cs,
+            targetExpression,
+            &targetResult,
+            5,
+            ZR_TYPE_RANGE_INT64_MAX);
+
+    ZrParser_InferredType_Free(g_state, &targetResult);
+    ZrParser_InferredType_Free(g_state, &whileType);
+    ZrParser_Ast_Free(g_state, ast);
+    destroy_compiler_state(cs);
+}
+
+static void test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_same_assignment_positive_residual_widens_upward(void) {
+    SZrCompilerState *cs = create_compiler_state();
+    const char *sourceNameText =
+            "numeric_while_self_dependent_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_same_assignment_positive_residual_dataflow_test.zr";
+    const char *source =
+            "while (flag) {\n"
+            "    narrowed = narrowed + ((step * (factor * (scale * (outer * (span * (cover * (mask * gate))))))) + step);\n"
+            "    other = narrowed;\n"
+            "}\n"
+            "narrowed + 0;\n"
+            "other + 0;\n";
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *whileStatement;
+    SZrAstNode *targetExpression;
+    SZrAstNode *observerExpression;
+    SZrInferredType whileType;
+    SZrInferredType targetResult;
+    SZrInferredType observerResult;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            (TZrNativeString)sourceNameText,
+            strlen(sourceNameText));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    whileStatement = statement_at(ast, 0);
+    targetExpression = expression_statement_expression(statement_at(ast, 1));
+    observerExpression = expression_statement_expression(statement_at(ast, 2));
+    register_bool_variable(cs, "flag");
+    register_int64_range_variable(cs, "narrowed", 5, 5);
+    register_int64_range_variable(cs, "other", 0, 0);
+    register_int64_range_variable(cs, "step", 1, 3);
+    register_int64_range_variable(cs, "factor", -1, 1);
+    register_int64_range_variable(cs, "scale", 0, 0);
+    register_int64_range_variable(cs, "outer", 1, 1);
+    register_int64_range_variable(cs, "span", 1, 1);
+    register_int64_range_variable(cs, "cover", 1, 1);
+    register_int64_range_variable(cs, "mask", -1, 1);
+    register_int64_range_variable(cs, "gate", 1, 1);
+
+    ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &targetResult, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &observerResult, ZR_VALUE_TYPE_OBJECT);
+
+    TEST_ASSERT_NOT_NULL(whileStatement);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
+    TEST_ASSERT_NOT_NULL(targetExpression);
+    TEST_ASSERT_NOT_NULL(observerExpression);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
+    assert_int64_range_result_and_fact(
+            cs,
+            targetExpression,
+            &targetResult,
+            5,
+            ZR_TYPE_RANGE_INT64_MAX);
+    assert_int64_range_result_and_fact(
+            cs,
+            observerExpression,
+            &observerResult,
+            0,
+            ZR_TYPE_RANGE_INT64_MAX);
+
+    ZrParser_InferredType_Free(g_state, &observerResult);
+    ZrParser_InferredType_Free(g_state, &targetResult);
+    ZrParser_InferredType_Free(g_state, &whileType);
+    ZrParser_Ast_Free(g_state, ast);
+    destroy_compiler_state(cs);
+}
+
+static void test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_inner_zero_factor_scale_product_coefficient_same_assignment_positive_residual_widens_upward(void) {
+    SZrCompilerState *cs = create_compiler_state();
+    const char *sourceNameText =
+            "numeric_while_self_dependent_symbolic_deeper_four_additional_level_inner_zero_factor_scale_product_coefficient_same_assignment_positive_residual_dataflow_test.zr";
+    const char *source =
+            "while (flag) {\n"
+            "    narrowed = narrowed + ((step * (factor * (scale * (outer * (span * (cover * (mask * gate))))))) + step);\n"
+            "    other = narrowed;\n"
+            "}\n"
+            "narrowed + 0;\n"
+            "other + 0;\n";
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *whileStatement;
+    SZrAstNode *targetExpression;
+    SZrAstNode *observerExpression;
+    SZrInferredType whileType;
+    SZrInferredType targetResult;
+    SZrInferredType observerResult;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            (TZrNativeString)sourceNameText,
+            strlen(sourceNameText));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    whileStatement = statement_at(ast, 0);
+    targetExpression = expression_statement_expression(statement_at(ast, 1));
+    observerExpression = expression_statement_expression(statement_at(ast, 2));
+    register_bool_variable(cs, "flag");
+    register_int64_range_variable(cs, "narrowed", 5, 5);
+    register_int64_range_variable(cs, "other", 0, 0);
+    register_int64_range_variable(cs, "step", 1, 3);
+    register_int64_range_variable(cs, "factor", -1, 1);
+    register_int64_range_variable(cs, "scale", -1, 1);
+    register_int64_range_variable(cs, "outer", 1, 1);
+    register_int64_range_variable(cs, "span", 1, 1);
+    register_int64_range_variable(cs, "cover", 0, 0);
+    register_int64_range_variable(cs, "mask", -1, 1);
+    register_int64_range_variable(cs, "gate", 1, 1);
+
+    ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &targetResult, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &observerResult, ZR_VALUE_TYPE_OBJECT);
+
+    TEST_ASSERT_NOT_NULL(whileStatement);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
+    TEST_ASSERT_NOT_NULL(targetExpression);
+    TEST_ASSERT_NOT_NULL(observerExpression);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
+    assert_int64_range_result_and_fact(
+            cs,
+            targetExpression,
+            &targetResult,
+            5,
+            ZR_TYPE_RANGE_INT64_MAX);
+    assert_int64_range_result_and_fact(
+            cs,
+            observerExpression,
+            &observerResult,
+            0,
+            ZR_TYPE_RANGE_INT64_MAX);
+
+    ZrParser_InferredType_Free(g_state, &observerResult);
+    ZrParser_InferredType_Free(g_state, &targetResult);
+    ZrParser_InferredType_Free(g_state, &whileType);
+    ZrParser_Ast_Free(g_state, ast);
+    destroy_compiler_state(cs);
+}
+
+static void test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_subtractive_positive_residual_widens_upward(void) {
+    SZrCompilerState *cs = create_compiler_state();
+    const char *sourceNameText =
+            "numeric_while_self_dependent_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_subtractive_positive_residual_dataflow_test.zr";
+    const char *source =
+            "while (flag) {\n"
+            "    narrowed = narrowed + (step - (step * (factor * (scale * (outer * (span * (cover * (mask * gate))))))));\n"
+            "    other = narrowed;\n"
+            "}\n"
+            "narrowed + 0;\n"
+            "other + 0;\n";
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *whileStatement;
+    SZrAstNode *targetExpression;
+    SZrAstNode *observerExpression;
+    SZrInferredType whileType;
+    SZrInferredType targetResult;
+    SZrInferredType observerResult;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            (TZrNativeString)sourceNameText,
+            strlen(sourceNameText));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    whileStatement = statement_at(ast, 0);
+    targetExpression = expression_statement_expression(statement_at(ast, 1));
+    observerExpression = expression_statement_expression(statement_at(ast, 2));
+    register_bool_variable(cs, "flag");
+    register_int64_range_variable(cs, "narrowed", 5, 5);
+    register_int64_range_variable(cs, "other", 0, 0);
+    register_int64_range_variable(cs, "step", 1, 3);
+    register_int64_range_variable(cs, "factor", -1, 1);
+    register_int64_range_variable(cs, "scale", 0, 0);
+    register_int64_range_variable(cs, "outer", 1, 1);
+    register_int64_range_variable(cs, "span", 1, 1);
+    register_int64_range_variable(cs, "cover", 1, 1);
+    register_int64_range_variable(cs, "mask", -1, 1);
+    register_int64_range_variable(cs, "gate", 1, 1);
+
+    ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &targetResult, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &observerResult, ZR_VALUE_TYPE_OBJECT);
+
+    TEST_ASSERT_NOT_NULL(whileStatement);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
+    TEST_ASSERT_NOT_NULL(targetExpression);
+    TEST_ASSERT_NOT_NULL(observerExpression);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
+    assert_int64_range_result_and_fact(
+            cs,
+            targetExpression,
+            &targetResult,
+            5,
+            ZR_TYPE_RANGE_INT64_MAX);
+    assert_int64_range_result_and_fact(
+            cs,
+            observerExpression,
+            &observerResult,
+            0,
+            ZR_TYPE_RANGE_INT64_MAX);
+
+    ZrParser_InferredType_Free(g_state, &observerResult);
+    ZrParser_InferredType_Free(g_state, &targetResult);
+    ZrParser_InferredType_Free(g_state, &whileType);
+    ZrParser_Ast_Free(g_state, ast);
+    destroy_compiler_state(cs);
+}
+
+static void test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_self_canceling_factor_scale_product_coefficient_same_assignment_positive_residual_widens_upward(void) {
+    SZrCompilerState *cs = create_compiler_state();
+    const char *sourceNameText =
+            "numeric_while_self_dependent_symbolic_deeper_four_additional_level_self_canceling_factor_scale_product_coefficient_same_assignment_positive_residual_dataflow_test.zr";
+    const char *source =
+            "while (flag) {\n"
+            "    narrowed = narrowed + ((step * (factor * (scale * (outer * (span * ((cover - cover) * (mask * gate))))))) + step);\n"
+            "    other = narrowed;\n"
+            "}\n"
+            "narrowed + 0;\n"
+            "other + 0;\n";
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *whileStatement;
+    SZrAstNode *targetExpression;
+    SZrAstNode *observerExpression;
+    SZrInferredType whileType;
+    SZrInferredType targetResult;
+    SZrInferredType observerResult;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            (TZrNativeString)sourceNameText,
+            strlen(sourceNameText));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    whileStatement = statement_at(ast, 0);
+    targetExpression = expression_statement_expression(statement_at(ast, 1));
+    observerExpression = expression_statement_expression(statement_at(ast, 2));
+    register_bool_variable(cs, "flag");
+    register_int64_range_variable(cs, "narrowed", 5, 5);
+    register_int64_range_variable(cs, "other", 0, 0);
+    register_int64_range_variable(cs, "step", 1, 3);
+    register_int64_range_variable(cs, "factor", -1, 1);
+    register_int64_range_variable(cs, "scale", -1, 1);
+    register_int64_range_variable(cs, "outer", 1, 1);
+    register_int64_range_variable(cs, "span", 1, 1);
+    register_int64_range_variable(cs, "cover", 1, 3);
+    register_int64_range_variable(cs, "mask", -1, 1);
+    register_int64_range_variable(cs, "gate", 1, 1);
+
+    ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &targetResult, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &observerResult, ZR_VALUE_TYPE_OBJECT);
+
+    TEST_ASSERT_NOT_NULL(whileStatement);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
+    TEST_ASSERT_NOT_NULL(targetExpression);
+    TEST_ASSERT_NOT_NULL(observerExpression);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
+    assert_int64_range_result_and_fact(
+            cs,
+            targetExpression,
+            &targetResult,
+            5,
+            ZR_TYPE_RANGE_INT64_MAX);
+    assert_int64_range_result_and_fact(
+            cs,
+            observerExpression,
+            &observerResult,
+            0,
+            ZR_TYPE_RANGE_INT64_MAX);
+
+    ZrParser_InferredType_Free(g_state, &observerResult);
+    ZrParser_InferredType_Free(g_state, &targetResult);
+    ZrParser_InferredType_Free(g_state, &whileType);
+    ZrParser_Ast_Free(g_state, ast);
+    destroy_compiler_state(cs);
+}
+
+static void test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_commuted_product_self_canceling_factor_scale_product_coefficient_same_assignment_positive_residual_widens_upward(void) {
+    SZrCompilerState *cs = create_compiler_state();
+    const char *sourceNameText =
+            "numeric_while_self_dependent_symbolic_deeper_four_additional_level_commuted_product_self_canceling_factor_scale_product_coefficient_same_assignment_positive_residual_dataflow_test.zr";
+    const char *source =
+            "while (flag) {\n"
+            "    narrowed = narrowed + ((step * (factor * (scale * (outer * (span * (((cover * mask) - (mask * cover)) * gate)))))) + step);\n"
+            "    other = narrowed;\n"
+            "}\n"
+            "narrowed + 0;\n"
+            "other + 0;\n";
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *whileStatement;
+    SZrAstNode *targetExpression;
+    SZrAstNode *observerExpression;
+    SZrInferredType whileType;
+    SZrInferredType targetResult;
+    SZrInferredType observerResult;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            (TZrNativeString)sourceNameText,
+            strlen(sourceNameText));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    whileStatement = statement_at(ast, 0);
+    targetExpression = expression_statement_expression(statement_at(ast, 1));
+    observerExpression = expression_statement_expression(statement_at(ast, 2));
+    register_bool_variable(cs, "flag");
+    register_int64_range_variable(cs, "narrowed", 5, 5);
+    register_int64_range_variable(cs, "other", 0, 0);
+    register_int64_range_variable(cs, "step", 1, 3);
+    register_int64_range_variable(cs, "factor", -1, 1);
+    register_int64_range_variable(cs, "scale", -1, 1);
+    register_int64_range_variable(cs, "outer", 1, 1);
+    register_int64_range_variable(cs, "span", 1, 1);
+    register_int64_range_variable(cs, "cover", 1, 3);
+    register_int64_range_variable(cs, "mask", -1, 1);
+    register_int64_range_variable(cs, "gate", 1, 1);
+
+    ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &targetResult, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &observerResult, ZR_VALUE_TYPE_OBJECT);
+
+    TEST_ASSERT_NOT_NULL(whileStatement);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
+    TEST_ASSERT_NOT_NULL(targetExpression);
+    TEST_ASSERT_NOT_NULL(observerExpression);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
+    assert_int64_range_result_and_fact(
+            cs,
+            targetExpression,
+            &targetResult,
+            5,
+            ZR_TYPE_RANGE_INT64_MAX);
+    assert_int64_range_result_and_fact(
+            cs,
+            observerExpression,
+            &observerResult,
+            0,
+            ZR_TYPE_RANGE_INT64_MAX);
+
+    ZrParser_InferredType_Free(g_state, &observerResult);
+    ZrParser_InferredType_Free(g_state, &targetResult);
+    ZrParser_InferredType_Free(g_state, &whileType);
+    ZrParser_Ast_Free(g_state, ast);
+    destroy_compiler_state(cs);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_positive_singleton_scale_product_coefficient_residual_widens_upward);
@@ -522,5 +989,11 @@ int main(void) {
     RUN_TEST(test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_negative_non_singleton_scale_product_coefficient_residual_widens_upward);
     RUN_TEST(test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_sign_crossing_scale_product_coefficient_residual_widens_upward);
     RUN_TEST(test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_noop_preserves_target);
+    RUN_TEST(test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_then_positive_delta_widens_upward);
+    RUN_TEST(test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_same_assignment_positive_residual_widens_upward);
+    RUN_TEST(test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_inner_zero_factor_scale_product_coefficient_same_assignment_positive_residual_widens_upward);
+    RUN_TEST(test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_subtractive_positive_residual_widens_upward);
+    RUN_TEST(test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_self_canceling_factor_scale_product_coefficient_same_assignment_positive_residual_widens_upward);
+    RUN_TEST(test_while_self_dependent_target_reading_symbolic_deeper_four_additional_level_commuted_product_self_canceling_factor_scale_product_coefficient_same_assignment_positive_residual_widens_upward);
     return UNITY_END();
 }

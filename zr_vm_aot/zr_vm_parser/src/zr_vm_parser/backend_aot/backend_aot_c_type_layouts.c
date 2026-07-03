@@ -1,6 +1,9 @@
 #include "backend_aot_c_type_layouts.h"
+#include "backend_aot_c_type_layout_metadata_roots.h"
 
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/object.h"
+#include "zr_vm_core/string.h"
 #include "zr_vm_core/type_layout.h"
 #include "zr_vm_core/value.h"
 
@@ -43,10 +46,320 @@ static TZrBool backend_aot_c_type_layout_seen_before(const SZrAotFunctionTable *
     return ZR_FALSE;
 }
 
-TZrUInt32 backend_aot_c_type_layout_count_referenced(const SZrAotFunctionTable *table) {
+static TZrBool backend_aot_c_type_layout_has_frame_reference(const SZrAotFunctionTable *table,
+                                                             TZrUInt32 typeLayoutId) {
+    if (table == ZR_NULL ||
+        table->entries == ZR_NULL ||
+        typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 entryIndex = 0u; entryIndex < table->count; entryIndex++) {
+        const SZrFunction *function = table->entries[entryIndex].function;
+
+        if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL) {
+            continue;
+        }
+
+        for (TZrUInt32 slotIndex = 0u; slotIndex < function->frameSlotLayoutLength; slotIndex++) {
+            const SZrFunctionFrameSlotLayout *slotLayout = &function->frameSlotLayouts[slotIndex];
+
+            if (slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
+                slotLayout->typeLayoutId == typeLayoutId) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool backend_aot_c_type_layout_root_seen_before(const TZrUInt32 *typeLayoutRoots,
+                                                          TZrUInt32 rootIndex,
+                                                          TZrUInt32 typeLayoutId) {
+    if (typeLayoutRoots == ZR_NULL || typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 previousRootIndex = 0u; previousRootIndex < rootIndex; previousRootIndex++) {
+        if (typeLayoutRoots[previousRootIndex] == typeLayoutId) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool backend_aot_c_type_layout_is_rooted(const TZrUInt32 *typeLayoutRoots,
+                                                   TZrUInt32 typeLayoutRootCount,
+                                                   TZrUInt32 typeLayoutId) {
+    if (typeLayoutRoots == ZR_NULL || typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 rootIndex = 0u; rootIndex < typeLayoutRootCount; rootIndex++) {
+        if (typeLayoutRoots[rootIndex] == typeLayoutId) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static const SZrTypeValue *backend_aot_c_type_layout_function_metadata_field(SZrState *state,
+                                                                             const SZrFunction *function,
+                                                                             const TZrChar *fieldName) {
+    SZrObject *metadataObject;
+    SZrString *fieldString;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL ||
+        function == ZR_NULL ||
+        fieldName == ZR_NULL ||
+        !function->hasDecoratorMetadata ||
+        function->decoratorMetadataValue.type != ZR_VALUE_TYPE_OBJECT ||
+        function->decoratorMetadataValue.value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    metadataObject = ZR_CAST_OBJECT(state, function->decoratorMetadataValue.value.object);
+    if (metadataObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    fieldString = ZrCore_String_CreateFromNative(state, (TZrNativeString)fieldName);
+    if (fieldString == ZR_NULL) {
+        return ZR_NULL;
+    }
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    return ZrCore_Object_GetValue(state, metadataObject, &key);
+}
+
+static TZrBool backend_aot_c_type_layout_function_metadata_uint32_field(SZrState *state,
+                                                                        const SZrFunction *function,
+                                                                        const TZrChar *fieldName,
+                                                                        TZrUInt32 *outValue) {
+    const SZrTypeValue *value = backend_aot_c_type_layout_function_metadata_field(state, function, fieldName);
+
+    if (outValue != ZR_NULL) {
+        *outValue = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    }
+    if (value == ZR_NULL ||
+        value->type != ZR_VALUE_TYPE_UINT64 ||
+        value->value.nativeObject.nativeUInt64 > (TZrUInt64)0xFFFFFFFFu) {
+        return ZR_FALSE;
+    }
+    if (outValue != ZR_NULL) {
+        *outValue = (TZrUInt32)value->value.nativeObject.nativeUInt64;
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_c_type_layout_append_root(TZrUInt32 *typeLayoutRoots,
+                                                     TZrUInt32 rootCapacity,
+                                                     TZrUInt32 *rootCount,
+                                                     TZrUInt32 typeLayoutId) {
+    if (typeLayoutRoots == ZR_NULL ||
+        rootCount == ZR_NULL ||
+        typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 rootIndex = 0u; rootIndex < *rootCount; rootIndex++) {
+        if (typeLayoutRoots[rootIndex] == typeLayoutId) {
+            return ZR_TRUE;
+        }
+    }
+    if (*rootCount >= rootCapacity) {
+        return ZR_FALSE;
+    }
+
+    typeLayoutRoots[*rootCount] = typeLayoutId;
+    (*rootCount)++;
+    return ZR_TRUE;
+}
+
+static const SZrTypeLayout *backend_aot_c_type_layout_resolve_from_function(SZrState *state,
+                                                                            const SZrFunction *function,
+                                                                            TZrUInt32 typeLayoutId) {
+    const SZrTypeLayout *typeLayout;
+
+    if (state == ZR_NULL ||
+        function == ZR_NULL ||
+        typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+        return ZR_NULL;
+    }
+
+    typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(function, typeLayoutId, state);
+    if (typeLayout != ZR_NULL &&
+        (typeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_STRUCT ||
+         typeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION)) {
+        return typeLayout;
+    }
+    return ZR_NULL;
+}
+
+static const SZrFunction *backend_aot_c_type_layout_find_root_resolver_function(SZrState *state,
+                                                                                const SZrAotFunctionTable *table,
+                                                                                TZrUInt32 typeLayoutId) {
+    if (state == ZR_NULL ||
+        table == ZR_NULL ||
+        table->entries == ZR_NULL ||
+        typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 entryIndex = 0u; entryIndex < table->count; entryIndex++) {
+        const SZrFunction *function = table->entries[entryIndex].function;
+
+        if (backend_aot_c_type_layout_resolve_from_function(state, function, typeLayoutId) != ZR_NULL) {
+            return function;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static const SZrTypeLayout *backend_aot_c_type_layout_resolve_rooted(SZrState *state,
+                                                                     const SZrAotFunctionTable *table,
+                                                                     const TZrUInt32 *typeLayoutRoots,
+                                                                     TZrUInt32 typeLayoutRootCount,
+                                                                     TZrUInt32 typeLayoutId) {
+    const SZrTypeLayout *typeLayout = backend_aot_c_type_layout_resolve_from_table(state, table, typeLayoutId);
+
+    if (typeLayout != ZR_NULL) {
+        return typeLayout;
+    }
+    if (!backend_aot_c_type_layout_is_rooted(typeLayoutRoots, typeLayoutRootCount, typeLayoutId)) {
+        return ZR_NULL;
+    }
+
+    return backend_aot_c_type_layout_resolve_from_function(
+            state,
+            backend_aot_c_type_layout_find_root_resolver_function(state, table, typeLayoutId),
+            typeLayoutId);
+}
+
+static TZrBool backend_aot_c_type_layout_append_metadata_roots(
+        SZrState *state,
+        const SZrAotFunctionTable *table,
+        TZrUInt32 *typeLayoutRoots,
+        TZrUInt32 rootCapacity,
+        TZrUInt32 *rootCount,
+        const SZrAotCTypeLayoutMetadataRoots *metadataRoots) {
+    if (metadataRoots == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 rootIndex = 0u; rootIndex < metadataRoots->count; rootIndex++) {
+        TZrUInt32 typeLayoutId = metadataRoots->typeLayoutIds[rootIndex];
+
+        if (backend_aot_c_type_layout_find_root_resolver_function(state, table, typeLayoutId) == ZR_NULL ||
+            !backend_aot_c_type_layout_append_root(typeLayoutRoots,
+                                                   rootCapacity,
+                                                   rootCount,
+                                                   typeLayoutId)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+TZrBool backend_aot_c_type_layout_collect_dynamic_dependency_roots(SZrState *state,
+                                                                   const SZrAotFunctionTable *table,
+                                                                   const TZrByte *metadataBlob,
+                                                                   TZrSize metadataBlobLength,
+                                                                   TZrUInt32 *typeLayoutRoots,
+                                                                   TZrUInt32 rootCapacity,
+                                                                   TZrUInt32 *outRootCount) {
+    TZrUInt32 rootCount = 0u;
+
+    if (outRootCount != ZR_NULL) {
+        *outRootCount = 0u;
+    }
+    if (state == ZR_NULL ||
+        table == ZR_NULL ||
+        table->entries == ZR_NULL ||
+        table->count > table->capacity ||
+        (rootCapacity > 0u && typeLayoutRoots == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 entryIndex = 0u; entryIndex < table->count; entryIndex++) {
+        const SZrFunction *function = table->entries[entryIndex].function;
+        TZrUInt32 typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+        TZrUInt32 rawTypeToken = 0u;
+        TZrUInt32 rawFieldToken = 0u;
+        SZrAotCTypeLayoutMetadataRoots metadataRoots;
+
+        if (function == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        if (backend_aot_c_type_layout_function_metadata_uint32_field(state,
+                                                                     function,
+                                                                     "dynamicDependencyTypeLayoutId",
+                                                                     &typeLayoutId)) {
+            if (backend_aot_c_type_layout_find_root_resolver_function(state, table, typeLayoutId) == ZR_NULL ||
+                !backend_aot_c_type_layout_append_root(typeLayoutRoots,
+                                                       rootCapacity,
+                                                       &rootCount,
+                                                       typeLayoutId)) {
+                return ZR_FALSE;
+            }
+        }
+        if (backend_aot_c_type_layout_function_metadata_uint32_field(state,
+                                                                     function,
+                                                                     "dynamicDependencyTypeToken",
+                                                                     &rawTypeToken)) {
+            TZrMetadataToken typeToken = (TZrMetadataToken)rawTypeToken;
+
+            if (!backend_aot_c_type_layout_metadata_type_token_roots(metadataBlob,
+                                                                     metadataBlobLength,
+                                                                     typeToken,
+                                                                     &metadataRoots) ||
+                !backend_aot_c_type_layout_append_metadata_roots(state,
+                                                                 table,
+                                                                 typeLayoutRoots,
+                                                                 rootCapacity,
+                                                                 &rootCount,
+                                                                 &metadataRoots)) {
+                return ZR_FALSE;
+            }
+        }
+        if (backend_aot_c_type_layout_function_metadata_uint32_field(state,
+                                                                     function,
+                                                                     "dynamicDependencyFieldToken",
+                                                                     &rawFieldToken)) {
+            TZrMetadataToken fieldToken = (TZrMetadataToken)rawFieldToken;
+
+            if (!backend_aot_c_type_layout_metadata_field_token_roots(metadataBlob,
+                                                                      metadataBlobLength,
+                                                                      fieldToken,
+                                                                      &metadataRoots) ||
+                !backend_aot_c_type_layout_append_metadata_roots(state,
+                                                                 table,
+                                                                 typeLayoutRoots,
+                                                                 rootCapacity,
+                                                                 &rootCount,
+                                                                 &metadataRoots)) {
+                return ZR_FALSE;
+            }
+        }
+    }
+
+    if (outRootCount != ZR_NULL) {
+        *outRootCount = rootCount;
+    }
+    return ZR_TRUE;
+}
+
+TZrUInt32 backend_aot_c_type_layout_count_referenced(SZrState *state,
+                                                     const SZrAotFunctionTable *table,
+                                                     const TZrUInt32 *typeLayoutRoots,
+                                                     TZrUInt32 typeLayoutRootCount) {
     TZrUInt32 count = 0u;
 
-    if (table == ZR_NULL || table->entries == ZR_NULL) {
+    if (state == ZR_NULL || table == ZR_NULL || table->entries == ZR_NULL) {
         return 0u;
     }
 
@@ -70,13 +383,31 @@ TZrUInt32 backend_aot_c_type_layout_count_referenced(const SZrAotFunctionTable *
         }
     }
 
+    for (TZrUInt32 rootIndex = 0u; rootIndex < typeLayoutRootCount; rootIndex++) {
+        TZrUInt32 typeLayoutId = typeLayoutRoots != ZR_NULL
+                                         ? typeLayoutRoots[rootIndex]
+                                         : ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+
+        if (typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE ||
+            backend_aot_c_type_layout_has_frame_reference(table, typeLayoutId) ||
+            backend_aot_c_type_layout_root_seen_before(typeLayoutRoots, rootIndex, typeLayoutId) ||
+            backend_aot_c_type_layout_find_root_resolver_function(state, table, typeLayoutId) == ZR_NULL) {
+            continue;
+        }
+
+        count++;
+    }
+
     return count;
 }
 
-unsigned long long backend_aot_c_type_layout_payload_bytes_referenced(const SZrAotFunctionTable *table) {
+unsigned long long backend_aot_c_type_layout_payload_bytes_referenced(SZrState *state,
+                                                                      const SZrAotFunctionTable *table,
+                                                                      const TZrUInt32 *typeLayoutRoots,
+                                                                      TZrUInt32 typeLayoutRootCount) {
     unsigned long long totalBytes = 0u;
 
-    if (table == ZR_NULL || table->entries == ZR_NULL) {
+    if (state == ZR_NULL || table == ZR_NULL || table->entries == ZR_NULL) {
         return 0u;
     }
 
@@ -97,6 +428,27 @@ unsigned long long backend_aot_c_type_layout_payload_bytes_referenced(const SZrA
             }
 
             totalBytes += (unsigned long long)slotLayout->byteSize;
+        }
+    }
+
+    for (TZrUInt32 rootIndex = 0u; rootIndex < typeLayoutRootCount; rootIndex++) {
+        TZrUInt32 typeLayoutId = typeLayoutRoots != ZR_NULL
+                                         ? typeLayoutRoots[rootIndex]
+                                         : ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+        const SZrTypeLayout *typeLayout;
+
+        if (typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE ||
+            backend_aot_c_type_layout_has_frame_reference(table, typeLayoutId) ||
+            backend_aot_c_type_layout_root_seen_before(typeLayoutRoots, rootIndex, typeLayoutId)) {
+            continue;
+        }
+
+        typeLayout = backend_aot_c_type_layout_resolve_from_function(
+                state,
+                backend_aot_c_type_layout_find_root_resolver_function(state, table, typeLayoutId),
+                typeLayoutId);
+        if (typeLayout != ZR_NULL) {
+            totalBytes += (unsigned long long)typeLayout->byteSize;
         }
     }
 
@@ -129,10 +481,8 @@ const SZrTypeLayout *backend_aot_c_type_layout_resolve_from_table(SZrState *stat
                 continue;
             }
 
-            typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(function, typeLayoutId, state);
-            if (typeLayout != ZR_NULL &&
-                (typeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_STRUCT ||
-                 typeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION)) {
+            typeLayout = backend_aot_c_type_layout_resolve_from_function(state, function, typeLayoutId);
+            if (typeLayout != ZR_NULL) {
                 return typeLayout;
             }
         }
@@ -141,7 +491,10 @@ const SZrTypeLayout *backend_aot_c_type_layout_resolve_from_table(SZrState *stat
     return ZR_NULL;
 }
 
-TZrUInt32 backend_aot_c_type_layout_index_space(SZrState *state, const SZrAotFunctionTable *table) {
+TZrUInt32 backend_aot_c_type_layout_index_space(SZrState *state,
+                                                const SZrAotFunctionTable *table,
+                                                const TZrUInt32 *typeLayoutRoots,
+                                                TZrUInt32 typeLayoutRootCount) {
     TZrUInt32 indexSpace = 0u;
 
     if (state == ZR_NULL || table == ZR_NULL || table->entries == ZR_NULL) {
@@ -167,6 +520,21 @@ TZrUInt32 backend_aot_c_type_layout_index_space(SZrState *state, const SZrAotFun
             if (slotLayout->typeLayoutId + 1u > indexSpace) {
                 indexSpace = slotLayout->typeLayoutId + 1u;
             }
+        }
+    }
+
+    for (TZrUInt32 rootIndex = 0u; rootIndex < typeLayoutRootCount; rootIndex++) {
+        TZrUInt32 typeLayoutId = typeLayoutRoots != ZR_NULL
+                                         ? typeLayoutRoots[rootIndex]
+                                         : ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+
+        if (typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE ||
+            backend_aot_c_type_layout_find_root_resolver_function(state, table, typeLayoutId) == ZR_NULL) {
+            continue;
+        }
+
+        if (typeLayoutId + 1u > indexSpace) {
+            indexSpace = typeLayoutId + 1u;
         }
     }
 
@@ -449,7 +817,6 @@ static TZrBool backend_aot_c_type_layout_try_get_ownership_offset(const SZrTypeL
 
 static TZrBool backend_aot_c_type_layout_can_emit_ownership_offsets(const SZrTypeLayout *typeLayout) {
     if (typeLayout == ZR_NULL ||
-        typeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION ||
         typeLayout->ownershipFieldCount == 0u) {
         return ZR_FALSE;
     }
@@ -588,37 +955,11 @@ static void backend_aot_c_type_layout_write_runtime_descriptor(FILE *file,
 static TZrBool backend_aot_c_type_layout_has_gc_descriptor(SZrState *state,
                                                            const SZrAotFunctionTable *table,
                                                            TZrUInt32 typeLayoutId) {
-    if (state == ZR_NULL ||
-        table == ZR_NULL ||
-        table->entries == ZR_NULL ||
-        typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
-        return ZR_FALSE;
-    }
+    const SZrTypeLayout *typeLayout = backend_aot_c_type_layout_resolve_from_table(state, table, typeLayoutId);
 
-    for (TZrUInt32 entryIndex = 0u; entryIndex < table->count; entryIndex++) {
-        const SZrFunction *function = table->entries[entryIndex].function;
-
-        if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL) {
-            continue;
-        }
-
-        for (TZrUInt32 slotIndex = 0u; slotIndex < function->frameSlotLayoutLength; slotIndex++) {
-            const SZrFunctionFrameSlotLayout *slotLayout = &function->frameSlotLayouts[slotIndex];
-            const SZrTypeLayout *typeLayout;
-
-            if (slotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
-                slotLayout->typeLayoutId != typeLayoutId) {
-                continue;
-            }
-
-            typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(function, typeLayoutId, state);
-            return (TZrBool)(typeLayout != ZR_NULL &&
-                             typeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_STRUCT &&
-                             backend_aot_c_type_layout_can_emit_gc_descriptor(typeLayout));
-        }
-    }
-
-    return ZR_FALSE;
+    return (TZrBool)(typeLayout != ZR_NULL &&
+                     typeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_STRUCT &&
+                     backend_aot_c_type_layout_can_emit_gc_descriptor(typeLayout));
 }
 
 static unsigned long long backend_aot_c_type_layout_emit_one(FILE *file,
@@ -721,7 +1062,9 @@ static unsigned long long backend_aot_c_type_layout_emit_one(FILE *file,
 
 static unsigned long long backend_aot_c_type_layout_emit_referenced(FILE *file,
                                                                     SZrState *state,
-                                                                    const SZrAotFunctionTable *table) {
+                                                                    const SZrAotFunctionTable *table,
+                                                                    const TZrUInt32 *typeLayoutRoots,
+                                                                    TZrUInt32 typeLayoutRootCount) {
     unsigned long long typeLayoutBytesTotal = 0u;
 
     if (file == ZR_NULL || state == ZR_NULL || table == ZR_NULL || table->entries == ZR_NULL) {
@@ -748,11 +1091,31 @@ static unsigned long long backend_aot_c_type_layout_emit_referenced(FILE *file,
         }
     }
 
+    for (TZrUInt32 rootIndex = 0u; rootIndex < typeLayoutRootCount; rootIndex++) {
+        TZrUInt32 typeLayoutId = typeLayoutRoots != ZR_NULL
+                                         ? typeLayoutRoots[rootIndex]
+                                         : ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+        const SZrFunction *function;
+
+        if (typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE ||
+            backend_aot_c_type_layout_has_frame_reference(table, typeLayoutId) ||
+            backend_aot_c_type_layout_root_seen_before(typeLayoutRoots, rootIndex, typeLayoutId)) {
+            continue;
+        }
+
+        function = backend_aot_c_type_layout_find_root_resolver_function(state, table, typeLayoutId);
+        if (function != ZR_NULL) {
+            typeLayoutBytesTotal += backend_aot_c_type_layout_emit_one(file, state, function, typeLayoutId);
+        }
+    }
+
     return typeLayoutBytesTotal;
 }
 
 unsigned long long backend_aot_c_type_layout_generated_bytes_referenced(SZrState *state,
-                                                                        const SZrAotFunctionTable *table) {
+                                                                        const SZrAotFunctionTable *table,
+                                                                        const TZrUInt32 *typeLayoutRoots,
+                                                                        TZrUInt32 typeLayoutRootCount) {
     FILE *scratchFile;
     unsigned long long typeLayoutBytesTotal;
 
@@ -765,14 +1128,20 @@ unsigned long long backend_aot_c_type_layout_generated_bytes_referenced(SZrState
         return 0u;
     }
 
-    typeLayoutBytesTotal = backend_aot_c_type_layout_emit_referenced(scratchFile, state, table);
+    typeLayoutBytesTotal = backend_aot_c_type_layout_emit_referenced(scratchFile,
+                                                                     state,
+                                                                     table,
+                                                                     typeLayoutRoots,
+                                                                     typeLayoutRootCount);
     fclose(scratchFile);
     return typeLayoutBytesTotal;
 }
 
 void backend_aot_write_c_type_layout_declarations(FILE *file,
                                                   SZrState *state,
-                                                  const SZrAotFunctionTable *table) {
+                                                  const SZrAotFunctionTable *table,
+                                                  const TZrUInt32 *typeLayoutRoots,
+                                                  TZrUInt32 typeLayoutRootCount) {
     unsigned long long typeLayoutBytesTotal = 0u;
 
     if (file == ZR_NULL || state == ZR_NULL || table == ZR_NULL) {
@@ -788,13 +1157,19 @@ void backend_aot_write_c_type_layout_declarations(FILE *file,
             "#else\n"
             "#define ZR_AOT_C_LAYOUT_STRUCT(name, bytes) struct name\n"
             "#endif\n");
-    typeLayoutBytesTotal = backend_aot_c_type_layout_emit_referenced(file, state, table);
+    typeLayoutBytesTotal = backend_aot_c_type_layout_emit_referenced(file,
+                                                                     state,
+                                                                     table,
+                                                                     typeLayoutRoots,
+                                                                     typeLayoutRootCount);
     fprintf(file, "/* aot_size.typeLayoutBytesTotal = %llu */\n", typeLayoutBytesTotal);
     fprintf(file, "\n");
 }
 
 TZrUInt32 backend_aot_c_type_layout_gc_descriptor_index_space(SZrState *state,
-                                                              const SZrAotFunctionTable *table) {
+                                                              const SZrAotFunctionTable *table,
+                                                              const TZrUInt32 *typeLayoutRoots,
+                                                              TZrUInt32 typeLayoutRootCount) {
     TZrUInt32 indexSpace = 0u;
 
     if (state == ZR_NULL || table == ZR_NULL || table->entries == ZR_NULL) {
@@ -823,12 +1198,36 @@ TZrUInt32 backend_aot_c_type_layout_gc_descriptor_index_space(SZrState *state,
         }
     }
 
+    for (TZrUInt32 rootIndex = 0u; rootIndex < typeLayoutRootCount; rootIndex++) {
+        TZrUInt32 typeLayoutId = typeLayoutRoots != ZR_NULL
+                                         ? typeLayoutRoots[rootIndex]
+                                         : ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+        const SZrTypeLayout *typeLayout;
+
+        if (typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+            continue;
+        }
+
+        typeLayout = backend_aot_c_type_layout_resolve_from_function(
+                state,
+                backend_aot_c_type_layout_find_root_resolver_function(state, table, typeLayoutId),
+                typeLayoutId);
+        if (typeLayout != ZR_NULL &&
+            typeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_STRUCT &&
+            backend_aot_c_type_layout_can_emit_gc_descriptor(typeLayout) &&
+            typeLayoutId + 1u > indexSpace) {
+            indexSpace = typeLayoutId + 1u;
+        }
+    }
+
     return indexSpace;
 }
 
 void backend_aot_write_c_type_layout_gc_descriptor_table(FILE *file,
                                                          SZrState *state,
                                                          const SZrAotFunctionTable *table,
+                                                         const TZrUInt32 *typeLayoutRoots,
+                                                         TZrUInt32 typeLayoutRootCount,
                                                          TZrUInt32 descriptorIndexSpace) {
     if (file == ZR_NULL ||
         state == ZR_NULL ||
@@ -841,7 +1240,15 @@ void backend_aot_write_c_type_layout_gc_descriptor_table(FILE *file,
             "/* AOT GC descriptor table indexed by typeLayoutId. */\n"
             "static const SZrAotGcDescriptor *const zr_aot_gc_descriptors[] = {\n");
     for (TZrUInt32 typeLayoutId = 0u; typeLayoutId < descriptorIndexSpace; typeLayoutId++) {
-        if (backend_aot_c_type_layout_has_gc_descriptor(state, table, typeLayoutId)) {
+        const SZrTypeLayout *typeLayout = backend_aot_c_type_layout_resolve_rooted(state,
+                                                                                  table,
+                                                                                  typeLayoutRoots,
+                                                                                  typeLayoutRootCount,
+                                                                                  typeLayoutId);
+
+        if (typeLayout != ZR_NULL &&
+            typeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_STRUCT &&
+            backend_aot_c_type_layout_can_emit_gc_descriptor(typeLayout)) {
             fprintf(file, "    &ZrGcDescriptor_%u,\n", (unsigned)typeLayoutId);
         } else {
             fprintf(file, "    ZR_NULL,\n");
@@ -853,6 +1260,8 @@ void backend_aot_write_c_type_layout_gc_descriptor_table(FILE *file,
 void backend_aot_write_c_type_layout_registration_table(FILE *file,
                                                         SZrState *state,
                                                         const SZrAotFunctionTable *table,
+                                                        const TZrUInt32 *typeLayoutRoots,
+                                                        TZrUInt32 typeLayoutRootCount,
                                                         TZrUInt32 typeLayoutIndexSpace) {
     if (file == ZR_NULL ||
         state == ZR_NULL ||
@@ -865,7 +1274,11 @@ void backend_aot_write_c_type_layout_registration_table(FILE *file,
             "/* AOT type layout table indexed by cTypeId/typeLayoutId. */\n"
             "static const SZrTypeLayout *const zr_aot_type_layouts[] = {\n");
     for (TZrUInt32 typeLayoutId = 0u; typeLayoutId < typeLayoutIndexSpace; typeLayoutId++) {
-        if (backend_aot_c_type_layout_resolve_from_table(state, table, typeLayoutId) != ZR_NULL) {
+        if (backend_aot_c_type_layout_resolve_rooted(state,
+                                                     table,
+                                                     typeLayoutRoots,
+                                                     typeLayoutRootCount,
+                                                     typeLayoutId) != ZR_NULL) {
             fprintf(file, "    &ZrTypeLayout_%u,\n", (unsigned)typeLayoutId);
         } else {
             fprintf(file, "    ZR_NULL,\n");

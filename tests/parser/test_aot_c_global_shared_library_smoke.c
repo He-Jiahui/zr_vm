@@ -697,6 +697,9 @@ static void test_aot_c_generated_shared_library_compiles_typeof_runtime_boundary
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "#include \"zr_vm_library/aot_runtime.h\""));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_typeof"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_TypeOf(state, &frame, 1, 0)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* trim_warnings.runtimeFallbackCount = 1 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* trim_warnings.runtimeFallbackReasonMask = 8 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "reasonFlag=8 reason=reflection"));
     TEST_ASSERT_NULL(strstr(generatedCText,
                             "ZrCore_Reflection_TypeOfValue(state, zr_aot_source, zr_aot_destination)"));
     free(generatedCText);

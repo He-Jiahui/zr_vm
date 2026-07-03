@@ -466,6 +466,68 @@ TZrUInt32 backend_aot_c_count_suppressed_runtime_fallback_warnings(SZrState *sta
     return warningCount;
 }
 
+static TZrUInt32 backend_aot_c_runtime_fallback_reason_mask(SZrState *state,
+                                                            const SZrAotFunctionTable *functionTable,
+                                                            const SZrAotExecIrModule *module,
+                                                            TZrUInt32 suppressedReasonMask,
+                                                            TZrBool collectSuppressed) {
+    TZrUInt32 reasonMask = ZR_AOT_RUNTIME_FALLBACK_WARNING_NONE;
+
+    if (state == ZR_NULL || functionTable == ZR_NULL || module == ZR_NULL) {
+        return ZR_AOT_RUNTIME_FALLBACK_WARNING_NONE;
+    }
+
+    for (TZrUInt32 functionIndex = 0; functionIndex < functionTable->count; functionIndex++) {
+        const SZrAotFunctionEntry *entry = &functionTable->entries[functionIndex];
+        const SZrAotExecIrFunction *functionIr;
+
+        if (entry->function == ZR_NULL) {
+            continue;
+        }
+
+        functionIr = backend_aot_exec_ir_find_function(module, entry->flatIndex);
+        for (TZrUInt32 instructionIndex = 0; instructionIndex < entry->function->instructionsLength; instructionIndex++) {
+            EZrAotRuntimeFallbackReason reason =
+                    backend_aot_c_runtime_fallback_reason_for_instruction(state,
+                                                                          functionTable,
+                                                                          module,
+                                                                          entry,
+                                                                          functionIr,
+                                                                          instructionIndex);
+            TZrBool reasonIsSuppressed =
+                    backend_aot_c_runtime_fallback_reason_is_suppressed(reason, suppressedReasonMask);
+            if (reason != ZR_AOT_RUNTIME_FALLBACK_REASON_NONE &&
+                reasonIsSuppressed == collectSuppressed) {
+                reasonMask |= backend_aot_c_runtime_fallback_warning_flag_for_reason(reason);
+            }
+        }
+    }
+
+    return reasonMask;
+}
+
+TZrUInt32 backend_aot_c_runtime_fallback_warning_reason_mask(SZrState *state,
+                                                             const SZrAotFunctionTable *functionTable,
+                                                             const SZrAotExecIrModule *module,
+                                                             TZrUInt32 suppressedReasonMask) {
+    return backend_aot_c_runtime_fallback_reason_mask(state,
+                                                      functionTable,
+                                                      module,
+                                                      suppressedReasonMask,
+                                                      ZR_FALSE);
+}
+
+TZrUInt32 backend_aot_c_suppressed_runtime_fallback_warning_reason_mask(SZrState *state,
+                                                                        const SZrAotFunctionTable *functionTable,
+                                                                        const SZrAotExecIrModule *module,
+                                                                        TZrUInt32 suppressedReasonMask) {
+    return backend_aot_c_runtime_fallback_reason_mask(state,
+                                                      functionTable,
+                                                      module,
+                                                      suppressedReasonMask,
+                                                      ZR_TRUE);
+}
+
 void backend_aot_write_c_trim_warnings(FILE *file,
                                        SZrState *state,
                                        const SZrAotFunctionTable *functionTable,

@@ -61,6 +61,7 @@ typedef struct SZrMetadataRuntimeTypeSpecGenericArgumentView {
 
 typedef struct SZrMetadataRuntimeMethodSpecSignatureView {
     TZrMetadataToken methodSpecToken;
+    const SZrMetadataTokenRecord *methodSpecRecord;
     TZrMetadataToken methodToken;
     TZrUInt64 signatureHash;
     SZrZrpMetadataPoolSliceView blob;
@@ -70,6 +71,52 @@ typedef struct SZrMetadataRuntimeMethodSpecSignatureView {
     TZrUInt32 argumentCount;
     TZrUInt32 argumentListBlobOffset;
 } SZrMetadataRuntimeMethodSpecSignatureView;
+
+typedef struct SZrMetadataRuntimeMethodSpecGenericArgumentView {
+    SZrMetadataRuntimeMethodSpecSignatureView signatureView;
+    SZrMetadataRuntimeSignatureTypeNodeView argumentNode;
+    TZrUInt32 argumentIndex;
+    TZrMetadataToken argumentToken;
+    const SZrMetadataTokenRecord *argumentRecord;
+} SZrMetadataRuntimeMethodSpecGenericArgumentView;
+
+typedef struct SZrMetadataRuntimeMethodBindingView {
+    TZrMetadataToken methodToken;
+    TZrUInt32 functionIndex;
+    const SZrAotMethodInfo *methodInfo;
+    FZrAotEntryThunk functionPointer;
+    FZrAotReflectionInvoker invoker;
+} SZrMetadataRuntimeMethodBindingView;
+
+typedef struct SZrMetadataRuntimeManifestExportView {
+    const SZrAotManifestExportEntry *entry;
+    TZrUInt32 index;
+    TZrUInt32 kind;
+    const TZrChar *target;
+    TZrMetadataToken typeToken;
+    TZrMetadataToken memberToken;
+} SZrMetadataRuntimeManifestExportView;
+
+typedef struct SZrMetadataRuntimeGenericParamView {
+    TZrMetadataToken ownerToken;
+    const SZrMetadataTokenRecord *ownerRecord;
+    const SZrZrpMetadataGenericParamRow *genericParamRow;
+    TZrUInt32 genericParamIndex;
+    TZrUInt32 parameterIndex;
+    TZrUInt32 nameStringOffset;
+    TZrUInt32 firstConstraintIndex;
+    TZrUInt32 constraintCount;
+    TZrUInt32 flags;
+} SZrMetadataRuntimeGenericParamView;
+
+typedef struct SZrMetadataRuntimeGenericParamConstraintView {
+    SZrMetadataRuntimeGenericParamView genericParamView;
+    const SZrZrpMetadataGenericParamConstraintRow *constraintRow;
+    TZrUInt32 constraintIndex;
+    TZrMetadataToken constraintTypeToken;
+    const SZrMetadataTokenRecord *constraintTypeRecord;
+    SZrZrpMetadataPoolSliceView signatureBlob;
+} SZrMetadataRuntimeGenericParamConstraintView;
 
 typedef struct SZrMetadataRuntimeTypeDefLayoutBindingView {
     TZrMetadataToken typeDefToken;
@@ -116,7 +163,9 @@ typedef enum EZrMetadataRuntimeBindingCompatibilityStatus {
     ZR_METADATA_RUNTIME_BINDING_STATUS_SIGNATURE_TOKEN_MISMATCH = 5,
     ZR_METADATA_RUNTIME_BINDING_STATUS_SIGNATURE_HASH_MISMATCH = 6,
     ZR_METADATA_RUNTIME_BINDING_STATUS_LAYOUT_VERSION_MISMATCH = 7,
-    ZR_METADATA_RUNTIME_BINDING_STATUS_LAYOUT_HASH_MISMATCH = 8
+    ZR_METADATA_RUNTIME_BINDING_STATUS_LAYOUT_HASH_MISMATCH = 8,
+    ZR_METADATA_RUNTIME_BINDING_STATUS_MANIFEST_EXPORT_NOT_FOUND = 9,
+    ZR_METADATA_RUNTIME_BINDING_STATUS_MANIFEST_EXPORT_TOKEN_MISMATCH = 10
 } EZrMetadataRuntimeBindingCompatibilityStatus;
 
 typedef struct SZrMetadataRuntimeBindingCompatibilityReport {
@@ -148,6 +197,8 @@ typedef struct SZrMetadataRuntime {
     const SZrAotCodeRegistration *codeRegistration;
     TZrUInt32 functionCount;
     TZrUInt32 methodInfoCount;
+    TZrUInt32 methodTokenCount;
+    TZrUInt32 memberTokenRemapCount;
     TZrUInt32 invokerCount;
     TZrUInt32 typeLayoutCount;
     TZrUInt32 typeLayoutTokenCount;
@@ -168,6 +219,8 @@ typedef struct SZrMetadataRuntime {
     const TZrByte *zrpMetadataBuffer;
     TZrSize zrpMetadataBufferLength;
     SZrZrpMetadataHeader zrpMetadataHeader;
+    const SZrAotManifestExportEntry *manifestExports;
+    TZrUInt32 manifestExportCount;
 } SZrMetadataRuntime;
 
 ZR_CORE_API TZrBool ZrCore_MetadataRuntime_AttachZrpMetadata(SZrMetadataRuntime *runtime,
@@ -203,6 +256,31 @@ ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadMethodSpecSignatureView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken methodSpecToken,
         SZrMetadataRuntimeMethodSpecSignatureView *outView);
+ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadMethodSpecGenericArgumentView(
+        SZrMetadataRuntime *runtime,
+        TZrMetadataToken methodSpecToken,
+        TZrUInt32 argumentIndex,
+        SZrMetadataRuntimeMethodSpecGenericArgumentView *outView);
+ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadMethodBindingView(
+        SZrMetadataRuntime *runtime,
+        TZrMetadataToken methodToken,
+        SZrMetadataRuntimeMethodBindingView *outView);
+ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadManifestExportView(
+        SZrMetadataRuntime *runtime,
+        TZrUInt32 kind,
+        const TZrChar *target,
+        SZrMetadataRuntimeManifestExportView *outView);
+ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadGenericParamView(
+        SZrMetadataRuntime *runtime,
+        TZrMetadataToken ownerToken,
+        TZrUInt32 parameterIndex,
+        SZrMetadataRuntimeGenericParamView *outView);
+ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadGenericParamConstraintView(
+        SZrMetadataRuntime *runtime,
+        TZrMetadataToken ownerToken,
+        TZrUInt32 parameterIndex,
+        TZrUInt32 constraintIndex,
+        SZrMetadataRuntimeGenericParamConstraintView *outView);
 ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadTypeDefLayoutBindingView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken typeDefToken,
@@ -257,6 +335,16 @@ ZrCore_MetadataRuntime_CheckTokenBindingCompatibility(
         const SZrMetadataTokenBinding *binding,
         const SZrMetadataTokenRecord *refRecord,
         struct SZrString *actualModuleVersion,
+        SZrMetadataRuntimeBindingCompatibilityReport *outReport);
+ZR_CORE_API EZrMetadataRuntimeBindingCompatibilityStatus
+ZrCore_MetadataRuntime_CheckManifestExportBindingCompatibility(
+        SZrMetadataRuntime *runtime,
+        TZrUInt32 exportKind,
+        const TZrChar *exportTarget,
+        const SZrMetadataTokenBinding *binding,
+        const SZrMetadataTokenRecord *refRecord,
+        struct SZrString *actualModuleVersion,
+        SZrMetadataRuntimeManifestExportView *outExportView,
         SZrMetadataRuntimeBindingCompatibilityReport *outReport);
 ZR_CORE_API EZrMetadataRuntimeBindingCompatibilityStatus
 ZrCore_MetadataRuntime_CheckFunctionTokenBindingsCompatibility(

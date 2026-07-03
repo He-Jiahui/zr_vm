@@ -13,6 +13,11 @@ related_code:
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/include/zr_vm_core/type_layout.h
   - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_core/include/zr_vm_core/metadata_runtime.h
+  - zr_vm_core/src/zr_vm_core/module/module_import_signature.c
+  - zr_vm_core/src/zr_vm_core/module/module_import_signature_manifest_export.c
+  - zr_vm_core/src/zr_vm_core/module/module_import_signature_manifest_export.h
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_generic_params.c
   - zr_vm_core/include/zr_vm_core/zrp_metadata.h
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_core/src/zr_vm_core/function.c
@@ -52,6 +57,8 @@ related_code:
   - tests/acceptance/2026-06-24-aot-11-s7d-zrp-project-manifest-legacy-declared-assembly-mapping.md
   - tests/acceptance/2026-06-24-aot-11-s7e-zrp-project-manifest-preserve-rule-parsing.md
   - tests/acceptance/2026-06-25-aot-11-s7f-zrp-project-manifest-aot-mode.md
+  - tests/acceptance/2026-07-02-aot-11-s7z-zrp-manifest-export-declarations.md
+  - tests/acceptance/2026-07-02-aot-11-s7za-export-declaration-writer-options.md
   - tests/acceptance/2026-06-25-aot-11-s7m-12-s4g-generic-preserve-argument-model.md
   - tests/acceptance/2026-06-25-aot-11-s7n-12-s4h-manifest-generic-preserve-writer-roots.md
   - tests/acceptance/2026-06-25-aot-11-s7o-12-s4i-manifest-generic-preserve-typespec-binding.md
@@ -64,8 +71,19 @@ related_code:
   - tests/acceptance/2026-06-25-aot-11-s7v-12-s3f-manifest-generic-methodspec-binding.md
   - zr_vm_parser/include/zr_vm_parser/writer.h
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
+  - zr_vm_library/include/zr_vm_library/project.h
+  - zr_vm_library/src/zr_vm_library/project/project.c
+  - zr_vm_library/src/zr_vm_library/project/project_import_provider_location.c
+  - zr_vm_library/src/zr_vm_library/project/project_exports.h
+  - zr_vm_library/src/zr_vm_library/project/project_exports.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.h
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
+  - zr_vm_language_server_extension/schemas/zrp.schema.json
+  - tests/library/test_project_manifest_normalization.c
+  - tests/cli/test_cli_aot_writer_options.c
   - zr_vm_library/include/zr_vm_library/aot_runtime.h
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
+  - zr_vm_aot/zr_vm_library/src/zr_vm_library/aot_runtime.c
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_internal.h
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_generic_dictionary.c
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c
@@ -97,12 +115,22 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_manifest_export.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_manifest_export.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_publication.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_publication.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_runtime_fallback.h
@@ -121,6 +149,8 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_u64_three_arg_thunks.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_thunks.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_thunks.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_thunk_shapes.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_thunk_shapes.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_thunks.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_thunks.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_two_arg_thunks.h
@@ -175,6 +205,11 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/exception.h
   - zr_vm_core/include/zr_vm_core/object.h
   - zr_vm_core/include/zr_vm_core/state.h
+  - zr_vm_core/include/zr_vm_core/metadata_runtime.h
+  - zr_vm_core/src/zr_vm_core/module/module_import_signature.c
+  - zr_vm_core/src/zr_vm_core/module/module_import_signature_manifest_export.c
+  - zr_vm_core/src/zr_vm_core/module/module_import_signature_manifest_export.h
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_generic_params.c
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
@@ -191,8 +226,14 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
   - zr_vm_parser/include/zr_vm_parser/writer.h
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.h
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
+  - zr_vm_library/include/zr_vm_library/project.h
+  - zr_vm_library/src/zr_vm_library/project/project_import_provider_location.c
   - zr_vm_library/include/zr_vm_library/aot_runtime.h
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
+  - zr_vm_aot/zr_vm_library/src/zr_vm_library/aot_runtime.c
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_internal.h
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_generic_dictionary.c
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c
@@ -215,12 +256,16 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_manifest_export.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_manifest_export.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_runtime_fallback.h
@@ -239,6 +284,8 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_u64_three_arg_thunks.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_thunks.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_thunks.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_thunk_shapes.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_thunk_shapes.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_thunks.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_thunks.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_two_arg_thunks.h
@@ -292,7 +339,58 @@ plan_sources:
 tests:
   - tests/parser/test_semir_pipeline.c
   - tests/parser/test_aot_c_source_contracts.c
+  - tests/cli/test_cli_aot_writer_options.c
+  - tests/module/test_metadata_type_ref_binding.c
+  - tests/module/test_metadata_runtime_manifest_exports.c
+  - tests/module/test_metadata_runtime_binding_compatibility.c
+  - tests/library/test_project_import_resolver.c
+  - tests/parser/test_aot_c_descriptor_diagnostics.c
   - tests/parser/test_aot_c_code_stripping.c
+  - tests/parser/test_aot_c_zrp_metadata_typedef_pruning.c
+  - tests/parser/test_aot_c_zrp_metadata_publication.c
+  - tests/acceptance/2026-07-03-aot-11-s7zsx-12-s7zzzq-zrp-sidecar-definition-table-validation.md
+  - tests/acceptance/2026-07-03-aot-11-s7zsy-12-s7zzzr-manifest-export-duplicate-target-guard.md
+  - tests/acceptance/2026-07-03-aot-11-s7zsz-12-s7zzzs-project-export-duplicate-target-guard.md
+  - tests/acceptance/2026-07-03-aot-11-s7zta-12-s7zzzt-project-export-schema-unique-items.md
+  - tests/acceptance/2026-07-03-aot-11-s7ztb-12-s7zzzu-cli-export-duplicate-bridge-guard.md
+  - tests/acceptance/2026-07-02-aot-11-s7za-export-declaration-writer-options.md
+  - tests/acceptance/2026-07-01-aot-12-s7zzc-signature-typedef-token-rewrite.md
+  - tests/acceptance/2026-07-01-aot-12-s7zzd-member-token-remap-abi-publication.md
+  - tests/acceptance/2026-07-01-aot-12-s7zze-member-token-remap-entry-validation.md
+  - tests/acceptance/2026-07-01-aot-12-s7zzf-member-token-remap-duplicate-validation.md
+  - tests/acceptance/2026-07-01-aot-12-s7zzg-member-token-remap-sidecar-source-duplicate-guard.md
+  - tests/acceptance/2026-07-01-aot-12-s7zzh-member-token-remap-sidecar-token-shape-guard.md
+  - tests/acceptance/2026-07-01-aot-12-s7zzi-member-token-remap-sidecar-retained-count-guard.md
+  - tests/acceptance/2026-07-01-aot-12-s7zzj-signature-token-rid-compaction.md
+  - tests/acceptance/2026-07-01-aot-12-s7zzk-signature-token-orphan-rejection.md
+  - tests/acceptance/2026-07-01-aot-12-s7zzl-generic-param-constraint-typespec-remap.md
+  - tests/acceptance/2026-07-01-aot-12-s7zzm-generic-param-constraint-typespec-root-retention.md
+  - tests/acceptance/2026-07-01-aot-12-s7zzn-signature-assembly-ref-token-rewrite.md
+  - tests/acceptance/2026-07-01-aot-12-s7zzo-signature-member-ref-token-rewrite.md
+  - tests/acceptance/2026-07-01-aot-12-s7zzp-signature-rooted-module-ref-retention.md
+  - tests/acceptance/2026-07-02-aot-11-s7zi-provider-manifest-export-binding-gate.md
+  - tests/acceptance/2026-07-02-aot-11-s7zj-provider-import-location-discovery.md
+  - tests/acceptance/2026-07-02-aot-11-s7zk-provider-aot-load-request.md
+  - tests/acceptance/2026-07-02-aot-11-s7zl-provider-aot-runtime-load-request.md
+  - tests/acceptance/2026-07-02-aot-11-s7zm-provider-aot-dynamic-library-success.md
+  - tests/acceptance/2026-07-02-aot-11-s7zn-provider-version-selection-range-guard.md
+  - tests/acceptance/2026-07-02-aot-11-s7zo-provider-export-metadata-attach-fixture.md
+  - tests/acceptance/2026-07-02-aot-11-s7zp-provider-range-candidate-selection.md
+  - tests/acceptance/2026-07-02-aot-11-s7zq-legacy-dependency-assembly-ref-identity.md
+  - tests/acceptance/2026-07-02-aot-11-s7zr-range-selected-provider-export-publication.md
+  - tests/acceptance/2026-07-02-aot-11-s7zsa-12-s7zzr-manifest-export-kind-token-guard.md
+  - tests/acceptance/2026-07-02-aot-11-s7zsb-12-s7zzs-zrp-manifest-export-section.md
+  - tests/acceptance/2026-07-02-aot-11-s7zsc-12-s7zzt-zrp-manifest-export-pruning.md
+  - tests/acceptance/2026-07-03-aot-11-s7zsd-12-s7zzu-zrp-manifest-export-declaration-publication.md
+  - tests/acceptance/2026-07-03-aot-11-s7zse-12-s7zzv-zrp-manifest-export-type-declaration-publication.md
+  - tests/acceptance/2026-07-03-aot-11-s7zsg-12-s7zzx-zrp-compacted-metadata-publication.md
+  - tests/acceptance/2026-07-03-aot-11-s7zsk-12-s7zzzd-fielddef-token-retention.md
+  - tests/acceptance/2026-07-03-aot-11-s7zsl-12-s7zzze-typespec-fielddef-retention.md
+  - tests/acceptance/2026-07-03-aot-11-s7zsm-12-s7zzzf-method-only-member-token-retention.md
+  - tests/acceptance/2026-07-03-aot-11-s7zsn-12-s7zzzg-typedef-fielddef-owner-token-retention.md
+  - tests/acceptance/2026-07-03-aot-11-s7zsp-12-s7zzzi-methodspec-memberref-retention.md
+  - tests/acceptance/2026-07-03-aot-11-s7zst-12-s7zzzm-signature-typeref-string-remap.md
+  - tests/acceptance/2026-07-03-aot-11-s7zsw-12-s7zzzp-signature-union-string-remap.md
   - tests/parser/test_aot_c_value_semir_contracts.c
   - tests/parser/test_aot_c_frame_setup_contracts.c
   - tests/parser/test_aot_c_control_contracts.c
@@ -300,6 +398,10 @@ tests:
   - tests/parser/test_aot_c_typed_call_contracts.c
   - tests/parser/aot_c_typed_call_contract_cases.h
   - tests/parser/aot_c_typed_call_contract_support.h
+  - tests/library/test_project_import_aot_provider_runtime.c
+  - tests/library/test_project_import_provider_version_selection.c
+  - tests/parser/test_aot_c_provider_shared_library_smoke.c
+  - tests/parser/test_project_import_canonicalization.c
   - tests/parser/test_aot_c_typed_call_i64_contracts.c
   - tests/parser/test_aot_c_typed_call_bool_contracts.c
   - tests/parser/test_aot_c_typed_call_u64_contracts.c
@@ -354,6 +456,7 @@ tests:
   - tests/acceptance/2026-06-27-aot-12-s7zi-zrp-constant-pool-orphan-sweep.md
   - tests/acceptance/2026-06-27-aot-12-s7zj-trim-warning-reason-flag.md
   - tests/acceptance/2026-06-27-aot-12-s7zk-trim-warning-source-file-escaping.md
+  - tests/acceptance/2026-06-30-aot-12-s7zt-runtime-fallback-reason-mask-aggregates.md
   - tests/acceptance/2026-06-27-aot-12-s7zl-zrp-string-pool-duplicate-slice-compaction.md
   - tests/acceptance/2026-06-27-aot-12-s7zm-zrp-pool-compaction-without-method-pruning.md
   - tests/acceptance/2026-06-27-aot-12-s7zn-export-member-token-remap.md
@@ -370,7 +473,9 @@ tests:
   - tests/acceptance/2026-06-28-aot-11-s6f-f64-typed-direct-call-deopt.md
   - tests/acceptance/2026-06-28-aot-11-s6g-bool-typed-direct-call-deopt.md
   - tests/acceptance/2026-06-28-aot-11-s6h-inline-struct-typed-call-deopt.md
+  - tests/acceptance/2026-07-02-aot-11-s6i-malformed-binding-table-fail-closed.md
   - tests/parser/test_aot_c_zrp_metadata_pruning.c
+  - tests/parser/test_aot_c_zrp_metadata_methodspec_pruning.c
   - tests/parser/test_aot_c_zrp_metadata_export_token_remap.c
   - tests/parser/test_aot_c_zrp_metadata_size_deltas.c
   - tests/parser/test_aot_c_zrp_metadata_pool_pruning.c
@@ -453,6 +558,15 @@ tests:
   - tests/acceptance/2026-06-28-aot-07-s2-s4-stack-copy-declaration-consumer-narrowing.md
   - tests/acceptance/2026-06-28-aot-07-s2-s4-generic-bool-equality-local-branch.md
   - tests/acceptance/2026-06-28-aot-07-s2-s4-generic-jump-if-bool-source-local-branch.md
+  - tests/acceptance/2026-06-28-aot-07-s2-s4-generic-jump-if-numeric-source-local-branch.md
+  - tests/acceptance/2026-06-29-aot-07-s2-s4-generic-jump-if-numeric-stack-copy-local-branch.md
+  - tests/acceptance/2026-06-29-aot-07-s2-s4-generic-logical-not-numeric-source-local-branch.md
+  - tests/acceptance/2026-06-29-aot-07-s2-s4-call-result-truthiness-local-propagation.md
+  - tests/acceptance/2026-07-03-aot-07-s2-s4-s5-u64-f64-call-result-truthiness-direct-call.md
+  - tests/acceptance/2026-07-03-aot-07-s2-s4-generic-equality-bool-branch-local.md
+  - tests/acceptance/2026-07-03-aot-07-s2-s4-generic-i64-equality-local-compare.md
+  - tests/acceptance/2026-07-03-aot-07-s2-s4-generic-u64-f64-equality-local-compare.md
+  - tests/acceptance/2026-06-29-aot-11-s5-generic-param-runtime-views.md
   - tests/acceptance/2026-06-05-aot-callable-constant-materialization-boundary.md
   - tests/acceptance/2026-06-05-aot-create-closure-materialization-boundary.md
   - tests/acceptance/2026-06-05-aot-get-sub-function-native-closure.md
@@ -704,14 +818,14 @@ For equal-sized copy spans it records the current generated-frame ABI shape: `me
 
 The first executable M5 steps are now inline `COPY_VALUE` lowering and primitive POD field load/store lowering. `backend_aot_try_write_c_value_semir_for_exec_instruction()` checks the current exec instruction for a matching value SemIR row:
 
-- `COPY_VALUE` on matching inline struct `SET_STACK` / `GET_STACK` sites now emits a generated type-layout gate and skips the old generic stack-copy helper. The generated C resolves `ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function, typeLayoutId, state)`, uses `ZrCore_TypeLayout_CanRawCopy()` to keep POD struct copies on `memmove`, and uses `ZrCore_TypeLayout_CopyInline()` for non-POD field-aware copies such as structs with embedded `SZrTypeValue` fields.
+- `COPY_VALUE` on matching inline struct `SET_STACK` / `GET_STACK` sites now emits a generated type-layout gate and skips the old generic stack-copy helper. The generated C resolves `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, typeLayoutId)`, uses `ZrCore_TypeLayout_CanRawCopy()` to keep POD struct copies on `memmove`, and uses `ZrCore_TypeLayout_CopyInline()` for non-POD field-aware copies such as structs with embedded `SZrTypeValue` fields.
 - `LOAD_VALUE` on matching inline struct `GET_MEMBER_SLOT` sites resolves the field layout, reads the primitive field bytes from `(const TZrByte *)frame.slotBase + baseOffset + fieldOffset`, writes the scalar result into the byte-backed destination `SZrTypeValue`, and mirrors that result into the dense `frame.slotBase + destinationSlot` view. Generated code may still have direct typed arithmetic, branch, or return paths that read the dense view while the byte-frame ABI migration is incomplete, so field loads must keep both views coherent.
 - `STORE_VALUE` on matching inline struct `SET_MEMBER_SLOT` sites resolves the field layout, prefers a populated dense `frame.slotBase + sourceSlot` source over the byte-backed source view, converts the scalar `SZrTypeValue` to the field primitive type, and copies the primitive bytes into `(TZrByte *)frame.slotBase + baseOffset + fieldOffset`. This prevents stale byte-backed scratch values from overriding newer direct arithmetic results written to the dense slot.
 - `LOAD_VALUE` / `STORE_VALUE` on matching inline struct fields that are stored as embedded `SZrTypeValue` cells now emit `zr_aot_value_exec_field_value_slot_load` / `zr_aot_value_exec_field_value_slot_store` and use `ZrCore_Value_Copy` directly between the frame byte field and the scalar destination/source slot. Value-slot loads also mirror the copied field into the dense destination, and value-slot stores prefer the dense source when it is materialized. This is the first AOT managed/reference field access slice; copy/drop ownership for whole non-POD structs still belongs to later layout-aware copy/drop lowering.
-- `LOAD_VALUE` / `STORE_VALUE` on matching nested inline struct fields now emit `zr_aot_value_exec_field_inline_struct_load` / `zr_aot_value_exec_field_inline_struct_store` when the field `typeLayoutId` and byte size match the inline destination/source slot. The generated C resolves the field `SZrTypeLayout` with `ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function, typeLayoutId, state)`, checks the emitted field byte size, keeps POD field layouts on overlap-safe `memmove`, and routes non-POD field layouts through `ZrCore_TypeLayout_CopyInline(state, ...)`. This mirrors whole-struct `COPY_VALUE` semantics for nested value fields instead of unconditionally raw-copying embedded ownership/value payloads.
+- `LOAD_VALUE` / `STORE_VALUE` on matching nested inline struct fields now emit `zr_aot_value_exec_field_inline_struct_load` / `zr_aot_value_exec_field_inline_struct_store` when the field `typeLayoutId` and byte size match the inline destination/source slot. The generated C resolves the field `SZrTypeLayout` with `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, typeLayoutId)`, checks the emitted field byte size, keeps POD field layouts on overlap-safe `memmove`, and routes non-POD field layouts through `ZrCore_TypeLayout_CopyInline(state, ...)`. This mirrors whole-struct `COPY_VALUE` semantics for nested value fields instead of unconditionally raw-copying embedded ownership/value payloads.
 - When `LOAD_VALUE` / `STORE_VALUE` resolves an inline struct field but the field is still outside the executable subset, for example a mismatched nested inline struct transfer, the generated C emits `zr_aot_value_unsupported_field_load` / `zr_aot_value_unsupported_field_store`, calls `ZrCore_Debug_RunError(state, "unsupported AOT value SemIR field ...")`, and exits through `ZR_AOT_C_FAIL()`. Unresolved or dynamic field access still falls through to the declared runtime member contract; proven value-type fields do not silently fall back to `GetMemberSlot` / `SetMemberSlot`.
-- `CALL_TYPED` on matching static/direct POD struct return sites resolves the caller destination type layout with `ZrCore_Function_ResolvePrototypeFrameTypeLayout`, checks the generated-frame destination byte size, stages the callable and arguments at `ZrCore_Function_GetCallInfoFrameStorageTop(state, frame.callInfo)`, resolves callable metadata from the callee slot with `ZrCore_Closure_GetMetadataFunctionFromValue`, prepares the resolved VM call with `ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource`, invokes the generated callee thunk, posts through `ZrCore_Function_PostCall`, and refreshes the active caller frame. Passing the caller `frame.slotBase` and source argument start lets the core runtime copy byte-backed VALUE parameters from the original generated frame while still using the staged call window for VM call setup.
-- `RETURN_TYPED` on matching single inline struct return sites resolves the callee source type layout with `ZrCore_Function_ResolvePrototypeFrameTypeLayout`, checks the inline source byte size, publishes the source slot as `state->stackTop`, and lets core post-call route the payload through `ZrCore_Function_TryCopyInlineFrameReturnValue`.
+- `CALL_TYPED` on matching static/direct POD struct return sites now passes destination layout id and byte span to `ZrLibrary_AotRuntime_CallInlineStruct()`. That helper validates the generated-frame destination layout through `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function, typeLayoutId)`, stages the callable and arguments, resolves callable metadata from the callee slot, prepares the resolved VM call with `ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource`, invokes the generated callee thunk, posts through `ZrCore_Function_PostCall`, and refreshes the active caller frame. Passing the caller `frame.slotBase` and source argument start lets the core runtime copy byte-backed VALUE parameters from the original generated frame while still using the staged call window for VM call setup.
+- `RETURN_TYPED` on matching single inline struct return sites now passes source layout id and byte span to `ZrLibrary_AotRuntime_ReturnInlineStruct()`. That helper validates the generated-frame source layout through `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function, typeLayoutId)`, publishes the source slot as `state->stackTop`, and lets core post-call route the payload through `ZrCore_Function_TryCopyInlineFrameReturnValue`.
 
 Generated AOT C functions now also have a first value-frame cleanup boundary. The generated guard macro uses `ZR_AOT_C_RETURN(expr)` instead of emitting direct `return` statements from normal return, tail return, unsupported-dispatch, and failure paths. Each generated function records `zr_aot_frame_started`, a `zr_aot_return_value`, and `zr_aot_skip_drop_slot`, then exits through `zr_aot_function_exit`. `backend_aot_c_frame_cleanup.*` emits reverse frame-layout cleanup for inline struct slots: it resolves each slot's `SZrTypeLayout` from `frame.function`, skips the typed inline return source slot when that source must remain available for core post-call return movement, and calls `ZrCore_TypeLayout_DropInline` only when the resolved layout has a non-`NONE` drop kind. This does not complete hidden-return ownership or exception-aware partial initialization; it prevents the generated C path from bypassing the existing layout-driven drop contract once non-POD inline value slots are active.
 
@@ -889,6 +1003,8 @@ Reset-stack fallback opcodes now use explicit AOT runtime boundaries. `RESET_STA
 
 This slice deliberately leaves generic/dynamic arithmetic outside the supported primitive subsets, string concatenation, bool-as-numeric helper compatibility for generic numeric arithmetic, full generic power meta-call execution, source-level `**` parsing, dynamic/meta shift behavior outside the integer-primitive generic shift subset, bool/string/object conversions, object/meta/dynamic equality, generic equality outside the primitive subset, string/object/meta/dynamic truthiness, and logical `&&`/`||` on explicit unsupported or existing helper paths. The interpreter's historical float-fallback behavior for `ADD_INT` / `SUB_INT` is also not treated as an AOT helper escape hatch; generated C now covers the integer subset directly and fails explicitly outside that subset. The remaining dynamic paths still carry VM semantics that need separate metadata or constant-materialization contracts before they can be converted to direct C expressions without silently changing behavior.
 
+AOT reflection token resolution now has a public runtime carrier. `ZrCore_Reflection_ResolveToken()` accepts an attached `SZrMetadataRuntime` and returns `SZrReflectionResolvedToken`, covering TypeDef/TypeSpec/TypeRef type records, FieldDef owner/field layout and byte offsets, and method records. The type and field paths consume the existing registry-backed metadata binding views, so offsets and layouts still come from the single metadata/layout source of truth. FieldDef resolution also carries the owner type record/row plus the field type token/record resolved from the field type layout id through the metadata runtime type-layout token resolver. TypeSpec resolution carries the generic base token, signature token/hash, and argument count, and `ZrCore_Reflection_ResolveTypeSpecGenericArgument()` exposes indexed primitive or direct TypeDef/TypeRef generic arguments. This remains a narrow bridge: it does not yet build public reflection objects, rewrite name lookup through tokens, execute `Invoke` through the invoker registry, construct runtime generic instances, or perform field value marshaling.
+
 Remaining dynamic and meta SemIR opcodes keep explicit runtime or unsupported-boundary behavior until their static metadata contracts are proven. Value-type SemIR is therefore a typed-layout contract first; the interpreter is being moved onto the same layout facts in incremental source-level slices.
 
 ## Interpreter Boundary
@@ -926,9 +1042,9 @@ The same test suite also checks the archived AotExecIR source contract: header/s
 
 The suite also checks the archived `aot_c` source contract: `backend_aot_c_value_semir.*` must expose the value SemIR lowering entry point, consume `SZrAotExecIrFrameLayout`, recognize `FIELD_ADDR` / `LOAD_VALUE` / `STORE_VALUE` / `COPY_VALUE` / `CALL_TYPED` / `RETURN_TYPED`, resolve field layout, emit `frame.slotBase` byte expressions, expose executable inline-copy, primitive field load/store, and typed call/return helpers, and be wired from `backend_aot_c_function_body.c`. The function-body source must try `backend_aot_try_write_c_value_semir_for_exec_instruction()` before old `GET_STACK` / `SET_STACK` stack-copy lowering, before old `GET_MEMBER_SLOT` / `SET_MEMBER_SLOT` runtime helpers, and before generic direct call/return helpers.
 
-The source-contract assertions now also lock the concrete field lowering shape and typed call/return shape: byte field address, scalar `SZrTypeValue` source/destination slot access, dense `zr_aot_dense_destination` and `zr_aot_dense_source` mirrors, `memcpy` between field bytes and primitive temporaries, `ZR_VALUE_FAST_SET` for load results, typed direct-call metadata resolution, `ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource`, generated thunk invocation, `ZrCore_Function_PostCall`, typed return `state->stackTop`, `ZrCore_Function_ResolvePrototypeFrameTypeLayout`, and the `ZrCore_Function_TryCopyInlineFrameReturnValue` post-call contract. Inline struct copy is locked by `zr_aot_value_exec_inline_copy`, `ZrCore_TypeLayout_CanRawCopy`, and `zr_aot_value_exec_inline_field_copy` / `ZrCore_TypeLayout_CopyInline` for non-POD field-aware copy. The same value SemIR source-contract test now also locks embedded `SZrTypeValue` field load/store with `backend_aot_c_value_field_layout_can_value_slot_exec`, `zr_aot_value_exec_field_value_slot_load`, `zr_aot_value_exec_field_value_slot_store`, and direct `ZrCore_Value_Copy` expressions that keep byte and dense VALUE views coherent. Nested inline struct field transfer is locked by `backend_aot_c_value_field_layout_can_inline_struct_exec`, `zr_aot_value_exec_field_inline_struct_load`, `zr_aot_value_exec_field_inline_struct_store`, `const SZrTypeLayout *zr_aot_field_layout`, `ZrCore_TypeLayout_CanRawCopy(zr_aot_field_layout)`, `zr_aot_value_exec_field_inline_struct_copy`, `ZrCore_TypeLayout_CopyInline(state, ...)`, and the POD `memmove` expressions that copy between the nested field span and the inline struct slot span. Resolved fields that are still unsupported remain locked by `zr_aot_value_unsupported_field_load`, `zr_aot_value_unsupported_field_store`, `fieldLayout.isPrimitivePod`, `fieldLayout.isValueSlot`, `fieldLayout.typeLayoutId`, `ZrCore_Debug_RunError`, and `ZR_AOT_C_FAIL()`.
+The source-contract assertions now also lock the concrete field lowering shape and typed call/return shape: byte field address, scalar `SZrTypeValue` source/destination slot access, dense `zr_aot_dense_destination` and `zr_aot_dense_source` mirrors, `memcpy` between field bytes and primitive temporaries, `ZR_VALUE_FAST_SET` for load results, typed direct-call metadata resolution, `ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource`, generated thunk invocation, `ZrCore_Function_PostCall`, typed return `state->stackTop`, runtime-boundary `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function, ...)` validation, and the `ZrCore_Function_TryCopyInlineFrameReturnValue` post-call contract. Inline struct copy is locked by `zr_aot_value_exec_inline_copy`, `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, ...)`, `ZrCore_TypeLayout_CanRawCopy`, and `zr_aot_value_exec_inline_field_copy` / `ZrCore_TypeLayout_CopyInline` for non-POD field-aware copy. The same value SemIR source-contract test now also locks embedded `SZrTypeValue` field load/store with `backend_aot_c_value_field_layout_can_value_slot_exec`, `zr_aot_value_exec_field_value_slot_load`, `zr_aot_value_exec_field_value_slot_store`, and direct `ZrCore_Value_Copy` expressions that keep byte and dense VALUE views coherent. Nested inline struct field transfer is locked by `backend_aot_c_value_field_layout_can_inline_struct_exec`, `zr_aot_value_exec_field_inline_struct_load`, `zr_aot_value_exec_field_inline_struct_store`, `const SZrTypeLayout *zr_aot_field_layout`, `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, ...)`, `ZrCore_TypeLayout_CanRawCopy(zr_aot_field_layout)`, `zr_aot_value_exec_field_inline_struct_copy`, `ZrCore_TypeLayout_CopyInline(state, ...)`, and the POD `memmove` expressions that copy between the nested field span and the inline struct slot span. Resolved fields that are still unsupported remain locked by `zr_aot_value_unsupported_field_load`, `zr_aot_value_unsupported_field_store`, `fieldLayout.isPrimitivePod`, `fieldLayout.isValueSlot`, `fieldLayout.typeLayoutId`, `ZrCore_Debug_RunError`, and `ZR_AOT_C_FAIL()`.
 
-The AOT source-contract suite now also locks generated value-frame cleanup: `backend_aot_c_frame_cleanup.*` must exist, generated C must include `zr_vm_core/function.h` and `zr_vm_core/type_layout.h`, `ZR_AOT_C_FAIL()` must route through `ZR_AOT_C_RETURN(...)` rather than directly returning, dispatch/default/return paths must use the shared exit, cleanup must emit `zr_aot_value_frame_drop` blocks with `ZrCore_TypeLayout_DropInline`, and typed inline return must set `zr_aot_skip_drop_slot` before `ZR_AOT_C_RETURN(1)`.
+The AOT source-contract suite now also locks generated value-frame cleanup: `backend_aot_c_frame_cleanup.*` must exist, generated C must include `zr_vm_core/function.h`, `zr_vm_core/metadata_runtime.h`, and `zr_vm_core/type_layout.h`, `ZR_AOT_C_FAIL()` must route through `ZR_AOT_C_RETURN(...)` rather than directly returning, dispatch/default/return paths must use the shared exit, cleanup must emit `zr_aot_value_frame_drop` blocks that resolve the drop layout through `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, ...)` before `ZrCore_TypeLayout_DropInline`, and typed inline return must set `zr_aot_skip_drop_slot` before `ZR_AOT_C_RETURN(1)`. The cleanup contract also forbids that emitter path from writing `ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function, ...)`; the adjacent value SemIR copy/field contracts separately forbid the same old prototype type-layout resolver for inline copy and nested inline-field transfer.
 
 The same cleanup/failure source-contract test now also locks direct generated failure reporting. The RED check first failed on missing `ZrCore_Debug_RunError(state,` in `ZR_AOT_C_FAIL()`, then passed after the macro emitted the generated failure message, frame/instruction metadata, and `ZR_AOT_C_RETURN(0)`, while `backend_aot_c_function_body.c` zero-initialized `ZrAotGeneratedFrame frame = {0};`. The contract forbids `ZrLibrary_AotRuntime_FailGeneratedFunction(state, &frame)` in checked generated-C emission.
 
@@ -1232,7 +1348,7 @@ Focused 2026-06-21 07-S5 closure value boundary-helper validation supersedes the
 
 Focused 2026-06-21 07-S5 RESET_STACK_NULL boundary-helper validation supersedes the old generated direct stack-null reset fallback expansion. `backend_aot_write_c_direct_reset_stack_null()` and `backend_aot_write_c_direct_reset_stack_null2()` now emit only their existing `zr_aot_value_exec_reset_stack_null` / `zr_aot_value_exec_reset_stack_null2` markers plus `ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ResetStackNull/ResetStackNull2(state, &frame, ...))`. The runtime helpers own frame-slot validation, value lookup, null reset, and failure reporting, so generated C no longer expands reset fallback destination/first/second `SZrTypeValue *` locals, direct frame-slot bounds checks, or direct `ZrCore_Value_ResetAsNull(...)` calls for those blocks. WSL GCC focused validation reports source contracts passing with 19 tests, aggregate shared-library smoke passing with 8 tests, typed scalar passing with 1 test, and call shared-library smoke passing with 3 tests. The refreshed generated shared/call fixtures contain `ZrLibrary_AotRuntime_ResetStackNull*` helper calls and reject the old reset2 local template; CTest filtering only matched the registered `aot_c_typed_scalar` test and passed 1/1.
 
-Focused 2026-06-21 07-S5 COPY_STACK boundary-helper validation supersedes the old generated direct stack-copy fallback expansion. `backend_aot_write_c_direct_stack_copy()` now emits only the `zr_aot_value_exec_copy_stack` marker plus `ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CopyStack(state, &frame, destinationSlot, sourceSlot))`. Focused 2026-06-22 local-sync boundary-helper validation then superseded the remaining generated scalar-local refresh expansion: `backend_aot_write_c_direct_stack_copy_scalar_local_sync()` now emits only `zr_aot_direct_stack_copy_sync_bool_local_boundary` / `i64` / `u64` / `f64` markers plus `ZrLibrary_AotRuntime_SyncBoolLocal()` / `SyncSignedIntLocal()` / `SyncUnsignedIntLocal()` / `SyncFloatLocal()` guards. `ZrLibrary_AotRuntime_CopyStack()` owns frame-slot validation, matching inline-struct copy, object-to-inline copy, value-slot copy, materialized stack-value assignment, and failure reporting; `aot_runtime_sync.c` owns source-slot validation and no-op-on-type-mismatch local-sync semantics. WSL GCC focused validation reports source contracts passing with 19 tests, aggregate shared-library smoke passing with 8 tests, call contracts passing with 4 tests, and the broader AOT focused group passing call/shared/power/source/generic numeric/global/logical/typed-scalar/return/frame-setup binaries. Refreshed generated shared/call fixtures contain `ZrLibrary_AotRuntime_CopyStack(...)` and stack-copy sync helper calls while rejecting the old generated direct stack-copy, inline-struct copy, materialized-copy templates, and `zr_aot_direct_stack_copy_sync_destination` local.
+Focused 2026-06-21 07-S5 COPY_STACK boundary-helper validation supersedes the old generated direct stack-copy fallback expansion. `backend_aot_write_c_direct_stack_copy()` now emits only the `zr_aot_value_exec_copy_stack` marker plus `ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CopyStack(state, &frame, destinationSlot, sourceSlot))`. Focused 2026-06-22 local-sync boundary-helper validation then superseded the remaining generated scalar-local refresh expansion: `backend_aot_write_c_direct_stack_copy_scalar_local_sync()` now emits only `zr_aot_direct_stack_copy_sync_bool_local_boundary` / `i64` / `u64` / `f64` markers plus `ZrLibrary_AotRuntime_SyncBoolLocal()` / `SyncSignedIntLocal()` / `SyncUnsignedIntLocal()` / `SyncFloatLocal()` guards. `ZrLibrary_AotRuntime_CopyStack()` owns frame-slot validation, metadata-runtime generated-frame inline-layout validation, matching inline-struct copy, object-to-inline copy, value-slot copy, materialized stack-value assignment, and failure reporting; `aot_runtime_sync.c` owns source-slot validation and no-op-on-type-mismatch local-sync semantics. WSL GCC focused validation reports source contracts passing with 19 tests, aggregate shared-library smoke passing with 8 tests, call contracts passing with 4 tests, and the broader AOT focused group passing call/shared/power/source/generic numeric/global/logical/typed-scalar/return/frame-setup binaries. Refreshed generated shared/call fixtures contain `ZrLibrary_AotRuntime_CopyStack(...)` and stack-copy sync helper calls while rejecting the old generated direct stack-copy, inline-struct copy, materialized-copy templates, and `zr_aot_direct_stack_copy_sync_destination` local.
 
 Focused 2026-06-21 07-S5 publish-exports boundary-helper validation supersedes the old generated direct module-export publication expansion. `backend_aot_write_c_publish_exports()` now emits only the `zr_aot_publish_exports_boundary` marker plus `ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PublishModuleExports(state, &frame))`; `ZrLibrary_AotRuntime_PublishModuleExports()` owns export record resolution, `moduleExecuted` handling, and centralized `aot_runtime_materialize_exports()` publication. Because earlier frame setup slices elide generated `frame.recordHandle` assignment, the helper falls back to resolving the loaded-module record from the generated frame function. WSL GCC focused validation reports return contracts passing with 1 test, source contracts passing with 19 tests, aggregate shared-library smoke passing with 8 tests, call shared-library smoke passing with 3 tests, frame setup contracts passing with 1 test, and typed scalar passing with 1 test. Refreshed generated shared/call fixtures contain the publish helper marker/call and reject the old direct export publication templates.
 
@@ -1582,6 +1698,16 @@ Focused 2026-06-24 12-S4A manifest preserve function roots validation adds the f
 
 Focused 2026-06-24 11-S7E / 12-S4B zrp manifest preserve declaration parsing adds the missing project-manifest file layer in front of the existing manifest-root writer option. `zr_vm_library` now exposes `SZrLibrary_ProjectPreserveRule` plus `preserveRules`/`preserveRuleCount`, and `project_preserve.{h,c}` parses top-level `.zrp` `preserve` arrays with `type`, `method`, or `generic` targets plus optional `members` (`all`/`methods`). `zrp.schema.json` mirrors that declaration shape, and invalid target text is rejected during project load. RED was project manifest normalization failing to compile because the project model had no preserve fields/enums; GREEN passes WSL gcc/clang manifest normalization 12/0 and import resolver 9/0, JSON schema parsing, Windows MSVC manifest normalization 12/0 and import resolver 9/0, plus CLI `hello_world`. This is declaration parsing only: preserve targets are not yet mapped to metadata tokens, function flat indices, generic instantiations, writer roots, annotations, or feature switches.
 
+Focused 2026-07-02 11-S7Z / 12-S7 zrp manifest export declaration parsing adds the file-level input surface for later persistent export manifest/table publication. `zr_vm_library` now exposes `SZrLibrary_ProjectExportDeclaration` plus `exportDeclarations`/`exportDeclarationCount`, and `project_exports.{h,c}` parses top-level `.zrp` `exports` arrays with `type`, `method`, or `field` targets. `zrp.schema.json` mirrors that declaration shape, and invalid kind or unsafe target text rejects the manifest during project load. RED was project manifest normalization failing to compile because the project model had no export declaration fields/enums; GREEN passes WSL gcc/clang and Windows MSVC Debug manifest normalization direct runs at 28/0. This is declaration modeling only: export targets are not yet bound to metadata tokens, compacted export token remaps, persistent writer tables, provider versions, or ABI drift diagnostics.
+
+Focused 2026-07-02 11-S7ZB / 12-S7 export declaration member-token binding moves the parsed export diagnostics bridge one step closer to a persistent export table. `SZrAotManifestExportDeclaration` now exposes `hasMemberTokenBinding/memberToken`, `compiler_aot_exports.c` binds current-module method export targets to matching typed exported function symbols with nonzero `MEMBER_DEF` tokens, and generated C writes `manifest.export[i].memberToken = 0x...` markers. RED was the CLI writer-options test failing to compile on the missing binding fields; GREEN passes WSL gcc/clang and Windows MSVC Debug direct `zr_vm_cli_aot_writer_options_test` 16/0, `zr_vm_aot_c_source_contracts_test` 24/0, and `zr_vm_aot_c_code_stripping_test` 10/0, with focused registered CTest coverage 2/2 on all three toolchains. This is current-module method writer input only: type/field binding, persistent export manifest/table writing, compacted-token file publication, provider version binding, and full trim analysis remain open.
+
+Focused 2026-07-02 11-S7ZC / 12-S7 field export declaration member-token binding extends the same writer-input bridge to current-module fields. `compiler_aot_exports.c` now maps method declarations to typed exported function symbols and field declarations to typed exported variable symbols before applying the existing target match and nonzero `MEMBER_DEF` token guard, so generated C emits `manifest.export[i].memberToken = 0x...` for `field Widget.value` as well as method exports. RED was the new CLI writer-options field test failing with `Expected TRUE Was FALSE`; GREEN passes WSL gcc/clang and Windows MSVC Debug direct `zr_vm_cli_aot_writer_options_test` 17/0, `zr_vm_aot_c_source_contracts_test` 24/0, and `zr_vm_aot_c_code_stripping_test` 10/0, with focused registered CTest coverage 2/2 on all three toolchains. This is still current-module method/field writer input only: type binding, persistent export manifest/table writing, compacted-token file publication, provider version binding, and full trim analysis remain open.
+
+Focused 2026-07-02 11-S7ZD / 12-S7 type export declaration type-token binding completes the current writer-input token binding coverage for local export declarations. `SZrAotManifestExportDeclaration` now carries `hasTypeTokenBinding/typeToken`, `compiler_aot_exports.c` scans current-function metadata token records for matching local `TYPE_DEF` signatures by resolving the signature string index through the metadata string heap, and generated C emits `manifest.export[i].typeToken = 0x...` for `type List`. RED was the new CLI writer-options type test failing to compile on the missing binding fields; GREEN passes WSL gcc/clang and Windows MSVC Debug direct `zr_vm_cli_aot_writer_options_test` 18/0, `zr_vm_aot_c_source_contracts_test` 24/0, and `zr_vm_aot_c_code_stripping_test` 10/0, with focused registered CTest coverage 2/2 on all three toolchains. This is still current-module writer input only: persistent export manifest/table writing, compacted-token file publication, provider version binding, and full trim analysis remain open.
+
+Focused 2026-07-02 11-S7ZA / 12-S7 export declaration writer options adds the first AOT writer-visible consumer for those parsed declarations. `SZrAotWriterOptions` now carries `manifestExportDeclarations` plus a count, `compiler_aot_exports.{h,c}` maps `SZrLibrary_ProjectExportDeclaration` into writer-level method/type/field declarations with CLI-owned scratch storage, and `backend_aot_c_emitter.c` writes `manifest.exports` plus per-entry `manifest.export[i] kind=... target=...` diagnostics. RED was the CLI writer-options test failing to compile on missing writer fields/enums and preserve-root scratch storage; GREEN passes WSL gcc/clang and Windows MSVC Debug direct `zr_vm_cli_aot_writer_options_test` 15/0, `zr_vm_aot_c_source_contracts_test` 24/0, and `zr_vm_aot_c_code_stripping_test` 10/0, with focused registered CTest coverage 2/2 on all three toolchains. This is still a diagnostics bridge only: export target token binding, persistent export manifest/table writing, compacted-token file publication, provider version binding, and full trim analysis remain open.
+
 Focused 2026-06-25 11-S7F zrp manifest AOT mode declaration parsing adds the file-level policy surface referenced by 08 full-AOT planning. `zr_vm_library` now exposes `EZrLibrary_ProjectAotMode` and `SZrLibrary_Project.aotMode`, while `project_aot_options.{h,c}` parses top-level `.zrp` `aotMode` values. Missing mode defaults to `hybrid`, explicit `full-aot` records `ZR_LIBRARY_PROJECT_AOT_MODE_FULL_AOT`, and invalid values reject the manifest. `zrp.schema.json` mirrors the `hybrid`/`full-aot` enum. RED was project manifest normalization failing to compile because the project model had no AOT mode field/enum; GREEN passes WSL gcc/clang manifest normalization 14/0 and import resolver 9/0, JSON schema parsing, Windows MSVC manifest normalization 14/0 and import resolver 9/0, plus CLI `hello_world`. This is declaration parsing only: the 11-S7F slice itself did not include the later CLI/compiler bridge into `SZrAotWriterOptions.requireFullAot`, and full-AOT closure diagnostics remain later 08/12 work.
 
 Focused 2026-06-25 11-S7G zrp manifest AOT mode writer injection adds the CLI/compiler bridge from the project model to AOT writer options. `ZrCli_Compiler_ApplyProjectAotWriterOptions()` maps `SZrLibrary_Project.aotMode` to `SZrAotWriterOptions.requireFullAot`, setting true for `full-aot` and false for the default hybrid path while preserving other writer options. RED was the CLI project incremental test linking against the missing helper; GREEN passes WSL gcc/clang and Windows MSVC Debug `zr_vm_cli_project_incremental_test` 10/0 plus Windows CLI `hello_world`. This is still only an injection point: the CLI does not yet expose an AOT C emission command, and full-AOT closure diagnostics remain later 08/12 work.
@@ -1606,6 +1732,8 @@ Focused 2026-06-24 12-S7H type-layout trim before/after statistics adds the firs
 
 Focused 2026-06-27 12-S7ZG zrp MethodSpec signature-pool rewrite/compaction closes the next emitted-metadata pruning gap for retained signature blobs. `backend_aot_c_zrp_metadata_signature.{h,c}` now collects signature blob slices referenced by retained token records and retained definition rows, deduplicates exact slices, copies a compacted signature blob pool, remaps signature blob offsets, and recomputes stable signature hashes from the final emitted bytes. For retained MethodSpec rows whose instantiation signature has the current `GENERIC_INST(MEMBER_REF methodToken, args...)` shape, the signature payload's method token is rewritten through the same compacted `MEMBER_DEF` MethodDef token map used by MethodSpec rows before hashes are recomputed. RED was the MethodSpec direct zrp fixture failing 1/5 once it required signature pool 30->15, MethodSpec signature method-token RID 2->1, and token record / MethodSpec hash recomputation; GREEN passes zrp pruning 5/0, code stripping 5/0, source contracts 21/0, frame setup 1/0, typed scalar, shared-library smoke, and focused CTest across WSL gcc, WSL clang, and Windows MSVC Debug. This closes the retained signature blob pool compaction/rewrite safety set; cross-module/export token handling, non-signature pool sweep, annotation-driven metadata promotion or suppression, and dump/diff tooling remain later work.
 
+Focused 2026-07-01 12-S7ZZC / 11-S7 retained signature TypeDef token rewrite closes the direct embedded-TypeDef gap left after TypeDef RID compaction. `backend_aot_c_zrp_metadata_signature.{h,c}` now recursively walks retained signature blobs after compacted pool copy and rewrites direct `TYPE_DEF` type-node payload tokens through the same compacted TypeDef remap used by token records and row owners. The pass covers `FIELD_SIG`, `METHOD_SIG`, and standalone type-node blobs, validates the final blob, and runs before token-record signature hashes are recomputed. RED was WSL gcc TypeDef pruning failing 1/2 because a retained `FIELD_SIG(TYPE_DEF(... source RID2))` still carried the pre-prune RID (`Expected 33554433 Was 33554434`); GREEN passes TypeDef pruning 2/0 on WSL gcc, WSL clang, and Windows MSVC Debug, plus focused CTest `zrp_metadata|aot_c_zrp_metadata|metadata_module_hash` 8/8 on all three environments. This closes only direct `TYPE_DEF` tokens embedded in retained signature payloads; TypeRef/provider rebinding, cross-module export manifest/table publication, complete metadata sweep, annotation policy, and full trim analyzer remain open.
+
 Focused 2026-06-27 12-S7ZH zrp string-pool sweep/compaction closes the first non-signature pool pruning gap for emitted zrp metadata. `backend_aot_c_zrp_metadata_string_pool.{h,c}` now collects NUL-terminated string slices referenced by retained TypeDef, retained MethodDef, FieldDef, retained GenericParam, and ModuleRef rows, deduplicates repeated offsets, writes a compacted string pool, and rewrites those row string offsets during blob rebuild. `backend_aot_c_zrp_metadata_sections.{h,c}` now carries shared section lookup/layout/copy helpers so `backend_aot_c_zrp_metadata_prune.c` remains orchestration-focused while sizing the target string-pool section from the remap and skipping the old raw string-pool copy path. RED was the new direct pool-pruning fixture failing because MethodDef pruning still emitted the original string pool length and kept removed/unused method strings; GREEN passes pool pruning 1/0, zrp pruning 5/0, code stripping 5/0, source contracts 21/0, frame setup 1/0, typed scalar, shared-library smoke, and focused CTest across WSL gcc, WSL clang, and Windows MSVC Debug. This closes string-pool compaction for the currently retained row set only; constant-pool sweep, annotation-driven metadata promotion/suppression, cross-module/export token handling, full trim analyzer, and dump/diff tooling remain later work.
 
 Focused 2026-06-27 12-S7ZI zrp constant-pool orphan sweep closes the current no-reference constant-pool pruning gap. The present 11-S1 zrp row ABI has no constant-pool offset/length fields, so emitted zrp pruning cannot yet remap retained constant slices; the safe retained set is empty in the current MethodDef-pruning path. `backend_aot_c_zrp_metadata_prune.c` now sizes the pruned header's constantPool section from an explicit retained byte count and passes 0 for that count, producing a zero byteLength/count/elementSize section and letting raw section copy no-op. The generated-C code-stripping fixture now expects after-trim constantPool bytes to shrink from 5 to 0 and includes those bytes in pool/metadata removed deltas. RED was the direct pool-pruning fixture failing 1/2 because the old pruner preserved the 5-byte constant pool (`Expected 488 Was 493`); GREEN passes pool pruning 2/0, zrp pruning 5/0, code stripping 5/0, source contracts 21/0, frame setup 1/0, typed scalar, shared-library smoke, and focused CTest across WSL gcc, WSL clang, and Windows MSVC Debug. Future constant literal/default-value rows will still need retained slice remap/compaction rather than this orphan-only sweep.
@@ -1614,9 +1742,23 @@ Focused 2026-06-27 12-S7ZJ trim warning reasonFlag marker makes existing runtime
 
 Focused 2026-06-27 12-S7ZK trim warning sourceFile quoted escaping makes the existing runtime-fallback warning source path machine-parseable. `backend_aot_c_runtime_fallback.c` now writes `sourceFile` as a quoted field and escapes backslash, double quote, common control characters, and other control bytes before the line/column fields. Ordinary warnings now contain `sourceFile="dynamic_deopt_bridge.zr"`, and a focused fixture with `src\quoted "module".zr` verifies the generated marker contains `sourceFile="src\\quoted \"module\".zr"`. RED was dynamic deopt bridge smoke failing 4/7 after the tests required quoted existing markers and the escaped source-file fixture; GREEN passes dynamic deopt bridge smoke 7/0, source contracts 21/0, code stripping 5/0, and focused `aot_c_code_stripping` CTest on WSL gcc/clang, with Windows MSVC Debug compiling the smoke target as 0 failures/7 ignored and passing source contracts/code stripping/CTest. This is still a warning-record shape fix only; it does not implement `@requires_unreferenced_code`, reflection data-flow annotations, annotation-based warning suppression or promotion, or a complete trim analyzer.
 
+Focused 2026-06-30 12-S7ZT runtime fallback reason-mask aggregates add a header-level summary for the same trim-warning surface. `backend_aot_c_runtime_fallback.{h,c}` now exposes visible and suppressed reason-mask aggregation helpers, and `backend_aot_c_emitter.c` writes `trim_warnings.runtimeFallbackReasonMask` plus `trim_warnings.runtimeFallbackSuppressedReasonMask` beside the existing visible/suppressed warning counts. Dynamic-call visible warnings therefore report mask `1`, dynamic-value-access visible warnings report mask `2`, and global or reason-mask suppression moves the bit to the suppressed mask while leaving the visible mask at `0`. RED was the dynamic deopt bridge smoke failing 4/7 after it required those header markers; GREEN passes WSL gcc/clang dynamic deopt bridge smoke 7/0 and code stripping 5/0, with Windows MSVC Debug compiling the same smoke target as 0 failures/7 ignored and passing code stripping 5/0. This is diagnostic observability only; it does not add reflection data-flow analysis, annotation-based warning policy, or new code-stripping decisions.
+
 Focused 2026-06-27 12-S7ZL zrp string-pool duplicate slice compaction extends the emitted metadata string-pool sweep from old-offset dedupe to content-level interning. `backend_aot_c_zrp_metadata_string_pool.c` still records each retained old offset for row rewriting, but when two retained NUL-terminated slices have identical bytes, their remap entries now share one emitted string-pool offset and do not grow the compacted byte count twice. The direct pool-pruning fixture covers a retained TypeDef name and retained FieldDef name both equal to `Shared` at different source offsets, expecting a compacted pool `Shared\0Example\0Kept\0` and matching rewritten offsets. RED was WSL gcc pool pruning failing 1/3 (`Expected 540 Was 547`) with the old offset-only remap; GREEN passes pool pruning 3/0, zrp pruning 5/0, code stripping 5/0, source contracts 21/0, and focused CTest on WSL gcc/clang and Windows MSVC Debug. This remains a string-pool compaction support slice; full trim analyzer, annotation-driven metadata policy, cross-module/export token handling, constant-pool retained-slice remap, and dump/diff tooling remain open.
 
+Focused 2026-07-02 11-S6I malformed binding table fail-closed tightens the typed-boundary metadata drift guard for corrupted or incomplete function binding metadata. `ZrCore_MetadataRuntime_CheckFunctionTokenBindingsCompatibility()` now rejects a nonzero `moduleMetadataBindingLength` paired with NULL `moduleMetadataBindings` as `ZR_METADATA_RUNTIME_BINDING_STATUS_INVALID_ARGUMENT` before scanning, instead of breaking out and reporting compatibility. `ZrLibrary_AotRuntime_CanUseTypedDirectCall()` already treats non-compatible binding status as ineligible, so malformed caller metadata now deopts/returns false without additional runtime production changes. RED was WSL gcc metadata runtime binding compatibility failing 16 tests / 1 failure because the malformed table was treated as compatible; GREEN passes metadata runtime binding compatibility 16/0 and typed direct-call compatibility 4/0 on WSL gcc, WSL clang, and Windows MSVC Debug. This closes only malformed binding-table fail-closed support; cross-module token resolve and broader no-crash ABI drift injection remain open.
+
 Focused 2026-06-28 11-S6H inline-struct `CALL_TYPED` metadata guard/deopt extends the typed-boundary drift guard to value SemIR inline-struct direct calls. `backend_aot_c_value_semir_calls.c` now emits `zr_aot_value_exec_call_typed_metadata_guard` before ordinary `CallInlineStruct()` calls, shared generic METHOD-slot calls, and full-AOT collected shared generic callsites. Compatible caller/callee bindings keep the direct inline-struct thunk path; drift emits `zr_aot_value_exec_call_typed_metadata_deopt` and falls back through `ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge()` with the destination slot, argument base slot/count, destination layout id, byte offset/size, and deopt id so the interpreter path can copy inline return bytes back into the generated destination. The full-AOT generic test now distinguishes missing generic-instance deopt, which remains forbidden, from metadata-drift deopt, which is required by 11-S6. RED was the new value SemIR source contract failing WSL gcc 4 tests / 1 failure because the inline-struct guard marker did not exist. GREEN passes runtime guard 3/0, value SemIR contracts 4/0, generic CALL_TYPED 7/0, and focused CTest 2/2 on WSL gcc/clang; Windows MSVC Debug passes runtime guard 3/0, value SemIR contracts 4/0, generic CALL_TYPED 7/0 with 3 existing Unix-only shared-library cases ignored, and focused CTest 2/2. This closes only inline-struct `CALL_TYPED` drift deopt; cross-module token resolve and broader ABI drift injection remain open.
+
+Focused 2026-07-03 11-S6H / 12-S8E CLI full-AOT metadata-drift assertion alignment fixes the project-level generated-C
+coverage after 11-S6H intentionally reintroduced an inline-struct metadata-drift bridge. The CLI full-AOT project test
+now continues to require `zr_aot_generic_call_typed_full_aot_no_deopt` and forbids the shared generic missing-instance
+deopt marker/reason, but it explicitly requires `zr_aot_value_exec_call_typed_metadata_guard`,
+`ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, ...)`, and the `typed inline struct direct call metadata drift`
+fallback marker. RED was `cli_project_incremental` failing `Expected NULL` on the older broad bridge anti-needle. GREEN
+passes `cli_project_incremental`, `cli_aot_compacted_metadata_sidecar`, `aot_runtime_typed_direct_call_compatibility`, and
+`aot_c_generic_call_typed` as focused CTest 4/4 on WSL GCC, WSL clang, and Windows MSVC Debug. This is a test semantics
+alignment only; the AOT generator behavior remains the 11-S6H plan behavior.
 
 Focused 2026-06-28 11-S6G bool typed direct-call metadata guard/deopt extends the same typed-boundary drift guard to bool-result direct calls. `backend_aot_c_emitter.h` now gives bool/bool and i64/u64/f64 comparison-to-bool writers the caller function slot, and `backend_aot_c_typed_direct_calls.c` threads it through no/one/two/three-arg bool dispatch including the no-arg helper path. `backend_aot_c_lowering_typed_bool_calls.c` emits `zr_aot_static_bool_*_direct_call_metadata_guard` plus `zr_aot_static_{i64,u64,f64}_bool_two_arg_direct_call_metadata_guard`, preserves compatible bool direct thunks, and deopts through `ZrLibrary_AotRuntime_DeoptTypedDirectCall()` plus `ZrLibrary_AotRuntime_SyncBoolLocal()` when caller/callee bindings drift. RED was the new source contract failing WSL gcc call contracts 8 tests / 1 failure because the bool guard marker did not exist. GREEN passes runtime guard 3/0, call contracts 8/0, typed call contracts 4/0, and bool typed direct-call shared-library smoke 28/0 on WSL gcc/clang, with Windows MSVC Debug passing runtime guard 3/0, call contracts 8/0, typed call contracts 4/0, and the existing Unix-only bool smoke ignored at 0 failures / 28 ignored. This closes only bool-result scalar typed direct-call drift deopt; inline-struct writeback, cross-module token resolve, and broader ABI drift injection remain open.
 
@@ -1766,6 +1908,439 @@ Focused 2026-06-25 11-S4F GC descriptor metadata-runtime resolver adds the descr
 
 Focused 2026-06-25 11-S4G GC inline-frame metadata-runtime layout resolver migrates the GC mark/rewrite consumer side of that table. AOT-loaded functions now attach the static code-registration layout registry to each `SZrFunction`, and `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout()` resolves inline-frame `typeLayoutId` from the function or its prototype-context entry function registry. GC inline-frame mark/rewrite uses that resolver for attached AOT functions and refuses stale prototype fallback when a registry is present, while unbound VM/interpreter functions still use `ZrCore_Function_ResolvePrototypeFrameTypeLayout()` so ordinary inline-frame GC scanning remains intact. RED first caught the missing attach/resolve API in the focused metadata type-layout test, then caught the lost non-AOT fallback in `zr_vm_gc_test` when inline-frame minor rewrite work dropped from 2 to 1. GREEN passes WSL gcc/clang/MSVC Debug metadata type-layout 7/0, metadata query 20/0, AOT GC root-frame 5/0, GC 66/0, value-type runtime 14/0, frame/source/AOT smoke, descriptor diagnostics, and generic reference sharing. This closes GC inline-frame consumer migration to the runtime layout table but still leaves TypeSpec/generic layout materialization, runtime layout construction, reflection consumer migration, and the complete token/cTypeId/layout cache open.
 
+Focused 2026-06-29 11-S4R-union generated ownership-offset descriptors extend the owner-field layout table from struct fields to union owner payload fields. `backend_aot_c_type_layouts.c` now allows any `SZrTypeLayout` with validated ownership offsets, including `ZR_TYPE_LAYOUT_KIND_UNION`, to emit `ZrOwnershipOffsets_<typeLayoutId>[]` and wire `.ownershipFieldOffsets` to that array; unsupported offset shapes still leave `ZR_NULL` and write the failure marker. The union descriptor keeps active-payload identity in `SZrTypeLayoutField.activeTag` and tag metadata, so the offset table remains a byte-offset carrier rather than a separate union semantics table. RED was the value-type shared-library smoke adding a `Shared<Box>` union payload fixture and failing on missing `ZrOwnershipOffsets_`; GREEN passes WSL gcc/clang type-layout CTest 1/1, source contracts 22/0, value-type smoke 5/0, and MSVC Debug with source contracts 22/0 plus value-type smoke 5/0/1 ignored. This closes generated union ownership-offset publication only; runtime generic layout construction, public reflection object materialization, cross-module token publication, and trim analysis remain later work.
+
+Focused 2026-06-29 11-S5 generic parameter runtime metadata views expose the first runtime read surface for zrp `GenericParam` and `GenericParamConstraint` rows. `metadata_runtime.h` now declares `SZrMetadataRuntimeGenericParamView`, `SZrMetadataRuntimeGenericParamConstraintView`, and read APIs by owner token, parameter index, and constraint index; `metadata_runtime_generic_params.c` keeps the implementation separate from the already-large runtime source and validates TypeDef/MethodDef owner ranges, generic parameter row ownership, constraint row ownership, constraint type records, and optional signature blobs. RED was `zr_vm_metadata_runtime_query_test` failing to compile on the missing view structs/APIs; GREEN passes WSL gcc/clang metadata runtime query 23/0 and MSVC Debug metadata runtime query 23/0, with adjacent reflection token resolve 2/0 and metadata runtime TypeSpec layout 14/0 passing under the same production change. This closes GenericParam/GenericParamConstraint inspection only; MethodSpec runtime instance binding, 08-compatible generic dedupe-key canonicalization, runtime generic layout construction, public generic reflection objects, cross-module token publication/rewrite, and full trim analysis remain open.
+
+Focused 2026-07-01 11-S7 / 12-S7ZZD member-token remap ABI publication promotes the existing emitted-zrp pruning sidecar
+from an internal method-token rewrite helper into a generated-C ABI carrier. `ZR_VM_AOT_ABI_VERSION` is now 12,
+`SZrAotMemberTokenRemap` carries source and compacted target member tokens, and both `ZrAotCompiledModule` and
+`SZrAotCodeRegistration` publish `memberTokenRemaps/memberTokenRemapCount`. `backend_aot_c_emitter.c` emits
+`zr_aot_member_token_remaps[]` plus `code_stripping.memberTokenRemaps` source/target markers, and runtime descriptor
+validation rejects descriptor/codeRegistration remap table mismatches. RED was `zr_vm_aot_c_code_stripping_test`
+requiring the generated MethodDef RID2->RID1 remap ABI table after the method-token table had already been compacted;
+GREEN passes WSL GCC code stripping 10/0, source contracts 24/0, export-token remap 3/0, focused CTest 4/4, WSL Clang
+source contracts 24/0 plus focused CTest 4/4, and Windows MSVC Debug source contracts 24/0 plus focused CTest 4/4. This
+closes generated-C remap ABI publication only; cross-module provider binding, real export manifest/table rewrite, full
+metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-02 11-S7ZE / 12-S7 manifest export table publication turns export declaration diagnostics into a
+generated-C ABI table. `ZR_VM_AOT_ABI_VERSION` is now 13, `SZrAotManifestExportEntry` records entry kind, flags, target,
+type token, and member token, and both `ZrAotCompiledModule` and `SZrAotCodeRegistration` publish
+`manifestExports/manifestExportCount`. `backend_aot_c_zrp_metadata_member_token.c` builds this table after zrp metadata
+pruning, preserves bound `TYPE_DEF` tokens, and remaps bound method/field `MEMBER_DEF` source tokens through the
+retained member-token sidecar before `backend_aot_c_emitter.c` writes `zr_aot_manifest_exports[]`. Root and mirrored
+runtime descriptor validation reject manifest table pointer/count mismatches, unknown entry flags, null targets, and
+invalid type/member token shapes. RED was the focused remap test requiring source `MEMBER_DEF(7)` to publish compacted
+`MEMBER_DEF(2)` in the manifest export table; GREEN passes WSL GCC direct remap 9/0, writer options 18/0, source
+contracts 24/0, and WSL GCC/Clang/Windows MSVC Debug focused CTest `aot_c_zrp_metadata_export_token_remap` plus
+`cli_aot_writer_options` 2/2 with source contracts 24/0. Cross-module provider loading/version binding, standalone
+provider manifest consumption, complete metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-02 11-S7ZF / 12-S7 manifest export runtime mirror makes that generated table visible from the attached
+metadata runtime. `SZrMetadataRuntime` now mirrors `SZrAotCodeRegistration.manifestExports/manifestExportCount`, and
+`ZrCore_Module_AttachMetadataRuntime()` publishes the table pointer/count during module attach. The fields are appended
+to the runtime struct tail to avoid shifting existing positional initialization of older counters and caches. RED was a
+new focused metadata runtime manifest export test compiling against missing mirror fields; GREEN passes WSL
+GCC/Clang/Windows MSVC Debug direct manifest export mirror 1/0, metadata runtime query 25/0, binding compatibility 15/0,
+and focused CTest `metadata_runtime_manifest_exports`, `metadata_runtime_query`, and
+`metadata_runtime_binding_compatibility` 3/3. This is attached-runtime table visibility only; cross-module provider
+loading/version binding, standalone provider import-path manifest consumption, complete metadata sweep, and full trim
+analysis remain open.
+
+Focused 2026-07-02 11-S7ZG / 12-S7 manifest export runtime view adds the first stable query surface over that attached
+table. `SZrMetadataRuntimeManifestExportView` and `ZrCore_MetadataRuntime_ReadManifestExportView()` let runtime
+consumers request one export by `kind + target` and receive the entry pointer/index plus target, `typeToken`, and
+`memberToken`. Duplicate target/kind entries, missing required token flags, and invalid token shapes fail closed and
+clear the output view. RED was the focused manifest export runtime test compiling against the missing view type/API;
+GREEN passes WSL GCC/Clang/Windows MSVC Debug direct manifest export runtime view 4/0, metadata runtime query 25/0,
+binding compatibility 15/0, and focused CTest for all three targets. This remains an attached-runtime lookup API only;
+cross-module provider loading/version binding, standalone provider import-path wiring, complete metadata sweep, and full
+trim analysis remain open.
+
+Focused 2026-07-02 11-S7ZH / 12-S7 manifest export binding gate connects that view to runtime ABI-drift checks.
+`ZrCore_MetadataRuntime_CheckManifestExportBindingCompatibility()` now reads a `kind + target` export view, reuses the
+existing token/signature/module/layout compatibility predicate, and then verifies that the binding's resolved metadata
+token equals the manifest export's published type/member token. Missing exports and export-token mismatches have explicit
+status values, while module-version drift still flows through the existing compatibility report. RED was the focused
+manifest export test compiling against missing API/status values; GREEN passes WSL GCC/Clang/Windows MSVC Debug direct
+manifest export runtime 7/0, binding compatibility 15/0, and focused CTest for both targets. This is a local attached
+runtime gate only; provider loading/version binding, import-path wiring, complete metadata sweep, and full trim analysis
+remain open.
+
+Focused 2026-07-02 11-S7ZI / 12-S7 provider manifest export binding gate wires that local gate into real import
+signature verification. `module_import_signature.c` now calls the new `module_import_signature_manifest_export.c/.h`
+helper after the selected provider typed export passes token/signature/hash/blob checks and before the binding sidecar is
+recorded. The helper maps import call/read/ref/type effects to manifest export method/field/type kinds, builds a
+`SZrMetadataTokenBinding` snapshot, and delegates to
+`ZrCore_MetadataRuntime_CheckManifestExportBindingCompatibility()` when the provider module has an attached manifest
+export table. Legacy providers without `manifestExports` keep their previous behavior; providers with a table must keep
+the published type/member token aligned with the selected typed export symbol. RED was a focused TypeRef/import binding
+fixture where the manifest table published `MEMBER_DEF(2)` while the typed export symbol still exposed `MEMBER_DEF(1)`;
+GREEN passes WSL GCC/Clang/Windows MSVC Debug direct metadata TypeRef/import binding 9/0, manifest export runtime 7/0,
+binding compatibility 15/0, and focused CTest 3/3 for those targets. Standalone provider import-path discovery/loading,
+version selection, complete metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-02 11-S7ZJ / 12-S7 provider import location discovery adds the project-layer API that later provider
+binding can call before runtime loading. `SZrLibrary_ProjectImportProviderLocation` and
+`ZrLibrary_Project_ResolveImportProviderLocation()` resolve a raw import specifier to the canonical
+`$alias@version/module` key, attach the declared AssemblyRef identity/version range, and return either `.zrm`
+archive/module entry pointers or `.zrp` source/binary/intermediate paths. RED was the import resolver test compiling
+against the missing type/API; GREEN passes the focused resolver test with both `.zrp` and `.zrm` provider references.
+This is import-path location discovery only; provider runtime loading, multi-version selection, export metadata attach,
+complete metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-02 11-S7ZK / 12-S7 provider AOT load-request planning extends that discovery surface into a stable
+request record for later runtime loading. `SZrLibrary_ProjectImportProviderAotLoadRequest` and
+`ZrLibrary_Project_ResolveImportProviderAotLoadRequest()` preserve the backend kind, canonical
+`$alias@version/module`, descriptor-local module name, declared assembly/version range, provider source/binary/
+intermediate paths, and `.zrp` backend library path under `aot_c` or `aot_llvm`. `.zrm` providers mirror archive/entry
+pointers and keep `libraryPath` empty, so the runtime can distinguish archive payloads from filesystem dynamic
+libraries. RED was the focused import resolver test compiling against the missing request type/API; GREEN passes the
+same resolver fixture for C-backend `.zrp` and LLVM-backend `.zrm` requests. Runtime dynamic loading, multi-version
+selection, export metadata attach, complete metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-02 11-S7ZL / 12-S7 provider AOT runtime load-request consumption wires that request into strict AOT
+module loading. `aot_runtime_prepare_record()` now maps canonical `$alias@version/module` imports through
+`ZrLibrary_Project_ResolveImportProviderAotLoadRequest()`, uses the provider `.zrp` source/binary/library paths, and
+validates the dynamic-library descriptor against the provider-local module name while preserving the canonical cache
+identity. `.zrm` provider archive entries fail closed instead of entering the filesystem dynamic-loader path. RED was a
+new focused runtime test failing because provider imports produced no provider-library `lastError`; GREEN passes the
+new focused runtime test on WSL GCC/clang and Windows MSVC Debug. A follow-up success fixture covers `.zrp` provider
+dynamic-library loading; multi-version selection, export metadata attach, complete metadata sweep, and full trim
+analysis remain open.
+
+Focused 2026-07-02 11-S7ZM / 12-S7 provider AOT dynamic-library success fixture proves the strict runtime path with a
+real generated provider library. The new smoke writes root/provider `.zrp` manifests, compiles provider `ops/sum.zr` to
+`.zro`, emits AOT C with provider-local `moduleName = "ops/sum"`, compiles the runtime-expected
+`/deps/math/bin/aot_c/lib/zrvm_aot_ops_sum.so`, and imports `$mathLocal@2.1.0/ops/sum`. It asserts canonical module
+cache identity, `ZR_LIBRARY_EXECUTED_VIA_AOT_C`, and the published `seed = 37` export. WSL GCC/clang pass the new smoke
+1/0; Windows MSVC Debug compiles the target and records the Unix-only dynamic-loader execution branch as ignored. This
+closes only the `.zrp` provider generated shared-library success fixture; exact alias/version verification, automatic
+range-based candidate selection, export metadata attach, full metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-02 11-S7ZN / 12-S7 provider version-selection range guard covers the project-layer exact selection needed
+before strict provider AOT loading. `tests/library/test_project_import_provider_version_selection.c` creates two aliases
+for the same `zr.math` assembly, `mathV2@2.1.0` and `mathV3@3.1.0`, and verifies
+`ZrLibrary_Project_ResolveImportProviderAotLoadRequest()` returns distinct canonical keys and `.zrp` source/binary/AOT
+library paths for `&mathV2.ops.sum` and `&mathV3.ops.sum`. The same slice makes `project.c` reject strict
+`major.minor.patch` provider references whose actual version is outside the declared `[min, max)` range across legacy
+dependency, `.zrp` reference, and `.zrm` reference parse paths. RED failed with `Expected NULL` for an out-of-range
+`3.1.0` provider; GREEN passes WSL GCC/clang/MSVC focused provider version-selection 2/0 plus resolver, manifest
+normalization, provider runtime, and provider shared-library smoke regressions. Automatic range-based candidate
+selection, cross-provider export metadata attach, full metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-02 11-S7ZO / 12-S7 provider export metadata attach fixture extends the generated provider dynamic-library
+smoke with manifest export assertions. The provider `.zrp` now declares method `add` and field `seed` exports; the fixture
+applies `ZrCli_Compiler_ApplyProjectAotExportDeclarations()` before AOT C generation, checks writer-bound `MEMBER_DEF`
+tokens, verifies generated manifest export table entries and descriptor wiring, then imports the provider library and
+queries the attached metadata runtime for `add` and `seed` manifest export views. WSL GCC/clang pass the smoke 1/0, and
+MSVC Debug builds the target with the Unix-only dynamic-loader branch ignored. This closes the provider export metadata
+attach fixture gap only; automatic candidate selection, complete metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-02 11-S7ZP / 12-S7 provider range candidate selection adds candidate-set resolution to project
+references. A `references.alias` entry may now provide `candidates[]` instead of exact `path`; candidate items can be
+string paths or `{ "path": "...", "version": "..." }` objects. `project.c` probes each candidate without mutating
+dependency packages, filters by declared assembly, optional exact version, and `[minVersionInclusive,
+maxVersionExclusive)`, requires strict three-part semver for ordering, and selects the highest matching provider while
+preserving canonical `$alias@version/module` imports. The schema now validates the mutually exclusive `path`/`candidates`
+forms and includes a `mathRange` example. RED was candidate-only references failing before selection because `path` was
+required; GREEN passes WSL GCC/clang/MSVC focused provider version-selection 4/0 plus adjacent resolver, normalization,
+runtime, shared-library, and schema checks. Complete metadata sweep, full trim analysis, and ABI drift/deopt closure
+remain open.
+
+Focused 2026-07-02 11-S7ZQ / 12-S7 legacy dependency AssemblyRef identity closes the stale residual from the 11-S7ZL
+provider runtime load-request slice. Legacy `dependencies` normalization preserves canonical static import/module effect
+keys such as `$math@1.2.3/ops/sum`, but the AssemblyRef row identity comes from the referenced provider manifest identity
+(`math`, via legacy top-level `name` fallback in this fixture). `tests/parser/test_project_import_canonicalization.c`
+now asserts the canonical module effect plus `math` assembly identity, rejects an AssemblyRef named by the canonical key,
+and keeps the existing requested/min/max version checks on the `math` AssemblyRef. RED was WSL GCC canonicalization 35/1
+from the stale lookup; GREEN passes WSL GCC/clang/MSVC canonicalization 35/0 plus adjacent provider version-selection,
+resolver, normalization, runtime, and shared-library smoke checks. No production code changed; complete metadata sweep,
+full trim analysis, and ABI drift/deopt closure remain open.
+
+Focused 2026-07-02 11-S7ZR / 12-S7 range-selected provider export publication closes the runtime side of the previous
+candidate-selection and manifest-export attach slices. `tests/parser/test_aot_c_provider_shared_library_smoke.c` now
+imports the same provider library through exact `$mathLocal@2.1.0/ops/sum` and candidate-selected
+`$mathRange@2.1.0/ops/sum` aliases, with the range alias selecting the 2.1.0 candidate over 2.0.5, then verifies module
+cache identity, strict AOT C execution, attached manifest export views for `add`/`seed`, and the ordinary `seed` public
+export. RED was the range alias attaching metadata but returning NULL for `seed` because export publication fell back
+from an empty `frame.recordHandle` to the first equivalent function record, which was the earlier exact alias. The
+runtime now prefers the matching `runtimeState->activeRecord` before function-equivalence lookup, so public exports are
+published to the module currently being initialized. GREEN passes WSL GCC/clang provider shared-library smoke 1/0 plus
+WSL GCC/clang/MSVC Debug provider version-selection, resolver, manifest normalization, provider runtime, source
+contracts, and frame setup contracts. Complete metadata sweep, compacted-token file publication, full trim analysis,
+and broader ABI drift/deopt closure remain open.
+
+Focused 2026-07-02 11-S7ZSA / 12-S7ZZR manifest export kind/token guard closes a generated-table validation gap before
+persistent manifest publication. `backend_aot_c_zrp_manifest_export_table_build()` now rejects type exports carrying
+`MEMBER_DEF` bindings and method/field exports carrying `TYPE_DEF` bindings, while preserving unbound declarations and
+remapped method/field member-token publication. RED was the focused export-token remap test accepting a type export with
+a member token; GREEN passes WSL GCC/clang/Windows MSVC Debug export-token remap 10/0, WSL GCC source contracts 24/0,
+and WSL GCC/clang provider smoke 1/0. Persistent `.zrp` manifest export section, complete metadata sweep, and full trim
+analysis remain open.
+
+Focused 2026-07-02 11-S7ZSB / 12-S7ZZS persistent `.zrp` manifest export section adds the file-format carrier that the
+generated manifest table can later write into. `.zrp` metadata is now v4 with 13 sections and a 224-byte header; the new
+tail `manifestExports` definition-table section stores kind, flags, target string offset, type token, and member token
+rows. Core metadata read/write/validation, section views, definition-table payload writing, CLI dump/diff, and generated
+AOT size/count markers all include the section. RED was WSL GCC format coverage compiling against the missing section
+and a code-stripping regression where stats/registration still assumed 12 sections; GREEN passes WSL GCC/clang/MSVC Debug
+focused format, CLI dump, size-delta, code-stripping, and export-token-remap tests. This is format-layer support only:
+writer/pruner generation of persistent manifest export rows, full metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-02 11-S7ZSC / 12-S7ZZT persistent `.zrp` manifest export pruning rewrite closes the raw-copy gap for
+existing file-level export rows. `backend_aot_c_zrp_metadata_manifest_export.{h,c}` copies `manifestExports` rows during
+pruned blob rebuild, remaps each target string offset through the compacted string pool, remaps method/field member
+tokens through the retained member-token map, remaps type exports through TypeDef token compaction, and fails closed on
+invalid kind/flag/token shapes. RED was WSL GCC pruning 11/1 because the old section copy kept source offset 25 instead
+of compacted offset 17; GREEN passes WSL GCC/clang/MSVC Debug pruning 11/0, export-token remap 10/0, and code stripping
+10/0. This covers rewrite of existing persistent rows only; at that point writer-side generation/publication of
+persistent rows, full metadata sweep, and full trim analysis still remained open.
+
+Focused 2026-07-03 11-S7ZSD / 12-S7ZZU persistent `.zrp` manifest export declaration publication closes the bound
+method/field subset of writer-side row generation. `backend_aot_c_zrp_publish_manifest_export_declarations()` appends
+writer declarations that carry `MEMBER_DEF` bindings into the prepared embedded `.zrp` `manifestExports` section after
+pruning, keeps existing rows, appends or reuses target string-pool slices, remaps source member tokens through the
+retained member-token sidecar, rebuilds section layout, and validates the final definition tables before the emitter
+samples the blob. RED was MSVC focused pruning expecting a 767-byte blob while the old path still returned 708 bytes;
+GREEN passes WSL GCC/clang/MSVC Debug pruning 12/0, export-token remap 10/0, and code stripping 10/0. This is limited to
+token-bound method/field declarations; type export row publication remained separate until the following TypeDef remap
+slice, and unbound declaration policy, full metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-03 11-S7ZSE / 12-S7ZZV persistent `.zrp` manifest export type declaration publication closes the bound
+type subset of writer-side row generation. TypeDef pruning now builds a source-to-compacted TypeDef token sidecar on the
+prepared embedded metadata, and `backend_aot_c_zrp_publish_manifest_export_declarations()` uses it to append `TYPE`
+manifest export declaration rows with compacted `TYPE_DEF` tokens, target string-pool updates, and no member token. The
+focused fixture prunes source `TYPE_DEF(1)` as an orphan while publishing source `TYPE_DEF(2)` as compacted
+`TYPE_DEF(1)` for `api.LiveType`. RED was WSL GCC focused pruning expecting a 559-byte blob while the old path still
+returned 526 bytes; GREEN passes WSL GCC/clang/MSVC Debug focused CTest
+`aot_c_zrp_metadata|aot_c_code_stripping|aot_c_guardrail_contracts` 7/7. This is limited to token-bound type
+declarations; unbound declaration policy, full metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-03 11-S7ZSF / 12-S7ZZW persistent `.zrp` manifest export unbound declaration publication closes the
+file-level policy gap for declarations that have a manifest target but no resolved type/member token. Core `.zrp`
+definition-table validation now accepts `manifestExports` rows whose kind is type/method/field and whose flags,
+`typeToken`, and `memberToken` are all zero; rows with unknown flags, wrong kind/token pairing, or unflagged nonzero
+tokens still fail closed. The pruner preserves existing unbound rows while remapping their target string offsets, and
+declaration publication appends unbound type/method/field exports as zero-token persistent rows after pruning. Runtime
+manifest export binding compatibility remains token-bound: unbound rows are persisted for manifest/table parity but do
+not satisfy ABI drift export-token gates. RED was WSL GCC `zrp_metadata_format` rejecting the new unbound rows and
+focused pruning returning 708 bytes instead of the 806-byte blob with `api.dynamic`, `api.DynamicType`, and `api.value`
+rows/strings; GREEN passes WSL GCC/clang/MSVC Debug focused CTest
+`zrp_metadata_format|aot_c_zrp_metadata|aot_c_code_stripping|aot_c_guardrail_contracts` 8/8. Full metadata sweep,
+compacted-token file publication, full trim analysis, and broader ABI drift/deopt closure remain open.
+
+Focused 2026-07-03 11-S7ZSG / 12-S7ZZX compacted `.zrp` metadata publication adds the writer-level file output
+surface for the final embedded metadata blob. `SZrAotWriterOptions.compactedZrpMetadataOutputPath` names an optional
+sidecar output; after generated C closes successfully, `backend_aot_c_publish_compacted_zrp_metadata()` validates the
+final prepared blob header and definition tables, then writes the exact compacted bytes to that path. Validation
+failures, short writes, or close failures remove the stale/partial sidecar and make the writer fail closed, deleting
+the generated C file as well. The focused test proves a
+retained MethodDef is published with compacted `MEMBER_DEF(1)` while a trimmed MethodDef is absent from the sidecar.
+RED was WSL GCC failing to compile because the writer option field was missing; GREEN passes WSL
+GCC/clang/MSVC Debug focused CTest
+`aot_c_zrp_metadata_publication|aot_c_zrp_metadata_pruning|aot_c_code_stripping|zrp_metadata_format|cli_aot_writer_options`
+5/5. CLI/project automatic sidecar path derivation, full metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-01 11-S7 / 12-S7ZZE member-token remap ABI entry validation tightens that published carrier from the
+runtime side. Root `zr_vm_library/src/zr_vm_library/aot_runtime.c` and mirrored
+`zr_vm_aot/zr_vm_library/src/zr_vm_library/aot_runtime.c` now include `metadata_token.h`, validate every
+`SZrAotMemberTokenRemap` entry before execution, and reject source/target tokens that are zero, not `MEMBER_DEF`, or
+have RID 0. `tests/parser/test_aot_c_descriptor_diagnostics.c` now builds a hand-written descriptor shared library with
+a valid embedded `.zro` blob but invalid source token `0x02000001`, and asserts the diagnostic includes
+`member token remap entry invalid`, the entry index, and source/target token values. RED was WSL GCC accepting the bad
+descriptor and failing `Expected FALSE Was TRUE`; GREEN passes WSL GCC and WSL Clang descriptor diagnostics 3/0,
+source contracts 24/0, focused CTest 4/4, plus Windows MSVC Debug source contracts 24/0 and focused CTest 4/4 with the
+Unix-only descriptor runtime checks ignored. This closes entry-shape validation only; cross-module provider binding,
+real export manifest/table rewrite, full metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-01 11-S7 / 12-S7ZZF member-token remap ABI duplicate validation adds the uniqueness half of the same
+runtime-side guardrail. After the nonzero `MEMBER_DEF` entry-shape check, root and mirrored runtime descriptor
+validation now scan earlier `SZrAotMemberTokenRemap` rows and reject duplicate source tokens or duplicate target tokens
+before executing the generated module. `tests/parser/test_aot_c_descriptor_diagnostics.c` now reuses the hand-written
+descriptor shared-library fixture for two valid-looking two-row tables: one repeats source `0x03000001`, the other
+repeats target `0x03000001`. RED was WSL GCC accepting both ambiguous descriptors and failing `Expected FALSE Was TRUE`;
+GREEN passes WSL GCC and WSL Clang descriptor diagnostics 5/0, source contracts 24/0, focused CTest 4/4, plus Windows
+MSVC Debug source contracts 24/0 and focused CTest 4/4 with the Unix-only descriptor runtime checks ignored. This
+closes only remap-table uniqueness validation; cross-module provider binding, real export manifest/table rewrite, full
+metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-01 11-S7 / 12-S7ZZG member-token remap sidecar source duplicate guard moves part of that invariant into
+the generated zrp metadata build path. `backend_aot_c_zrp_member_token_remap_append()` now scans already-written sidecar
+entries before publishing a new source-to-compacted member-token row and rejects duplicate `sourceToken` values, leaving
+the metadata remap state empty on failure. `tests/parser/test_aot_c_zrp_metadata_export_token_remap.c` covers a retained
+MethodDef and FieldDef sharing the same source `MEMBER_DEF` token. RED was WSL GCC accepting the duplicate-source sidecar
+and failing `Expected FALSE Was TRUE`; GREEN passes WSL GCC/Clang export-token remap 4/0 and source contracts 24/0, plus
+Windows MSVC Debug export-token remap 4/0 and source contracts 24/0. This closes only generated-side source-token
+uniqueness; cross-module provider binding, real export manifest/table rewrite, full metadata sweep, and full trim
+analysis remain open.
+
+Focused 2026-07-01 11-S7 / 12-S7ZZH member-token remap sidecar token-shape guard aligns the generated-side sidecar builder
+with the runtime ABI entry validator. `backend_aot_c_zrp_member_token_is_member_def()` now requires a nonzero token,
+`MEMBER_DEF` table tag, and nonzero RID; `backend_aot_c_zrp_member_token_remap_append()` applies that guard to both
+source and target tokens before writing a sidecar entry. `tests/parser/test_aot_c_zrp_metadata_export_token_remap.c` now
+covers invalid retained MethodDef source tokens with `TYPE_DEF` table tag and with `MEMBER_DEF` RID 0. RED was WSL GCC
+accepting each invalid source and failing `Expected FALSE Was TRUE`; GREEN passes WSL GCC/Clang export-token remap 6/0
+and source contracts 24/0, plus Windows MSVC Debug export-token remap 6/0 and source contracts 24/0. This closes only
+generated-side token-shape validation; cross-module provider binding, real export manifest/table rewrite, full metadata
+sweep, and full trim analysis remain open.
+
+Focused 2026-07-01 11-S7 / 12-S7ZZI member-token remap retained-count guard closes one more generated-side publication
+invariant for the direct export-token remap helper and the same ABI carrier. `backend_aot_c_zrp_remap_export_member_token()`
+and `backend_aot_c_zrp_member_token_remap_build()` now recompute the actual retained MethodDef count from the MethodDef
+rows and function table, then reject a caller-supplied `retainedMethodDefCount` that does not match before rewriting an
+export token or allocating sidecar entries. The focused remap test uses a one-retained-MethodDef plus one-FieldDef
+fixture with a stale count of two; old code accepted it and would have returned or published a FieldDef target at RID3,
+leaving RID2 empty in the compacted `MEMBER_DEF` target domain. RED was WSL GCC failing `Expected FALSE Was TRUE` for
+both the direct helper and sidecar builder; GREEN passes WSL GCC/Clang export-token remap 8/0 and source contracts 24/0,
+plus Windows MSVC Debug export-token remap 8/0 and source contracts 24/0. This remains a retained-count consistency guard
+only; cross-module provider binding, real export manifest/table rewrite, full metadata sweep, and full trim analysis
+remain open.
+
+Focused 2026-07-01 11-S7 / 12-S7ZZJ retained `SIGNATURE` token RID compaction closes the token-identity side of
+retained signature metadata pruning. `backend_aot_c_zrp_metadata_signature.{h,c}` now computes compacted local
+`SIGNATURE` RIDs by iterating retained signature token records after member, TypeDef, TypeSpec, and ModuleRef pruning
+filters. Token-record copy rewrites signature tokens in the local record fields, and MethodSpec row copy rewrites the
+row `token` through the same remap before hash recomputation. RED was WSL GCC zrp metadata pruning failing 2/6 because
+old code kept source signature RIDs 9 and 11 where the pruned metadata now expects compacted RID1. GREEN passes WSL
+GCC/Clang zrp metadata pruning 6/0, typedef pruning 2/0, pool pruning 6/0, source contracts 24/0, focused metadata
+CTest 4/4, and Windows MSVC Debug direct runs for the same direct targets. This closes retained local signature token
+compaction only; cross-module provider binding, real export manifest/table rewrite, complete metadata sweep, and full
+trim analysis remain open.
+
+Focused 2026-07-01 11-S7 / 12-S7ZZK signature-token orphan rejection closes the fail-closed half of the retained
+`SIGNATURE` token pruning path. `backend_aot_c_zrp_metadata_signature.c` now rejects a retained local `SIGNATURE` token
+when no retained signature-token record list exists or when that source token is absent from the retained list, so
+retained MethodSpec rows cannot keep orphan source signature RIDs. `backend_aot_c_zrp_metadata_prune.c` also clears
+prepared embedded metadata output on prune failure before returning false. RED first showed the missing-record fixture
+returning true (`Expected FALSE Was TRUE`), then showed failed pruning still exposing source blob length 659; GREEN
+passes WSL GCC/Clang zrp metadata pruning 7/0, typedef pruning 2/0, pool pruning 6/0, source contracts 24/0, focused
+metadata CTest 4/4, and Windows MSVC Debug direct runs for the same direct targets. This closes only orphan retained
+local signature-token rejection and failure cleanup; cross-module provider binding, real export manifest/table rewrite,
+complete metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-01 11-S7 / 12-S7ZZP signature-rooted ModuleRef retention closes the producer side left open after
+retained signature AssemblyRef token rewriting. ModuleRef retention now scans retained signature blob remap entries for
+`ASSEMBLY_REF` nodes, `backend_aot_c_zrp_metadata_prune.c` builds the signature remap before ModuleRef count/string
+remap, the string pool keeps ModuleRef name/version slices that are rooted only by retained signature payloads, and
+signature rewrite still remaps the embedded AssemblyRef token to the compacted RID. RED added a pool-pruning fixture
+whose retained `FIELD_SIG(ASSEMBLY_REF source RID2)` had no retained token-record root; old pruning dropped the row and
+failed WSL GCC with `Expected TRUE Was FALSE`. GREEN passes WSL GCC/Clang and Windows MSVC Debug direct zrp metadata
+pruning 10/0, TypeSpec pruning 2/0, pool pruning 8/0, export token remap 8/0, source contracts 24/0, plus focused
+metadata CTest 4/4 on all three toolchains. This closes only signature-rooted ModuleRef row/name/version retention and
+compacted AssemblyRef RID publication; cross-module provider binding, real export manifest/table rewrite, complete
+metadata sweep, and full trim analysis remain open.
+
+Focused 2026-07-01 11-S7 / 12-S7ZZO signature MemberRef token rewrite closes the retained signature blob consumer side
+of local member-token compaction. `backend_aot_c_zrp_metadata_signature.c` now rewrites `MEMBER_REF` signature nodes by
+feeding the embedded token through the existing MethodDef/FieldDef token-record remap path and writing the compacted
+token back before signature validation and hash recomputation. RED added a MethodDef pruning fixture where retained
+source `MEMBER_DEF` RID2 compacts to RID1, but the signature blob root `MEMBER_REF` still held source RID2; WSL GCC
+failed with `Expected 50331649 Was 50331650`. GREEN passes WSL GCC/Clang and Windows MSVC Debug direct zrp metadata
+pruning 10/0, TypeSpec pruning 2/0, pool pruning 7/0, export token remap 8/0, source contracts 24/0, plus focused
+metadata CTest 4/4 on all three toolchains. This closes only retained signature-blob local MemberRef compaction;
+cross-module provider binding, real export manifest/table rewrite, complete metadata sweep, and full trim analysis remain
+open.
+
+Focused 2026-07-01 11-S7 / 12-S7ZZN signature AssemblyRef token rewrite closes the retained signature blob consumer side
+of ModuleRef compaction. `backend_aot_c_zrp_metadata_signature.{h,c}` now threads TypeSpec/ModuleRef rows into the
+signature rewrite context and rewrites `ASSEMBLY_REF` nodes through `backend_aot_c_zrp_remap_module_ref_token()` before
+signature validation and hash recomputation. RED added a ModuleRef compaction fixture where source `ASSEMBLY_REF` RID2
+was retained by a `TYPE_REF` token record and source RID1 was pruned; old signature rewriting left RID2 in the blob and
+WSL GCC failed with `Expected 67108865 Was 67108866`. GREEN passes WSL GCC/Clang and Windows MSVC Debug direct zrp
+metadata pruning 9/0, TypeSpec pruning 2/0, pool pruning 7/0, export token remap 8/0, source contracts 24/0, plus
+focused metadata CTest 4/4 on all three toolchains. This closes only retained signature-blob AssemblyRef compaction;
+cross-module provider binding, real export manifest/table rewrite, complete metadata sweep, and full trim analysis remain
+open.
+
+Focused 2026-07-01 11-S7 / 12-S7ZZM GenericParamConstraint TypeSpec root retention makes retained generic parameter
+constraints a live root for TypeSpec rows and signature blobs. `backend_aot_c_zrp_metadata_type_spec.{h,c}` now threads
+GenericParam/GenericParamConstraint context through TypeSpec retention, count, remap, and copy helpers, while signature
+blob remap uses the same context so a TypeSpec row referenced only by a retained
+`GenericParamConstraint.constraintTypeToken` survives pruning and publishes a compacted `TYPE_SPEC` RID. RED added a
+fixture with no retained TypeSpec token record and source `TYPE_SPEC` RID2 referenced only by a retained constraint; old
+pruning returned false with `Expected TRUE Was FALSE`. GREEN passes WSL GCC/Clang and Windows MSVC Debug direct zrp
+metadata pruning 9/0, TypeSpec pruning 2/0, pool pruning 6/0, export token remap 8/0, source contracts 24/0, plus
+focused metadata CTest 4/4 on all three toolchains. This closes only constraint-rooted TypeSpec row/signature retention;
+cross-module provider binding, real export manifest/table rewrite, complete metadata sweep, and full trim analysis remain
+open.
+
+Focused 2026-07-03 11-S7ZSH / 12-S7ZZY CLI/project compacted `.zrp` sidecar path bridge wires writer-level metadata
+publication into project artifacts. Project path helpers now derive `main.zrp` from `main.c`, CLI AOT injects
+`compactedZrpMetadataOutputPath` only when the embedded blob passes both `.zrp` header and definition-table validation,
+and optional AOT C cleanup removes the derived sidecar with the generated C artifact. RED first failed on the missing
+project path helper, then exposed a header-only false positive with `Expected FALSE Was TRUE` for an invalid definition
+table blob. GREEN passes the focused sidecar/writer/pruning/format CTest set 5/5 on WSL GCC, WSL clang, and Windows MSVC
+Debug. The adjacent `cli_project_incremental` full-AOT bridge assertion was later narrowed by the 11-S6H/12-S8E
+metadata-drift alignment slice.
+
+Focused 2026-07-03 11-S7ZSI / 12-S7ZZZ CLI/project sidecar stale cleanup closes the next artifact fail-closed edge.
+`ZrCli_Compiler_WriteAotCFileForModule()` now derives the compacted metadata sidecar path even before deciding whether
+the current embedded blob is publishable; when `.zrp` header or definition-table validation fails, it deletes any stale
+derived sidecar before normal AOT C generation. If that stale sidecar cannot be removed, the CLI write fails closed and
+does not produce a fresh `.c` artifact beside stale metadata. The new CLI fixtures pre-create a stale sidecar beside an
+invalid metadata input, then block stale-sidecar removal with a non-empty path. RED was WSL GCC
+`cli_aot_compacted_metadata_sidecar` failing `Expected FALSE Was TRUE` for both stale-retention and removal-failure
+cases; GREEN passes the focused sidecar/writer/pruning/format CTest set 5/5 on WSL GCC, WSL clang, and Windows MSVC
+Debug. This closes only stale sidecar cleanup; full metadata sweep and full trim analysis remain open.
+
+Focused 2026-07-03 11-S7ZSK / 12-S7ZZZD FieldDef member-token retained-row guard fixes a stale shared `MEMBER_DEF`
+compaction edge in emitted `.zrp` pruning. `backend_aot_c_zrp_metadata_remap.{h,c}` now exposes retained-row-aware
+token-record and manifest-export member-token wrappers; their FieldDef path checks `backend_aot_c_zrp_field_def_row_is_retained()`
+and compacts with `backend_aot_c_zrp_compacted_retained_field_def_token()` instead of using the raw source field index.
+The direct pruning fixture keeps a live FieldDef after a pruned FieldDef and proves the dead field token record is
+dropped while the live field receives the compacted RID after retained methods. RED was WSL GCC pruning failing with
+`Expected 640 Was 736`; GREEN passes pruning 18/0, source contracts 24/0, and export-token remap 10/0 on WSL GCC, WSL
+clang, and Windows MSVC Debug. This closes only retained FieldDef member-token row guarding; full metadata sweep and
+full trim analysis remain open.
+
+Focused 2026-07-03 11-S7ZSL / 12-S7ZZZE TypeSpec retained FieldDef token-record guard extends the same retained-row
+semantics to TypeSpec retention. `backend_aot_c_zrp_type_spec_row_is_retained()` now calls the retained token-record
+remapper with TypeDef context, and the ModuleRef/signature/string-pool/prune paths pass that context through their
+TypeSpec consumers. The direct pruning fixture proves a TypeSpec rooted only by a pruned FieldDef `MEMBER_DEF` token
+record is dropped with its signature blob, while a live FieldDef-rooted TypeSpec compacts to retained `TYPE_SPEC(1)`
+with rewritten signature offsets and hashes. RED was WSL GCC pruning failing with `Expected 765 Was 794`; GREEN passes
+source contracts 24/0, export-token remap 10/0, and pruning 19/0 on WSL GCC, WSL clang, and Windows MSVC Debug. This
+closes only TypeSpec retained FieldDef token-record guarding; full metadata sweep and full trim analysis remain open.
+
+Focused 2026-07-03 11-S7ZSM / 12-S7ZZZF Method-only member-token guard tightens GenericParam and MethodSpec pruning
+slots that carry `MEMBER_DEF` tokens. `backend_aot_c_zrp_remap_method_spec_row()` now requires a retained MethodDef
+method token, and `backend_aot_c_zrp_remap_generic_param_owner_token()` accepts TypeDef owners or retained MethodDef
+owners, but no longer treats FieldDef rows as valid method owners. The direct fixture keeps a retained FieldDef row and
+its token record alive while proving a FieldDef token in GenericParam owner / MethodSpec method slots is dropped with
+the MethodSpec-only signature blob. RED was WSL GCC pruning failing with `Expected TRUE Was FALSE`; GREEN passes source
+contracts 24/0, export-token remap 10/0, and pruning 20/0 on WSL GCC, WSL clang, and Windows MSVC Debug. This closes
+only MethodDef-only member-token guarding; full metadata sweep and full trim analysis remain open.
+
+Focused 2026-07-03 11-S7ZSN / 12-S7ZZZG TypeDef retained FieldDef owner-token guard closes the matching TypeDef root
+edge. TypeDef token-record root checks now validate `MEMBER_DEF` roots with retained row context: MethodDef tokens must
+still be retained, FieldDef tokens must resolve to retained FieldDef rows, and a FieldDef token cannot be used to
+reverse-retain the same TypeDef that owns that field. The direct pruning fixture mutates a dead FieldDef token record so
+its `ownerToken` points at the dead TypeDef; old pruning left the dead TypeDef/FieldDef pair untouched and produced no
+owned compacted blob. RED was WSL GCC pruning failing with `Expected Non-NULL`; GREEN passes source contracts 24/0,
+export-token remap 10/0, and pruning 21/0 on WSL GCC, WSL clang, and Windows MSVC Debug. This closes only TypeDef
+FieldDef-owner token-record guarding; full metadata sweep and full trim analysis remain open.
+
+Focused 2026-07-01 11-S7 / 12-S7ZZL GenericParamConstraint TypeSpec token remap closes the constraint-row consumer side
+of retained TypeSpec compaction. `backend_aot_c_zrp_metadata_prune.c` now passes TypeSpec rows/count into
+`backend_aot_c_zrp_copy_generic_param_constraints()` and remaps retained `constraintTypeToken` values through
+`backend_aot_c_zrp_remap_type_spec_token()` after the existing GenericParam owner/range and direct TypeDef token remap.
+RED added a generic method parameter constraint whose source `TYPE_SPEC` RID2 is retained after RID1 is pruned; old
+pruning published source RID2 and WSL GCC failed with `Expected 117440513 Was 117440514`. GREEN passes WSL GCC/Clang
+zrp metadata pruning 8/0, TypeSpec pruning 2/0, pool pruning 6/0, source contracts 24/0, focused metadata CTest 4/4,
+and Windows MSVC Debug direct plus CTest runs for the same focused set. This closes only retained GenericParamConstraint
+TypeSpec token remap; cross-module provider binding, real export manifest/table rewrite, complete metadata sweep, and
+full trim analysis remain open.
+
+Focused 2026-06-29 07-S3/S4 + 11-S4G frame cleanup registry layout resolver migrates generated value-frame cleanup drop lookup to the same function-level metadata runtime table used by attached AOT functions. `backend_aot_c_frame_cleanup.c` now emits `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, typeLayoutId)` for each inline-struct drop slot instead of `ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function, typeLayoutId, state)`, and `backend_aot_c_emitter.c` emits `#include "zr_vm_core/metadata_runtime.h"` into generated C. The source contract locks the generated include, the metadata-runtime resolver needle, and a cleanup-local negative check for the old prototype resolver. RED was `zr_vm_aot_c_source_contracts_test` failing on the missing generated metadata runtime include; GREEN passes WSL gcc/clang source contracts 22/0, frame setup contracts 1/0, value-type shared-library smoke 5/0, and MSVC Debug with the same contract set plus value-type smoke 5/0/1 ignored. Generated artifact inspection confirms cleanup blocks contain `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, ...)`; broader byte-frame/runtime-layout work remains separate 07/11 work.
+
+Focused 2026-06-29 07-S3/S4 + 11-S4G value SemIR registry layout resolver migrates generated inline copy and nested inline-struct field transfer to the same function-level metadata runtime table. `backend_aot_c_value_semir.c` now emits `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, typeLayoutId)` for inline `COPY_VALUE`, and `backend_aot_c_value_semir_fields.c` uses the same resolver for inline-struct field load/store before raw-copy or `ZrCore_TypeLayout_CopyInline` selection. Source/value SemIR contracts require the metadata-runtime resolver and forbid `ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function, ...)` in those helper paths, while leaving field-layout lookup through `ZrCore_Function_ResolvePrototypeFrameFieldLayout(state, ...)` unchanged. RED was the source contract failing after the new metadata resolver needle was added; GREEN passes WSL gcc/clang source contracts 22/0, value SemIR contracts 4/0, value-type shared-library smoke 5/0, and MSVC Debug with source contracts 22/0, value SemIR contracts 4/0, and value-type smoke 5/0/1 ignored. Generated artifact inspection confirms value-type generated C contains only `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, ...)` for these lookups and no old prototype type-layout resolver.
+
+Focused 2026-06-29 07-S3/S4 + 11-S4G runtime inline-struct call/return registry layout resolver migrates the runtime boundary helpers used by value SemIR typed calls and returns. `ZrLibrary_AotRuntime_CallInlineStruct()`, `ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge()`, and `ZrLibrary_AotRuntime_ReturnInlineStruct()` now validate generated-frame inline struct destination/source layouts with `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function, typeLayoutId)` instead of `ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame->function, typeLayoutId, state)`. The return contract also reflects the current frame thunk carrier ABI by checking `codeRegistration->functionPointers` rather than the older descriptor fields. RED first exposed that stale ABI needle, then failed on the new metadata-runtime resolver requirement; GREEN passes WSL gcc/clang return contracts 1/0, source contracts 22/0, value SemIR contracts 4/0, call shared-library smoke 5/0, and value-type smoke 5/0. MSVC Debug passes return/source/value SemIR contracts, reports call smoke 5/0/5 ignored under the existing Windows policy, and passes value-type smoke 5/0/1 ignored. This closes runtime inline-struct call/return layout lookup migration only; field layout resolver, runtime generic layout construction, cross-module token publication, and trim analysis remain open.
+
+Focused 2026-06-29 07-S3/S4 + 11-S4G runtime CopyStack registry layout resolver migrates the runtime boundary helper used by generated stack-copy fallback. `ZrLibrary_AotRuntime_CopyStack()` now validates inline-struct source/destination fallback layout with `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function, destinationLayout->typeLayoutId)` instead of `ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame->function, destinationLayout->typeLayoutId, state)`. The source contract requires `aot_runtime_values.c` to include `zr_vm_core/metadata_runtime.h`, requires the metadata-runtime resolver, and forbids the old prototype resolver in that runtime helper source. RED was `zr_vm_aot_c_source_contracts_test` failing on the missing runtime metadata include/resolver; GREEN passes WSL gcc/clang source contracts 22/0, call shared-library smoke 5/0, and value-type smoke 5/0, with MSVC Debug passing source contracts 22/0 and reporting the existing Windows ignored smoke cases. This closes CopyStack inline-layout lookup migration only; field layout resolver, runtime generic layout construction, cross-module token publication, and trim analysis remain open.
+
 Focused 2026-06-28 07-S2/S4 call-boundary bool frame semantics fixes two scalar-local proof edges around bool value slots. Stack-call argument slots are now treated as required frame reads, so a bool constant passed to `choose(true)` still materializes `ZR_VALUE_TYPE_BOOL` for `ZrLibrary_AotRuntime_CallStaticDirect()`. Scalar-local write tracking now records the exact current kind across reset, call result, and stack-copy writes, and scalar stack-copy can prefer a bool local source when a previous typed bool direct-call result is forced into a value slot for the next condition. The focused logical shared-library smoke verifies the bool call argument frame write and requires `zr_aot_scalar_stack_copy_bool dstSlot=15 srcSlot=16` while forbidding the stale i64 copy. Source contracts lock the previous-call-result bool preference path. WSL gcc/clang pass logical smoke 5/0, shared-library smoke 13/0, source contracts 21/0, and frame setup contracts 1/0; MSVC Debug passes source/frame contracts and the existing Unix-only logical/shared-library tests as ignored. This closes only the bool call-boundary argument and forced condition-copy edge; broader generic/dynamic/string boundaries, GC roots, exports, frame cleanup, byte-frame narrowing, performance counters, and full typed function-body zero-frame proof remain later 07 work.
 
 Focused 2026-06-28 07-S2/S4 string logical bool sync parentheses cleans up generated C for string `!=` bool-local sync. The generic/string logical emitter now uses `(TZrBool)((%s) != 0u)` in both local-only string logical results and bool-local sync after frame-backed logical results, so `!zr_aot_equal` is parenthesized before comparison with `0u`. The focused string equality smoke now requires `(TZrBool)((!zr_aot_equal) != 0u)` and forbids `!zr_aot_equal != 0u`; source contracts lock the template and reject the old form. RED was the generated-C assertion failing on the old output; GREEN passes WSL gcc/clang logical smoke 5/0 and source contracts 22/0, with the earlier Clang `logical-not-parentheses` warning gone. MSVC Debug passes source contracts and ignores the Unix-only logical smoke. This is a warning-cleanliness and generated-expression correctness slice only; broader generic/dynamic/string boundaries and full 07 zero-frame proof remain later work.
@@ -1790,6 +2365,14 @@ Focused 2026-06-28 07-S2/S4 generic JUMP_IF bool-source local branch removes the
 
 Focused 2026-06-28 07-S2/S4 generic JUMP_IF numeric-source local branch extends that branch-local path to already-written primitive numeric locals. `backend_aot_c_write_generic_jump_if_scalar_local()` now accepts proven i64/u64/f64 condition slots after the bool case, emitting `zr_aot_generic_jump_if_i64_scalar_local`, `zr_aot_generic_jump_if_u64_scalar_local`, or `zr_aot_generic_jump_if_f64_scalar_local` with zero predicates over `zr_aot_s*`, `zr_aot_u*`, or `zr_aot_f*`. `backend_aot_c_frame_descriptor_generic_jump_if_condition_can_use_local_only()` mirrors the same bool/i64/u64/f64 written-before proof so numeric conditions can skip their frame value slot. The shared logical smoke expectation was updated because source-level `if (zero())` now legitimately lowers to the i64 local branch and no longer needs `GenericPrimitiveIsTruthy`; generic `LOGICAL_NOT` int truthiness still stays on `GenericPrimitiveLogicalNot`. RED was the logical contract plus the extended hand-built JUMP_IF smoke requiring i64/u64/f64 markers and no truthiness helper for slots 0/2/3/4; GREEN passes WSL gcc/clang logical contracts 4/0, generic JUMP_IF bool/numeric smoke 2/0, control contracts 2/0, frame setup contracts 1/0, generic bool equality smoke 1/0, and logical shared-library smoke 6/0, with MSVC Debug passing source/control/frame contracts and ignoring Unix-only shared-library cases. This is only the proven primitive numeric condition path; dynamic/object/string truthiness, value-copy migration, GC roots/exports/frame cleanup, byte-frame narrowing, and full typed function-body zero-frame proof remain later 07 work.
 
+Focused 2026-06-29 07-S2/S4 generic JUMP_IF numeric stack-copy local branch fixes the next proof gap in that path. `backend_aot_c_scalar_locals_kind_from_stack_copy_destination_consumers()` now treats generic `JUMP_IF` as a truthiness consumer that preserves the copied candidate primitive kind instead of always requesting bool; `JUMP_IF_BOOL_FALSE` remains bool-only. The shared helper `backend_aot_c_scalar_locals_truthiness_consumer_kind()` allows bool/i64/u64/f64 candidates and falls back to bool only when no primitive candidate is known. A hand-built fixture with `GET_CONSTANT i64 -> SET_STACK -> JUMP_IF` now emits `zr_aot_scalar_stack_copy_i64 dstSlot=5 srcSlot=0`, `zr_aot_s5 = zr_aot_s0;`, and `zr_aot_generic_jump_if_i64_scalar_local` instead of materializing `CopyStack` plus `GenericPrimitiveIsTruthy`. RED was the stack-copy smoke missing those i64 copy/branch markers; GREEN passes WSL gcc/clang logical contracts 4/0, generic JUMP_IF bool/numeric/stack-copy smoke 3/0, and the same control/frame/logical/equality adjacent group, with MSVC Debug passing contracts and ignoring Unix-only smoke cases. This slice deliberately leaves call-result truthiness propagation and broader dynamic/string/object truthiness for later 07 work.
+
+Focused 2026-06-29 07-S2/S4 generic LOGICAL_NOT numeric-source local branch closes the matching unary truthiness gap for proven primitive numeric locals. `backend_aot_c_write_generic_logical_not_scalar_local()` now keeps the existing strict bool-source path and then tries i64/u64/f64 source locals, emitting `zr_aot_generic_logical_not_i64_scalar_local`, `zr_aot_generic_logical_not_u64_scalar_local`, or `zr_aot_generic_logical_not_f64_scalar_local` with zero predicates that assign the bool destination local. Scalar-local declaration and bool-value write tracking now allow primitive bool/i64/u64/f64 sources for generic `LOGICAL_NOT` destinations, but still reject string/object/dynamic sources. The new focused smoke constructs `i64 0`, `u64 7`, and `f64 0.0` source cases followed by `JUMP_IF_BOOL_FALSE`, verifies `zr_aot_b1/b3/b5` local assignments, and forbids `GenericPrimitiveLogicalNot` plus `SyncBoolLocal` for those slots. RED was the new smoke failing on missing numeric local markers; GREEN passes WSL gcc/clang logical contracts 4/0, new generic LOGICAL_NOT numeric local smoke 1/0, logical shared-library smoke 6/0, generic JUMP_IF smoke 3/0, generic bool equality smoke 1/0, control contracts 2/0, and frame setup contracts 1/0, with MSVC Debug passing contracts and ignoring Unix-only smoke cases. This remains the proven primitive numeric unary path only; call-result truthiness propagation and broader generic/dynamic/string/object truthiness stay later 07 work.
+
+Focused 2026-06-29 07-S2/S4 call-result truthiness local propagation closes that next unary proof gap for no-arg typed primitive callees. `backend_aot_c_scalar_locals_kind_from_call_result_callee()` now resolves a call-result instruction's callable slot backward through top-level callable bindings, constants, closures, sub-functions, and stack-copy aliases, then uses the existing typed no-arg thunk predicates to recover bool/i64/u64/f64 return kinds. Generic `LOGICAL_NOT` consumer inference uses that callee kind when the call result feeds the immediate logical-not source, so source-level `var inverted = !zero();` and `if (!one())` keep `zero()`/`one()` results in `zr_aot_s4` and `zr_aot_s6`, emit `zr_aot_generic_logical_not_i64_scalar_local`, and assign `zr_aot_b3` / `zr_aot_b5` with zero predicates instead of calling `GenericPrimitiveLogicalNot` or `SyncBoolLocal`. The source contract locks the resolver and typed i64 no-arg gate, while the logical shared-library smoke verifies both generated code shape and runtime result. Adjacent call shared-library validation exposed a stale static numeric call assertion that still expected direct stack-copy sync markers; it was updated to the already accepted `zr_aot_scalar_stack_copy_u64/f64` local-copy shape. WSL gcc/clang pass the logical/call adjacent matrix, and MSVC Debug passes contract targets with Unix-only shared-library cases ignored. This is limited to no-arg typed primitive call results; unknown callable, dynamic, string, and object truthiness remain runtime-boundary work for later 07 slices.
+
+Focused 2026-06-29 07-S2/S4 call-result truthiness value-slot sync elision removes the remaining `SZrValue` write for that proven scalar-only i64 call-result path. The scalar-local live-value scan now treats generic `JUMP_IF` and `LOGICAL_NOT` as i64/u64/f64 truthiness consumers when the source/condition slot already has the matching primitive local, with `LOGICAL_NOT` additionally requiring a bool destination local. That lets the direct i64 no-arg call-result skip-value-slot proof see `!zero()`, `if (zero())`, and `!one()` as scalar-local-only consumers. The generated C keeps `zr_aot_s4 = zr_aot_typed_i64_fn_1();` and `zr_aot_s6 = zr_aot_typed_i64_fn_2();`, then feeds the numeric logical-not and jump-if local branches, without `zr_aot_typed_destination`, `ZR_VALUE_FAST_SET(zr_aot_typed_destination, ...)`, or `zr_aot_static_i64_no_arg_direct_call_sync_stack_slot`. RED was the expanded logical shared-library truthiness fixture failing on the old value-slot sync marker; GREEN passes WSL gcc/clang logical shared smoke, logical contracts, generic LOGICAL_NOT numeric smoke, generic JUMP_IF smoke, call shared smoke, and call contracts, with MSVC Debug passing contract targets and ignoring Unix-only shared-library cases. This is still the no-arg typed i64 truthiness chain only; dynamic/string/object truthiness, value-copy migration, GC roots/exports/frame cleanup, byte-frame narrowing, and full typed function-body zero-frame proof remain later 07 work.
+
 Focused 2026-06-28 07-S3/S4 bool logical frame-descriptor elision aligns the generated-frame proof with the bool logical scalar emitters. `backend_aot_c_frame_descriptor.c` now accepts local-only `LOGICAL_AND`, `LOGICAL_OR`, `LOGICAL_EQUAL_BOOL`, `LOGICAL_NOT_EQUAL_BOOL`, and `LOGICAL_NOT_BOOL` when the same bool-result skip and bool-written-before predicates used by the emitters prove the pipeline frame-free. The descriptor return gate also matches `backend_aot_try_write_c_typed_return()` by accepting bool/u64/f64 inferred scalar returns, not only explicit callable return types. `backend_aot_c_function_body.c` keeps generic `LOGICAL_NOT` conservative, but no longer forces a preceding bool stack copy to materialize `frame.slotBase` when typed `LOGICAL_NOT_BOOL` can consume an already-written bool scalar local and write a local-only result. The focused shared-library smoke executes a bool local logical pipeline and verifies generated C contains `zr_aot_bool_not_scalar_local`, `zr_aot_bool_compare_scalar_local`, and `zr_aot_direct_return_bool_local` while omitting `ZrAotGeneratedFrame frame`, generated frame setup, `ZrCore_Stack_GetValue`, and `ZR_VALUE_FAST_SET`. WSL gcc/clang pass frame setup contracts 1/0 and logical shared-library smoke 5/0; MSVC Debug passes frame setup contracts 1/0 and the Unix-only logical smoke with 5 ignored tests. Dynamic/generic/string logical boundaries, GC roots, exports, frame cleanup, wider byte-frame narrowing, and performance acceptance remain later 07 work.
 
 Focused 2026-06-28 07-S2/S4 bool generic conversion source frame elision extends the bool scalar-local path from direct returns into generic primitive conversions. `TO_INT`, `TO_UINT`, and `TO_FLOAT` now recognize already-written bool locals as source consumers, so `<int> flag`, `<uint> flag`, and `<float> flag` can read `zr_aot_b*` directly instead of forcing `flag` into `frame.slotBase`. The u64/f64 fallback emitters also only guard/write destination slots when the source is a bool scalar local, and the frame descriptor accepts bool-written sources for `TO_UINT`/`TO_FLOAT` local-only conversion proof. While validating the shared-library smoke, the constant-elision scan exposed a second false positive: generic/unary conversion instructions carried an unused default `operand1[1] = 0`, which the generic slot-mention helper treated as a real slot read. That helper now treats conversion/unary opcodes as one-source operations. The focused generic primitive conversion smoke verifies `zr_aot_b0 = ZR_TRUE;`, bool-to-u64/f64 scalar expressions, and no `frame.slotBase[0].value`; WSL gcc/clang pass shared-library smoke 13/0, source contracts 21/0, and frame setup contracts 1/0, while MSVC Debug passes source/frame contracts and the existing Unix-only shared-library cases as ignored. Destination value slots, generic runtime boundaries, GC roots/exports/frame cleanup, wider byte-frame narrowing, and performance acceptance remain later 07 work.
@@ -1801,3 +2384,55 @@ Focused 2026-06-28 07-S2/S4 signed branch constant frame elision removes a remai
 Focused 2026-06-28 07-S2/S4 signed-const scalar reset frame elision fixes a liveness false positive that kept generated frames alive after arithmetic had already lowered to scalar SemIR. `backend_aot_c_scalar_locals_instruction_reads_slot_as_any_local()` now dispatches only through the reader family that matches the instruction opcode, so u64/f64/bool readers no longer interpret signed-const `operand1[1]` constant-pool indexes as stack slots. The generic operand/source mention helpers also route signed local consumers through `backend_aot_c_scalar_locals_signed_consumer_reads_slot()`, preserving the rule that `*_SIGNED_CONST` reads only its left operand slot. The focused shared-library smoke executes an `int` right-constant arithmetic pipeline returning 42 and verifies generated C keeps `zr_aot_scalar_exec_i64_binary`, `zr_aot_direct_return_i64_local`, and scalar reset skip markers while omitting `ZrAotGeneratedFrame frame`, generated frame setup, `ZrCore_Stack_GetValue`, and `ZR_VALUE_FAST_SET`. WSL gcc/clang pass frame setup contracts 1/0 and shared-library smoke 9/0; MSVC Debug passes frame setup contracts 1/0 and the Unix-only shared-library smoke with 9 ignored tests. Unsigned/f64 const/reset, load-const/load-stack const, dynamic/generic/string boundaries, GC roots/exports/frame cleanup, wider byte-frame narrowing, and performance acceptance remain later 07 work.
 
 Focused 2026-06-28 07-S2/S4 signed load-const/load-stack-const scalar frame elision extends that scalar-local proof to the fused signed constant forms. `ADD/SUB/MUL/DIV/MOD_SIGNED_LOAD_CONST`, `ADD/SUB/MUL/DIV/MOD_SIGNED_LOAD_STACK_CONST`, and the signed load-stack/load-stack-load-const variants now classify their result as i64 scalar locals and report only their real source slots as scalar consumers. Immediate `GET_CONSTANT` destinations are declared as scalar locals when a later scalar consumer, power operand, or fused signed constant materialization slot needs the constant, so generated C can keep the literal in `zr_aot_s*` locals instead of materializing `frame.slotBase`. The focused load-const scalar smoke constructs the fused instruction chain directly and verifies scalar literals, scalar stack-copy, and direct i64 return while omitting generated frame setup, `frame.slotBase`, `ZrCore_Stack_GetValue`, and `ZR_VALUE_FAST_SET`. WSL gcc/clang pass the new smoke plus source/frame contracts; MSVC Debug compiles the same target and runs the contract tests, with the Unix-only shared-library compile branch ignored on Windows. Dynamic/generic/string boundaries, GC roots/exports/frame cleanup, wider byte-frame narrowing, and performance acceptance remain later 07 work.
+
+Focused 2026-07-03 11-S7ZSO/12-S7ZZZH GenericParam TypeDef-owner pruning makes the emitted `.zrp` compacted metadata writer retained-row-aware for `GenericParam.ownerToken = TYPE_DEF(...)`. The owner remap now rejects pruned TypeDef rows and rewrites retained TypeDef owners to compacted RIDs, while GenericParam and GenericParamConstraint count/range/remap helpers carry the TypeDef/token-record/constraint context needed by signature, string-pool, TypeSpec, and prune-copy paths. TypeDef retention no longer lets a TypeDef-owned GenericParam self-root its owner TypeDef. RED was the new pruned TypeDef-owned GenericParam fixture failing WSL GCC pruning with `Expected Non-NULL`; GREEN passes WSL GCC/clang and Windows MSVC Debug source contracts 24/0, export token remap 10/0, and pruning 22/0. This closes only the GenericParam TypeDef-owner retained-row/remap gap; complete trim analysis, annotation promotion policy, and the remaining metadata sweep stay open.
+
+Focused 2026-07-03 11-S7ZSP/12-S7ZZZI MethodSpec imported MEMBER_REF retention keeps cross-module generic method instantiation metadata alive through MethodDef pruning. `backend_aot_c_zrp_remap_method_spec_row()` now preserves `METHOD_SPEC.methodToken = MEMBER_REF(...)` as a valid imported method reference, while local `MEMBER_DEF` method tokens still require retained MethodDef remap and compacted RIDs. The new focused MethodSpec pruning fixture keeps an imported `MEMBER_REF` MethodSpec row while pruning an unrelated local MethodDef and verifies the row, signature blob, and signature hash survive. RED was the same fixture with the `MEMBER_REF` branch removed failing `Expected 735 Was 711`; GREEN passes WSL GCC/clang and Windows MSVC Debug source contracts 24/0, export token remap 10/0, pruning 22/0, and MethodSpec pruning 1/0. This closes only the imported MethodSpec method-token retention gap; complete trim analysis, annotation promotion policy, and remaining metadata sweep stay open.
+
+Focused 2026-07-03 11-S7ZSQ/12-S7ZZZJ MethodSpec imported MEMBER_REF token-record guard closes the matching orphan-retention edge. `backend_aot_c_zrp_remap_method_spec_row()` now carries token-record context and requires imported `MEMBER_REF` method tokens to have a source token record; retained token-record remap also rejects signature/owner/target fields that reference missing imported member records. The focused fixture omits the imported member token record while leaving a MethodSpec row and `SIGNATURE` token record that point at it, then verifies the compacted `.zrp` drops the MethodSpec row, signature token record, and signature blob. RED was WSL GCC MethodSpec pruning failing `Expected 504 Was 639`; GREEN passes WSL GCC/clang and Windows MSVC Debug source contracts 24/0, export token remap 10/0, pruning 22/0, and MethodSpec pruning 2/0. This closes only the imported MethodSpec token-record integrity guard; complete trim analysis, annotation promotion policy, and remaining metadata sweep stay open.
+
+Focused 2026-07-03 11-S7ZSR/12-S7ZZZK MethodSpec imported MEMBER_REF retained-token-record guard closes the next dangling edge. `backend_aot_c_zrp_remap_method_spec_row()` now requires the matching imported `MEMBER_REF` token record to remain valid after retained MethodDef/FieldDef pruning, and retained token-record remap applies the same check to nested `MEMBER_REF` references. The focused fixture keeps the imported member token record but makes it point at a pruned local MethodDef, then verifies the compacted `.zrp` drops the invalid imported member record, MethodSpec row, `SIGNATURE` token record, and signature blob. RED was WSL GCC MethodSpec pruning failing `Expected 600 Was 639`; GREEN passes WSL GCC/clang and Windows MSVC Debug source contracts 24/0, export token remap 10/0, pruning 22/0, and MethodSpec pruning 3/0. This closes only the imported MethodSpec retained-token-record guard; complete trim analysis, annotation promotion policy, and remaining metadata sweep stay open.
+
+Focused 2026-07-03 11-S7ZSS/12-S7ZZZL MethodSpec imported MEMBER_REF recursive retained-token-record guard closes the nested dangling edge. `backend_aot_c_zrp_member_ref_reference_has_retained_token_record_with_depth()` recursively validates imported member token records referenced by other imported member records, with token-record-count depth bounding and direct self-reference preservation. The focused fixture adds both a valid `MEMBER_REF(1) -> MEMBER_REF(2)` chain and a dangling chain where `MEMBER_REF(2)` targets a pruned MethodDef; the latter now drops the MethodSpec row, `SIGNATURE` token record, signature blob, and imported member records. RED was WSL GCC MethodSpec pruning failing `Expected 504 Was 639`; GREEN passes WSL GCC/clang and Windows MSVC Debug source contracts 24/0, export token remap 10/0, pruning 22/0, and MethodSpec pruning 5/0. This closes only the recursive imported MethodSpec retained-token-record guard; complete trim analysis, annotation promotion policy, and remaining metadata sweep stay open.
+
+Focused 2026-07-03 11-S7ZST/12-S7ZZZM retained signature TYPE_REF string-pool sweep/remap closes a compacted metadata string root gap. `backend_aot_c_zrp_metadata_string_pool.c` now scans retained signature blobs and treats `TYPE_REF(baseType, nameStringOffset)` payloads as string-pool roots, while `backend_aot_c_zrp_metadata_signature.c` rewrites those name offsets after copy using the same compacted string remap. The focused MethodSpec fixture keeps a generic instantiation whose only reference to `ExternalArg` is inside a retained `TYPE_REF` argument; RED was WSL GCC MethodSpec pruning failing `Expected 776 Was 764` because the old compacted blob dropped that string slice. GREEN passes WSL GCC/clang and Windows MSVC Debug source contracts 24/0, pool pruning 8/0, pruning 22/0, TypeDef pruning 2/0, TypeSpec pruning 2/0, and MethodSpec pruning 6/0. This closes only retained signature `TYPE_REF` string retention/remap; complete trim analysis, annotation promotion policy, provider binding edges, and the remaining metadata sweep stay open.
+
+Focused 2026-07-03 11-S7ZSU/12-S7ZZZN retained signature MODULE string-pool sweep/remap closes the matching module-literal string root gap. `backend_aot_c_zrp_metadata_string_pool.c` now treats `MODULE(nameStringOffset, versionStringOffset)` signature payloads as string-pool roots, and `backend_aot_c_zrp_metadata_signature.c` rewrites both offsets after copy through the compacted string remap. The focused MethodSpec fixture keeps a generic instantiation whose only references to `__entry` and `1.0.0` are inside a retained `MODULE` argument, with an unused string before them to force offset movement; RED was WSL GCC MethodSpec pruning failing `Expected 778 Was 764`. GREEN passes WSL GCC/clang and Windows MSVC Debug source contracts 24/0, pool pruning 8/0, pruning 22/0, TypeDef pruning 2/0, TypeSpec pruning 2/0, and MethodSpec pruning 7/0. This closes only retained signature `MODULE` string retention/remap; complete trim analysis, annotation promotion policy, provider binding edges, and the remaining metadata sweep stay open.
+
+Focused 2026-07-03 11-S7ZSV/12-S7ZZZO ModuleRef retained-row generic context closes an AssemblyRef pruning gap. `backend_aot_c_zrp_metadata_module_ref.{h,c}` now threads GenericParam and GenericParamConstraint rows through ModuleRef retained/count/compact/remap, and prune/string-pool/signature callers pass the same context. A retained import TypeRef whose target TypeSpec is rooted only by a GenericParamConstraint now keeps its related ModuleRef row and remaps `relatedToken` to the compacted AssemblyRef RID. RED was WSL GCC ModuleRef pruning failing `Expected 1 Was 0`; GREEN passes WSL GCC/clang and Windows MSVC Debug metadata pruning CTest matrix 5/5, TypeDef pruning 2/0, and source contracts 24/0. This closes only ModuleRef generic-context retention/remap; complete trim analysis, annotation promotion policy, provider binding edges, and the remaining metadata sweep stay open.
+
+Focused 2026-07-03 11-S7ZSW/12-S7ZZZP retained signature UNION string-pool sweep/remap closes the matching union base-name string root gap. `backend_aot_c_zrp_metadata_string_pool.c` now treats `UNION(valueType, baseNameStringOffset, args...)` payloads as retained signature string roots, and `backend_aot_c_zrp_metadata_signature.c` rewrites the base-name offset after signature blob copy through the compacted string remap. The focused MethodSpec fixture keeps a generic instantiation whose only reference to `"Option"` is inside a retained `UNION` argument, with an unused string before it to force offset movement; RED was WSL GCC MethodSpec pruning failing `Expected 780 Was 773`. GREEN passes WSL GCC/clang and Windows MSVC Debug metadata pruning CTest matrix 5/5, TypeDef pruning 2/0, and source contracts 24/0. This closes only retained signature `UNION` base-name string retention/remap; complete trim analysis, annotation promotion policy, provider binding edges, and the remaining metadata sweep stay open.
+
+Focused 2026-07-03 11-S7ZSX/12-S7ZZZQ writer sidecar definition-table validation closes a file-publication fail-closed gap. `backend_aot_c_publish_compacted_zrp_metadata()` now requires the final prepared blob to pass both `.zrp` header parsing and definition-table validation before writing `compactedZrpMetadataOutputPath`. If validation fails, the helper deletes any stale sidecar at that path and returns false, which makes the writer remove the generated C artifact. The focused fixture pre-creates a stale sidecar, passes a blob whose header is readable but whose MethodDef section fails definition-table validation, and expects the direct writer call to fail with no sidecar left behind. RED was WSL GCC `aot_c_zrp_metadata_publication` failing `Expected FALSE Was TRUE`; GREEN passes WSL GCC/clang and Windows MSVC Debug CTest for publication, CLI sidecar, zrp metadata pruning, MethodSpec pruning, and pool pruning 5/5, plus source contracts 24/0. This closes only writer-level sidecar validation/stale cleanup; complete trim analysis, annotation promotion policy, provider binding edges, and the remaining metadata sweep stay open.
+
+Focused 2026-07-03 11-S7ZSY/12-S7ZZZR manifest export duplicate kind-target guard closes a generated-table ambiguity gap. `backend_aot_c_zrp_manifest_export_table_build()` now scans already-written manifest export entries and rejects a second declaration with the same `kind + target`, leaving the embedded metadata table empty on failure. This moves the runtime manifest export view's duplicate-target fail-closed rule into the generator path, so ambiguous exports are rejected before codeRegistration/metadata publication. The focused fixture adds two bound `METHOD` declarations for `"Factory.make"` and expects the table build to fail. RED was WSL GCC `zr_vm_aot_c_zrp_metadata_export_token_remap_test` failing `Expected FALSE Was TRUE`; GREEN passes WSL GCC/clang and Windows MSVC Debug CTest for export-token remap, metadata-runtime manifest exports, and zrp metadata pruning 3/3, plus source contracts 24/0. This closes only generated manifest export uniqueness; complete trim analysis, annotation promotion policy, provider binding edges, and the remaining metadata sweep stay open.
+
+Focused 2026-07-03 11-S7ZSZ/12-S7ZZZS project manifest export duplicate target guard closes the upstream parser side of the same ambiguity. `library_project_parse_export_declarations()` now compares each parsed `.zrp` `exports` entry against prior entries and rejects a duplicate `kind + target` before the project is created. The focused manifest fixture declares two `method` exports for `"Widget.run"` and expects project load to fail, so the CLI AOT writer bridge never receives an ambiguous export set. RED was WSL GCC project manifest normalization failing `Expected NULL`; GREEN passes project manifest normalization 29/0 on WSL GCC/clang and Windows MSVC Debug, downstream manifest export CTest 2/2, and source contracts 24/0. This closes only project manifest export uniqueness; complete trim analysis, annotation promotion policy, provider binding edges, and the remaining metadata sweep stay open.
+
+Focused 2026-07-03 11-S7ZTA/12-S7ZZZT project export schema uniqueItems parity closes the schema-level part of duplicate export feedback. `zr_vm_language_server_extension/schemas/zrp.schema.json` now marks the top-level `exports` array with `uniqueItems: true`, so fully duplicated export declaration objects are rejected by schema-aware tooling before project load. JSON Schema cannot express this repo's full `kind + target` uniqueness while unknown properties remain allowed, so the project parser and generated table remain the authoritative fail-closed checks for semantic duplicates. RED was the schema assertion failing `AssertionError`; GREEN passes the same assertion and `python -m json.tool` for the schema file. This closes only schema parity for exact duplicate export objects; complete trim analysis, annotation promotion policy, provider binding edges, and the remaining metadata sweep stay open.
+
+Focused 2026-07-03 11-S7ZTB/12-S7ZZZU CLI export duplicate bridge guard closes the writer-option injection path for in-memory duplicate export declarations. `zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c` now checks the already copied declarations before appending the next project export declaration, rejects duplicate `kind + target` keys, and frees the CLI-owned scratch storage on failure so writer options cannot observe an ambiguous export set. RED was WSL GCC `test_cli_aot_writer_options_rejects_duplicate_manifest_export_declarations` failing `Expected FALSE Was TRUE`; GREEN passes CLI writer-options 19/0, project manifest normalization 29/0, manifest export/runtime view CTest 2/2, and source contracts 24/0 across WSL GCC/clang and Windows MSVC Debug. This closes only the CLI bridge duplicate guard; complete trim analysis, annotation promotion policy, provider binding edges, and the remaining metadata sweep stay open.
+
+Focused 2026-07-04 07-S2/S4/S5 u64-f64 call-result truthiness direct-call closes a stale scalar-kind gap for no-argument typed primitive calls consumed by generic truthiness. `backend_aot_c_scalar_locals.c` now treats the provable typed callee return kind as authoritative for per-exec written-before queries, so `JUMP_IF` and `LOGICAL_NOT` read unsigned call results through `zr_aot_u*` and float call results through `zr_aot_f*` instead of stale signed/unsigned reuse from earlier occupants of the same slot. Global scalar declarations still OR the call-result kind to preserve later slot-reuse declarations. `backend_aot_c_typed_f64_thunk_shapes.c` also accepts the `GET_CONSTANT; RESET_STACK_NULL(non-return slot); FUNCTION_RETURN` f64 no-arg shape, allowing reset-tail constant f64 helpers to emit typed f64 thunks. The focused logical shared-library smoke now verifies u64/f64 no-arg direct-call markers, u64/f64 scalar truthiness markers, no typed-destination `SZrTypeValue` materialization, no direct-call stack-slot sync markers, and runtime execution for `unsignedZero/unsignedOne/floatZero/floatOne`. RED was WSL GCC logical smoke missing the f64 direct-call marker and inspection showing `unsignedZero()` read stale `zr_aot_s17` while f64 truthiness fell through to U64 sync/read; GREEN passes the focused smoke 6/0 plus WSL GCC/clang logical, source, guardrail, f64 direct-call, and u64 direct-call matrix, with MSVC Debug source/guardrail passing and Unix-only shared-library/direct-call cases ignored. This remains a narrow no-arg u64/f64 truthiness slice; dynamic/string/object truthiness, value-copy migration, GC roots/exports/frame cleanup, wider byte-frame narrowing, performance counters, and full zero-frame typed bodies remain open 07 work.
+
+Focused 2026-07-04 07-S2/S4 generic equality bool-result branch local reuse closes the next frame-read gap after a dynamic primitive equality boundary. Generic `LOGICAL_EQUAL`/`LOGICAL_NOT_EQUAL` still call `ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual/NotEqual` for mixed primitive equality semantics, and still sync the bool destination through `ZrLibrary_AotRuntime_SyncBoolLocal` when the result must cross that boundary. The scalar-local write tracker now records that destination as a bool local write whenever the declared destination slot has a bool local, so the following typed `JUMP_IF_BOOL_FALSE` consumes `zr_aot_b9` directly instead of rebuilding a condition pointer from `frame.slotBase[9].value`. The focused logical shared-library smoke verifies the dynamic equality helper calls remain present, `SyncBoolLocal(state, &frame, 9, &zr_aot_b9)` still appears, `if (!zr_aot_b9) {` is emitted, and the stale `zr_aot_condition = &frame.slotBase[9].value;` reread is absent. RED was WSL GCC logical smoke failing `Expected Non-NULL` for the missing local branch marker; GREEN passes WSL GCC/clang logical/shared/generic/control guard matrix and MSVC Debug source/guardrail with Unix-only smoke cases ignored. This remains a branch-local reuse slice; equality operand constant materialization, dynamic/string/object truthiness, value-copy migration, GC roots/exports/frame cleanup, wider byte-frame narrowing, and full zero-frame typed bodies remain open 07 work.
+
+Focused 2026-07-04 07-S2/S4 generic i64 equality local compare removes the runtime equality boundary for the subset where both plain generic equality operands are already proven i64 scalar locals and the bool result can stay local. `backend_aot_c_lowering_generic_logical.c` now emits `zr_aot_b* = (TZrBool)((zr_aot_sL ==|!= zr_aot_sR) != 0u);` before falling back to `ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual/NotEqual`; `backend_aot_c_scalar_locals.c` recognizes that same shape as an i64 local consumer and bool-result local write so later typed branches can read `zr_aot_b*` directly. The new generic i64 equality shared-library smoke executes `42 == 42` and `42 != 7`, requires `zr_aot_generic_i64_compare_scalar_local`, requires the exact `zr_aot_b2`/`zr_aot_b3` compare assignments, and forbids the equality helpers, `SyncBoolLocal`, and `frame.slotBase[0/1/4].value` in that project. RED was WSL GCC focused generic equality smoke failing `Expected Non-NULL` for the missing direct-compare marker; GREEN passes WSL GCC/clang generic equality, logical/shared/generic/control/contract/typed direct-call matrix and MSVC Debug logical/source/guardrail contracts with Unix-only shared-library/direct-call smoke cases ignored. Mixed primitive equality still uses the runtime helper, and broader dynamic/string/object truthiness, value-copy migration, GC roots/exports/frame cleanup, wider byte-frame narrowing, performance acceptance, and full zero-frame typed bodies remain open 07 work.
+
+Focused 2026-07-04 07-S2/S4 generic u64/f64 equality local compare extends that direct local-compare path to proven unsigned and float operands. `backend_aot_c_lowering_generic_logical.c` now selects i64/u64/f64 scalar-local compare markers from the matched operand kind, while `backend_aot_c_scalar_locals.c` treats plain generic equality as u64/f64 local consumers and bool-result writes only when both operands are proven written before the compare. `backend_aot_c_lowering_values.c` also emits `zr_aot_scalar_constant_u64_local` before the frame fallback and returns early when the unsigned constant is consumed only by local compare. The new generic u64/f64 equality shared-library smoke executes `42u == 42u`, `42u != 7u`, `2.5 == 2.5`, and `2.5 != 3.5`, requires u64/f64 compare markers and exact bool assignments, and forbids targeted equality helpers, `SyncBoolLocal`, and `frame.slotBase[0/1/4/6/7/8].value`. RED first failed on the missing u64/f64 compare marker, then exposed unsigned constant frame materialization; GREEN passes WSL GCC/clang generic equality, logical/shared/generic/control/contract/typed direct-call matrix and MSVC Debug logical/source/guardrail contracts with Unix-only shared-library/direct-call smoke cases ignored. Mixed primitive equality still uses the runtime helper, and broader dynamic/string/object truthiness, value-copy migration, GC roots/exports/frame cleanup, wider byte-frame narrowing, performance acceptance, and full zero-frame typed bodies remain open 07 work.
+
+Focused 2026-07-04 07-S2/S4 generic call-result equality local compare keeps proven no-argument typed u64/f64 call results on the same scalar-local direct-compare path. The new shared-library smoke compiles helpers returning u64 and f64 values, rewrites four typed equality ops to generic `LOGICAL_EQUAL`/`LOGICAL_NOT_EQUAL`, executes the generated library, and requires `zr_aot_generic_u64_compare_scalar_local` / `zr_aot_generic_f64_compare_scalar_local` without generic equality helpers, bool sync, or typed-destination `SZrTypeValue` materialization. That RED exposed a u64 thunk-shape gap: `unsignedSeven()` lowered through `GET_CONSTANT; RESET_STACK_NULL(non-return slot); TO_UINT; FUNCTION_RETURN`, so the old u64 recognizer rejected the no-arg typed thunk and generated direct static call fallback syncs. `backend_aot_c_typed_u64_thunks.c` now mirrors the f64 reset-null rule by accepting `RESET_STACK_NULL` when it does not reset the constant return slot, so the helper emits `static TZrUInt64 ...` and `return (TZrUInt64)7;`. WSL GCC/clang pass generic equality 4/0, logical shared-library 6/0, typed direct-call u64 25/0, and call shared-library 5/0; MSVC Debug builds and runs the generic equality target with the Unix-only cases ignored. This closes only call-result generic equality plus the u64 reset-tail constant-return thunk shape; mixed primitive equality, dynamic/string/object truthiness, value-copy migration, GC roots/exports/frame cleanup, wider byte-frame narrowing, performance acceptance, and full zero-frame typed bodies remain open 07 work.
+
+Focused 2026-07-04 07-S2/S4 generic LOGICAL_NOT runtime bool-result local branch reuse closes the next frame reread after a primitive runtime truthiness boundary. When `LOGICAL_NOT` cannot use the scalar-source fast path, generated C still calls `ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot`, but the scalar-local proof now records a bool write for the destination when that slot is declared as a bool local. The new null-source shared-library smoke requires `GenericPrimitiveLogicalNot(state, &frame, 1, 0)`, the `zr_aot_generic_logical_sync_bool_local_boundary`, `SyncBoolLocal(state, &frame, 1, &zr_aot_b1)`, and `if (!zr_aot_b1) {`, while forbidding the stale `zr_aot_condition` / `frame.slotBase[1].value` branch path. RED first exposed the missing local branch marker; the fixture was corrected from unsupported string truthiness to supported null primitive truthiness after implementation. WSL GCC/clang pass generic LOGICAL_NOT 2/0, logical shared-library 6/0, generic JUMP_IF 3/0, and generic equality 4/0; MSVC Debug builds and runs the target with both Unix-only shared-library cases ignored. This closes only runtime primitive `LOGICAL_NOT` bool-result local branch reuse; string/object truthiness, value-copy migration, GC roots/exports/frame cleanup, wider byte-frame narrowing, performance acceptance, and full zero-frame typed bodies remain open 07 work.
+
+Focused 2026-07-04 07-S2/S4 generic LOGICAL_NOT null-constant local branch removes the value-slot write for the immediate `GET_CONSTANT null -> LOGICAL_NOT -> JUMP_IF_BOOL_FALSE` shape. `backend_aot_c_null_constant_consumed_by_local_logical_not()` now gates the optimization for constant emission, frame-descriptor proof, and generic logical lowering: the source slot must be an unexported immediate null constant, the next instruction must consume it with generic `LOGICAL_NOT`, and the bool destination must be able to stay local. The generated C emits `zr_aot_null_constant_local_logical_not_source_skip`, `zr_aot_generic_logical_not_null_constant_local`, `zr_aot_b1 = ZR_TRUE;`, and `if (!zr_aot_b1) {` without `frame.slotBase[0].value`, `GenericPrimitiveLogicalNot`, or `SyncBoolLocal` in that project. The runtime fallback test was moved to `RESET_STACK_NULL -> LOGICAL_NOT`, preserving helper and sync coverage for non-constant null values. RED was the new null-constant smoke failing on the missing local marker; GREEN passes WSL GCC/clang generic LOGICAL_NOT 3/0, logical shared-library 6/0, generic JUMP_IF 3/0, generic equality 4/0, and logical contracts 4/0, with MSVC Debug passing source contracts and compiling the Unix-only smoke with expected ignores. This is still a narrow immediate-null constant fold; dynamic/string/object truthiness and broader value-copy/frame cleanup remain open 07 work.
+
+Focused 2026-07-04 07-S2/S4 generic JUMP_IF null-constant local branch removes the value-slot write for the immediate `GET_CONSTANT null -> JUMP_IF` shape and lowers it to the known false successor. `backend_aot_c_null_constant_consumed_by_local_jump_if()` now shares the proof between constant emission, frame-descriptor local-only classification, and generic jump lowering: no exception handlers, an unexported source slot, the current same-slot null constant, an immediate same-slot `JUMP_IF`, and a valid target. The generated C emits `zr_aot_null_constant_local_jump_if_source_skip`, `zr_aot_generic_jump_if_null_constant_false`, and a direct `goto` to the false/fallthrough target without `frame.slotBase[0].value`, `GenericPrimitiveIsTruthy`, a temporary truthy bool, or null value reset in that project. RED was the new null-constant JUMP_IF smoke failing on the missing source-skip marker; GREEN passes WSL GCC/clang generic JUMP_IF 4/0, generic LOGICAL_NOT 3/0, logical shared-library 6/0, generic equality 4/0, logical contracts 4/0, frame setup contracts 1/0, and control contracts 2/0, with MSVC Debug passing the contract set and compiling the Unix-only smoke with expected ignores. This is still a narrow immediate-null false-branch fold; dynamic/string/object truthiness, value-copy migration, GC roots/exports/frame cleanup, wider byte-frame narrowing, and full zero-frame typed bodies remain open 07 work.
+
+Focused 2026-07-04 07-S2/S4 generic JUMP_IF reset-null local branch removes the runtime reset and truthiness helper for the immediate `RESET_STACK_NULL -> JUMP_IF` shape. `backend_aot_c_reset_null_consumed_by_local_jump_if()` now gates reset emission, frame-descriptor local-only classification, and generic jump lowering with the same conservative proof: no exception handlers, an unexported source slot, the current same-slot reset-null instruction, an immediate same-slot `JUMP_IF`, and a valid target. The generated C emits `zr_aot_reset_null_local_jump_if_source_skip`, `zr_aot_generic_jump_if_reset_null_false`, and a direct `goto` without `ZrLibrary_AotRuntime_ResetStackNull(state, &frame, 0)`, `GenericPrimitiveIsTruthy`, or a temporary truthy bool in that project, while ordinary reset fallbacks still use the runtime helper. RED was the new reset-null JUMP_IF smoke failing on the missing source-skip marker; GREEN passes WSL GCC/clang generic JUMP_IF 5/0, generic LOGICAL_NOT 3/0, logical shared-library 6/0, generic equality 4/0, logical contracts 4/0, frame setup contracts 1/0, and control contracts 2/0, with MSVC Debug passing the contract set and compiling the Unix-only smoke with expected ignores. This is still a narrow immediate reset-null false-branch fold; dynamic/string/object truthiness, value-copy migration, GC roots/exports/frame cleanup, wider byte-frame narrowing, and full zero-frame typed bodies remain open 07 work.
+
+Focused 2026-07-04 07-S2/S4 generic JUMP_IF bool-constant direct branch removes the bool constant assignment and truthiness helper for the immediate `GET_CONSTANT bool -> JUMP_IF` shape. `backend_aot_c_bool_constant_consumed_by_local_jump_if()` now shares the proof across constant emission, frame-descriptor local-only classification, and generic jump lowering: no exception handlers, an unexported source slot, the current same-slot bool constant, an immediate same-slot `JUMP_IF`, and a valid target. False constants emit `zr_aot_bool_constant_local_jump_if_source_skip`, `zr_aot_generic_jump_if_bool_constant_false`, and a direct `goto`; true constants emit `zr_aot_generic_jump_if_bool_constant_true` and fall through without a conditional branch. The bool scalar-local `JUMP_IF` fixture was moved to `GET_CONSTANT -> SET_STACK -> JUMP_IF` so `zr_aot_scalar_stack_copy_bool` and `if (!zr_aot_b5) {` coverage remains intact. RED was the new bool-constant JUMP_IF smoke failing on the missing source-skip marker; GREEN passes WSL GCC/clang generic JUMP_IF 6/0, generic LOGICAL_NOT 3/0, logical shared-library 6/0, generic equality 4/0, logical contracts 4/0, frame setup contracts 1/0, and control contracts 2/0, with MSVC Debug passing contracts and compiling the Unix-only smoke with expected ignores. This remains a narrow immediate bool constant fold; dynamic/string/object truthiness, value-copy migration, GC roots/exports/frame cleanup, wider byte-frame narrowing, and full zero-frame typed bodies remain open 07 work.
+
+Focused 2026-07-04 07-S2/S4 generic LOGICAL_NOT bool-constant local branch removes the source write for the immediate `GET_CONSTANT bool -> LOGICAL_NOT -> JUMP_IF_BOOL_FALSE` shape. `backend_aot_c_bool_constant_consumed_by_local_logical_not()` mirrors the existing null-constant and bool-constant JUMP_IF proofs across constant emission, frame-descriptor classification, and generic logical lowering: no exception handlers, an unexported source slot, the current same-slot bool constant, an immediate same-slot generic `LOGICAL_NOT`, and a bool destination that can stay local. The generated C emits `zr_aot_bool_constant_local_logical_not_source_skip`, `zr_aot_generic_logical_not_bool_constant_local`, and a direct `zr_aot_bD = ZR_FALSE/ZR_TRUE;` assignment without `zr_aot_scalar_constant_bool_local`, `GenericPrimitiveLogicalNot`, `SyncBoolLocal`, or `frame.slotBase[0].value` in the focused project. The ordinary bool-source generic LOGICAL_NOT shared-library fixture now uses `LOGICAL_NOT_BOOL -> LOGICAL_NOT` so the scalar-source path remains covered after immediate constants fold away. RED was the new bool-constant LOGICAL_NOT smoke and source contract failing on the missing helper/marker; GREEN passes WSL GCC/clang generic LOGICAL_NOT 4/0, generic JUMP_IF 6/0, logical shared-library 6/0, generic equality 4/0, logical contracts 4/0, frame setup contracts 1/0, and control contracts 2/0, with MSVC Debug compiling/running the focused Unix-only smokes as expected ignores and passing contracts. This remains a narrow immediate bool constant fold; dynamic/string/object truthiness, value-copy migration, GC roots/exports/frame cleanup, wider byte-frame narrowing, and full zero-frame typed bodies remain open 07 work.
+
+Focused 2026-07-04 07-S2/S4 generic LOGICAL_NOT bool stack-copy local branch fixes the matching non-immediate bool-source path for `GET_CONSTANT bool -> SET_STACK -> LOGICAL_NOT -> JUMP_IF_BOOL_FALSE`. The stack-copy destination consumer analysis now treats generic `LOGICAL_NOT` like `JUMP_IF`: it applies `backend_aot_c_scalar_locals_truthiness_consumer_kind(candidateKind)` before the broad primitive truthiness consumer checks, so a bool source copied into a later logical-not source slot is declared and written as `zr_aot_b*`, not accidentally as `zr_aot_u*`. RED showed generated C declaring `zr_aot_u5`, falling back to `ZrLibrary_AotRuntime_CopyStack(state, &frame, 5, 0)`, and then emitting `zr_aot_b1 = (TZrBool)(!zr_aot_b5);` without declaring `zr_aot_b5`. GREEN emits `TZrBool zr_aot_b5`, `zr_aot_scalar_stack_copy_bool dstSlot=5 srcSlot=0`, `zr_aot_b5 = (TZrBool)(zr_aot_b0 != 0u);`, and `zr_aot_b1 = (TZrBool)(!zr_aot_b5);` while forbidding `CopyStack`, `GenericPrimitiveLogicalNot`, and bool sync in the focused project. WSL GCC/clang pass the adjacent generic JUMP_IF/LOGICAL_NOT/logical/equality/contracts matrix, and MSVC Debug passes the same build/contract set with Unix-only smoke bodies ignored. This closes only the bool stack-copy source proof gap; dynamic/string/object truthiness, broader value-copy migration, GC roots/exports/frame cleanup, wider byte-frame narrowing, performance acceptance, and complete zero-frame typed bodies remain open 07 work.

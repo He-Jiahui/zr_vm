@@ -3138,7 +3138,9 @@ static void test_project_compile_applies_dependency_import_version_range_to_asse
     TEST_ASSERT_EQUAL_UINT32(1u, function->staticImportLength);
     TEST_ASSERT_EQUAL_UINT32(1u,
                              (TZrUInt32)count_static_imports_named(function, "$math@1.2.3/ops/sum"));
-    assemblyRef = find_assembly_ref_record_named(function, "$math@1.2.3/ops/sum");
+    TEST_ASSERT_TRUE(function_contains_module_effect_with_assembly(function, "$math@1.2.3/ops/sum", "math"));
+    TEST_ASSERT_NULL(find_assembly_ref_record_named(function, "$math@1.2.3/ops/sum"));
+    assemblyRef = find_assembly_ref_record_named(function, "math");
     TEST_ASSERT_NOT_NULL(assemblyRef);
     TEST_ASSERT_TRUE(metadata_token_record_module_versions_match(assemblyRef,
                                                                  "1.2.3",

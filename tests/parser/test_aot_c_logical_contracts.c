@@ -106,6 +106,11 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "const SZrAotExecIrFunction *functionIr",
             "TZrUInt32 execInstructionIndex",
             "backend_aot_write_c_direct_jump_if(FILE *file",
+            "backend_aot_c_null_constant_consumed_by_local_logical_not(",
+            "backend_aot_c_null_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_bool_constant_consumed_by_local_logical_not(",
+            "backend_aot_c_bool_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_reset_null_consumed_by_local_jump_if(",
     };
     static const char *const moduleNeedles[] = {
             "backend_aot_c_lowering_generic_logical.c",
@@ -114,21 +119,41 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "backend_aot_write_c_direct_jump_if(",
             "backend_aot_c_write_generic_jump_if_scalar_local(",
             "backend_aot_c_write_generic_logical_not_scalar_local(",
-            "backend_aot_c_generic_logical_not_destination_is_next_bool_branch(",
+            "backend_aot_c_null_constant_consumed_by_local_logical_not(",
+            "backend_aot_c_null_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_bool_constant_consumed_by_local_logical_not(",
+            "backend_aot_c_bool_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_reset_null_consumed_by_local_jump_if(",
             "backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(functionIr, destinationSlot, execInstructionIndex)",
             "backend_aot_c_scalar_locals_bool_value_written_before(functionIr, sourceSlot, execInstructionIndex)",
+            "backend_aot_c_scalar_locals_i64_written_before(functionIr, sourceSlot, execInstructionIndex)",
+            "backend_aot_c_scalar_locals_u64_written_before(functionIr, sourceSlot, execInstructionIndex)",
+            "backend_aot_c_scalar_locals_f64_written_before(functionIr, sourceSlot, execInstructionIndex)",
             "backend_aot_c_scalar_locals_bool_value_written_before(functionIr, conditionSlot, execInstructionIndex)",
             "backend_aot_c_scalar_locals_i64_written_before(functionIr, conditionSlot, execInstructionIndex)",
             "backend_aot_c_scalar_locals_u64_written_before(functionIr, conditionSlot, execInstructionIndex)",
             "backend_aot_c_scalar_locals_f64_written_before(functionIr, conditionSlot, execInstructionIndex)",
             "zr_aot_generic_logical_not",
+            "zr_aot_generic_logical_not_null_constant_local",
+            "zr_aot_generic_logical_not_bool_constant_local",
             "zr_aot_generic_logical_not_scalar_local",
+            "zr_aot_generic_logical_not_i64_scalar_local",
+            "zr_aot_generic_logical_not_u64_scalar_local",
+            "zr_aot_generic_logical_not_f64_scalar_local",
+            "zr_aot_b%u = ZR_TRUE;",
             "zr_aot_b%u = (TZrBool)(!zr_aot_b%u);",
+            "zr_aot_b%u = (TZrBool)(zr_aot_s%u == (TZrInt64)0);",
+            "zr_aot_b%u = (TZrBool)(zr_aot_u%u == (TZrUInt64)0u);",
+            "zr_aot_b%u = (TZrBool)(zr_aot_f%u == (TZrFloat64)0.0);",
             "zr_aot_generic_jump_if",
             "zr_aot_generic_jump_if_bool_scalar_local",
             "zr_aot_generic_jump_if_i64_scalar_local",
             "zr_aot_generic_jump_if_u64_scalar_local",
             "zr_aot_generic_jump_if_f64_scalar_local",
+            "zr_aot_generic_jump_if_null_constant_false",
+            "zr_aot_generic_jump_if_bool_constant_false",
+            "zr_aot_generic_jump_if_bool_constant_true",
+            "zr_aot_generic_jump_if_reset_null_false",
             "TZrBool zr_aot_truthy = ZR_FALSE;",
             "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(state, &frame, %u, %u)",
             "ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(state, &frame, %u, &zr_aot_truthy)",
@@ -140,6 +165,10 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "if (zr_aot_u%u == (TZrUInt64)0u) {",
             "if (zr_aot_f%u == (TZrFloat64)0.0) {",
             "if (!zr_aot_truthy) {",
+    };
+    static const char *const valuesNeedles[] = {
+            "backend_aot_c_bool_constant_consumed_by_local_logical_not(",
+            "zr_aot_bool_constant_local_logical_not_source_skip",
     };
     static const char *const runtimeHeaderNeedles[] = {
             "ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(struct SZrState *state,",
@@ -168,6 +197,24 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "case ZR_INSTRUCTION_ENUM(JUMP_IF):\n"
             "        case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):\n"
             "            return (TZrBool)(instruction->instruction.operandExtra == slot);",
+            "backend_aot_c_scalar_locals_truthiness_consumer_kind(",
+            "kind | backend_aot_c_scalar_locals_truthiness_consumer_kind(candidateKind)",
+            "if (opcode == ZR_INSTRUCTION_ENUM(LOGICAL_NOT) &&\n"
+            "            instruction->instruction.operand.operand1[0] == destinationSlot) {\n"
+            "            kind = (EZrAotScalarLocalKind)(\n"
+            "                    kind | backend_aot_c_scalar_locals_truthiness_consumer_kind(candidateKind));\n"
+            "            continue;\n"
+            "        }",
+            "backend_aot_c_scalar_locals_kind_from_call_result_callee(",
+            "backend_aot_c_scalar_locals_resolve_callable_slot_function_before_instruction(",
+            "backend_aot_c_can_emit_typed_i64_no_arg_thunk(calleeFunction)",
+            "opcode == ZR_INSTRUCTION_ENUM(LOGICAL_NOT) &&",
+            "instruction->instruction.operand.operand1[0] == destinationSlot",
+            "EZrAotScalarLocalKind candidateKind = destinationSlot < slotCount",
+            "backend_aot_c_scalar_locals_kind_from_generic_logical_not_destination_consumers(",
+            "backend_aot_c_scalar_locals_record_generic_logical_not_destinations(",
+            "kind = (EZrAotScalarLocalKind)(kind | ZR_AOT_SCALAR_LOCAL_KIND_BOOL);",
+            "(EZrAotScalarLocalKind)(consumerKind & ZR_AOT_SCALAR_LOCAL_KIND_BOOL)",
     };
     static const char *const frameDescriptorNeedles[] = {
             "backend_aot_c_frame_descriptor_generic_jump_if_condition_can_use_local_only(",
@@ -181,8 +228,14 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "                              functionIr, conditionSlot, instructionIndex)",
             "backend_aot_c_scalar_locals_f64_written_before(\n"
             "                              functionIr, conditionSlot, instructionIndex)",
-            "backend_aot_c_frame_descriptor_generic_jump_if_condition_can_use_local_only(\n"
-            "                                     functionIr, destinationSlot, instructionIndex)",
+            "backend_aot_c_frame_descriptor_generic_jump_if_condition_can_use_local_only(",
+            "functionIr, destinationSlot, instructionIndex) ||",
+            "backend_aot_c_null_constant_consumed_by_local_logical_not(",
+            "backend_aot_c_null_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_bool_constant_consumed_by_local_logical_not(",
+            "backend_aot_c_bool_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_reset_null_consumed_by_local_jump_if(",
+            "functionIr, destinationSlot, instructionIndex - 1u)",
     };
     static const char *const forbiddenModuleNeedles[] = {
             "backend_aot_c_write_generic_truthiness_unsupported",
@@ -209,6 +262,8 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *moduleText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_logical.c");
+    char *valuesText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *controlText = read_repo_text_file_owned(
@@ -223,6 +278,7 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(moduleText);
+    TEST_ASSERT_NOT_NULL(valuesText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
     TEST_ASSERT_NOT_NULL(controlText);
     TEST_ASSERT_NOT_NULL(scalarLocalsText);
@@ -232,6 +288,7 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
     assert_text_contains_all(moduleText, moduleNeedles, ARRAY_COUNT(moduleNeedles));
+    assert_text_contains_all(valuesText, valuesNeedles, ARRAY_COUNT(valuesNeedles));
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
     assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
@@ -243,6 +300,7 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
 
     free(headerText);
     free(moduleText);
+    free(valuesText);
     free(functionBodyText);
     free(controlText);
     free(scalarLocalsText);

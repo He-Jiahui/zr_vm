@@ -9,6 +9,7 @@
 
 #include "zr_vm_common/zr_parser_conf.h"
 #include "zr_vm_common/zr_type_conf.h"
+#include "zr_vm_core/string.h"
 #include "zr_vm_parser/compiler.h"
 
 TZrBool ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicDeltaCurrentRange(
@@ -235,6 +236,33 @@ static TZrBool loop_assignment_sequence_symbolic_delta_literal_coefficient(
     return ZR_FALSE;
 }
 
+static TZrBool loop_assignment_sequence_symbolic_delta_is_identifier_name(
+        SZrAstNode *node,
+        SZrString *name) {
+    return node != ZR_NULL &&
+           name != ZR_NULL &&
+           node->type == ZR_AST_IDENTIFIER_LITERAL &&
+           node->data.identifier.name != ZR_NULL &&
+           ZrCore_String_Equal(node->data.identifier.name, name);
+}
+
+static TZrBool loop_assignment_sequence_symbolic_delta_is_direct_target_self_canceling_zero_factor(
+        SZrAstNode *node,
+        SZrString *sequenceName) {
+    return node != ZR_NULL &&
+           sequenceName != ZR_NULL &&
+           node->type == ZR_AST_BINARY_EXPRESSION &&
+           loop_assignment_sequence_symbolic_string_equal(
+                   node->data.binaryExpression.op.op,
+                   "-") &&
+           loop_assignment_sequence_symbolic_delta_is_identifier_name(
+                   node->data.binaryExpression.left,
+                   sequenceName) &&
+           loop_assignment_sequence_symbolic_delta_is_identifier_name(
+                   node->data.binaryExpression.right,
+                   sequenceName);
+}
+
 static TZrBool loop_assignment_sequence_symbolic_delta_singleton_coefficient(
         SZrCompilerState *cs,
         SZrString *sequenceName,
@@ -242,6 +270,7 @@ static TZrBool loop_assignment_sequence_symbolic_delta_singleton_coefficient(
         TZrInt64 *outValue) {
     TZrInt64 minValue;
     TZrInt64 maxValue;
+    TZrInt64 childValue;
 
     if (node == ZR_NULL || outValue == ZR_NULL) {
         return ZR_FALSE;
@@ -249,10 +278,57 @@ static TZrBool loop_assignment_sequence_symbolic_delta_singleton_coefficient(
     if (loop_assignment_sequence_symbolic_delta_literal_coefficient(node, outValue)) {
         return ZR_TRUE;
     }
-    if (cs == ZR_NULL ||
-        sequenceName == ZR_NULL ||
-        ZrParser_TypeInferenceLoopAssignment_ExpressionUsesName(node, sequenceName) ||
-        !ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicInferInt64Range(
+    if (loop_assignment_sequence_symbolic_delta_is_direct_target_self_canceling_zero_factor(
+                node,
+                sequenceName)) {
+        *outValue = 0;
+        return ZR_TRUE;
+    }
+    if (cs == ZR_NULL || sequenceName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (node->type == ZR_AST_BINARY_EXPRESSION) {
+        if (loop_assignment_sequence_symbolic_string_equal(
+                    node->data.binaryExpression.op.op,
+                    "*")) {
+            if (loop_assignment_sequence_symbolic_delta_singleton_coefficient(
+                        cs,
+                        sequenceName,
+                        node->data.binaryExpression.left,
+                        &childValue) &&
+                childValue == 0) {
+                *outValue = 0;
+                return ZR_TRUE;
+            }
+            if (loop_assignment_sequence_symbolic_delta_singleton_coefficient(
+                        cs,
+                        sequenceName,
+                        node->data.binaryExpression.right,
+                        &childValue) &&
+                childValue == 0) {
+                *outValue = 0;
+                return ZR_TRUE;
+            }
+        }
+        if (!ZrParser_TypeInferenceLoopAssignment_ExpressionUsesName(node, sequenceName) &&
+            loop_assignment_sequence_symbolic_string_equal(
+                    node->data.binaryExpression.op.op,
+                    "-") &&
+            ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaExpressionsEqual(
+                    node->data.binaryExpression.left,
+                    node->data.binaryExpression.right,
+                    sequenceName)) {
+            *outValue = 0;
+            return ZR_TRUE;
+        }
+    }
+
+    if (ZrParser_TypeInferenceLoopAssignment_ExpressionUsesName(node, sequenceName)) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrParser_TypeInferenceLoopAssignment_SequenceSymbolicInferInt64Range(
                 cs,
                 node,
                 &minValue,

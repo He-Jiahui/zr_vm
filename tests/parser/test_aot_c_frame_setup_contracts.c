@@ -93,15 +93,23 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     }
 }
 
-static void assert_text_contains_all_in_either(const char *left,
-                                               const char *right,
-                                               const char *const *needles,
-                                               size_t needleCount) {
+static void assert_text_contains_all_in_any6(const char *first,
+                                             const char *second,
+                                             const char *third,
+                                             const char *fourth,
+                                             const char *fifth,
+                                             const char *sixth,
+                                             const char *const *needles,
+                                             size_t needleCount) {
     size_t index;
 
     for (index = 0; index < needleCount; index++) {
-        if ((left == NULL || strstr(left, needles[index]) == NULL) &&
-            (right == NULL || strstr(right, needles[index]) == NULL)) {
+        if ((first == NULL || strstr(first, needles[index]) == NULL) &&
+            (second == NULL || strstr(second, needles[index]) == NULL) &&
+            (third == NULL || strstr(third, needles[index]) == NULL) &&
+            (fourth == NULL || strstr(fourth, needles[index]) == NULL) &&
+            (fifth == NULL || strstr(fifth, needles[index]) == NULL) &&
+            (sixth == NULL || strstr(sixth, needles[index]) == NULL)) {
             printf("Missing source contract text: %s\n", needles[index]);
             TEST_FAIL_MESSAGE("missing required source contract text");
         }
@@ -151,7 +159,7 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "struct SZrAotMethodInfo;",
             "struct SZrAotGcRootMap;",
             "struct SZrTypeLayout;",
-            "ZR_VM_AOT_ABI_VERSION 10u",
+            "ZR_VM_AOT_ABI_VERSION 13u",
             "typedef void (*FZrAotReflectionInvoker)(struct SZrState *state,",
             "FZrAotEntryThunk target,",
             "const struct SZrAotMethodInfo *method,",
@@ -225,6 +233,8 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "const FZrAotEntryThunk *functionPointers;",
             "const SZrAotMethodInfo *const *methodInfos;",
             "TZrUInt32 methodInfoCount;",
+            "const TZrUInt32 *methodTokens;",
+            "TZrUInt32 methodTokenCount;",
             "const FZrAotReflectionInvoker *invokers;",
             "TZrUInt32 invokerCount;",
             "const struct SZrTypeLayout *const *typeLayouts;",
@@ -236,6 +246,8 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "} SZrAotCodeRegistration;",
             "const SZrAotMethodInfo *const *methodInfos;",
             "TZrUInt32 methodInfoCount;",
+            "const TZrUInt32 *methodTokens;",
+            "TZrUInt32 methodTokenCount;",
             "const struct SZrTypeLayout *const *typeLayouts;",
             "TZrUInt32 typeLayoutCount;",
             "const TZrUInt32 *typeLayoutTokens;",
@@ -252,6 +264,9 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "record->codeRegistration = descriptor->codeRegistration;",
             "record->codeRegistration->methodInfos",
             "record->codeRegistration->methodInfoCount",
+            "descriptor->codeRegistration->methodTokens != descriptor->methodTokens",
+            "descriptor->codeRegistration->methodTokenCount != descriptor->methodTokenCount",
+            "method token table mismatch",
             "record->codeRegistration->functionPointers",
             "record->codeRegistration->functionCount",
             "context->methodInfo =",
@@ -425,6 +440,7 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
     static const char *const emitterSourceNeedles[] = {
             "backend_aot_write_c_signature_type(FILE *file,",
             "#include \\\"zr_vm_core/gc.h\\\"",
+            "#include \\\"zr_vm_core/value.h\\\"",
             "const SZrFunctionTypedTypeRef *typeRef",
             "#include \"backend_aot_c_scalar_locals.h\"",
             "backend_aot_c_signature_try_infer_i64_return(",
@@ -453,13 +469,193 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "ZR_STATIC_C_TYPE_F64",
             "backend_aot_write_c_signature(FILE *file,",
             "const SZrAotExecIrFunction *functionIr",
-            "backend_aot_write_c_reflection_invokers(FILE *file)",
+            "#include \"backend_aot_c_reflection_invokers.h\"",
+            "backend_aot_write_c_reflection_invokers(FILE *file, const SZrAotFunctionTable *table)",
+            "static TZrBool backend_aot_c_method_metadata_has_i64_no_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_i64_no_arg_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_i64_no_arg_cases(",
+            "zr_aot_try_invoke_i64_no_arg",
+            "static TZrBool backend_aot_c_method_metadata_has_i64_one_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_i64_one_arg_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_i64_one_arg_cases(",
+            "zr_aot_try_invoke_i64_one_arg",
+            "static TZrBool backend_aot_c_method_metadata_has_i64_two_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_i64_two_arg_thunk(entry->function)",
+            "backend_aot_c_can_emit_typed_i64_two_arg_state_free_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_i64_two_arg_cases(",
+            "zr_aot_try_invoke_i64_two_arg",
+            "#include \"backend_aot_c_reflection_numeric_three_arg_invokers.h\"",
+            "static TZrBool backend_aot_c_method_metadata_has_i64_three_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_i64_three_arg_thunk(entry->function)",
+            "backend_aot_c_can_emit_typed_i64_three_arg_state_free_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_i64_three_arg_cases(",
+            "zr_aot_try_invoke_i64_three_arg",
+            "#include \"backend_aot_c_typed_u64_three_arg_thunks.h\"",
+            "static TZrBool backend_aot_c_method_metadata_has_u64_three_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_u64_three_arg_thunk(entry->function)",
+            "backend_aot_c_can_emit_typed_u64_three_arg_state_free_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_u64_three_arg_cases(",
+            "zr_aot_try_invoke_u64_three_arg",
+            "static TZrBool backend_aot_c_method_metadata_has_f64_three_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_f64_three_arg_thunk(entry->function)",
+            "backend_aot_c_can_emit_typed_f64_three_arg_state_free_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_f64_three_arg_cases(",
+            "zr_aot_try_invoke_f64_three_arg",
+            "#include \"backend_aot_c_reflection_bool_three_arg_invokers.h\"",
+            "#include \"backend_aot_c_typed_bool_three_arg_thunks.h\"",
+            "static TZrBool backend_aot_c_method_metadata_has_bool_three_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_bool_three_arg_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_bool_three_arg_cases(",
+            "zr_aot_try_invoke_bool_three_arg",
+            "#include \"backend_aot_c_typed_bool_thunks.h\"",
+            "static TZrBool backend_aot_c_method_metadata_has_bool_no_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_bool_no_arg_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_bool_no_arg_cases(",
+            "zr_aot_try_invoke_bool_no_arg",
+            "static TZrBool backend_aot_c_method_metadata_has_bool_one_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_bool_one_arg_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_bool_one_arg_cases(",
+            "zr_aot_try_invoke_bool_one_arg",
+            "static TZrBool backend_aot_c_method_metadata_has_bool_two_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_bool_two_arg_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_bool_two_arg_cases(",
+            "zr_aot_try_invoke_bool_two_arg",
+            "static TZrBool backend_aot_c_method_metadata_has_bool_i64_two_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_bool_i64_two_arg_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_bool_i64_two_arg_cases(",
+            "zr_aot_try_invoke_bool_i64_two_arg",
+            "static TZrBool backend_aot_c_method_metadata_has_bool_u64_two_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_bool_u64_two_arg_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_bool_u64_two_arg_cases(",
+            "zr_aot_try_invoke_bool_u64_two_arg",
+            "static TZrBool backend_aot_c_method_metadata_has_bool_f64_two_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_bool_f64_two_arg_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_bool_f64_two_arg_cases(",
+            "zr_aot_try_invoke_bool_f64_two_arg",
+            "#include \"backend_aot_c_typed_f64_thunks.h\"",
+            "static TZrBool backend_aot_c_method_metadata_has_f64_no_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_f64_no_arg_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_f64_no_arg_cases(",
+            "zr_aot_try_invoke_f64_no_arg",
+            "static TZrBool backend_aot_c_method_metadata_has_f64_one_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_f64_one_arg_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_f64_one_arg_cases(",
+            "zr_aot_try_invoke_f64_one_arg",
+            "static TZrBool backend_aot_c_method_metadata_has_f64_two_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_f64_two_arg_thunk(entry->function)",
+            "backend_aot_c_can_emit_typed_f64_two_arg_state_free_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_f64_two_arg_cases(",
+            "zr_aot_try_invoke_f64_two_arg",
+            "#include \"backend_aot_c_typed_u64_thunks.h\"",
+            "static TZrBool backend_aot_c_method_metadata_has_u64_no_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_u64_no_arg_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_u64_no_arg_cases(",
+            "zr_aot_try_invoke_u64_no_arg",
+            "static TZrBool backend_aot_c_method_metadata_has_u64_one_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_u64_one_arg_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_u64_one_arg_cases(",
+            "zr_aot_try_invoke_u64_one_arg",
+            "static TZrBool backend_aot_c_method_metadata_has_u64_two_arg_reflection_case(",
+            "backend_aot_c_can_emit_typed_u64_two_arg_thunk(entry->function)",
+            "backend_aot_c_can_emit_typed_u64_two_arg_state_free_thunk(entry->function)",
+            "static void backend_aot_write_c_reflection_u64_two_arg_cases(",
+            "zr_aot_try_invoke_u64_two_arg",
+            "method->signature->returnType->baseType != (TZrUInt16)ZR_VALUE_TYPE_BOOL",
+            "method->signature->returnType->baseType != (TZrUInt16)ZR_VALUE_TYPE_UINT64",
+            "method->signature->returnType->baseType != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE",
+            "method->signature->parameterCount != 0u",
+            "method->signature->parameterCount != 1u",
+            "method->signature->parameterCount != 2u",
+            "method->signature->parameterCount != 3u",
+            "method->signature->parameterTypes == ZR_NULL",
+            "method->signature->parameterTypes[0].baseType != (TZrUInt16)ZR_VALUE_TYPE_INT64",
+            "method->signature->parameterTypes[1].baseType != (TZrUInt16)ZR_VALUE_TYPE_INT64",
+            "method->signature->parameterTypes[2].baseType != (TZrUInt16)ZR_VALUE_TYPE_INT64",
+            "method->signature->parameterTypes[0].baseType != (TZrUInt16)ZR_VALUE_TYPE_UINT64",
+            "method->signature->parameterTypes[1].baseType != (TZrUInt16)ZR_VALUE_TYPE_UINT64",
+            "method->signature->parameterTypes[2].baseType != (TZrUInt16)ZR_VALUE_TYPE_UINT64",
+            "method->signature->parameterTypes[0].baseType != (TZrUInt16)ZR_VALUE_TYPE_BOOL",
+            "method->signature->parameterTypes[1].baseType != (TZrUInt16)ZR_VALUE_TYPE_BOOL",
+            "method->signature->parameterTypes[2].baseType != (TZrUInt16)ZR_VALUE_TYPE_BOOL",
+            "method->signature->parameterTypes[0].baseType != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE",
+            "method->signature->parameterTypes[1].baseType != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE",
+            "args == ZR_NULL",
+            "args[0].type != (TZrUInt16)ZR_VALUE_TYPE_INT64",
+            "args[1].type != (TZrUInt16)ZR_VALUE_TYPE_INT64",
+            "args[2].type != (TZrUInt16)ZR_VALUE_TYPE_INT64",
+            "args[0].type != (TZrUInt16)ZR_VALUE_TYPE_UINT64",
+            "args[1].type != (TZrUInt16)ZR_VALUE_TYPE_UINT64",
+            "args[2].type != (TZrUInt16)ZR_VALUE_TYPE_UINT64",
+            "args[0].type != (TZrUInt16)ZR_VALUE_TYPE_BOOL",
+            "args[1].type != (TZrUInt16)ZR_VALUE_TYPE_BOOL",
+            "args[2].type != (TZrUInt16)ZR_VALUE_TYPE_BOOL",
+            "args[0].type != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE",
+            "args[1].type != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE",
+            "args[2].type != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE",
+            "switch (method->functionIndex)",
+            "zr_aot_return_value = zr_aot_typed_i64_fn_%u();",
+            "TZrInt64 zr_aot_arg0 = args[0].value.nativeObject.nativeInt64;",
+            "TZrInt64 zr_aot_arg1 = args[1].value.nativeObject.nativeInt64;",
+            "TZrInt64 zr_aot_arg2 = args[2].value.nativeObject.nativeInt64;",
+            "zr_aot_return_value = zr_aot_typed_i64_fn_%u(zr_aot_arg0);",
+            "zr_aot_return_value = zr_aot_typed_i64_fn_%u(zr_aot_arg0, zr_aot_arg1);",
+            "zr_aot_return_value = zr_aot_typed_i64_fn_%u(state, zr_aot_arg0, zr_aot_arg1);",
+            "zr_aot_return_value = zr_aot_typed_i64_fn_%u(zr_aot_arg0, zr_aot_arg1, zr_aot_arg2);",
+            "zr_aot_return_value = zr_aot_typed_i64_fn_%u(state, zr_aot_arg0, zr_aot_arg1, zr_aot_arg2);",
+            "ZrCore_Value_InitAsInt(state, outReturn, zr_aot_return_value);",
+            "TZrBool zr_aot_return_value = zr_aot_typed_bool_fn_%u();",
+            "TZrBool zr_aot_arg0 = args[0].value.nativeObject.nativeBool;",
+            "TZrBool zr_aot_arg1 = args[1].value.nativeObject.nativeBool;",
+            "TZrBool zr_aot_arg2 = args[2].value.nativeObject.nativeBool;",
+            "zr_aot_return_value = zr_aot_typed_bool_fn_%u(zr_aot_arg0);",
+            "zr_aot_return_value = zr_aot_typed_bool_fn_%u(zr_aot_arg0, zr_aot_arg1);",
+            "zr_aot_return_value = zr_aot_typed_bool_fn_%u(zr_aot_arg0, zr_aot_arg1, zr_aot_arg2);",
+            "ZrCore_Value_InitAsBool(state, outReturn, zr_aot_return_value);",
+            "TZrUInt64 zr_aot_return_value = zr_aot_typed_u64_fn_%u();",
+            "TZrUInt64 zr_aot_arg0 = args[0].value.nativeObject.nativeUInt64;",
+            "TZrUInt64 zr_aot_arg1 = args[1].value.nativeObject.nativeUInt64;",
+            "TZrUInt64 zr_aot_arg2 = args[2].value.nativeObject.nativeUInt64;",
+            "zr_aot_return_value = zr_aot_typed_u64_fn_%u(zr_aot_arg0);",
+            "zr_aot_return_value = zr_aot_typed_u64_fn_%u(zr_aot_arg0, zr_aot_arg1);",
+            "zr_aot_return_value = zr_aot_typed_u64_fn_%u(state, zr_aot_arg0, zr_aot_arg1);",
+            "zr_aot_return_value = zr_aot_typed_u64_fn_%u(zr_aot_arg0, zr_aot_arg1, zr_aot_arg2);",
+            "zr_aot_return_value = zr_aot_typed_u64_fn_%u(state, zr_aot_arg0, zr_aot_arg1, zr_aot_arg2);",
+            "ZrCore_Value_InitAsUInt(state, outReturn, zr_aot_return_value);",
+            "TZrFloat64 zr_aot_return_value = zr_aot_typed_f64_fn_%u();",
+            "TZrFloat64 zr_aot_arg0 = args[0].value.nativeObject.nativeDouble;",
+            "TZrFloat64 zr_aot_arg1 = args[1].value.nativeObject.nativeDouble;",
+            "TZrFloat64 zr_aot_arg2 = args[2].value.nativeObject.nativeDouble;",
+            "zr_aot_return_value = zr_aot_typed_f64_fn_%u(zr_aot_arg0);",
+            "zr_aot_return_value = zr_aot_typed_f64_fn_%u(zr_aot_arg0, zr_aot_arg1);",
+            "zr_aot_return_value = zr_aot_typed_f64_fn_%u(state, zr_aot_arg0, zr_aot_arg1);",
+            "zr_aot_return_value = zr_aot_typed_f64_fn_%u(zr_aot_arg0, zr_aot_arg1, zr_aot_arg2);",
+            "zr_aot_return_value = zr_aot_typed_f64_fn_%u(state, zr_aot_arg0, zr_aot_arg1, zr_aot_arg2);",
+            "ZrCore_Value_InitAsFloat(state, outReturn, zr_aot_return_value);",
             "static void zr_aot_invoker_entry_thunk(struct SZrState *state,",
             "FZrAotEntryThunk target,",
             "const SZrAotMethodInfo *method,",
             "SZrTypeValue *self,",
             "SZrTypeValue *args,",
             "SZrTypeValue *outReturn)",
+            "if (zr_aot_try_invoke_i64_no_arg(state, method, outReturn))",
+            "if (zr_aot_try_invoke_i64_one_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_i64_two_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_i64_three_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_bool_no_arg(state, method, outReturn))",
+            "if (zr_aot_try_invoke_bool_one_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_bool_two_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_bool_three_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_bool_i64_two_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_bool_u64_two_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_bool_f64_two_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_u64_no_arg(state, method, outReturn))",
+            "if (zr_aot_try_invoke_u64_one_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_u64_two_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_u64_three_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_f64_no_arg(state, method, outReturn))",
+            "if (zr_aot_try_invoke_f64_one_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_f64_two_arg(state, method, args, outReturn))",
+            "if (zr_aot_try_invoke_f64_three_arg(state, method, args, outReturn))",
             "if (target != ZR_NULL) {",
             "(void)target(state);",
             "static const FZrAotReflectionInvoker zr_aot_reflection_invokers[] = {",
@@ -494,16 +690,23 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "ZR_AOT_REFLECTION_METADATA_NONE",
             "backend_aot_write_c_generic_dictionary_macros(file);",
             "backend_aot_write_c_generic_sharing_entries(file, &functionTable, stripGeneratedSymbols);",
-            "backend_aot_write_c_reflection_invokers(file);",
+            "backend_aot_write_c_reflection_invokers(file, &functionTable);",
             "backend_aot_write_c_method_info_table(FILE *file,",
             "static const SZrAotMethodInfo *const zr_aot_method_infos[] = {",
             "&zr_aot_method_info_%u,",
+            "backend_aot_write_c_method_token_table(FILE *file,",
+            "backend_aot_c_method_token_for_function(",
+            "static const TZrUInt32 zr_aot_method_tokens[] = {",
+            "0x%08xu,",
             "zr_aot_method_infos,",
+            "zr_aot_method_tokens,",
             "static const SZrAotCodeRegistration zr_aot_code_registration = {",
             ".functionCount = %u,",
             ".functionPointers = zr_aot_function_thunks,",
             ".methodInfos = zr_aot_method_infos,",
             ".methodInfoCount = %u,",
+            ".methodTokens = zr_aot_method_tokens,",
+            ".methodTokenCount = %u,",
             ".invokers = zr_aot_reflection_invokers,",
             ".invokerCount = 1u,",
             ".typeLayouts = %s,",
@@ -518,6 +721,7 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "backend_aot_function_table_index_space(&functionTable);",
             "backend_aot_write_c_function_table(file, &functionTable, functionIndexSpace);",
             "backend_aot_write_c_method_info_table(file, &functionTable, functionIndexSpace);",
+            "backend_aot_write_c_method_token_table(file,\n                                           &functionTable,\n                                           &embeddedZrpMetadata,\n                                           functionIndexSpace);",
             "if (entry != ZR_NULL) {\n            fprintf(file, \"    zr_aot_fn_%u,\\n\", (unsigned)entry->flatIndex);",
             "if (entry != ZR_NULL) {\n            fprintf(file, \"    &zr_aot_method_info_%u,\\n\", (unsigned)entry->flatIndex);",
             "fprintf(file, \"    ZR_NULL,\\n\");",
@@ -579,6 +783,17 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             read_repo_text_file_owned("zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *methodMetadataSourceText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c");
+    char *reflectionInvokersSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_reflection_invokers.c");
+    char *reflectionBoolNumericInvokersSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/"
+            "backend_aot_c_reflection_bool_numeric_invokers.c");
+    char *reflectionNumericThreeArgInvokersSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/"
+            "backend_aot_c_reflection_numeric_three_arg_invokers.c");
+    char *reflectionBoolThreeArgInvokersSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/"
+            "backend_aot_c_reflection_bool_three_arg_invokers.c");
 
     TEST_ASSERT_NOT_NULL(runtimeHeaderText);
     TEST_ASSERT_NOT_NULL(runtimeSourceText);
@@ -594,6 +809,10 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
     TEST_ASSERT_NOT_NULL(scalarStackCopyText);
     TEST_ASSERT_NOT_NULL(emitterSourceText);
     TEST_ASSERT_NOT_NULL(methodMetadataSourceText);
+    TEST_ASSERT_NOT_NULL(reflectionInvokersSourceText);
+    TEST_ASSERT_NOT_NULL(reflectionBoolNumericInvokersSourceText);
+    TEST_ASSERT_NOT_NULL(reflectionNumericThreeArgInvokersSourceText);
+    TEST_ASSERT_NOT_NULL(reflectionBoolThreeArgInvokersSourceText);
 
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
     assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
@@ -613,10 +832,14 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
     assert_text_contains_all(scalarStackCopyText,
                              scalarStackCopySourceNeedles,
                              ARRAY_COUNT(scalarStackCopySourceNeedles));
-    assert_text_contains_all_in_either(emitterSourceText,
-                                       methodMetadataSourceText,
-                                       emitterSourceNeedles,
-                                       ARRAY_COUNT(emitterSourceNeedles));
+    assert_text_contains_all_in_any6(emitterSourceText,
+                                     methodMetadataSourceText,
+                                     reflectionInvokersSourceText,
+                                     reflectionBoolNumericInvokersSourceText,
+                                     reflectionNumericThreeArgInvokersSourceText,
+                                     reflectionBoolThreeArgInvokersSourceText,
+                                     emitterSourceNeedles,
+                                     ARRAY_COUNT(emitterSourceNeedles));
     assert_text_contains_none(runtimeHeaderText, forbiddenRuntimeNeedles, ARRAY_COUNT(forbiddenRuntimeNeedles));
     assert_text_contains_none(runtimeSourceText, forbiddenRuntimeNeedles, ARRAY_COUNT(forbiddenRuntimeNeedles));
     assert_text_contains_none(functionBodyText, forbiddenFunctionBodyNeedles, ARRAY_COUNT(forbiddenFunctionBodyNeedles));
@@ -636,6 +859,10 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
     free(scalarStackCopyText);
     free(emitterSourceText);
     free(methodMetadataSourceText);
+    free(reflectionInvokersSourceText);
+    free(reflectionBoolNumericInvokersSourceText);
+    free(reflectionNumericThreeArgInvokersSourceText);
+    free(reflectionBoolThreeArgInvokersSourceText);
 }
 
 int main(void) {

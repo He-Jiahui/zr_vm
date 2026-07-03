@@ -95,6 +95,16 @@ static TZrInstruction create_generic_logical_not_instruction(TZrUInt16 destinati
     return instruction;
 }
 
+static TZrInstruction create_bool_logical_not_instruction(TZrUInt16 destinationSlot, TZrUInt16 sourceSlot) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL);
+    instruction.instruction.operandExtra = destinationSlot;
+    instruction.instruction.operand.operand1[0] = sourceSlot;
+    return instruction;
+}
+
 static TZrInstruction create_jump_if_bool_false_instruction(TZrUInt16 conditionSlot, TZrInt32 offset) {
     TZrInstruction instruction;
 
@@ -147,17 +157,18 @@ static SZrFunction *create_generic_logical_not_bool_source_function(SZrState *st
 
     function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
             state->global,
-            sizeof(TZrInstruction) * 7u,
+            sizeof(TZrInstruction) * 8u,
             ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     TEST_ASSERT_NOT_NULL(function->instructionsList);
     function->instructionsList[0] = create_get_constant_instruction(0u, 0);
-    function->instructionsList[1] = create_generic_logical_not_instruction(1u, 0u);
-    function->instructionsList[2] = create_jump_if_bool_false_instruction(1u, 2);
-    function->instructionsList[3] = create_get_constant_instruction(2u, 1);
-    function->instructionsList[4] = create_return_instruction(1u, 2u);
-    function->instructionsList[5] = create_get_constant_instruction(2u, 2);
-    function->instructionsList[6] = create_return_instruction(1u, 2u);
-    function->instructionsLength = 7u;
+    function->instructionsList[1] = create_bool_logical_not_instruction(5u, 0u);
+    function->instructionsList[2] = create_generic_logical_not_instruction(1u, 5u);
+    function->instructionsList[3] = create_jump_if_bool_false_instruction(1u, 2);
+    function->instructionsList[4] = create_get_constant_instruction(2u, 1);
+    function->instructionsList[5] = create_return_instruction(1u, 2u);
+    function->instructionsList[6] = create_get_constant_instruction(2u, 2);
+    function->instructionsList[7] = create_return_instruction(1u, 2u);
+    function->instructionsLength = 8u;
 
     function->constantValueList = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(
             state->global,
@@ -166,10 +177,10 @@ static SZrFunction *create_generic_logical_not_bool_source_function(SZrState *st
     TEST_ASSERT_NOT_NULL(function->constantValueList);
     function->constantValueLength = 3u;
     ZrCore_Value_InitAsBool(state, &function->constantValueList[0], ZR_TRUE);
-    ZrCore_Value_InitAsInt(state, &function->constantValueList[1], 66);
-    ZrCore_Value_InitAsInt(state, &function->constantValueList[2], 7);
+    ZrCore_Value_InitAsInt(state, &function->constantValueList[1], 7);
+    ZrCore_Value_InitAsInt(state, &function->constantValueList[2], 66);
 
-    function->stackSize = 3u;
+    function->stackSize = 6u;
     function->parameterCount = 0u;
     function->hasVariableArguments = ZR_FALSE;
     function->closureValueLength = 0u;
@@ -210,12 +221,48 @@ static void test_aot_c_generated_shared_library_executes_generic_truthiness_boun
             "pub var one = () => {\n"
             "    return 1;\n"
             "};\n"
+            "func unsignedZero(): uint {\n"
+            "    var value: uint = 0;\n"
+            "    return value;\n"
+            "}\n"
+            "func unsignedOne(): uint {\n"
+            "    var value: uint = 1;\n"
+            "    return value;\n"
+            "}\n"
+            "func floatZero(): float {\n"
+            "    var value: float = 0.0;\n"
+            "    return value;\n"
+            "}\n"
+            "func floatOne(): float {\n"
+            "    var value: float = 1.5;\n"
+            "    return value;\n"
+            "}\n"
             "var inverted = !zero();\n"
+            "var unsignedInverted = !unsignedZero();\n"
+            "var floatInverted = !floatZero();\n"
             "if (zero()) {\n"
             "    return 99;\n"
             "}\n"
             "if (!one()) {\n"
             "    return 88;\n"
+            "}\n"
+            "if (unsignedZero()) {\n"
+            "    return 77;\n"
+            "}\n"
+            "if (!unsignedOne()) {\n"
+            "    return 66;\n"
+            "}\n"
+            "if (floatZero()) {\n"
+            "    return 55;\n"
+            "}\n"
+            "if (!floatOne()) {\n"
+            "    return 44;\n"
+            "}\n"
+            "if (!unsignedInverted) {\n"
+            "    return 22;\n"
+            "}\n"
+            "if (!floatInverted) {\n"
+            "    return 11;\n"
             "}\n"
             "return inverted ? 7 : 3;\n";
     const char *projectJson =
@@ -301,9 +348,38 @@ static void test_aot_c_generated_shared_library_executes_generic_truthiness_boun
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_jump_if"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_jump_if_i64_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_s3 == (TZrInt64)0) {"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(state, &frame, 3, 4)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "== (TZrInt64)0"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "= zr_aot_typed_i64_fn_1();"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "= zr_aot_typed_i64_fn_2();"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_no_arg_direct_call_sync_stack_slot */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_u64_no_arg_direct_call */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_f64_no_arg_direct_call */"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_u64_no_arg_direct_call_sync_stack_slot */"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_f64_no_arg_direct_call_sync_stack_slot */"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_u17 = zr_aot_typed_u64_fn_3();"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_u17 == (TZrUInt64)0u) {"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "if (zr_aot_s17 == (TZrInt64)0) {"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrFloat64 zr_aot_typed_f64_fn_5(void);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrFloat64 zr_aot_typed_f64_fn_6(void);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_f21 = zr_aot_typed_f64_fn_5();"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_f21 == (TZrFloat64)0.0) {"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_f24 = zr_aot_typed_f64_fn_6();"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b23 = (TZrBool)(zr_aot_f24 == (TZrFloat64)0.0);"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, 24"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not_i64_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not_u64_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not_f64_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_jump_if_u64_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_jump_if_f64_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, " == (TZrInt64)0);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "== (TZrUInt64)0u"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "== (TZrFloat64)0.0"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(state, &frame, 3, 4)"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(state, &frame, 5, 6)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_b3 = (TZrBool)(!zr_aot_b4);"));
     TEST_ASSERT_NULL(strstr(generatedCText, "TZrBool zr_aot_truthy = ZR_FALSE;"));
     TEST_ASSERT_NULL(strstr(generatedCText,
@@ -462,10 +538,14 @@ static void test_aot_c_generated_shared_library_executes_generic_primitive_equal
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not_equal"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
                                 "ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual(state, &frame"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(state, &frame"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_i64_compare_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b2 = (TZrBool)((zr_aot_s3 != zr_aot_s4) != 0u);"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(state, &frame, 2, 3, 4)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_sync_bool_local_boundary"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b9) {"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_condition = &frame.slotBase[9].value;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
                                 "zr_aot_destination->value.nativeObject.nativeBool = ZR_TRUE;"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_LogicalEqual(state, &frame"));
@@ -935,13 +1015,18 @@ static void test_aot_c_generated_shared_library_executes_generic_logical_not_boo
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_bool_not_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b5 = (TZrBool)((!zr_aot_b0) != 0u);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b1 = (TZrBool)(!zr_aot_b0);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b1 = (TZrBool)(!zr_aot_b5);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_jump_if_bool_false_scalar_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b1) {"));
     TEST_ASSERT_NULL(strstr(generatedCText,
                             "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(state, &frame, 1, 0)"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(state, &frame, 1, 5)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not_bool_constant_local"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, 1"));
     free(generatedCText);
 

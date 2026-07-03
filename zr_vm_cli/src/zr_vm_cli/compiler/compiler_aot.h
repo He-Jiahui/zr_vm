@@ -13,6 +13,9 @@ typedef struct SZrCliAotPreserveRoots {
     SZrAotManifestGenericRoot *genericRoots;
     TZrUInt32 genericRootCount;
     TZrUInt32 genericRootCapacity;
+    SZrAotManifestExportDeclaration *exportDeclarations;
+    TZrUInt32 exportDeclarationCount;
+    TZrUInt32 exportDeclarationCapacity;
 } SZrCliAotPreserveRoots;
 
 void ZrCli_Compiler_AotPreserveRoots_Init(SZrCliAotPreserveRoots *roots);

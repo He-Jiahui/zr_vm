@@ -1,9 +1,15 @@
 #include "backend_aot_c_zrp_metadata_prune.h"
 
+#include "backend_aot_c_zrp_metadata_constant_pool.h"
+#include "backend_aot_c_zrp_metadata_manifest_export.h"
+#include "backend_aot_c_zrp_metadata_member_token.h"
+#include "backend_aot_c_zrp_metadata_module_ref.h"
 #include "backend_aot_c_zrp_metadata_remap.h"
 #include "backend_aot_c_zrp_metadata_sections.h"
 #include "backend_aot_c_zrp_metadata_signature.h"
 #include "backend_aot_c_zrp_metadata_string_pool.h"
+#include "backend_aot_c_zrp_metadata_type_def.h"
+#include "backend_aot_c_zrp_metadata_type_spec.h"
 #include "backend_aot_internal.h"
 
 #include "zr_vm_core/zrp_metadata.h"
@@ -26,11 +32,15 @@ static TZrBool backend_aot_c_zrp_can_prune_method_defs(const SZrZrpMetadataHeade
 }
 
 static TZrBool backend_aot_c_zrp_build_pruned_header(const SZrZrpMetadataHeader *sourceHeader,
-                                                     TZrUInt32 retainedTokenRecordCount,
-                                                     TZrUInt32 retainedMethodDefCount,
-                                                     TZrUInt32 retainedGenericParamCount,
+                                                      TZrUInt32 retainedTokenRecordCount,
+                                                      TZrUInt32 retainedTypeDefCount,
+                                                      TZrUInt32 retainedMethodDefCount,
+                                                      TZrUInt32 retainedFieldDefCount,
+                                                      TZrUInt32 retainedGenericParamCount,
                                                      TZrUInt32 retainedGenericParamConstraintCount,
+                                                     TZrUInt32 retainedTypeSpecCount,
                                                      TZrUInt32 retainedMethodSpecCount,
+                                                     TZrUInt32 retainedModuleRefCount,
                                                      TZrUInt32 retainedStringPoolBytes,
                                                      TZrUInt32 retainedSignatureBlobBytes,
                                                      TZrUInt32 retainedConstantPoolBytes,
@@ -63,10 +73,18 @@ static TZrBool backend_aot_c_zrp_build_pruned_header(const SZrZrpMetadataHeader 
             count = retainedTokenRecordCount;
             elementSize = retainedTokenRecordCount > 0u ? (TZrUInt32)sizeof(SZrMetadataTokenRecord) : 0u;
             byteLength = retainedTokenRecordCount * (TZrUInt32)sizeof(SZrMetadataTokenRecord);
+        } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_TYPE_DEFS) {
+            count = retainedTypeDefCount;
+            elementSize = retainedTypeDefCount > 0u ? (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow) : 0u;
+            byteLength = retainedTypeDefCount * (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow);
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_METHOD_DEFS) {
             count = retainedMethodDefCount;
             elementSize = retainedMethodDefCount > 0u ? (TZrUInt32)sizeof(SZrZrpMetadataMethodDefRow) : 0u;
             byteLength = retainedMethodDefCount * (TZrUInt32)sizeof(SZrZrpMetadataMethodDefRow);
+        } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_FIELD_DEFS) {
+            count = retainedFieldDefCount;
+            elementSize = retainedFieldDefCount > 0u ? (TZrUInt32)sizeof(SZrZrpMetadataFieldDefRow) : 0u;
+            byteLength = retainedFieldDefCount * (TZrUInt32)sizeof(SZrZrpMetadataFieldDefRow);
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_GENERIC_PARAMS) {
             count = retainedGenericParamCount;
             elementSize = retainedGenericParamCount > 0u ? (TZrUInt32)sizeof(SZrZrpMetadataGenericParamRow) : 0u;
@@ -78,10 +96,18 @@ static TZrBool backend_aot_c_zrp_build_pruned_header(const SZrZrpMetadataHeader 
                                   : 0u;
             byteLength =
                     retainedGenericParamConstraintCount * (TZrUInt32)sizeof(SZrZrpMetadataGenericParamConstraintRow);
+        } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_TYPE_SPECS) {
+            count = retainedTypeSpecCount;
+            elementSize = retainedTypeSpecCount > 0u ? (TZrUInt32)sizeof(SZrZrpMetadataTypeSpecRow) : 0u;
+            byteLength = retainedTypeSpecCount * (TZrUInt32)sizeof(SZrZrpMetadataTypeSpecRow);
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_METHOD_SPECS) {
             count = retainedMethodSpecCount;
             elementSize = retainedMethodSpecCount > 0u ? (TZrUInt32)sizeof(SZrZrpMetadataMethodSpecRow) : 0u;
             byteLength = retainedMethodSpecCount * (TZrUInt32)sizeof(SZrZrpMetadataMethodSpecRow);
+        } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_MODULE_REFS) {
+            count = retainedModuleRefCount;
+            elementSize = retainedModuleRefCount > 0u ? (TZrUInt32)sizeof(SZrZrpMetadataModuleRefRow) : 0u;
+            byteLength = retainedModuleRefCount * (TZrUInt32)sizeof(SZrZrpMetadataModuleRefRow);
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_STRING_POOL) {
             count = retainedStringPoolBytes;
             elementSize = retainedStringPoolBytes > 0u ? 1u : 0u;
@@ -107,12 +133,24 @@ static TZrBool backend_aot_c_zrp_copy_token_records(TZrByte *targetBlob,
                                                     const SZrZrpMetadataHeader *targetHeader,
                                                     const SZrMetadataTokenRecord *tokenRecords,
                                                     TZrUInt32 tokenRecordCount,
+                                                    const SZrZrpMetadataTypeDefRow *typeRows,
+                                                    TZrUInt32 typeCount,
+                                                    const SZrZrpMetadataTypeSpecRow *typeSpecRows,
+                                                    TZrUInt32 typeSpecCount,
+                                                    const SZrZrpMetadataModuleRefRow *moduleRefRows,
+                                                    TZrUInt32 moduleRefCount,
                                                     const SZrZrpMetadataMethodDefRow *methodRows,
                                                     TZrUInt32 methodCount,
                                                     const SZrZrpMetadataFieldDefRow *fieldRows,
                                                     TZrUInt32 fieldCount,
+                                                    const SZrZrpMetadataGenericParamRow *genericParamRows,
+                                                    TZrUInt32 genericParamCount,
+                                                    const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+                                                    TZrUInt32 genericParamConstraintCount,
                                                     const SZrAotFunctionTable *functionTable,
                                                     TZrUInt32 retainedMethodDefCount,
+                                                    const TZrByte *sourceSignatureBlobPool,
+                                                    TZrUInt32 sourceSignatureBlobPoolBytes,
                                                     const SZrAotCZrpSignatureBlobRemap *signatureRemap) {
     SZrMetadataTokenRecord *targetRows;
     TZrUInt32 writeIndex = 0u;
@@ -124,14 +162,103 @@ static TZrBool backend_aot_c_zrp_copy_token_records(TZrByte *targetBlob,
     targetRows = (SZrMetadataTokenRecord *)(void *)(targetBlob + targetHeader->tokenRecords.offset);
     for (TZrUInt32 readIndex = 0u; readIndex < tokenRecordCount; readIndex++) {
         SZrMetadataTokenRecord record = tokenRecords[readIndex];
-        if (!backend_aot_c_zrp_remap_token_record(&record,
-                                                  methodRows,
-                                                  methodCount,
-                                                  fieldRows,
-                                                  fieldCount,
-                                                  functionTable,
-                                                  retainedMethodDefCount)) {
+        if (!backend_aot_c_zrp_remap_retained_token_record(&record,
+                                                           methodRows,
+                                                           methodCount,
+                                                           fieldRows,
+                                                           fieldCount,
+                                                           typeRows,
+                                                           typeCount,
+                                                           tokenRecords,
+                                                           tokenRecordCount,
+                                                           genericParamRows,
+                                                           genericParamCount,
+                                                           genericParamConstraintRows,
+                                                           genericParamConstraintCount,
+                                                           functionTable,
+                                                           retainedMethodDefCount)) {
             continue;
+        }
+        if (!backend_aot_c_zrp_remap_type_def_tokens_in_record(&record,
+                                                               typeRows,
+                                                               typeCount,
+                                                               tokenRecords,
+                                                               tokenRecordCount,
+                                                               methodRows,
+                                                               methodCount,
+                                                               fieldRows,
+                                                               fieldCount,
+                                                               genericParamRows,
+                                                               genericParamCount,
+                                                               genericParamConstraintRows,
+                                                               genericParamConstraintCount,
+                                                               functionTable,
+                                                               retainedMethodDefCount)) {
+            continue;
+        }
+        if (!backend_aot_c_zrp_remap_type_spec_tokens_in_record(&record,
+                                                                typeSpecRows,
+                                                                typeSpecCount,
+                                                                tokenRecords,
+                                                                tokenRecordCount,
+                                                                methodRows,
+                                                                methodCount,
+                                                                fieldRows,
+                                                                fieldCount,
+                                                                typeRows,
+                                                                typeCount,
+                                                                genericParamRows,
+                                                                genericParamCount,
+                                                                genericParamConstraintRows,
+                                                                genericParamConstraintCount,
+                                                                functionTable,
+                                                                retainedMethodDefCount)) {
+            continue;
+        }
+        if (!backend_aot_c_zrp_remap_module_ref_tokens_in_record(&record,
+                                                                 moduleRefRows,
+                                                                 moduleRefCount,
+                                                                 tokenRecords,
+                                                                 tokenRecordCount,
+                                                                 typeSpecRows,
+                                                                 typeSpecCount,
+                                                                 typeRows,
+                                                                 typeCount,
+                                                                 methodRows,
+                                                                 methodCount,
+                                                                 fieldRows,
+                                                                 fieldCount,
+                                                                 genericParamRows,
+                                                                 genericParamCount,
+                                                                 genericParamConstraintRows,
+                                                                 genericParamConstraintCount,
+                                                                 functionTable,
+                                                                 retainedMethodDefCount,
+                                                                 sourceSignatureBlobPool,
+                                                                 sourceSignatureBlobPoolBytes,
+                                                                 signatureRemap)) {
+            continue;
+        }
+        if (!backend_aot_c_zrp_remap_retained_signature_tokens_in_record(&record,
+                                                                         tokenRecords,
+                                                                         tokenRecordCount,
+                                                                         typeRows,
+                                                                         typeCount,
+                                                                         typeSpecRows,
+                                                                         typeSpecCount,
+                                                                         moduleRefRows,
+                                                                         moduleRefCount,
+                                                                         methodRows,
+                                                                         methodCount,
+                                                                         fieldRows,
+                                                                         fieldCount,
+                                                                         genericParamRows,
+                                                                         genericParamCount,
+                                                                         genericParamConstraintRows,
+                                                                         genericParamConstraintCount,
+                                                                         functionTable,
+                                                                         retainedMethodDefCount)) {
+            return ZR_FALSE;
         }
         if (!backend_aot_c_zrp_remap_signature_blob_offset(&record.signatureBlobOffset,
                                                            record.signatureBlobLength,
@@ -149,64 +276,123 @@ static TZrBool backend_aot_c_zrp_copy_token_records(TZrByte *targetBlob,
     return ZR_TRUE;
 }
 
-static TZrBool backend_aot_c_zrp_copy_type_defs(TZrByte *targetBlob,
-                                                const TZrByte *sourceBlob,
-                                                const SZrZrpMetadataHeader *sourceHeader,
-                                                const SZrZrpMetadataHeader *targetHeader,
-                                                const SZrZrpMetadataMethodDefRow *methodRows,
-                                                TZrUInt32 methodCount,
-                                                const SZrZrpMetadataFieldDefRow *fieldRows,
-                                                TZrUInt32 fieldCount,
-                                                const SZrZrpMetadataGenericParamRow *genericParamRows,
-                                                TZrUInt32 genericParamCount,
-                                                const SZrAotFunctionTable *functionTable,
-                                                TZrUInt32 retainedMethodDefCount,
-                                                const SZrAotCZrpSignatureBlobRemap *signatureRemap,
-                                                const SZrAotCZrpStringPoolRemap *stringRemap) {
-    SZrZrpMetadataTypeDefRow *targetRows;
+static TZrUInt32 backend_aot_c_zrp_count_retained_token_records_for_pruning(
+        const SZrMetadataTokenRecord *records,
+        TZrUInt32 count,
+        const SZrZrpMetadataTypeDefRow *typeRows,
+        TZrUInt32 typeCount,
+        const SZrZrpMetadataTypeSpecRow *typeSpecRows,
+        TZrUInt32 typeSpecCount,
+        const SZrZrpMetadataModuleRefRow *moduleRefRows,
+        TZrUInt32 moduleRefCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataFieldDefRow *fieldRows,
+        TZrUInt32 fieldCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount) {
+    TZrUInt32 retainedCount = 0u;
 
-    if (targetHeader->typeDefs.byteLength == 0u) {
-        return ZR_TRUE;
+    if (records == ZR_NULL) {
+        return 0u;
     }
 
-    memcpy(targetBlob + targetHeader->typeDefs.offset,
-           sourceBlob + sourceHeader->typeDefs.offset,
-           targetHeader->typeDefs.byteLength);
-    targetRows = (SZrZrpMetadataTypeDefRow *)(void *)(targetBlob + targetHeader->typeDefs.offset);
-    for (TZrUInt32 index = 0u; index < targetHeader->typeDefs.count; index++) {
-        backend_aot_c_zrp_adjust_type_def_method_range(&targetRows[index],
-                                                       methodRows,
-                                                       methodCount,
-                                                       functionTable);
-        backend_aot_c_zrp_adjust_generic_param_range(&targetRows[index].firstGenericParamIndex,
-                                                     &targetRows[index].genericParamCount,
-                                                     genericParamRows,
-                                                     genericParamCount,
-                                                     methodRows,
-                                                     methodCount,
-                                                     fieldRows,
-                                                     fieldCount,
-                                                     functionTable,
-                                                     retainedMethodDefCount);
-        if (!backend_aot_c_zrp_remap_type_def_string_offsets(&targetRows[index], stringRemap) ||
-            !backend_aot_c_zrp_remap_signature_blob_offset(&targetRows[index].signatureBlobOffset,
-                                                           targetRows[index].signatureBlobLength,
-                                                           signatureRemap)) {
-            return ZR_FALSE;
+    for (TZrUInt32 index = 0u; index < count; index++) {
+        SZrMetadataTokenRecord record = records[index];
+        if (backend_aot_c_zrp_remap_retained_token_record(&record,
+                                                          methodRows,
+                                                          methodCount,
+                                                          fieldRows,
+                                                          fieldCount,
+                                                          typeRows,
+                                                          typeCount,
+                                                          records,
+                                                          count,
+                                                          genericParamRows,
+                                                          genericParamCount,
+                                                          genericParamConstraintRows,
+                                                          genericParamConstraintCount,
+                                                          functionTable,
+                                                          retainedMethodDefCount) &&
+            backend_aot_c_zrp_remap_type_def_tokens_in_record(&record,
+                                                              typeRows,
+                                                              typeCount,
+                                                              records,
+                                                              count,
+                                                              methodRows,
+                                                              methodCount,
+                                                              fieldRows,
+                                                              fieldCount,
+                                                              genericParamRows,
+                                                              genericParamCount,
+                                                              genericParamConstraintRows,
+                                                              genericParamConstraintCount,
+                                                              functionTable,
+                                                              retainedMethodDefCount) &&
+            backend_aot_c_zrp_remap_type_spec_tokens_in_record(&record,
+                                                               typeSpecRows,
+                                                               typeSpecCount,
+                                                               records,
+                                                               count,
+                                                               methodRows,
+                                                               methodCount,
+                                                               fieldRows,
+                                                               fieldCount,
+                                                               typeRows,
+                                                               typeCount,
+                                                               genericParamRows,
+                                                               genericParamCount,
+                                                               genericParamConstraintRows,
+                                                               genericParamConstraintCount,
+                                                               functionTable,
+                                                               retainedMethodDefCount) &&
+            backend_aot_c_zrp_remap_module_ref_tokens_in_record(&record,
+                                                                moduleRefRows,
+                                                                moduleRefCount,
+                                                                records,
+                                                                count,
+                                                                typeSpecRows,
+                                                                typeSpecCount,
+                                                                typeRows,
+                                                                typeCount,
+                                                                methodRows,
+                                                                methodCount,
+                                                                fieldRows,
+                                                                fieldCount,
+                                                                genericParamRows,
+                                                                genericParamCount,
+                                                                genericParamConstraintRows,
+                                                                genericParamConstraintCount,
+                                                                functionTable,
+                                                                retainedMethodDefCount,
+                                                                ZR_NULL,
+                                                                0u,
+                                                                ZR_NULL)) {
+            retainedCount++;
         }
     }
 
-    return ZR_TRUE;
+    return retainedCount;
 }
 
 static TZrBool backend_aot_c_zrp_copy_method_defs(TZrByte *targetBlob,
                                                   const SZrZrpMetadataHeader *targetHeader,
                                                   const SZrZrpMetadataMethodDefRow *methodRows,
                                                   TZrUInt32 methodCount,
+                                                  const SZrZrpMetadataTypeDefRow *typeRows,
+                                                  TZrUInt32 typeCount,
+                                                  const SZrMetadataTokenRecord *tokenRecords,
+                                                  TZrUInt32 tokenRecordCount,
                                                   const SZrZrpMetadataFieldDefRow *fieldRows,
                                                   TZrUInt32 fieldCount,
                                                   const SZrZrpMetadataGenericParamRow *genericParamRows,
                                                   TZrUInt32 genericParamCount,
+                                                  const SZrZrpMetadataGenericParamConstraintRow *constraintRows,
+                                                  TZrUInt32 constraintCount,
                                                   const SZrAotFunctionTable *functionTable,
                                                   TZrUInt32 retainedMethodDefCount,
                                                   const SZrAotCZrpSignatureBlobRemap *signatureRemap,
@@ -226,14 +412,37 @@ static TZrBool backend_aot_c_zrp_copy_method_defs(TZrByte *targetBlob,
         targetRows[writeIndex] = methodRows[readIndex];
         targetRows[writeIndex].token =
                 backend_aot_c_zrp_compacted_method_def_token(methodRows, methodCount, readIndex, functionTable);
+        if (!backend_aot_c_zrp_remap_type_def_token(&targetRows[writeIndex].ownerTypeToken,
+                                                    typeRows,
+                                                    typeCount,
+                                                    tokenRecords,
+                                                    tokenRecordCount,
+                                                    methodRows,
+                                                    methodCount,
+                                                    fieldRows,
+                                                    fieldCount,
+                                                    genericParamRows,
+                                                    genericParamCount,
+                                                    constraintRows,
+                                                    constraintCount,
+                                                    functionTable,
+                                                    retainedMethodDefCount)) {
+            return ZR_FALSE;
+        }
         backend_aot_c_zrp_adjust_generic_param_range(&targetRows[writeIndex].firstGenericParamIndex,
                                                      &targetRows[writeIndex].genericParamCount,
                                                      genericParamRows,
                                                      genericParamCount,
+                                                     typeRows,
+                                                     typeCount,
+                                                     tokenRecords,
+                                                     tokenRecordCount,
                                                      methodRows,
                                                      methodCount,
                                                      fieldRows,
                                                      fieldCount,
+                                                     constraintRows,
+                                                     constraintCount,
                                                      functionTable,
                                                      retainedMethodDefCount);
         if (!backend_aot_c_zrp_remap_method_def_string_offsets(&targetRows[writeIndex], stringRemap) ||
@@ -252,32 +461,99 @@ static TZrBool backend_aot_c_zrp_copy_field_defs(TZrByte *targetBlob,
                                                  const SZrZrpMetadataHeader *targetHeader,
                                                  const SZrZrpMetadataFieldDefRow *fieldRows,
                                                  TZrUInt32 fieldCount,
+                                                 const SZrZrpMetadataTypeDefRow *typeRows,
+                                                 TZrUInt32 typeCount,
+                                                 const SZrMetadataTokenRecord *tokenRecords,
+                                                 TZrUInt32 tokenRecordCount,
+                                                 const SZrZrpMetadataMethodDefRow *methodRows,
+                                                 TZrUInt32 methodCount,
+                                                 const SZrZrpMetadataGenericParamRow *genericParamRows,
+                                                 TZrUInt32 genericParamCount,
+                                                 const SZrZrpMetadataGenericParamConstraintRow *constraintRows,
+                                                 TZrUInt32 constraintCount,
+                                                 const SZrAotFunctionTable *functionTable,
                                                  TZrUInt32 retainedMethodDefCount,
                                                  const SZrAotCZrpSignatureBlobRemap *signatureRemap,
-                                                 const SZrAotCZrpStringPoolRemap *stringRemap) {
+                                                 const SZrAotCZrpStringPoolRemap *stringRemap,
+                                                 const SZrAotCZrpConstantPoolRemap *constantPoolRemap) {
     SZrZrpMetadataFieldDefRow *targetRows;
+    TZrUInt32 writeIndex = 0u;
 
     if (targetHeader->fieldDefs.byteLength == 0u) {
         return ZR_TRUE;
     }
 
     targetRows = (SZrZrpMetadataFieldDefRow *)(void *)(targetBlob + targetHeader->fieldDefs.offset);
-    for (TZrUInt32 index = 0u; index < fieldCount; index++) {
-        targetRows[index] = fieldRows[index];
-        targetRows[index].token = backend_aot_c_zrp_compacted_field_def_token(retainedMethodDefCount, index);
-        if (!backend_aot_c_zrp_remap_field_def_string_offsets(&targetRows[index], stringRemap) ||
-            !backend_aot_c_zrp_remap_signature_blob_offset(&targetRows[index].signatureBlobOffset,
-                                                           targetRows[index].signatureBlobLength,
-                                                           signatureRemap)) {
+    for (TZrUInt32 readIndex = 0u; readIndex < fieldCount; readIndex++) {
+        if (!backend_aot_c_zrp_field_def_row_is_retained(&fieldRows[readIndex],
+                                                         typeRows,
+                                                         typeCount,
+                                                         tokenRecords,
+                                                         tokenRecordCount,
+                                                         methodRows,
+                                                         methodCount,
+                                                         fieldRows,
+                                                         fieldCount,
+                                                         genericParamRows,
+                                                         genericParamCount,
+                                                         constraintRows,
+                                                         constraintCount,
+                                                         functionTable,
+                                                         retainedMethodDefCount)) {
+            continue;
+        }
+        targetRows[writeIndex] = fieldRows[readIndex];
+        targetRows[writeIndex].token =
+                backend_aot_c_zrp_compacted_retained_field_def_token(retainedMethodDefCount,
+                                                                     fieldRows,
+                                                                     fieldCount,
+                                                                     readIndex,
+                                                                     typeRows,
+                                                                     typeCount,
+                                                                     tokenRecords,
+                                                                     tokenRecordCount,
+                                                                     methodRows,
+                                                                     methodCount,
+                                                                     genericParamRows,
+                                                                     genericParamCount,
+                                                                     constraintRows,
+                                                                     constraintCount,
+                                                                     functionTable);
+        if (!backend_aot_c_zrp_remap_type_def_token(&targetRows[writeIndex].ownerTypeToken,
+                                                    typeRows,
+                                                    typeCount,
+                                                    tokenRecords,
+                                                    tokenRecordCount,
+                                                    methodRows,
+                                                    methodCount,
+                                                    fieldRows,
+                                                    fieldCount,
+                                                    genericParamRows,
+                                                    genericParamCount,
+                                                    constraintRows,
+                                                    constraintCount,
+                                                    functionTable,
+                                                    retainedMethodDefCount) ||
+            !backend_aot_c_zrp_remap_field_def_string_offsets(&targetRows[writeIndex], stringRemap) ||
+            !backend_aot_c_zrp_remap_signature_blob_offset(&targetRows[writeIndex].signatureBlobOffset,
+                                                           targetRows[writeIndex].signatureBlobLength,
+                                                           signatureRemap) ||
+            !backend_aot_c_zrp_remap_field_def_default_value_constant_pool_slice(&targetRows[writeIndex],
+                                                                                 constantPoolRemap)) {
             return ZR_FALSE;
         }
+        writeIndex++;
     }
 
-    return ZR_TRUE;
+    return (TZrBool)(writeIndex == targetHeader->fieldDefs.count);
 }
 
 static TZrBool backend_aot_c_zrp_copy_generic_params(TZrByte *targetBlob,
                                                      const SZrZrpMetadataHeader *targetHeader,
+                                                     const SZrZrpMetadataTypeDefRow *typeRows,
+                                                     TZrUInt32 typeCount,
+                                                     const SZrMetadataTokenRecord *tokenRecords,
+                                                     TZrUInt32 tokenRecordCount,
                                                      const SZrZrpMetadataGenericParamRow *genericParamRows,
                                                      TZrUInt32 genericParamCount,
                                                      const SZrZrpMetadataGenericParamConstraintRow *constraintRows,
@@ -300,10 +576,18 @@ static TZrBool backend_aot_c_zrp_copy_generic_params(TZrByte *targetBlob,
     for (TZrUInt32 readIndex = 0u; readIndex < genericParamCount; readIndex++) {
         SZrZrpMetadataGenericParamRow row = genericParamRows[readIndex];
         if (!backend_aot_c_zrp_remap_generic_param_owner_token(&row.ownerToken,
+                                                               typeRows,
+                                                               typeCount,
+                                                               tokenRecords,
+                                                               tokenRecordCount,
                                                                methodRows,
                                                                methodCount,
                                                                fieldRows,
                                                                fieldCount,
+                                                               genericParamRows,
+                                                               genericParamCount,
+                                                               constraintRows,
+                                                               constraintCount,
                                                                functionTable,
                                                                retainedMethodDefCount)) {
             continue;
@@ -314,6 +598,10 @@ static TZrBool backend_aot_c_zrp_copy_generic_params(TZrByte *targetBlob,
                                                                 constraintCount,
                                                                 genericParamRows,
                                                                 genericParamCount,
+                                                                typeRows,
+                                                                typeCount,
+                                                                tokenRecords,
+                                                                tokenRecordCount,
                                                                 methodRows,
                                                                 methodCount,
                                                                 fieldRows,
@@ -333,6 +621,12 @@ static TZrBool backend_aot_c_zrp_copy_generic_params(TZrByte *targetBlob,
 static TZrBool backend_aot_c_zrp_copy_generic_param_constraints(
         TZrByte *targetBlob,
         const SZrZrpMetadataHeader *targetHeader,
+        const SZrZrpMetadataTypeDefRow *typeRows,
+        TZrUInt32 typeCount,
+        const SZrZrpMetadataTypeSpecRow *typeSpecRows,
+        TZrUInt32 typeSpecCount,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
         const SZrZrpMetadataGenericParamConstraintRow *constraintRows,
         TZrUInt32 constraintCount,
         const SZrZrpMetadataGenericParamRow *genericParamRows,
@@ -358,6 +652,12 @@ static TZrBool backend_aot_c_zrp_copy_generic_param_constraints(
         if (!backend_aot_c_zrp_remap_generic_param_constraint_row(&row,
                                                                   genericParamRows,
                                                                   genericParamCount,
+                                                                  typeRows,
+                                                                  typeCount,
+                                                                  tokenRecords,
+                                                                  tokenRecordCount,
+                                                                  constraintRows,
+                                                                  constraintCount,
                                                                   methodRows,
                                                                   methodCount,
                                                                   fieldRows,
@@ -365,6 +665,42 @@ static TZrBool backend_aot_c_zrp_copy_generic_param_constraints(
                                                                   functionTable,
                                                                   retainedMethodDefCount)) {
             continue;
+        }
+        if (!backend_aot_c_zrp_remap_type_def_token(&row.constraintTypeToken,
+                                                    typeRows,
+                                                    typeCount,
+                                                    tokenRecords,
+                                                    tokenRecordCount,
+                                                    methodRows,
+                                                    methodCount,
+                                                    fieldRows,
+                                                    fieldCount,
+                                                    genericParamRows,
+                                                    genericParamCount,
+                                                    constraintRows,
+                                                    constraintCount,
+                                                    functionTable,
+                                                    retainedMethodDefCount)) {
+            return ZR_FALSE;
+        }
+        if (!backend_aot_c_zrp_remap_type_spec_token(&row.constraintTypeToken,
+                                                     typeSpecRows,
+                                                     typeSpecCount,
+                                                     tokenRecords,
+                                                     tokenRecordCount,
+                                                     methodRows,
+                                                     methodCount,
+                                                     fieldRows,
+                                                     fieldCount,
+                                                     typeRows,
+                                                     typeCount,
+                                                     genericParamRows,
+                                                     genericParamCount,
+                                                     constraintRows,
+                                                     constraintCount,
+                                                     functionTable,
+                                                     retainedMethodDefCount)) {
+            return ZR_FALSE;
         }
         if (!backend_aot_c_zrp_remap_signature_blob_offset(&row.signatureBlobOffset,
                                                            row.signatureBlobLength,
@@ -378,42 +714,26 @@ static TZrBool backend_aot_c_zrp_copy_generic_param_constraints(
     return ZR_TRUE;
 }
 
-static TZrBool backend_aot_c_zrp_copy_type_specs(TZrByte *targetBlob,
-                                                 const SZrZrpMetadataHeader *targetHeader,
-                                                 const SZrZrpMetadataTypeSpecRow *typeSpecRows,
-                                                 TZrUInt32 typeSpecCount,
-                                                 const SZrAotCZrpSignatureBlobRemap *signatureRemap) {
-    SZrZrpMetadataTypeSpecRow *targetRows;
-
-    if (targetHeader->typeSpecs.byteLength == 0u) {
-        return ZR_TRUE;
-    }
-
-    targetRows = (SZrZrpMetadataTypeSpecRow *)(void *)(targetBlob + targetHeader->typeSpecs.offset);
-    for (TZrUInt32 index = 0u; index < typeSpecCount; index++) {
-        targetRows[index] = typeSpecRows[index];
-        if (!backend_aot_c_zrp_remap_signature_blob_offset(&targetRows[index].signatureBlobOffset,
-                                                           targetRows[index].signatureBlobLength,
-                                                           signatureRemap)) {
-            return ZR_FALSE;
-        }
-        targetRows[index].signatureHash = backend_aot_c_zrp_recomputed_signature_hash(targetBlob,
-                                                                                      targetHeader,
-                                                                                      targetRows[index].signatureBlobOffset,
-                                                                                      targetRows[index].signatureBlobLength);
-    }
-
-    return ZR_TRUE;
-}
-
 static TZrBool backend_aot_c_zrp_copy_method_specs(TZrByte *targetBlob,
                                                    const SZrZrpMetadataHeader *targetHeader,
                                                    const SZrZrpMetadataMethodSpecRow *methodSpecRows,
                                                    TZrUInt32 methodSpecCount,
+                                                   const SZrMetadataTokenRecord *tokenRecords,
+                                                   TZrUInt32 tokenRecordCount,
+                                                   const SZrZrpMetadataTypeDefRow *typeRows,
+                                                   TZrUInt32 typeCount,
+                                                   const SZrZrpMetadataTypeSpecRow *typeSpecRows,
+                                                   TZrUInt32 typeSpecCount,
+                                                   const SZrZrpMetadataModuleRefRow *moduleRefRows,
+                                                   TZrUInt32 moduleRefCount,
                                                    const SZrZrpMetadataMethodDefRow *methodRows,
                                                    TZrUInt32 methodCount,
                                                    const SZrZrpMetadataFieldDefRow *fieldRows,
                                                    TZrUInt32 fieldCount,
+                                                   const SZrZrpMetadataGenericParamRow *genericParamRows,
+                                                   TZrUInt32 genericParamCount,
+                                                   const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+                                                   TZrUInt32 genericParamConstraintCount,
                                                    const SZrAotFunctionTable *functionTable,
                                                    TZrUInt32 retainedMethodDefCount,
                                                    const SZrAotCZrpSignatureBlobRemap *signatureRemap) {
@@ -432,9 +752,38 @@ static TZrBool backend_aot_c_zrp_copy_method_specs(TZrByte *targetBlob,
                                                      methodCount,
                                                      fieldRows,
                                                      fieldCount,
+                                                     typeRows,
+                                                     typeCount,
+                                                     tokenRecords,
+                                                     tokenRecordCount,
+                                                     genericParamRows,
+                                                     genericParamCount,
+                                                     genericParamConstraintRows,
+                                                     genericParamConstraintCount,
                                                      functionTable,
                                                      retainedMethodDefCount)) {
             continue;
+        }
+        if (!backend_aot_c_zrp_remap_retained_signature_token(&row.token,
+                                                              tokenRecords,
+                                                              tokenRecordCount,
+                                                              typeRows,
+                                                              typeCount,
+                                                              typeSpecRows,
+                                                              typeSpecCount,
+                                                              moduleRefRows,
+                                                              moduleRefCount,
+                                                              methodRows,
+                                                              methodCount,
+                                                              fieldRows,
+                                                              fieldCount,
+                                                              genericParamRows,
+                                                              genericParamCount,
+                                                              genericParamConstraintRows,
+                                                              genericParamConstraintCount,
+                                                              functionTable,
+                                                              retainedMethodDefCount)) {
+            return ZR_FALSE;
         }
         if (!backend_aot_c_zrp_remap_signature_blob_offset(&row.instantiationBlobOffset,
                                                            row.instantiationBlobLength,
@@ -456,21 +805,89 @@ static TZrBool backend_aot_c_zrp_copy_module_refs(TZrByte *targetBlob,
                                                   const TZrByte *sourceBlob,
                                                   const SZrZrpMetadataHeader *sourceHeader,
                                                   const SZrZrpMetadataHeader *targetHeader,
+                                                  const SZrZrpMetadataModuleRefRow *moduleRefRows,
+                                                  TZrUInt32 moduleRefCount,
+                                                  const SZrMetadataTokenRecord *tokenRecords,
+                                                  TZrUInt32 tokenRecordCount,
+                                                  const SZrZrpMetadataTypeSpecRow *typeSpecRows,
+                                                  TZrUInt32 typeSpecCount,
+                                                  const SZrZrpMetadataTypeDefRow *typeRows,
+                                                  TZrUInt32 typeCount,
+                                                  const SZrZrpMetadataMethodDefRow *methodRows,
+                                                  TZrUInt32 methodCount,
+                                                  const SZrZrpMetadataFieldDefRow *fieldRows,
+                                                  TZrUInt32 fieldCount,
+                                                  const SZrZrpMetadataGenericParamRow *genericParamRows,
+                                                  TZrUInt32 genericParamCount,
+                                                  const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+                                                  TZrUInt32 genericParamConstraintCount,
+                                                  const SZrAotFunctionTable *functionTable,
+                                                  TZrUInt32 retainedMethodDefCount,
+                                                  const TZrByte *sourceSignatureBlobPool,
+                                                  TZrUInt32 sourceSignatureBlobPoolBytes,
+                                                  const SZrAotCZrpSignatureBlobRemap *signatureRemap,
                                                   const SZrAotCZrpStringPoolRemap *stringRemap) {
     SZrZrpMetadataModuleRefRow *targetRows;
+    TZrUInt32 writeIndex = 0u;
 
     if (targetHeader->moduleRefs.byteLength == 0u) {
         return ZR_TRUE;
     }
 
-    memcpy(targetBlob + targetHeader->moduleRefs.offset,
-           sourceBlob + sourceHeader->moduleRefs.offset,
-           targetHeader->moduleRefs.byteLength);
+    (void)sourceBlob;
+    (void)sourceHeader;
     targetRows = (SZrZrpMetadataModuleRefRow *)(void *)(targetBlob + targetHeader->moduleRefs.offset);
-    for (TZrUInt32 index = 0u; index < targetHeader->moduleRefs.count; index++) {
-        if (!backend_aot_c_zrp_remap_module_ref_string_offsets(&targetRows[index], stringRemap)) {
+    for (TZrUInt32 readIndex = 0u; readIndex < moduleRefCount; readIndex++) {
+        if (!backend_aot_c_zrp_module_ref_row_is_retained(&moduleRefRows[readIndex],
+                                                          tokenRecords,
+                                                           tokenRecordCount,
+                                                           typeSpecRows,
+                                                           typeSpecCount,
+                                                           typeRows,
+                                                           typeCount,
+                                                           methodRows,
+                                                          methodCount,
+                                                          fieldRows,
+                                                          fieldCount,
+                                                          genericParamRows,
+                                                          genericParamCount,
+                                                          genericParamConstraintRows,
+                                                          genericParamConstraintCount,
+                                                          functionTable,
+                                                          retainedMethodDefCount,
+                                                          sourceSignatureBlobPool,
+                                                          sourceSignatureBlobPoolBytes,
+                                                          signatureRemap)) {
+            continue;
+        }
+        targetRows[writeIndex] = moduleRefRows[readIndex];
+        targetRows[writeIndex].token =
+                backend_aot_c_zrp_compacted_module_ref_token(moduleRefRows,
+                                                             moduleRefCount,
+                                                             readIndex,
+                                                             tokenRecords,
+                                                              tokenRecordCount,
+                                                              typeSpecRows,
+                                                              typeSpecCount,
+                                                              typeRows,
+                                                              typeCount,
+                                                              methodRows,
+                                                             methodCount,
+                                                             fieldRows,
+                                                             fieldCount,
+                                                             genericParamRows,
+                                                             genericParamCount,
+                                                             genericParamConstraintRows,
+                                                             genericParamConstraintCount,
+                                                             functionTable,
+                                                             retainedMethodDefCount,
+                                                             sourceSignatureBlobPool,
+                                                             sourceSignatureBlobPoolBytes,
+                                                             signatureRemap);
+        if (!backend_aot_c_zrp_remap_module_ref_string_offsets(&targetRows[writeIndex], stringRemap)) {
             return ZR_FALSE;
         }
+        writeIndex++;
     }
 
     return ZR_TRUE;
@@ -492,6 +909,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
     SZrZrpMetadataSectionView moduleRefView;
     SZrZrpMetadataSectionView stringPoolView;
     SZrZrpMetadataSectionView signatureBlobView;
+    SZrZrpMetadataSectionView manifestExportView;
     const SZrMetadataTokenRecord *tokenRecords;
     const SZrZrpMetadataTypeDefRow *typeRows;
     const SZrZrpMetadataMethodDefRow *methodRows;
@@ -501,16 +919,22 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
     const SZrZrpMetadataTypeSpecRow *typeSpecs;
     const SZrZrpMetadataMethodSpecRow *methodSpecs;
     const SZrZrpMetadataModuleRefRow *moduleRefs;
+    const SZrZrpMetadataManifestExportRow *manifestExports;
+    SZrAotCZrpConstantPoolRemap constantPoolRemap;
     SZrAotCZrpSignatureBlobRemap signatureRemap;
     SZrAotCZrpStringPoolRemap stringRemap;
+    TZrUInt32 constantPoolRemapCapacity;
     TZrUInt32 signatureRemapCapacity;
     TZrUInt32 stringRemapCapacity;
     TZrUInt32 retainedTokenRecordCount;
+    TZrUInt32 retainedTypeDefCount;
     TZrUInt32 retainedMethodDefCount;
+    TZrUInt32 retainedFieldDefCount;
     TZrUInt32 retainedGenericParamCount;
     TZrUInt32 retainedGenericParamConstraintCount;
+    TZrUInt32 retainedTypeSpecCount;
     TZrUInt32 retainedMethodSpecCount;
-    TZrUInt32 retainedConstantPoolBytes = 0u;
+    TZrUInt32 retainedModuleRefCount;
     TZrSize prunedLength = 0u;
     TZrByte *prunedBlob;
 
@@ -575,7 +999,12 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                            options->embeddedModuleBlobLength,
                                            &sourceHeader,
                                            ZR_ZRP_METADATA_SECTION_SIGNATURE_BLOB_POOL,
-                                           &signatureBlobView)) {
+                                           &signatureBlobView) ||
+        !ZrCore_ZrpMetadata_GetSectionView(options->embeddedModuleBlob,
+                                           options->embeddedModuleBlobLength,
+                                           &sourceHeader,
+                                           ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS,
+                                           &manifestExportView)) {
         return ZR_TRUE;
     }
 
@@ -589,24 +1018,54 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
     typeSpecs = (const SZrZrpMetadataTypeSpecRow *)(const void *)typeSpecView.data;
     methodSpecs = (const SZrZrpMetadataMethodSpecRow *)(const void *)methodSpecView.data;
     moduleRefs = (const SZrZrpMetadataModuleRefRow *)(const void *)moduleRefView.data;
+    manifestExports = (const SZrZrpMetadataManifestExportRow *)(const void *)manifestExportView.data;
     retainedMethodDefCount =
             backend_aot_c_zrp_count_retained_method_defs(methodRows, methodView.count, functionTable);
-    retainedTokenRecordCount =
-            backend_aot_c_zrp_count_retained_token_records(tokenRecords,
-                                                           tokenRecordView.count,
-                                                           methodRows,
-                                                           methodView.count,
-                                                           fieldRows,
-                                                           fieldView.count,
-                                                           functionTable,
-                                                           retainedMethodDefCount);
+    retainedTypeDefCount =
+            backend_aot_c_zrp_count_retained_type_defs(typeRows,
+                                                       typeView.count,
+                                                       tokenRecords,
+                                                       tokenRecordView.count,
+                                                       methodRows,
+                                                       methodView.count,
+                                                       fieldRows,
+                                                       fieldView.count,
+                                                       genericParamRows,
+                                                       genericParamView.count,
+                                                       genericParamConstraints,
+                                                       genericParamConstraintView.count,
+                                                       functionTable,
+                                                       retainedMethodDefCount);
+    retainedFieldDefCount =
+            backend_aot_c_zrp_count_retained_field_defs(fieldRows,
+                                                        fieldView.count,
+                                                        typeRows,
+                                                        typeView.count,
+                                                        tokenRecords,
+                                                        tokenRecordView.count,
+                                                        methodRows,
+                                                        methodView.count,
+                                                        genericParamRows,
+                                                        genericParamView.count,
+                                                        genericParamConstraints,
+                                                        genericParamConstraintView.count,
+                                                        functionTable,
+                                                        retainedMethodDefCount);
     retainedGenericParamCount =
             backend_aot_c_zrp_count_retained_generic_params(genericParamRows,
                                                             genericParamView.count,
+                                                            typeRows,
+                                                            typeView.count,
+                                                            tokenRecords,
+                                                            tokenRecordView.count,
                                                             methodRows,
                                                             methodView.count,
                                                             fieldRows,
                                                             fieldView.count,
+                                                            genericParamRows,
+                                                            genericParamView.count,
+                                                            genericParamConstraints,
+                                                            genericParamConstraintView.count,
                                                             functionTable,
                                                             retainedMethodDefCount);
     retainedGenericParamConstraintCount =
@@ -614,10 +1073,52 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                                        genericParamConstraintView.count,
                                                                        genericParamRows,
                                                                        genericParamView.count,
+                                                                       typeRows,
+                                                                       typeView.count,
+                                                                       tokenRecords,
+                                                                       tokenRecordView.count,
                                                                        methodRows,
                                                                        methodView.count,
                                                                        fieldRows,
                                                                        fieldView.count,
+                                                                       genericParamConstraints,
+                                                                       genericParamConstraintView.count,
+                                                                       functionTable,
+                                                                       retainedMethodDefCount);
+    retainedTypeSpecCount =
+            backend_aot_c_zrp_count_retained_type_specs(typeSpecs,
+                                                        typeSpecView.count,
+                                                        tokenRecords,
+                                                        tokenRecordView.count,
+                                                        methodRows,
+                                                        methodView.count,
+                                                        fieldRows,
+                                                        fieldView.count,
+                                                        typeRows,
+                                                        typeView.count,
+                                                        genericParamRows,
+                                                        genericParamView.count,
+                                                        genericParamConstraints,
+                                                        genericParamConstraintView.count,
+                                                        functionTable,
+                                                        retainedMethodDefCount);
+    retainedTokenRecordCount =
+            backend_aot_c_zrp_count_retained_token_records_for_pruning(tokenRecords,
+                                                                       tokenRecordView.count,
+                                                                       typeRows,
+                                                                       typeView.count,
+                                                                       typeSpecs,
+                                                                       typeSpecView.count,
+                                                                       moduleRefs,
+                                                                       moduleRefView.count,
+                                                                       methodRows,
+                                                                       methodView.count,
+                                                                       fieldRows,
+                                                                       fieldView.count,
+                                                                       genericParamRows,
+                                                                       genericParamView.count,
+                                                                       genericParamConstraints,
+                                                                       genericParamConstraintView.count,
                                                                        functionTable,
                                                                        retainedMethodDefCount);
     retainedMethodSpecCount =
@@ -627,13 +1128,21 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                           methodView.count,
                                                           fieldRows,
                                                           fieldView.count,
+                                                          typeRows,
+                                                          typeView.count,
+                                                          tokenRecords,
+                                                          tokenRecordView.count,
+                                                          genericParamRows,
+                                                          genericParamView.count,
+                                                          genericParamConstraints,
+                                                          genericParamConstraintView.count,
                                                           functionTable,
                                                           retainedMethodDefCount);
 
     signatureRemapCapacity = tokenRecordView.count +
-                             typeView.count +
+                             retainedTypeDefCount +
                              methodView.count +
-                             fieldView.count +
+                             retainedFieldDefCount +
                              genericParamConstraintView.count +
                              typeSpecView.count +
                              methodSpecView.count;
@@ -644,11 +1153,12 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
     }
     if (!backend_aot_c_zrp_build_signature_blob_remap(&signatureRemap,
                                                       tokenRecords,
-                                                      tokenRecordView.count,
-                                                      typeRows,
-                                                      typeView.count,
-                                                      methodRows,
-                                                      methodView.count,
+                                                       tokenRecordView.count,
+                                                       typeRows,
+                                                       typeView.count,
+                                                       retainedTypeDefCount,
+                                                       methodRows,
+                                                       methodView.count,
                                                       fieldRows,
                                                       fieldView.count,
                                                       genericParamRows,
@@ -657,6 +1167,8 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                       genericParamConstraintView.count,
                                                       typeSpecs,
                                                       typeSpecView.count,
+                                                      moduleRefs,
+                                                      moduleRefView.count,
                                                       methodSpecs,
                                                       methodSpecView.count,
                                                       functionTable,
@@ -664,63 +1176,137 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
         return ZR_FALSE;
     }
+    retainedModuleRefCount =
+            backend_aot_c_zrp_count_retained_module_refs(moduleRefs,
+                                                         moduleRefView.count,
+                                                         tokenRecords,
+                                                          tokenRecordView.count,
+                                                          typeSpecs,
+                                                          typeSpecView.count,
+                                                          typeRows,
+                                                          typeView.count,
+                                                          methodRows,
+                                                         methodView.count,
+                                                         fieldRows,
+                                                         fieldView.count,
+                                                         genericParamRows,
+                                                         genericParamView.count,
+                                                         genericParamConstraints,
+                                                         genericParamConstraintView.count,
+                                                         functionTable,
+                                                         retainedMethodDefCount,
+                                                         signatureBlobView.data,
+                                                         (TZrUInt32)signatureBlobView.byteLength,
+                                                         &signatureRemap);
 
-    stringRemapCapacity = (typeView.count * 2u) +
-                          methodView.count +
-                          fieldView.count +
+    constantPoolRemapCapacity = retainedFieldDefCount;
+    if (!backend_aot_c_zrp_constant_pool_remap_init(&constantPoolRemap,
+                                                    constantPoolRemapCapacity,
+                                                    sourceHeader.constantPool.byteLength)) {
+        backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_zrp_build_constant_pool_remap(&constantPoolRemap,
+                                                     fieldRows,
+                                                     fieldView.count,
+                                                     typeRows,
+                                                     typeView.count,
+                                                     tokenRecords,
+                                                     tokenRecordView.count,
+                                                     methodRows,
+                                                     methodView.count,
+                                                     genericParamRows,
+                                                     genericParamView.count,
+                                                     genericParamConstraints,
+                                                     genericParamConstraintView.count,
+                                                     functionTable,
+                                                     retainedMethodDefCount)) {
+        backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
+        backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        return ZR_FALSE;
+    }
+
+    stringRemapCapacity = (retainedTypeDefCount * 2u) +
+                           methodView.count +
+                           retainedFieldDefCount +
                           genericParamView.count +
-                          (moduleRefView.count * 2u);
+                          (retainedModuleRefCount * 2u) +
+                          manifestExportView.count;
     if (!backend_aot_c_zrp_string_pool_remap_init(&stringRemap,
                                                   stringRemapCapacity,
                                                   (TZrUInt32)stringPoolView.byteLength)) {
+        backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
         return ZR_FALSE;
     }
     if (!backend_aot_c_zrp_build_string_pool_remap(&stringRemap,
-                                                   stringPoolView.data,
-                                                   (TZrUInt32)stringPoolView.byteLength,
-                                                   typeRows,
-                                                   typeView.count,
-                                                   methodRows,
-                                                   methodView.count,
+                                                    stringPoolView.data,
+                                                    (TZrUInt32)stringPoolView.byteLength,
+                                                    typeRows,
+                                                    typeView.count,
+                                                    retainedTypeDefCount,
+                                                    methodRows,
+                                                    methodView.count,
                                                    fieldRows,
                                                    fieldView.count,
                                                    genericParamRows,
                                                    genericParamView.count,
+                                                   genericParamConstraints,
+                                                   genericParamConstraintView.count,
                                                    moduleRefs,
                                                    moduleRefView.count,
+                                                   manifestExports,
+                                                   manifestExportView.count,
+                                                   tokenRecords,
+                                                   tokenRecordView.count,
+                                                   typeSpecs,
+                                                   typeSpecView.count,
                                                    functionTable,
-                                                   retainedMethodDefCount)) {
+                                                   retainedMethodDefCount,
+                                                   signatureBlobView.data,
+                                                   (TZrUInt32)signatureBlobView.byteLength,
+                                                   &signatureRemap)) {
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+        backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
         return ZR_FALSE;
     }
 
     if (retainedTokenRecordCount == tokenRecordView.count &&
+        retainedTypeDefCount == typeView.count &&
         retainedMethodDefCount == methodView.count &&
+        retainedFieldDefCount == fieldView.count &&
         retainedGenericParamCount == genericParamView.count &&
         retainedGenericParamConstraintCount == genericParamConstraintView.count &&
+        retainedTypeSpecCount == typeSpecView.count &&
         retainedMethodSpecCount == methodSpecView.count &&
-        retainedConstantPoolBytes == sourceHeader.constantPool.byteLength &&
+        retainedModuleRefCount == moduleRefView.count &&
+        backend_aot_c_zrp_constant_pool_remap_is_identity(&constantPoolRemap) &&
         backend_aot_c_zrp_signature_blob_remap_is_identity(&signatureRemap) &&
         backend_aot_c_zrp_string_pool_remap_is_identity(&stringRemap)) {
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+        backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
         return ZR_TRUE;
     }
 
     if (!backend_aot_c_zrp_build_pruned_header(&sourceHeader,
                                                retainedTokenRecordCount,
+                                               retainedTypeDefCount,
                                                retainedMethodDefCount,
+                                               retainedFieldDefCount,
                                                retainedGenericParamCount,
                                                retainedGenericParamConstraintCount,
+                                               retainedTypeSpecCount,
                                                retainedMethodSpecCount,
+                                               retainedModuleRefCount,
                                                stringRemap.byteLength,
                                                signatureRemap.byteLength,
-                                               retainedConstantPoolBytes,
+                                               constantPoolRemap.byteLength,
                                                &targetHeader,
                                                &prunedLength)) {
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+        backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
         return ZR_FALSE;
     }
@@ -728,6 +1314,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
     prunedBlob = (TZrByte *)malloc(prunedLength);
     if (prunedBlob == ZR_NULL) {
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+        backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
         return ZR_FALSE;
     }
@@ -735,6 +1322,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
     if (!ZrCore_ZrpMetadata_WriteHeader(prunedBlob, prunedLength, &targetHeader)) {
         free(prunedBlob);
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+        backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
         return ZR_FALSE;
     }
@@ -748,6 +1336,47 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                &sourceHeader,
                                                &targetHeader,
                                                &signatureRemap);
+    if (!backend_aot_c_zrp_copy_constant_pool(prunedBlob,
+                                              options->embeddedModuleBlob,
+                                              &sourceHeader,
+                                              &targetHeader,
+                                              &constantPoolRemap)) {
+        free(prunedBlob);
+        backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+        backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
+        backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_zrp_rewrite_retained_signature_type_def_tokens(prunedBlob,
+                                                                       &targetHeader,
+                                                                       typeRows,
+                                                                       typeView.count,
+                                                                       typeSpecs,
+                                                                       typeSpecView.count,
+                                                                       moduleRefs,
+                                                                       moduleRefView.count,
+                                                                       tokenRecords,
+                                                                       tokenRecordView.count,
+                                                                       methodRows,
+                                                                      methodView.count,
+                                                                      fieldRows,
+                                                                      fieldView.count,
+                                                                      genericParamRows,
+                                                                      genericParamView.count,
+                                                                      genericParamConstraints,
+                                                                      genericParamConstraintView.count,
+                                                                      functionTable,
+                                                                     retainedMethodDefCount,
+                                                                     signatureBlobView.data,
+                                                                     (TZrUInt32)signatureBlobView.byteLength,
+                                                                     &signatureRemap,
+                                                                     &stringRemap)) {
+        free(prunedBlob);
+        backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+        backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
+        backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        return ZR_FALSE;
+    }
     if (!backend_aot_c_zrp_rewrite_retained_method_spec_signature_blobs(prunedBlob,
                                                                         &targetHeader,
                                                                         methodSpecs,
@@ -756,11 +1385,20 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                                         methodView.count,
                                                                         fieldRows,
                                                                         fieldView.count,
+                                                                        typeRows,
+                                                                        typeView.count,
+                                                                        tokenRecords,
+                                                                        tokenRecordView.count,
+                                                                        genericParamRows,
+                                                                        genericParamView.count,
+                                                                        genericParamConstraints,
+                                                                        genericParamConstraintView.count,
                                                                         functionTable,
                                                                         retainedMethodDefCount,
                                                                         &signatureRemap)) {
         free(prunedBlob);
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+        backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
         return ZR_FALSE;
     }
@@ -771,35 +1409,53 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                       &targetHeader,
                                                       tokenRecords,
                                                       tokenRecordView.count,
+                                                      typeRows,
+                                                      typeView.count,
+                                                      typeSpecs,
+                                                      typeSpecView.count,
+                                                      moduleRefs,
+                                                      moduleRefView.count,
                                                       methodRows,
                                                       methodView.count,
                                                       fieldRows,
                                                       fieldView.count,
+                                                      genericParamRows,
+                                                      genericParamView.count,
+                                                      genericParamConstraints,
+                                                      genericParamConstraintView.count,
                                                       functionTable,
                                                       retainedMethodDefCount,
+                                                      signatureBlobView.data,
+                                                      (TZrUInt32)signatureBlobView.byteLength,
                                                       &signatureRemap)) {
                 free(prunedBlob);
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+                backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_TYPE_DEFS) {
             if (!backend_aot_c_zrp_copy_type_defs(prunedBlob,
-                                                  options->embeddedModuleBlob,
-                                                  &sourceHeader,
                                                   &targetHeader,
+                                                  typeRows,
+                                                  typeView.count,
+                                                  tokenRecords,
+                                                  tokenRecordView.count,
                                                   methodRows,
                                                   methodView.count,
                                                   fieldRows,
                                                   fieldView.count,
                                                   genericParamRows,
                                                   genericParamView.count,
+                                                  genericParamConstraints,
+                                                  genericParamConstraintView.count,
                                                   functionTable,
                                                   retainedMethodDefCount,
                                                   &signatureRemap,
                                                   &stringRemap)) {
                 free(prunedBlob);
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+                backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
@@ -808,16 +1464,23 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                     &targetHeader,
                                                     methodRows,
                                                     methodView.count,
+                                                    typeRows,
+                                                    typeView.count,
+                                                    tokenRecords,
+                                                    tokenRecordView.count,
                                                     fieldRows,
                                                     fieldView.count,
                                                     genericParamRows,
                                                     genericParamView.count,
+                                                    genericParamConstraints,
+                                                    genericParamConstraintView.count,
                                                     functionTable,
                                                     retainedMethodDefCount,
                                                     &signatureRemap,
                                                     &stringRemap)) {
                 free(prunedBlob);
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+                backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
@@ -826,17 +1489,34 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                    &targetHeader,
                                                    fieldRows,
                                                    fieldView.count,
+                                                   typeRows,
+                                                   typeView.count,
+                                                   tokenRecords,
+                                                   tokenRecordView.count,
+                                                   methodRows,
+                                                   methodView.count,
+                                                   genericParamRows,
+                                                   genericParamView.count,
+                                                   genericParamConstraints,
+                                                   genericParamConstraintView.count,
+                                                   functionTable,
                                                    retainedMethodDefCount,
                                                    &signatureRemap,
-                                                   &stringRemap)) {
+                                                   &stringRemap,
+                                                   &constantPoolRemap)) {
                 free(prunedBlob);
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+                backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_GENERIC_PARAMS) {
             if (!backend_aot_c_zrp_copy_generic_params(prunedBlob,
                                                        &targetHeader,
+                                                       typeRows,
+                                                       typeView.count,
+                                                       tokenRecords,
+                                                       tokenRecordView.count,
                                                        genericParamRows,
                                                        genericParamView.count,
                                                        genericParamConstraints,
@@ -850,12 +1530,19 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                        &stringRemap)) {
                 free(prunedBlob);
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+                backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_GENERIC_PARAM_CONSTRAINTS) {
             if (!backend_aot_c_zrp_copy_generic_param_constraints(prunedBlob,
                                                                   &targetHeader,
+                                                                  typeRows,
+                                                                  typeView.count,
+                                                                  typeSpecs,
+                                                                  typeSpecView.count,
+                                                                  tokenRecords,
+                                                                  tokenRecordView.count,
                                                                   genericParamConstraints,
                                                                   genericParamConstraintView.count,
                                                                   genericParamRows,
@@ -869,6 +1556,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                                   &signatureRemap)) {
                 free(prunedBlob);
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+                backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
@@ -877,26 +1565,54 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                    &targetHeader,
                                                    typeSpecs,
                                                    typeSpecView.count,
+                                                   tokenRecords,
+                                                   tokenRecordView.count,
+                                                   methodRows,
+                                                   methodView.count,
+                                                   fieldRows,
+                                                   fieldView.count,
+                                                   typeRows,
+                                                   typeView.count,
+                                                   genericParamRows,
+                                                   genericParamView.count,
+                                                   genericParamConstraints,
+                                                   genericParamConstraintView.count,
+                                                   functionTable,
+                                                   retainedMethodDefCount,
                                                    &signatureRemap)) {
                 free(prunedBlob);
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+                backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_METHOD_SPECS) {
             if (!backend_aot_c_zrp_copy_method_specs(prunedBlob,
-                                                     &targetHeader,
-                                                     methodSpecs,
-                                                     methodSpecView.count,
-                                                     methodRows,
-                                                     methodView.count,
-                                                     fieldRows,
-                                                     fieldView.count,
-                                                     functionTable,
-                                                     retainedMethodDefCount,
-                                                     &signatureRemap)) {
+                                                    &targetHeader,
+                                                    methodSpecs,
+                                                    methodSpecView.count,
+                                                    tokenRecords,
+                                                    tokenRecordView.count,
+                                                    typeRows,
+                                                    typeView.count,
+                                                    typeSpecs,
+                                                    typeSpecView.count,
+                                                    moduleRefs,
+                                                    moduleRefView.count,
+                                                    methodRows,
+                                                    methodView.count,
+                                                    fieldRows,
+                                                    fieldView.count,
+                                                    genericParamRows,
+                                                    genericParamView.count,
+                                                    genericParamConstraints,
+                                                    genericParamConstraintView.count,
+                                                    functionTable,
+                                                    retainedMethodDefCount,
+                                                    &signatureRemap)) {
                 free(prunedBlob);
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+                backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
@@ -905,9 +1621,31 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                     options->embeddedModuleBlob,
                                                     &sourceHeader,
                                                     &targetHeader,
+                                                    moduleRefs,
+                                                    moduleRefView.count,
+                                                    tokenRecords,
+                                                     tokenRecordView.count,
+                                                     typeSpecs,
+                                                     typeSpecView.count,
+                                                     typeRows,
+                                                     typeView.count,
+                                                     methodRows,
+                                                    methodView.count,
+                                                    fieldRows,
+                                                    fieldView.count,
+                                                    genericParamRows,
+                                                    genericParamView.count,
+                                                    genericParamConstraints,
+                                                    genericParamConstraintView.count,
+                                                    functionTable,
+                                                    retainedMethodDefCount,
+                                                    signatureBlobView.data,
+                                                    (TZrUInt32)signatureBlobView.byteLength,
+                                                    &signatureRemap,
                                                     &stringRemap)) {
                 free(prunedBlob);
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+                backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
                 return ZR_FALSE;
             }
@@ -915,6 +1653,34 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
             /* Already copied from compacted string remap before row rewrites. */
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_SIGNATURE_BLOB_POOL) {
             /* Already copied before row rewrites so signature hashes can be recomputed from final bytes. */
+        } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_CONSTANT_POOL) {
+            /* Already copied from compacted constant remap before row rewrites. */
+        } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS) {
+            if (!backend_aot_c_zrp_copy_manifest_exports(prunedBlob,
+                                                         &targetHeader,
+                                                         manifestExports,
+                                                         manifestExportView.count,
+                                                         tokenRecords,
+                                                         tokenRecordView.count,
+                                                         typeRows,
+                                                         typeView.count,
+                                                         methodRows,
+                                                         methodView.count,
+                                                         fieldRows,
+                                                         fieldView.count,
+                                                         genericParamRows,
+                                                         genericParamView.count,
+                                                         genericParamConstraints,
+                                                         genericParamConstraintView.count,
+                                                         functionTable,
+                                                         retainedMethodDefCount,
+                                                         &stringRemap)) {
+                free(prunedBlob);
+                backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+                backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
+                backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+                return ZR_FALSE;
+            }
         } else {
             backend_aot_c_zrp_copy_section_if_needed(prunedBlob,
                                                      options->embeddedModuleBlob,
@@ -924,10 +1690,57 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         }
     }
 
+    if (!backend_aot_c_zrp_member_token_remap_build(outMetadata,
+                                                    methodRows,
+                                                    methodView.count,
+                                                    fieldRows,
+                                                    fieldView.count,
+                                                    typeRows,
+                                                    typeView.count,
+                                                    tokenRecords,
+                                                    tokenRecordView.count,
+                                                    genericParamRows,
+                                                    genericParamView.count,
+                                                    genericParamConstraints,
+                                                    genericParamConstraintView.count,
+                                                    functionTable,
+                                                    retainedMethodDefCount,
+                                                    retainedFieldDefCount)) {
+        free(prunedBlob);
+        backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+        backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
+        backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_zrp_type_def_token_remap_build(outMetadata,
+                                                      typeRows,
+                                                      typeView.count,
+                                                      tokenRecords,
+                                                      tokenRecordView.count,
+                                                      methodRows,
+                                                      methodView.count,
+                                                      fieldRows,
+                                                      fieldView.count,
+                                                      genericParamRows,
+                                                      genericParamView.count,
+                                                      genericParamConstraints,
+                                                      genericParamConstraintView.count,
+                                                      functionTable,
+                                                      retainedMethodDefCount,
+                                                      retainedTypeDefCount)) {
+        free(prunedBlob);
+        backend_aot_c_zrp_member_token_remap_destroy(outMetadata);
+        backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+        backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
+        backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        return ZR_FALSE;
+    }
+
     outMetadata->blob = prunedBlob;
     outMetadata->length = prunedLength;
     outMetadata->ownedBlob = prunedBlob;
     backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
+    backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
     backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
     return ZR_TRUE;
 }
@@ -943,12 +1756,34 @@ TZrBool backend_aot_c_prepare_embedded_zrp_metadata(const SZrAotWriterOptions *o
     outMetadata->blob = options != ZR_NULL ? options->embeddedModuleBlob : ZR_NULL;
     outMetadata->length = options != ZR_NULL ? options->embeddedModuleBlobLength : 0u;
     outMetadata->ownedBlob = ZR_NULL;
+    outMetadata->hasTypeDefTokenRemap = ZR_FALSE;
+    outMetadata->typeDefTokenRemapEntries = ZR_NULL;
+    outMetadata->typeDefTokenRemapCount = 0u;
+    outMetadata->ownedTypeDefTokenRemapEntries = ZR_NULL;
+    outMetadata->memberTokenRemapEntries = ZR_NULL;
+    outMetadata->memberTokenRemapCount = 0u;
+    outMetadata->ownedMemberTokenRemapEntries = ZR_NULL;
+    outMetadata->manifestExportEntries = ZR_NULL;
+    outMetadata->manifestExportCount = 0u;
+    outMetadata->ownedManifestExportEntries = ZR_NULL;
 
-    if (!enableCodeStripping || outMetadata->blob == ZR_NULL || outMetadata->length == 0u) {
-        return ZR_TRUE;
+    if (enableCodeStripping &&
+        outMetadata->blob != ZR_NULL &&
+        outMetadata->length != 0u &&
+        !backend_aot_c_prune_method_def_metadata_blob(options, functionTable, outMetadata)) {
+        backend_aot_c_release_embedded_zrp_metadata(outMetadata);
+        return ZR_FALSE;
     }
 
-    return backend_aot_c_prune_method_def_metadata_blob(options, functionTable, outMetadata);
+    if (!backend_aot_c_zrp_publish_manifest_export_declarations(
+                outMetadata,
+                options != ZR_NULL ? options->manifestExportDeclarations : ZR_NULL,
+                options != ZR_NULL ? options->manifestExportDeclarationCount : 0u)) {
+        backend_aot_c_release_embedded_zrp_metadata(outMetadata);
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
 }
 
 void backend_aot_c_release_embedded_zrp_metadata(SZrAotCEmbeddedZrpMetadata *metadata) {
@@ -959,6 +1794,9 @@ void backend_aot_c_release_embedded_zrp_metadata(SZrAotCEmbeddedZrpMetadata *met
     if (metadata->ownedBlob != ZR_NULL) {
         free(metadata->ownedBlob);
     }
+    backend_aot_c_zrp_type_def_token_remap_destroy(metadata);
+    backend_aot_c_zrp_member_token_remap_destroy(metadata);
+    backend_aot_c_zrp_manifest_export_table_destroy(metadata);
 
     metadata->blob = ZR_NULL;
     metadata->length = 0u;

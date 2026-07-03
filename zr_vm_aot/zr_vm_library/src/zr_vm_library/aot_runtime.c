@@ -17,6 +17,7 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/math.h"
+#include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/ownership.h"
@@ -466,6 +467,61 @@ static TZrBool aot_runtime_descriptor_has_true_aot_payload(const ZrAotCompiledMo
     }
 
     return descriptor->entryThunk != ZR_NULL;
+}
+
+static TZrBool aot_runtime_member_token_remap_entry_is_valid(const SZrAotMemberTokenRemap *entry) {
+    if (entry == ZR_NULL ||
+        entry->sourceToken == 0u ||
+        entry->targetToken == 0u ||
+        ZR_METADATA_TOKEN_TABLE(entry->sourceToken) != ZR_METADATA_TABLE_MEMBER_DEF ||
+        ZR_METADATA_TOKEN_TABLE(entry->targetToken) != ZR_METADATA_TABLE_MEMBER_DEF ||
+        ZR_METADATA_TOKEN_RID(entry->sourceToken) == 0u ||
+        ZR_METADATA_TOKEN_RID(entry->targetToken) == 0u) {
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool aot_runtime_metadata_token_is_type_def(TZrUInt32 token) {
+    return (TZrBool)(token != 0u &&
+                     ZR_METADATA_TOKEN_TABLE(token) == ZR_METADATA_TABLE_TYPE_DEF &&
+                     ZR_METADATA_TOKEN_RID(token) != 0u);
+}
+
+static TZrBool aot_runtime_metadata_token_is_member_def(TZrUInt32 token) {
+    return (TZrBool)(token != 0u &&
+                     ZR_METADATA_TOKEN_TABLE(token) == ZR_METADATA_TABLE_MEMBER_DEF &&
+                     ZR_METADATA_TOKEN_RID(token) != 0u);
+}
+
+static TZrBool aot_runtime_manifest_export_entry_is_valid(const SZrAotManifestExportEntry *entry) {
+    if (entry == ZR_NULL ||
+        entry->target == ZR_NULL ||
+        (entry->kind != ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_TYPE &&
+         entry->kind != ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_METHOD &&
+         entry->kind != ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_FIELD) ||
+        (entry->flags & ~ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_KNOWN_MASK) != 0u) {
+        return ZR_FALSE;
+    }
+
+    if ((entry->flags & ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_TYPE_TOKEN) != 0u) {
+        if (!aot_runtime_metadata_token_is_type_def(entry->typeToken)) {
+            return ZR_FALSE;
+        }
+    } else if (entry->typeToken != 0u) {
+        return ZR_FALSE;
+    }
+
+    if ((entry->flags & ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_MEMBER_TOKEN) != 0u) {
+        if (!aot_runtime_metadata_token_is_member_def(entry->memberToken)) {
+            return ZR_FALSE;
+        }
+    } else if (entry->memberToken != 0u) {
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
 }
 
 static TZrBool aot_runtime_resolve_library_path(const SZrLibrary_Project *project,
@@ -2104,6 +2160,12 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
         descriptor->codeRegistration->functionCount != descriptor->functionThunkCount ||
         descriptor->codeRegistration->methodInfos != descriptor->methodInfos ||
         descriptor->codeRegistration->methodInfoCount != descriptor->methodInfoCount ||
+        descriptor->codeRegistration->methodTokens != descriptor->methodTokens ||
+        descriptor->codeRegistration->methodTokenCount != descriptor->methodTokenCount ||
+        descriptor->codeRegistration->memberTokenRemaps != descriptor->memberTokenRemaps ||
+        descriptor->codeRegistration->memberTokenRemapCount != descriptor->memberTokenRemapCount ||
+        descriptor->codeRegistration->manifestExports != descriptor->manifestExports ||
+        descriptor->codeRegistration->manifestExportCount != descriptor->manifestExportCount ||
         descriptor->codeRegistration->typeLayouts != descriptor->typeLayouts ||
         descriptor->codeRegistration->typeLayoutCount != descriptor->typeLayoutCount ||
         descriptor->codeRegistration->typeLayoutTokens != descriptor->typeLayoutTokens ||
@@ -2116,6 +2178,96 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
                          "AOT descriptor validation failed for module '%s': codeRegistration table mismatch",
                          normalizedModule);
         return ZR_FALSE;
+    }
+
+    if (descriptor->methodTokenCount != descriptor->methodInfoCount ||
+        (descriptor->methodTokenCount > 0u && descriptor->methodTokens == ZR_NULL) ||
+        (descriptor->methodTokenCount == 0u && descriptor->methodTokens != ZR_NULL)) {
+        aot_runtime_close_library(handle);
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': method token table mismatch",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if ((descriptor->memberTokenRemapCount > 0u && descriptor->memberTokenRemaps == ZR_NULL) ||
+        (descriptor->memberTokenRemapCount == 0u && descriptor->memberTokenRemaps != ZR_NULL)) {
+        aot_runtime_close_library(handle);
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': member token remap table mismatch",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if ((descriptor->manifestExportCount > 0u && descriptor->manifestExports == ZR_NULL) ||
+        (descriptor->manifestExportCount == 0u && descriptor->manifestExports != ZR_NULL)) {
+        aot_runtime_close_library(handle);
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': manifest export table mismatch",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0u; index < descriptor->manifestExportCount; index++) {
+        const SZrAotManifestExportEntry *entry = &descriptor->manifestExports[index];
+        if (!aot_runtime_manifest_export_entry_is_valid(entry)) {
+            aot_runtime_close_library(handle);
+            aot_runtime_fail(state,
+                             runtimeState,
+                             "AOT descriptor validation failed for module '%s': "
+                             "manifest export entry invalid index=%u kind=%u flags=%u",
+                             normalizedModule,
+                             (unsigned)index,
+                             entry != ZR_NULL ? (unsigned)entry->kind : 0u,
+                             entry != ZR_NULL ? (unsigned)entry->flags : 0u);
+            return ZR_FALSE;
+        }
+    }
+
+    for (TZrUInt32 index = 0u; index < descriptor->memberTokenRemapCount; index++) {
+        const SZrAotMemberTokenRemap *entry = &descriptor->memberTokenRemaps[index];
+        if (!aot_runtime_member_token_remap_entry_is_valid(entry)) {
+            aot_runtime_close_library(handle);
+            aot_runtime_fail(state,
+                             runtimeState,
+                             "AOT descriptor validation failed for module '%s': "
+                             "member token remap entry invalid index=%u sourceToken=0x%08x targetToken=0x%08x",
+                             normalizedModule,
+                             (unsigned)index,
+                             (unsigned)entry->sourceToken,
+                             (unsigned)entry->targetToken);
+            return ZR_FALSE;
+        }
+        for (TZrUInt32 previousIndex = 0u; previousIndex < index; previousIndex++) {
+            const SZrAotMemberTokenRemap *previous = &descriptor->memberTokenRemaps[previousIndex];
+            if (previous->sourceToken == entry->sourceToken) {
+                aot_runtime_close_library(handle);
+                aot_runtime_fail(state,
+                                 runtimeState,
+                                 "AOT descriptor validation failed for module '%s': "
+                                 "member token remap duplicate sourceToken index=%u previousIndex=%u sourceToken=0x%08x",
+                                 normalizedModule,
+                                 (unsigned)index,
+                                 (unsigned)previousIndex,
+                                 (unsigned)entry->sourceToken);
+                return ZR_FALSE;
+            }
+            if (previous->targetToken == entry->targetToken) {
+                aot_runtime_close_library(handle);
+                aot_runtime_fail(state,
+                                 runtimeState,
+                                 "AOT descriptor validation failed for module '%s': "
+                                 "member token remap duplicate targetToken index=%u previousIndex=%u targetToken=0x%08x",
+                                 normalizedModule,
+                                 (unsigned)index,
+                                 (unsigned)previousIndex,
+                                 (unsigned)entry->targetToken);
+                return ZR_FALSE;
+            }
+        }
     }
 
     if ((descriptor->typeLayoutCount > 0u && descriptor->typeLayouts == ZR_NULL) ||

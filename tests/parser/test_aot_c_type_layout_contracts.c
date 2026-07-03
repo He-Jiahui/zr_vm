@@ -96,9 +96,20 @@ static void test_aot_c_type_layouts_emit_generated_struct_static_asserts(void) {
             "backend_aot_write_c_type_layout_token_table(",
             "SZrState *state",
             "const SZrAotFunctionTable *table",
+            "const TZrUInt32 *typeLayoutRoots",
+            "TZrUInt32 typeLayoutRootCount",
+            "const TZrByte *metadataBlob",
+            "TZrSize metadataBlobLength",
+    };
+    static const char *const metadataRootHeaderNeedles[] = {
+            "ZR_AOT_C_TYPE_LAYOUT_METADATA_ROOT_CAPACITY",
+            "SZrAotCTypeLayoutMetadataRoots",
+            "backend_aot_c_type_layout_metadata_type_token_roots(",
+            "backend_aot_c_type_layout_metadata_field_token_roots(",
     };
     static const char *const sourceNeedles[] = {
             "#include \"backend_aot_c_type_layouts.h\"",
+            "#include \"backend_aot_c_type_layout_metadata_roots.h\"",
             "ZrCore_Function_ResolvePrototypeFrameTypeLayout(",
             "ZrCore_Function_VisitPrototypeFrameFieldLayouts(",
             "#define ZR_AOT_C_LAYOUT_STRUCT(name, bytes)",
@@ -123,15 +134,35 @@ static void test_aot_c_type_layouts_emit_generated_struct_static_asserts(void) {
             "zr_aot_gc_descriptor_offsets_failed",
             "typeLayout->gcFieldCount == 0u",
     };
+    static const char *const metadataRootSourceNeedles[] = {
+            "#include \"backend_aot_c_type_layout_metadata_roots.h\"",
+            "backend_aot_c_type_layout_metadata_type_token_roots(",
+            "backend_aot_c_type_layout_metadata_field_token_roots(",
+            "ZR_METADATA_TOKEN_TABLE(typeToken) == ZR_METADATA_TABLE_TYPE_REF",
+            "ZR_ZRP_METADATA_SECTION_TOKEN_RECORDS",
+            "SZrMetadataTokenRecord",
+            "record->targetMetadataToken",
+            "ZR_METADATA_TOKEN_TABLE(fieldToken) != ZR_METADATA_TABLE_MEMBER_DEF",
+            "ZR_ZRP_METADATA_SECTION_FIELD_DEFS",
+            "SZrZrpMetadataFieldDefRow",
+            "backend_aot_c_type_layout_metadata_find_owner_type_def(",
+            "ownerRow->typeLayoutId",
+            "fieldRow->typeLayoutId",
+    };
     static const char *const tokenNeedles[] = {
             "#include \"backend_aot_c_type_layouts.h\"",
             "#include \"zr_vm_core/metadata_token.h\"",
+            "#include \"zr_vm_core/zrp_metadata.h\"",
             "backend_aot_c_type_layout_token_from_table(",
+            "backend_aot_c_type_layout_token_from_metadata_blob(",
+            "backend_aot_c_type_layout_token_is_rooted(",
             "backend_aot_c_type_layout_type_name_from_table(",
             "backend_aot_c_type_layout_type_def_token_from_table(",
             "ZR_METADATA_TOKEN_TABLE(record->token) != ZR_METADATA_TABLE_TYPE_DEF",
             "ZR_METADATA_SIGNATURE_NODE_TYPE_DEF",
             "backend_aot_c_type_layout_resolve_from_table(state, table, typeLayoutId)",
+            "SZrZrpMetadataTypeDefRow",
+            "SZrZrpMetadataTypeSpecRow",
             "static const TZrUInt32 zr_aot_type_layout_tokens[]",
             "0x%08xu",
     };
@@ -139,15 +170,19 @@ static void test_aot_c_type_layouts_emit_generated_struct_static_asserts(void) {
             "#include \"backend_aot_c_type_layouts.h\"",
             "#include <stddef.h>",
             "TZrUInt32 gcDescriptorIndexSpace;",
-            "gcDescriptorIndexSpace = backend_aot_c_type_layout_gc_descriptor_index_space(state, &functionTable);",
-            "backend_aot_write_c_type_layout_declarations(file, state, &functionTable);",
-            "backend_aot_write_c_type_layout_gc_descriptor_table(file, state, &functionTable, gcDescriptorIndexSpace);",
+            "gcDescriptorIndexSpace = backend_aot_c_type_layout_gc_descriptor_index_space(state,",
+            "backend_aot_write_c_type_layout_declarations(file,",
+            "backend_aot_write_c_type_layout_gc_descriptor_table(file,",
             "gcDescriptorIndexSpace > 0u ? \"zr_aot_gc_descriptors\" : \"ZR_NULL\"",
     };
     char *headerText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h");
     char *sourceText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c");
+    char *metadataRootHeaderText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_metadata_roots.h");
+    char *metadataRootSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_metadata_roots.c");
     char *tokenText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c");
     char *emitterText = read_repo_text_file_owned(
@@ -155,16 +190,26 @@ static void test_aot_c_type_layouts_emit_generated_struct_static_asserts(void) {
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(sourceText);
+    TEST_ASSERT_NOT_NULL(metadataRootHeaderText);
+    TEST_ASSERT_NOT_NULL(metadataRootSourceText);
     TEST_ASSERT_NOT_NULL(tokenText);
     TEST_ASSERT_NOT_NULL(emitterText);
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
     assert_text_contains_all(sourceText, sourceNeedles, ARRAY_COUNT(sourceNeedles));
+    assert_text_contains_all(metadataRootHeaderText,
+                             metadataRootHeaderNeedles,
+                             ARRAY_COUNT(metadataRootHeaderNeedles));
+    assert_text_contains_all(metadataRootSourceText,
+                             metadataRootSourceNeedles,
+                             ARRAY_COUNT(metadataRootSourceNeedles));
     assert_text_contains_all(tokenText, tokenNeedles, ARRAY_COUNT(tokenNeedles));
     assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
 
     free(headerText);
     free(sourceText);
+    free(metadataRootHeaderText);
+    free(metadataRootSourceText);
     free(tokenText);
     free(emitterText);
 }

@@ -34,6 +34,8 @@ const SZrZrpMetadataSection *backend_aot_c_zrp_metadata_section(
             return &header->signatureBlobPool;
         case ZR_ZRP_METADATA_SECTION_CONSTANT_POOL:
             return &header->constantPool;
+        case ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS:
+            return &header->manifestExports;
         default:
             return ZR_NULL;
     }
@@ -71,6 +73,8 @@ SZrZrpMetadataSection *backend_aot_c_zrp_metadata_mutable_section(
             return &header->signatureBlobPool;
         case ZR_ZRP_METADATA_SECTION_CONSTANT_POOL:
             return &header->constantPool;
+        case ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS:
+            return &header->manifestExports;
         default:
             return ZR_NULL;
     }

@@ -229,6 +229,11 @@ void type_inference_apply_binary_numeric_range(SZrState *state,
                                                const SZrInferredType *leftType,
                                                const SZrInferredType *rightType,
                                                SZrInferredType *result);
+TZrBool type_inference_apply_bitwise_identity_range(SZrCompilerState *cs,
+                                                    const TZrChar *op,
+                                                    const SZrAstNode *left,
+                                                    const SZrAstNode *right,
+                                                    SZrInferredType *result);
 void type_inference_apply_unary_numeric_range(SZrState *state,
                                               const TZrChar *op,
                                               const SZrInferredType *operandType,

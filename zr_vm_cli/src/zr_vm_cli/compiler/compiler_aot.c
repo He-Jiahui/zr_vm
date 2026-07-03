@@ -1,5 +1,7 @@
 #include "compiler/compiler_aot.h"
+#include "compiler/compiler_aot_exports.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -11,6 +13,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/zrp_metadata.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/generic_instantiation.h"
 #include "zr_vm_parser/writer.h"
@@ -64,6 +67,19 @@ static TZrBool zr_cli_read_binary_file(const TZrChar *path, TZrByte **outBytes, 
     return ZR_TRUE;
 }
 
+static TZrBool zr_cli_remove_optional_file(const TZrChar *path) {
+    if (path == ZR_NULL || path[0] == '\0') {
+        return ZR_TRUE;
+    }
+
+    errno = 0;
+    if (remove(path) == 0) {
+        return ZR_TRUE;
+    }
+
+    return (TZrBool)(errno == ENOENT);
+}
+
 void ZrCli_Compiler_AotPreserveRoots_Init(SZrCliAotPreserveRoots *roots) {
     if (roots == ZR_NULL) {
         return;
@@ -75,6 +91,7 @@ void ZrCli_Compiler_AotPreserveRoots_Init(SZrCliAotPreserveRoots *roots) {
     roots->genericRoots = ZR_NULL;
     roots->genericRootCount = 0u;
     roots->genericRootCapacity = 0u;
+    ZrCli_Compiler_AotExportDeclarations_Init(roots);
 }
 
 void ZrCli_Compiler_AotPreserveRoots_Free(SZrCliAotPreserveRoots *roots) {
@@ -88,6 +105,7 @@ void ZrCli_Compiler_AotPreserveRoots_Free(SZrCliAotPreserveRoots *roots) {
         }
     }
     free(roots->genericRoots);
+    ZrCli_Compiler_AotExportDeclarations_Free(roots);
     free(roots->indices);
     ZrCli_Compiler_AotPreserveRoots_Init(roots);
 }
@@ -1611,6 +1629,8 @@ TZrBool ZrCli_Compiler_ApplyProjectAotPreserveRules(const SZrCliProjectContext *
     options->manifestPreserveFunctionFlatIndexCount = 0u;
     options->manifestPreserveGenericRoots = ZR_NULL;
     options->manifestPreserveGenericRootCount = 0u;
+    options->manifestExportDeclarations = ZR_NULL;
+    options->manifestExportDeclarationCount = 0u;
     libraryProject = project->libraryProject;
     for (TZrSize ruleIndex = 0; ruleIndex < libraryProject->preserveRuleCount; ruleIndex++) {
         const SZrLibrary_ProjectPreserveRule *rule = &libraryProject->preserveRules[ruleIndex];
@@ -1659,6 +1679,9 @@ TZrBool ZrCli_Compiler_ApplyProjectAotPreserveRules(const SZrCliProjectContext *
     options->manifestPreserveFunctionFlatIndexCount = roots->count;
     options->manifestPreserveGenericRoots = roots->genericRootCount > 0u ? roots->genericRoots : ZR_NULL;
     options->manifestPreserveGenericRootCount = roots->genericRootCount;
+    if (!ZrCli_Compiler_ApplyProjectAotExportDeclarations(project, function, options, roots)) {
+        goto cleanup;
+    }
     success = ZR_TRUE;
 
 cleanup:
@@ -1678,6 +1701,10 @@ TZrBool ZrCli_Compiler_WriteAotCFileForModule(const SZrCliProjectContext *projec
     TZrByte *embeddedBlob = ZR_NULL;
     TZrSize embeddedBlobLength = 0;
     SZrCliAotPreserveRoots preserveRoots;
+    SZrZrpMetadataHeader embeddedMetadataHeader;
+    TZrChar compactedMetadataPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrBool hasCompactedMetadataPath = ZR_FALSE;
+    TZrBool canWriteAotC = ZR_TRUE;
     TZrBool success = ZR_FALSE;
 
     ZrCli_Compiler_AotPreserveRoots_Init(&preserveRoots);
@@ -1702,8 +1729,25 @@ TZrBool ZrCli_Compiler_WriteAotCFileForModule(const SZrCliProjectContext *projec
 
     if (ZrCli_Compiler_ApplyProjectAotWriterOptions(project, &options) &&
         ZrCli_Compiler_ApplyProjectAotPreserveRules(project, state, function, moduleName, &options, &preserveRoots)) {
-        success = ZrCli_Project_EnsureParentDirectory(aotCPath) &&
-                  ZrParser_Writer_WriteAotCFileWithOptions(state, function, aotCPath, &options);
+        hasCompactedMetadataPath = ZrCli_Project_ResolveAotCompactedMetadataPathFromAotCPath(aotCPath,
+                                                                                             compactedMetadataPath,
+                                                                                             sizeof(compactedMetadataPath));
+        if (ZrCore_ZrpMetadata_ReadHeader(embeddedBlob, embeddedBlobLength, &embeddedMetadataHeader) &&
+            ZrCore_ZrpMetadata_ValidateDefinitionTables(embeddedBlob,
+                                                        embeddedBlobLength,
+                                                        &embeddedMetadataHeader) &&
+            hasCompactedMetadataPath) {
+            options.compactedZrpMetadataOutputPath = compactedMetadataPath;
+        } else if (hasCompactedMetadataPath) {
+            canWriteAotC = zr_cli_remove_optional_file(compactedMetadataPath);
+        }
+
+        if (canWriteAotC) {
+            success = ZrCli_Project_EnsureParentDirectory(aotCPath) &&
+                      ZrParser_Writer_WriteAotCFileWithOptions(state, function, aotCPath, &options);
+        } else {
+            (void)remove(aotCPath);
+        }
     }
 
     ZrCli_Compiler_AotPreserveRoots_Free(&preserveRoots);

@@ -420,6 +420,28 @@ static void attach_generic_method_spec_metadata(SZrState *state, SZrFunction *fu
     TEST_ASSERT_NOT_NULL(function->typedExportedSymbols[0].name);
 }
 
+static void attach_field_export_symbol(SZrState *state, SZrFunction *function) {
+    const TZrUInt32 fieldToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 2u);
+    const TZrUInt32 fieldSignatureToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 3u);
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    function->typedExportedSymbols = (SZrFunctionTypedExportSymbol *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionTypedExportSymbol),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->typedExportedSymbols);
+
+    memset(function->typedExportedSymbols, 0, sizeof(SZrFunctionTypedExportSymbol));
+    function->typedExportedSymbolLength = 1u;
+    function->typedExportedSymbols[0].name = ZrCore_String_CreateFromNative(state, "Widget.value");
+    function->typedExportedSymbols[0].symbolKind = ZR_FUNCTION_TYPED_SYMBOL_VARIABLE;
+    function->typedExportedSymbols[0].metadataToken = fieldToken;
+    function->typedExportedSymbols[0].signatureToken = fieldSignatureToken;
+    TEST_ASSERT_NOT_NULL(function->typedExportedSymbols[0].name);
+}
+
 static void attach_list_foo_type_def_and_type_spec_metadata(SZrState *state, SZrFunction *function) {
     const TZrUInt32 listStringIndex = 10u;
     const TZrUInt32 fooStringIndex = 11u;
@@ -593,6 +615,76 @@ static void assert_generated_reports_manifest_generic_roots(SZrState *state,
     assert_text_contains(generatedCText, "/* manifest.genericRoot[0] target=List argumentCount=2 */");
     assert_text_contains(generatedCText, "/* manifest.genericRoot[0].argument[0] = Foo */");
     assert_text_contains(generatedCText, "/* manifest.genericRoot[0].argument[1] = Bar.Baz */");
+    free(generatedCText);
+}
+
+static void assert_generated_reports_manifest_export_declarations(SZrState *state,
+                                                                  SZrFunction *function,
+                                                                  SZrAotWriterOptions *options,
+                                                                  const TZrChar *artifactName) {
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("cli_aot_writer_options",
+                                                       "generated",
+                                                       artifactName,
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, options));
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, generatedLength);
+    assert_text_contains(generatedCText, "/* manifest.exports = 3 */");
+    assert_text_contains(generatedCText, "/* manifest.export[0] kind=method target=Widget.kept */");
+    assert_text_contains(generatedCText, "/* manifest.export[1] kind=type target=Widget */");
+    assert_text_contains(generatedCText, "/* manifest.export[2] kind=field target=Widget.value */");
+    assert_text_contains(generatedCText, "/* manifest.exportTableEntries = 3 */");
+    assert_text_contains(generatedCText, "static const SZrAotManifestExportEntry zr_aot_manifest_exports[]");
+    assert_text_contains(generatedCText,
+                         "{ .kind = 2u, .flags = 0u, .target = \"Widget.kept\", "
+                         ".typeToken = 0x00000000u, .memberToken = 0x00000000u },");
+    assert_text_contains(generatedCText,
+                         "{ .kind = 1u, .flags = 0u, .target = \"Widget\", "
+                         ".typeToken = 0x00000000u, .memberToken = 0x00000000u },");
+    assert_text_contains(generatedCText,
+                         "{ .kind = 3u, .flags = 0u, .target = \"Widget.value\", "
+                         ".typeToken = 0x00000000u, .memberToken = 0x00000000u },");
+    assert_text_contains(generatedCText, ".manifestExports = zr_aot_manifest_exports,");
+    assert_text_contains(generatedCText, ".manifestExportCount = 3u,");
+    free(generatedCText);
+}
+
+static void assert_generated_reports_manifest_export_token_binding(SZrState *state,
+                                                                   SZrFunction *function,
+                                                                   SZrAotWriterOptions *options,
+                                                                   const TZrChar *artifactName,
+                                                                   const TZrChar *expectedExportLine,
+                                                                   const TZrChar *expectedTokenLine,
+                                                                   const TZrChar *expectedTableEntryLine) {
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("cli_aot_writer_options",
+                                                       "generated",
+                                                       artifactName,
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, options));
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, generatedLength);
+    assert_text_contains(generatedCText, "/* manifest.exports = 1 */");
+    assert_text_contains(generatedCText, expectedExportLine);
+    assert_text_contains(generatedCText, expectedTokenLine);
+    assert_text_contains(generatedCText, "/* manifest.exportTableEntries = 1 */");
+    assert_text_contains(generatedCText, "static const SZrAotManifestExportEntry zr_aot_manifest_exports[]");
+    assert_text_contains(generatedCText, expectedTableEntryLine);
+    assert_text_contains(generatedCText, ".manifestExports = zr_aot_manifest_exports,");
+    assert_text_contains(generatedCText, ".manifestExportCount = 1u,");
     free(generatedCText);
 }
 
@@ -1048,6 +1140,305 @@ static void test_cli_aot_writer_options_bind_generic_preserve_arguments_to_write
     TEST_ASSERT_EQUAL_STRING("Bar.Baz", options.manifestPreserveGenericRoots[0].arguments[1]);
 
     assert_generated_reports_manifest_generic_roots(state, function, &options, "generic_preserve_root");
+
+    ZrCli_Compiler_AotPreserveRoots_Free(&preserveRoots);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_cli_aot_writer_options_bridges_manifest_export_declarations(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrLibrary_Project libraryProject;
+    SZrLibrary_ProjectExportDeclaration exportDeclarations[3];
+    SZrCliProjectContext projectContext;
+    SZrCliAotPreserveRoots preserveRoots;
+    SZrAotWriterOptions options;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_preserve_method_fixture(state, "Widget.used", "Widget.kept");
+
+    memset(&libraryProject, 0, sizeof(libraryProject));
+    memset(exportDeclarations, 0, sizeof(exportDeclarations));
+    memset(&projectContext, 0, sizeof(projectContext));
+    memset(&options, 0, sizeof(options));
+    ZrCli_Compiler_AotPreserveRoots_Init(&preserveRoots);
+
+    exportDeclarations[0].kind = ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_METHOD;
+    exportDeclarations[0].target = ZrCore_String_CreateFromNative(state, "Widget.kept");
+    exportDeclarations[1].kind = ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_TYPE;
+    exportDeclarations[1].target = ZrCore_String_CreateFromNative(state, "Widget");
+    exportDeclarations[2].kind = ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_FIELD;
+    exportDeclarations[2].target = ZrCore_String_CreateFromNative(state, "Widget.value");
+    TEST_ASSERT_NOT_NULL(exportDeclarations[0].target);
+    TEST_ASSERT_NOT_NULL(exportDeclarations[1].target);
+    TEST_ASSERT_NOT_NULL(exportDeclarations[2].target);
+
+    libraryProject.aotMode = ZR_LIBRARY_PROJECT_AOT_MODE_HYBRID;
+    libraryProject.exportDeclarations = exportDeclarations;
+    libraryProject.exportDeclarationCount = 3u;
+    projectContext.libraryProject = &libraryProject;
+
+    options.moduleName = "main";
+    options.sourceHash = "cli-aot-export-declarations";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "cli-aot-export-declarations";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrCli_Compiler_ApplyProjectAotPreserveRules(&projectContext,
+                                                                 state,
+                                                                 function,
+                                                                 "main",
+                                                                 &options,
+                                                                 &preserveRoots));
+    TEST_ASSERT_EQUAL_UINT32(3u, options.manifestExportDeclarationCount);
+    TEST_ASSERT_EQUAL_PTR(preserveRoots.exportDeclarations, options.manifestExportDeclarations);
+    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)ZR_AOT_MANIFEST_EXPORT_DECLARATION_METHOD,
+                             (TZrUInt32)options.manifestExportDeclarations[0].kind);
+    TEST_ASSERT_EQUAL_STRING("Widget.kept", options.manifestExportDeclarations[0].target);
+    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)ZR_AOT_MANIFEST_EXPORT_DECLARATION_TYPE,
+                             (TZrUInt32)options.manifestExportDeclarations[1].kind);
+    TEST_ASSERT_EQUAL_STRING("Widget", options.manifestExportDeclarations[1].target);
+    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)ZR_AOT_MANIFEST_EXPORT_DECLARATION_FIELD,
+                             (TZrUInt32)options.manifestExportDeclarations[2].kind);
+    TEST_ASSERT_EQUAL_STRING("Widget.value", options.manifestExportDeclarations[2].target);
+
+    assert_generated_reports_manifest_export_declarations(state,
+                                                          function,
+                                                          &options,
+                                                          "manifest_export_declarations");
+
+    ZrCli_Compiler_AotPreserveRoots_Free(&preserveRoots);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_cli_aot_writer_options_rejects_duplicate_manifest_export_declarations(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrLibrary_Project libraryProject;
+    SZrLibrary_ProjectExportDeclaration exportDeclarations[2];
+    SZrCliProjectContext projectContext;
+    SZrCliAotPreserveRoots preserveRoots;
+    SZrAotWriterOptions options;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_preserve_method_fixture(state, "Widget.used", "Widget.kept");
+
+    memset(&libraryProject, 0, sizeof(libraryProject));
+    memset(exportDeclarations, 0, sizeof(exportDeclarations));
+    memset(&projectContext, 0, sizeof(projectContext));
+    memset(&options, 0, sizeof(options));
+    ZrCli_Compiler_AotPreserveRoots_Init(&preserveRoots);
+
+    exportDeclarations[0].kind = ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_METHOD;
+    exportDeclarations[0].target = ZrCore_String_CreateFromNative(state, "Widget.kept");
+    exportDeclarations[1].kind = ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_METHOD;
+    exportDeclarations[1].target = ZrCore_String_CreateFromNative(state, "Widget.kept");
+    TEST_ASSERT_NOT_NULL(exportDeclarations[0].target);
+    TEST_ASSERT_NOT_NULL(exportDeclarations[1].target);
+
+    libraryProject.aotMode = ZR_LIBRARY_PROJECT_AOT_MODE_HYBRID;
+    libraryProject.exportDeclarations = exportDeclarations;
+    libraryProject.exportDeclarationCount = 2u;
+    projectContext.libraryProject = &libraryProject;
+
+    options.moduleName = "main";
+    options.sourceHash = "cli-aot-duplicate-export-declarations";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "cli-aot-duplicate-export-declarations";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_FALSE(ZrCli_Compiler_ApplyProjectAotPreserveRules(&projectContext,
+                                                                  state,
+                                                                  function,
+                                                                  "main",
+                                                                  &options,
+                                                                  &preserveRoots));
+    TEST_ASSERT_NULL(options.manifestExportDeclarations);
+    TEST_ASSERT_EQUAL_UINT32(0u, options.manifestExportDeclarationCount);
+    TEST_ASSERT_NULL(preserveRoots.exportDeclarations);
+    TEST_ASSERT_EQUAL_UINT32(0u, preserveRoots.exportDeclarationCount);
+
+    ZrCli_Compiler_AotPreserveRoots_Free(&preserveRoots);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_cli_aot_writer_options_binds_method_export_declaration_to_member_token(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrLibrary_Project libraryProject;
+    SZrLibrary_ProjectExportDeclaration exportDeclaration;
+    SZrCliProjectContext projectContext;
+    SZrCliAotPreserveRoots preserveRoots;
+    SZrAotWriterOptions options;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_preserve_method_fixture(state, "used", "kept");
+    attach_generic_method_spec_metadata(state, function);
+
+    memset(&libraryProject, 0, sizeof(libraryProject));
+    memset(&exportDeclaration, 0, sizeof(exportDeclaration));
+    memset(&projectContext, 0, sizeof(projectContext));
+    memset(&options, 0, sizeof(options));
+    ZrCli_Compiler_AotPreserveRoots_Init(&preserveRoots);
+
+    exportDeclaration.kind = ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_METHOD;
+    exportDeclaration.target = ZrCore_String_CreateFromNative(state, "Factory.make");
+    TEST_ASSERT_NOT_NULL(exportDeclaration.target);
+
+    libraryProject.aotMode = ZR_LIBRARY_PROJECT_AOT_MODE_HYBRID;
+    libraryProject.exportDeclarations = &exportDeclaration;
+    libraryProject.exportDeclarationCount = 1u;
+    projectContext.libraryProject = &libraryProject;
+
+    options.moduleName = "main";
+    options.sourceHash = "cli-aot-export-declaration-member-token";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "cli-aot-export-declaration-member-token";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrCli_Compiler_ApplyProjectAotPreserveRules(&projectContext,
+                                                                 state,
+                                                                 function,
+                                                                 "main",
+                                                                 &options,
+                                                                 &preserveRoots));
+    TEST_ASSERT_EQUAL_UINT32(1u, options.manifestExportDeclarationCount);
+    TEST_ASSERT_EQUAL_STRING("Factory.make", options.manifestExportDeclarations[0].target);
+    TEST_ASSERT_TRUE(options.manifestExportDeclarations[0].hasMemberTokenBinding);
+    TEST_ASSERT_EQUAL_UINT32(ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 1u),
+                             options.manifestExportDeclarations[0].memberToken);
+
+    assert_generated_reports_manifest_export_token_binding(state,
+                                                           function,
+                                                           &options,
+                                                           "manifest_export_member_token",
+                                                           "/* manifest.export[0] kind=method target=Factory.make */",
+                                                           "/* manifest.export[0].memberToken = 0x03000001 */",
+                                                           "{ .kind = 2u, .flags = 2u, .target = \"Factory.make\", "
+                                                           ".typeToken = 0x00000000u, .memberToken = 0x03000001u },");
+
+    ZrCli_Compiler_AotPreserveRoots_Free(&preserveRoots);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_cli_aot_writer_options_binds_field_export_declaration_to_member_token(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrLibrary_Project libraryProject;
+    SZrLibrary_ProjectExportDeclaration exportDeclaration;
+    SZrCliProjectContext projectContext;
+    SZrCliAotPreserveRoots preserveRoots;
+    SZrAotWriterOptions options;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_preserve_method_fixture(state, "used", "kept");
+    attach_field_export_symbol(state, function);
+
+    memset(&libraryProject, 0, sizeof(libraryProject));
+    memset(&exportDeclaration, 0, sizeof(exportDeclaration));
+    memset(&projectContext, 0, sizeof(projectContext));
+    memset(&options, 0, sizeof(options));
+    ZrCli_Compiler_AotPreserveRoots_Init(&preserveRoots);
+
+    exportDeclaration.kind = ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_FIELD;
+    exportDeclaration.target = ZrCore_String_CreateFromNative(state, "Widget.value");
+    TEST_ASSERT_NOT_NULL(exportDeclaration.target);
+
+    libraryProject.aotMode = ZR_LIBRARY_PROJECT_AOT_MODE_HYBRID;
+    libraryProject.exportDeclarations = &exportDeclaration;
+    libraryProject.exportDeclarationCount = 1u;
+    projectContext.libraryProject = &libraryProject;
+
+    options.moduleName = "main";
+    options.sourceHash = "cli-aot-field-export-declaration-member-token";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "cli-aot-field-export-declaration-member-token";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrCli_Compiler_ApplyProjectAotPreserveRules(&projectContext,
+                                                                 state,
+                                                                 function,
+                                                                 "main",
+                                                                 &options,
+                                                                 &preserveRoots));
+    TEST_ASSERT_EQUAL_UINT32(1u, options.manifestExportDeclarationCount);
+    TEST_ASSERT_EQUAL_STRING("Widget.value", options.manifestExportDeclarations[0].target);
+    TEST_ASSERT_TRUE(options.manifestExportDeclarations[0].hasMemberTokenBinding);
+    TEST_ASSERT_EQUAL_UINT32(ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 2u),
+                             options.manifestExportDeclarations[0].memberToken);
+
+    assert_generated_reports_manifest_export_token_binding(state,
+                                                           function,
+                                                           &options,
+                                                           "manifest_field_export_member_token",
+                                                           "/* manifest.export[0] kind=field target=Widget.value */",
+                                                           "/* manifest.export[0].memberToken = 0x03000002 */",
+                                                           "{ .kind = 3u, .flags = 2u, .target = \"Widget.value\", "
+                                                           ".typeToken = 0x00000000u, .memberToken = 0x03000002u },");
+
+    ZrCli_Compiler_AotPreserveRoots_Free(&preserveRoots);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_cli_aot_writer_options_binds_type_export_declaration_to_type_token(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrLibrary_Project libraryProject;
+    SZrLibrary_ProjectExportDeclaration exportDeclaration;
+    SZrCliProjectContext projectContext;
+    SZrCliAotPreserveRoots preserveRoots;
+    SZrAotWriterOptions options;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_preserve_method_fixture(state, "used", "kept");
+    attach_list_foo_type_def_and_type_spec_metadata(state, function);
+
+    memset(&libraryProject, 0, sizeof(libraryProject));
+    memset(&exportDeclaration, 0, sizeof(exportDeclaration));
+    memset(&projectContext, 0, sizeof(projectContext));
+    memset(&options, 0, sizeof(options));
+    ZrCli_Compiler_AotPreserveRoots_Init(&preserveRoots);
+
+    exportDeclaration.kind = ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_TYPE;
+    exportDeclaration.target = ZrCore_String_CreateFromNative(state, "List");
+    TEST_ASSERT_NOT_NULL(exportDeclaration.target);
+
+    libraryProject.aotMode = ZR_LIBRARY_PROJECT_AOT_MODE_HYBRID;
+    libraryProject.exportDeclarations = &exportDeclaration;
+    libraryProject.exportDeclarationCount = 1u;
+    projectContext.libraryProject = &libraryProject;
+
+    options.moduleName = "main";
+    options.sourceHash = "cli-aot-type-export-declaration-type-token";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "cli-aot-type-export-declaration-type-token";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrCli_Compiler_ApplyProjectAotPreserveRules(&projectContext,
+                                                                 state,
+                                                                 function,
+                                                                 "main",
+                                                                 &options,
+                                                                 &preserveRoots));
+    TEST_ASSERT_EQUAL_UINT32(1u, options.manifestExportDeclarationCount);
+    TEST_ASSERT_EQUAL_STRING("List", options.manifestExportDeclarations[0].target);
+    TEST_ASSERT_TRUE(options.manifestExportDeclarations[0].hasTypeTokenBinding);
+    TEST_ASSERT_EQUAL_UINT32(ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u),
+                             options.manifestExportDeclarations[0].typeToken);
+
+    assert_generated_reports_manifest_export_token_binding(state,
+                                                           function,
+                                                           &options,
+                                                           "manifest_type_export_type_token",
+                                                           "/* manifest.export[0] kind=type target=List */",
+                                                           "/* manifest.export[0].typeToken = 0x02000001 */",
+                                                           "{ .kind = 1u, .flags = 1u, .target = \"List\", "
+                                                           ".typeToken = 0x02000001u, .memberToken = 0x00000000u },");
 
     ZrCli_Compiler_AotPreserveRoots_Free(&preserveRoots);
     ZrTests_Runtime_State_Destroy(state);
@@ -1574,6 +1965,11 @@ int main(void) {
     RUN_TEST(test_cli_aot_writer_options_applies_matching_feature_conditioned_preserve_rule);
     RUN_TEST(test_cli_aot_writer_options_skips_mismatched_feature_conditioned_preserve_rule);
     RUN_TEST(test_cli_aot_writer_options_bind_generic_preserve_arguments_to_writer_options);
+    RUN_TEST(test_cli_aot_writer_options_bridges_manifest_export_declarations);
+    RUN_TEST(test_cli_aot_writer_options_rejects_duplicate_manifest_export_declarations);
+    RUN_TEST(test_cli_aot_writer_options_binds_method_export_declaration_to_member_token);
+    RUN_TEST(test_cli_aot_writer_options_binds_field_export_declaration_to_member_token);
+    RUN_TEST(test_cli_aot_writer_options_binds_type_export_declaration_to_type_token);
     RUN_TEST(test_cli_aot_writer_options_binds_generic_preserve_to_type_spec_token);
     RUN_TEST(test_cli_aot_writer_options_materializes_bound_generic_preserve_instantiation_root);
     RUN_TEST(test_cli_aot_writer_options_materializes_generic_preserve_instantiation_open_base_token);

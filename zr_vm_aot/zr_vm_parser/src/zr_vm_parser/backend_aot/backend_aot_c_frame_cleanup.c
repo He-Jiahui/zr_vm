@@ -56,7 +56,7 @@ void backend_aot_write_c_frame_cleanup(FILE *file, const SZrAotExecIrFrameLayout
                 "        /* zr_aot_value_frame_drop slot=%u offset=%u size=%u typeLayoutId=%u */\n"
                 "        if (zr_aot_skip_drop_slot != %u) {\n"
                 "            const SZrTypeLayout *zr_aot_drop_layout =\n"
-                "                    ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function, %u, state);\n"
+                "                    ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, %u);\n"
                 "            if (zr_aot_drop_layout != ZR_NULL &&\n"
                 "                zr_aot_drop_layout->byteSize == %u &&\n"
                 "                zr_aot_drop_layout->dropKind != ZR_TYPE_LAYOUT_DROP_KIND_NONE) {\n"

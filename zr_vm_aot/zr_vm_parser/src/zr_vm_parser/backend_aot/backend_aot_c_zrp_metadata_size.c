@@ -52,6 +52,7 @@ void backend_aot_collect_zrp_metadata_size_stats_from_blob(const TZrByte *blob,
         stats->stringPoolBytes = backend_aot_zrp_section_bytes(&header.stringPool);
         stats->signatureBlobPoolBytes = backend_aot_zrp_section_bytes(&header.signatureBlobPool);
         stats->constantPoolBytes = backend_aot_zrp_section_bytes(&header.constantPool);
+        stats->manifestExportBytes = backend_aot_zrp_section_bytes(&header.manifestExports);
         stats->tokenRecordCount = backend_aot_zrp_section_count(&header.tokenRecords);
         stats->typeDefCount = backend_aot_zrp_section_count(&header.typeDefs);
         stats->methodDefCount = backend_aot_zrp_section_count(&header.methodDefs);
@@ -64,6 +65,7 @@ void backend_aot_collect_zrp_metadata_size_stats_from_blob(const TZrByte *blob,
         stats->stringPoolCount = backend_aot_zrp_section_count(&header.stringPool);
         stats->signatureBlobPoolCount = backend_aot_zrp_section_count(&header.signatureBlobPool);
         stats->constantPoolCount = backend_aot_zrp_section_count(&header.constantPool);
+        stats->manifestExportCount = backend_aot_zrp_section_count(&header.manifestExports);
     }
 
     stats->definitionTableBytes = stats->typeDefBytes +
@@ -73,7 +75,8 @@ void backend_aot_collect_zrp_metadata_size_stats_from_blob(const TZrByte *blob,
                                   stats->genericParamConstraintBytes +
                                   stats->typeSpecBytes +
                                   stats->methodSpecBytes +
-                                  stats->moduleRefBytes;
+                                  stats->moduleRefBytes +
+                                  stats->manifestExportBytes;
     stats->poolBytes = stats->stringPoolBytes + stats->signatureBlobPoolBytes + stats->constantPoolBytes;
 }
 
@@ -112,6 +115,9 @@ void backend_aot_write_zrp_metadata_size_stats(FILE *file, const SZrAotZrpMetada
     backend_aot_write_zrp_metadata_size_stat(file,
                                              "zrpMetadataSectionBytes.constantPool",
                                              stats->constantPoolBytes);
+    backend_aot_write_zrp_metadata_size_stat(file,
+                                             "zrpMetadataSectionBytes.manifestExports",
+                                             stats->manifestExportBytes);
     backend_aot_write_zrp_metadata_size_stat(file, "zrpMetadataSectionCounts.tokenRecords", stats->tokenRecordCount);
     backend_aot_write_zrp_metadata_size_stat(file, "zrpMetadataSectionCounts.typeDefs", stats->typeDefCount);
     backend_aot_write_zrp_metadata_size_stat(file, "zrpMetadataSectionCounts.methodDefs", stats->methodDefCount);
@@ -132,6 +138,9 @@ void backend_aot_write_zrp_metadata_size_stats(FILE *file, const SZrAotZrpMetada
     backend_aot_write_zrp_metadata_size_stat(file,
                                              "zrpMetadataSectionCounts.constantPool",
                                              stats->constantPoolCount);
+    backend_aot_write_zrp_metadata_size_stat(file,
+                                             "zrpMetadataSectionCounts.manifestExports",
+                                             stats->manifestExportCount);
 }
 
 static void backend_aot_write_code_stripping_zrp_metadata_delta_stat(FILE *file,
@@ -202,6 +211,10 @@ static void backend_aot_write_code_stripping_zrp_metadata_section_delta_stats(
                                                              "zrpMetadataSectionBytes.constantPool",
                                                              beforeStats->constantPoolBytes,
                                                              afterStats->constantPoolBytes);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionBytes.manifestExports",
+                                                             beforeStats->manifestExportBytes,
+                                                             afterStats->manifestExportBytes);
 }
 
 static void backend_aot_write_code_stripping_zrp_metadata_section_count_delta_stats(
@@ -257,6 +270,10 @@ static void backend_aot_write_code_stripping_zrp_metadata_section_count_delta_st
                                                              "zrpMetadataSectionCounts.constantPool",
                                                              beforeStats->constantPoolCount,
                                                              afterStats->constantPoolCount);
+    backend_aot_write_code_stripping_zrp_metadata_delta_stat(file,
+                                                             "zrpMetadataSectionCounts.manifestExports",
+                                                             beforeStats->manifestExportCount,
+                                                             afterStats->manifestExportCount);
 }
 
 void backend_aot_write_code_stripping_zrp_metadata_size_deltas(

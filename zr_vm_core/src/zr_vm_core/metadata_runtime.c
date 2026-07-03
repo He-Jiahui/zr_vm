@@ -583,7 +583,7 @@ TZrBool ZrCore_MetadataRuntime_ReadTypeSpecGenericArgumentView(
         TZrUInt32 argumentIndex,
         SZrMetadataRuntimeTypeSpecGenericArgumentView *outView) {
     SZrMetadataRuntimeTypeSpecGenericBindingView bindingView;
-    SZrMetadataRuntimeSignatureTypeNodeView argumentNode;
+    SZrMetadataRuntimeSignatureTypeNodeView argumentNode = {0};
     const SZrMetadataTokenRecord *argumentRecord;
     TZrUInt32 index;
     TZrUInt32 argumentBlobOffset;
@@ -672,6 +672,7 @@ TZrBool ZrCore_MetadataRuntime_ReadMethodSpecSignatureView(
     }
 
     outView->methodSpecToken = methodSpecToken;
+    outView->methodSpecRecord = methodSpecRecord;
     outView->methodToken = methodToken;
     outView->signatureHash = methodSpecRecord->signatureHash;
     outView->blob = blob;
@@ -680,6 +681,57 @@ TZrBool ZrCore_MetadataRuntime_ReadMethodSpecSignatureView(
     outView->methodRecord = methodRecord;
     outView->argumentCount = genericInstanceNode.childCount;
     outView->argumentListBlobOffset = genericInstanceNode.childListBlobOffset;
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_MetadataRuntime_ReadMethodSpecGenericArgumentView(
+        SZrMetadataRuntime *runtime,
+        TZrMetadataToken methodSpecToken,
+        TZrUInt32 argumentIndex,
+        SZrMetadataRuntimeMethodSpecGenericArgumentView *outView) {
+    SZrMetadataRuntimeMethodSpecSignatureView signatureView;
+    SZrMetadataRuntimeSignatureTypeNodeView argumentNode = {0};
+    const SZrMetadataTokenRecord *argumentRecord;
+    TZrUInt32 index;
+    TZrUInt32 argumentBlobOffset;
+
+    if (outView != ZR_NULL) {
+        ZrCore_Memory_RawSet(outView, 0, sizeof(*outView));
+    }
+    if (outView == ZR_NULL ||
+        !ZrCore_MetadataRuntime_ReadMethodSpecSignatureView(runtime, methodSpecToken, &signatureView) ||
+        argumentIndex >= signatureView.argumentCount) {
+        return ZR_FALSE;
+    }
+
+    argumentBlobOffset = signatureView.argumentListBlobOffset;
+    for (index = 0u; index <= argumentIndex; ++index) {
+        if (!ZrCore_MetadataRuntime_ReadSignatureTypeNode(&signatureView.blob,
+                                                         argumentBlobOffset,
+                                                         &argumentNode)) {
+            return ZR_FALSE;
+        }
+        if (index < argumentIndex) {
+            argumentBlobOffset = argumentNode.nextBlobOffset;
+        }
+    }
+
+    argumentRecord = ZR_NULL;
+    if (argumentNode.node == ZR_METADATA_SIGNATURE_NODE_TYPE_REF ||
+        argumentNode.node == ZR_METADATA_SIGNATURE_NODE_TYPE_DEF) {
+        argumentRecord = metadata_runtime_find_type_record_by_node(runtime, &argumentNode);
+        if (argumentRecord == ZR_NULL) {
+            return ZR_FALSE;
+        }
+    }
+
+    outView->signatureView = signatureView;
+    outView->argumentNode = argumentNode;
+    outView->argumentIndex = argumentIndex;
+    if (argumentRecord != ZR_NULL) {
+        outView->argumentToken = argumentRecord->token;
+        outView->argumentRecord = argumentRecord;
+    }
     return ZR_TRUE;
 }
 

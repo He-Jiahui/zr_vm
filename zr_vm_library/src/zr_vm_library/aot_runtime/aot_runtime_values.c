@@ -6,6 +6,7 @@
 
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/meta.h"
+#include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
 
@@ -54,7 +55,7 @@ TZrBool ZrLibrary_AotRuntime_CopyStack(SZrState *state,
         sourceLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
         destinationLayout->typeLayoutId == sourceLayout->typeLayoutId) {
         const SZrTypeLayout *inlineLayout =
-                ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame->function, destinationLayout->typeLayoutId, state);
+                ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function, destinationLayout->typeLayoutId);
         if (inlineLayout == ZR_NULL) {
             aot_runtime_fail(state, runtimeState, "COPY_STACK: missing inline layout");
             return ZR_FALSE;

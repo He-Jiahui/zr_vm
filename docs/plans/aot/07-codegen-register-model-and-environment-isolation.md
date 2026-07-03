@@ -12,6 +12,9 @@ references:
 related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c
@@ -19,7 +22,10 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_semir.c
   - zr_vm_core/include/zr_vm_core/value.h
   - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_core/include/zr_vm_core/metadata_runtime.h
   - zr_vm_core/include/zr_vm_core/object.h
+  - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c
+  - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_values.c
 ---
 
 # 07 · 代码生成寄存器模型 + AOT/解释器环境隔离（极致性能降级规则）
@@ -362,6 +368,554 @@ before/after 速查（与 `04`§2 降级表合并使用）：
 ---
 
 ##状态与产出记录
+
+- 2026-07-04 06:09:04 +08:00 · M1.5 / 07-S2/S4 generic LOGICAL_NOT bool stack-copy source local branch ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中，dynamic/string/object
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。完成项目：修复
+  `GET_CONSTANT bool -> SET_STACK -> LOGICAL_NOT -> JUMP_IF_BOOL_FALSE` 的 scalar-local 类型反推，
+  当 `SET_STACK` 目标槽后续被 generic `LOGICAL_NOT` 作为真值源消费时，按源候选类型调用
+  `backend_aot_c_scalar_locals_truthiness_consumer_kind(candidateKind)` 收窄为 bool，避免泛型真值消费者的
+  u64 读取路径先命中并把目标槽误声明为 `zr_aot_u*`。新增 shared-library smoke 覆盖该形态，要求生成
+  `zr_aot_scalar_stack_copy_bool dstSlot=5 srcSlot=0`、`zr_aot_b5 = (TZrBool)(zr_aot_b0 != 0u);`、
+  `zr_aot_generic_logical_not_scalar_local`、`zr_aot_b1 = (TZrBool)(!zr_aot_b5);` 和本地
+  `JUMP_IF_BOOL_FALSE`，并禁止 `ZrLibrary_AotRuntime_CopyStack(state, &frame, 5, 0)`、
+  `GenericPrimitiveLogicalNot(state, &frame, 1, 5)` 与 `SyncBoolLocal(state, &frame, 1)`。源码契约新增连续
+  needle，锁定 stack-copy destination consumer 中的 generic `LOGICAL_NOT` 真值收窄规则。
+  RED/GREEN：RED 为新增 bool stack-copy `LOGICAL_NOT` 用例失败在缺少
+  `zr_aot_scalar_stack_copy_bool dstSlot=5 srcSlot=0`；生成 C 检查显示只声明了 `zr_aot_b0`、
+  `zr_aot_b1` 和错误的 `zr_aot_u5`，`SET_STACK` 退回 `CopyStack`，但 `LOGICAL_NOT` 又生成
+  `zr_aot_b1 = (TZrBool)(!zr_aot_b5);`。GREEN 后生成 C 声明 `TZrBool zr_aot_b5`，不再声明
+  `zr_aot_u5`，并保留全本地 bool copy + generic logical-not + typed bool branch。
+  测试结果：WSL GCC 通过
+  `zr_vm_aot_c_generic_jump_if_bool_local_smoke_test` 6/0、
+  `zr_vm_aot_c_generic_logical_not_numeric_local_smoke_test` 5/0、
+  `zr_vm_aot_c_logical_shared_library_smoke_test` 6/0、
+  `zr_vm_aot_c_generic_bool_equality_local_smoke_test` 4/0、
+  `zr_vm_aot_c_logical_contracts_test` 4/0、
+  `zr_vm_aot_c_frame_setup_contracts_test` 1/0、
+  `zr_vm_aot_c_control_contracts_test` 2/0；WSL Clang 通过同组 6/0、5/0、6/0、4/0、4/0、1/0、2/0。
+  Windows MSVC Debug 通过 generic JUMP_IF 0 failures / 6 expected ignores、generic LOGICAL_NOT
+  0 failures / 5 expected ignores、logical shared-library 0 failures / 6 expected ignores、generic equality
+  0 failures / 4 expected ignores，并通过 logical/frame/control contracts 4/0、1/0、2/0；`git diff --check`
+  仅有既有 LF/CRLF 提示。产出：更新 `backend_aot_c_scalar_locals.c`、
+  `tests/parser/test_aot_c_generic_logical_not_numeric_local_smoke.c`、
+  `tests/parser/test_aot_c_logical_contracts.c`、`docs/parser-and-semantics/csharp-value-type-semir-aot.md`，
+  新增 `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-logical-not-bool-stack-copy-local.md`。
+
+- 2026-07-04 05:23:13 +08:00 · M1.5 / 07-S2/S4 generic LOGICAL_NOT bool-constant local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中，dynamic/string/object
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。完成项目：将
+  `GET_CONSTANT bool -> LOGICAL_NOT` 的立即相邻形态保守折叠为本地 bool 常量取反，常量发射阶段输出
+  `zr_aot_bool_constant_local_logical_not_source_skip` 并跳过源 bool local/value-slot 写入；generic
+  `LOGICAL_NOT` lowering 直接生成 `zr_aot_generic_logical_not_bool_constant_local` 和
+  `zr_aot_bD = ZR_FALSE/ZR_TRUE;`。新增
+  `backend_aot_c_bool_constant_consumed_by_local_logical_not()` 作为共享判定，要求无异常处理、源槽未导出、
+  当前指令为同槽 bool 常量、下一条 generic `LOGICAL_NOT` 消费同槽且目标 bool 能留在本地；`backend_aot_c_frame_descriptor.c`
+  复用同一判定允许源 bool 常量和对应 `LOGICAL_NOT` local-only。为保留普通 bool scalar-source
+  覆盖，shared-library bool-source fixture 改为 `LOGICAL_NOT_BOOL -> LOGICAL_NOT`，继续断言
+  `zr_aot_generic_logical_not_scalar_local` 和 `zr_aot_b1 = (TZrBool)(!zr_aot_b5);`，避免与立即常量折叠重叠。
+  RED/GREEN：RED 为新增 bool-constant `LOGICAL_NOT` shared-library 用例缺少
+  `zr_aot_bool_constant_local_logical_not_source_skip`，源码契约也缺少新 helper；GREEN 后生成 C 检查确认该项目包含
+  source-skip marker、`zr_aot_generic_logical_not_bool_constant_local` 和 `zr_aot_b1 = ZR_FALSE;`，且没有
+  `zr_aot_scalar_constant_bool_local`、`GenericPrimitiveLogicalNot(state, &frame, 1, 0)`、`SyncBoolLocal(state, &frame, 1)`
+  或 `frame.slotBase[0].value`。测试结果：WSL GCC 通过
+  `zr_vm_aot_c_generic_jump_if_bool_local_smoke_test` 6/0、
+  `zr_vm_aot_c_generic_logical_not_numeric_local_smoke_test` 4/0、
+  `zr_vm_aot_c_logical_shared_library_smoke_test` 6/0、
+  `zr_vm_aot_c_generic_bool_equality_local_smoke_test` 4/0、
+  `zr_vm_aot_c_logical_contracts_test` 4/0、
+  `zr_vm_aot_c_frame_setup_contracts_test` 1/0、
+  `zr_vm_aot_c_control_contracts_test` 2/0；WSL Clang 通过同组 6/0、4/0、6/0、4/0、4/0、1/0、2/0。
+  Windows MSVC Debug 通过 focused JUMP_IF 目标 0 failures / 6 expected ignores、focused LOGICAL_NOT
+  目标 0 failures / 4 expected ignores、logical shared-library 0 failures / 6 expected ignores，并通过
+  logical/frame/control contracts 4/0、1/0、2/0；`git diff --check` 仅有既有 LF/CRLF 提示。
+  产出：更新 `backend_aot_c_emitter.h`、`backend_aot_c_lowering_values.c`、
+  `backend_aot_c_frame_descriptor.c`、`backend_aot_c_lowering_generic_logical.c`、
+  `tests/parser/test_aot_c_generic_logical_not_numeric_local_smoke.c`、
+  `tests/parser/test_aot_c_logical_shared_library_smoke.c`、
+  `tests/parser/test_aot_c_logical_contracts.c`、`docs/parser-and-semantics/csharp-value-type-semir-aot.md`，
+  新增 `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-logical-not-bool-constant-local.md`。
+
+- 2026-07-04 04:51:23 +08:00 · M1.5 / 07-S2/S4 generic JUMP_IF bool-constant direct branch ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中，dynamic/string/object
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。完成项目：将
+  `GET_CONSTANT bool -> JUMP_IF` 的立即相邻形态保守折叠为常量分支，常量发射阶段输出
+  `zr_aot_bool_constant_local_jump_if_source_skip` 并跳过 `zr_aot_scalar_constant_bool_local` 写入；
+  generic `JUMP_IF` lowering 对 false 常量生成 `zr_aot_generic_jump_if_bool_constant_false`
+  和目标 `goto zr_aot_fn_0_ins_4;`，对 true 常量生成 `zr_aot_generic_jump_if_bool_constant_true`
+  并直接落下。新增 `backend_aot_c_bool_constant_consumed_by_local_jump_if()` 作为共享判定，要求无异常处理、
+  源槽未导出、当前指令为同槽 bool 常量、下一条 `JUMP_IF` 消费同槽且跳转目标有效；`backend_aot_c_frame_descriptor.c`
+  复用同一判定允许源 bool 常量和对应 `JUMP_IF` local-only。为保留已有 bool scalar-local 分支覆盖，
+  原 bool `JUMP_IF` fixture 改为 `GET_CONSTANT false -> SET_STACK -> JUMP_IF`，继续断言
+  `zr_aot_scalar_stack_copy_bool`、`zr_aot_generic_jump_if_bool_scalar_local` 和 `if (!zr_aot_b5) {`。
+  RED/GREEN：RED 为新增 bool-constant `JUMP_IF` shared-library 用例缺少
+  `zr_aot_bool_constant_local_jump_if_source_skip`；GREEN 后生成 C 检查确认该项目包含 source-skip marker、
+  `zr_aot_generic_jump_if_bool_constant_false` 和直接 `goto`，且没有
+  `zr_aot_scalar_constant_bool_local`、`GenericPrimitiveIsTruthy(state, &frame, 0)`、
+  `TZrBool zr_aot_truthy = ZR_FALSE;` 或 `frame.slotBase[0].value`。测试结果：WSL GCC 通过
+  `zr_vm_aot_c_generic_jump_if_bool_local_smoke_test` 6/0、
+  `zr_vm_aot_c_generic_logical_not_numeric_local_smoke_test` 3/0、
+  `zr_vm_aot_c_logical_shared_library_smoke_test` 6/0、
+  `zr_vm_aot_c_generic_bool_equality_local_smoke_test` 4/0、
+  `zr_vm_aot_c_logical_contracts_test` 4/0、
+  `zr_vm_aot_c_frame_setup_contracts_test` 1/0、
+  `zr_vm_aot_c_control_contracts_test` 2/0；WSL Clang 通过同组 6/0、3/0、6/0、4/0、4/0、1/0、2/0。
+  Windows MSVC Debug 通过 focused `JUMP_IF` 目标编译并报告 0 failures / 6 expected Unix-only ignores，
+  且 logical/frame/control contracts 分别 4/0、1/0、2/0；`git diff --check` 仅有既有 LF/CRLF 提示。
+  产出：更新 `backend_aot_c_emitter.h`、`backend_aot_c_lowering_values.c`、
+  `backend_aot_c_frame_descriptor.c`、`backend_aot_c_lowering_generic_logical.c`、
+  `tests/parser/test_aot_c_generic_jump_if_bool_local_smoke.c`、
+  `tests/parser/test_aot_c_logical_contracts.c`、`docs/parser-and-semantics/csharp-value-type-semir-aot.md`，
+  新增 `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-jump-if-bool-constant-local.md`。
+
+- 2026-07-04 04:28:50 +08:00 · M1.5 / 07-S2/S4 generic JUMP_IF reset-null direct false branch ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中，dynamic/string/object
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。完成项目：将
+  `RESET_STACK_NULL -> JUMP_IF` 的立即相邻形态保守折叠为本地 false 分支，reset 发射阶段输出
+  `zr_aot_reset_null_local_jump_if_source_skip` 并跳过 `ZrLibrary_AotRuntime_ResetStackNull(state, &frame, 0)`，
+  generic `JUMP_IF` lowering 直接生成 `zr_aot_generic_jump_if_reset_null_false` 和目标
+  `goto zr_aot_fn_0_ins_4;`。新增 `backend_aot_c_reset_null_consumed_by_local_jump_if()` 作为共享判定，
+  要求无异常处理、源槽未导出、当前指令为同槽 `RESET_STACK_NULL`、下一条 `JUMP_IF` 消费同槽且跳转目标有效；
+  `backend_aot_c_function_body.c`、`backend_aot_c_frame_descriptor.c` 和
+  `backend_aot_c_lowering_generic_logical.c` 共用该判定，普通 reset fallback 仍保留 runtime helper。
+  RED/GREEN：RED 为新增 reset-null `JUMP_IF` shared-library 用例缺少
+  `zr_aot_reset_null_local_jump_if_source_skip`；GREEN 后生成 C 检查确认该项目包含 reset source-skip marker、
+  `zr_aot_generic_jump_if_reset_null_false` 和直接 `goto`，且没有
+  `ZrLibrary_AotRuntime_ResetStackNull(state, &frame, 0)`、`GenericPrimitiveIsTruthy(state, &frame, 0)` 或
+  `TZrBool zr_aot_truthy = ZR_FALSE;`。测试结果：WSL GCC 通过
+  `zr_vm_aot_c_generic_jump_if_bool_local_smoke_test` 5/0、
+  `zr_vm_aot_c_generic_logical_not_numeric_local_smoke_test` 3/0、
+  `zr_vm_aot_c_logical_shared_library_smoke_test` 6/0、
+  `zr_vm_aot_c_generic_bool_equality_local_smoke_test` 4/0、
+  `zr_vm_aot_c_logical_contracts_test` 4/0、
+  `zr_vm_aot_c_frame_setup_contracts_test` 1/0、
+  `zr_vm_aot_c_control_contracts_test` 2/0；WSL Clang 通过同组 5/0、3/0、6/0、4/0、4/0、1/0、2/0。
+  Windows MSVC Debug 通过 focused `JUMP_IF` 目标编译并报告 0 failures / 5 expected Unix-only ignores，
+  且 logical/frame/control contracts 分别 4/0、1/0、2/0。产出：更新
+  `backend_aot_c_emitter.h`、`backend_aot_c_lowering_values.c`、`backend_aot_c_function_body.c`、
+  `backend_aot_c_frame_descriptor.c`、`backend_aot_c_lowering_generic_logical.c`、
+  `tests/parser/test_aot_c_generic_jump_if_bool_local_smoke.c`、
+  `tests/parser/test_aot_c_logical_contracts.c`、`docs/parser-and-semantics/csharp-value-type-semir-aot.md`，
+  新增 `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-jump-if-reset-null-local.md`。
+
+- 2026-07-04 04:10:55 +08:00 · M1.5 / 07-S2/S4 generic JUMP_IF null-constant direct false branch ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中，dynamic/string/object
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。完成项目：将
+  `GET_CONSTANT null -> JUMP_IF` 的立即相邻形态保守折叠为本地 false 分支，常量发射阶段输出
+  `zr_aot_null_constant_local_jump_if_source_skip` 并跳过源槽 `frame.slotBase[0].value` 写入，
+  `backend_aot_c_lowering_generic_logical.c` 直接生成
+  `zr_aot_generic_jump_if_null_constant_false` 和目标 `goto zr_aot_fn_0_ins_4;`。新增
+  `backend_aot_c_null_constant_consumed_by_local_jump_if()` 作为共享判定，要求无异常处理、源槽未导出、
+  当前指令为同槽 null 常量、下一条 `JUMP_IF` 消费同槽且跳转目标有效；`backend_aot_c_frame_descriptor.c`
+  复用同一判定允许源 null 常量和对应 `JUMP_IF` local-only。RED/GREEN：RED 为新增
+  null-constant `JUMP_IF` shared-library 用例缺少 `zr_aot_null_constant_local_jump_if_source_skip`；
+  GREEN 后生成 C 检查确认该项目包含 source-skip marker、`zr_aot_generic_jump_if_null_constant_false`
+  和直接 `goto`，且没有 `frame.slotBase[0].value`、`GenericPrimitiveIsTruthy(state, &frame, 0)`、
+  `TZrBool zr_aot_truthy = ZR_FALSE;` 或 `ZrCore_Value_ResetAsNull(zr_aot_destination);`。测试结果：WSL GCC、
+  WSL Clang 均通过 `zr_vm_aot_c_generic_jump_if_bool_local_smoke_test` 4/0、
+  `zr_vm_aot_c_generic_logical_not_numeric_local_smoke_test` 3/0、
+  `zr_vm_aot_c_logical_shared_library_smoke_test` 6/0、
+  `zr_vm_aot_c_generic_bool_equality_local_smoke_test` 4/0、
+  `zr_vm_aot_c_logical_contracts_test` 4/0、
+  `zr_vm_aot_c_frame_setup_contracts_test` 1/0、
+  `zr_vm_aot_c_control_contracts_test` 2/0；Windows MSVC Debug 通过 focused `JUMP_IF` 目标编译并报告
+  0 failures / 4 expected Unix-only ignores，且 logical/frame/control contracts 分别 4/0、1/0、2/0。产出：更新
+  `backend_aot_c_emitter.h`、`backend_aot_c_lowering_values.c`、
+  `backend_aot_c_frame_descriptor.c`、`backend_aot_c_lowering_generic_logical.c`、
+  `tests/parser/test_aot_c_generic_jump_if_bool_local_smoke.c`、
+  `tests/parser/test_aot_c_logical_contracts.c`、`docs/parser-and-semantics/csharp-value-type-semir-aot.md`，
+  新增 `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-jump-if-null-constant-local.md`。
+
+- 2026-07-04 03:49:20 +08:00 · M1.5 / 07-S2/S4 generic LOGICAL_NOT null-constant local branch ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中，dynamic/string/object
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。完成项目：将
+  `GET_CONSTANT null -> LOGICAL_NOT -> JUMP_IF_BOOL_FALSE` 的立即相邻形态保守折叠到本地
+  bool 路径，生成 `zr_aot_null_constant_local_logical_not_source_skip` 和
+  `zr_aot_generic_logical_not_null_constant_local`，直接写 `zr_aot_b1 = ZR_TRUE;` 并让分支
+  发射 `if (!zr_aot_b1) {`；`backend_aot_c_lowering_values.c` 新增共享判定，只有无异常处理、
+  源槽未导出、同槽 null 常量马上被 `LOGICAL_NOT` 消费且 bool 结果可跳过 value slot 时才跳过
+  常量 value-slot 写入；`backend_aot_c_frame_descriptor.c` 用同一判定允许该 null 常量 local-only；
+  `backend_aot_c_lowering_generic_logical.c` 在 runtime fallback 前写本地 bool 结果。为保留运行时边界覆盖，
+  原 null-source runtime 用例改为 `RESET_STACK_NULL -> LOGICAL_NOT`，继续要求
+  `GenericPrimitiveLogicalNot`、`SyncBoolLocal` 和本地 `JUMP_IF_BOOL_FALSE` 分支。RED/GREEN：RED 为新增
+  null-constant shared-library 用例缺少 `zr_aot_generic_logical_not_null_constant_local`；GREEN 后生成 C 检查确认
+  null-constant 项目没有 `frame.slotBase[0].value`、没有 `GenericPrimitiveLogicalNot(state, &frame, 1, 0)`、
+  没有 `SyncBoolLocal(state, &frame, 1...)`，reset-null 项目仍保留 `zr_aot_value_exec_reset_stack_null`、
+  runtime helper 和 bool sync。测试结果：WSL GCC、WSL Clang 均通过
+  `zr_vm_aot_c_generic_logical_not_numeric_local_smoke_test` 3/0、
+  `zr_vm_aot_c_logical_shared_library_smoke_test` 6/0、
+  `zr_vm_aot_c_generic_jump_if_bool_local_smoke_test` 3/0、
+  `zr_vm_aot_c_generic_bool_equality_local_smoke_test` 4/0、
+  `zr_vm_aot_c_logical_contracts_test` 4/0；Windows MSVC Debug 通过 focused 目标编译并报告 3/0/3 ignored，
+  `zr_vm_aot_c_logical_contracts_test` 4/0。产出：更新
+  `backend_aot_c_emitter.h`、`backend_aot_c_lowering_values.c`、`backend_aot_c_frame_descriptor.c`、
+  `backend_aot_c_lowering_generic_logical.c`、`tests/parser/test_aot_c_generic_logical_not_numeric_local_smoke.c`、
+  `tests/parser/test_aot_c_logical_contracts.c`、`docs/parser-and-semantics/csharp-value-type-semir-aot.md`，
+  新增 `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-logical-not-null-constant-local.md`。
+
+- 2026-07-04 03:18:03 +08:00 · M1.5 / 07-S2/S4 generic LOGICAL_NOT runtime bool-result local branch reuse ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中，完整 dynamic/string/object
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。完成项目：新增 generic
+  `LOGICAL_NOT` null-source runtime shared-library 覆盖，验证当源值无法直接证明为 scalar local 但
+  `GenericPrimitiveLogicalNot` 的结果槽声明为 bool local 且后续由 `JUMP_IF_BOOL_FALSE` 消费时，生成物仍保留
+  runtime helper 语义边界，随后通过 `ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, 1, &zr_aot_b1)`
+  同步到 `zr_aot_b1`，后续分支直接发射 `if (!zr_aot_b1) {`，不再构造 `zr_aot_condition` 或重读
+  `frame.slotBase[1].value`。`backend_aot_c_scalar_locals.c` 现在对 generic `LOGICAL_NOT` 的 bool
+  结果登记不再要求源槽已经是 bool scalar local，而是以目标槽已声明 bool local 为准，覆盖 runtime fallback
+  结果同步后的本地分支复用。RED/GREEN：RED 先证明 runtime-source `LOGICAL_NOT` 缺少本地 bool 分支 marker；
+  实现后发现字符串源不属于 `GenericPrimitiveLogicalNot` 支持的 primitive truthiness，测试输入改为同样走
+  runtime fallback 且受支持的 null 源；GREEN 后 focused generic LOGICAL_NOT smoke 2/0。验证：生成物确认包含
+  `GenericPrimitiveLogicalNot(state, &frame, 1, 0)`、`zr_aot_generic_logical_sync_bool_local_boundary`、
+  `SyncBoolLocal(..., &zr_aot_b1)`、`zr_aot_jump_if_bool_false_scalar_local` 和 `if (!zr_aot_b1) {`，且无
+  `const SZrTypeValue *zr_aot_condition = ZR_NULL;`、`zr_aot_condition = &frame.slotBase[1].value;` 或
+  `zr_aot_condition_bool` 命中。WSL GCC/Clang 均通过 generic LOGICAL_NOT numeric/null smoke 2/0、
+  logical shared-library smoke 6/0、generic JUMP_IF bool/numeric local 3/0、generic bool equality local 4/0；
+  Windows MSVC Debug 构建并运行 generic LOGICAL_NOT target，2 项 Unix-only shared-library 用例按预期 ignored
+  且 0 failures。`git diff --check` 只报告 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-logical-not-runtime-bool-local.md`。
+  备注：本切片只关闭 generic `LOGICAL_NOT` runtime primitive 结果到 bool local branch 的复用缺口；
+  string/object truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能门槛和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-04 02:52:14 +08:00 · M1.5 / 07-S2/S4 generic call-result equality local compare + u64 reset-null thunk ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中，完整 dynamic/string/object
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。完成项目：新增 call-result equality
+  shared-library 覆盖，把 no-arg typed u64/f64 helper 的 typed equality SemIR 重写成 generic
+  `LOGICAL_EQUAL`/`LOGICAL_NOT_EQUAL`，验证已证明 u64/f64 call result 可直接进入
+  `zr_aot_generic_u64_compare_scalar_local` / `zr_aot_generic_f64_compare_scalar_local`，不经过
+  `GenericPrimitiveLogicalEqual/NotEqual`、bool sync 或 typed destination `SZrTypeValue` materialization。
+  `backend_aot_c_typed_u64_thunks.c` 现在接受 `GET_CONSTANT` 后跟不重置返回常量槽的
+  `RESET_STACK_NULL`，再接 `TO_UINT`/`FUNCTION_RETURN` 的 no-arg u64 thunk 形状，与既有 f64 reset-null
+  规则对齐，使 `unsignedSeven()` 这类 reset-tail helper 可发射 `static TZrUInt64 ...` 直接 thunk。
+  RED/GREEN：RED 为新增 `generic_call_result_equality_local_project` 后生成物缺少
+  `static TZrUInt64 zr_aot_typed_u64_fn_3(void)` / `return (TZrUInt64)7;`，并回退到
+  direct static function call + bool/u64/f64 local sync；GREEN 后 focused generic equality smoke 4/0。
+  验证：生成物确认包含 u64/f64 no-arg direct-call marker、u64 reset-tail typed thunk、
+  `zr_aot_generic_u64_compare_scalar_local` 和 `zr_aot_generic_f64_compare_scalar_local`，且无目标
+  `direct_static_function_call_sync_bool`、`generic_logical_sync_bool`、`GenericPrimitiveLogical*`、
+  `SZrTypeValue *zr_aot_typed_destination` 或 `ZR_VALUE_FAST_SET(zr_aot_typed_destination,` 命中。
+  WSL GCC/Clang 均通过 generic bool equality local 4/0、logical shared-library smoke 6/0、
+  typed direct-call u64 25/0、call shared-library smoke 5/0；Windows MSVC Debug 构建并运行 generic bool
+  equality local 4 项，Unix-only shared-library 用例按预期 ignored 且 0 failures。`git diff --check`
+  只报告 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-call-result-equality-u64-reset-thunk.md`。
+  备注：本切片只关闭 call-result generic equality 与 u64 reset-null constant-return typed thunk 缺口；
+  混合 primitive equality、dynamic/string/object truthiness、value-copy migration、GC roots/exports/
+  frame cleanup、更广 byte-frame narrowing、性能门槛和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-04 02:22:10 +08:00 · M1.5 / 07-S2/S4 generic u64/f64 equality local compare ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中，完整 dynamic/string/object
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。完成项目：当 generic
+  `LOGICAL_EQUAL`/`LOGICAL_NOT_EQUAL` 的左右操作数均已证明为同类 u64 或 f64 scalar local，且目标槽可作为
+  bool scalar local 后续消费时，`backend_aot_c_lowering_generic_logical.c` 现在直接发射
+  `zr_aot_b* = (TZrBool)((zr_aot_u* ==|!= zr_aot_u*) != 0u);` 或
+  `zr_aot_b* = (TZrBool)((zr_aot_f* ==|!= zr_aot_f*) != 0u);`，不再进入
+  `ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual/NotEqual`、`SyncBoolLocal` 或相关
+  `frame.slotBase` operand materialization。`backend_aot_c_scalar_locals.c` 同步把 plain generic
+  equality/inequality 纳入 u64/f64 local consumer、operand mention 和 bool-result write 证明；
+  `backend_aot_c_lowering_values.c` 增加 unsigned 常量的 `zr_aot_scalar_constant_u64_local` 早返回路径，
+  使 u64 常量在只被 local compare 消费时也跳过 value slot。RED/GREEN：RED 为
+  `test_aot_c_generic_bool_equality_local_smoke.c` 新增 `generic_u64_f64_equality_local_project` 后 WSL GCC
+  focused 3 项中 1 项失败 `Expected Non-NULL`，证明旧生成物缺少 u64/f64 direct-compare marker；补
+  compare 后又因 `frame.slotBase[0].value` 命中失败 `Expected NULL`，证明 unsigned 常量仍落到 frame。
+  GREEN 后 focused generic bool/i64/u64/f64 equality smoke 3/0。验证：生成物确认包含
+  `zr_aot_scalar_constant_u64_local`、`zr_aot_generic_u64_compare_scalar_local`、
+  `zr_aot_generic_f64_compare_scalar_local`、四条 exact bool compare assignment，且无目标 helper/sync/
+  frame-slot 命中。WSL GCC/Clang 均通过 generic bool equality local 3/0、logical shared-library smoke 6/0、
+  shared-library smoke 13/0、generic LOGICAL_NOT numeric local 1/0、generic JUMP_IF bool/numeric local 3/0、
+  logical contracts 4/0、source contracts 24/0、guardrail contracts 6/0、typed direct-call bool 28/0、
+  typed direct-call u64 25/0、typed direct-call f64 19/0；Windows MSVC Debug 构建同组目标，logical/source/
+  guardrail contracts 4/0、24/0、6/0 通过，Unix-only shared-library/direct-call 用例按预期 ignored 且
+  0 failures。产出：`tests/acceptance/2026-07-03-aot-07-s2-s4-generic-u64-f64-equality-local-compare.md`。
+  备注：本切片只关闭 plain generic equality 的已证明 u64/f64-local 直接比较与 unsigned 常量 local-only
+  缺口；混合 primitive equality、dynamic/string/object truthiness、value-copy migration、GC roots/exports/
+  frame cleanup、更广 byte-frame narrowing、性能门槛和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-04 01:37:47 +08:00 · M1.5 / 07-S2/S4 generic i64 equality local compare ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中，完整 dynamic/string/object
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。完成项目：当 generic
+  `LOGICAL_EQUAL`/`LOGICAL_NOT_EQUAL` 的左右操作数均已证明为 i64 scalar local，且目标槽可作为 bool
+  scalar local 后续消费时，`backend_aot_c_lowering_generic_logical.c` 现在直接发射
+  `zr_aot_b* = (TZrBool)((zr_aot_sL ==|!= zr_aot_sR) != 0u);`，不再进入
+  `ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual/NotEqual`、`SyncBoolLocal` 或相关
+  `frame.slotBase` operand materialization。`backend_aot_c_scalar_locals.c` 同步把 plain generic
+  equality/inequality 纳入 i64 local consumer、operand mention 和 bool-result write 证明；混合/未证明
+  operand 仍保留 runtime helper 动态语义。RED/GREEN：RED 为
+  `test_aot_c_generic_bool_equality_local_smoke.c` 新增 `generic_i64_equality_local_project` 后 WSL GCC
+  focused 2 项中 1 项失败 `Expected Non-NULL`，证明旧生成物缺少
+  `zr_aot_generic_i64_compare_scalar_local`。GREEN 后 focused generic bool/i64 equality smoke 2/0，
+  logical shared-library smoke 调整既有断言以接受已证明 i64 的 `choose(true) != 4` 直接 local compare。
+  验证：生成物确认包含 `zr_aot_b2 = (TZrBool)((zr_aot_s0 == zr_aot_s1) != 0u);` 与
+  `zr_aot_b3 = (TZrBool)((zr_aot_s0 != zr_aot_s4) != 0u);`，且无目标 helper/sync/frame-slot 命中。
+  WSL GCC/Clang 均通过 generic bool equality local 2/0、logical shared-library smoke 6/0、
+  shared-library smoke 13/0、generic LOGICAL_NOT numeric local 1/0、generic JUMP_IF bool/numeric local 3/0、
+  logical contracts 4/0、source contracts 24/0、guardrail contracts 6/0、typed direct-call bool 28/0、
+  typed direct-call u64 25/0、typed direct-call f64 19/0；Windows MSVC Debug 构建同组目标，logical/source/
+  guardrail contracts 4/0、24/0、6/0 通过，Unix-only shared-library/direct-call 用例按预期 ignored 且
+  0 failures。产出：`tests/acceptance/2026-07-03-aot-07-s2-s4-generic-i64-equality-local-compare.md`。
+  备注：本切片只关闭 plain generic equality 的已证明 i64-local 直接比较；混合 primitive equality、
+  dynamic/string/object truthiness、value-copy migration、GC roots/exports/frame cleanup、更广
+  byte-frame narrowing、性能门槛和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-04 01:04:05 +08:00 · M1.5 / 07-S2/S4 generic equality bool-result branch local reuse ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中，完整 dynamic/string/object
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。完成项目：generic primitive
+  equality/inequality 保持 `ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual/NotEqual` 动态边界，
+  但当目标槽已声明为 bool scalar local 且边界结果已通过 `ZrLibrary_AotRuntime_SyncBoolLocal`
+  同步到 `zr_aot_b*` 后，后续 `JUMP_IF_BOOL_FALSE` 直接读取 bool local，不再回读
+  `frame.slotBase[9].value`。`backend_aot_c_scalar_locals.c` 的 exec write 与 bool-value write
+  记录现在把 generic equality 的 bool 目标槽识别为 bool local write，不再要求两个操作数都已证明
+  为 bool；动态 equality 语义仍由 runtime helper 负责。RED/GREEN：RED 为 WSL GCC logical
+  shared-library smoke 新增断言后失败 `Expected Non-NULL`，证明旧生成物没有 `if (!zr_aot_b9)`;
+  GREEN 后 focused logical shared-library smoke 6/0，生成物确认保留
+  `GenericPrimitiveLogicalEqual/NotEqual` 与 `SyncBoolLocal(state, &frame, 9, &zr_aot_b9)`，
+  并输出 `if (!zr_aot_b9) {`、不再输出 `zr_aot_condition = &frame.slotBase[9].value;`。
+  验证：WSL GCC/Clang 均通过 logical shared-library smoke 6/0、shared-library smoke 13/0、
+  generic LOGICAL_NOT numeric local 1/0、generic JUMP_IF bool/numeric local 3/0、source contracts 24/0、
+  guardrail contracts 6/0、typed direct-call bool 28/0、typed direct-call u64 25/0、typed direct-call f64 19/0；
+  Windows MSVC Debug 构建同组目标，source contracts 24/0、guardrail contracts 6/0 通过，Unix-only
+  shared-library/direct-call 用例按预期 ignored 且 0 failures。产出：
+  `tests/acceptance/2026-07-03-aot-07-s2-s4-generic-equality-bool-branch-local.md`。
+  备注：本切片只关闭 generic equality runtime-boundary bool result 后续 branch 的 frame reread 缺口；
+  operand 常量 materialization、动态/string/object truthiness、value-copy migration、GC roots/exports/frame cleanup、
+  更广 byte-frame narrowing 和完整 zero-frame proof 仍待后续。
+
+- 2026-07-04 00:22:33 +08:00 · M1.5 / 07-S2/S4/S5 u64-f64 call-result truthiness direct-call ·
+  状态：子切片完成、07-S2/S4/S5 部分完成；07~12 总目标继续进行中，完整 dynamic/string/object
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。完成项目：generic truthiness
+  shared-library smoke 扩展到 `unsignedZero/unsignedOne/floatZero/floatOne`，覆盖 `!call()`、
+  `if (call())` 和保存后的 inverted bool；call-result written-before 现在优先使用 no-arg static typed
+  callee 的真实返回 kind，让 u64/f64 call result 分别读 `zr_aot_u*` / `zr_aot_f*`，避免旧的 i64/u64
+  槽复用污染；全局 scalar declaration 仍保留 OR 聚合，避免破坏后续槽复用需要的声明；
+  f64 constant-return thunk 识别接受 `GET_CONSTANT; RESET_STACK_NULL(non-return slot); FUNCTION_RETURN`
+  形状，使 reset-tail 的 f64 local-return 函数继续生成 typed f64 no-arg thunk。RED/GREEN：RED 为
+  WSL GCC logical shared-library smoke 缺少 `/* zr_aot_static_f64_no_arg_direct_call */`，并暴露
+  `unsignedZero()` 的 `JUMP_IF` 读取 stale `zr_aot_s17`、f64 truthiness 走 u64 sync/read；GREEN 后
+  focused logical shared-library smoke 6/0。验证：WSL GCC/Clang 均通过 logical shared-library
+  smoke 6/0、generic LOGICAL_NOT numeric local 1/0、generic JUMP_IF bool/numeric local 3/0、
+  source contracts 24/0、guardrail contracts 6/0、typed direct-call f64 19/0、typed direct-call u64 25/0；
+  Windows MSVC Debug 构建同组目标，source contracts 24/0、guardrail contracts 6/0 通过，Unix-only
+  shared-library/direct-call 用例按预期 ignored 且 0 failures。产出：
+  `tests/acceptance/2026-07-03-aot-07-s2-s4-s5-u64-f64-call-result-truthiness-direct-call.md`。
+  备注：本切片只关闭 no-arg typed u64/f64 call result 到 generic truthiness/direct-call 的局部缺口，
+  不声明完整 07-S2、07-S4、07-S5 或 07~12 总目标完成。
+
+- 2026-06-29 14:40:45 +08:00 · M1.5 / 07-S2/S5 bool call-result stack-copy direct-call propagation ·
+  状态：子切片完成、07-S2/S5 部分完成；完整 byte-frame narrowing、GC roots/exports、SZrValue 归零、
+  字段布局 resolver 迁移和性能门槛仍待后续；08-12 继续按各自计划推进 ·
+  完成项目：call-result scalar-local consumer 推断现在在遇到 `SET_STACK`/`GET_STACK` 把 call result
+  复制到下游槽时，会复用已有 stack-copy destination consumer narrowing，继续读取 copy destination 后续
+  `JUMP_IF_BOOL_FALSE` / truthiness consumer。这让 `invert(false)` 这类 typed bool call result 经 stack-copy
+  再进入 bool branch 的路径能把 call destination 证明为 bool local，生成
+  `zr_aot_static_bool_one_arg_direct_call` + `zr_aot_typed_bool_fn_1(zr_aot_b...)`，不再退回
+  `ZrLibrary_AotRuntime_CallStaticDirect(...)` 后同步 i64 local。RED/GREEN：RED 为
+  `zr_vm_aot_c_typed_direct_call_bool_shared_library_smoke_test` 在 28 个 bool direct-call 用例中 25 个失败，
+  首个失败位于 direct-call marker 断言；GREEN 后 28/0。验证：WSL gcc/clang 均通过 typed direct-call
+  bool shared-library smoke 28/0、typed call contracts 4/0、call contracts 8/0、source contracts 22/0、
+  logical shared-library smoke 6/0、call shared-library smoke 5/0；Windows MSVC Debug 通过 typed call
+  contracts 4/0、call contracts 8/0、source contracts 22/0，typed direct-call bool smoke 为 0 failures /
+  28 ignored（Unix-only）。产出：
+  `tests/acceptance/2026-06-29-aot-07-s2-s5-bool-call-result-stack-copy-direct-call.md`。
+  备注：本切片只收窄 typed bool call result 经 stack-copy 进入 bool/truthiness consumer 的 scalar-local
+  类型传播；dynamic/string/object truthiness、value-copy migration、GC roots/exports/frame cleanup、
+  更广 byte-frame narrowing、性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续切片。
+
+- 2026-06-29 14:21:20 +08:00 · M1.5 / 07-S3/S4 runtime CopyStack registry layout resolver ·
+  状态：子切片完成、07-S3/S4 部分完成；完整 byte-frame narrowing、GC roots/exports、SZrValue 归零、
+  字段布局 resolver 迁移和性能门槛仍待后续；08-12 继续按各自计划推进 ·
+  完成项目：`ZrLibrary_AotRuntime_CopyStack()` 的 inline-struct source/destination stack-copy fallback
+  现在通过 `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function, destinationLayout->typeLayoutId)`
+  校验 generated-frame inline layout，不再使用
+  `ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame->function, ..., state)`。source contract 同步要求
+  `aot_runtime_values.c` include `zr_vm_core/metadata_runtime.h`、包含 metadata-runtime resolver，并禁止该
+  runtime helper 继续出现旧 prototype type-layout resolver。RED/GREEN：RED 为 source contract 新增
+  metadata runtime include/resolver needle 后，`aot_runtime_values.c` 仍缺少该 include/resolver；helper include
+  与 resolver 替换后 GREEN。验证：WSL gcc/clang 均通过 source contracts 22/0、call shared-library smoke 5/0、
+  value-type shared-library smoke 5/0；Windows MSVC Debug 通过 source contracts 22/0、call smoke 5/0/5 ignored、
+  value-type smoke 5/0/1 ignored。产出：
+  `tests/acceptance/2026-06-29-aot-07-s3-s4-runtime-copy-stack-registry-layout.md`。
+  备注：object-to-inline copy、value-slot copy、materialized stack-value assignment 语义保持由 CopyStack helper
+  负责；本记录不改变字段 layout resolver、runtime generic layout construction、public reflection object、
+  cross-module token rewrite 或完整裁剪分析。
+
+- 2026-06-29 14:11:34 +08:00 · M1.5 / 07-S3/S4 runtime inline-struct call/return registry layout resolver ·
+  状态：子切片完成、07-S3/S4 部分完成；完整 byte-frame narrowing、GC roots/exports、SZrValue 归零、
+  字段布局 resolver 迁移和性能门槛仍待后续；08-12 继续按各自计划推进 ·
+  完成项目：`ZrLibrary_AotRuntime_CallInlineStruct()`、
+  `ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge()` 与
+  `ZrLibrary_AotRuntime_ReturnInlineStruct()` 现在通过
+  `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function, typeLayoutId)` 校验 generated-frame
+  inline struct call destination、dynamic deopt destination 和 return source layout，不再读取
+  `ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame->function, ..., state)`。return contract 同步把
+  frame thunk carrier needle 从旧 descriptor 字段收窄到当前 `codeRegistration->functionPointers` ABI。
+  RED/GREEN：return contract 先暴露既有 codeRegistration ABI needle 漂移；同步 needle 后，新增
+  metadata-runtime resolver contract 得到 RED；改 runtime helper 后 GREEN。验证：WSL gcc 与 WSL clang
+  均通过 return contracts 1/0、source contracts 22/0、value SemIR contracts 4/0、call shared-library
+  smoke 5/0、value-type shared-library smoke 5/0；Windows MSVC Debug 通过 return contracts 1/0、
+  source contracts 22/0、value SemIR contracts 4/0、call smoke 5/0/5 ignored、value-type smoke
+  5/0/1 ignored。源码扫描确认 `aot_runtime_return.c` 中三处 inline-struct boundary lookup 均使用
+  metadata-runtime resolver，且无旧 `ResolvePrototypeFrameTypeLayout(frame->function` 命中。产出：
+  `tests/acceptance/2026-06-29-aot-07-s3-s4-runtime-inline-struct-call-return-registry-layout.md`。
+  备注：本记录不改变 `ZrCore_Function_ResolvePrototypeFrameFieldLayout(state, ...)` 字段布局解析，也不声明
+  runtime generic layout construction、public reflection object、cross-module token rewrite 或完整裁剪分析完成。
+
+- 2026-06-29 13:57:57 +08:00 · M1.5 / 07-S3/S4 value SemIR registry layout resolver ·
+  状态：子切片完成、07-S3/S4 部分完成；完整 value-copy migration、byte-frame narrowing、
+  GC roots/exports、SZrValue 归零和性能门槛仍待后续；08-12 继续按各自计划推进 ·
+  完成项目：generated value SemIR inline `COPY_VALUE` 以及 nested inline-struct field
+  load/store 的 type-layout lookup 不再输出
+  `ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function, ..., state)`，改为
+  `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, typeLayoutId)`。这让
+  value SemIR inline copy/field transfer 与 frame cleanup、GC inline-frame consumer 共用
+  11-S4G attached code-registration layout registry。RED/GREEN：RED 为 source/value SemIR
+  contract 新增 metadata-runtime resolver needle 后仍看到旧 prototype resolver；GREEN 后
+  source contract 与 value SemIR focused contract 同时要求 metadata resolver 并禁止 inline copy/field
+  transfer 发射旧 prototype type-layout resolver。验证：WSL gcc 与 WSL clang 均通过 source
+  contracts 22/0、value SemIR contracts 4/0、value-type shared-library smoke 5/0；Windows
+  MSVC Debug 通过 source contracts 22/0、value SemIR contracts 4/0、value-type smoke
+  5/0/1 ignored。生成产物检查确认 value-type generated C 只出现
+  `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, ...)`，未出现旧
+  `ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function`。产出：
+  `tests/acceptance/2026-06-29-aot-07-s3-s4-value-semir-registry-layout.md`。
+  备注：本记录不改变 `ZrCore_Function_ResolvePrototypeFrameFieldLayout(state, ...)` 字段布局解析；
+  typed call/return、runtime generic layout construction、public reflection object、cross-module token
+  rewrite、完整 byte-frame narrowing 和 trim 分析仍待后续切片。
+
+- 2026-06-29 13:44:33 +08:00 · M1.5 / 07-S3/S4 frame cleanup registry layout resolver ·
+  状态：子切片完成、07-S3/S4 部分完成；完整 frame cleanup/byte-frame/GC roots/exports/SZrValue
+  归零仍待后续；08-12 继续按各自计划推进 ·
+  完成项目：generated value-frame cleanup 的 inline-struct drop layout lookup 不再输出
+  `ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function, ..., state)`，改为
+  `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, typeLayoutId)`；generated C
+  同步 include `zr_vm_core/metadata_runtime.h`。这让 AOT-loaded function cleanup 与 11-S4G
+  attached code-registration layout registry 共用同一 layout table。RED/GREEN：RED 为
+  `zr_vm_aot_c_source_contracts_test` 缺少 generated `metadata_runtime.h` include；GREEN 后
+  cleanup source contract 同时要求 metadata-runtime resolver 并禁止 cleanup 发射旧 prototype resolver。
+  验证：WSL gcc 与 WSL clang 均通过 source contracts 22/0、frame setup contracts 1/0、value-type
+  shared-library smoke 5/0；Windows MSVC Debug 通过 source contracts 22/0、frame setup contracts
+  1/0、value-type smoke 5/0/1 ignored。生成产物检查确认 value-frame cleanup block 已出现
+  `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, ...)`。产出：
+  `tests/acceptance/2026-06-29-aot-07-s3-s4-frame-cleanup-registry-layout.md`。
+  备注：本记录只迁移 frame cleanup drop lookup；value SemIR copy/field helpers 中仍存在的 prototype
+  resolver、完整 byte-frame narrowing、GC roots/exports 和性能/SZrValue 计数仍待后续切片。
+
+- 2026-06-29 11:56:53 +08:00 · M1.5 / 07-S2/S4 call-result truthiness value-slot sync elision ·
+  状态：子切片完成、07-S2/S4 部分完成、07/M1.5 部分推进；08-12 仍按各自计划继续推进 ·
+  完成项目：scalar-local live-value scan 现在把 generic `JUMP_IF` 与 `LOGICAL_NOT`
+  识别为 i64/u64/f64 primitive truthiness consumer，而不是只按 bool consumer 处理。
+  这让 `backend_aot_c_scalar_locals_*_result_can_skip_value_slot()` 能证明 no-arg typed i64
+  call result 在 `!zero()`、`if (zero())`、`!one()` 这类 source-level truthiness 链路中只被
+  scalar local 读取；`backend_aot_write_c_static_direct_i64_no_arg_function_call()` 因此只生成
+  `zr_aot_s* = zr_aot_typed_i64_fn_*();`，不再额外声明 `zr_aot_typed_destination`、
+  写 `ZR_VALUE_FAST_SET(zr_aot_typed_destination, ...)`，也不再出现
+  `zr_aot_static_i64_no_arg_direct_call_sync_stack_slot` ·
+  RED/GREEN：扩展 `test_aot_c_logical_shared_library_smoke.c` 的 generic truthiness fixture，
+  RED 先因生成 C 仍包含 typed call-result value-slot sync marker 在第 307 行 `Expected NULL`
+  失败；GREEN 后同一 smoke 6/0，并确认生成 C 保留 `zr_aot_s4/zr_aot_s6` typed direct-call
+  local、`zr_aot_generic_logical_not_i64_scalar_local`、`zr_aot_generic_jump_if_i64_scalar_local`，
+  且不再包含 `zr_aot_typed_destination` / `ZR_VALUE_FAST_SET(zr_aot_typed_destination, ...)` ·
+  测试结果：WSL GCC logical shared-library smoke 6/0、logical contracts 4/0、
+  generic LOGICAL_NOT numeric local smoke 1/0、generic JUMP_IF bool/numeric/stack-copy local smoke 3/0、
+  call shared-library smoke 5/0、call contracts 8/0；WSL Clang 同组 6/0、4/0、1/0、3/0、
+  5/0、8/0；Windows MSVC Debug logical contracts 4/0、call contracts 8/0、
+  logical shared-library smoke 0 failures / 6 ignored。产出：
+  `tests/acceptance/2026-06-29-aot-07-s2-s4-call-result-truthiness-value-slot-sync-elision.md`。
+  备注：本切片只删除 proven scalar-only no-arg typed i64 call-result truthiness 的 value-slot sync；
+  dynamic/string/object truthiness、value-copy 迁移、GC roots/exports/frame cleanup、byte-frame
+  更广收窄、性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续切片。
+
+- 2026-06-29 11:29:46 +08:00 · M1.5 / 07-S2/S4 call-result truthiness local propagation ·
+  状态：子切片完成、07-S2/S4 部分完成、07/M1.5 部分推进；08-12 仍按各自计划继续推进 ·
+  完成项目：generic `LOGICAL_NOT` 的 call-result source 现在可以从 no-arg typed callee
+  追回 primitive return kind。`backend_aot_c_scalar_locals_kind_from_call_result_callee()` 通过
+  callable slot 反向解析、constant/closure/sub-function/stack-copy 追踪和 no-arg typed thunk gate，
+  为 `!zero()` / `!one()` 这类 i64 call result 声明并保持 `zr_aot_s*` local；
+  `backend_aot_c_write_generic_logical_not_scalar_local()` 随后直接生成
+  `zr_aot_generic_logical_not_i64_scalar_local` 与
+  `zr_aot_bD = (TZrBool)(zr_aot_sS == (TZrInt64)0)`，不再为这些 proven call result 调
+  `GenericPrimitiveLogicalNot` 或 `SyncBoolLocal`。相邻 call shared-library smoke 同步更新为已接受的
+  numeric scalar stack-copy local 形态，检查 `zr_aot_scalar_stack_copy_u64/f64` 而不是旧的
+  direct stack-copy sync marker ·
+  RED/GREEN：扩展 `test_aot_c_logical_shared_library_smoke.c` 中 generic truthiness fixture，
+  RED 先因 `!one()` 缺少 `zr_aot_s6 = zr_aot_typed_i64_fn_2();` 与
+  `zr_aot_b5 = (TZrBool)(zr_aot_s6 == (TZrInt64)0);` 失败；GREEN 后聚焦 smoke 6/0。
+  邻近验证中 call shared smoke 先因 stale `zr_aot_direct_stack_copy_sync_*_local_boundary`
+  断言失败，确认 lowerer 已按上一切片生成 scalar stack-copy 后更新测试期望并恢复 GREEN ·
+  测试结果：WSL GCC logical contracts 4/0、logical shared-library smoke 6/0、
+  generic LOGICAL_NOT numeric local smoke 1/0、generic JUMP_IF bool/numeric/stack-copy local smoke 3/0、
+  generic bool equality local smoke 1/0、control contracts 2/0、frame setup contracts 1/0、
+  call shared-library smoke 5/0、call contracts 8/0；WSL Clang 同组 4/0、6/0、1/0、3/0、1/0、
+  2/0、1/0、5/0、8/0；Windows MSVC Debug logical/control/frame/call contracts 4/0、2/0、1/0、
+  8/0，Unix-only shared-library smokes 为 0 failures / logical 6 ignored、LOGICAL_NOT numeric 1 ignored、
+  JUMP_IF 3 ignored、bool equality 1 ignored、call shared 5 ignored。产出：
+  `tests/acceptance/2026-06-29-aot-07-s2-s4-call-result-truthiness-local-propagation.md`。
+  备注：本切片只关闭 no-arg typed primitive callee 的 call-result truthiness 本地传播；
+  broader generic/dynamic/string/object truthiness、value-copy 迁移、GC roots/exports/frame cleanup、
+  byte-frame 更广收窄、性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续切片。
+
+- 2026-06-29 10:25:39 +08:00 · M1.5 / 07-S2/S4 generic LOGICAL_NOT numeric-source local branch ·
+  状态：子切片完成、07-S2/S4 部分完成、07/M1.5 部分推进；08-12 仍按各自计划继续推进 ·
+  完成项目：generic `LOGICAL_NOT` 在 bool-source scalar-local 分支之后继续尝试 i64/u64/f64
+  source local。该路径仍要求 destination 紧邻 `JUMP_IF_BOOL_FALSE`、bool result 可跳过 value slot，
+  且 source slot 在当前 instruction 前有对应 primitive written-before 证明；匹配时生成
+  `zr_aot_generic_logical_not_i64_scalar_local` / `zr_aot_generic_logical_not_u64_scalar_local` /
+  `zr_aot_generic_logical_not_f64_scalar_local`，分别以
+  `zr_aot_bD = (TZrBool)(zr_aot_sS == (TZrInt64)0)`、
+  `zr_aot_bD = (TZrBool)(zr_aot_uS == (TZrUInt64)0u)`、
+  `zr_aot_bD = (TZrBool)(zr_aot_fS == (TZrFloat64)0.0)` 保持 generic truthiness 的
+  logical-not 语义。`backend_aot_c_scalar_locals_record_generic_logical_not_destinations()` 与
+  bool-value write tracking 现在只接受 primitive bool/i64/u64/f64 source，不扩大到 string/object/dynamic。
+  RED/GREEN：新增独立 shared-library smoke target
+  `zr_vm_aot_c_generic_logical_not_numeric_local_smoke_test`，RED 先因旧生成物缺少
+  `zr_aot_generic_logical_not_i64_scalar_local` 等 marker 而失败 `Expected Non-NULL`；
+  GREEN 后 WSL GCC logical contracts 4/0、新 generic LOGICAL_NOT numeric local smoke 1/0、
+  logical shared-library smoke 6/0、generic JUMP_IF bool/numeric/stack-copy local smoke 3/0、
+  generic bool equality local smoke 1/0、control contracts 2/0、frame setup contracts 1/0；
+  WSL Clang 同组 4/0、1/0、6/0、3/0、1/0、2/0、1/0；Windows MSVC Debug logical/control/frame
+  contracts 4/0、2/0、1/0，Unix-only新 smoke 为 0 failures / 1 ignored，logical shared-library
+  smoke 为 0 failures / 6 ignored，generic JUMP_IF smoke 为 0 failures / 3 ignored，generic bool equality
+  smoke 为 0 failures / 1 ignored。产出：
+  `tests/acceptance/2026-06-29-aot-07-s2-s4-generic-logical-not-numeric-source-local-branch.md`。
+  备注：本切片只关闭 proven primitive numeric source 的 generic `LOGICAL_NOT` local 分支；
+  call-result truthiness 传播、generic/dynamic/string/object truthiness 更广覆盖、value-copy 迁移、
+  GC roots/exports/frame cleanup、byte-frame 更广收窄、性能计数和完整 typed 函数体零
+  `SZrValue`/frame write 仍待后续切片。
+
+- 2026-06-29 10:00:09 +08:00 · M1.5 / 07-S2/S4 generic JUMP_IF numeric stack-copy local branch ·
+  状态：子切片完成、07-S2/S4 部分完成、07/M1.5 部分推进；08-12 仍按各自计划继续推进 ·
+  完成项目：generic `JUMP_IF` 的 truthiness consumer kind 推断不再把 stack-copy destination
+  一律窄化成 bool。`backend_aot_c_scalar_locals_truthiness_consumer_kind()` 现在对 generic
+  `JUMP_IF` 沿用候选的 primitive scalar kind（bool/i64/u64/f64），只有候选未知时才保留旧 bool
+  fallback；`JUMP_IF_BOOL_FALSE` 仍保持 bool-only consumer。这样 `GET_CONSTANT i64 -> SET_STACK`
+  后接 generic `JUMP_IF` 时，copy destination 会声明为 `zr_aot_s*`，生成
+  `zr_aot_scalar_stack_copy_i64 dstSlot=5 srcSlot=0` 与
+  `zr_aot_generic_jump_if_i64_scalar_local`，不再退回 `CopyStack` + `GenericPrimitiveIsTruthy`。
+  RED/GREEN：RED 由扩展后的手写 IR shared-library smoke 捕获旧输出缺少
+  `zr_aot_scalar_stack_copy_i64 dstSlot=5 srcSlot=0`、`zr_aot_s5 = zr_aot_s0;` 和
+  `if (zr_aot_s5 == (TZrInt64)0)`；GREEN 后 WSL GCC logical contracts 4/0、
+  generic JUMP_IF bool/numeric/stack-copy local smoke 3/0、control contracts 2/0、frame setup contracts 1/0、
+  generic bool equality local smoke 1/0、logical shared-library smoke 6/0；WSL Clang 同组 4/0、3/0、2/0、1/0、1/0、6/0；
+  Windows MSVC Debug logical contracts 4/0、control contracts 2/0、frame setup contracts 1/0，
+  Unix-only generic JUMP_IF bool/numeric/stack-copy local smoke 为 0 failures / 3 ignored，
+  generic bool equality smoke 为 0 failures / 1 ignored、logical shared-library smoke 为
+  0 failures / 6 ignored。产出：
+  `tests/acceptance/2026-06-29-aot-07-s2-s4-generic-jump-if-numeric-stack-copy-local-branch.md`。
+  备注：本切片只关闭 numeric condition 经 stack-copy 进入 generic `JUMP_IF` 的 local 分支；
+  call-result truthiness 传播、generic/dynamic/string truthiness 更广覆盖、value-copy 迁移、
+  GC roots/exports/frame cleanup、byte-frame 更广收窄、性能计数和完整 typed 函数体零
+  `SZrValue`/frame write 仍待后续切片。
 
 - 2026-06-28 17:12:40 +08:00 · M1.5 / 07-S2/S4 generic JUMP_IF numeric-source local branch ·
   状态：子切片完成、07-S2/S4 部分完成、07/M1.5 部分推进；08-12 仍按各自计划继续推进 ·

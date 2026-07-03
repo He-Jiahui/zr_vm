@@ -173,6 +173,75 @@ static TZrBool metadata_runtime_is_layout_type_token(TZrMetadataToken typeToken)
                      table == ZR_METADATA_TABLE_TYPE_SPEC);
 }
 
+static TZrBool metadata_runtime_type_ref_matches_type_def_layout(
+        SZrMetadataRuntime *runtime,
+        const SZrMetadataTokenRecord *typeRefRecord,
+        const SZrMetadataRuntimeTypeDefLayoutBindingView *typeDefView) {
+    if (typeRefRecord == ZR_NULL ||
+        typeDefView == ZR_NULL ||
+        typeDefView->typeRecord == ZR_NULL ||
+        ZR_METADATA_TOKEN_TABLE(typeRefRecord->token) != ZR_METADATA_TABLE_TYPE_REF ||
+        ZR_METADATA_TOKEN_TABLE(typeRefRecord->targetMetadataToken) != ZR_METADATA_TABLE_TYPE_DEF ||
+        typeRefRecord->targetMetadataToken != typeDefView->typeDefToken) {
+        return ZR_FALSE;
+    }
+
+    if (typeRefRecord->targetModuleSignatureHash != 0u &&
+        (runtime == ZR_NULL ||
+         runtime->metadataFunction == ZR_NULL ||
+         runtime->metadataFunction->moduleSignatureHash != typeRefRecord->targetModuleSignatureHash)) {
+        return ZR_FALSE;
+    }
+    if (typeRefRecord->targetSignatureToken != 0u &&
+        typeRefRecord->targetSignatureToken != typeDefView->typeRecord->relatedToken) {
+        return ZR_FALSE;
+    }
+    if (typeRefRecord->targetSignatureHash != 0u &&
+        typeRefRecord->targetSignatureHash != typeDefView->typeRecord->signatureHash) {
+        return ZR_FALSE;
+    }
+    if ((typeRefRecord->layoutVersion != 0u ||
+         typeRefRecord->layoutHash != 0u ||
+         typeDefView->layoutVersion != 0u ||
+         typeDefView->layoutHash != 0u) &&
+        (typeRefRecord->layoutVersion != typeDefView->layoutVersion ||
+         typeRefRecord->layoutHash != typeDefView->layoutHash)) {
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool metadata_runtime_read_type_ref_target_type_def_layout(
+        SZrMetadataRuntime *runtime,
+        TZrMetadataToken typeRefToken,
+        SZrMetadataRuntimeTypeDefLayoutBindingView *outView) {
+    const SZrMetadataTokenRecord *typeRefRecord;
+
+    if (outView != ZR_NULL) {
+        ZrCore_Memory_RawSet(outView, 0, sizeof(*outView));
+    }
+    if (runtime == ZR_NULL ||
+        outView == ZR_NULL ||
+        ZR_METADATA_TOKEN_TABLE(typeRefToken) != ZR_METADATA_TABLE_TYPE_REF) {
+        return ZR_FALSE;
+    }
+
+    typeRefRecord = ZrCore_MetadataRuntime_ResolveTypeRecord(runtime, typeRefToken);
+    if (typeRefRecord == ZR_NULL ||
+        ZR_METADATA_TOKEN_TABLE(typeRefRecord->targetMetadataToken) != ZR_METADATA_TABLE_TYPE_DEF ||
+        !ZrCore_MetadataRuntime_ReadTypeDefLayoutBindingView(runtime,
+                                                             typeRefRecord->targetMetadataToken,
+                                                             outView) ||
+        outView->typeLayout == ZR_NULL ||
+        !metadata_runtime_type_ref_matches_type_def_layout(runtime, typeRefRecord, outView)) {
+        ZrCore_Memory_RawSet(outView, 0, sizeof(*outView));
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrMetadataToken metadata_runtime_resolve_registration_type_layout_token(
         SZrMetadataRuntime *runtime,
         TZrUInt32 typeLayoutId) {
@@ -388,6 +457,16 @@ const SZrTypeLayout *ZrCore_MetadataRuntime_ResolveTypeTokenLayout(
         case ZR_METADATA_TABLE_TYPE_SPEC: {
             SZrMetadataRuntimeTypeSpecLayoutBindingView view;
             if (!ZrCore_MetadataRuntime_ReadTypeSpecLayoutBindingView(runtime, typeToken, &view)) {
+                return ZR_NULL;
+            }
+            typeLayoutId = view.typeLayoutId;
+            typeLayout = view.typeLayout;
+            break;
+        }
+
+        case ZR_METADATA_TABLE_TYPE_REF: {
+            SZrMetadataRuntimeTypeDefLayoutBindingView view;
+            if (!metadata_runtime_read_type_ref_target_type_def_layout(runtime, typeToken, &view)) {
                 return ZR_NULL;
             }
             typeLayoutId = view.typeLayoutId;

@@ -114,10 +114,29 @@ static void test_typed_direct_call_guard_deopts_on_callee_binding_drift(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_typed_direct_call_guard_deopts_on_malformed_caller_binding_table(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction caller = {0};
+    SZrFunction callee = {0};
+    SZrFunction *functionTable[2];
+    ZrAotGeneratedFrame frame;
+
+    TEST_ASSERT_NOT_NULL(state);
+    caller.moduleMetadataBindingLength = 1u;
+    functionTable[0] = &caller;
+    functionTable[1] = &callee;
+    frame = make_frame(&caller, functionTable, 2u);
+
+    TEST_ASSERT_FALSE(ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, 1u));
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_typed_direct_call_guard_accepts_empty_caller_and_callee_bindings);
     RUN_TEST(test_typed_direct_call_guard_deopts_on_caller_binding_drift);
     RUN_TEST(test_typed_direct_call_guard_deopts_on_callee_binding_drift);
+    RUN_TEST(test_typed_direct_call_guard_deopts_on_malformed_caller_binding_table);
     return UNITY_END();
 }

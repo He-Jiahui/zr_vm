@@ -395,6 +395,10 @@ TZrUInt32 backend_aot_option_runtime_fallback_warning_suppression_mask(const SZr
     return options->suppressRuntimeFallbackWarningReasonMask & ZR_AOT_RUNTIME_FALLBACK_WARNING_ALL;
 }
 
+TZrBool backend_aot_option_suppress_annotation_warnings(const SZrAotWriterOptions *options) {
+    return (TZrBool)(options != ZR_NULL && options->suppressAnnotationWarnings);
+}
+
 static TZrBool backend_aot_constant_int_is_known_non_zero(const SZrFunction *function, TZrUInt32 constantIndex) {
     const SZrTypeValue *constantValue;
 

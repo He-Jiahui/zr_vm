@@ -3,6 +3,7 @@
 #include "backend_aot_c_scalar_locals.h"
 
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/string.h"
 
 static void backend_aot_write_c_direct_ownership_helper_call(FILE *file,
                                                              const char *helperName,
@@ -170,6 +171,401 @@ TZrBool backend_aot_c_constant_can_emit_immediate(const SZrFunction *function, T
            ZR_VALUE_IS_TYPE_INT(constantValue->type) || ZR_VALUE_IS_TYPE_FLOAT(constantValue->type);
 }
 
+static TZrBool backend_aot_c_function_exports_stack_slot(const SZrFunction *function, TZrUInt32 stackSlot) {
+    TZrUInt32 exportIndex;
+
+    if (function == ZR_NULL || function->exportedVariables == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (exportIndex = 0u; exportIndex < function->exportedVariableLength; exportIndex++) {
+        if (function->exportedVariables[exportIndex].stackSlot == stackSlot) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool backend_aot_c_string_constant_truthy(const SZrTypeValue *constantValue, TZrBool *outTruthy) {
+    const SZrString *stringValue;
+
+    if (constantValue == ZR_NULL ||
+        !ZR_VALUE_IS_TYPE_STRING(constantValue->type) ||
+        constantValue->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    stringValue = ZR_CAST(SZrString *, constantValue->value.object);
+    if (outTruthy != ZR_NULL) {
+        *outTruthy = (TZrBool)(ZrCore_String_GetByteLength(stringValue) > 0u);
+    }
+    return ZR_TRUE;
+}
+
+TZrBool backend_aot_c_null_constant_consumed_by_local_logical_not(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 getConstantInstructionIndex) {
+    const SZrFunction *function;
+    const TZrInstruction *constantInstruction;
+    const TZrInstruction *logicalNotInstruction;
+    const SZrTypeValue *constantValue;
+    TZrUInt32 logicalNotInstructionIndex;
+
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    logicalNotInstructionIndex = getConstantInstructionIndex + 1u;
+    if (function->exceptionHandlerCount > 0 ||
+        backend_aot_c_function_exports_stack_slot(function, sourceSlot) ||
+        function->instructionsList == ZR_NULL ||
+        getConstantInstructionIndex >= function->instructionsLength ||
+        logicalNotInstructionIndex >= function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    constantInstruction = &function->instructionsList[getConstantInstructionIndex];
+    if (constantInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
+        constantInstruction->instruction.operandExtra != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    constantValue = backend_aot_c_get_constant_value(
+            function,
+            constantInstruction->instruction.operand.operand2[0]);
+    if (constantValue == ZR_NULL || !ZR_VALUE_IS_TYPE_NULL(constantValue->type)) {
+        return ZR_FALSE;
+    }
+
+    logicalNotInstruction = &function->instructionsList[logicalNotInstructionIndex];
+    if (logicalNotInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(LOGICAL_NOT) ||
+        logicalNotInstruction->instruction.operand.operand1[0] != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    return backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
+            functionIr,
+            logicalNotInstruction->instruction.operandExtra,
+            logicalNotInstructionIndex);
+}
+
+TZrBool backend_aot_c_null_constant_consumed_by_local_jump_if(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 getConstantInstructionIndex) {
+    const SZrFunction *function;
+    const TZrInstruction *constantInstruction;
+    const TZrInstruction *jumpInstruction;
+    const SZrTypeValue *constantValue;
+    TZrUInt32 jumpInstructionIndex;
+    TZrInt64 targetInstructionIndex;
+
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    jumpInstructionIndex = getConstantInstructionIndex + 1u;
+    if (function->exceptionHandlerCount > 0 ||
+        backend_aot_c_function_exports_stack_slot(function, sourceSlot) ||
+        function->instructionsList == ZR_NULL ||
+        getConstantInstructionIndex >= function->instructionsLength ||
+        jumpInstructionIndex >= function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    constantInstruction = &function->instructionsList[getConstantInstructionIndex];
+    if (constantInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
+        constantInstruction->instruction.operandExtra != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    constantValue = backend_aot_c_get_constant_value(
+            function,
+            constantInstruction->instruction.operand.operand2[0]);
+    if (constantValue == ZR_NULL || !ZR_VALUE_IS_TYPE_NULL(constantValue->type)) {
+        return ZR_FALSE;
+    }
+
+    jumpInstruction = &function->instructionsList[jumpInstructionIndex];
+    if (jumpInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF) ||
+        jumpInstruction->instruction.operandExtra != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    targetInstructionIndex = (TZrInt64)jumpInstructionIndex +
+                             (TZrInt64)jumpInstruction->instruction.operand.operand2[0] +
+                             1;
+    return (TZrBool)(targetInstructionIndex >= 0 &&
+                       targetInstructionIndex < (TZrInt64)function->instructionsLength);
+}
+
+TZrBool backend_aot_c_bool_constant_consumed_by_local_logical_not(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 getConstantInstructionIndex,
+        TZrBool *outTruthy) {
+    const SZrFunction *function;
+    const TZrInstruction *constantInstruction;
+    const TZrInstruction *logicalNotInstruction;
+    const SZrTypeValue *constantValue;
+    TZrUInt32 logicalNotInstructionIndex;
+
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    logicalNotInstructionIndex = getConstantInstructionIndex + 1u;
+    if (function->exceptionHandlerCount > 0 ||
+        backend_aot_c_function_exports_stack_slot(function, sourceSlot) ||
+        function->instructionsList == ZR_NULL ||
+        getConstantInstructionIndex >= function->instructionsLength ||
+        logicalNotInstructionIndex >= function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    constantInstruction = &function->instructionsList[getConstantInstructionIndex];
+    if (constantInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
+        constantInstruction->instruction.operandExtra != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    constantValue = backend_aot_c_get_constant_value(
+            function,
+            constantInstruction->instruction.operand.operand2[0]);
+    if (constantValue == ZR_NULL || !ZR_VALUE_IS_TYPE_BOOL(constantValue->type)) {
+        return ZR_FALSE;
+    }
+
+    logicalNotInstruction = &function->instructionsList[logicalNotInstructionIndex];
+    if (logicalNotInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(LOGICAL_NOT) ||
+        logicalNotInstruction->instruction.operand.operand1[0] != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    if (!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
+                functionIr,
+                logicalNotInstruction->instruction.operandExtra,
+                logicalNotInstructionIndex)) {
+        return ZR_FALSE;
+    }
+
+    if (outTruthy != ZR_NULL) {
+        *outTruthy = (TZrBool)(constantValue->value.nativeObject.nativeBool != 0u);
+    }
+    return ZR_TRUE;
+}
+
+TZrBool backend_aot_c_bool_constant_consumed_by_local_jump_if(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 getConstantInstructionIndex,
+        TZrBool *outTruthy) {
+    const SZrFunction *function;
+    const TZrInstruction *constantInstruction;
+    const TZrInstruction *jumpInstruction;
+    const SZrTypeValue *constantValue;
+    TZrUInt32 jumpInstructionIndex;
+    TZrInt64 targetInstructionIndex;
+
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    jumpInstructionIndex = getConstantInstructionIndex + 1u;
+    if (function->exceptionHandlerCount > 0 ||
+        backend_aot_c_function_exports_stack_slot(function, sourceSlot) ||
+        function->instructionsList == ZR_NULL ||
+        getConstantInstructionIndex >= function->instructionsLength ||
+        jumpInstructionIndex >= function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    constantInstruction = &function->instructionsList[getConstantInstructionIndex];
+    if (constantInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
+        constantInstruction->instruction.operandExtra != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    constantValue = backend_aot_c_get_constant_value(
+            function,
+            constantInstruction->instruction.operand.operand2[0]);
+    if (constantValue == ZR_NULL || !ZR_VALUE_IS_TYPE_BOOL(constantValue->type)) {
+        return ZR_FALSE;
+    }
+
+    jumpInstruction = &function->instructionsList[jumpInstructionIndex];
+    if (jumpInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF) ||
+        jumpInstruction->instruction.operandExtra != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    targetInstructionIndex = (TZrInt64)jumpInstructionIndex +
+                             (TZrInt64)jumpInstruction->instruction.operand.operand2[0] +
+                             1;
+    if (targetInstructionIndex < 0 || targetInstructionIndex >= (TZrInt64)function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    if (outTruthy != ZR_NULL) {
+        *outTruthy = (TZrBool)(constantValue->value.nativeObject.nativeBool != 0u);
+    }
+    return ZR_TRUE;
+}
+
+TZrBool backend_aot_c_string_constant_consumed_by_local_logical_not(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 getConstantInstructionIndex,
+        TZrBool *outTruthy) {
+    const SZrFunction *function;
+    const TZrInstruction *constantInstruction;
+    const TZrInstruction *logicalNotInstruction;
+    const SZrTypeValue *constantValue;
+    TZrUInt32 logicalNotInstructionIndex;
+
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    logicalNotInstructionIndex = getConstantInstructionIndex + 1u;
+    if (function->exceptionHandlerCount > 0 ||
+        backend_aot_c_function_exports_stack_slot(function, sourceSlot) ||
+        function->instructionsList == ZR_NULL ||
+        getConstantInstructionIndex >= function->instructionsLength ||
+        logicalNotInstructionIndex >= function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    constantInstruction = &function->instructionsList[getConstantInstructionIndex];
+    if (constantInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
+        constantInstruction->instruction.operandExtra != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    constantValue = backend_aot_c_get_constant_value(
+            function,
+            constantInstruction->instruction.operand.operand2[0]);
+    if (!backend_aot_c_string_constant_truthy(constantValue, outTruthy)) {
+        return ZR_FALSE;
+    }
+
+    logicalNotInstruction = &function->instructionsList[logicalNotInstructionIndex];
+    if (logicalNotInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(LOGICAL_NOT) ||
+        logicalNotInstruction->instruction.operand.operand1[0] != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    return backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
+            functionIr,
+            logicalNotInstruction->instruction.operandExtra,
+            logicalNotInstructionIndex);
+}
+
+TZrBool backend_aot_c_string_constant_consumed_by_local_jump_if(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 getConstantInstructionIndex,
+        TZrBool *outTruthy) {
+    const SZrFunction *function;
+    const TZrInstruction *constantInstruction;
+    const TZrInstruction *jumpInstruction;
+    const SZrTypeValue *constantValue;
+    TZrUInt32 jumpInstructionIndex;
+    TZrInt64 targetInstructionIndex;
+
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    jumpInstructionIndex = getConstantInstructionIndex + 1u;
+    if (function->exceptionHandlerCount > 0 ||
+        backend_aot_c_function_exports_stack_slot(function, sourceSlot) ||
+        function->instructionsList == ZR_NULL ||
+        getConstantInstructionIndex >= function->instructionsLength ||
+        jumpInstructionIndex >= function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    constantInstruction = &function->instructionsList[getConstantInstructionIndex];
+    if (constantInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
+        constantInstruction->instruction.operandExtra != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    constantValue = backend_aot_c_get_constant_value(
+            function,
+            constantInstruction->instruction.operand.operand2[0]);
+    if (!backend_aot_c_string_constant_truthy(constantValue, outTruthy)) {
+        return ZR_FALSE;
+    }
+
+    jumpInstruction = &function->instructionsList[jumpInstructionIndex];
+    if (jumpInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF) ||
+        jumpInstruction->instruction.operandExtra != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    targetInstructionIndex = (TZrInt64)jumpInstructionIndex +
+                             (TZrInt64)jumpInstruction->instruction.operand.operand2[0] +
+                             1;
+    if (targetInstructionIndex < 0 || targetInstructionIndex >= (TZrInt64)function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+TZrBool backend_aot_c_reset_null_consumed_by_local_jump_if(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 resetInstructionIndex) {
+    const SZrFunction *function;
+    const TZrInstruction *resetInstruction;
+    const TZrInstruction *jumpInstruction;
+    TZrUInt32 jumpInstructionIndex;
+    TZrInt64 targetInstructionIndex;
+
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    jumpInstructionIndex = resetInstructionIndex + 1u;
+    if (function->exceptionHandlerCount > 0 ||
+        backend_aot_c_function_exports_stack_slot(function, sourceSlot) ||
+        function->instructionsList == ZR_NULL ||
+        resetInstructionIndex >= function->instructionsLength ||
+        jumpInstructionIndex >= function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    resetInstruction = &function->instructionsList[resetInstructionIndex];
+    if (resetInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(RESET_STACK_NULL) ||
+        resetInstruction->instruction.operandExtra != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    jumpInstruction = &function->instructionsList[jumpInstructionIndex];
+    if (jumpInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF) ||
+        jumpInstruction->instruction.operandExtra != sourceSlot) {
+        return ZR_FALSE;
+    }
+
+    targetInstructionIndex = (TZrInt64)jumpInstructionIndex +
+                             (TZrInt64)jumpInstruction->instruction.operand.operand2[0] +
+                             1;
+    return (TZrBool)(targetInstructionIndex >= 0 &&
+                     targetInstructionIndex < (TZrInt64)function->instructionsLength);
+}
+
 static void backend_aot_c_write_direct_plain_value_replace_guard(FILE *file) {
     if (file == ZR_NULL) {
         return;
@@ -249,6 +645,55 @@ void backend_aot_write_c_direct_primitive_constant(FILE *file,
         return;
     }
 
+    if (ZR_VALUE_IS_TYPE_NULL(constantValue->type) &&
+        backend_aot_c_null_constant_consumed_by_local_logical_not(
+                functionIr, destinationSlot, execInstructionIndex)) {
+        fprintf(file,
+                "    /* zr_aot_null_constant_local_logical_not_source_skip slot=%u */\n",
+                (unsigned)destinationSlot);
+        return;
+    }
+    if (ZR_VALUE_IS_TYPE_NULL(constantValue->type) &&
+        backend_aot_c_null_constant_consumed_by_local_jump_if(
+                functionIr, destinationSlot, execInstructionIndex)) {
+        fprintf(file,
+                "    /* zr_aot_null_constant_local_jump_if_source_skip slot=%u */\n",
+                (unsigned)destinationSlot);
+        return;
+    }
+    if (ZR_VALUE_IS_TYPE_BOOL(constantValue->type) &&
+        backend_aot_c_bool_constant_consumed_by_local_logical_not(
+                functionIr, destinationSlot, execInstructionIndex, ZR_NULL)) {
+        fprintf(file,
+                "    /* zr_aot_bool_constant_local_logical_not_source_skip slot=%u */\n",
+                (unsigned)destinationSlot);
+        return;
+    }
+    if (ZR_VALUE_IS_TYPE_BOOL(constantValue->type) &&
+        backend_aot_c_bool_constant_consumed_by_local_jump_if(
+                functionIr, destinationSlot, execInstructionIndex, ZR_NULL)) {
+        fprintf(file,
+                "    /* zr_aot_bool_constant_local_jump_if_source_skip slot=%u */\n",
+                (unsigned)destinationSlot);
+        return;
+    }
+    if (ZR_VALUE_IS_TYPE_STRING(constantValue->type) &&
+        backend_aot_c_string_constant_consumed_by_local_logical_not(
+                functionIr, destinationSlot, execInstructionIndex, ZR_NULL)) {
+        fprintf(file,
+                "    /* zr_aot_string_constant_local_logical_not_source_skip slot=%u */\n",
+                (unsigned)destinationSlot);
+        return;
+    }
+    if (ZR_VALUE_IS_TYPE_STRING(constantValue->type) &&
+        backend_aot_c_string_constant_consumed_by_local_jump_if(
+                functionIr, destinationSlot, execInstructionIndex, ZR_NULL)) {
+        fprintf(file,
+                "    /* zr_aot_string_constant_local_jump_if_source_skip slot=%u */\n",
+                (unsigned)destinationSlot);
+        return;
+    }
+
     if (ZR_VALUE_IS_TYPE_BOOL(constantValue->type) &&
         backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot)) {
         const char *boolExpression = constantValue->value.nativeObject.nativeBool ? "ZR_TRUE" : "ZR_FALSE";
@@ -291,6 +736,24 @@ void backend_aot_write_c_direct_primitive_constant(FILE *file,
         fprintf(file,
                 "    {\n"
                 "        /* zr_aot_scalar_constant_u64_from_i64_local */\n"
+                "        zr_aot_u%u = %s;\n"
+                "    }\n",
+                (unsigned)destinationSlot,
+                dataExpression);
+        wroteScalarLocal = ZR_TRUE;
+        if (backend_aot_c_scalar_locals_u64_constant_can_skip_value_slot(
+                    functionIr, destinationSlot, execInstructionIndex)) {
+            return;
+        }
+    } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(constantValue->type) &&
+               backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot)) {
+        snprintf(dataExpression,
+                 sizeof(dataExpression),
+                 "(TZrUInt64)%llu",
+                 (unsigned long long)constantValue->value.nativeObject.nativeUInt64);
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_scalar_constant_u64_local */\n"
                 "        zr_aot_u%u = %s;\n"
                 "    }\n",
                 (unsigned)destinationSlot,
@@ -744,6 +1207,16 @@ void backend_aot_write_c_reset_stack_null_scalar_local_skip(FILE *file, TZrUInt3
 
     fprintf(file,
             "    /* zr_aot_reset_stack_null_scalar_local_skip slot=%u */\n",
+            (unsigned)destinationSlot);
+}
+
+void backend_aot_write_c_reset_stack_null_local_jump_if_skip(FILE *file, TZrUInt32 destinationSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    /* zr_aot_reset_null_local_jump_if_source_skip slot=%u */\n",
             (unsigned)destinationSlot);
 }
 

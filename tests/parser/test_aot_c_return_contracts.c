@@ -133,8 +133,8 @@ static void test_aot_c_source_lowers_export_return_to_boundary_publication_then_
             "frame->moduleExecuted = &record->moduleExecuted;",
             "frame->functionTable = record->functionTable;",
             "frame->functionCount = record->functionCount;",
-            "frame->functionThunks = record->descriptor != ZR_NULL ? record->descriptor->functionThunks : ZR_NULL;",
-            "frame->functionThunkCount = record->descriptor != ZR_NULL ? record->descriptor->functionThunkCount : 0;",
+            "frame->functionThunks = record->codeRegistration != ZR_NULL ? record->codeRegistration->functionPointers : ZR_NULL;",
+            "frame->functionThunkCount = record->codeRegistration != ZR_NULL ? record->codeRegistration->functionCount : 0;",
             "SZrTypeValue *callerResultValue;",
             "metadataFunction = aot_runtime_frame_function(frame);",
             "callerResultValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);",
@@ -161,7 +161,10 @@ static void test_aot_c_source_lowers_export_return_to_boundary_publication_then_
             "TZrBool ZrLibrary_AotRuntime_ReturnF64(SZrState *state, TZrFloat64 value)",
             "ZrCore_Value_InitAsFloat(state, callerResultValue, value);",
             "TZrBool ZrLibrary_AotRuntime_ReturnInlineStruct(SZrState *state,",
-            "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame->function, sourceTypeLayoutId, state);",
+            "#include \"zr_vm_core/metadata_runtime.h\"",
+            "ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function,",
+            "destinationTypeLayoutId);",
+            "sourceTypeLayoutId);",
             "*outSkipDropSlot = sourceSlot;",
             "SZrFunctionStackAnchor callerFrameTopAnchor;",
             "callBase = frame->callInfo->functionTop.valuePointer;",
@@ -296,6 +299,9 @@ static void test_aot_c_source_lowers_export_return_to_boundary_publication_then_
     static const char *const forbiddenRuntimeNeedles[] = {
             "ZrLibrary_AotRuntime_MaterializeModuleExportValue",
     };
+    static const char *const forbiddenRuntimeReturnNeedles[] = {
+            "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame->function",
+    };
     static const char *const forbiddenRuntimeCoreNeedles[] = {
             "TZrBool ZrLibrary_AotRuntime_ReturnI64(SZrState *state, TZrInt64 value)",
             "TZrBool ZrLibrary_AotRuntime_ReturnBool(SZrState *state, TZrBool value)",
@@ -345,6 +351,9 @@ static void test_aot_c_source_lowers_export_return_to_boundary_publication_then_
                              runtimeInternalHeaderNeedles,
                              ARRAY_COUNT(runtimeInternalHeaderNeedles));
     assert_text_contains_all(runtimeReturnSourceText, runtimeReturnSourceNeedles, ARRAY_COUNT(runtimeReturnSourceNeedles));
+    assert_text_contains_none(runtimeReturnSourceText,
+                              forbiddenRuntimeReturnNeedles,
+                              ARRAY_COUNT(forbiddenRuntimeReturnNeedles));
     assert_text_contains_none(runtimeHeaderText, forbiddenRuntimeNeedles, ARRAY_COUNT(forbiddenRuntimeNeedles));
     assert_text_contains_none(runtimeSourceText, forbiddenRuntimeNeedles, ARRAY_COUNT(forbiddenRuntimeNeedles));
     assert_text_contains_none(runtimeSourceText, forbiddenRuntimeCoreNeedles, ARRAY_COUNT(forbiddenRuntimeCoreNeedles));

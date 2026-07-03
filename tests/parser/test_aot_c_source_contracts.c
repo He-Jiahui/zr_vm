@@ -130,7 +130,7 @@ static void test_aot_c_source_lowers_value_semir_with_frame_layout(void) {
             "zr_aot_value_exec_inline_copy",
             "zr_aot_value_exec_inline_field_copy",
             "const SZrTypeLayout *zr_aot_copy_layout =",
-            "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function",
+            "ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function",
             "ZrCore_TypeLayout_CanRawCopy(zr_aot_copy_layout)",
             "ZrCore_TypeLayout_CopyInline(state,",
             "backend_aot_write_c_value_semir_field_addr(file, state, functionIr, frameLayout, instruction);",
@@ -214,7 +214,7 @@ static void test_aot_c_source_lowers_value_semir_with_frame_layout(void) {
             "zr_aot_value_exec_field_inline_struct_load",
             "zr_aot_value_exec_field_inline_struct_store",
             "const SZrTypeLayout *zr_aot_field_layout =",
-            "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function, %u, state);",
+            "ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, %u);",
             "ZrCore_TypeLayout_CanRawCopy(zr_aot_field_layout)",
             "zr_aot_value_exec_field_inline_struct_copy",
             "ZrCore_TypeLayout_CopyInline(state,",
@@ -240,6 +240,10 @@ static void test_aot_c_source_lowers_value_semir_with_frame_layout(void) {
             "ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,",
             "ZrLibrary_AotRuntime_FinishDirectCall(state, &frame, &zr_aot_direct_call, 1)",
             "(unsigned)frameLayout->frameByteSize",
+            "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function",
+    };
+    static const char *const fieldSourceForbiddenNeedles[] = {
+            "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function",
     };
     static const char *const functionBodyNeedles[] = {
             "#include \"backend_aot_c_value_semir.h\"",
@@ -292,6 +296,9 @@ static void test_aot_c_source_lowers_value_semir_with_frame_layout(void) {
     assert_text_contains_none(valueLoweringSourceText,
                               valueSourceForbiddenNeedles,
                               ARRAY_COUNT(valueSourceForbiddenNeedles));
+    assert_text_contains_none(fieldLoweringSourceText,
+                              fieldSourceForbiddenNeedles,
+                              ARRAY_COUNT(fieldSourceForbiddenNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
 
     free(valueLoweringHeaderText);
@@ -381,8 +388,10 @@ static void test_aot_c_source_lowers_primitive_constants_to_direct_value_writes(
             "ZrLibrary_AotRuntime_ResetStackNull2(struct SZrState *state,",
     };
     static const char *const runtimeSourceNeedles[] = {
+            "#include \"zr_vm_core/metadata_runtime.h\"",
             "TZrBool ZrLibrary_AotRuntime_CopyStack(SZrState *state,",
             "COPY_STACK: invalid stack slot",
+            "ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function,",
             "ZrCore_Function_CopyFrameSlotInline(",
             "ZrCore_Function_CopyObjectValueToFrameSlotInline(",
             "ZrCore_Value_AssignMaterializedStackValue(",
@@ -400,6 +409,9 @@ static void test_aot_c_source_lowers_primitive_constants_to_direct_value_writes(
             "ZR_VALUE_IS_TYPE_UNSIGNED_INT(sourceValue->type)",
             "ZR_VALUE_IS_TYPE_FLOAT(sourceValue->type)",
             "ZR_VALUE_IS_TYPE_BOOL(sourceValue->type)",
+    };
+    static const char *const forbiddenRuntimeSourceNeedles[] = {
+            "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame->function",
     };
     static const char *const forbiddenValueSourceNeedles[] = {
             "ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant)",
@@ -452,6 +464,7 @@ static void test_aot_c_source_lowers_primitive_constants_to_direct_value_writes(
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
     assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
     assert_text_contains_all(runtimeSyncSourceText, runtimeSyncSourceNeedles, ARRAY_COUNT(runtimeSyncSourceNeedles));
+    assert_text_contains_none(runtimeSourceText, forbiddenRuntimeSourceNeedles, ARRAY_COUNT(forbiddenRuntimeSourceNeedles));
     assert_text_contains_none(valueLoweringText, forbiddenValueSourceNeedles, ARRAY_COUNT(forbiddenValueSourceNeedles));
     assert_text_contains_none(functionBodyText, forbiddenFunctionBodyNeedles, ARRAY_COUNT(forbiddenFunctionBodyNeedles));
 
@@ -1989,6 +2002,7 @@ static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
             "#include \\\"zr_vm_core/function.h\\\"",
             "#include \\\"zr_vm_core/exception.h\\\"",
             "#include \\\"zr_vm_core/execution_control.h\\\"",
+            "#include \\\"zr_vm_core/metadata_runtime.h\\\"",
             "#include \\\"zr_vm_core/type_layout.h\\\"",
             "#define ZR_AOT_C_RETURN(expr)",
             "zr_aot_return_value = (expr);",
@@ -2012,12 +2026,15 @@ static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
     static const char *const cleanupSourceNeedles[] = {
             "#include \"backend_aot_c_frame_cleanup.h\"",
             "zr_aot_value_frame_drop",
-            "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function",
+            "ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function",
             "zr_aot_drop_layout->dropKind != ZR_TYPE_LAYOUT_DROP_KIND_NONE",
             "ZrCore_TypeLayout_DropInline(state,",
             "(TZrByte *)frame.slotBase +",
             "layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT",
             "zr_aot_skip_drop_slot != %u",
+    };
+    static const char *const cleanupForbiddenNeedles[] = {
+            "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function",
     };
     static const char *const functionBodyNeedles[] = {
             "#include \"backend_aot_c_frame_cleanup.h\"",
@@ -2182,6 +2199,7 @@ static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
     assert_text_contains_none(emitterText, emitterForbiddenNeedles, ARRAY_COUNT(emitterForbiddenNeedles));
     assert_text_contains_all(cleanupHeaderText, cleanupHeaderNeedles, ARRAY_COUNT(cleanupHeaderNeedles));
     assert_text_contains_all(cleanupSourceText, cleanupSourceNeedles, ARRAY_COUNT(cleanupSourceNeedles));
+    assert_text_contains_none(cleanupSourceText, cleanupForbiddenNeedles, ARRAY_COUNT(cleanupForbiddenNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
     assert_text_contains_all(controlText, controlNeedles, ARRAY_COUNT(controlNeedles));
     assert_text_contains_all(exportText, exportNeedles, ARRAY_COUNT(exportNeedles));
@@ -2264,22 +2282,43 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "const TZrByte *blob;",
             "TZrSize length;",
             "TZrByte *ownedBlob;",
+            "typedef struct SZrAotCZrpMemberTokenRemapEntry",
+            "TZrMetadataToken sourceToken;",
+            "TZrMetadataToken targetToken;",
+            "memberTokenRemapEntries;",
+            "memberTokenRemapCount;",
+            "ownedMemberTokenRemapEntries;",
+            "manifestExportEntries;",
+            "manifestExportCount;",
+            "ownedManifestExportEntries;",
             "backend_aot_c_prepare_embedded_zrp_metadata(",
             "backend_aot_c_release_embedded_zrp_metadata(",
     };
     static const char *const pruneSourceNeedles[] = {
             "#include \"backend_aot_c_zrp_metadata_prune.h\"",
+            "#include \"backend_aot_c_zrp_metadata_constant_pool.h\"",
+            "#include \"backend_aot_c_zrp_metadata_member_token.h\"",
+            "#include \"backend_aot_c_zrp_metadata_module_ref.h\"",
             "#include \"backend_aot_c_zrp_metadata_remap.h\"",
             "#include \"backend_aot_c_zrp_metadata_sections.h\"",
             "#include \"backend_aot_c_zrp_metadata_signature.h\"",
             "#include \"backend_aot_c_zrp_metadata_string_pool.h\"",
+            "#include \"backend_aot_c_zrp_metadata_type_def.h\"",
+            "#include \"backend_aot_c_zrp_metadata_type_spec.h\"",
             "#include \"zr_vm_core/zrp_metadata.h\"",
             "backend_aot_c_zrp_can_prune_method_defs(",
             "backend_aot_c_zrp_build_pruned_header(",
+            "backend_aot_c_zrp_build_constant_pool_remap(",
             "backend_aot_c_zrp_build_signature_blob_remap(",
             "backend_aot_c_zrp_build_string_pool_remap(",
+            "backend_aot_c_zrp_count_retained_type_defs(",
+            "backend_aot_c_zrp_count_retained_type_specs(",
+            "backend_aot_c_zrp_count_retained_module_refs(",
+            "backend_aot_c_zrp_count_retained_token_records_for_pruning(",
+            "backend_aot_c_zrp_remap_retained_token_record(",
             "backend_aot_c_zrp_copy_string_pool(",
             "backend_aot_c_zrp_copy_signature_blob_pool(",
+            "backend_aot_c_zrp_copy_constant_pool(",
             "backend_aot_c_zrp_rewrite_retained_method_spec_signature_blobs(",
             "backend_aot_c_zrp_copy_token_records(",
             "backend_aot_c_zrp_copy_type_defs(",
@@ -2287,8 +2326,16 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_copy_field_defs(",
             "backend_aot_c_zrp_copy_generic_params(",
             "backend_aot_c_zrp_copy_generic_param_constraints(",
+            "backend_aot_c_zrp_remap_type_spec_token(&row.constraintTypeToken,",
+            "backend_aot_c_zrp_copy_type_specs(",
             "backend_aot_c_zrp_copy_method_specs(",
+            "backend_aot_c_zrp_copy_module_refs(",
             "backend_aot_c_zrp_copy_section_if_needed(",
+            "backend_aot_c_zrp_member_token_remap_build(",
+            "backend_aot_c_zrp_member_token_remap_destroy(metadata);",
+            "backend_aot_c_zrp_manifest_export_table_destroy(metadata);",
+            "!backend_aot_c_prune_method_def_metadata_blob(options, functionTable, outMetadata))",
+            "backend_aot_c_release_embedded_zrp_metadata(outMetadata);",
             "ZrCore_ZrpMetadata_WriteHeader(",
             "malloc(prunedLength)",
             "free(metadata->ownedBlob);",
@@ -2300,7 +2347,9 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_compacted_method_def_token(",
             "backend_aot_c_zrp_compacted_field_def_token(",
             "backend_aot_c_zrp_remap_token_record(",
+            "backend_aot_c_zrp_remap_retained_token_record(",
             "backend_aot_c_zrp_remap_export_member_token(",
+            "backend_aot_c_zrp_remap_retained_export_member_token(",
             "backend_aot_c_zrp_count_retained_token_records(",
             "backend_aot_c_zrp_remap_method_spec_row(",
             "backend_aot_c_zrp_count_retained_method_specs(",
@@ -2315,11 +2364,18 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
     };
     static const char *const remapSourceNeedles[] = {
             "#include \"backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"backend_aot_c_zrp_metadata_type_def.h\"",
             "#include \"backend_aot_internal.h\"",
             "backend_aot_c_function_table_contains_flat_index(",
             "backend_aot_c_zrp_find_field_def_index_for_token(",
+            "backend_aot_c_zrp_retained_method_def_count_matches(",
+            "actualRetainedMethodDefCount == retainedMethodDefCount",
             "backend_aot_c_zrp_remap_member_def_token(",
+            "backend_aot_c_zrp_remap_retained_member_def_token(",
+            "backend_aot_c_zrp_field_def_row_is_retained(",
+            "backend_aot_c_zrp_compacted_retained_field_def_token(",
             "backend_aot_c_zrp_remap_export_member_token(",
+            "backend_aot_c_zrp_remap_retained_export_member_token(",
             "backend_aot_c_zrp_remap_method_spec_row(",
             "backend_aot_c_zrp_count_retained_method_specs(",
             "backend_aot_c_zrp_remap_generic_param_owner_token(",
@@ -2330,9 +2386,37 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_adjust_generic_param_range(",
             "backend_aot_c_zrp_adjust_generic_param_constraint_range(",
             "backend_aot_c_zrp_remap_token_record(",
+            "backend_aot_c_zrp_remap_retained_token_record(",
             "backend_aot_c_zrp_count_retained_token_records(",
             "backend_aot_c_zrp_count_retained_method_defs(",
             "backend_aot_c_zrp_adjust_type_def_method_range(",
+    };
+    static const char *const memberTokenHeaderNeedles[] = {
+            "ZR_VM_PARSER_BACKEND_AOT_C_ZRP_METADATA_MEMBER_TOKEN_H",
+            "backend_aot_c_zrp_member_token_remap_build(",
+            "backend_aot_c_zrp_member_token_remap_destroy(",
+            "backend_aot_c_embedded_zrp_metadata_remap_member_token(",
+            "backend_aot_c_zrp_manifest_export_table_build(",
+            "backend_aot_c_zrp_manifest_export_table_destroy(",
+    };
+    static const char *const memberTokenSourceNeedles[] = {
+            "#include \"backend_aot_c_zrp_metadata_member_token.h\"",
+            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
+            "backend_aot_c_zrp_member_token_remap_append(",
+            "ZR_METADATA_TOKEN_RID(token) != 0u",
+            "!backend_aot_c_zrp_member_token_is_member_def(sourceToken)",
+            "!backend_aot_c_zrp_member_token_is_member_def(targetToken)",
+            "actualRetainedMethodDefCount != retainedMethodDefCount",
+            "entries[index].sourceToken == sourceToken",
+            "backend_aot_c_zrp_method_def_row_is_retained(",
+            "backend_aot_c_zrp_compacted_method_def_token(",
+            "backend_aot_c_zrp_compacted_retained_field_def_token(",
+            "memberTokenRemapEntries",
+            "ownedMemberTokenRemapEntries",
+            "manifestExportEntries",
+            "ownedManifestExportEntries",
+            "ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_TYPE_TOKEN",
+            "ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_MEMBER_TOKEN",
     };
     static const char *const sectionsHeaderNeedles[] = {
             "ZR_VM_PARSER_BACKEND_AOT_C_ZRP_METADATA_SECTIONS_H",
@@ -2348,23 +2432,57 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "case ZR_ZRP_METADATA_SECTION_CONSTANT_POOL:",
             "memcpy(targetBlob + targetSection->offset",
     };
+    static const char *const constantPoolHeaderNeedles[] = {
+            "ZR_VM_PARSER_BACKEND_AOT_C_ZRP_METADATA_CONSTANT_POOL_H",
+            "typedef struct SZrAotCZrpConstantPoolRemap",
+            "backend_aot_c_zrp_constant_pool_remap_init(",
+            "backend_aot_c_zrp_constant_pool_remap_destroy(",
+            "backend_aot_c_zrp_constant_pool_remap_is_identity(",
+            "backend_aot_c_zrp_build_constant_pool_remap(",
+            "backend_aot_c_zrp_copy_constant_pool(",
+            "backend_aot_c_zrp_remap_field_def_default_value_constant_pool_slice(",
+    };
+    static const char *const constantPoolSourceNeedles[] = {
+            "#include \"backend_aot_c_zrp_metadata_constant_pool.h\"",
+            "backend_aot_c_zrp_constant_pool_remap_add(",
+            "backend_aot_c_zrp_constant_pool_remap_lookup(",
+            "defaultValueConstantPoolOffset",
+            "defaultValueConstantPoolLength",
+            "memcpy(targetPool + entry->newOffset",
+    };
     static const char *const signatureHeaderNeedles[] = {
             "ZR_VM_PARSER_BACKEND_AOT_C_ZRP_METADATA_SIGNATURE_H",
             "typedef struct SZrAotCZrpSignatureBlobRemap",
             "backend_aot_c_zrp_signature_blob_remap_init(",
             "backend_aot_c_zrp_signature_blob_remap_destroy(",
             "backend_aot_c_zrp_build_signature_blob_remap(",
+            "backend_aot_c_zrp_remap_retained_signature_token(",
+            "backend_aot_c_zrp_remap_retained_signature_tokens_in_record(",
             "backend_aot_c_zrp_copy_signature_blob_pool(",
             "backend_aot_c_zrp_rewrite_retained_method_spec_signature_blobs(",
+            "const SZrZrpMetadataModuleRefRow *moduleRefRows,",
             "backend_aot_c_zrp_remap_signature_blob_offset(",
             "backend_aot_c_zrp_recomputed_signature_hash(",
     };
     static const char *const signatureSourceNeedles[] = {
             "#include \"backend_aot_c_zrp_metadata_signature.h\"",
+            "#include \"backend_aot_c_zrp_metadata_module_ref.h\"",
             "#include \"backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"backend_aot_c_zrp_metadata_type_spec.h\"",
             "#include \"zr_vm_core/hash.h\"",
             "CZrAotCZrpSignatureHashV1Prefix",
             "backend_aot_c_zrp_signature_blob_remap_add(",
+            "backend_aot_c_zrp_token_record_is_retained_for_signature_pruning(",
+            "backend_aot_c_zrp_token_is_signature(",
+            "if (tokenRecords == ZR_NULL)",
+            "ZR_METADATA_TABLE_SIGNATURE",
+            "ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE",
+            "backend_aot_c_zrp_remap_module_ref_tokens_in_record(",
+            "backend_aot_c_zrp_rewrite_signature_module_ref_token(",
+            "backend_aot_c_zrp_remap_module_ref_token(&token,",
+            "backend_aot_c_zrp_rewrite_signature_member_ref_token(",
+            "backend_aot_c_zrp_remap_retained_token_record(&record,",
+            "backend_aot_c_zrp_add_retained_type_spec_signature_blobs(",
             "backend_aot_c_zrp_add_retained_method_spec_signature_blobs(",
             "backend_aot_c_zrp_rewrite_method_spec_signature_blob(",
             "ZrCore_ZrpMetadata_ValidateSignatureBlob(",
@@ -2376,6 +2494,7 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_string_pool_remap_init(",
             "backend_aot_c_zrp_string_pool_remap_destroy(",
             "backend_aot_c_zrp_build_string_pool_remap(",
+            "const SZrZrpMetadataManifestExportRow *manifestExportRows",
             "backend_aot_c_zrp_copy_string_pool(",
             "backend_aot_c_zrp_remap_type_def_string_offsets(",
             "backend_aot_c_zrp_remap_method_def_string_offsets(",
@@ -2383,12 +2502,69 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
     };
     static const char *const stringPoolSourceNeedles[] = {
             "#include \"backend_aot_c_zrp_metadata_string_pool.h\"",
+            "#include \"backend_aot_c_zrp_metadata_manifest_export.h\"",
+            "#include \"backend_aot_c_zrp_metadata_module_ref.h\"",
             "#include \"backend_aot_c_zrp_metadata_remap.h\"",
             "backend_aot_c_zrp_string_pool_slice_length(",
             "backend_aot_c_zrp_string_pool_remap_add(",
             "backend_aot_c_zrp_add_string_offset(",
             "backend_aot_c_zrp_remap_string_offset(",
             "backend_aot_c_zrp_generic_param_row_is_retained(",
+            "backend_aot_c_zrp_module_ref_row_is_retained(",
+            "backend_aot_c_zrp_manifest_export_row_is_retained(",
+            "manifestExportRows[index].targetStringOffset",
+    };
+    static const char *const moduleRefHeaderNeedles[] = {
+            "ZR_VM_PARSER_BACKEND_AOT_C_ZRP_METADATA_MODULE_REF_H",
+            "backend_aot_c_zrp_module_ref_row_is_retained(",
+            "backend_aot_c_zrp_count_retained_module_refs(",
+            "backend_aot_c_zrp_compacted_module_ref_token(",
+            "backend_aot_c_zrp_remap_module_ref_token(",
+            "backend_aot_c_zrp_remap_module_ref_tokens_in_record(",
+    };
+    static const char *const moduleRefSourceNeedles[] = {
+            "#include \"backend_aot_c_zrp_metadata_module_ref.h\"",
+            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"backend_aot_c_zrp_metadata_signature.h\"",
+            "#include \"backend_aot_c_zrp_metadata_type_spec.h\"",
+            "ZR_METADATA_TABLE_ASSEMBLY_REF",
+            "ZR_METADATA_SIGNATURE_NODE_ASSEMBLY_REF",
+            "backend_aot_c_zrp_token_record_is_import_ref_root(",
+            "backend_aot_c_zrp_retained_signature_blobs_reference_module_ref(",
+            "backend_aot_c_zrp_find_module_ref_index_for_token(",
+            "backend_aot_c_zrp_count_retained_module_refs_before(",
+    };
+    static const char *const typeDefHeaderNeedles[] = {
+            "ZR_VM_PARSER_BACKEND_AOT_C_ZRP_METADATA_TYPE_DEF_H",
+            "backend_aot_c_zrp_count_retained_type_defs(",
+    };
+    static const char *const typeDefSourceNeedles[] = {
+            "#include \"backend_aot_c_zrp_metadata_type_def.h\"",
+            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
+            "ZR_METADATA_TABLE_TYPE_DEF",
+            "backend_aot_c_zrp_token_record_references_type_def(",
+            "backend_aot_c_zrp_retained_token_record_references_type_def(",
+            "backend_aot_c_zrp_retained_method_def_references_type_def(",
+            "backend_aot_c_zrp_type_def_row_has_retained_root(",
+    };
+    static const char *const typeSpecHeaderNeedles[] = {
+            "ZR_VM_PARSER_BACKEND_AOT_C_ZRP_METADATA_TYPE_SPEC_H",
+            "backend_aot_c_zrp_type_spec_row_is_retained(",
+            "backend_aot_c_zrp_compacted_type_spec_token(",
+            "backend_aot_c_zrp_remap_type_spec_token(",
+            "backend_aot_c_zrp_remap_type_spec_tokens_in_record(",
+            "backend_aot_c_zrp_count_retained_type_specs(",
+            "backend_aot_c_zrp_copy_type_specs(",
+    };
+    static const char *const typeSpecSourceNeedles[] = {
+            "#include \"backend_aot_c_zrp_metadata_type_spec.h\"",
+            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
+            "ZR_METADATA_TABLE_TYPE_SPEC",
+            "backend_aot_c_zrp_remap_retained_token_record(",
+            "backend_aot_c_zrp_remap_generic_param_constraint_row(&constraintRow,",
+            "backend_aot_c_zrp_find_type_spec_index_for_token(",
+            "backend_aot_c_zrp_count_retained_type_specs_before(",
+            "backend_aot_c_zrp_recomputed_signature_hash(",
     };
     char *emitterText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
@@ -2404,10 +2580,18 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.h");
     char *remapSourceText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c");
+    char *memberTokenHeaderText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.h");
+    char *memberTokenSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.c");
     char *sectionsHeaderText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.h");
     char *sectionsSourceText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c");
+    char *constantPoolHeaderText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_constant_pool.h");
+    char *constantPoolSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_constant_pool.c");
     char *signatureHeaderText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.h");
     char *signatureSourceText = read_repo_text_file_owned(
@@ -2416,6 +2600,18 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.h");
     char *stringPoolSourceText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c");
+    char *moduleRefHeaderText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.h");
+    char *moduleRefSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.c");
+    char *typeDefHeaderText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.h");
+    char *typeDefSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.c");
+    char *typeSpecHeaderText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_spec.h");
+    char *typeSpecSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_spec.c");
 
     TEST_ASSERT_NOT_NULL(emitterText);
     TEST_ASSERT_NOT_NULL(metadataHeaderText);
@@ -2424,12 +2620,22 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
     TEST_ASSERT_NOT_NULL(pruneSourceText);
     TEST_ASSERT_NOT_NULL(remapHeaderText);
     TEST_ASSERT_NOT_NULL(remapSourceText);
+    TEST_ASSERT_NOT_NULL(memberTokenHeaderText);
+    TEST_ASSERT_NOT_NULL(memberTokenSourceText);
     TEST_ASSERT_NOT_NULL(sectionsHeaderText);
     TEST_ASSERT_NOT_NULL(sectionsSourceText);
+    TEST_ASSERT_NOT_NULL(constantPoolHeaderText);
+    TEST_ASSERT_NOT_NULL(constantPoolSourceText);
     TEST_ASSERT_NOT_NULL(signatureHeaderText);
     TEST_ASSERT_NOT_NULL(signatureSourceText);
     TEST_ASSERT_NOT_NULL(stringPoolHeaderText);
     TEST_ASSERT_NOT_NULL(stringPoolSourceText);
+    TEST_ASSERT_NOT_NULL(moduleRefHeaderText);
+    TEST_ASSERT_NOT_NULL(moduleRefSourceText);
+    TEST_ASSERT_NOT_NULL(typeDefHeaderText);
+    TEST_ASSERT_NOT_NULL(typeDefSourceText);
+    TEST_ASSERT_NOT_NULL(typeSpecHeaderText);
+    TEST_ASSERT_NOT_NULL(typeSpecSourceText);
 
     assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
     assert_text_contains_none(emitterText, emitterForbiddenNeedles, ARRAY_COUNT(emitterForbiddenNeedles));
@@ -2439,12 +2645,30 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
     assert_text_contains_all(pruneSourceText, pruneSourceNeedles, ARRAY_COUNT(pruneSourceNeedles));
     assert_text_contains_all(remapHeaderText, remapHeaderNeedles, ARRAY_COUNT(remapHeaderNeedles));
     assert_text_contains_all(remapSourceText, remapSourceNeedles, ARRAY_COUNT(remapSourceNeedles));
+    assert_text_contains_all(memberTokenHeaderText,
+                             memberTokenHeaderNeedles,
+                             ARRAY_COUNT(memberTokenHeaderNeedles));
+    assert_text_contains_all(memberTokenSourceText,
+                             memberTokenSourceNeedles,
+                             ARRAY_COUNT(memberTokenSourceNeedles));
     assert_text_contains_all(sectionsHeaderText, sectionsHeaderNeedles, ARRAY_COUNT(sectionsHeaderNeedles));
     assert_text_contains_all(sectionsSourceText, sectionsSourceNeedles, ARRAY_COUNT(sectionsSourceNeedles));
+    assert_text_contains_all(constantPoolHeaderText,
+                             constantPoolHeaderNeedles,
+                             ARRAY_COUNT(constantPoolHeaderNeedles));
+    assert_text_contains_all(constantPoolSourceText,
+                             constantPoolSourceNeedles,
+                             ARRAY_COUNT(constantPoolSourceNeedles));
     assert_text_contains_all(signatureHeaderText, signatureHeaderNeedles, ARRAY_COUNT(signatureHeaderNeedles));
     assert_text_contains_all(signatureSourceText, signatureSourceNeedles, ARRAY_COUNT(signatureSourceNeedles));
     assert_text_contains_all(stringPoolHeaderText, stringPoolHeaderNeedles, ARRAY_COUNT(stringPoolHeaderNeedles));
     assert_text_contains_all(stringPoolSourceText, stringPoolSourceNeedles, ARRAY_COUNT(stringPoolSourceNeedles));
+    assert_text_contains_all(moduleRefHeaderText, moduleRefHeaderNeedles, ARRAY_COUNT(moduleRefHeaderNeedles));
+    assert_text_contains_all(moduleRefSourceText, moduleRefSourceNeedles, ARRAY_COUNT(moduleRefSourceNeedles));
+    assert_text_contains_all(typeDefHeaderText, typeDefHeaderNeedles, ARRAY_COUNT(typeDefHeaderNeedles));
+    assert_text_contains_all(typeDefSourceText, typeDefSourceNeedles, ARRAY_COUNT(typeDefSourceNeedles));
+    assert_text_contains_all(typeSpecHeaderText, typeSpecHeaderNeedles, ARRAY_COUNT(typeSpecHeaderNeedles));
+    assert_text_contains_all(typeSpecSourceText, typeSpecSourceNeedles, ARRAY_COUNT(typeSpecSourceNeedles));
 
     free(emitterText);
     free(metadataHeaderText);
@@ -2453,12 +2677,22 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
     free(pruneSourceText);
     free(remapHeaderText);
     free(remapSourceText);
+    free(memberTokenHeaderText);
+    free(memberTokenSourceText);
     free(sectionsHeaderText);
     free(sectionsSourceText);
+    free(constantPoolHeaderText);
+    free(constantPoolSourceText);
     free(signatureHeaderText);
     free(signatureSourceText);
     free(stringPoolHeaderText);
     free(stringPoolSourceText);
+    free(moduleRefHeaderText);
+    free(moduleRefSourceText);
+    free(typeDefHeaderText);
+    free(typeDefSourceText);
+    free(typeSpecHeaderText);
+    free(typeSpecSourceText);
 }
 
 static void test_aot_c_source_tracks_method_metadata_generated_byte_deltas(void) {
@@ -2536,6 +2770,26 @@ static void test_aot_c_generated_abi_header_is_public(void) {
             "const SZrAotCodeRegistration *codeRegistration;",
             "const SZrAotMethodInfo *const *methodInfos;",
             "TZrUInt32 methodInfoCount;",
+            "const TZrUInt32 *methodTokens;",
+            "TZrUInt32 methodTokenCount;",
+            "SZrAotMemberTokenRemap",
+            "TZrUInt32 sourceToken;",
+            "TZrUInt32 targetToken;",
+            "const SZrAotMemberTokenRemap *memberTokenRemaps;",
+            "TZrUInt32 memberTokenRemapCount;",
+            "ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_TYPE",
+            "ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_METHOD",
+            "ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_FIELD",
+            "ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_TYPE_TOKEN",
+            "ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_MEMBER_TOKEN",
+            "SZrAotManifestExportEntry",
+            "TZrUInt32 kind;",
+            "TZrUInt32 flags;",
+            "const TZrChar *target;",
+            "TZrUInt32 typeToken;",
+            "TZrUInt32 memberToken;",
+            "const SZrAotManifestExportEntry *manifestExports;",
+            "TZrUInt32 manifestExportCount;",
             "const struct SZrTypeLayout *const *typeLayouts;",
             "TZrUInt32 typeLayoutCount;",
             "const TZrUInt32 *typeLayoutTokens;",
@@ -2555,9 +2809,28 @@ static void test_aot_c_generated_abi_header_is_public(void) {
             "ZR_VM_AOT_EXPORT const ZrAotCompiledModule *ZrVm_GetAotCompiledModule(void)",
             "ZR_AOT_BACKEND_KIND_C",
             "ZR_VM_AOT_ABI_VERSION",
-            "backend_aot_c_type_layout_index_space(state, &functionTable);",
-            "backend_aot_write_c_type_layout_registration_table(file, state, &functionTable, typeLayoutIndexSpace);",
-            "backend_aot_write_c_type_layout_token_table(file, state, &functionTable, typeLayoutIndexSpace);",
+            "backend_aot_c_type_layout_index_space(state,",
+            "annotationTypeLayoutRoots",
+            "annotationTypeLayoutRootCount",
+            "backend_aot_write_c_type_layout_registration_table(file,",
+            "backend_aot_write_c_type_layout_token_table(file,",
+            "embeddedZrpMetadata.blob",
+            "backend_aot_write_c_method_token_table(file,\n                                           &functionTable,\n                                           &embeddedZrpMetadata,\n                                           functionIndexSpace);",
+            "backend_aot_write_member_token_remap_markers(file, &embeddedZrpMetadata);",
+            "backend_aot_write_member_token_remap_table(file, &embeddedZrpMetadata);",
+            "backend_aot_c_zrp_manifest_export_table_build(",
+            "backend_aot_write_manifest_export_table_markers(file, &embeddedZrpMetadata);",
+            "backend_aot_write_manifest_export_table(file, &embeddedZrpMetadata);",
+            "static const SZrAotMemberTokenRemap zr_aot_member_token_remaps[]",
+            "static const SZrAotManifestExportEntry zr_aot_manifest_exports[]",
+            "code_stripping.memberTokenRemaps = %u",
+            "manifest.exportTableEntries = %u",
+            ".methodTokens = zr_aot_method_tokens,",
+            ".methodTokenCount = %u,",
+            ".memberTokenRemaps = %s,",
+            ".memberTokenRemapCount = %uu,",
+            ".manifestExports = %s,",
+            ".manifestExportCount = %uu,",
             ".typeLayouts = ",
             ".typeLayoutCount = %u,",
             ".typeLayoutTokens = ",
@@ -2569,18 +2842,52 @@ static void test_aot_c_generated_abi_header_is_public(void) {
             "backend_aot_write_c_generic_monomorphization_entries(file, &functionTable, stripGeneratedSymbols);",
             "backend_aot_write_c_generic_sharing_entries(file, &functionTable, stripGeneratedSymbols);",
     };
+    static const char *const runtimeNeedles[] = {
+            "#include \"zr_vm_core/metadata_token.h\"",
+            "descriptor->codeRegistration->memberTokenRemaps != descriptor->memberTokenRemaps",
+            "descriptor->codeRegistration->memberTokenRemapCount != descriptor->memberTokenRemapCount",
+            "descriptor->codeRegistration->manifestExports != descriptor->manifestExports",
+            "descriptor->codeRegistration->manifestExportCount != descriptor->manifestExportCount",
+            "member token remap table mismatch",
+            "manifest export table mismatch",
+            "aot_runtime_member_token_remap_entry_is_valid(",
+            "aot_runtime_manifest_export_entry_is_valid(",
+            "ZR_METADATA_TOKEN_TABLE(entry->sourceToken) != ZR_METADATA_TABLE_MEMBER_DEF",
+            "ZR_METADATA_TOKEN_TABLE(entry->targetToken) != ZR_METADATA_TABLE_MEMBER_DEF",
+            "ZR_METADATA_TOKEN_RID(entry->sourceToken) == 0u",
+            "ZR_METADATA_TOKEN_RID(entry->targetToken) == 0u",
+            "ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_KNOWN_MASK",
+            "aot_runtime_metadata_token_is_type_def(entry->typeToken)",
+            "aot_runtime_metadata_token_is_member_def(entry->memberToken)",
+            "manifest export entry invalid",
+            "member token remap entry invalid",
+            "previousIndex < index",
+            "previous->sourceToken == entry->sourceToken",
+            "member token remap duplicate sourceToken",
+            "previous->targetToken == entry->targetToken",
+            "member token remap duplicate targetToken",
+    };
     char *abiHeaderText = read_repo_text_file_owned("zr_vm_common/include/zr_vm_common/zr_aot_abi.h");
     char *emitterText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+    char *runtimeText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    char *aotRuntimeText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_library/src/zr_vm_library/aot_runtime.c");
 
     TEST_ASSERT_NOT_NULL(abiHeaderText);
     TEST_ASSERT_NOT_NULL(emitterText);
+    TEST_ASSERT_NOT_NULL(runtimeText);
+    TEST_ASSERT_NOT_NULL(aotRuntimeText);
 
     assert_text_contains_all(abiHeaderText, abiHeaderNeedles, ARRAY_COUNT(abiHeaderNeedles));
     assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
+    assert_text_contains_all(runtimeText, runtimeNeedles, ARRAY_COUNT(runtimeNeedles));
+    assert_text_contains_all(aotRuntimeText, runtimeNeedles, ARRAY_COUNT(runtimeNeedles));
 
     free(abiHeaderText);
     free(emitterText);
+    free(runtimeText);
+    free(aotRuntimeText);
 }
 
 static void test_aot_c_writer_options_are_public(void) {
@@ -2598,6 +2905,14 @@ static void test_aot_c_writer_options_are_public(void) {
             "TZrBool stripGeneratedSymbols;",
             "TZrBool suppressRuntimeFallbackWarnings;",
             "TZrUInt32 suppressRuntimeFallbackWarningReasonMask;",
+            "TZrBool suppressAnnotationWarnings;",
+            "typedef struct SZrAotManifestExportDeclaration",
+            "TZrBool hasTypeTokenBinding;",
+            "TZrMetadataToken typeToken;",
+            "TZrBool hasMemberTokenBinding;",
+            "TZrMetadataToken memberToken;",
+            "const SZrAotManifestExportDeclaration *manifestExportDeclarations;",
+            "TZrUInt32 manifestExportDeclarationCount;",
             "ZR_AOT_RUNTIME_FALLBACK_WARNING_DYNAMIC_CALL",
             "ZrParser_Writer_WriteAotCFileWithOptions(",
             "const SZrAotWriterOptions *options",
@@ -2611,19 +2926,178 @@ static void test_aot_c_writer_options_are_public(void) {
             "backend_aot_option_strip_generated_symbols(const SZrAotWriterOptions *options)",
             "backend_aot_option_suppress_runtime_fallback_warnings(const SZrAotWriterOptions *options)",
             "backend_aot_option_runtime_fallback_warning_suppression_mask(const SZrAotWriterOptions *options)",
+            "backend_aot_option_suppress_annotation_warnings(const SZrAotWriterOptions *options)",
+    };
+    static const char *const emitterNeedles[] = {
+            "suppressAnnotationWarnings = backend_aot_option_suppress_annotation_warnings(options);",
+            "backend_aot_c_count_suppressed_annotation_warnings(state, &functionTable)",
+            "trimAnnotationSuppressedCount = trimAnnotationWarningTotal;",
+            "backend_aot_write_manifest_export_declarations(file, options);",
+            "backend_aot_write_manifest_export_table_markers(file, &embeddedZrpMetadata);",
+            "/* manifest.exports = %u */",
+            "/* manifest.exportTableEntries = %u */",
+            "/* manifest.export[%u].typeToken = 0x%08x */",
+            "/* manifest.export[%u].memberToken = 0x%08x */",
+            "/* trim_warnings.annotationSuppressedCount = %u */",
+            "if (enableCodeStripping && !suppressAnnotationWarnings)",
+    };
+    static const char *const annotationWarningNeedles[] = {
+            "\"suppressRequiresUnreferencedCodeWarning\"",
+            "backend_aot_c_annotation_source_file",
+            "backend_aot_exec_ir_debug_line_for_instruction",
+            "sourceFile=",
+            "sourceLine=%u sourceLineEnd=%u sourceColumn=%u sourceColumnEnd=%u",
+            "backend_aot_c_count_suppressed_annotation_warnings",
+            "scanSuppressedWarnings",
     };
     char *writerHeaderText = read_repo_text_file_owned("zr_vm_parser/include/zr_vm_parser/writer.h");
     char *internalHeaderText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_internal.h");
+    char *emitterText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+    char *annotationWarningText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_annotation_warnings.c");
 
     TEST_ASSERT_NOT_NULL(writerHeaderText);
     TEST_ASSERT_NOT_NULL(internalHeaderText);
+    TEST_ASSERT_NOT_NULL(emitterText);
+    TEST_ASSERT_NOT_NULL(annotationWarningText);
 
     assert_text_contains_all(writerHeaderText, writerHeaderNeedles, ARRAY_COUNT(writerHeaderNeedles));
     assert_text_contains_all(internalHeaderText, internalHeaderNeedles, ARRAY_COUNT(internalHeaderNeedles));
+    assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
+    assert_text_contains_all(annotationWarningText, annotationWarningNeedles, ARRAY_COUNT(annotationWarningNeedles));
 
     free(writerHeaderText);
     free(internalHeaderText);
+    free(emitterText);
+    free(annotationWarningText);
+}
+
+static void test_aot_c_dynamic_dependency_method_token_roots_are_source_guarded(void) {
+    static const char *const reachabilityNeedles[] = {
+            "#include \"zr_vm_core/metadata_token.h\"",
+            "\"dynamicDependencyMethodToken\"",
+            "\"dynamicDependencyMethodName\"",
+            "\"dynamicDependencyMethodSignatureHash\"",
+            "backend_aot_function_metadata_uint64_field(",
+            "backend_aot_function_metadata_string_field(",
+            "ZR_METADATA_TOKEN_TABLE(rawToken) != ZR_METADATA_TABLE_MEMBER_DEF",
+            "backend_aot_resolve_dynamic_dependency_method_token(",
+            "backend_aot_resolve_dynamic_dependency_method_name(",
+            "rootFunction->typedExportedSymbols == ZR_NULL",
+            "backend_aot_typed_function_symbol_matches_method_token(",
+            "symbol->symbolKind != ZR_FUNCTION_TYPED_SYMBOL_FUNCTION",
+            "symbol->metadataToken != methodToken",
+            "ZR_METADATA_TOKEN_TABLE(symbol->metadataToken) != ZR_METADATA_TABLE_MEMBER_DEF",
+            "matchedMethodTokenSymbolCount++",
+            "hasDynamicDependencyMethodSignatureHash =",
+            "backend_aot_typed_export_symbol_matches_name(symbol,",
+            "hasMethodSignatureHash && symbol->signatureHash != methodSignatureHash",
+            "symbol->signatureHash != methodSignatureHash",
+            "matchedSymbolCount++",
+            "symbol->callableChildIndex >= rootFunction->childFunctionLength",
+            "backend_aot_find_function_table_index(table, childFunction)",
+    };
+    char *reachabilityText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c");
+
+    TEST_ASSERT_NOT_NULL(reachabilityText);
+    assert_text_contains_all(reachabilityText, reachabilityNeedles, ARRAY_COUNT(reachabilityNeedles));
+    free(reachabilityText);
+}
+
+static void test_aot_c_dynamic_dependency_type_layout_roots_are_source_guarded(void) {
+    static const char *const emitterNeedles[] = {
+            "annotationTypeLayoutRoots",
+            "annotationTypeLayoutRootCount",
+            "backend_aot_c_type_layout_collect_dynamic_dependency_roots(state,",
+            "backend_aot_c_type_layout_count_referenced(state,",
+            "backend_aot_c_type_layout_payload_bytes_referenced(state,",
+            "backend_aot_c_type_layout_generated_bytes_referenced(state,",
+            "code_stripping.annotationTypeLayoutRoots = %u",
+            "code_stripping.annotationTypeLayoutRoot[%u] = %u",
+            "backend_aot_write_c_type_layout_declarations(file,",
+            "backend_aot_write_c_type_layout_gc_descriptor_table(file,",
+            "backend_aot_write_c_type_layout_registration_table(file,",
+            "backend_aot_write_c_type_layout_token_table(file,",
+    };
+    static const char *const typeLayoutHeaderNeedles[] = {
+            "backend_aot_c_type_layout_collect_dynamic_dependency_roots(",
+            "const TZrByte *metadataBlob",
+            "TZrSize metadataBlobLength",
+            "const TZrUInt32 *typeLayoutRoots",
+            "TZrUInt32 typeLayoutRootCount",
+    };
+    static const char *const typeLayoutSourceNeedles[] = {
+            "#include \"backend_aot_c_type_layout_metadata_roots.h\"",
+            "#include \"zr_vm_core/object.h\"",
+            "#include \"zr_vm_core/string.h\"",
+            "\"dynamicDependencyTypeLayoutId\"",
+            "\"dynamicDependencyTypeToken\"",
+            "\"dynamicDependencyFieldToken\"",
+            "backend_aot_c_type_layout_metadata_type_token_roots(",
+            "backend_aot_c_type_layout_metadata_field_token_roots(",
+            "backend_aot_c_type_layout_function_metadata_uint32_field(",
+            "backend_aot_c_type_layout_append_root(",
+            "backend_aot_c_type_layout_append_metadata_roots(",
+            "backend_aot_c_type_layout_is_rooted(",
+            "backend_aot_c_type_layout_resolve_rooted(",
+            "backend_aot_c_type_layout_find_root_resolver_function(",
+            "backend_aot_c_type_layout_has_frame_reference(table, typeLayoutId)",
+            "backend_aot_c_type_layout_root_seen_before(typeLayoutRoots, rootIndex, typeLayoutId)",
+    };
+    static const char *const metadataRootSourceNeedles[] = {
+            "#include \"backend_aot_c_type_layout_metadata_roots.h\"",
+            "#include \"zr_vm_core/metadata_token.h\"",
+            "#include \"zr_vm_core/zrp_metadata.h\"",
+            "ZR_AOT_C_TYPE_LAYOUT_METADATA_ROOT_CAPACITY",
+            "backend_aot_c_type_layout_metadata_type_token_roots(",
+            "backend_aot_c_type_layout_metadata_field_token_roots(",
+            "ZR_METADATA_TOKEN_TABLE(typeToken) == ZR_METADATA_TABLE_TYPE_DEF",
+            "ZR_METADATA_TOKEN_TABLE(typeToken) == ZR_METADATA_TABLE_TYPE_REF",
+            "ZR_METADATA_TOKEN_TABLE(typeToken) == ZR_METADATA_TABLE_TYPE_SPEC",
+            "ZR_METADATA_TOKEN_TABLE(fieldToken) != ZR_METADATA_TABLE_MEMBER_DEF",
+            "ZrCore_ZrpMetadata_GetSectionView(",
+            "ZR_ZRP_METADATA_SECTION_TOKEN_RECORDS",
+            "SZrMetadataTokenRecord",
+            "record->targetMetadataToken",
+            "SZrZrpMetadataTypeDefRow",
+            "SZrZrpMetadataTypeSpecRow",
+            "SZrZrpMetadataFieldDefRow",
+            "ownerRow->typeLayoutId",
+            "fieldRow->typeLayoutId",
+            "fieldRowIndex - row->firstFieldDefIndex >= row->fieldDefCount",
+    };
+    char *emitterText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+    char *typeLayoutHeaderText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h");
+    char *typeLayoutSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c");
+    char *metadataRootSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_metadata_roots.c");
+
+    TEST_ASSERT_NOT_NULL(emitterText);
+    TEST_ASSERT_NOT_NULL(typeLayoutHeaderText);
+    TEST_ASSERT_NOT_NULL(typeLayoutSourceText);
+    TEST_ASSERT_NOT_NULL(metadataRootSourceText);
+
+    assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
+    assert_text_contains_all(typeLayoutHeaderText,
+                             typeLayoutHeaderNeedles,
+                             ARRAY_COUNT(typeLayoutHeaderNeedles));
+    assert_text_contains_all(typeLayoutSourceText,
+                             typeLayoutSourceNeedles,
+                             ARRAY_COUNT(typeLayoutSourceNeedles));
+    assert_text_contains_all(metadataRootSourceText,
+                             metadataRootSourceNeedles,
+                             ARRAY_COUNT(metadataRootSourceNeedles));
+
+    free(emitterText);
+    free(typeLayoutHeaderText);
+    free(typeLayoutSourceText);
+    free(metadataRootSourceText);
 }
 
 void setUp(void) {}
@@ -2654,5 +3128,7 @@ int main(void) {
     RUN_TEST(test_aot_c_source_tracks_method_metadata_generated_byte_deltas);
     RUN_TEST(test_aot_c_generated_abi_header_is_public);
     RUN_TEST(test_aot_c_writer_options_are_public);
+    RUN_TEST(test_aot_c_dynamic_dependency_method_token_roots_are_source_guarded);
+    RUN_TEST(test_aot_c_dynamic_dependency_type_layout_roots_are_source_guarded);
     return UNITY_END();
 }

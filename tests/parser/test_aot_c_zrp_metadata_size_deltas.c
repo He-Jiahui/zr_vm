@@ -109,7 +109,8 @@ static void test_aot_c_zrp_metadata_size_deltas_emit_section_level_code_strippin
     beforeStats.stringPoolBytes = 25u;
     beforeStats.signatureBlobPoolBytes = 30u;
     beforeStats.constantPoolBytes = 11u;
-    beforeStats.definitionTableBytes = 121u;
+    beforeStats.manifestExportBytes = 14u;
+    beforeStats.definitionTableBytes = 135u;
     beforeStats.poolBytes = 66u;
     beforeStats.tokenRecordCount = 6u;
     beforeStats.typeDefCount = 1u;
@@ -123,8 +124,9 @@ static void test_aot_c_zrp_metadata_size_deltas_emit_section_level_code_strippin
     beforeStats.stringPoolCount = 25u;
     beforeStats.signatureBlobPoolCount = 30u;
     beforeStats.constantPoolCount = 11u;
+    beforeStats.manifestExportCount = 2u;
 
-    afterStats.zrpMetadataBytes = 151u;
+    afterStats.zrpMetadataBytes = 155u;
     afterStats.tokenRecordBytes = 10u;
     afterStats.typeDefBytes = 10u;
     afterStats.methodDefBytes = 10u;
@@ -137,7 +139,8 @@ static void test_aot_c_zrp_metadata_size_deltas_emit_section_level_code_strippin
     afterStats.stringPoolBytes = 15u;
     afterStats.signatureBlobPoolBytes = 22u;
     afterStats.constantPoolBytes = 0u;
-    afterStats.definitionTableBytes = 69u;
+    afterStats.manifestExportBytes = 4u;
+    afterStats.definitionTableBytes = 73u;
     afterStats.poolBytes = 37u;
     afterStats.tokenRecordCount = 3u;
     afterStats.typeDefCount = 1u;
@@ -151,6 +154,7 @@ static void test_aot_c_zrp_metadata_size_deltas_emit_section_level_code_strippin
     afterStats.stringPoolCount = 15u;
     afterStats.signatureBlobPoolCount = 22u;
     afterStats.constantPoolCount = 0u;
+    afterStats.manifestExportCount = 1u;
 
     file = tmpfile();
     TEST_ASSERT_NOT_NULL(file);
@@ -161,8 +165,8 @@ static void test_aot_c_zrp_metadata_size_deltas_emit_section_level_code_strippin
     text[bytesRead] = '\0';
     fclose(file);
 
-    assert_text_contains(text, "/* code_stripping.zrpMetadataBytesRemoved = 89 */");
-    assert_text_contains(text, "/* code_stripping.zrpMetadataDefinitionTableBytesRemoved = 52 */");
+    assert_text_contains(text, "/* code_stripping.zrpMetadataBytesRemoved = 85 */");
+    assert_text_contains(text, "/* code_stripping.zrpMetadataDefinitionTableBytesRemoved = 62 */");
     assert_text_contains(text, "/* code_stripping.zrpMetadataPoolBytesRemoved = 29 */");
 
     assert_zrp_metadata_section_delta(text, "tokenRecords", 24u, 10u, 14u);
@@ -177,6 +181,7 @@ static void test_aot_c_zrp_metadata_size_deltas_emit_section_level_code_strippin
     assert_zrp_metadata_section_delta(text, "stringPool", 25u, 15u, 10u);
     assert_zrp_metadata_section_delta(text, "signatureBlobPool", 30u, 22u, 8u);
     assert_zrp_metadata_section_delta(text, "constantPool", 11u, 0u, 11u);
+    assert_zrp_metadata_section_delta(text, "manifestExports", 14u, 4u, 10u);
 
     assert_zrp_metadata_section_count_delta(text, "tokenRecords", 6u, 3u, 3u);
     assert_zrp_metadata_section_count_delta(text, "typeDefs", 1u, 1u, 0u);
@@ -190,6 +195,7 @@ static void test_aot_c_zrp_metadata_size_deltas_emit_section_level_code_strippin
     assert_zrp_metadata_section_count_delta(text, "stringPool", 25u, 15u, 10u);
     assert_zrp_metadata_section_count_delta(text, "signatureBlobPool", 30u, 22u, 8u);
     assert_zrp_metadata_section_count_delta(text, "constantPool", 11u, 0u, 11u);
+    assert_zrp_metadata_section_count_delta(text, "manifestExports", 2u, 1u, 1u);
 }
 
 static void test_aot_c_zrp_metadata_size_stats_emit_section_count_markers(void) {
@@ -211,6 +217,7 @@ static void test_aot_c_zrp_metadata_size_stats_emit_section_count_markers(void) 
     stats.stringPoolCount = 25u;
     stats.signatureBlobPoolCount = 30u;
     stats.constantPoolCount = 11u;
+    stats.manifestExportCount = 2u;
 
     file = tmpfile();
     TEST_ASSERT_NOT_NULL(file);
@@ -233,6 +240,7 @@ static void test_aot_c_zrp_metadata_size_stats_emit_section_count_markers(void) 
     assert_zrp_metadata_section_count_stat(text, "stringPool", 25u);
     assert_zrp_metadata_section_count_stat(text, "signatureBlobPool", 30u);
     assert_zrp_metadata_section_count_stat(text, "constantPool", 11u);
+    assert_zrp_metadata_section_count_stat(text, "manifestExports", 2u);
 }
 
 int main(void) {

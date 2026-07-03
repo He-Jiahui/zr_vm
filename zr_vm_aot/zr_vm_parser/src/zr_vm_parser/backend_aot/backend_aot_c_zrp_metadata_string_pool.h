@@ -19,6 +19,8 @@ typedef struct SZrAotCZrpStringPoolRemap {
     TZrUInt32 sourceByteLength;
 } SZrAotCZrpStringPoolRemap;
 
+typedef struct SZrAotCZrpSignatureBlobRemap SZrAotCZrpSignatureBlobRemap;
+
 TZrBool backend_aot_c_zrp_string_pool_remap_init(SZrAotCZrpStringPoolRemap *remap,
                                                  TZrUInt32 capacity,
                                                  TZrUInt32 sourceByteLength);
@@ -31,16 +33,28 @@ TZrBool backend_aot_c_zrp_build_string_pool_remap(
         TZrUInt32 sourceStringPoolBytes,
         const SZrZrpMetadataTypeDefRow *typeRows,
         TZrUInt32 typeCount,
+        TZrUInt32 retainedTypeDefCount,
         const SZrZrpMetadataMethodDefRow *methodRows,
         TZrUInt32 methodCount,
         const SZrZrpMetadataFieldDefRow *fieldRows,
         TZrUInt32 fieldCount,
         const SZrZrpMetadataGenericParamRow *genericParamRows,
         TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
         const SZrZrpMetadataModuleRefRow *moduleRefRows,
         TZrUInt32 moduleRefCount,
+        const SZrZrpMetadataManifestExportRow *manifestExportRows,
+        TZrUInt32 manifestExportCount,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataTypeSpecRow *typeSpecRows,
+        TZrUInt32 typeSpecCount,
         const SZrAotFunctionTable *functionTable,
-        TZrUInt32 retainedMethodDefCount);
+        TZrUInt32 retainedMethodDefCount,
+        const TZrByte *signatureBlobPool,
+        TZrUInt32 signatureBlobPoolBytes,
+        const SZrAotCZrpSignatureBlobRemap *signatureRemap);
 
 void backend_aot_c_zrp_copy_string_pool(TZrByte *targetBlob,
                                         const TZrByte *sourceBlob,
@@ -58,5 +72,7 @@ TZrBool backend_aot_c_zrp_remap_generic_param_string_offsets(SZrZrpMetadataGener
                                                             const SZrAotCZrpStringPoolRemap *stringRemap);
 TZrBool backend_aot_c_zrp_remap_module_ref_string_offsets(SZrZrpMetadataModuleRefRow *row,
                                                           const SZrAotCZrpStringPoolRemap *stringRemap);
+TZrBool backend_aot_c_zrp_remap_string_offset(TZrUInt32 *stringOffset,
+                                              const SZrAotCZrpStringPoolRemap *stringRemap);
 
 #endif

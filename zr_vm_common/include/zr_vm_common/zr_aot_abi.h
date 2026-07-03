@@ -14,7 +14,7 @@ struct SZrAotMethodInfo;
 struct SZrAotGcRootMap;
 struct SZrTypeLayout;
 
-#define ZR_VM_AOT_ABI_VERSION 10u
+#define ZR_VM_AOT_ABI_VERSION 13u
 
 typedef enum EZrAotBackendKind {
     ZR_AOT_BACKEND_KIND_NONE = 0,
@@ -143,11 +143,39 @@ typedef struct SZrAotGcDescriptor {
     const TZrUInt32 *gcFieldOffsets;
 } SZrAotGcDescriptor;
 
+typedef struct SZrAotMemberTokenRemap {
+    TZrUInt32 sourceToken;
+    TZrUInt32 targetToken;
+} SZrAotMemberTokenRemap;
+
+#define ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_TYPE 1u
+#define ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_METHOD 2u
+#define ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_FIELD 3u
+
+#define ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_TYPE_TOKEN 1u
+#define ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_MEMBER_TOKEN 2u
+#define ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_KNOWN_MASK \
+    (ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_TYPE_TOKEN | ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_MEMBER_TOKEN)
+
+typedef struct SZrAotManifestExportEntry {
+    TZrUInt32 kind;
+    TZrUInt32 flags;
+    const TZrChar *target;
+    TZrUInt32 typeToken;
+    TZrUInt32 memberToken;
+} SZrAotManifestExportEntry;
+
 typedef struct SZrAotCodeRegistration {
     TZrUInt32 functionCount;
     const FZrAotEntryThunk *functionPointers;
     const SZrAotMethodInfo *const *methodInfos;
     TZrUInt32 methodInfoCount;
+    const TZrUInt32 *methodTokens;
+    TZrUInt32 methodTokenCount;
+    const SZrAotMemberTokenRemap *memberTokenRemaps;
+    TZrUInt32 memberTokenRemapCount;
+    const SZrAotManifestExportEntry *manifestExports;
+    TZrUInt32 manifestExportCount;
     const FZrAotReflectionInvoker *invokers;
     TZrUInt32 invokerCount;
     const struct SZrTypeLayout *const *typeLayouts;
@@ -172,6 +200,12 @@ typedef struct ZrAotCompiledModule {
     FZrAotEntryThunk entryThunk;
     const SZrAotMethodInfo *const *methodInfos;
     TZrUInt32 methodInfoCount;
+    const TZrUInt32 *methodTokens;
+    TZrUInt32 methodTokenCount;
+    const SZrAotMemberTokenRemap *memberTokenRemaps;
+    TZrUInt32 memberTokenRemapCount;
+    const SZrAotManifestExportEntry *manifestExports;
+    TZrUInt32 manifestExportCount;
     const struct SZrTypeLayout *const *typeLayouts;
     TZrUInt32 typeLayoutCount;
     const TZrUInt32 *typeLayoutTokens;

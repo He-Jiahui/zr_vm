@@ -495,6 +495,57 @@ TZrBool ZrCli_Project_ResolveAotCPath(const SZrCliProjectContext *context,
     return zr_cli_resolve_aot_c_path_from_binary_path(binaryPath, moduleName, buffer, bufferSize);
 }
 
+TZrBool ZrCli_Project_ResolveAotCompactedMetadataPathFromAotCPath(const TZrChar *aotCPath,
+                                                                  TZrChar *buffer,
+                                                                  TZrSize bufferSize) {
+    const TZrChar *lastSeparator = ZR_NULL;
+    const TZrChar *lastDot = ZR_NULL;
+    TZrSize prefixLength;
+    TZrSize extensionLength = strlen(".zrp");
+    TZrSize index;
+
+    if (aotCPath == ZR_NULL || aotCPath[0] == '\0' || buffer == ZR_NULL || bufferSize == 0u) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0u; aotCPath[index] != '\0'; index++) {
+        if (zr_cli_path_is_separator(aotCPath[index])) {
+            lastSeparator = aotCPath + index;
+            lastDot = ZR_NULL;
+        } else if (aotCPath[index] == '.') {
+            lastDot = aotCPath + index;
+        }
+    }
+
+    prefixLength = lastDot != ZR_NULL
+                           ? (TZrSize)(lastDot - aotCPath)
+                           : (TZrSize)strlen(aotCPath);
+    if (prefixLength == 0u || prefixLength + extensionLength + 1u > bufferSize) {
+        return ZR_FALSE;
+    }
+    if (lastSeparator != ZR_NULL && lastDot == lastSeparator + 1) {
+        return ZR_FALSE;
+    }
+
+    memcpy(buffer, aotCPath, prefixLength);
+    memcpy(buffer + prefixLength, ".zrp", extensionLength);
+    buffer[prefixLength + extensionLength] = '\0';
+    return ZR_TRUE;
+}
+
+TZrBool ZrCli_Project_ResolveAotCompactedMetadataPath(const SZrCliProjectContext *context,
+                                                      const TZrChar *moduleName,
+                                                      TZrChar *buffer,
+                                                      TZrSize bufferSize) {
+    TZrChar aotCPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    if (!ZrCli_Project_ResolveAotCPath(context, moduleName, aotCPath, sizeof(aotCPath))) {
+        return ZR_FALSE;
+    }
+
+    return ZrCli_Project_ResolveAotCompactedMetadataPathFromAotCPath(aotCPath, buffer, bufferSize);
+}
+
 TZrBool ZrCli_Project_OpenFileIo(SZrState *state, const TZrChar *path, TZrBool isBinary, SZrIo *io) {
     SZrLibrary_File_Reader *reader;
 

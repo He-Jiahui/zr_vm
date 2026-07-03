@@ -5,6 +5,7 @@
 
 #include "backend_aot_exec_ir.h"
 #include "backend_aot_function_table.h"
+#include "backend_aot_c_zrp_metadata_prune.h"
 
 unsigned long long backend_aot_write_c_method_infos(FILE *file,
                                                     SZrState *state,
@@ -16,11 +17,14 @@ unsigned long long backend_aot_c_method_metadata_generated_bytes_referenced(
         const SZrAotFunctionTable *table,
         const SZrAotExecIrModule *module,
         TZrUInt8 reflectionMetadataLevel);
-void backend_aot_write_c_reflection_invokers(FILE *file);
 TZrUInt32 backend_aot_c_method_metadata_count_gc_roots(SZrState *state,
                                                        const SZrAotExecIrFunction *functionIr);
 void backend_aot_write_c_method_info_table(FILE *file,
                                            const SZrAotFunctionTable *table,
                                            TZrUInt32 functionIndexSpace);
+void backend_aot_write_c_method_token_table(FILE *file,
+                                            const SZrAotFunctionTable *table,
+                                            const SZrAotCEmbeddedZrpMetadata *embeddedZrpMetadata,
+                                            TZrUInt32 functionIndexSpace);
 
 #endif

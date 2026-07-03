@@ -631,6 +631,104 @@ static void test_project_manifest_normalization_parses_generic_preserve_argument
     destroy_test_project(state, project);
 }
 
+static void test_project_manifest_normalization_parses_export_declarations(void) {
+    SZrState *state;
+    SZrLibrary_Project *project;
+    static const TZrChar *projectContent =
+            "{\n"
+            "  \"manifestVersion\": 1,\n"
+            "  \"assembly\": { \"name\": \"app.render\", \"version\": \"1.0.0\" },\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\",\n"
+            "  \"exports\": [\n"
+            "    { \"kind\": \"type\", \"target\": \"Widget\" },\n"
+            "    { \"kind\": \"method\", \"target\": \"Widget.run\" },\n"
+            "    { \"kind\": \"field\", \"target\": \"Widget.value\" }\n"
+            "  ]\n"
+            "}\n";
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectContent, "E:/repo/app/app.zrp");
+    TEST_ASSERT_NOT_NULL(project);
+    TEST_ASSERT_EQUAL_UINT32(3u, (TZrUInt32)project->exportDeclarationCount);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_TYPE, project->exportDeclarations[0].kind);
+    TEST_ASSERT_EQUAL_STRING("Widget", test_string_text(project->exportDeclarations[0].target));
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_METHOD, project->exportDeclarations[1].kind);
+    TEST_ASSERT_EQUAL_STRING("Widget.run", test_string_text(project->exportDeclarations[1].target));
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_FIELD, project->exportDeclarations[2].kind);
+    TEST_ASSERT_EQUAL_STRING("Widget.value", test_string_text(project->exportDeclarations[2].target));
+    destroy_test_project(state, project);
+}
+
+static void test_project_manifest_normalization_rejects_invalid_export_kind(void) {
+    SZrState *state;
+    SZrLibrary_Project *project;
+    static const TZrChar *projectContent =
+            "{\n"
+            "  \"manifestVersion\": 1,\n"
+            "  \"assembly\": { \"name\": \"app.render\", \"version\": \"1.0.0\" },\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\",\n"
+            "  \"exports\": [\n"
+            "    { \"kind\": \"generic\", \"target\": \"Widget\" }\n"
+            "  ]\n"
+            "}\n";
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectContent, "E:/repo/app/app.zrp");
+    TEST_ASSERT_NULL(project);
+    destroy_test_project(state, project);
+}
+
+static void test_project_manifest_normalization_rejects_invalid_export_target(void) {
+    SZrState *state;
+    SZrLibrary_Project *project;
+    static const TZrChar *projectContent =
+            "{\n"
+            "  \"manifestVersion\": 1,\n"
+            "  \"assembly\": { \"name\": \"app.render\", \"version\": \"1.0.0\" },\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\",\n"
+            "  \"exports\": [\n"
+            "    { \"kind\": \"method\", \"target\": \"Widget run\" }\n"
+            "  ]\n"
+            "}\n";
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectContent, "E:/repo/app/app.zrp");
+    TEST_ASSERT_NULL(project);
+    destroy_test_project(state, project);
+}
+
+static void test_project_manifest_normalization_rejects_duplicate_export_target(void) {
+    SZrState *state;
+    SZrLibrary_Project *project;
+    static const TZrChar *projectContent =
+            "{\n"
+            "  \"manifestVersion\": 1,\n"
+            "  \"assembly\": { \"name\": \"app.render\", \"version\": \"1.0.0\" },\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\",\n"
+            "  \"exports\": [\n"
+            "    { \"kind\": \"method\", \"target\": \"Widget.run\" },\n"
+            "    { \"kind\": \"method\", \"target\": \"Widget.run\" }\n"
+            "  ]\n"
+            "}\n";
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectContent, "E:/repo/app/app.zrp");
+    TEST_ASSERT_NULL(project);
+    destroy_test_project(state, project);
+}
+
 static void test_project_manifest_normalization_rejects_invalid_generic_preserve_arguments(void) {
     SZrState *state;
     SZrLibrary_Project *project;
@@ -875,6 +973,10 @@ int main(void) {
     RUN_TEST(test_project_manifest_normalization_parses_preserve_rules);
     RUN_TEST(test_project_manifest_normalization_parses_feature_conditioned_preserve_rule);
     RUN_TEST(test_project_manifest_normalization_parses_generic_preserve_arguments);
+    RUN_TEST(test_project_manifest_normalization_parses_export_declarations);
+    RUN_TEST(test_project_manifest_normalization_rejects_invalid_export_kind);
+    RUN_TEST(test_project_manifest_normalization_rejects_invalid_export_target);
+    RUN_TEST(test_project_manifest_normalization_rejects_duplicate_export_target);
     RUN_TEST(test_project_manifest_normalization_rejects_invalid_generic_preserve_arguments);
     RUN_TEST(test_project_manifest_normalization_rejects_non_array_generic_preserve_arguments);
     RUN_TEST(test_project_manifest_normalization_rejects_generic_preserve_without_arguments);

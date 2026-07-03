@@ -1,6 +1,7 @@
 #include "zr_vm_core/zrp_metadata.h"
 
 #include "zr_vm_core/memory.h"
+#include "zr_vm_common/zr_aot_abi.h"
 
 #define ZR_ZRP_METADATA_SECTION_ENCODED_SIZE 16u
 #define ZR_ZRP_METADATA_SIGNATURE_MAX_RECURSION_DEPTH 64u
@@ -109,6 +110,8 @@ static const SZrZrpMetadataSection *zrp_metadata_get_section(const SZrZrpMetadat
             return &header->signatureBlobPool;
         case ZR_ZRP_METADATA_SECTION_CONSTANT_POOL:
             return &header->constantPool;
+        case ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS:
+            return &header->manifestExports;
         default:
             return ZR_NULL;
     }
@@ -138,6 +141,8 @@ static TZrUInt32 zrp_metadata_definition_table_element_size(EZrZrpMetadataSectio
             return (TZrUInt32)sizeof(SZrZrpMetadataMethodSpecRow);
         case ZR_ZRP_METADATA_SECTION_MODULE_REFS:
             return (TZrUInt32)sizeof(SZrZrpMetadataModuleRefRow);
+        case ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS:
+            return (TZrUInt32)sizeof(SZrZrpMetadataManifestExportRow);
         default:
             return 0u;
     }
@@ -178,6 +183,18 @@ static TZrBool zrp_metadata_range_is_in_count(TZrUInt32 firstIndex, TZrUInt32 co
         return ZR_FALSE;
     }
     return count <= (totalCount - firstIndex);
+}
+
+static TZrBool zrp_metadata_constant_pool_slice_is_valid(TZrUInt32 offset,
+                                                         TZrUInt32 byteLength,
+                                                         TZrUInt32 constantPoolByteLength) {
+    if (byteLength == 0u) {
+        return offset == 0u;
+    }
+    if (offset >= constantPoolByteLength) {
+        return ZR_FALSE;
+    }
+    return byteLength <= constantPoolByteLength - offset;
 }
 
 static TZrBool zrp_metadata_section_is_valid(const SZrZrpMetadataSection *section,
@@ -346,6 +363,52 @@ static TZrBool zrp_metadata_validate_field_signature_blob(const TZrByte *signatu
            zrp_metadata_validate_signature_type_node(signatureBlob, signatureBlobLength, offset, 0u);
 }
 
+static TZrBool zrp_metadata_token_has_table_and_rid(TZrMetadataToken token, TZrUInt32 table) {
+    return zrp_metadata_token_has_table(token, table) && ZR_METADATA_TOKEN_RID(token) != 0u;
+}
+
+static TZrBool zrp_metadata_manifest_export_target_is_valid(const TZrByte *buffer,
+                                                            TZrSize bufferLength,
+                                                            const SZrZrpMetadataHeader *header,
+                                                            TZrUInt32 targetStringOffset) {
+    SZrZrpMetadataStringView stringView;
+
+    return ZrCore_ZrpMetadata_GetString(buffer, bufferLength, header, targetStringOffset, &stringView);
+}
+
+static TZrBool zrp_metadata_manifest_export_row_is_valid(const TZrByte *buffer,
+                                                         TZrSize bufferLength,
+                                                         const SZrZrpMetadataHeader *header,
+                                                         const SZrZrpMetadataManifestExportRow *row) {
+    if (row == ZR_NULL ||
+        (row->flags & ~((TZrUInt32)ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_KNOWN_MASK)) != 0u ||
+        !zrp_metadata_manifest_export_target_is_valid(buffer, bufferLength, header, row->targetStringOffset)) {
+        return ZR_FALSE;
+    }
+
+    if (row->flags == 0u) {
+        return (TZrBool)((row->kind == ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_TYPE ||
+                          row->kind == ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_METHOD ||
+                          row->kind == ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_FIELD) &&
+                         row->typeToken == 0u &&
+                         row->memberToken == 0u);
+    }
+
+    switch (row->kind) {
+        case ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_TYPE:
+            return row->flags == ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_TYPE_TOKEN &&
+                   zrp_metadata_token_has_table_and_rid(row->typeToken, ZR_METADATA_TABLE_TYPE_DEF) &&
+                   row->memberToken == 0u;
+        case ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_METHOD:
+        case ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_FIELD:
+            return row->flags == ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_MEMBER_TOKEN &&
+                   row->typeToken == 0u &&
+                   zrp_metadata_token_has_table_and_rid(row->memberToken, ZR_METADATA_TABLE_MEMBER_DEF);
+        default:
+            return ZR_FALSE;
+    }
+}
+
 ZR_CORE_API void ZrCore_ZrpMetadata_InitHeader(SZrZrpMetadataHeader *header) {
     if (header == ZR_NULL) {
         return;
@@ -399,7 +462,10 @@ ZR_CORE_API TZrBool ZrCore_ZrpMetadata_ValidateHeader(const SZrZrpMetadataHeader
                                          (TZrUInt32)sizeof(SZrZrpMetadataModuleRefRow)) &&
            zrp_metadata_section_is_valid(&header->stringPool, bufferLength, 1u) &&
            zrp_metadata_section_is_valid(&header->signatureBlobPool, bufferLength, 1u) &&
-           zrp_metadata_section_is_valid(&header->constantPool, bufferLength, 1u);
+           zrp_metadata_section_is_valid(&header->constantPool, bufferLength, 1u) &&
+           zrp_metadata_section_is_valid(&header->manifestExports,
+                                         bufferLength,
+                                         (TZrUInt32)sizeof(SZrZrpMetadataManifestExportRow));
 }
 
 ZR_CORE_API TZrBool ZrCore_ZrpMetadata_WriteHeader(TZrByte *buffer,
@@ -443,6 +509,8 @@ ZR_CORE_API TZrBool ZrCore_ZrpMetadata_WriteHeader(TZrByte *buffer,
     zrp_metadata_write_section(buffer, sectionOffset, &header->signatureBlobPool);
     sectionOffset += ZR_ZRP_METADATA_SECTION_ENCODED_SIZE;
     zrp_metadata_write_section(buffer, sectionOffset, &header->constantPool);
+    sectionOffset += ZR_ZRP_METADATA_SECTION_ENCODED_SIZE;
+    zrp_metadata_write_section(buffer, sectionOffset, &header->manifestExports);
     return ZR_TRUE;
 }
 
@@ -486,6 +554,8 @@ ZR_CORE_API TZrBool ZrCore_ZrpMetadata_ReadHeader(const TZrByte *buffer,
     zrp_metadata_read_section(buffer, sectionOffset, &outHeader->signatureBlobPool);
     sectionOffset += ZR_ZRP_METADATA_SECTION_ENCODED_SIZE;
     zrp_metadata_read_section(buffer, sectionOffset, &outHeader->constantPool);
+    sectionOffset += ZR_ZRP_METADATA_SECTION_ENCODED_SIZE;
+    zrp_metadata_read_section(buffer, sectionOffset, &outHeader->manifestExports);
     return ZrCore_ZrpMetadata_ValidateHeader(outHeader, bufferLength);
 }
 
@@ -756,7 +826,10 @@ ZR_CORE_API TZrBool ZrCore_ZrpMetadata_ValidateDefinitionTables(const TZrByte *b
         const SZrZrpMetadataFieldDefRow *row = &((const SZrZrpMetadataFieldDefRow *)(const void *)view.data)[index];
         if (!zrp_metadata_token_has_table(row->token, ZR_METADATA_TABLE_MEMBER_DEF) ||
             !zrp_metadata_token_has_table(row->ownerTypeToken, ZR_METADATA_TABLE_TYPE_DEF) ||
-            !zrp_metadata_rid_is_in_count(row->ownerTypeToken, typeDefCount)) {
+            !zrp_metadata_rid_is_in_count(row->ownerTypeToken, typeDefCount) ||
+            !zrp_metadata_constant_pool_slice_is_valid(row->defaultValueConstantPoolOffset,
+                                                       row->defaultValueConstantPoolLength,
+                                                       header->constantPool.byteLength)) {
             return ZR_FALSE;
         }
     }
@@ -843,6 +916,21 @@ ZR_CORE_API TZrBool ZrCore_ZrpMetadata_ValidateDefinitionTables(const TZrByte *b
         const SZrZrpMetadataModuleRefRow *row =
                 &((const SZrZrpMetadataModuleRefRow *)(const void *)view.data)[index];
         if (!zrp_metadata_token_has_table(row->token, ZR_METADATA_TABLE_ASSEMBLY_REF)) {
+            return ZR_FALSE;
+        }
+    }
+
+    if (!ZrCore_ZrpMetadata_GetSectionView(buffer,
+                                           bufferLength,
+                                           header,
+                                           ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS,
+                                           &view)) {
+        return ZR_FALSE;
+    }
+    for (index = 0u; index < view.count; ++index) {
+        const SZrZrpMetadataManifestExportRow *row =
+                &((const SZrZrpMetadataManifestExportRow *)(const void *)view.data)[index];
+        if (!zrp_metadata_manifest_export_row_is_valid(buffer, bufferLength, header, row)) {
             return ZR_FALSE;
         }
     }

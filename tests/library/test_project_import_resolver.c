@@ -483,6 +483,10 @@ static void test_project_import_resolver_normalizes_assembly_references(void) {
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
     TZrChar mathPath[ZR_TESTS_PATH_MAX];
     TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar providerModuleKey[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar providerError[ZR_LIBRARY_MAX_PATH_LENGTH];
+    SZrLibrary_ProjectImportProviderLocation providerLocation;
+    SZrLibrary_ProjectImportProviderAotLoadRequest providerLoadRequest;
     SZrString *requestedVersion = ZR_NULL;
     SZrString *assemblyName = ZR_NULL;
     SZrString *minVersionInclusive = ZR_NULL;
@@ -545,6 +549,53 @@ static void test_project_import_resolver_normalizes_assembly_references(void) {
     assert_import_resolves(project, "main", "&mathLocal.ops.sum", "$mathLocal@2.1.0/ops/sum");
     assert_import_resolves(project, "main", "&mathLocal", "$mathLocal@2.1.0/index");
     assert_import_resolves(project, "$mathLocal@2.1.0/feature/main", "@core.util", "$mathLocal@2.1.0/core/util");
+    memset(&providerLocation, 0, sizeof(providerLocation));
+    memset(providerModuleKey, 0, sizeof(providerModuleKey));
+    memset(providerError, 0, sizeof(providerError));
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_Project_ResolveImportProviderLocation(project,
+                                                                             "main",
+                                                                             "&mathLocal.ops.sum",
+                                                                             providerModuleKey,
+                                                                             sizeof(providerModuleKey),
+                                                                             &providerLocation,
+                                                                             providerError,
+                                                                             sizeof(providerError)),
+                             providerError);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_DEPENDENCY_PACKAGE_PROJECT, providerLocation.artifactKind);
+    TEST_ASSERT_EQUAL_STRING("$mathLocal@2.1.0/ops/sum", providerModuleKey);
+    TEST_ASSERT_EQUAL_STRING("zr.math", test_string_text(providerLocation.assemblyName));
+    TEST_ASSERT_EQUAL_STRING("2.1.0", test_string_text(providerLocation.requestedVersion));
+    TEST_ASSERT_EQUAL_STRING("2.0.0", test_string_text(providerLocation.minVersionInclusive));
+    TEST_ASSERT_EQUAL_STRING("3.0.0", test_string_text(providerLocation.maxVersionExclusive));
+    normalize_path_text(providerLocation.sourcePath);
+    normalize_path_text(providerLocation.binaryPath);
+    normalize_path_text(providerLocation.intermediatePath);
+    TEST_ASSERT_TRUE(text_ends_with(providerLocation.sourcePath, "/deps/math/src/ops/sum.zr"));
+    TEST_ASSERT_TRUE(text_ends_with(providerLocation.binaryPath, "/deps/math/bin/ops/sum.zro"));
+    TEST_ASSERT_TRUE(text_ends_with(providerLocation.intermediatePath, "/deps/math/bin/ops/sum.zri"));
+
+    memset(&providerLoadRequest, 0, sizeof(providerLoadRequest));
+    memset(providerError, 0, sizeof(providerError));
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_Project_ResolveImportProviderAotLoadRequest(project,
+                                                                                   "main",
+                                                                                   "&mathLocal.ops.sum",
+                                                                                   ZR_AOT_BACKEND_KIND_C,
+                                                                                   &providerLoadRequest,
+                                                                                   providerError,
+                                                                                   sizeof(providerError)),
+                             providerError);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_BACKEND_KIND_C, providerLoadRequest.backendKind);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_DEPENDENCY_PACKAGE_PROJECT, providerLoadRequest.artifactKind);
+    TEST_ASSERT_EQUAL_STRING("$mathLocal@2.1.0/ops/sum", providerLoadRequest.resolvedModuleKey);
+    TEST_ASSERT_EQUAL_STRING("ops/sum", providerLoadRequest.descriptorModuleName);
+    normalize_path_text(providerLoadRequest.sourcePath);
+    normalize_path_text(providerLoadRequest.binaryPath);
+    normalize_path_text(providerLoadRequest.intermediatePath);
+    normalize_path_text(providerLoadRequest.libraryPath);
+    TEST_ASSERT_TRUE(text_ends_with(providerLoadRequest.sourcePath, "/deps/math/src/ops/sum.zr"));
+    TEST_ASSERT_TRUE(text_ends_with(providerLoadRequest.binaryPath, "/deps/math/bin/ops/sum.zro"));
+    TEST_ASSERT_TRUE(text_ends_with(providerLoadRequest.intermediatePath, "/deps/math/bin/ops/sum.zri"));
+    TEST_ASSERT_TRUE(strstr(providerLoadRequest.libraryPath, "/deps/math/bin/aot_c/lib/zrvm_aot_ops_sum.") != ZR_NULL);
     TEST_ASSERT_TRUE(ZrLibrary_Project_ResolveSourcePath(project,
                                                          "$mathLocal@2.1.0/ops/sum",
                                                          sourcePath,
@@ -644,11 +695,14 @@ static void test_project_references_accept_zrm_assembly_container(void) {
     TZrChar zrmPath[ZR_TESTS_PATH_MAX];
     TZrChar projectContent[ZR_TESTS_PATH_MAX * 2];
     TZrChar resolvedEntry[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar providerModuleKey[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar providerError[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar *lastSeparator;
     SZrLibrary_ZrmAssemblyInfo assembly;
     SZrLibrary_ZrmPackModule modules[1];
     SZrLibrary_ZrmPackRequest request;
     TZrChar error[ZR_LIBRARY_ZRM_ERROR_BUFFER_LENGTH];
+    SZrLibrary_ProjectImportProviderLocation providerLocation;
     SZrString *assemblyName = ZR_NULL;
     SZrString *requestedVersion = ZR_NULL;
     SZrString *minVersionInclusive = ZR_NULL;
@@ -659,6 +713,7 @@ static void test_project_references_accept_zrm_assembly_container(void) {
     static const TZrByte fakeModule[] = "zrm referenced module bytes";
     TZrByte readBuffer[sizeof(fakeModule)];
     TZrSize readBytes;
+    SZrLibrary_ProjectImportProviderAotLoadRequest providerLoadRequest;
 
     TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("library",
                                                        "project_zrm_reference",
@@ -724,6 +779,45 @@ static void test_project_references_accept_zrm_assembly_container(void) {
     TEST_ASSERT_EQUAL_STRING("zr.math", test_string_text(project->dependencyPackages[0].assemblyName));
 
     assert_import_resolves(project, "main", "&mathLocal.ops.sum", "$mathLocal@2.1.0/ops/sum");
+    memset(&providerLocation, 0, sizeof(providerLocation));
+    memset(providerModuleKey, 0, sizeof(providerModuleKey));
+    memset(providerError, 0, sizeof(providerError));
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_Project_ResolveImportProviderLocation(project,
+                                                                             "main",
+                                                                             "&mathLocal.ops.sum",
+                                                                             providerModuleKey,
+                                                                             sizeof(providerModuleKey),
+                                                                             &providerLocation,
+                                                                             providerError,
+                                                                             sizeof(providerError)),
+                             providerError);
+    TEST_ASSERT_EQUAL_STRING("$mathLocal@2.1.0/ops/sum", providerModuleKey);
+    TEST_ASSERT_EQUAL_STRING("zr.math", test_string_text(providerLocation.assemblyName));
+    TEST_ASSERT_EQUAL_STRING("2.1.0", test_string_text(providerLocation.requestedVersion));
+    TEST_ASSERT_EQUAL_STRING("2.0.0", test_string_text(providerLocation.minVersionInclusive));
+    TEST_ASSERT_EQUAL_STRING("3.0.0", test_string_text(providerLocation.maxVersionExclusive));
+    TEST_ASSERT_NOT_NULL(providerLocation.archive);
+    TEST_ASSERT_NOT_NULL(providerLocation.entry);
+    TEST_ASSERT_EQUAL_STRING("modules/ops/sum.zro", providerLocation.entry->entryName);
+
+    memset(&providerLoadRequest, 0, sizeof(providerLoadRequest));
+    memset(providerError, 0, sizeof(providerError));
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_Project_ResolveImportProviderAotLoadRequest(project,
+                                                                                   "main",
+                                                                                   "&mathLocal.ops.sum",
+                                                                                   ZR_AOT_BACKEND_KIND_LLVM,
+                                                                                   &providerLoadRequest,
+                                                                                   providerError,
+                                                                                   sizeof(providerError)),
+                             providerError);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_BACKEND_KIND_LLVM, providerLoadRequest.backendKind);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_DEPENDENCY_PACKAGE_ZRM, providerLoadRequest.artifactKind);
+    TEST_ASSERT_EQUAL_STRING("$mathLocal@2.1.0/ops/sum", providerLoadRequest.resolvedModuleKey);
+    TEST_ASSERT_EQUAL_STRING("ops/sum", providerLoadRequest.descriptorModuleName);
+    TEST_ASSERT_NOT_NULL(providerLoadRequest.archive);
+    TEST_ASSERT_NOT_NULL(providerLoadRequest.entry);
+    TEST_ASSERT_EQUAL_STRING("modules/ops/sum.zro", providerLoadRequest.entry->entryName);
+    TEST_ASSERT_EQUAL_STRING("", providerLoadRequest.libraryPath);
     TEST_ASSERT_TRUE(ZrLibrary_Project_GetDependencyImportVersionRange(project,
                                                                        "main",
                                                                        "$mathLocal@2.1.0/ops/sum",

@@ -682,6 +682,56 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_numeric_range_inference_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_bitwise_zero_wrapper_range_inference_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bitwise_zero_wrapper_range_inference.c
+    )
+    target_include_directories(zr_vm_bitwise_zero_wrapper_range_inference_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_bitwise_zero_wrapper_range_inference_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bitwise_zero_minus_unary_rhs_range_inference_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bitwise_zero_minus_unary_rhs_range_inference.c
+    )
+    target_include_directories(zr_vm_bitwise_zero_minus_unary_rhs_range_inference_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_bitwise_zero_minus_unary_rhs_range_inference_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bitwise_zero_minus_rhs_range_inference_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bitwise_zero_minus_rhs_range_inference.c
+    )
+    target_include_directories(zr_vm_bitwise_zero_minus_rhs_range_inference_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_bitwise_zero_minus_rhs_range_inference_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bitwise_zero_minus_shift_exact_zero_count_range_inference_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bitwise_zero_minus_shift_exact_zero_count_range_inference.c
+    )
+    target_include_directories(zr_vm_bitwise_zero_minus_shift_exact_zero_count_range_inference_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_bitwise_zero_minus_shift_exact_zero_count_range_inference_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bitwise_zero_minus_shift_supported_count_range_inference_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bitwise_zero_minus_shift_supported_count_range_inference.c
+    )
+    target_include_directories(zr_vm_bitwise_zero_minus_shift_supported_count_range_inference_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_bitwise_zero_minus_shift_supported_count_range_inference_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_numeric_branch_refinement_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_branch_refinement.c
     )
@@ -742,6 +792,177 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_self_dependency_symbolic_dataflow_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_conditional_delta_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_conditional_delta_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_conditional_delta_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_conditional_delta_offset_expression_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_offset_expression_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_conditional_delta_offset_expression_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_conditional_delta_offset_expression_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_conditional_delta_target_unary_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_target_unary_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_conditional_delta_target_unary_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_conditional_delta_target_unary_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_conditional_delta_target_positive_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_target_positive_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_conditional_delta_target_positive_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_conditional_delta_target_positive_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_expression_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_negative_offset_expression_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_expression_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_expression_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_neg_product_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_negative_offset_product_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_neg_product_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_neg_product_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_neg_zero_incl_add_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_additive_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_neg_zero_incl_add_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_neg_zero_incl_add_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_identity_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_sum_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_unary_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_cond_delta_neg_zero_incl_subtract_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_subtractive_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_cond_delta_neg_zero_incl_subtract_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_cond_delta_neg_zero_incl_subtract_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_neg_zero_incl_product_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_product_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_neg_zero_incl_product_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_neg_zero_incl_product_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_selfdep_neg_zero_product_unary_same_diff_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_selfdep_neg_zero_product_unary_same_diff.c
+    )
+    target_include_directories(zr_vm_selfdep_neg_zero_product_unary_same_diff_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_selfdep_neg_zero_product_unary_same_diff_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_neg_zero_incl_diff_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_difference_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_neg_zero_incl_diff_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_neg_zero_incl_diff_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_conditional_delta_bitwise_offset_expression_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_bitwise_offset_expression_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_conditional_delta_bitwise_offset_expression_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_conditional_delta_bitwise_offset_expression_dataflow_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_selfdep_bitwise_idempotent_wrapper_offset_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_selfdep_bitwise_idempotent_wrapper_offset.c
+    )
+    target_include_directories(zr_vm_selfdep_bitwise_idempotent_wrapper_offset_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_selfdep_bitwise_idempotent_wrapper_offset_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_loop_selfdep_conditional_delta_bitwise_arith_offset_dataflow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_bitwise_arithmetic_offset_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_loop_selfdep_conditional_delta_bitwise_arith_offset_dataflow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_conditional_delta_bitwise_arith_offset_dataflow_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_numeric_loop_self_dependency_symbolic_coefficient_dataflow_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_symbolic_coefficient_dataflow.c
     )
@@ -792,6 +1013,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_numeric_selfdep_coeff_cross_four_additional_scale_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_numeric_selfdep_coeff_cross_four_additional_scale_reader_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_symbolic_coeff_cross_four_additional_scale_reader_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_selfdep_coeff_cross_four_additional_scale_reader_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_selfdep_coeff_cross_four_additional_scale_reader_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_numeric_selfdep_coeff_cross_five_additional_scale_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_symbolic_coeff_cross_five_additional_scale_dataflow.c
     )
@@ -810,6 +1041,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_numeric_selfdep_coeff_cross_six_additional_scale_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_numeric_selfdep_coeff_cross_seven_additional_scale_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_symbolic_coeff_cross_seven_additional_scale_dataflow.c
+    )
+    target_include_directories(zr_vm_numeric_selfdep_coeff_cross_seven_additional_scale_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_selfdep_coeff_cross_seven_additional_scale_test)
 
     zr_vm_add_unity_test_target(
             zr_vm_numeric_loop_self_dependency_symbolic_product_dataflow_test
@@ -1005,6 +1246,13 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot
     )
+    if (WIN32 AND BUILD_SHARED_LIB)
+        target_sources(zr_vm_aot_reachability_test PRIVATE
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
+        )
+    endif ()
     zr_vm_link_parser_core(zr_vm_aot_reachability_test)
 
     zr_vm_add_unity_test_target(
@@ -1032,6 +1280,29 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_aot_c_code_stripping_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_aot_c_zrp_metadata_publication_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_zrp_metadata_publication.c
+    )
+    target_include_directories(zr_vm_aot_c_zrp_metadata_publication_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_aot_c_zrp_metadata_publication_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_aot_c_reflection_annotation_preserve_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_reflection_annotation_preserve.c
+    )
+    target_include_directories(zr_vm_aot_c_reflection_annotation_preserve_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_aot_c_reflection_annotation_preserve_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_aot_c_zrp_metadata_pruning_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_zrp_metadata_pruning.c
     )
@@ -1044,13 +1315,127 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     if (WIN32 AND BUILD_SHARED_LIB)
         target_sources(zr_vm_aot_c_zrp_metadata_pruning_test PRIVATE
                 ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_constant_pool.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_manifest_export.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.c
                 ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c
                 ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c
                 ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c
                 ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_spec.c
         )
     endif ()
     zr_vm_link_parser_core(zr_vm_aot_c_zrp_metadata_pruning_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_aot_c_zrp_metadata_methodspec_pruning_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_zrp_metadata_methodspec_pruning.c
+    )
+    target_include_directories(zr_vm_aot_c_zrp_metadata_methodspec_pruning_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot
+    )
+    if (WIN32 AND BUILD_SHARED_LIB)
+        target_sources(zr_vm_aot_c_zrp_metadata_methodspec_pruning_test PRIVATE
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_constant_pool.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_manifest_export.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_spec.c
+        )
+    endif ()
+    zr_vm_link_parser_core(zr_vm_aot_c_zrp_metadata_methodspec_pruning_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_aot_c_zrp_metadata_typedef_pruning_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_zrp_metadata_typedef_pruning.c
+    )
+    target_include_directories(zr_vm_aot_c_zrp_metadata_typedef_pruning_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot
+    )
+    if (WIN32 AND BUILD_SHARED_LIB)
+        target_sources(zr_vm_aot_c_zrp_metadata_typedef_pruning_test PRIVATE
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_constant_pool.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_manifest_export.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_spec.c
+        )
+    endif ()
+    zr_vm_link_parser_core(zr_vm_aot_c_zrp_metadata_typedef_pruning_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_aot_c_zrp_metadata_typespec_pruning_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_zrp_metadata_typespec_pruning.c
+    )
+    target_include_directories(zr_vm_aot_c_zrp_metadata_typespec_pruning_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot
+    )
+    if (WIN32 AND BUILD_SHARED_LIB)
+        target_sources(zr_vm_aot_c_zrp_metadata_typespec_pruning_test PRIVATE
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_constant_pool.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_manifest_export.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_spec.c
+        )
+    endif ()
+    zr_vm_link_parser_core(zr_vm_aot_c_zrp_metadata_typespec_pruning_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_aot_c_zrp_metadata_module_ref_pruning_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_zrp_metadata_module_ref_pruning.c
+    )
+    target_include_directories(zr_vm_aot_c_zrp_metadata_module_ref_pruning_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot
+    )
+    if (WIN32 AND BUILD_SHARED_LIB)
+        target_sources(zr_vm_aot_c_zrp_metadata_module_ref_pruning_test PRIVATE
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_constant_pool.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_manifest_export.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_spec.c
+        )
+    endif ()
+    zr_vm_link_parser_core(zr_vm_aot_c_zrp_metadata_module_ref_pruning_test)
 
     zr_vm_add_unity_test_target(
             zr_vm_aot_c_zrp_metadata_export_token_remap_test
@@ -1064,7 +1449,15 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     )
     if (WIN32 AND BUILD_SHARED_LIB)
         target_sources(zr_vm_aot_c_zrp_metadata_export_token_remap_test PRIVATE
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_manifest_export.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.c
                 ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_spec.c
         )
     endif ()
     zr_vm_link_parser_core(zr_vm_aot_c_zrp_metadata_export_token_remap_test)
@@ -1099,10 +1492,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     if (WIN32 AND BUILD_SHARED_LIB)
         target_sources(zr_vm_aot_c_zrp_metadata_pool_pruning_test PRIVATE
                 ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_constant_pool.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_manifest_export.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.c
                 ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c
                 ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c
                 ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c
                 ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.c
+                ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_spec.c
         )
     endif ()
     zr_vm_link_parser_core(zr_vm_aot_c_zrp_metadata_pool_pruning_test)
@@ -1459,6 +1858,30 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     endif ()
 
     zr_vm_add_unity_test_target(
+            zr_vm_aot_c_provider_shared_library_smoke_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_provider_shared_library_smoke.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
+    )
+    target_include_directories(zr_vm_aot_c_provider_shared_library_smoke_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    target_compile_definitions(zr_vm_aot_c_provider_shared_library_smoke_test PRIVATE
+            ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
+            ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
+            ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_aot_c_provider_shared_library_smoke_test)
+    if (UNIX AND NOT APPLE)
+        target_link_libraries(zr_vm_aot_c_provider_shared_library_smoke_test PRIVATE dl)
+    endif ()
+
+    zr_vm_add_unity_test_target(
             zr_vm_aot_c_dynamic_deopt_bridge_smoke_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_dynamic_deopt_bridge_smoke.c
     )
@@ -1697,6 +2120,26 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_aot_c_generic_jump_if_bool_local_smoke_test)
     if (UNIX AND NOT APPLE)
         target_link_libraries(zr_vm_aot_c_generic_jump_if_bool_local_smoke_test PRIVATE dl)
+    endif ()
+
+    zr_vm_add_unity_test_target(
+            zr_vm_aot_c_generic_logical_not_numeric_local_smoke_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_generic_logical_not_numeric_local_smoke.c
+    )
+    target_include_directories(zr_vm_aot_c_generic_logical_not_numeric_local_smoke_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    target_compile_definitions(zr_vm_aot_c_generic_logical_not_numeric_local_smoke_test PRIVATE
+            ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
+            ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
+            ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_aot_c_generic_logical_not_numeric_local_smoke_test)
+    if (UNIX AND NOT APPLE)
+        target_link_libraries(zr_vm_aot_c_generic_logical_not_numeric_local_smoke_test PRIVATE dl)
     endif ()
 
     zr_vm_add_unity_test_target(
@@ -2572,6 +3015,43 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_core(zr_vm_metadata_runtime_query_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_metadata_runtime_manifest_exports_test
+            ${CMAKE_SOURCE_DIR}/tests/module/test_metadata_runtime_manifest_exports.c
+    )
+    target_include_directories(zr_vm_metadata_runtime_manifest_exports_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+    )
+    zr_vm_link_core(zr_vm_metadata_runtime_manifest_exports_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_metadata_runtime_method_binding_test
+            ${CMAKE_SOURCE_DIR}/tests/module/test_metadata_runtime_method_binding.c
+    )
+    target_include_directories(zr_vm_metadata_runtime_method_binding_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_metadata_runtime_method_binding_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_reflection_token_resolve_test
+            ${CMAKE_SOURCE_DIR}/tests/module/test_reflection_token_resolve.c
+    )
+    target_include_directories(zr_vm_reflection_token_resolve_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_reflection_token_resolve_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_reflection_method_invoke_test
+            ${CMAKE_SOURCE_DIR}/tests/module/test_reflection_method_invoke.c
+    )
+    target_include_directories(zr_vm_reflection_method_invoke_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_reflection_method_invoke_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_metadata_runtime_binding_compatibility_test
             ${CMAKE_SOURCE_DIR}/tests/module/test_metadata_runtime_binding_compatibility.c
     )
@@ -2637,6 +3117,26 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_project_import_resolver_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_project_import_aot_provider_runtime_test
+            ${CMAKE_SOURCE_DIR}/tests/library/test_project_import_aot_provider_runtime.c
+    )
+    target_include_directories(zr_vm_project_import_aot_provider_runtime_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_project_import_aot_provider_runtime_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_project_import_provider_version_selection_test
+            ${CMAKE_SOURCE_DIR}/tests/library/test_project_import_provider_version_selection.c
+    )
+    target_include_directories(zr_vm_project_import_provider_version_selection_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_project_import_provider_version_selection_test)
 
     zr_vm_add_unity_test_target(
             zr_vm_project_manifest_normalization_test
@@ -2960,6 +3460,31 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_semantic_query.c
     )
     zr_vm_add_support_target(
+            zr_vm_lsp_bitwise_zero_wrapper_range_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bitwise_zero_wrapper_range_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bitwise_zero_minus_unary_rhs_range_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bitwise_zero_minus_unary_rhs_range_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bitwise_zero_minus_rhs_range_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bitwise_zero_minus_rhs_range_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bitwise_zero_minus_shift_exact_zero_count_range_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bitwise_zero_minus_shift_exact_zero_count_range_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bitwise_zero_minus_shift_supported_count_range_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
             zr_vm_language_server_numeric_branch_semantic_query_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_branch_semantic_query.c
     )
@@ -2974,6 +3499,96 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
     zr_vm_add_support_target(
             zr_vm_language_server_numeric_loop_self_dependency_symbolic_semantic_query_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_symbolic_semantic_query.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_conditional_delta_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_conditional_delta_target_unary_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_target_unary_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_conditional_delta_target_positive_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_target_positive_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_conditional_delta_negative_offset_expr_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_expression_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_neg_product_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_product_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_neg_zero_incl_add_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_additive_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_conditional_delta_negative_offset_identity_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_identity_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_identity_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_sum_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_unary_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_cond_delta_neg_zero_incl_subtract_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_subtractive_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_neg_zero_incl_product_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_product_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_neg_zero_product_unary_same_diff_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_selfdep_neg_zero_product_unary_same_diff_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_neg_zero_incl_diff_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_difference_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_conditional_delta_bitwise_offset_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_bitwise_offset_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_bitwise_idempotent_wrapper_offset_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_selfdep_bitwise_idempotent_wrapper_offset_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_conditional_delta_bitwise_unary_offset_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_bitwise_unary_offset_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
     )
     zr_vm_add_support_target(
             zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_semantic_query_test
@@ -2999,6 +3614,11 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
     )
     zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_reader_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_symbolic_coeff_cross_four_additional_scale_reader_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
             zr_vm_lsp_selfdep_coeff_cross_five_additional_scale_query_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_symbolic_coeff_cross_five_additional_scale_semantic_query.c
             ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
@@ -3006,6 +3626,11 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
     zr_vm_add_support_target(
             zr_vm_lsp_selfdep_coeff_cross_six_additional_scale_query_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_symbolic_coeff_cross_six_additional_scale_semantic_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_selfdep_coeff_cross_seven_additional_scale_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_symbolic_coeff_cross_seven_additional_scale_semantic_query.c
             ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
     )
     zr_vm_add_support_target(
@@ -3117,17 +3742,42 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             zr_vm_language_server_semantic_query_diagnostics_test
             zr_vm_language_server_reaching_definition_navigation_test
             zr_vm_language_server_numeric_semantic_query_test
+            zr_vm_lsp_bitwise_zero_wrapper_range_query_test
+            zr_vm_lsp_bitwise_zero_minus_unary_rhs_range_query_test
+            zr_vm_lsp_bitwise_zero_minus_rhs_range_query_test
+            zr_vm_lsp_bitwise_zero_minus_shift_exact_zero_count_range_query_test
+            zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test
             zr_vm_language_server_numeric_branch_semantic_query_test
             zr_vm_language_server_numeric_branch_assignment_semantic_query_test
             zr_vm_language_server_numeric_loop_self_dependency_semantic_query_test
             zr_vm_language_server_numeric_loop_self_dependency_symbolic_semantic_query_test
+            zr_vm_lsp_selfdep_conditional_delta_query_test
+            zr_vm_lsp_selfdep_conditional_delta_target_unary_query_test
+            zr_vm_lsp_selfdep_conditional_delta_target_positive_query_test
+            zr_vm_lsp_selfdep_conditional_delta_negative_offset_expr_query_test
+            zr_vm_lsp_selfdep_neg_product_query_test
+            zr_vm_lsp_selfdep_neg_zero_incl_add_query_test
+            zr_vm_lsp_selfdep_conditional_delta_negative_offset_identity_query_test
+            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_query_test
+            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_query_test
+            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_query_test
+            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_query_test
+            zr_vm_lsp_selfdep_cond_delta_neg_zero_incl_subtract_query_test
+            zr_vm_lsp_selfdep_neg_zero_incl_product_query_test
+            zr_vm_lsp_selfdep_neg_zero_product_unary_same_diff_test
+            zr_vm_lsp_selfdep_neg_zero_incl_diff_query_test
+            zr_vm_lsp_selfdep_conditional_delta_bitwise_offset_query_test
+            zr_vm_lsp_selfdep_bitwise_idempotent_wrapper_offset_test
+            zr_vm_lsp_selfdep_conditional_delta_bitwise_unary_offset_query_test
             zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_semantic_query_test
             zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_cross_semantic_query_test
             zr_vm_lsp_selfdep_coeff_cross_deeper_scale_query_test
             zr_vm_lsp_selfdep_coeff_cross_three_additional_scale_query_test
             zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_query_test
+            zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_reader_query_test
             zr_vm_lsp_selfdep_coeff_cross_five_additional_scale_query_test
             zr_vm_lsp_selfdep_coeff_cross_six_additional_scale_query_test
+            zr_vm_lsp_selfdep_coeff_cross_seven_additional_scale_query_test
             zr_vm_language_server_numeric_loop_self_dependency_symbolic_product_semantic_query_test
             zr_vm_language_server_numeric_loop_constant_condition_semantic_query_test
             zr_vm_language_server_numeric_for_header_assignment_semantic_query_test
@@ -3211,6 +3861,31 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
     )
+    target_include_directories(zr_vm_lsp_bitwise_zero_wrapper_range_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bitwise_zero_minus_unary_rhs_range_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bitwise_zero_minus_rhs_range_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bitwise_zero_minus_shift_exact_zero_count_range_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
     target_include_directories(zr_vm_language_server_numeric_branch_semantic_query_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
@@ -3227,6 +3902,168 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
     )
     target_include_directories(zr_vm_language_server_numeric_loop_self_dependency_symbolic_semantic_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_bitwise_offset_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_bitwise_idempotent_wrapper_offset_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_target_unary_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_target_positive_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_negative_offset_expr_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_neg_product_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_neg_zero_incl_add_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_negative_offset_identity_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_cond_delta_neg_zero_incl_subtract_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_neg_zero_incl_product_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_neg_zero_product_unary_same_diff_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_neg_zero_incl_diff_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_bitwise_unary_offset_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
@@ -3256,12 +4093,22 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
     )
+    target_include_directories(zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_reader_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
     target_include_directories(zr_vm_lsp_selfdep_coeff_cross_five_additional_scale_query_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
     )
     target_include_directories(zr_vm_lsp_selfdep_coeff_cross_six_additional_scale_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_selfdep_coeff_cross_seven_additional_scale_query_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
@@ -3490,6 +4337,7 @@ if (TARGET zr_vm_cli_executable AND
             ${CMAKE_SOURCE_DIR}/tests/cli/test_cli_project_incremental.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/project/project.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
     )
@@ -3498,6 +4346,16 @@ if (TARGET zr_vm_cli_executable AND
             ${CMAKE_SOURCE_DIR}/tests/cli/test_cli_aot_writer_options.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/project/project.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+    )
+    zr_vm_add_unity_test_target(
+            zr_vm_cli_aot_compacted_metadata_sidecar_test
+            ${CMAKE_SOURCE_DIR}/tests/cli/test_cli_aot_compacted_metadata_sidecar.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/project/project.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
     )
@@ -3507,6 +4365,7 @@ if (TARGET zr_vm_cli_executable AND
             ${CMAKE_SOURCE_DIR}/tests/harness/path_support.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/project/project.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
     )
@@ -3516,6 +4375,7 @@ if (TARGET zr_vm_cli_executable AND
             ${CMAKE_SOURCE_DIR}/tests/harness/path_support.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler_aot_exports.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/project/project.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
     )
@@ -3574,6 +4434,19 @@ if (TARGET zr_vm_cli_executable AND
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_network/include
     )
+    target_include_directories(zr_vm_cli_aot_compacted_metadata_sidecar_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_network/include
+    )
     if (BUILD_SHARED_LIB)
         target_link_libraries(zr_vm_cli_project_incremental_test PRIVATE
                   zr_vm_parser_shared
@@ -3586,6 +4459,16 @@ if (TARGET zr_vm_cli_executable AND
                   zr_vm_lib_network_shared
         )
         target_link_libraries(zr_vm_cli_aot_writer_options_test PRIVATE
+                  zr_vm_parser_shared
+                  zr_vm_core_shared
+                  zr_vm_library_shared
+                  zr_vm_lib_math_shared
+                  zr_vm_lib_system_shared
+                  zr_vm_lib_container_shared
+                  zr_vm_lib_ffi_shared
+                  zr_vm_lib_network_shared
+        )
+        target_link_libraries(zr_vm_cli_aot_compacted_metadata_sidecar_test PRIVATE
                   zr_vm_parser_shared
                   zr_vm_core_shared
                   zr_vm_library_shared
@@ -3640,6 +4523,16 @@ if (TARGET zr_vm_cli_executable AND
                   zr_vm_lib_ffi_static
                   zr_vm_lib_network_static
         )
+        target_link_libraries(zr_vm_cli_aot_compacted_metadata_sidecar_test PRIVATE
+                  zr_vm_parser_static
+                  zr_vm_core_static
+                  zr_vm_library_static
+                  zr_vm_lib_math_static
+                  zr_vm_lib_system_static
+                  zr_vm_lib_container_static
+                  zr_vm_lib_ffi_static
+                  zr_vm_lib_network_static
+        )
         target_link_libraries(zr_vm_cli_zrm_fixture_test PRIVATE
                 zr_vm_parser_static
                 zr_vm_core_static
@@ -3668,19 +4561,23 @@ if (TARGET zr_vm_cli_executable AND
     if (TARGET zr_vm_lib_thread_shared)
         target_link_libraries(zr_vm_cli_project_incremental_test PRIVATE zr_vm_lib_thread_shared)
         target_link_libraries(zr_vm_cli_aot_writer_options_test PRIVATE zr_vm_lib_thread_shared)
+        target_link_libraries(zr_vm_cli_aot_compacted_metadata_sidecar_test PRIVATE zr_vm_lib_thread_shared)
         target_link_libraries(zr_vm_cli_import_basic_fixture_test PRIVATE zr_vm_lib_thread_shared)
         target_link_libraries(zr_vm_cli_zrm_fixture_test PRIVATE zr_vm_lib_thread_shared)
         target_compile_definitions(zr_vm_cli_project_incremental_test PRIVATE ZR_VM_HAS_THREAD_MODULE=1)
         target_compile_definitions(zr_vm_cli_aot_writer_options_test PRIVATE ZR_VM_HAS_THREAD_MODULE=1)
+        target_compile_definitions(zr_vm_cli_aot_compacted_metadata_sidecar_test PRIVATE ZR_VM_HAS_THREAD_MODULE=1)
         target_compile_definitions(zr_vm_cli_import_basic_fixture_test PRIVATE ZR_VM_HAS_THREAD_MODULE=1)
         target_compile_definitions(zr_vm_cli_zrm_fixture_test PRIVATE ZR_VM_HAS_THREAD_MODULE=1)
     elseif (TARGET zr_vm_lib_thread_static)
         target_link_libraries(zr_vm_cli_project_incremental_test PRIVATE zr_vm_lib_thread_static)
         target_link_libraries(zr_vm_cli_aot_writer_options_test PRIVATE zr_vm_lib_thread_static)
+        target_link_libraries(zr_vm_cli_aot_compacted_metadata_sidecar_test PRIVATE zr_vm_lib_thread_static)
         target_link_libraries(zr_vm_cli_import_basic_fixture_test PRIVATE zr_vm_lib_thread_static)
         target_link_libraries(zr_vm_cli_zrm_fixture_test PRIVATE zr_vm_lib_thread_static)
         target_compile_definitions(zr_vm_cli_project_incremental_test PRIVATE ZR_VM_HAS_THREAD_MODULE=1)
         target_compile_definitions(zr_vm_cli_aot_writer_options_test PRIVATE ZR_VM_HAS_THREAD_MODULE=1)
+        target_compile_definitions(zr_vm_cli_aot_compacted_metadata_sidecar_test PRIVATE ZR_VM_HAS_THREAD_MODULE=1)
         target_compile_definitions(zr_vm_cli_import_basic_fixture_test PRIVATE ZR_VM_HAS_THREAD_MODULE=1)
         target_compile_definitions(zr_vm_cli_zrm_fixture_test PRIVATE ZR_VM_HAS_THREAD_MODULE=1)
     endif ()
@@ -3935,6 +4832,16 @@ if (TARGET zr_vm_parser_test AND
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_range_inference_test>")
     list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bitwise_zero_wrapper_range_inference_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bitwise_zero_minus_unary_rhs_range_inference_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bitwise_zero_minus_rhs_range_inference_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bitwise_zero_minus_shift_exact_zero_count_range_inference_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bitwise_zero_minus_shift_supported_count_range_inference_test>")
+    list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_branch_refinement_test>")
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_branch_segment_sets_test>")
@@ -3947,6 +4854,40 @@ if (TARGET zr_vm_parser_test AND
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_loop_self_dependency_symbolic_dataflow_test>")
     list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_conditional_delta_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_conditional_delta_offset_expression_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_conditional_delta_target_unary_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_conditional_delta_target_positive_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_expression_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_neg_product_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_neg_zero_incl_add_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_cond_delta_neg_zero_incl_subtract_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_neg_zero_incl_product_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_selfdep_neg_zero_product_unary_same_diff_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_neg_zero_incl_diff_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_conditional_delta_bitwise_offset_expression_dataflow_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_selfdep_bitwise_idempotent_wrapper_offset_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_conditional_delta_bitwise_arith_offset_dataflow_test>")
+    list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_loop_self_dependency_symbolic_coefficient_dataflow_test>")
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_loop_self_dependency_symbolic_coefficient_cross_dataflow_test>")
@@ -3957,9 +4898,13 @@ if (TARGET zr_vm_parser_test AND
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_selfdep_coeff_cross_four_additional_scale_test>")
     list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_selfdep_coeff_cross_four_additional_scale_reader_test>")
+    list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_selfdep_coeff_cross_five_additional_scale_test>")
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_selfdep_coeff_cross_six_additional_scale_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_numeric_selfdep_coeff_cross_seven_additional_scale_test>")
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_loop_self_dependency_symbolic_product_dataflow_test>")
     list(APPEND language_pipeline_executables
@@ -4038,17 +4983,42 @@ if (TARGET zr_vm_language_server_symbol_table_test AND
         TARGET zr_vm_language_server_expression_fact_hover_test AND
         TARGET zr_vm_language_server_reachability_semantic_query_test AND
         TARGET zr_vm_language_server_numeric_semantic_query_test AND
+        TARGET zr_vm_lsp_bitwise_zero_wrapper_range_query_test AND
+        TARGET zr_vm_lsp_bitwise_zero_minus_unary_rhs_range_query_test AND
+        TARGET zr_vm_lsp_bitwise_zero_minus_rhs_range_query_test AND
+        TARGET zr_vm_lsp_bitwise_zero_minus_shift_exact_zero_count_range_query_test AND
+        TARGET zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test AND
         TARGET zr_vm_language_server_numeric_branch_semantic_query_test AND
         TARGET zr_vm_language_server_numeric_branch_assignment_semantic_query_test AND
         TARGET zr_vm_language_server_numeric_loop_self_dependency_semantic_query_test AND
         TARGET zr_vm_language_server_numeric_loop_self_dependency_symbolic_semantic_query_test AND
+        TARGET zr_vm_lsp_selfdep_conditional_delta_query_test AND
+        TARGET zr_vm_lsp_selfdep_conditional_delta_target_unary_query_test AND
+        TARGET zr_vm_lsp_selfdep_conditional_delta_target_positive_query_test AND
+        TARGET zr_vm_lsp_selfdep_conditional_delta_negative_offset_expr_query_test AND
+        TARGET zr_vm_lsp_selfdep_neg_product_query_test AND
+        TARGET zr_vm_lsp_selfdep_neg_zero_incl_add_query_test AND
+        TARGET zr_vm_lsp_selfdep_conditional_delta_negative_offset_identity_query_test AND
+        TARGET zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_query_test AND
+        TARGET zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_query_test AND
+        TARGET zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_query_test AND
+        TARGET zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_query_test AND
+        TARGET zr_vm_lsp_selfdep_cond_delta_neg_zero_incl_subtract_query_test AND
+        TARGET zr_vm_lsp_selfdep_neg_zero_incl_product_query_test AND
+        TARGET zr_vm_lsp_selfdep_neg_zero_product_unary_same_diff_test AND
+        TARGET zr_vm_lsp_selfdep_neg_zero_incl_diff_query_test AND
+        TARGET zr_vm_lsp_selfdep_conditional_delta_bitwise_offset_query_test AND
+        TARGET zr_vm_lsp_selfdep_bitwise_idempotent_wrapper_offset_test AND
+        TARGET zr_vm_lsp_selfdep_conditional_delta_bitwise_unary_offset_query_test AND
         TARGET zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_semantic_query_test AND
         TARGET zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_cross_semantic_query_test AND
         TARGET zr_vm_lsp_selfdep_coeff_cross_deeper_scale_query_test AND
         TARGET zr_vm_lsp_selfdep_coeff_cross_three_additional_scale_query_test AND
         TARGET zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_query_test AND
+        TARGET zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_reader_query_test AND
         TARGET zr_vm_lsp_selfdep_coeff_cross_five_additional_scale_query_test AND
         TARGET zr_vm_lsp_selfdep_coeff_cross_six_additional_scale_query_test AND
+        TARGET zr_vm_lsp_selfdep_coeff_cross_seven_additional_scale_query_test AND
         TARGET zr_vm_language_server_numeric_loop_self_dependency_symbolic_product_semantic_query_test AND
         TARGET zr_vm_language_server_numeric_loop_constant_condition_semantic_query_test AND
         TARGET zr_vm_language_server_numeric_for_header_assignment_semantic_query_test AND
@@ -4071,12 +5041,60 @@ if (TARGET zr_vm_language_server_symbol_table_test AND
         TARGET zr_vm_language_server_lsp_project_utf16_ranges_test AND
         TARGET zr_vm_language_server_lsp_advanced_editor_features_test)
     set(language_server_executables
-            "$<TARGET_FILE:zr_vm_language_server_symbol_table_test>;$<TARGET_FILE:zr_vm_language_server_reference_tracker_test>;$<TARGET_FILE:zr_vm_language_server_semantic_analyzer_test>;$<TARGET_FILE:zr_vm_language_server_ownership_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_union_pattern_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_local_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_logical_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_inlay_semantic_facts_test>;$<TARGET_FILE:zr_vm_language_server_local_semantic_hover_test>;$<TARGET_FILE:zr_vm_language_server_computed_member_hover_test>;$<TARGET_FILE:zr_vm_language_server_expression_fact_hover_test>;$<TARGET_FILE:zr_vm_language_server_reachability_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_branch_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_branch_assignment_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_symbolic_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_cross_semantic_query_test>;$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_deeper_scale_query_test>;$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_three_additional_scale_query_test>;$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_symbolic_product_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_constant_condition_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_for_header_assignment_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_nested_loop_assignment_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_foreach_cardinality_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_call_member_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_incremental_parser_test>;$<TARGET_FILE:zr_vm_language_server_parser_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_declaration_parser_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_statement_parser_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_lsp_position_mapping_test>;$<TARGET_FILE:zr_vm_language_server_lsp_position_fuzz_test>;$<TARGET_FILE:zr_vm_language_server_lsp_decorator_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_code_lens_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_super_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_token_metadata_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_source_contracts_test>;$<TARGET_FILE:zr_vm_language_server_lsp_interface_test>;$<TARGET_FILE:zr_vm_language_server_lsp_project_features_test>;$<TARGET_FILE:zr_vm_language_server_lsp_project_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_advanced_editor_features_test>"
+            "$<TARGET_FILE:zr_vm_language_server_symbol_table_test>;$<TARGET_FILE:zr_vm_language_server_reference_tracker_test>;$<TARGET_FILE:zr_vm_language_server_semantic_analyzer_test>;$<TARGET_FILE:zr_vm_language_server_ownership_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_union_pattern_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_local_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_logical_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_inlay_semantic_facts_test>;$<TARGET_FILE:zr_vm_language_server_local_semantic_hover_test>;$<TARGET_FILE:zr_vm_language_server_computed_member_hover_test>;$<TARGET_FILE:zr_vm_language_server_expression_fact_hover_test>;$<TARGET_FILE:zr_vm_language_server_reachability_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_branch_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_branch_assignment_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_symbolic_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_cross_semantic_query_test>;$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_deeper_scale_query_test>;$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_three_additional_scale_query_test>;$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_query_test>;$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_reader_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_symbolic_product_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_constant_condition_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_for_header_assignment_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_nested_loop_assignment_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_foreach_cardinality_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_call_member_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_incremental_parser_test>;$<TARGET_FILE:zr_vm_language_server_parser_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_declaration_parser_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_statement_parser_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_lsp_position_mapping_test>;$<TARGET_FILE:zr_vm_language_server_lsp_position_fuzz_test>;$<TARGET_FILE:zr_vm_language_server_lsp_decorator_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_code_lens_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_super_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_token_metadata_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_source_contracts_test>;$<TARGET_FILE:zr_vm_language_server_lsp_interface_test>;$<TARGET_FILE:zr_vm_language_server_lsp_project_features_test>;$<TARGET_FILE:zr_vm_language_server_lsp_project_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_advanced_editor_features_test>"
     )
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bitwise_zero_wrapper_range_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bitwise_zero_minus_unary_rhs_range_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bitwise_zero_minus_rhs_range_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bitwise_zero_minus_shift_exact_zero_count_range_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test>")
     string(APPEND language_server_executables
             ";$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_five_additional_scale_query_test>")
     string(APPEND language_server_executables
             ";$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_six_additional_scale_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_seven_additional_scale_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_target_unary_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_target_positive_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_negative_offset_expr_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_neg_product_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_neg_zero_incl_add_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_negative_offset_identity_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_cond_delta_neg_zero_incl_subtract_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_neg_zero_incl_product_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_neg_zero_product_unary_same_diff_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_neg_zero_incl_diff_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_bitwise_offset_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_bitwise_idempotent_wrapper_offset_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_bitwise_unary_offset_query_test>")
     add_test(
             NAME language_server
             COMMAND ${CMAKE_COMMAND}
@@ -4309,6 +5327,21 @@ if (TARGET zr_vm_cli_aot_writer_options_test)
     )
 endif ()
 
+if (TARGET zr_vm_cli_aot_compacted_metadata_sidecar_test)
+    add_test(
+            NAME cli_aot_compacted_metadata_sidecar
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=cli_aot_compacted_metadata_sidecar"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_cli_aot_compacted_metadata_sidecar_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_cli_aot_compacted_metadata_sidecar_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_cli_aot_compacted_metadata_sidecar_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_cli_aot_compacted_metadata_sidecar_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
 if (TARGET zr_vm_cli_import_basic_fixture_test)
     add_test(
             NAME cli_import_basic_fixture
@@ -4467,6 +5500,62 @@ if (TARGET zr_vm_metadata_runtime_query_test)
     )
 endif ()
 
+if (TARGET zr_vm_metadata_runtime_manifest_exports_test)
+    add_test(
+            NAME metadata_runtime_manifest_exports
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=metadata_runtime_manifest_exports"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_metadata_runtime_manifest_exports_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_metadata_runtime_manifest_exports_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_metadata_runtime_manifest_exports_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_metadata_runtime_manifest_exports_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_metadata_runtime_method_binding_test)
+    add_test(
+            NAME metadata_runtime_method_binding
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=metadata_runtime_method_binding"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_metadata_runtime_method_binding_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_metadata_runtime_method_binding_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_metadata_runtime_method_binding_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_metadata_runtime_method_binding_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_reflection_token_resolve_test)
+    add_test(
+            NAME reflection_token_resolve
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=reflection_token_resolve"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_reflection_token_resolve_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_reflection_token_resolve_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_reflection_token_resolve_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_reflection_token_resolve_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_reflection_method_invoke_test)
+    add_test(
+            NAME reflection_method_invoke
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=reflection_method_invoke"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_reflection_method_invoke_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_reflection_method_invoke_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_reflection_method_invoke_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_reflection_method_invoke_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
 if (TARGET zr_vm_metadata_runtime_binding_compatibility_test)
     add_test(
             NAME metadata_runtime_binding_compatibility
@@ -4565,6 +5654,34 @@ if (TARGET zr_vm_aot_c_code_stripping_test)
     )
 endif ()
 
+if (TARGET zr_vm_aot_c_zrp_metadata_publication_test)
+    add_test(
+            NAME aot_c_zrp_metadata_publication
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=aot_c_zrp_metadata_publication"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_publication_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_publication_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_publication_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_publication_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_aot_c_reflection_annotation_preserve_test)
+    add_test(
+            NAME aot_c_reflection_annotation_preserve
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=aot_c_reflection_annotation_preserve"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_aot_c_reflection_annotation_preserve_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_aot_c_reflection_annotation_preserve_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_aot_c_reflection_annotation_preserve_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_aot_c_reflection_annotation_preserve_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
 if (TARGET zr_vm_aot_c_zrp_metadata_pruning_test)
     add_test(
             NAME aot_c_zrp_metadata_pruning
@@ -4574,6 +5691,48 @@ if (TARGET zr_vm_aot_c_zrp_metadata_pruning_test)
             "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_pruning_test>"
             "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_pruning_test>"
             "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_pruning_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_aot_c_zrp_metadata_methodspec_pruning_test)
+    add_test(
+            NAME aot_c_zrp_metadata_methodspec_pruning
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=aot_c_zrp_metadata_methodspec_pruning"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_methodspec_pruning_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_methodspec_pruning_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_methodspec_pruning_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_methodspec_pruning_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_aot_c_zrp_metadata_typespec_pruning_test)
+    add_test(
+            NAME aot_c_zrp_metadata_typespec_pruning
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=aot_c_zrp_metadata_typespec_pruning"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_typespec_pruning_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_typespec_pruning_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_typespec_pruning_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_typespec_pruning_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_aot_c_zrp_metadata_module_ref_pruning_test)
+    add_test(
+            NAME aot_c_zrp_metadata_module_ref_pruning
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=aot_c_zrp_metadata_module_ref_pruning"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_module_ref_pruning_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_module_ref_pruning_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_module_ref_pruning_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_aot_c_zrp_metadata_module_ref_pruning_test>"
             "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
             -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
     )

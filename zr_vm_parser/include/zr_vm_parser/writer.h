@@ -35,6 +35,21 @@ typedef struct SZrAotManifestGenericRoot {
     TZrUInt32 genericInstantiationShareKind;
 } SZrAotManifestGenericRoot;
 
+typedef enum EZrAotManifestExportDeclarationKind {
+    ZR_AOT_MANIFEST_EXPORT_DECLARATION_TYPE = 1,
+    ZR_AOT_MANIFEST_EXPORT_DECLARATION_METHOD = 2,
+    ZR_AOT_MANIFEST_EXPORT_DECLARATION_FIELD = 3
+} EZrAotManifestExportDeclarationKind;
+
+typedef struct SZrAotManifestExportDeclaration {
+    EZrAotManifestExportDeclarationKind kind;
+    const TZrChar *target;
+    TZrBool hasTypeTokenBinding;
+    TZrMetadataToken typeToken;
+    TZrBool hasMemberTokenBinding;
+    TZrMetadataToken memberToken;
+} SZrAotManifestExportDeclaration;
+
 typedef enum EZrAotRuntimeFallbackWarningFlag {
     ZR_AOT_RUNTIME_FALLBACK_WARNING_NONE = 0,
     ZR_AOT_RUNTIME_FALLBACK_WARNING_DYNAMIC_CALL = 1u << 0,
@@ -55,16 +70,20 @@ typedef struct SZrAotWriterOptions {
     const TZrChar *inputHash;
     const TZrByte *embeddedModuleBlob;
     TZrSize embeddedModuleBlobLength;
+    const TZrChar *compactedZrpMetadataOutputPath;
     TZrBool requireExecutableLowering;
     TZrBool requireFullAot;
     TZrBool enableCodeStripping;
     TZrBool stripGeneratedSymbols;
     TZrBool suppressRuntimeFallbackWarnings;
     TZrUInt32 suppressRuntimeFallbackWarningReasonMask;
+    TZrBool suppressAnnotationWarnings;
     const TZrUInt32 *manifestPreserveFunctionFlatIndices;
     TZrUInt32 manifestPreserveFunctionFlatIndexCount;
     const SZrAotManifestGenericRoot *manifestPreserveGenericRoots;
     TZrUInt32 manifestPreserveGenericRootCount;
+    const SZrAotManifestExportDeclaration *manifestExportDeclarations;
+    TZrUInt32 manifestExportDeclarationCount;
 } SZrAotWriterOptions;
 
 // 写入二进制文件 (.zro)

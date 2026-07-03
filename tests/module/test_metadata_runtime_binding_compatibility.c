@@ -332,6 +332,26 @@ static void test_function_binding_compatibility_accepts_empty_bindings_and_clear
     TEST_ASSERT_EQUAL_INT(ZR_METADATA_RUNTIME_BINDING_STATUS_COMPATIBLE, report.status);
 }
 
+static void test_function_binding_compatibility_rejects_nonzero_count_with_null_binding_table(void) {
+    SZrFunction function = {0};
+    const SZrMetadataTokenBinding *failedBinding = (const SZrMetadataTokenBinding *)1;
+    const SZrMetadataTokenRecord *failedRecord = (const SZrMetadataTokenRecord *)1;
+    SZrMetadataRuntimeBindingCompatibilityReport report;
+
+    function.moduleMetadataBindingLength = 1u;
+
+    TEST_ASSERT_EQUAL_INT(
+            ZR_METADATA_RUNTIME_BINDING_STATUS_INVALID_ARGUMENT,
+            ZrCore_MetadataRuntime_CheckFunctionTokenBindingsCompatibility(&function,
+                                                                          ZR_NULL,
+                                                                          &failedBinding,
+                                                                          &failedRecord,
+                                                                          &report));
+    TEST_ASSERT_NULL(failedBinding);
+    TEST_ASSERT_NULL(failedRecord);
+    TEST_ASSERT_EQUAL_INT(ZR_METADATA_RUNTIME_BINDING_STATUS_INVALID_ARGUMENT, report.status);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_binding_compatibility_accepts_matching_identity_layout_and_version);
@@ -349,5 +369,6 @@ int main(void) {
     RUN_TEST(test_function_binding_compatibility_returns_first_incompatible_binding);
     RUN_TEST(test_function_binding_compatibility_uses_module_ref_record_for_version_range);
     RUN_TEST(test_function_binding_compatibility_accepts_empty_bindings_and_clears_outputs);
+    RUN_TEST(test_function_binding_compatibility_rejects_nonzero_count_with_null_binding_table);
     return UNITY_END();
 }

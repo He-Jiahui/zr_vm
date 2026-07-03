@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "type_inference_loop_assignment_syntax.h"
+#include "type_inference_loop_assignment_target_zero.h"
 #include "zr_vm_core/array.h"
 #include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_parser/compiler.h"
@@ -68,6 +69,15 @@ static TZrBool loop_assignment_self_dependency_integer_range(
     if (node->type == ZR_AST_INTEGER_LITERAL) {
         *outMin = node->data.integerLiteral.value;
         *outMax = node->data.integerLiteral.value;
+        return ZR_TRUE;
+    }
+
+    if (ZrParser_TypeInferenceLoopAssignment_TargetSelfCancelingRange(
+                cs,
+                node,
+                targetName,
+                outMin,
+                outMax)) {
         return ZR_TRUE;
     }
 
@@ -340,87 +350,6 @@ TZrBool ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaSign(SZrAstNode *
     return ZR_TRUE;
 }
 
-static TZrBool loop_assignment_self_dependency_target_array_contains(const SZrArray *targetNames,
-                                                                     SZrString *name) {
-    TZrSize index;
-
-    if (targetNames == ZR_NULL || !targetNames->isValid || name == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (index = 0; index < targetNames->length; index++) {
-        SZrString **target = (SZrString **)ZrCore_Array_Get((SZrArray *)targetNames, index);
-        if (target != ZR_NULL &&
-            *target != ZR_NULL &&
-            ZrCore_String_Equal(*target, name)) {
-            return ZR_TRUE;
-        }
-    }
-    return ZR_FALSE;
-}
-
-static TZrBool loop_assignment_self_dependency_expression_uses_any_target(SZrAstNode *node,
-                                                                          const SZrArray *targetNames) {
-    SZrAstNodeArray *members;
-
-    if (node == ZR_NULL || targetNames == ZR_NULL || !targetNames->isValid) {
-        return ZR_FALSE;
-    }
-
-    switch (node->type) {
-        case ZR_AST_IDENTIFIER_LITERAL:
-            return loop_assignment_self_dependency_target_array_contains(
-                    targetNames,
-                    node->data.identifier.name);
-        case ZR_AST_INTEGER_LITERAL:
-        case ZR_AST_FLOAT_LITERAL:
-        case ZR_AST_BOOLEAN_LITERAL:
-            return ZR_FALSE;
-        case ZR_AST_BINARY_EXPRESSION:
-            return loop_assignment_self_dependency_expression_uses_any_target(
-                           node->data.binaryExpression.left,
-                           targetNames) ||
-                   loop_assignment_self_dependency_expression_uses_any_target(
-                           node->data.binaryExpression.right,
-                           targetNames);
-        case ZR_AST_LOGICAL_EXPRESSION:
-            return loop_assignment_self_dependency_expression_uses_any_target(
-                           node->data.logicalExpression.left,
-                           targetNames) ||
-                   loop_assignment_self_dependency_expression_uses_any_target(
-                           node->data.logicalExpression.right,
-                           targetNames);
-        case ZR_AST_UNARY_EXPRESSION:
-            return loop_assignment_self_dependency_expression_uses_any_target(
-                    node->data.unaryExpression.argument,
-                    targetNames);
-        case ZR_AST_TYPE_CAST_EXPRESSION:
-            return loop_assignment_self_dependency_expression_uses_any_target(
-                    node->data.typeCastExpression.expression,
-                    targetNames);
-        case ZR_AST_CONDITIONAL_EXPRESSION:
-            return loop_assignment_self_dependency_expression_uses_any_target(
-                           node->data.conditionalExpression.test,
-                           targetNames) ||
-                   loop_assignment_self_dependency_expression_uses_any_target(
-                           node->data.conditionalExpression.consequent,
-                           targetNames) ||
-                   loop_assignment_self_dependency_expression_uses_any_target(
-                           node->data.conditionalExpression.alternate,
-                           targetNames);
-        case ZR_AST_PRIMARY_EXPRESSION:
-            members = node->data.primaryExpression.members;
-            if (members != ZR_NULL && members->count > 0) {
-                return ZR_TRUE;
-            }
-            return loop_assignment_self_dependency_expression_uses_any_target(
-                    node->data.primaryExpression.property,
-                    targetNames);
-        default:
-            return ZR_TRUE;
-    }
-}
-
 TZrBool ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaUsesAnyTarget(
         SZrAstNode *right,
         SZrString *targetName,
@@ -432,7 +361,10 @@ TZrBool ZrParser_TypeInferenceLoopAssignment_SelfDependentDeltaUsesAnyTarget(
     if (deltaNode == ZR_NULL || targetNames == ZR_NULL || !targetNames->isValid) {
         return ZR_FALSE;
     }
-    return loop_assignment_self_dependency_expression_uses_any_target(deltaNode, targetNames);
+    return ZrParser_TypeInferenceLoopAssignment_TargetSelfCancelingDeltaUsesNonCancelingTarget(
+            deltaNode,
+            targetName,
+            targetNames);
 }
 
 TZrBool ZrParser_TypeInferenceLoopAssignment_ExpressionUsesName(SZrAstNode *node,

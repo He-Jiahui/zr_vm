@@ -466,7 +466,11 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                  entry->function,
                                                                  destinationSlot,
                                                                  ZR_AOT_INVALID_FUNCTION_INDEX);
-                } else if (backend_aot_c_constant_can_emit_immediate(entry->function, operandA2)) {
+                } else if (backend_aot_c_constant_can_emit_immediate(entry->function, operandA2) ||
+                           backend_aot_c_string_constant_consumed_by_local_logical_not(
+                                   functionIr, destinationSlot, instructionIndex, ZR_NULL) ||
+                           backend_aot_c_string_constant_consumed_by_local_jump_if(
+                                   functionIr, destinationSlot, instructionIndex, ZR_NULL)) {
                     backend_aot_write_c_direct_primitive_constant(
                             file, functionIr, destinationSlot, instructionIndex,
                             backend_aot_c_get_constant_value(entry->function, operandA2));
@@ -606,7 +610,9 @@ void backend_aot_write_c_function_body(FILE *file,
             case ZR_INSTRUCTION_ENUM(NOP):
                 break;
             case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
-                if (backend_aot_c_scalar_locals_reset_can_skip_value_slot(
+                if (backend_aot_c_reset_null_consumed_by_local_jump_if(functionIr, destinationSlot, instructionIndex)) {
+                    backend_aot_write_c_reset_stack_null_local_jump_if_skip(file, destinationSlot);
+                } else if (backend_aot_c_scalar_locals_reset_can_skip_value_slot(
                             functionIr, destinationSlot, instructionIndex)) {
                     backend_aot_write_c_reset_stack_null_scalar_local_skip(file, destinationSlot);
                 } else {

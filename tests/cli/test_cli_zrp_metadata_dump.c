@@ -127,9 +127,9 @@ static int test_summary_prints_metadata_section_bytes_and_counts(void) {
     }
     fclose(output);
 
-    DUMP_ASSERT_CONTAINS(outputText, "zrp.metadata.version=2", "version marker should be present");
-    DUMP_ASSERT_CONTAINS(outputText, "zrp.metadata.headerBytes=208", "header size marker should be present");
-    DUMP_ASSERT_CONTAINS(outputText, "zrp.metadata.sectionCount=12", "section count marker should be present");
+    DUMP_ASSERT_CONTAINS(outputText, "zrp.metadata.version=4", "version marker should be present");
+    DUMP_ASSERT_CONTAINS(outputText, "zrp.metadata.headerBytes=224", "header size marker should be present");
+    DUMP_ASSERT_CONTAINS(outputText, "zrp.metadata.sectionCount=13", "section count marker should be present");
 
     snprintf(expected,
              sizeof(expected),
@@ -152,6 +152,9 @@ static int test_summary_prints_metadata_section_bytes_and_counts(void) {
              "zrp.metadata.section.stringPool bytes=12 count=12 elementSize=1 offset=%u",
              (unsigned int)header.stringPool.offset);
     DUMP_ASSERT_CONTAINS(outputText, expected, "stringPool section should include bytes and count");
+    DUMP_ASSERT_CONTAINS(outputText,
+                         "zrp.metadata.section.manifestExports bytes=0 count=0 elementSize=0 offset=0",
+                         "manifestExports section should be summarized");
 
     input = fopen(testPath, "wb");
     DUMP_ASSERT_TRUE(input != ZR_NULL, "test zrp file should open for write");
@@ -207,13 +210,13 @@ static int test_diff_prints_metadata_section_deltas(void) {
     fclose(output);
 
     DUMP_ASSERT_CONTAINS(outputText,
-                         "zrp.metadata.diff.versionBefore=2 versionAfter=2",
+                         "zrp.metadata.diff.versionBefore=4 versionAfter=4",
                          "version diff marker should be present");
     DUMP_ASSERT_CONTAINS(outputText,
-                         "zrp.metadata.diff.headerBytesBefore=208 headerBytesAfter=208",
+                         "zrp.metadata.diff.headerBytesBefore=224 headerBytesAfter=224",
                          "header bytes diff marker should be present");
     DUMP_ASSERT_CONTAINS(outputText,
-                         "zrp.metadata.diff.sectionCountBefore=12 sectionCountAfter=12",
+                         "zrp.metadata.diff.sectionCountBefore=13 sectionCountAfter=13",
                          "section count diff marker should be present");
 
     snprintf(expected,
@@ -238,6 +241,9 @@ static int test_diff_prints_metadata_section_deltas(void) {
     DUMP_ASSERT_CONTAINS(outputText,
                          "zrp.metadata.diff.section.constantPool bytesBefore=4 bytesAfter=9 bytesRemoved=0 countBefore=4 countAfter=9 countRemoved=0",
                          "constantPool growth should not underflow removed counters");
+    DUMP_ASSERT_CONTAINS(outputText,
+                         "zrp.metadata.diff.section.manifestExports bytesBefore=0 bytesAfter=0 bytesRemoved=0 countBefore=0 countAfter=0 countRemoved=0",
+                         "manifestExports diff should be summarized");
 
     input = fopen(beforePath, "wb");
     DUMP_ASSERT_TRUE(input != ZR_NULL, "before zrp file should open for write");
@@ -302,13 +308,13 @@ static int test_version_check_reports_current_header_shape(void) {
              (unsigned int)ZR_ZRP_METADATA_MAGIC);
     DUMP_ASSERT_CONTAINS(outputText, expected, "version check should report magic");
     DUMP_ASSERT_CONTAINS(outputText,
-                         "zrp.metadata.versionCheck.version=2 expectedVersion=2",
+                         "zrp.metadata.versionCheck.version=4 expectedVersion=4",
                          "version check should report metadata version");
     DUMP_ASSERT_CONTAINS(outputText,
-                         "zrp.metadata.versionCheck.headerBytes=208 expectedHeaderBytes=208",
+                         "zrp.metadata.versionCheck.headerBytes=224 expectedHeaderBytes=224",
                          "version check should report header bytes");
     DUMP_ASSERT_CONTAINS(outputText,
-                         "zrp.metadata.versionCheck.sectionCount=12 expectedSectionCount=12",
+                         "zrp.metadata.versionCheck.sectionCount=13 expectedSectionCount=13",
                          "version check should report section count");
 
     input = fopen(testPath, "wb");
@@ -342,7 +348,7 @@ static int test_version_check_reports_unsupported_header_shape(void) {
     FILE *output;
 
     build_summary_metadata(bytes, sizeof(bytes), &header, 1u, 1u, 4u, 0u);
-    bytes[4] = 3u;
+    bytes[4] = 5u;
     bytes[5] = 0u;
 
     output = tmpfile();
@@ -359,7 +365,7 @@ static int test_version_check_reports_unsupported_header_shape(void) {
                          "zrp.metadata.versionCheck.status=unsupported",
                          "version check should report unsupported status");
     DUMP_ASSERT_CONTAINS(outputText,
-                         "zrp.metadata.versionCheck.version=3 expectedVersion=2",
+                         "zrp.metadata.versionCheck.version=5 expectedVersion=4",
                          "version check should report actual unsupported version");
     DUMP_ASSERT_CONTAINS(error,
                          "Unsupported zrp metadata version or header shape",

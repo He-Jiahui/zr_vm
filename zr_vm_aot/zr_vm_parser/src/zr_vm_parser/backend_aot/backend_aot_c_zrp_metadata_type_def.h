@@ -1,0 +1,193 @@
+#ifndef ZR_VM_PARSER_BACKEND_AOT_C_ZRP_METADATA_TYPE_DEF_H
+#define ZR_VM_PARSER_BACKEND_AOT_C_ZRP_METADATA_TYPE_DEF_H
+
+#include "backend_aot_function_table.h"
+
+#include "zr_vm_core/metadata_token.h"
+#include "zr_vm_core/zrp_metadata.h"
+
+typedef struct SZrAotCZrpSignatureBlobRemap SZrAotCZrpSignatureBlobRemap;
+typedef struct SZrAotCZrpStringPoolRemap SZrAotCZrpStringPoolRemap;
+typedef struct SZrAotCEmbeddedZrpMetadata SZrAotCEmbeddedZrpMetadata;
+
+TZrBool backend_aot_c_zrp_type_def_row_is_retained(
+        const SZrZrpMetadataTypeDefRow *row,
+        const SZrZrpMetadataTypeDefRow *typeRows,
+        TZrUInt32 typeCount,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataFieldDefRow *fieldRows,
+        TZrUInt32 fieldCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount);
+TZrUInt32 backend_aot_c_zrp_count_retained_type_defs(
+        const SZrZrpMetadataTypeDefRow *rows,
+        TZrUInt32 count,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataFieldDefRow *fieldRows,
+        TZrUInt32 fieldCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount);
+TZrBool backend_aot_c_zrp_field_def_row_is_retained(
+        const SZrZrpMetadataFieldDefRow *row,
+        const SZrZrpMetadataTypeDefRow *typeRows,
+        TZrUInt32 typeCount,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataFieldDefRow *fieldRows,
+        TZrUInt32 fieldCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount);
+TZrUInt32 backend_aot_c_zrp_count_retained_field_defs(
+        const SZrZrpMetadataFieldDefRow *rows,
+        TZrUInt32 count,
+        const SZrZrpMetadataTypeDefRow *typeRows,
+        TZrUInt32 typeCount,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount);
+TZrMetadataToken backend_aot_c_zrp_compacted_retained_field_def_token(
+        TZrUInt32 retainedMethodDefCount,
+        const SZrZrpMetadataFieldDefRow *rows,
+        TZrUInt32 count,
+        TZrUInt32 fieldDefIndex,
+        const SZrZrpMetadataTypeDefRow *typeRows,
+        TZrUInt32 typeCount,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable);
+void backend_aot_c_zrp_adjust_type_def_field_range(
+        SZrZrpMetadataTypeDefRow *row,
+        const SZrZrpMetadataFieldDefRow *fieldRows,
+        TZrUInt32 fieldCount,
+        const SZrZrpMetadataTypeDefRow *typeRows,
+        TZrUInt32 typeCount,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount);
+TZrBool backend_aot_c_zrp_type_def_token_remap_build(
+        SZrAotCEmbeddedZrpMetadata *metadata,
+        const SZrZrpMetadataTypeDefRow *rows,
+        TZrUInt32 count,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataFieldDefRow *fieldRows,
+        TZrUInt32 fieldCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount,
+        TZrUInt32 retainedTypeDefCount);
+void backend_aot_c_zrp_type_def_token_remap_destroy(SZrAotCEmbeddedZrpMetadata *metadata);
+TZrMetadataToken backend_aot_c_zrp_compacted_type_def_token(
+        const SZrZrpMetadataTypeDefRow *rows,
+        TZrUInt32 count,
+        TZrUInt32 typeDefIndex,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataFieldDefRow *fieldRows,
+        TZrUInt32 fieldCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount);
+TZrBool backend_aot_c_zrp_remap_type_def_token(
+        TZrMetadataToken *token,
+        const SZrZrpMetadataTypeDefRow *rows,
+        TZrUInt32 count,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataFieldDefRow *fieldRows,
+        TZrUInt32 fieldCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount);
+TZrBool backend_aot_c_zrp_remap_type_def_tokens_in_record(
+        SZrMetadataTokenRecord *record,
+        const SZrZrpMetadataTypeDefRow *rows,
+        TZrUInt32 count,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataFieldDefRow *fieldRows,
+        TZrUInt32 fieldCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount);
+TZrBool backend_aot_c_zrp_copy_type_defs(
+        TZrByte *targetBlob,
+        const SZrZrpMetadataHeader *targetHeader,
+        const SZrZrpMetadataTypeDefRow *typeRows,
+        TZrUInt32 typeCount,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataFieldDefRow *fieldRows,
+        TZrUInt32 fieldCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount,
+        const SZrAotCZrpSignatureBlobRemap *signatureRemap,
+        const SZrAotCZrpStringPoolRemap *stringRemap);
+
+#endif

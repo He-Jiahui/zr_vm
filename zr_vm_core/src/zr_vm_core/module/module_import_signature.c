@@ -1,5 +1,6 @@
 #include "module/module_import_signature.h"
 #include "module/module_import_signature_binding.h"
+#include "module/module_import_signature_manifest_export.h"
 
 #include <string.h>
 
@@ -1119,6 +1120,14 @@ static TZrBool module_import_signature_verify_resolved_effect(SZrState *state,
                                                 effectiveEffect->targetSignatureHash,
                                                 symbol->signatureHash,
                                                 ZR_TRUE);
+        return ZR_FALSE;
+    }
+    if (!zr_module_import_signature_verify_manifest_export_binding(module,
+                                                                   memberRefRecord,
+                                                                   effectiveEffect,
+                                                                   symbol,
+                                                                   *ioEntryFunction,
+                                                                   outMismatch)) {
         return ZR_FALSE;
     }
 

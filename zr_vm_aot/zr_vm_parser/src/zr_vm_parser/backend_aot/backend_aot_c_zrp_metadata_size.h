@@ -19,6 +19,7 @@ typedef struct SZrAotZrpMetadataSizeStats {
     unsigned long long stringPoolBytes;
     unsigned long long signatureBlobPoolBytes;
     unsigned long long constantPoolBytes;
+    unsigned long long manifestExportBytes;
     unsigned long long definitionTableBytes;
     unsigned long long poolBytes;
     unsigned long long tokenRecordCount;
@@ -33,6 +34,7 @@ typedef struct SZrAotZrpMetadataSizeStats {
     unsigned long long stringPoolCount;
     unsigned long long signatureBlobPoolCount;
     unsigned long long constantPoolCount;
+    unsigned long long manifestExportCount;
 } SZrAotZrpMetadataSizeStats;
 
 void backend_aot_collect_zrp_metadata_size_stats(const SZrAotWriterOptions *options,

@@ -1,0 +1,29 @@
+# AOT 11-S7ZSG / 12-S7ZZX - zrp compacted metadata publication
+
+- Time: 2026-07-03 02:47:37 +08:00
+- Status: Completed for the writer-level sidecar publication slice; the broader AOT 07~12 goal remains active.
+- Scope:
+  - Added `SZrAotWriterOptions.compactedZrpMetadataOutputPath`.
+  - Added `backend_aot_c_publish_compacted_zrp_metadata()` to validate and write the final prepared `.zrp` metadata blob.
+  - The AOT C writer publishes the sidecar only after the generated C file closes successfully.
+  - Write or close failure removes the partial sidecar and makes the writer fail closed.
+  - Added registered CTest `aot_c_zrp_metadata_publication`.
+- RED:
+  - WSL GCC focused build failed because `SZrAotWriterOptions` had no `compactedZrpMetadataOutputPath` member.
+- GREEN:
+  - WSL GCC focused `aot_c_zrp_metadata_publication` passed 1/1.
+  - WSL GCC focused adjacent CTest matrix passed 5/5 after rebuilding stale targets.
+  - WSL clang focused adjacent CTest matrix passed 5/5.
+  - Windows MSVC Debug focused adjacent CTest matrix passed 5/5.
+- Acceptance:
+  - The sidecar `.zrp` file length and header match the final compacted metadata blob.
+  - The sidecar publishes one retained `MethodDef` row after pruning.
+  - The retained method token is compacted to `MEMBER_DEF(1)`.
+  - The retained `functionIndex` stays `1`.
+  - The string/signature/constant pool lengths match the final compacted blob.
+- Non-goals:
+  - CLI/project automatic sidecar path derivation.
+  - Complete metadata sweep/pruning.
+  - Full trim analyzer.
+  - Annotation promotion/warning policy.
+  - ABI drift deopt loop.

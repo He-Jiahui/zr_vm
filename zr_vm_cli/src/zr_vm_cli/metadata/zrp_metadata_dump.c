@@ -34,6 +34,7 @@ static const SZrCliZrpMetadataDumpSectionInfo g_zr_cli_zrp_metadata_dump_section
         {"stringPool", ZR_ZRP_METADATA_SECTION_STRING_POOL},
         {"signatureBlobPool", ZR_ZRP_METADATA_SECTION_SIGNATURE_BLOB_POOL},
         {"constantPool", ZR_ZRP_METADATA_SECTION_CONSTANT_POOL},
+        {"manifestExports", ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS},
 };
 
 static TZrUInt16 zrp_metadata_dump_read_u16(const TZrByte *buffer, TZrSize offset) {
@@ -94,6 +95,8 @@ static const SZrZrpMetadataSection *zrp_metadata_dump_get_section(const SZrZrpMe
             return &header->signatureBlobPool;
         case ZR_ZRP_METADATA_SECTION_CONSTANT_POOL:
             return &header->constantPool;
+        case ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS:
+            return &header->manifestExports;
         default:
             return ZR_NULL;
     }

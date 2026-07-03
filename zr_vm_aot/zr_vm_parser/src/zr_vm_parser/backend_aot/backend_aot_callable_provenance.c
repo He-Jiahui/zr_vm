@@ -201,6 +201,13 @@ TZrUInt32 backend_aot_resolve_callable_slot_function_index_before_instruction(co
                 }
                 return ZR_AOT_INVALID_FUNCTION_INDEX;
             }
+            case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION): {
+                TZrUInt32 childIndex = instruction->instruction.operand.operand1[0];
+                if (function->childFunctionList == ZR_NULL || childIndex >= function->childFunctionLength) {
+                    return ZR_AOT_INVALID_FUNCTION_INDEX;
+                }
+                return backend_aot_find_function_table_index(table, &function->childFunctionList[childIndex]);
+            }
             case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE): {
                 TZrUInt32 functionIndex = ZR_AOT_INVALID_FUNCTION_INDEX;
                 if (backend_aot_resolve_callable_constant_function_index(

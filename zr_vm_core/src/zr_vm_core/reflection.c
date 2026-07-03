@@ -35,6 +35,7 @@ static const TZrChar *kReflectionCollectionOrderFieldName = "__zr_reflection_ord
 #define ZR_RUNTIME_DECLARATION_MODIFIER_OVERRIDE ((TZrUInt32)(1u << 2))
 #define ZR_RUNTIME_DECLARATION_MODIFIER_FINAL ((TZrUInt32)(1u << 3))
 #define ZR_RUNTIME_DECLARATION_MODIFIER_SHADOW ((TZrUInt32)(1u << 4))
+#define ZR_REFLECTION_SIGNATURE_NODE_OBJECT_MAX_RECURSION_DEPTH 64u
 
 static SZrObject *reflection_build_module_reflection(SZrState *state, SZrObjectModule *module);
 static SZrObject *reflection_build_type_reflection(SZrState *state,
@@ -97,6 +98,24 @@ static const TZrChar *reflection_string_from_constant(SZrState *state,
                                                       SZrFunction *entryFunction,
                                                       TZrUInt32 constantIndex,
                                                       const TZrChar *fallback);
+static const TZrChar *reflection_string_from_zrp_pool(SZrMetadataRuntime *runtime,
+                                                      TZrUInt32 stringOffset,
+                                                      const TZrChar *fallback,
+                                                      TZrChar *buffer,
+                                                      TZrSize bufferSize);
+static const SZrMetadataTokenRecord *reflection_find_signature_type_record(
+        SZrMetadataRuntime *runtime,
+        const SZrMetadataRuntimeSignatureTypeNodeView *nodeView);
+static SZrObject *reflection_build_signature_type_node_object(
+        SZrState *state,
+        SZrMetadataRuntime *runtime,
+        const SZrZrpMetadataPoolSliceView *signatureBlob,
+        const SZrMetadataRuntimeSignatureTypeNodeView *nodeView,
+        TZrMetadataToken typeToken,
+        TZrUInt32 typeLayoutId,
+        const SZrTypeLayout *typeLayout,
+        const TZrChar *typeName,
+        TZrBool matchesLayout);
 static TZrInt64 reflection_optional_slot_to_int(TZrUInt32 value);
 static TZrBool reflection_modifier_flag_enabled(TZrUInt32 modifierFlags, TZrUInt32 modifierFlag);
 static void reflection_apply_modifier_flags(SZrState *state,
@@ -395,6 +414,20 @@ static void reflection_set_field_uint(SZrState *state,
     }
 
     ZrCore_Value_InitAsUInt(state, &fieldValue, value);
+    reflection_set_field_value(state, object, fieldName, &fieldValue);
+}
+
+static void reflection_set_field_native_pointer(SZrState *state,
+                                                SZrObject *object,
+                                                const TZrChar *fieldName,
+                                                TZrPtr value) {
+    SZrTypeValue fieldValue;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Value_InitAsNativePointer(state, &fieldValue, value);
     reflection_set_field_value(state, object, fieldName, &fieldValue);
 }
 
@@ -2160,6 +2193,316 @@ static const TZrChar *reflection_string_from_constant(SZrState *state,
     return ZrCore_String_GetNativeString(ZR_CAST_STRING(state, entryFunction->constantValueList[constantIndex].value.object));
 }
 
+static const TZrChar *reflection_string_from_zrp_pool(SZrMetadataRuntime *runtime,
+                                                      TZrUInt32 stringOffset,
+                                                      const TZrChar *fallback,
+                                                      TZrChar *buffer,
+                                                      TZrSize bufferSize) {
+    SZrZrpMetadataStringView stringView;
+    TZrSize byteLength;
+
+    if (buffer != ZR_NULL && bufferSize > 0u) {
+        buffer[0] = '\0';
+    }
+    if (runtime == ZR_NULL ||
+        buffer == ZR_NULL ||
+        bufferSize == 0u ||
+        !runtime->hasZrpMetadata ||
+        !ZrCore_ZrpMetadata_GetString(runtime->zrpMetadataBuffer,
+                                      runtime->zrpMetadataBufferLength,
+                                      &runtime->zrpMetadataHeader,
+                                      stringOffset,
+                                      &stringView) ||
+        stringView.data == ZR_NULL) {
+        return fallback;
+    }
+
+    byteLength = stringView.byteLength;
+    if (byteLength >= bufferSize) {
+        byteLength = bufferSize - 1u;
+    }
+    if (byteLength > 0u) {
+        memcpy(buffer, stringView.data, byteLength);
+    }
+    buffer[byteLength] = '\0';
+    return buffer;
+}
+
+static TZrBool reflection_signature_node_matches_record(SZrMetadataRuntime *runtime,
+                                                        const SZrMetadataTokenRecord *record,
+                                                        const SZrMetadataRuntimeSignatureTypeNodeView *nodeView) {
+    SZrZrpMetadataPoolSliceView blob;
+    SZrMetadataRuntimeSignatureTypeNodeView recordNodeView;
+
+    if (runtime == ZR_NULL ||
+        record == ZR_NULL ||
+        nodeView == ZR_NULL ||
+        !ZrCore_MetadataRuntime_GetSignatureBlob(runtime, record->token, &blob) ||
+        !ZrCore_MetadataRuntime_ReadSignatureTypeNode(&blob, 0u, &recordNodeView)) {
+        return ZR_FALSE;
+    }
+
+    return recordNodeView.node == nodeView->node &&
+           recordNodeView.payload0 == nodeView->payload0 &&
+           recordNodeView.payload1 == nodeView->payload1 &&
+           recordNodeView.nextBlobOffset == (TZrUInt32)blob.byteLength;
+}
+
+static const SZrMetadataTokenRecord *reflection_find_signature_type_record(
+        SZrMetadataRuntime *runtime,
+        const SZrMetadataRuntimeSignatureTypeNodeView *nodeView) {
+    const SZrMetadataTokenRecord *records;
+    TZrUInt32 recordLength;
+    TZrUInt32 table;
+    TZrUInt32 index;
+
+    if (runtime == ZR_NULL || runtime->metadataFunction == ZR_NULL || nodeView == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (nodeView->node == ZR_METADATA_SIGNATURE_NODE_TYPE_DEF) {
+        records = runtime->metadataFunction->metadataTokenRecords;
+        recordLength = runtime->metadataFunction->metadataTokenRecordLength;
+        table = ZR_METADATA_TABLE_TYPE_DEF;
+    } else if (nodeView->node == ZR_METADATA_SIGNATURE_NODE_TYPE_REF) {
+        records = runtime->metadataFunction->moduleMetadataTokenRecords;
+        recordLength = runtime->metadataFunction->moduleMetadataTokenRecordLength;
+        table = ZR_METADATA_TABLE_TYPE_REF;
+    } else {
+        return ZR_NULL;
+    }
+
+    if (records == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0u; index < recordLength; index++) {
+        const SZrMetadataTokenRecord *record = &records[index];
+
+        if (ZR_METADATA_TOKEN_TABLE(record->token) == table &&
+            reflection_signature_node_matches_record(runtime, record, nodeView)) {
+            return record;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrObject *reflection_build_signature_type_node_object_internal(
+        SZrState *state,
+        SZrMetadataRuntime *runtime,
+        const SZrZrpMetadataPoolSliceView *signatureBlob,
+        const SZrMetadataRuntimeSignatureTypeNodeView *nodeView,
+        TZrMetadataToken typeToken,
+        TZrUInt32 typeLayoutId,
+        const SZrTypeLayout *typeLayout,
+        const TZrChar *typeName,
+        TZrBool matchesLayout,
+        TZrUInt32 depth) {
+    SZrObject *nodeObject;
+    SZrObject *typeObject = ZR_NULL;
+    SZrObject *baseTypeNodeObject = ZR_NULL;
+    SZrObject *childNodeObjects = ZR_NULL;
+    SZrMetadataRuntimeSignatureTypeNodeView baseTypeNodeView = {0};
+    SZrMetadataRuntimeSignatureTypeNodeView childNodeView = {0};
+    TZrMetadataToken effectiveTypeToken;
+    TZrUInt32 effectiveTypeLayoutId;
+    const SZrTypeLayout *effectiveTypeLayout;
+    const TZrChar *effectiveTypeName;
+    TZrChar effectiveTypeNameBuffer[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
+    TZrUInt32 childBlobOffset;
+    TZrUInt32 childIndex;
+
+    if (state == ZR_NULL || nodeView == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    nodeObject = reflection_new_object(state);
+    if (nodeObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    effectiveTypeToken = typeToken;
+    effectiveTypeLayoutId = typeLayoutId;
+    effectiveTypeLayout = typeLayout;
+    effectiveTypeName = typeName;
+    effectiveTypeNameBuffer[0] = '\0';
+    if (nodeView->node == ZR_METADATA_SIGNATURE_NODE_TYPE_DEF ||
+        nodeView->node == ZR_METADATA_SIGNATURE_NODE_TYPE_REF) {
+        const SZrMetadataTokenRecord *nodeRecord = reflection_find_signature_type_record(runtime, nodeView);
+
+        if (nodeRecord != ZR_NULL) {
+            effectiveTypeToken = effectiveTypeToken != 0u ? effectiveTypeToken : nodeRecord->token;
+            if (effectiveTypeLayout == ZR_NULL && effectiveTypeToken != 0u) {
+                effectiveTypeLayout = ZrCore_MetadataRuntime_ResolveTypeTokenLayout(runtime,
+                                                                                    effectiveTypeToken,
+                                                                                    &effectiveTypeLayoutId);
+                if (effectiveTypeLayout == ZR_NULL) {
+                    effectiveTypeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+                }
+            }
+            if ((effectiveTypeName == ZR_NULL || effectiveTypeName[0] == '\0') &&
+                ZR_METADATA_TOKEN_TABLE(effectiveTypeToken) == ZR_METADATA_TABLE_TYPE_DEF) {
+                SZrMetadataRuntimeTypeDefLayoutBindingView typeDefView;
+
+                if (ZrCore_MetadataRuntime_ReadTypeDefLayoutBindingView(runtime, effectiveTypeToken, &typeDefView) &&
+                    typeDefView.typeDefRow != ZR_NULL) {
+                    effectiveTypeName = reflection_string_from_zrp_pool(runtime,
+                                                                        typeDefView.typeDefRow->nameStringOffset,
+                                                                        "",
+                                                                        effectiveTypeNameBuffer,
+                                                                        sizeof(effectiveTypeNameBuffer));
+                }
+            } else if ((effectiveTypeName == ZR_NULL || effectiveTypeName[0] == '\0') &&
+                       ZR_METADATA_TOKEN_TABLE(effectiveTypeToken) == ZR_METADATA_TABLE_TYPE_REF &&
+                       ZR_METADATA_TOKEN_TABLE(nodeRecord->targetMetadataToken) == ZR_METADATA_TABLE_TYPE_DEF) {
+                SZrMetadataRuntimeTypeDefLayoutBindingView typeDefView;
+
+                if (ZrCore_MetadataRuntime_ReadTypeDefLayoutBindingView(runtime,
+                                                                        nodeRecord->targetMetadataToken,
+                                                                        &typeDefView) &&
+                    typeDefView.typeDefRow != ZR_NULL) {
+                    effectiveTypeName = reflection_string_from_zrp_pool(runtime,
+                                                                        typeDefView.typeDefRow->nameStringOffset,
+                                                                        "",
+                                                                        effectiveTypeNameBuffer,
+                                                                        sizeof(effectiveTypeNameBuffer));
+                }
+            }
+        }
+    } else if ((effectiveTypeName == ZR_NULL || effectiveTypeName[0] == '\0') &&
+               nodeView->node == ZR_METADATA_SIGNATURE_NODE_PRIMITIVE) {
+        effectiveTypeName = reflection_builtin_type_name((EZrValueType)nodeView->payload0);
+    }
+
+    reflection_set_field_string(state, nodeObject, "kind", "signatureTypeNode");
+    reflection_set_field_int(state, nodeObject, "node", (TZrUInt32)nodeView->node);
+    reflection_set_field_int(state, nodeObject, "blobOffset", nodeView->blobOffset);
+    reflection_set_field_int(state, nodeObject, "nextBlobOffset", nodeView->nextBlobOffset);
+    reflection_set_field_int(state, nodeObject, "payload0", nodeView->payload0);
+    reflection_set_field_int(state, nodeObject, "payload1", nodeView->payload1);
+    reflection_set_field_int(state, nodeObject, "baseTypeBlobOffset", nodeView->baseTypeBlobOffset);
+    reflection_set_field_int(state, nodeObject, "childCount", nodeView->childCount);
+    reflection_set_field_int(state, nodeObject, "childListBlobOffset", nodeView->childListBlobOffset);
+    reflection_set_field_int(state, nodeObject, "typeToken", effectiveTypeToken);
+    reflection_set_field_int(state,
+                             nodeObject,
+                             "typeLayoutId",
+                             effectiveTypeLayout != ZR_NULL ? effectiveTypeLayoutId : 0u);
+    reflection_set_field_int(state,
+                             nodeObject,
+                             "typeSize",
+                             effectiveTypeLayout != ZR_NULL ? effectiveTypeLayout->byteSize : 0u);
+    reflection_set_field_string(state, nodeObject, "typeName", effectiveTypeName != ZR_NULL ? effectiveTypeName : "");
+    if (effectiveTypeName != ZR_NULL && effectiveTypeName[0] != '\0') {
+        typeObject = reflection_build_type_literal_object_internal(state, effectiveTypeName);
+    }
+    if (typeObject != ZR_NULL) {
+        reflection_set_field_object(state, nodeObject, "type", typeObject, ZR_VALUE_TYPE_OBJECT);
+    } else {
+        reflection_set_field_null(state, nodeObject, "type");
+    }
+    reflection_set_field_bool(state, nodeObject, "matchesLayout", matchesLayout);
+    if (signatureBlob != ZR_NULL &&
+        depth < ZR_REFLECTION_SIGNATURE_NODE_OBJECT_MAX_RECURSION_DEPTH &&
+        nodeView->baseTypeBlobOffset > 0u &&
+        ZrCore_MetadataRuntime_ReadSignatureTypeNode(signatureBlob,
+                                                     nodeView->baseTypeBlobOffset,
+                                                     &baseTypeNodeView)) {
+        baseTypeNodeObject = reflection_build_signature_type_node_object_internal(state,
+                                                                                  runtime,
+                                                                                  signatureBlob,
+                                                                                  &baseTypeNodeView,
+                                                                                  0u,
+                                                                                  0u,
+                                                                                  ZR_NULL,
+                                                                                  "",
+                                                                                  ZR_FALSE,
+                                                                                  depth + 1u);
+    }
+    if (baseTypeNodeObject != ZR_NULL) {
+        reflection_set_field_object(state,
+                                    nodeObject,
+                                    "baseTypeNodeObject",
+                                    baseTypeNodeObject,
+                                    ZR_VALUE_TYPE_OBJECT);
+    } else {
+        reflection_set_field_null(state, nodeObject, "baseTypeNodeObject");
+    }
+
+    childNodeObjects = reflection_new_array(state);
+    if (childNodeObjects != ZR_NULL) {
+        reflection_set_field_object(state,
+                                    nodeObject,
+                                    "childNodeObjects",
+                                    childNodeObjects,
+                                    ZR_VALUE_TYPE_ARRAY);
+    } else {
+        reflection_set_field_null(state, nodeObject, "childNodeObjects");
+    }
+    if (signatureBlob != ZR_NULL &&
+        childNodeObjects != ZR_NULL &&
+        depth < ZR_REFLECTION_SIGNATURE_NODE_OBJECT_MAX_RECURSION_DEPTH &&
+        nodeView->childCount > 0u &&
+        nodeView->childListBlobOffset > 0u) {
+        childBlobOffset = nodeView->childListBlobOffset;
+        for (childIndex = 0u; childIndex < nodeView->childCount; ++childIndex) {
+            SZrObject *childNodeObject;
+            SZrTypeValue childNodeValue;
+
+            if (!ZrCore_MetadataRuntime_ReadSignatureTypeNode(signatureBlob,
+                                                             childBlobOffset,
+                                                             &childNodeView)) {
+                break;
+            }
+            childNodeObject = reflection_build_signature_type_node_object_internal(state,
+                                                                                  runtime,
+                                                                                  signatureBlob,
+                                                                                  &childNodeView,
+                                                                                  0u,
+                                                                                  0u,
+                                                                                  ZR_NULL,
+                                                                                  "",
+                                                                                  ZR_FALSE,
+                                                                                  depth + 1u);
+            if (childNodeObject == ZR_NULL) {
+                break;
+            }
+            reflection_init_object_value(state,
+                                         &childNodeValue,
+                                         ZR_CAST_RAW_OBJECT_AS_SUPER(childNodeObject),
+                                         ZR_VALUE_TYPE_OBJECT);
+            if (!reflection_array_push(state, childNodeObjects, &childNodeValue)) {
+                break;
+            }
+            childBlobOffset = childNodeView.nextBlobOffset;
+        }
+    }
+    return nodeObject;
+}
+
+static SZrObject *reflection_build_signature_type_node_object(
+        SZrState *state,
+        SZrMetadataRuntime *runtime,
+        const SZrZrpMetadataPoolSliceView *signatureBlob,
+        const SZrMetadataRuntimeSignatureTypeNodeView *nodeView,
+        TZrMetadataToken typeToken,
+        TZrUInt32 typeLayoutId,
+        const SZrTypeLayout *typeLayout,
+        const TZrChar *typeName,
+        TZrBool matchesLayout) {
+    return reflection_build_signature_type_node_object_internal(state,
+                                                               runtime,
+                                                               signatureBlob,
+                                                               nodeView,
+                                                               typeToken,
+                                                               typeLayoutId,
+                                                               typeLayout,
+                                                               typeName,
+                                                               matchesLayout,
+                                                               0u);
+}
+
 static SZrObject *reflection_build_member_info(SZrState *state,
                                                const TZrChar *name,
                                                const TZrChar *qualifiedName,
@@ -3090,6 +3433,334 @@ static SZrObject *reflection_build_type_literal_object_internal(SZrState *state,
 ZR_CORE_API SZrObject *ZrCore_Reflection_BuildTypeLiteralObject(SZrState *state, SZrString *typeName) {
     const TZrChar *nativeTypeName = typeName != ZR_NULL ? ZrCore_String_GetNativeString(typeName) : ZR_NULL;
     return reflection_build_type_literal_object_internal(state, nativeTypeName);
+}
+
+ZR_CORE_API SZrObject *ZrCore_Reflection_BuildFieldInfoTokenObject(
+        SZrState *state,
+        SZrMetadataRuntime *runtime,
+        TZrMetadataToken fieldToken) {
+    SZrReflectionResolvedToken resolved;
+    SZrObject *fieldReflection;
+    SZrObject *fieldTypeObject;
+    SZrObject *fieldTypeSignatureTypeObject;
+    SZrObject *fieldTypeSignatureNodeObject;
+    SZrObject *declaringTypeObject;
+    SZrObject *moduleObject;
+    SZrObject *layoutObject;
+    TZrChar fieldNameBuffer[ZR_RUNTIME_MEMBER_NAME_BUFFER_LENGTH];
+    TZrChar ownerNameBuffer[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
+    TZrChar fieldTypeNameBuffer[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
+    TZrChar fieldTypeSignatureTypeNameBuffer[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
+    TZrChar qualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
+    const TZrChar *fieldName;
+    const TZrChar *ownerName;
+    const TZrChar *fieldTypeName;
+    const TZrChar *fieldTypeSignatureTypeName;
+    const TZrChar *moduleName;
+    SZrMetadataRuntimeSignatureView signatureView = {0};
+    SZrMetadataRuntimeSignatureTypeNodeView fieldTypeSignatureNodeView = {0};
+    const SZrMetadataTokenRecord *fieldTypeSignatureRecord = ZR_NULL;
+    TZrMetadataToken fieldTypeSignatureToken = 0u;
+    TZrUInt32 fieldTypeSignatureTypeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    const SZrTypeLayout *fieldTypeSignatureLayout = ZR_NULL;
+    TZrBool hasFieldSignatureView;
+    TZrBool hasFieldTypeSignatureNodeView;
+    TZrBool hasPrimitiveFieldTypeSignature;
+    TZrBool hasSemanticFieldTypeSignature;
+    TZrBool fieldTypeSignatureMatchesLayout;
+
+    if (state == ZR_NULL ||
+        runtime == ZR_NULL ||
+        !ZrCore_Reflection_ResolveToken(runtime, fieldToken, &resolved) ||
+        resolved.kind != ZR_REFLECTION_RESOLVED_TOKEN_FIELD ||
+        resolved.fieldDefRow == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    hasFieldSignatureView = ZrCore_MetadataRuntime_ReadSignatureView(runtime, resolved.token, &signatureView) &&
+                            signatureView.rootNode == ZR_METADATA_SIGNATURE_NODE_FIELD_SIG;
+    hasFieldTypeSignatureNodeView = hasFieldSignatureView &&
+                                    ZrCore_MetadataRuntime_ReadSignatureTypeNode(
+                                            &signatureView.blob,
+                                            signatureView.fieldTypeBlobOffset,
+                                            &fieldTypeSignatureNodeView);
+    hasPrimitiveFieldTypeSignature =
+            hasFieldTypeSignatureNodeView &&
+            fieldTypeSignatureNodeView.node == ZR_METADATA_SIGNATURE_NODE_PRIMITIVE;
+    hasSemanticFieldTypeSignature =
+            hasFieldTypeSignatureNodeView &&
+            (fieldTypeSignatureNodeView.node == ZR_METADATA_SIGNATURE_NODE_TYPE_DEF ||
+             fieldTypeSignatureNodeView.node == ZR_METADATA_SIGNATURE_NODE_TYPE_REF);
+    if (hasSemanticFieldTypeSignature) {
+        fieldTypeSignatureRecord = reflection_find_signature_type_record(runtime, &fieldTypeSignatureNodeView);
+        if (fieldTypeSignatureRecord != ZR_NULL) {
+            fieldTypeSignatureToken = fieldTypeSignatureRecord->token;
+            fieldTypeSignatureLayout = ZrCore_MetadataRuntime_ResolveTypeTokenLayout(runtime,
+                                                                                     fieldTypeSignatureToken,
+                                                                                     &fieldTypeSignatureTypeLayoutId);
+            if (fieldTypeSignatureLayout == ZR_NULL) {
+                fieldTypeSignatureTypeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+            }
+        }
+    }
+    fieldTypeSignatureTypeName =
+            hasPrimitiveFieldTypeSignature
+                    ? reflection_builtin_type_name((EZrValueType)fieldTypeSignatureNodeView.payload0)
+                    : "";
+    if (fieldTypeSignatureRecord != ZR_NULL &&
+        ZR_METADATA_TOKEN_TABLE(fieldTypeSignatureToken) == ZR_METADATA_TABLE_TYPE_DEF) {
+        SZrMetadataRuntimeTypeDefLayoutBindingView signatureTypeView;
+
+        if (ZrCore_MetadataRuntime_ReadTypeDefLayoutBindingView(runtime,
+                                                                fieldTypeSignatureToken,
+                                                                &signatureTypeView) &&
+            signatureTypeView.typeDefRow != ZR_NULL) {
+            fieldTypeSignatureTypeName = reflection_string_from_zrp_pool(
+                    runtime,
+                    signatureTypeView.typeDefRow->nameStringOffset,
+                    "",
+                    fieldTypeSignatureTypeNameBuffer,
+                    sizeof(fieldTypeSignatureTypeNameBuffer));
+        }
+    } else if (fieldTypeSignatureRecord != ZR_NULL &&
+               fieldTypeSignatureLayout != ZR_NULL &&
+               ZR_METADATA_TOKEN_TABLE(fieldTypeSignatureToken) == ZR_METADATA_TABLE_TYPE_REF &&
+               ZR_METADATA_TOKEN_TABLE(fieldTypeSignatureRecord->targetMetadataToken) ==
+                       ZR_METADATA_TABLE_TYPE_DEF) {
+        SZrMetadataRuntimeTypeDefLayoutBindingView signatureTypeView;
+
+        if (ZrCore_MetadataRuntime_ReadTypeDefLayoutBindingView(runtime,
+                                                                fieldTypeSignatureRecord->targetMetadataToken,
+                                                                &signatureTypeView) &&
+            signatureTypeView.typeDefRow != ZR_NULL) {
+            fieldTypeSignatureTypeName = reflection_string_from_zrp_pool(
+                    runtime,
+                    signatureTypeView.typeDefRow->nameStringOffset,
+                    "",
+                    fieldTypeSignatureTypeNameBuffer,
+                    sizeof(fieldTypeSignatureTypeNameBuffer));
+        }
+    }
+    fieldTypeSignatureMatchesLayout =
+            fieldTypeSignatureLayout != ZR_NULL &&
+            resolved.fieldTypeLayout != ZR_NULL &&
+            fieldTypeSignatureTypeLayoutId != ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE &&
+            fieldTypeSignatureTypeLayoutId == resolved.fieldTypeLayoutId &&
+            fieldTypeSignatureLayout == resolved.fieldTypeLayout;
+
+    fieldName = reflection_string_from_zrp_pool(runtime,
+                                                resolved.fieldDefRow->nameStringOffset,
+                                                "field",
+                                                fieldNameBuffer,
+                                                sizeof(fieldNameBuffer));
+    ownerName = resolved.ownerTypeDefRow != ZR_NULL
+                        ? reflection_string_from_zrp_pool(runtime,
+                                                          resolved.ownerTypeDefRow->nameStringOffset,
+                                                          "type",
+                                                          ownerNameBuffer,
+                                                          sizeof(ownerNameBuffer))
+                        : "type";
+    fieldTypeName = "any";
+    if (resolved.fieldTypeToken != 0u &&
+        ZR_METADATA_TOKEN_TABLE(resolved.fieldTypeToken) == ZR_METADATA_TABLE_TYPE_DEF) {
+        SZrMetadataRuntimeTypeDefLayoutBindingView typeView;
+
+        if (ZrCore_MetadataRuntime_ReadTypeDefLayoutBindingView(runtime, resolved.fieldTypeToken, &typeView) &&
+            typeView.typeDefRow != ZR_NULL) {
+            fieldTypeName = reflection_string_from_zrp_pool(runtime,
+                                                            typeView.typeDefRow->nameStringOffset,
+                                                            "any",
+                                                            fieldTypeNameBuffer,
+                                                            sizeof(fieldTypeNameBuffer));
+        }
+    }
+    moduleName = "";
+    if (runtime->module != ZR_NULL) {
+        moduleName = runtime->module->moduleName != ZR_NULL
+                             ? ZrCore_String_GetNativeString(runtime->module->moduleName)
+                             : (runtime->module->fullPath != ZR_NULL
+                                        ? ZrCore_String_GetNativeString(runtime->module->fullPath)
+                                        : "");
+    }
+
+    snprintf(qualifiedName,
+             sizeof(qualifiedName),
+             "%s.%s",
+             ownerName != ZR_NULL && ownerName[0] != '\0' ? ownerName : "type",
+             fieldName != ZR_NULL && fieldName[0] != '\0' ? fieldName : "field");
+
+    fieldReflection = reflection_build_member_info(state,
+                                                   fieldName != ZR_NULL && fieldName[0] != '\0' ? fieldName : "field",
+                                                   qualifiedName,
+                                                   "field",
+                                                   XXH3_64bits(&resolved.token, sizeof(resolved.token)));
+    if (fieldReflection == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    reflection_set_field_string(state, fieldReflection, "typeName", fieldTypeName);
+    reflection_set_field_string(state, fieldReflection, "ownerTypeName", ownerName);
+    reflection_set_field_string(state, fieldReflection, "declaringTypeName", ownerName);
+    reflection_set_field_string(state, fieldReflection, "moduleName", moduleName != ZR_NULL ? moduleName : "");
+    reflection_set_field_int(state, fieldReflection, "metadataToken", resolved.token);
+    reflection_set_field_native_pointer(state, fieldReflection, "metadataRuntime", runtime);
+    reflection_set_field_int(state, fieldReflection, "metadataFlags", resolved.fieldDefRow->flags);
+    reflection_set_field_int(state, fieldReflection, "signatureBlobOffset", resolved.fieldDefRow->signatureBlobOffset);
+    reflection_set_field_int(state, fieldReflection, "signatureBlobLength", resolved.fieldDefRow->signatureBlobLength);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "signatureRootNode",
+                             hasFieldSignatureView ? (TZrUInt32)signatureView.rootNode : 0u);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "signatureFlags",
+                             hasFieldSignatureView ? signatureView.flags : 0u);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "fieldTypeBlobOffset",
+                             hasFieldSignatureView ? signatureView.fieldTypeBlobOffset : 0u);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "fieldTypeSignatureNode",
+                             hasFieldTypeSignatureNodeView ? (TZrUInt32)fieldTypeSignatureNodeView.node : 0u);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "fieldTypeSignatureBlobOffset",
+                             hasFieldTypeSignatureNodeView ? fieldTypeSignatureNodeView.blobOffset : 0u);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "fieldTypeSignatureNextBlobOffset",
+                             hasFieldTypeSignatureNodeView ? fieldTypeSignatureNodeView.nextBlobOffset : 0u);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "fieldTypeSignaturePayload0",
+                             hasFieldTypeSignatureNodeView ? fieldTypeSignatureNodeView.payload0 : 0u);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "fieldTypeSignaturePayload1",
+                             hasFieldTypeSignatureNodeView ? fieldTypeSignatureNodeView.payload1 : 0u);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "fieldTypeSignatureValueType",
+                             hasPrimitiveFieldTypeSignature ? fieldTypeSignatureNodeView.payload0 : 0u);
+    reflection_set_field_string(state,
+                                fieldReflection,
+                                "fieldTypeSignatureTypeName",
+                                fieldTypeSignatureTypeName);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "fieldTypeSignatureBaseTypeBlobOffset",
+                             hasFieldTypeSignatureNodeView ? fieldTypeSignatureNodeView.baseTypeBlobOffset : 0u);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "fieldTypeSignatureChildCount",
+                             hasFieldTypeSignatureNodeView ? fieldTypeSignatureNodeView.childCount : 0u);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "fieldTypeSignatureChildListBlobOffset",
+                             hasFieldTypeSignatureNodeView ? fieldTypeSignatureNodeView.childListBlobOffset : 0u);
+    reflection_set_field_int(state, fieldReflection, "fieldTypeSignatureTypeToken", fieldTypeSignatureToken);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "fieldTypeSignatureTypeLayoutId",
+                             fieldTypeSignatureLayout != ZR_NULL ? fieldTypeSignatureTypeLayoutId : 0u);
+    reflection_set_field_int(state,
+                             fieldReflection,
+                             "fieldTypeSignatureTypeSize",
+                             fieldTypeSignatureLayout != ZR_NULL ? fieldTypeSignatureLayout->byteSize : 0u);
+    reflection_set_field_bool(state,
+                              fieldReflection,
+                              "fieldTypeSignatureMatchesLayout",
+                              fieldTypeSignatureMatchesLayout);
+    fieldTypeSignatureNodeObject =
+            hasFieldTypeSignatureNodeView
+                    ? reflection_build_signature_type_node_object(state,
+                                                                  runtime,
+                                                                  &signatureView.blob,
+                                                                  &fieldTypeSignatureNodeView,
+                                                                  fieldTypeSignatureToken,
+                                                                  fieldTypeSignatureTypeLayoutId,
+                                                                  fieldTypeSignatureLayout,
+                                                                  fieldTypeSignatureTypeName,
+                                                                  fieldTypeSignatureMatchesLayout)
+                    : ZR_NULL;
+    if (fieldTypeSignatureNodeObject != ZR_NULL) {
+        reflection_set_field_object(state,
+                                    fieldReflection,
+                                    "fieldTypeSignatureNodeObject",
+                                    fieldTypeSignatureNodeObject,
+                                    ZR_VALUE_TYPE_OBJECT);
+    } else {
+        reflection_set_field_null(state, fieldReflection, "fieldTypeSignatureNodeObject");
+    }
+    reflection_set_field_int(state, fieldReflection, "ownerTypeToken", resolved.ownerTypeToken);
+    reflection_set_field_int(state, fieldReflection, "fieldTypeToken", resolved.fieldTypeToken);
+    reflection_set_field_int(state, fieldReflection, "offset", resolved.byteOffset);
+    reflection_set_field_int(state, fieldReflection, "size", resolved.fieldTypeLayout != ZR_NULL
+                                                                 ? resolved.fieldTypeLayout->byteSize
+                                                                 : 0u);
+    reflection_set_field_int(state, fieldReflection, "typeLayoutId", resolved.fieldTypeLayoutId);
+    reflection_set_field_int(state, fieldReflection, "fieldTypeLayoutId", resolved.fieldTypeLayoutId);
+    reflection_set_field_int(state, fieldReflection, "ownerTypeLayoutId", resolved.ownerTypeLayoutId);
+    reflection_set_field_bool(state, fieldReflection, "isStatic", ZR_FALSE);
+    reflection_set_field_bool(state, fieldReflection, "isConst", ZR_FALSE);
+
+    layoutObject = reflection_get_field_object(state, fieldReflection, "layout", ZR_VALUE_TYPE_OBJECT);
+    reflection_set_field_int(state, layoutObject, "offset", resolved.byteOffset);
+    reflection_set_field_int(state, layoutObject, "size", resolved.fieldTypeLayout != ZR_NULL
+                                                                ? resolved.fieldTypeLayout->byteSize
+                                                                : 0u);
+    reflection_set_field_int(state, layoutObject, "alignment", resolved.fieldTypeLayout != ZR_NULL
+                                                                     ? resolved.fieldTypeLayout->byteAlign
+                                                                     : 0u);
+
+    fieldTypeObject = reflection_build_type_literal_object_internal(state, fieldTypeName);
+    if (fieldTypeObject != ZR_NULL) {
+        reflection_set_field_object(state, fieldReflection, "type", fieldTypeObject, ZR_VALUE_TYPE_OBJECT);
+    } else {
+        reflection_set_field_null(state, fieldReflection, "type");
+    }
+
+    fieldTypeSignatureTypeObject =
+            fieldTypeSignatureTypeName != ZR_NULL && fieldTypeSignatureTypeName[0] != '\0'
+                    ? reflection_build_type_literal_object_internal(state, fieldTypeSignatureTypeName)
+                    : ZR_NULL;
+    if (fieldTypeSignatureTypeObject != ZR_NULL) {
+        reflection_set_field_object(state,
+                                    fieldReflection,
+                                    "fieldTypeSignatureType",
+                                    fieldTypeSignatureTypeObject,
+                                    ZR_VALUE_TYPE_OBJECT);
+    } else {
+        reflection_set_field_null(state, fieldReflection, "fieldTypeSignatureType");
+    }
+
+    moduleObject = (runtime->module != ZR_NULL &&
+                    runtime->module->super.internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE)
+                           ? reflection_build_module_reflection(state, runtime->module)
+                           : ZR_NULL;
+    if (moduleObject != ZR_NULL) {
+        reflection_set_field_object(state, fieldReflection, "module", moduleObject, ZR_VALUE_TYPE_OBJECT);
+    } else {
+        reflection_set_field_null(state, fieldReflection, "module");
+    }
+
+    declaringTypeObject = reflection_build_type_literal_object_internal(state, ownerName);
+    if (declaringTypeObject != ZR_NULL) {
+        reflection_set_field_object(state,
+                                    fieldReflection,
+                                    "declaringType",
+                                    declaringTypeObject,
+                                    ZR_VALUE_TYPE_OBJECT);
+        reflection_set_field_object(state,
+                                    fieldReflection,
+                                    "owner",
+                                    declaringTypeObject,
+                                    ZR_VALUE_TYPE_OBJECT);
+    } else {
+        reflection_set_field_null(state, fieldReflection, "declaringType");
+    }
+    return fieldReflection;
 }
 
 ZR_CORE_API SZrObject *ZrCore_Reflection_BuildCallableTypeLiteralObject(

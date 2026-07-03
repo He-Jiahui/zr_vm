@@ -6,6 +6,8 @@
 
 TZrBool backend_aot_compute_static_callable_reachability(SZrState *state,
                                                          const SZrAotFunctionTable *table,
+                                                         const TZrUInt32 *annotationRoots,
+                                                         TZrUInt32 annotationRootCount,
                                                          const TZrUInt32 *manifestRoots,
                                                          TZrUInt32 manifestRootCount,
                                                          TZrUInt32 *roots,
@@ -19,5 +21,11 @@ TZrBool backend_aot_compute_static_callable_reachability(SZrState *state,
                                                          TZrUInt32 queueCapacity,
                                                          TZrUInt32 *outMarkedCount,
                                                          TZrUInt32 *outEdgeCount);
+
+TZrBool backend_aot_collect_reflection_annotation_roots(SZrState *state,
+                                                        const SZrAotFunctionTable *table,
+                                                        TZrUInt32 *annotationRoots,
+                                                        TZrUInt32 annotationRootCapacity,
+                                                        TZrUInt32 *outAnnotationRootCount);
 
 #endif

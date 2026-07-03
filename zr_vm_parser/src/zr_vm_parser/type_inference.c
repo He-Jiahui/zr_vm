@@ -28,29 +28,23 @@ void ZrParser_TypeError_Report(SZrCompilerState *cs, const TZrChar *message, con
     if (cs == ZR_NULL || message == ZR_NULL) {
         return;
     }
-    
     static TZrChar errorMsg[ZR_PARSER_TEXT_BUFFER_LENGTH];
     static TZrChar expectedTypeStr[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
     static TZrChar actualTypeStr[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
-    
     const TZrChar *expectedName = "unknown";
     const TZrChar *actualName = "unknown";
-    
     if (expectedType != ZR_NULL) {
         expectedName = ZrParser_TypeNameString_Get(cs->state, expectedType, expectedTypeStr, sizeof(expectedTypeStr));
     }
     if (actualType != ZR_NULL) {
         actualName = ZrParser_TypeNameString_Get(cs->state, actualType, actualTypeStr, sizeof(actualTypeStr));
     }
-    
     // 构建详细的错误消息，包含类型信息
-    snprintf(errorMsg, sizeof(errorMsg), 
-             "Type Error: %s (expected: %s, actual: %s). "
+    snprintf(errorMsg, sizeof(errorMsg),             "Type Error: %s (expected: %s, actual: %s). "
              "Check variable types, function signatures, and type annotations. "
              "Ensure the actual type is compatible with the expected type. "
              "Consider adding explicit type conversions if needed.",
              message, expectedName, actualName);
-    
     ZrParser_Compiler_Error(cs, errorMsg, location);
 }
 
@@ -745,7 +739,6 @@ TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, const SZrInferred
     if (cs == ZR_NULL || fromType == ZR_NULL || toType == ZR_NULL) {
         return ZR_FALSE;
     }
-    
     if (ZrParser_InferredType_IsCompatible(fromType, toType)) {
         return ZR_TRUE;
     }
@@ -753,7 +746,6 @@ TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, const SZrInferred
     if (inferred_type_can_use_named_constraint_fallback(cs, fromType, toType)) {
         return ZR_TRUE;
     }
-    
     // 类型不兼容，报告错误
     ZrParser_TypeError_Report(cs, "Type mismatch", toType, fromType, location);
     return ZR_FALSE;
@@ -768,7 +760,6 @@ TZrBool ZrParser_AssignmentCompatibility_Check(SZrCompilerState *cs, const SZrIn
     if (!type_inference_report_ownership_flow_escape(cs, leftType, rightType, location)) {
         return ZR_FALSE;
     }
-    
     // 首先检查基本类型兼容性
     if (!ZrParser_TypeCompatibility_Check(cs, rightType, leftType, location)) {
         return ZR_FALSE;
@@ -777,7 +768,6 @@ TZrBool ZrParser_AssignmentCompatibility_Check(SZrCompilerState *cs, const SZrIn
     if (type_inference_inferred_type_is_move_only_struct(cs, rightType)) {
         return type_inference_report_move_only_struct_copy(cs, rightType, "assignment", location);
     }
-    
     // 检查范围约束（如果目标类型有范围约束）
     if (leftType->hasRangeConstraint) {
         // 对于字面量，在 ZrParser_LiteralRange_Check 中已经检查
@@ -786,7 +776,6 @@ TZrBool ZrParser_AssignmentCompatibility_Check(SZrCompilerState *cs, const SZrIn
         // 注意：编译期常量检查需要在编译时进行，这里只做类型兼容性检查
         // 实际的常量值检查在编译期执行器中完成
     }
-    
     // 检查数组大小约束
     if (leftType->hasArraySizeConstraint && rightType->baseType == ZR_VALUE_TYPE_ARRAY) {
         // 如果目标数组有固定大小，检查源数组大小是否匹配
@@ -802,7 +791,6 @@ TZrBool ZrParser_AssignmentCompatibility_Check(SZrCompilerState *cs, const SZrIn
             }
         }
     }
-    
     return ZR_TRUE;
 }
 
@@ -905,12 +893,10 @@ TZrBool ZrParser_LiteralType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrIn
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
-    
     switch (node->type) {
         case ZR_AST_BOOLEAN_LITERAL:
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_BOOL);
             return ZR_TRUE;
-            
         case ZR_AST_INTEGER_LITERAL: {
             // 未加后缀的整数字面量统一按 int64 推断。
             // 后续若需要字面量收窄，应由语义层在约束上下文中完成，而不是在基础推断阶段直接缩小。
@@ -918,27 +904,22 @@ TZrBool ZrParser_LiteralType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrIn
             type_inference_apply_literal_numeric_range(node, result);
             return ZR_TRUE;
         }
-            
         case ZR_AST_FLOAT_LITERAL:
             // 默认使用DOUBLE
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_DOUBLE);
             return ZR_TRUE;
-            
         case ZR_AST_STRING_LITERAL:
         case ZR_AST_TEMPLATE_STRING_LITERAL:
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_STRING);
             return ZR_TRUE;
-            
         case ZR_AST_CHAR_LITERAL:
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_INT8);
             type_inference_apply_literal_numeric_range(node, result);
             return ZR_TRUE;
-            
         case ZR_AST_NULL_LITERAL:
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_NULL);
             result->isNullable = ZR_TRUE;
             return ZR_TRUE;
-            
         default:
             return ZR_FALSE;
     }
@@ -1003,12 +984,10 @@ TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL) {
         return ZR_FALSE;
     }
-    
     SZrString *name = node->data.identifier.name;
     if (name == ZR_NULL) {
         return ZR_FALSE;
     }
-    
     // 在类型环境中查找变量类型
     if (cs->typeEnv != ZR_NULL) {
         if (ZrParser_TypeEnvironment_LookupVariable(cs->state, cs->typeEnv, name, result)) {
@@ -1045,7 +1024,6 @@ TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
     if (find_compiler_type_prototype_inference(cs, name) != ZR_NULL) {
         return inferred_type_from_type_name(cs, name, result);
     }
-    
     // 未找到变量类型，不立即报错
     // 可能是全局对象 zr 的属性访问，或者子函数，或者全局对象的其他属性
     // 返回默认的 OBJECT 类型，让 compile_identifier 继续处理
@@ -1054,12 +1032,139 @@ TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
     return ZR_TRUE;
 }
 
+static const SZrAstNode *type_inference_skip_unary_plus_identity(
+        const SZrAstNode *expression) {
+    while (expression != ZR_NULL &&
+           expression->type == ZR_AST_UNARY_EXPRESSION &&
+           expression->data.unaryExpression.op.op != ZR_NULL &&
+           strcmp(expression->data.unaryExpression.op.op, "+") == 0) {
+        expression = expression->data.unaryExpression.argument;
+    }
+    return expression;
+}
+
+static TZrBool type_inference_expression_is_exact_zero_identity(
+        SZrCompilerState *cs,
+        SZrAstNode *expression) {
+    SZrInferredType type;
+    TZrBool isExactZero;
+
+    if (cs == ZR_NULL || expression == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &type, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_ExpressionType_Infer(cs, expression, &type)) {
+        ZrParser_InferredType_Free(cs->state, &type);
+        return ZR_FALSE;
+    }
+
+    isExactZero = type.baseType == ZR_VALUE_TYPE_INT64 &&
+                  type.hasRangeConstraint &&
+                  type.minValue == 0 &&
+                  type.maxValue == 0;
+    ZrParser_InferredType_Free(cs->state, &type);
+    return isExactZero;
+}
+
+static const SZrAstNode *type_inference_skip_zero_identity_wrapper(
+        SZrCompilerState *cs,
+        const SZrAstNode *expression) {
+    const SZrBinaryExpression *binary;
+
+    while (expression != ZR_NULL) {
+        expression = type_inference_skip_unary_plus_identity(expression);
+        if (expression == ZR_NULL ||
+            expression->type != ZR_AST_BINARY_EXPRESSION) {
+            break;
+        }
+
+        binary = &expression->data.binaryExpression;
+        if (binary->op.op == ZR_NULL) {
+            break;
+        }
+
+        if (strcmp(binary->op.op, "+") == 0) {
+            if (type_inference_expression_is_exact_zero_identity(cs, binary->right)) {
+                expression = binary->left;
+                continue;
+            }
+            if (type_inference_expression_is_exact_zero_identity(cs, binary->left)) {
+                expression = binary->right;
+                continue;
+            }
+            break;
+        }
+        if (strcmp(binary->op.op, "-") == 0 &&
+            type_inference_expression_is_exact_zero_identity(cs, binary->right)) {
+            expression = binary->left;
+            continue;
+        }
+        break;
+    }
+    return expression;
+}
+
+static TZrBool type_inference_binary_operands_are_same_identifier(
+        SZrCompilerState *cs,
+        const SZrAstNode *left,
+        const SZrAstNode *right) {
+    left = type_inference_skip_zero_identity_wrapper(cs, left);
+    right = type_inference_skip_zero_identity_wrapper(cs, right);
+    return left != ZR_NULL &&
+           right != ZR_NULL &&
+           left->type == ZR_AST_IDENTIFIER_LITERAL &&
+           right->type == ZR_AST_IDENTIFIER_LITERAL &&
+           left->data.identifier.name != ZR_NULL &&
+           right->data.identifier.name != ZR_NULL &&
+           ZrCore_String_Equal(left->data.identifier.name, right->data.identifier.name);
+}
+
+static TZrBool type_inference_apply_same_identifier_exact_zero_range(
+        SZrCompilerState *cs,
+        const TZrChar *op,
+        const SZrAstNode *left,
+        const SZrAstNode *right,
+        const SZrInferredType *leftType,
+        const SZrInferredType *rightType,
+        SZrInferredType *result) {
+    TZrBool isSubtractiveIdentity;
+    TZrBool isModuloIdentity;
+
+    if (op == ZR_NULL ||
+        leftType == ZR_NULL ||
+        rightType == ZR_NULL ||
+        result == ZR_NULL ||
+        leftType->baseType != ZR_VALUE_TYPE_INT64 ||
+        rightType->baseType != ZR_VALUE_TYPE_INT64 ||
+        !leftType->hasRangeConstraint ||
+        !rightType->hasRangeConstraint ||
+        leftType->minValue != rightType->minValue ||
+        leftType->maxValue != rightType->maxValue ||
+        !type_inference_binary_operands_are_same_identifier(cs, left, right)) {
+        return ZR_FALSE;
+    }
+
+    isSubtractiveIdentity = strcmp(op, "-") == 0;
+    isModuloIdentity = strcmp(op, "%") == 0 && leftType->minValue > 0;
+    if (!isSubtractiveIdentity && !isModuloIdentity) {
+        return ZR_FALSE;
+    }
+
+    result->minValue = 0;
+    result->maxValue = 0;
+    result->hasRangeConstraint = ZR_TRUE;
+    ZrParser_NumericRangeSegments_Reset(&result->rangeSegmentCount,
+                                        result->rangeSegments,
+                                        &result->rangeExtraSegments);
+    return ZR_TRUE;
+}
+
 // 从一元表达式推断类型
 TZrBool ZrParser_UnaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_UNARY_EXPRESSION) {
         return ZR_FALSE;
     }
-    
     const TZrChar *op = node->data.unaryExpression.op.op;
     SZrAstNode *arg = node->data.unaryExpression.argument;
     if (strcmp(op, "new") == 0 || strcmp(op, "$") == 0) {
@@ -1068,7 +1173,6 @@ TZrBool ZrParser_UnaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *nod
                         node->location);
         return ZR_FALSE;
     }
-    
     // 推断操作数类型
     SZrInferredType argType;
     ZrParser_InferredType_Init(cs->state, &argType, ZR_VALUE_TYPE_OBJECT);
@@ -1076,7 +1180,6 @@ TZrBool ZrParser_UnaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *nod
         ZrParser_InferredType_Free(cs->state, &argType);
         return ZR_FALSE;
     }
-    
     if (strcmp(op, "!") == 0) {
         // 逻辑非：结果类型是bool
         ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_BOOL);
@@ -1095,7 +1198,6 @@ TZrBool ZrParser_UnaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *nod
         ZrParser_InferredType_Free(cs->state, &argType);
         return ZR_TRUE;
     }
-    
     ZrParser_InferredType_Free(cs->state, &argType);
     return ZR_FALSE;
 }
@@ -1105,11 +1207,9 @@ TZrBool ZrParser_BinaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *no
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_BINARY_EXPRESSION) {
         return ZR_FALSE;
     }
-    
     const TZrChar *op = node->data.binaryExpression.op.op;
     SZrAstNode *left = node->data.binaryExpression.left;
     SZrAstNode *right = node->data.binaryExpression.right;
-    
     // 推断左右操作数类型
     SZrInferredType leftType, rightType;
     TZrBool hasLeftType = ZR_FALSE;
@@ -1127,11 +1227,8 @@ TZrBool ZrParser_BinaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *no
         }
         return ZR_FALSE;
     }
-    
     // 根据操作符确定结果类型
-    if (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0 || 
-        strcmp(op, "<") == 0 || strcmp(op, ">") == 0 || 
-        strcmp(op, "<=") == 0 || strcmp(op, ">=") == 0) {
+    if (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0 ||        strcmp(op, "<") == 0 || strcmp(op, ">") == 0 ||        strcmp(op, "<=") == 0 || strcmp(op, ">=") == 0) {
         // 比较运算符：结果类型是bool
         ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_BOOL);
         ZrParser_InferredType_Free(cs->state, &leftType);
@@ -1143,9 +1240,7 @@ TZrBool ZrParser_BinaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *no
         ZrParser_InferredType_Free(cs->state, &leftType);
         ZrParser_InferredType_Free(cs->state, &rightType);
         return ZR_TRUE;
-    } else if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 || 
-               strcmp(op, "*") == 0 || strcmp(op, "/") == 0 || 
-               strcmp(op, "%") == 0 || strcmp(op, "**") == 0) {
+    } else if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||               strcmp(op, "*") == 0 || strcmp(op, "/") == 0 ||               strcmp(op, "%") == 0 || strcmp(op, "**") == 0) {
         if (strcmp(op, "+") == 0 &&
             (leftType.baseType == ZR_VALUE_TYPE_STRING ||
              rightType.baseType == ZR_VALUE_TYPE_STRING)) {
@@ -1171,7 +1266,16 @@ TZrBool ZrParser_BinaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *no
             ZrParser_InferredType_Free(cs->state, &rightType);
             return ZR_FALSE;
         }
-        type_inference_apply_binary_numeric_range(cs->state, op, &leftType, &rightType, result);
+        if (!type_inference_apply_same_identifier_exact_zero_range(
+                    cs,
+                    op,
+                    left,
+                    right,
+                    &leftType,
+                    &rightType,
+                    result)) {
+            type_inference_apply_binary_numeric_range(cs->state, op, &leftType, &rightType, result);
+        }
         ZrParser_InferredType_Free(cs->state, &leftType);
         ZrParser_InferredType_Free(cs->state, &rightType);
         return ZR_TRUE;
@@ -1179,11 +1283,14 @@ TZrBool ZrParser_BinaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *no
                strcmp(op, "&") == 0 || strcmp(op, "|") == 0 || strcmp(op, "^") == 0) {
         // 位运算符：结果类型与左操作数类型相同（整数类型）
         ZrParser_InferredType_Copy(cs->state, result, &leftType);
+        if (!type_inference_apply_bitwise_identity_range(cs, op, left, right, result) &&
+            (strcmp(op, "<<") == 0 || strcmp(op, ">>") == 0)) {
+            type_inference_apply_binary_numeric_range(cs->state, op, &leftType, &rightType, result);
+        }
         ZrParser_InferredType_Free(cs->state, &leftType);
         ZrParser_InferredType_Free(cs->state, &rightType);
         return ZR_TRUE;
     }
-    
     ZrParser_InferredType_Free(cs->state, &leftType);
     ZrParser_InferredType_Free(cs->state, &rightType);
     return ZR_FALSE;
@@ -1226,14 +1333,11 @@ TZrBool ZrParser_FunctionCallType_Infer(SZrCompilerState *cs, SZrAstNode *node, 
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_FUNCTION_CALL) {
         return ZR_FALSE;
     }
-    
     ZR_UNUSED_PARAMETER(&node->data.functionCall);
-    
     // 注意：函数调用在 PRIMARY_EXPRESSION 中处理
     // SZrFunctionCall 只有 args 字段，被调用的表达式在 PRIMARY_EXPRESSION 的 property 中
     // 这个函数应该从 PRIMARY_EXPRESSION 调用，而不是直接从 FUNCTION_CALL 调用
     // 如果直接调用，无法获取被调用的表达式，返回默认对象类型
-    
     // 尝试从类型环境查找函数类型（如果函数名可以从上下文中推断）
     // 未来可以从 PRIMARY_EXPRESSION 中获取被调用的表达式进行类型推断
     // 注意：SZrFunctionCall没有callee成员，函数调用在primary expression中处理
@@ -1978,7 +2082,6 @@ TZrBool ZrParser_ConditionalType_Infer(SZrCompilerState *cs, SZrAstNode *node, S
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_CONDITIONAL_EXPRESSION) {
         return ZR_FALSE;
     }
-    
     condExpr = &node->data.conditionalExpression;
     ZrParser_InferredType_Init(cs->state, &conditionType, ZR_VALUE_TYPE_OBJECT);
     if (condExpr->test != ZR_NULL) {
@@ -2000,7 +2103,6 @@ TZrBool ZrParser_ConditionalType_Infer(SZrCompilerState *cs, SZrAstNode *node, S
         return ZR_TRUE;
     }
     ZrParser_InferredType_Free(cs->state, &conditionType);
-    
     // 推断then和else分支类型
     ZrParser_InferredType_Init(cs->state, &thenType, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Init(cs->state, &elseType, ZR_VALUE_TYPE_OBJECT);
@@ -2015,7 +2117,6 @@ TZrBool ZrParser_ConditionalType_Infer(SZrCompilerState *cs, SZrAstNode *node, S
         }
         return ZR_FALSE;
     }
-    
     // 获取公共类型
     if (!ZrParser_InferredType_GetCommonType(cs->state, result, &thenType, &elseType)) {
         // 类型不兼容，报告错误
@@ -2024,7 +2125,6 @@ TZrBool ZrParser_ConditionalType_Infer(SZrCompilerState *cs, SZrAstNode *node, S
         ZrParser_InferredType_Free(cs->state, &elseType);
         return ZR_FALSE;
     }
-    
     ZrParser_InferredType_Free(cs->state, &thenType);
     ZrParser_InferredType_Free(cs->state, &elseType);
     return ZR_TRUE;
@@ -2037,14 +2137,11 @@ TZrBool ZrParser_AssignmentType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_ASSIGNMENT_EXPRESSION) {
         return ZR_FALSE;
     }
-    
     SZrAssignmentExpression *assignExpr = &node->data.assignmentExpression;
-    
     // 推断右值类型
     if (!ZrParser_ExpressionType_Infer(cs, assignExpr->right, result)) {
         return ZR_FALSE;
     }
-    
     // 检查与左值类型的兼容性
     // 1. 推断左值类型
     SZrInferredType leftType;
@@ -2109,7 +2206,6 @@ TZrBool ZrParser_AssignmentType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
         }
         ZrParser_InferredType_Free(cs->state, &leftType);
     }
-    
     return ZR_TRUE;
 }
 
@@ -2118,10 +2214,8 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION) {
         return ZR_FALSE;
     }
-    
     SZrPrimaryExpression *primary = &node->data.primaryExpression;
     TZrBool unionVariantHandled = ZR_FALSE;
-    
     // 如果没有members，直接推断property的类型
     if (primary->members == ZR_NULL || primary->members->count == 0) {
         if (primary->property != ZR_NULL) {
@@ -2138,7 +2232,6 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
     if (unionVariantHandled) {
         return ZR_TRUE;
     }
-    
     // 检查第一个member是否是函数调用：foo()
     SZrAstNode *firstMember = primary->members->nodes[0];
     if (firstMember != ZR_NULL && firstMember->type == ZR_AST_FUNCTION_CALL) {
@@ -2296,12 +2389,10 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                 return ZR_TRUE;
             }
         }
-        
         // property不是标识符，或者函数名未找到，返回对象类型
         ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
         return ZR_TRUE;
     }
-    
     // 不是函数调用，或者是成员访问等其他情况
     // 先推断property的类型，然后根据members推断最终类型
     // 实现完整的成员访问链类型推断（如 obj.prop）
@@ -2337,7 +2428,6 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
             }
         }
     }
-    
     // 默认返回对象类型
     ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
     return ZR_TRUE;
@@ -2361,7 +2451,6 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
             return ZR_FALSE;
         }
     }
-    
     switch (node->type) {
         // 字面量
         case ZR_AST_BOOLEAN_LITERAL:
@@ -2377,7 +2466,6 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
             numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_LITERAL;
             success = ZR_TRUE;
             break;
-        
         case ZR_AST_IDENTIFIER_LITERAL:
             success = ZrParser_IdentifierType_Infer(cs, node, result);
             if (success &&
@@ -2386,7 +2474,6 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
                 numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_RANGE;
             }
             break;
-        
         // 表达式
         case ZR_AST_BINARY_EXPRESSION:
             if (!ZrParser_BinaryExpressionType_Infer(cs, node, result)) {
@@ -2399,7 +2486,6 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
         case ZR_AST_LOGICAL_EXPRESSION:
             success = type_inference_logical_expression(cs, node, result);
             break;
-        
         case ZR_AST_UNARY_EXPRESSION:
             success = ZrParser_UnaryExpressionType_Infer(cs, node, result);
             if (success &&
@@ -2410,7 +2496,6 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
                         : ZR_SEMANTIC_NUMERIC_FACT_PROMOTION;
             }
             break;
-        
         case ZR_AST_CONDITIONAL_EXPRESSION:
             success = ZrParser_ConditionalType_Infer(cs, node, result);
             if (success &&
@@ -2419,7 +2504,6 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
                 numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_RANGE;
             }
             break;
-        
         case ZR_AST_ASSIGNMENT_EXPRESSION:
             success = ZrParser_AssignmentType_Infer(cs, node, result);
             break;
@@ -2433,7 +2517,6 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
                 numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_CONVERSION;
             }
             break;
-        
         case ZR_AST_FUNCTION_CALL:
             success = ZrParser_FunctionCallType_Infer(cs, node, result);
             break;
@@ -2449,15 +2532,12 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
         case ZR_AST_TYPE_LITERAL_EXPRESSION:
             success = infer_type_literal_expression_type(cs, node, result);
             break;
-        
         case ZR_AST_LAMBDA_EXPRESSION:
             success = ZrParser_LambdaType_Infer(cs, node, result);
             break;
-        
         case ZR_AST_ARRAY_LITERAL:
             success = ZrParser_ArrayLiteralType_Infer(cs, node, result);
             break;
-        
         case ZR_AST_OBJECT_LITERAL:
             success = ZrParser_ObjectLiteralType_Infer(cs, node, result);
             break;
@@ -2469,12 +2549,10 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
         case ZR_AST_CONSTRUCT_EXPRESSION:
             success = infer_construct_expression_type(cs, node, result);
             break;
-        
         // TODO: 处理其他表达式类型
         case ZR_AST_PRIMARY_EXPRESSION:
             success = ZrParser_PrimaryExpressionType_Infer(cs, node, result);
             break;
-        
         case ZR_AST_MEMBER_EXPRESSION:
             // 实现member expression的类型推断
             // member expression的类型推断需要知道对象类型和成员名称
@@ -2523,7 +2601,6 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
             success = ZR_TRUE;
             break;
         }
-        
         case ZR_AST_IF_EXPRESSION:
             // 实现if expression的类型推断
             // if expression的类型是thenExpr和elseExpr的公共类型
@@ -2588,7 +2665,6 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
                 success = ZR_TRUE;
                 break;
             }
-        
         case ZR_AST_SWITCH_EXPRESSION:
             // 实现switch expression的类型推断
             // switch expression的类型是所有case和default的公共类型
@@ -2597,7 +2673,6 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
                 SZrInferredType commonType;
                 ZrParser_InferredType_Init(cs->state, &commonType, ZR_VALUE_TYPE_OBJECT);
                 TZrBool hasType = ZR_FALSE;
-                
                 // 遍历所有case，推断类型
                 if (switchExpr->cases != ZR_NULL) {
                     for (TZrSize i = 0; i < switchExpr->cases->count; i++) {
@@ -2625,7 +2700,6 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
                         }
                     }
                 }
-                
                 // 处理default case
                 if (switchExpr->defaultCase != ZR_NULL && switchExpr->defaultCase->type == ZR_AST_SWITCH_DEFAULT) {
                     SZrSwitchDefault *switchDefault = &switchExpr->defaultCase->data.switchDefault;
@@ -2648,20 +2722,17 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
                         }
                     }
                 }
-                
                 if (hasType) {
                     ZrParser_InferredType_Copy(cs->state, result, &commonType);
                     ZrParser_InferredType_Free(cs->state, &commonType);
                     success = ZR_TRUE;
                     break;
                 }
-                
                 // 默认返回对象类型
                 ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
                 success = ZR_TRUE;
                 break;
             }
-        
         default:
             return ZR_FALSE;
     }
@@ -3295,7 +3366,6 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
     if (cs == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
-    
     // 如果没有类型注解，返回对象类型
     if (astType == ZR_NULL || astType->name == ZR_NULL) {
         ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
@@ -3447,13 +3517,11 @@ TZrBool ZrParser_LiteralRange_Check(SZrCompilerState *cs, SZrAstNode *literalNod
     if (cs == ZR_NULL || literalNode == ZR_NULL || targetType == ZR_NULL) {
         return ZR_FALSE;
     }
-    
     // 检查整数类型字面量
     if (literalNode->type == ZR_AST_INTEGER_LITERAL && ZR_VALUE_IS_TYPE_INT(targetType->baseType)) {
         TZrInt64 literalValue = literalNode->data.integerLiteral.value;
         TZrInt64 minValue, maxValue;
         get_type_range(targetType->baseType, &minValue, &maxValue);
-        
         if (literalValue < minValue || literalValue > maxValue) {
             static TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
             snprintf(errorMsg, sizeof(errorMsg),
@@ -3462,7 +3530,6 @@ TZrBool ZrParser_LiteralRange_Check(SZrCompilerState *cs, SZrAstNode *literalNod
             ZrParser_TypeError_Report(cs, errorMsg, targetType, ZR_NULL, location);
             return ZR_FALSE;
         }
-        
         // 检查用户定义的范围约束
         if (targetType->hasRangeConstraint) {
             if (literalValue < targetType->minValue || literalValue > targetType->maxValue) {
@@ -3475,7 +3542,6 @@ TZrBool ZrParser_LiteralRange_Check(SZrCompilerState *cs, SZrAstNode *literalNod
             }
         }
     }
-    
     // 检查浮点数类型字面量（NaN, Infinity）
     if (literalNode->type == ZR_AST_FLOAT_LITERAL) {
         TZrDouble floatValue = literalNode->data.floatLiteral.value;
@@ -3484,16 +3550,13 @@ TZrBool ZrParser_LiteralRange_Check(SZrCompilerState *cs, SZrAstNode *literalNod
         if (isnan(floatValue) || isinf(floatValue)) {
             // 检查目标类型是否允许NaN/Infinity
             // 对于整数类型，不允许NaN/Infinity
-            if (ZR_VALUE_IS_TYPE_SIGNED_INT(targetType->baseType) || 
-                ZR_VALUE_IS_TYPE_UNSIGNED_INT(targetType->baseType)) {
-                ZrParser_TypeError_Report(cs, "NaN/Infinity cannot be assigned to integer type", 
-                                 targetType, ZR_NULL, location);
+            if (ZR_VALUE_IS_TYPE_SIGNED_INT(targetType->baseType) ||                ZR_VALUE_IS_TYPE_UNSIGNED_INT(targetType->baseType)) {
+                ZrParser_TypeError_Report(cs, "NaN/Infinity cannot be assigned to integer type",                                 targetType, ZR_NULL, location);
                 return ZR_FALSE;
             }
             // 对于浮点类型，允许NaN/Infinity
         }
     }
-    
     return ZR_TRUE;
 }
 
@@ -3502,11 +3565,9 @@ TZrBool ZrParser_ArrayIndexBounds_Check(SZrCompilerState *cs, SZrAstNode *indexE
     if (cs == ZR_NULL || indexExpr == ZR_NULL || arrayType == ZR_NULL) {
         return ZR_FALSE;
     }
-    
     // 只对字面量索引进行编译期检查
     if (indexExpr->type == ZR_AST_INTEGER_LITERAL) {
         TZrInt64 indexValue = indexExpr->data.integerLiteral.value;
-        
         if (indexValue < 0) {
             static TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
             snprintf(errorMsg, sizeof(errorMsg),
@@ -3514,7 +3575,6 @@ TZrBool ZrParser_ArrayIndexBounds_Check(SZrCompilerState *cs, SZrAstNode *indexE
             ZrParser_TypeError_Report(cs, errorMsg, arrayType, ZR_NULL, location);
             return ZR_FALSE;
         }
-        
         // 如果数组有固定大小，检查索引是否越界
         if (arrayType->hasArraySizeConstraint && arrayType->arrayFixedSize > 0) {
             if ((TZrSize)indexValue >= arrayType->arrayFixedSize) {
@@ -3527,7 +3587,6 @@ TZrBool ZrParser_ArrayIndexBounds_Check(SZrCompilerState *cs, SZrAstNode *indexE
             }
         }
     }
-    
     // 对于非字面量索引，编译期无法检查，将在运行时检查（如果启用）
     return ZR_TRUE;
 }

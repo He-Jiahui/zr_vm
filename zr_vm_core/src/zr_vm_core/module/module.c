@@ -32,6 +32,43 @@ static void zr_module_barrier_hash_pair(SZrState *state,
     ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(module), &pair->value);
 }
 
+static TZrBool zr_module_metadata_token_is_member_def(TZrMetadataToken token) {
+    return token != 0u && ZR_METADATA_TOKEN_TABLE(token) == ZR_METADATA_TABLE_MEMBER_DEF ? ZR_TRUE : ZR_FALSE;
+}
+
+static TZrMetadataToken zr_module_remap_aot_member_token(const SZrAotCodeRegistration *codeRegistration,
+                                                         TZrMetadataToken token) {
+    if (codeRegistration == ZR_NULL ||
+        !zr_module_metadata_token_is_member_def(token) ||
+        codeRegistration->memberTokenRemapCount == 0u ||
+        codeRegistration->memberTokenRemaps == ZR_NULL) {
+        return token;
+    }
+
+    for (TZrUInt32 index = 0u; index < codeRegistration->memberTokenRemapCount; ++index) {
+        const SZrAotMemberTokenRemap *remap = &codeRegistration->memberTokenRemaps[index];
+        if (remap->sourceToken == token && zr_module_metadata_token_is_member_def(remap->targetToken)) {
+            return remap->targetToken;
+        }
+    }
+
+    return token;
+}
+
+static void zr_module_apply_aot_member_token_remaps_to_exports(SZrFunction *metadataFunction,
+                                                               const SZrAotCodeRegistration *codeRegistration) {
+    if (metadataFunction == ZR_NULL ||
+        metadataFunction->typedExportedSymbols == ZR_NULL ||
+        metadataFunction->typedExportedSymbolLength == 0u) {
+        return;
+    }
+
+    for (TZrUInt32 index = 0u; index < metadataFunction->typedExportedSymbolLength; ++index) {
+        SZrFunctionTypedExportSymbol *symbol = &metadataFunction->typedExportedSymbols[index];
+        symbol->metadataToken = zr_module_remap_aot_member_token(codeRegistration, symbol->metadataToken);
+    }
+}
+
 struct SZrObjectModule *ZrCore_Module_Create(SZrState *state) {
     SZrObject *object;
     struct SZrObjectModule *module;
@@ -358,10 +395,15 @@ SZrMetadataRuntime *ZrCore_Module_AttachMetadataRuntime(SZrObjectModule *module,
     module->metadataRuntime.codeRegistration = codeRegistration;
     module->metadataRuntime.functionCount = codeRegistration->functionCount;
     module->metadataRuntime.methodInfoCount = codeRegistration->methodInfoCount;
+    module->metadataRuntime.methodTokenCount = codeRegistration->methodTokenCount;
+    module->metadataRuntime.memberTokenRemapCount = codeRegistration->memberTokenRemapCount;
+    module->metadataRuntime.manifestExports = codeRegistration->manifestExports;
+    module->metadataRuntime.manifestExportCount = codeRegistration->manifestExportCount;
     module->metadataRuntime.invokerCount = codeRegistration->invokerCount;
     module->metadataRuntime.typeLayoutCount = codeRegistration->typeLayoutCount;
     module->metadataRuntime.typeLayoutTokenCount = codeRegistration->typeLayoutTokenCount;
     module->metadataRuntime.gcDescriptorCount = codeRegistration->gcDescriptorCount;
+    zr_module_apply_aot_member_token_remaps_to_exports(metadataFunction, codeRegistration);
     ZrCore_MetadataRuntime_AttachFunction(&module->metadataRuntime, metadataFunction);
     module->hasMetadataRuntime = ZR_TRUE;
     return &module->metadataRuntime;

@@ -227,6 +227,139 @@ static TZrBool loop_assignment_replay_step(
         const SZrTypeInferenceLoopAssignmentStep *step,
         SZrTypeInferenceLoopAssignmentResult *result);
 
+static TZrBool loop_assignment_replay_prefix_reader_writes_delta_dependency(
+        const SZrTypeInferenceLoopAssignmentStep *readerStep,
+        const SZrTypeInferenceLoopAssignmentStep *deltaStep) {
+    return readerStep != ZR_NULL &&
+           readerStep->name != ZR_NULL &&
+           deltaStep != ZR_NULL &&
+           deltaStep->right != ZR_NULL &&
+           ZrParser_TypeInferenceLoopAssignment_ExpressionUsesName(deltaStep->right, readerStep->name);
+}
+
+static TZrBool loop_assignment_replay_sequence_has_replay_resolved_delta(
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        TZrSize startIndex,
+        const SZrTypeInferenceLoopAssignmentStep *firstStep) {
+    TZrSize index;
+
+    if (plan == ZR_NULL ||
+        !plan->isInitialized ||
+        firstStep == ZR_NULL ||
+        firstStep->name == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (index = startIndex; index < plan->steps.length; index++) {
+        SZrTypeInferenceLoopAssignmentStep *step =
+                loop_assignment_replay_plan_step_at(plan, index);
+
+        if (step == ZR_NULL) {
+            return ZR_TRUE;
+        }
+        if (step->kind == ZR_TYPE_INFERENCE_LOOP_ASSIGNMENT_STEP_ASSIGNMENT &&
+            step->name != ZR_NULL &&
+            ZrCore_String_Equal(step->name, firstStep->name) &&
+            (step->hasSelfDependentDelta || step->resolveSelfDependentDeltaOnReplay)) {
+            if (step->resolveSelfDependentDeltaOnReplay) {
+                return ZR_TRUE;
+            }
+            continue;
+        }
+        if (!ZrParser_TypeInferenceLoopAssignment_SequenceStepIsInterleavable(
+                    step,
+                    firstStep->name,
+                    ZR_TRUE)) {
+            break;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool loop_assignment_replay_target_reading_prefix_steps(
+        SZrCompilerState *cs,
+        const SZrTypeInferenceLoopAssignmentPlan *plan,
+        TZrSize startIndex,
+        const SZrTypeInferenceLoopAssignmentStep *firstStep,
+        const SZrInferredType *sourceType,
+        TZrBool allowTargetReadingInterleaves,
+        TZrInt64 sequenceDeltaMin,
+        TZrInt64 sequenceDeltaMax,
+        SZrTypeInferenceLoopAssignmentResult *result) {
+    TZrSize prefixStart;
+    TZrSize index;
+    TZrBool hasTargetReadingPrefix = ZR_FALSE;
+
+    if (cs == ZR_NULL ||
+        plan == ZR_NULL ||
+        !plan->isInitialized ||
+        firstStep == ZR_NULL ||
+        firstStep->name == ZR_NULL ||
+        sourceType == ZR_NULL ||
+        result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (startIndex == 0 ||
+        (!allowTargetReadingInterleaves &&
+         loop_assignment_replay_sequence_has_replay_resolved_delta(plan, startIndex, firstStep))) {
+        return ZR_TRUE;
+    }
+
+    prefixStart = startIndex;
+    while (prefixStart > 0) {
+        SZrTypeInferenceLoopAssignmentStep *prefixStep =
+                loop_assignment_replay_plan_step_at(plan, prefixStart - 1u);
+
+        if (!ZrParser_TypeInferenceLoopAssignment_SequenceStepIsInterleavable(
+                    prefixStep,
+                    firstStep->name,
+                    ZR_TRUE)) {
+            break;
+        }
+        if (loop_assignment_replay_prefix_reader_writes_delta_dependency(
+                    prefixStep,
+                    firstStep)) {
+            return ZR_TRUE;
+        }
+        prefixStart--;
+    }
+
+    for (index = prefixStart; index < startIndex; index++) {
+        SZrTypeInferenceLoopAssignmentStep *prefixStep =
+                loop_assignment_replay_plan_step_at(plan, index);
+
+        if (ZrParser_TypeInferenceLoopAssignment_SequenceStepReadsName(
+                prefixStep,
+                firstStep->name)) {
+            hasTargetReadingPrefix = ZR_TRUE;
+            break;
+        }
+    }
+    if (!hasTargetReadingPrefix) {
+        return ZR_TRUE;
+    }
+    if (!ZrParser_TypeInferenceLoopAssignment_SequenceStoreIntermediate(
+                    cs,
+                    firstStep->name,
+                    sourceType,
+                    0,
+                    0,
+                    sequenceDeltaMin,
+                    sequenceDeltaMax)) {
+        return ZR_FALSE;
+    }
+
+    for (index = prefixStart; index < startIndex; index++) {
+        SZrTypeInferenceLoopAssignmentStep *prefixStep =
+                loop_assignment_replay_plan_step_at(plan, index);
+
+        if (!loop_assignment_replay_step(cs, plan, prefixStep, result)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool loop_assignment_replay_self_dependent_sequence(
         SZrCompilerState *cs,
         const SZrTypeInferenceLoopAssignmentPlan *plan,
@@ -275,6 +408,18 @@ static TZrBool loop_assignment_replay_self_dependent_sequence(
             &allowTargetReadingInterleaves,
             &sequenceDeltaMin,
             &sequenceDeltaMax)) {
+        return ZR_FALSE;
+    }
+    if (!loop_assignment_replay_target_reading_prefix_steps(
+            cs,
+            plan,
+            startIndex,
+            firstStep,
+            &sourceBinding->type,
+            allowTargetReadingInterleaves,
+            sequenceDeltaMin,
+            sequenceDeltaMax,
+            result)) {
         return ZR_FALSE;
     }
 

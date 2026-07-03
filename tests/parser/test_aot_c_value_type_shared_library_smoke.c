@@ -616,11 +616,58 @@ static void test_aot_c_generated_type_layout_emits_ownership_offsets_for_owner_f
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_aot_c_generated_union_type_layout_emits_ownership_offsets_for_owner_payloads(void) {
+    const char *source =
+            "class Box {}\n"
+            "union Resource {\n"
+            "    Empty;\n"
+            "    Open(handle: Shared<Box>);\n"
+            "}\n"
+            "var resource: Resource;\n";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_source(state, source, "aot_c_union_owner_payload_layout.zr");
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_value_type_shared_library",
+                                                       "ownership_offsets/src",
+                                                       "owner_union",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_union_owner_payload_layout";
+    options.sourceHash = "aot-c-union-owner-payload-layout";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-union-owner-payload-layout";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "    .kind = 2u,\n"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static const TZrUInt32 ZrOwnershipOffsets_"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_ownership_offsets layout="));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, " count=1 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "    .ownershipFieldCount = 1u,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "    .ownershipFieldOffsets = ZrOwnershipOffsets_"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_ownership_offsets_failed"));
+    free(generatedCText);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_string_field_value_type_copy_and_return);
     RUN_TEST(test_aot_c_generated_union_type_layout_token_uses_local_type_def);
     RUN_TEST(test_aot_c_generated_type_layout_gc_descriptors_are_ref_exact_and_skip_pod);
     RUN_TEST(test_aot_c_generated_type_layout_emits_ownership_offsets_for_owner_fields);
+    RUN_TEST(test_aot_c_generated_union_type_layout_emits_ownership_offsets_for_owner_payloads);
     return UNITY_END();
 }

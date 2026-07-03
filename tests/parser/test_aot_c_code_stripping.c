@@ -9,7 +9,10 @@
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/object.h"
+#include "zr_vm_core/string.h"
 #include "zr_vm_core/type_layout.h"
+#include "zr_vm_core/value.h"
 #include "zr_vm_core/zrp_metadata.h"
 #include "zr_vm_parser/writer.h"
 
@@ -29,6 +32,79 @@ static void assert_text_does_not_contain(const char *text, const char *needle) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NOT_NULL(needle);
     TEST_ASSERT_NULL(strstr(text, needle));
+}
+
+static SZrObject *get_or_create_function_metadata_object(SZrState *state, SZrFunction *function) {
+    SZrObject *metadataObject;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    if (function->hasDecoratorMetadata &&
+        function->decoratorMetadataValue.type == ZR_VALUE_TYPE_OBJECT &&
+        function->decoratorMetadataValue.value.object != ZR_NULL) {
+        metadataObject = ZR_CAST_OBJECT(state, function->decoratorMetadataValue.value.object);
+        if (metadataObject != ZR_NULL) {
+            return metadataObject;
+        }
+    }
+
+    metadataObject = ZrCore_Object_New(state, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(metadataObject);
+    ZrCore_Value_InitAsRawObject(state,
+                                 &function->decoratorMetadataValue,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(metadataObject));
+    function->hasDecoratorMetadata = ZR_TRUE;
+    return metadataObject;
+}
+
+static void mark_function_metadata_uint(SZrState *state,
+                                        SZrFunction *function,
+                                        const TZrChar *fieldName,
+                                        TZrUInt64 fieldValue) {
+    SZrObject *metadataObject;
+    SZrString *fieldString;
+    SZrTypeValue key;
+    SZrTypeValue value;
+
+    TEST_ASSERT_NOT_NULL(fieldName);
+
+    metadataObject = get_or_create_function_metadata_object(state, function);
+    TEST_ASSERT_NOT_NULL(metadataObject);
+    fieldString = ZrCore_String_CreateFromNative(state, (TZrNativeString)fieldName);
+    TEST_ASSERT_NOT_NULL(fieldString);
+    ZrCore_Value_InitAsRawObject(state,
+                                 &key,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    ZrCore_Value_InitAsUInt(state, &value, fieldValue);
+    ZrCore_Object_SetValue(state, metadataObject, &key, &value);
+}
+
+static void mark_function_dynamic_dependency_type_layout(SZrState *state,
+                                                         SZrFunction *function,
+                                                         TZrUInt32 typeLayoutId) {
+    mark_function_metadata_uint(state,
+                                function,
+                                "dynamicDependencyTypeLayoutId",
+                                (TZrUInt64)typeLayoutId);
+}
+
+static void mark_function_dynamic_dependency_type_token(SZrState *state,
+                                                        SZrFunction *function,
+                                                        TZrMetadataToken typeToken) {
+    mark_function_metadata_uint(state,
+                                function,
+                                "dynamicDependencyTypeToken",
+                                (TZrUInt64)typeToken);
+}
+
+static void mark_function_dynamic_dependency_field_token(SZrState *state,
+                                                         SZrFunction *function,
+                                                         TZrMetadataToken fieldToken) {
+    mark_function_metadata_uint(state,
+                                function,
+                                "dynamicDependencyFieldToken",
+                                (TZrUInt64)fieldToken);
 }
 
 static void assert_code_stripping_stats(const char *text,
@@ -242,6 +318,8 @@ static void assert_zrp_metadata_size_stats(const char *text,
     assert_zrp_metadata_size_marker(text,
                                     "zrpMetadataSectionBytes.constantPool",
                                     (unsigned long long)constantPoolBytes);
+    assert_zrp_metadata_size_marker(text, "zrpMetadataSectionBytes.manifestExports", 0u);
+    assert_zrp_metadata_size_marker(text, "zrpMetadataSectionCounts.manifestExports", 0u);
 }
 
 static void assert_zrp_metadata_code_stripping_delta_stats(const char *text,
@@ -527,10 +605,10 @@ static TZrSize build_zrp_metadata_method_def_trim_fixture(TZrByte *buffer,
     methodDefs = (SZrZrpMetadataMethodDefRow *)(void *)(buffer + header.methodDefs.offset);
     methodDefs[0].token = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 1u);
     methodDefs[0].ownerTypeToken = typeDefs[0].token;
-    methodDefs[0].functionIndex = 1u;
+    methodDefs[0].functionIndex = 2u;
     methodDefs[1].token = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 2u);
     methodDefs[1].ownerTypeToken = typeDefs[0].token;
-    methodDefs[1].functionIndex = 2u;
+    methodDefs[1].functionIndex = 1u;
 
     *outMetadataBytesAfterTrim =
             (TZrSize)(offset -
@@ -556,6 +634,214 @@ static TZrSize build_zrp_metadata_method_def_trim_fixture(TZrByte *buffer,
     *outSignatureBlobPoolBytesAfterTrim = signatureBlobPoolBytesAfterTrim;
     *outConstantPoolBytesBeforeTrim = constantPoolBytesBeforeTrim;
     *outConstantPoolBytesAfterTrim = constantPoolBytesAfterTrim;
+    return offset;
+}
+
+static TZrSize build_zrp_metadata_type_token_layout_fixture(TZrByte *buffer,
+                                                            TZrSize bufferLength) {
+    const TZrUInt32 tokenRecordBytes = (TZrUInt32)sizeof(SZrMetadataTokenRecord);
+    const TZrUInt32 typeDefBytes = (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow);
+    SZrZrpMetadataHeader header;
+    SZrMetadataTokenRecord *tokenRecords;
+    SZrZrpMetadataTypeDefRow *typeDefs;
+    TZrUInt32 offset = ZR_ZRP_METADATA_HEADER_SIZE;
+
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_TRUE(bufferLength >= ZR_ZRP_METADATA_HEADER_SIZE + tokenRecordBytes + typeDefBytes);
+
+    ZrCore_ZrpMetadata_InitHeader(&header);
+    set_zrp_metadata_section(&header.tokenRecords,
+                             &offset,
+                             tokenRecordBytes,
+                             1u,
+                             (TZrUInt32)sizeof(SZrMetadataTokenRecord));
+    set_zrp_metadata_section(&header.typeDefs,
+                             &offset,
+                             typeDefBytes,
+                             1u,
+                             (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow));
+    set_zrp_metadata_section(&header.methodDefs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.fieldDefs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.genericParams, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.genericParamConstraints, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.typeSpecs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.methodSpecs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.moduleRefs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.stringPool, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.signatureBlobPool, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.constantPool, &offset, 0u, 0u, 0u);
+
+    memset(buffer, 0, bufferLength);
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteHeader(buffer, offset, &header));
+
+    tokenRecords = (SZrMetadataTokenRecord *)(void *)(buffer + header.tokenRecords.offset);
+    tokenRecords[0].token = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u);
+
+    typeDefs = (SZrZrpMetadataTypeDefRow *)(void *)(buffer + header.typeDefs.offset);
+    typeDefs[0].token = tokenRecords[0].token;
+    typeDefs[0].typeLayoutId = 2u;
+
+    return offset;
+}
+
+static TZrSize build_zrp_metadata_type_ref_token_layout_fixture(TZrByte *buffer,
+                                                                TZrSize bufferLength) {
+    const TZrUInt32 tokenRecordBytes = (TZrUInt32)(sizeof(SZrMetadataTokenRecord) * 2u);
+    const TZrUInt32 typeDefBytes = (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow);
+    SZrZrpMetadataHeader header;
+    SZrMetadataTokenRecord *tokenRecords;
+    SZrZrpMetadataTypeDefRow *typeDefs;
+    TZrUInt32 offset = ZR_ZRP_METADATA_HEADER_SIZE;
+
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_TRUE(bufferLength >= ZR_ZRP_METADATA_HEADER_SIZE + tokenRecordBytes + typeDefBytes);
+
+    ZrCore_ZrpMetadata_InitHeader(&header);
+    set_zrp_metadata_section(&header.tokenRecords,
+                             &offset,
+                             tokenRecordBytes,
+                             2u,
+                             (TZrUInt32)sizeof(SZrMetadataTokenRecord));
+    set_zrp_metadata_section(&header.typeDefs,
+                             &offset,
+                             typeDefBytes,
+                             1u,
+                             (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow));
+    set_zrp_metadata_section(&header.methodDefs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.fieldDefs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.genericParams, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.genericParamConstraints, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.typeSpecs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.methodSpecs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.moduleRefs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.stringPool, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.signatureBlobPool, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.constantPool, &offset, 0u, 0u, 0u);
+
+    memset(buffer, 0, bufferLength);
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteHeader(buffer, offset, &header));
+
+    tokenRecords = (SZrMetadataTokenRecord *)(void *)(buffer + header.tokenRecords.offset);
+    tokenRecords[0].token = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 1u);
+    tokenRecords[0].targetMetadataToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u);
+    tokenRecords[1].token = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u);
+
+    typeDefs = (SZrZrpMetadataTypeDefRow *)(void *)(buffer + header.typeDefs.offset);
+    typeDefs[0].token = tokenRecords[1].token;
+    typeDefs[0].typeLayoutId = 2u;
+
+    return offset;
+}
+
+static TZrSize build_zrp_metadata_type_spec_token_layout_fixture(TZrByte *buffer,
+                                                                 TZrSize bufferLength) {
+    const TZrUInt32 tokenRecordBytes = (TZrUInt32)sizeof(SZrMetadataTokenRecord);
+    const TZrUInt32 typeSpecBytes = (TZrUInt32)sizeof(SZrZrpMetadataTypeSpecRow);
+    SZrZrpMetadataHeader header;
+    SZrMetadataTokenRecord *tokenRecords;
+    SZrZrpMetadataTypeSpecRow *typeSpecs;
+    TZrUInt32 offset = ZR_ZRP_METADATA_HEADER_SIZE;
+
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_TRUE(bufferLength >= ZR_ZRP_METADATA_HEADER_SIZE + tokenRecordBytes + typeSpecBytes);
+
+    ZrCore_ZrpMetadata_InitHeader(&header);
+    set_zrp_metadata_section(&header.tokenRecords,
+                             &offset,
+                             tokenRecordBytes,
+                             1u,
+                             (TZrUInt32)sizeof(SZrMetadataTokenRecord));
+    set_zrp_metadata_section(&header.typeDefs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.methodDefs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.fieldDefs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.genericParams, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.genericParamConstraints, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.typeSpecs,
+                             &offset,
+                             typeSpecBytes,
+                             1u,
+                             (TZrUInt32)sizeof(SZrZrpMetadataTypeSpecRow));
+    set_zrp_metadata_section(&header.methodSpecs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.moduleRefs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.stringPool, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.signatureBlobPool, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.constantPool, &offset, 0u, 0u, 0u);
+
+    memset(buffer, 0, bufferLength);
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteHeader(buffer, offset, &header));
+
+    tokenRecords = (SZrMetadataTokenRecord *)(void *)(buffer + header.tokenRecords.offset);
+    tokenRecords[0].token = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_SPEC, 1u);
+
+    typeSpecs = (SZrZrpMetadataTypeSpecRow *)(void *)(buffer + header.typeSpecs.offset);
+    typeSpecs[0].token = tokenRecords[0].token;
+    typeSpecs[0].typeLayoutId = 2u;
+
+    return offset;
+}
+
+static TZrSize build_zrp_metadata_field_token_layout_fixture(TZrByte *buffer,
+                                                             TZrSize bufferLength) {
+    const TZrUInt32 tokenRecordBytes = (TZrUInt32)(sizeof(SZrMetadataTokenRecord) * 2u);
+    const TZrUInt32 typeDefBytes = (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow);
+    const TZrUInt32 fieldDefBytes = (TZrUInt32)sizeof(SZrZrpMetadataFieldDefRow);
+    SZrZrpMetadataHeader header;
+    SZrMetadataTokenRecord *tokenRecords;
+    SZrZrpMetadataTypeDefRow *typeDefs;
+    SZrZrpMetadataFieldDefRow *fieldDefs;
+    TZrUInt32 offset = ZR_ZRP_METADATA_HEADER_SIZE;
+
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_TRUE(bufferLength >= ZR_ZRP_METADATA_HEADER_SIZE +
+                                           tokenRecordBytes +
+                                           typeDefBytes +
+                                           fieldDefBytes);
+
+    ZrCore_ZrpMetadata_InitHeader(&header);
+    set_zrp_metadata_section(&header.tokenRecords,
+                             &offset,
+                             tokenRecordBytes,
+                             2u,
+                             (TZrUInt32)sizeof(SZrMetadataTokenRecord));
+    set_zrp_metadata_section(&header.typeDefs,
+                             &offset,
+                             typeDefBytes,
+                             1u,
+                             (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow));
+    set_zrp_metadata_section(&header.methodDefs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.fieldDefs,
+                             &offset,
+                             fieldDefBytes,
+                             1u,
+                             (TZrUInt32)sizeof(SZrZrpMetadataFieldDefRow));
+    set_zrp_metadata_section(&header.genericParams, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.genericParamConstraints, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.typeSpecs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.methodSpecs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.moduleRefs, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.stringPool, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.signatureBlobPool, &offset, 0u, 0u, 0u);
+    set_zrp_metadata_section(&header.constantPool, &offset, 0u, 0u, 0u);
+
+    memset(buffer, 0, bufferLength);
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteHeader(buffer, offset, &header));
+
+    tokenRecords = (SZrMetadataTokenRecord *)(void *)(buffer + header.tokenRecords.offset);
+    tokenRecords[0].token = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u);
+    tokenRecords[1].token = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 1u);
+
+    typeDefs = (SZrZrpMetadataTypeDefRow *)(void *)(buffer + header.typeDefs.offset);
+    typeDefs[0].token = tokenRecords[0].token;
+    typeDefs[0].firstFieldDefIndex = 0u;
+    typeDefs[0].fieldDefCount = 1u;
+    typeDefs[0].typeLayoutId = 1u;
+
+    fieldDefs = (SZrZrpMetadataFieldDefRow *)(void *)(buffer + header.fieldDefs.offset);
+    fieldDefs[0].token = tokenRecords[1].token;
+    fieldDefs[0].ownerTypeToken = typeDefs[0].token;
+    fieldDefs[0].byteOffset = 0u;
+    fieldDefs[0].typeLayoutId = 2u;
+
     return offset;
 }
 
@@ -621,6 +907,28 @@ static void add_exported_second_child_callable_binding(SZrState *state, SZrFunct
     root->topLevelCallableBindingLength = 1u;
 }
 
+static void add_typed_exported_first_child_method_token(SZrState *state,
+                                                        SZrFunction *root,
+                                                        TZrMetadataToken metadataToken) {
+    SZrFunctionTypedExportSymbol *symbol;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(root);
+
+    symbol = (SZrFunctionTypedExportSymbol *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionTypedExportSymbol),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(symbol);
+    memset(symbol, 0, sizeof(*symbol));
+    symbol->symbolKind = ZR_FUNCTION_TYPED_SYMBOL_FUNCTION;
+    symbol->exportKind = ZR_MODULE_EXPORT_KIND_FUNCTION;
+    symbol->callableChildIndex = 0u;
+    symbol->metadataToken = metadataToken;
+    root->typedExportedSymbols = symbol;
+    root->typedExportedSymbolLength = 1u;
+}
+
 static void test_aot_c_code_stripping_option_filters_unreachable_static_callable(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -677,6 +985,324 @@ static void test_aot_c_code_stripping_option_filters_unreachable_static_callable
                          "    &zr_aot_method_info_1,\n"
                          "    ZR_NULL,\n"
                          "};");
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_preserves_dynamic_dependency_type_layout_metadata(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    mark_function_dynamic_dependency_type_layout(state, function, 2u);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_dynamic_dependency_type_layout";
+    options.sourceHash = "aot-c-code-stripping-dynamic-dependency-type-layout";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-dynamic-dependency-type-layout";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "dynamic_dependency_type_layout",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, generatedLength);
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_0(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_1(struct SZrState *state)");
+    assert_text_does_not_contain(generatedCText, "static TZrInt64 zr_aot_fn_2(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static const SZrTypeLayout ZrTypeLayout_2 = {");
+    assert_text_contains(generatedCText,
+                         "static const SZrTypeLayout *const zr_aot_type_layouts[] = {\n"
+                         "    ZR_NULL,\n"
+                         "    &ZrTypeLayout_1,\n"
+                         "    &ZrTypeLayout_2,\n"
+                         "};");
+    assert_text_contains(generatedCText, ".typeLayoutCount = 3,");
+    assert_text_contains(generatedCText, "/* code_stripping.annotationTypeLayoutRoots = 1 */");
+    assert_text_contains(generatedCText, "/* code_stripping.annotationTypeLayoutRoot[0] = 2 */");
+    assert_code_stripping_stats(generatedCText, 3u, 2u, 1u);
+    assert_code_stripping_type_layout_stats(generatedCText, 2u, 2u, 0u);
+    assert_code_stripping_type_layout_byte_stats(generatedCText, 16u, 16u, 0u);
+    assert_code_stripping_type_layout_generated_byte_stats(generatedCText, ZR_FALSE);
+    assert_code_stripping_method_metadata_generated_byte_stats(generatedCText, ZR_TRUE);
+    assert_code_stripping_function_body_bytes_contains(generatedCText, 0u);
+    assert_code_stripping_function_body_bytes_contains(generatedCText, 1u);
+    assert_code_stripping_function_body_bytes_missing(generatedCText, 2u);
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_preserves_dynamic_dependency_type_token_layout_metadata(void) {
+    TZrByte metadataBlob[512];
+    TZrSize metadataBytes;
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    metadataBytes = build_zrp_metadata_type_token_layout_fixture(metadataBlob, sizeof(metadataBlob));
+    mark_function_dynamic_dependency_type_token(
+            state,
+            function,
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u));
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_dynamic_dependency_type_token";
+    options.sourceHash = "aot-c-code-stripping-dynamic-dependency-type-token";
+    options.inputKind = ZR_AOT_INPUT_KIND_BINARY;
+    options.inputHash = "aot-c-code-stripping-dynamic-dependency-type-token";
+    options.embeddedModuleBlob = metadataBlob;
+    options.embeddedModuleBlobLength = metadataBytes;
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "dynamic_dependency_type_token",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, generatedLength);
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_0(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_1(struct SZrState *state)");
+    assert_text_does_not_contain(generatedCText, "static TZrInt64 zr_aot_fn_2(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static const SZrTypeLayout ZrTypeLayout_2 = {");
+    assert_text_contains(generatedCText,
+                         "static const SZrTypeLayout *const zr_aot_type_layouts[] = {\n"
+                         "    ZR_NULL,\n"
+                         "    &ZrTypeLayout_1,\n"
+                         "    &ZrTypeLayout_2,\n"
+                         "};");
+    assert_text_contains(generatedCText,
+                         "static const TZrUInt32 zr_aot_type_layout_tokens[] = {\n"
+                         "    0u,\n"
+                         "    0u,\n"
+                         "    0x02000001u,\n"
+                         "};");
+    assert_text_contains(generatedCText, "/* code_stripping.annotationTypeLayoutRoots = 1 */");
+    assert_text_contains(generatedCText, "/* code_stripping.annotationTypeLayoutRoot[0] = 2 */");
+    assert_code_stripping_stats(generatedCText, 3u, 2u, 1u);
+    assert_code_stripping_type_layout_stats(generatedCText, 2u, 2u, 0u);
+    assert_code_stripping_type_layout_byte_stats(generatedCText, 16u, 16u, 0u);
+    assert_code_stripping_type_layout_generated_byte_stats(generatedCText, ZR_FALSE);
+    assert_code_stripping_method_metadata_generated_byte_stats(generatedCText, ZR_TRUE);
+    assert_code_stripping_function_body_bytes_missing(generatedCText, 2u);
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_preserves_dynamic_dependency_type_ref_token_layout_metadata(void) {
+    TZrByte metadataBlob[512];
+    TZrSize metadataBytes;
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    metadataBytes = build_zrp_metadata_type_ref_token_layout_fixture(metadataBlob, sizeof(metadataBlob));
+    mark_function_dynamic_dependency_type_token(
+            state,
+            function,
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 1u));
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_dynamic_dependency_type_ref_token";
+    options.sourceHash = "aot-c-code-stripping-dynamic-dependency-type-ref-token";
+    options.inputKind = ZR_AOT_INPUT_KIND_BINARY;
+    options.inputHash = "aot-c-code-stripping-dynamic-dependency-type-ref-token";
+    options.embeddedModuleBlob = metadataBlob;
+    options.embeddedModuleBlobLength = metadataBytes;
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "dynamic_dependency_type_ref_token",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, generatedLength);
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_0(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_1(struct SZrState *state)");
+    assert_text_does_not_contain(generatedCText, "static TZrInt64 zr_aot_fn_2(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static const SZrTypeLayout ZrTypeLayout_2 = {");
+    assert_text_contains(generatedCText,
+                         "static const TZrUInt32 zr_aot_type_layout_tokens[] = {\n"
+                         "    0u,\n"
+                         "    0u,\n"
+                         "    0x02000001u,\n"
+                         "};");
+    assert_text_contains(generatedCText, "/* code_stripping.annotationTypeLayoutRoots = 1 */");
+    assert_text_contains(generatedCText, "/* code_stripping.annotationTypeLayoutRoot[0] = 2 */");
+    assert_code_stripping_stats(generatedCText, 3u, 2u, 1u);
+    assert_code_stripping_type_layout_stats(generatedCText, 2u, 2u, 0u);
+    assert_code_stripping_type_layout_byte_stats(generatedCText, 16u, 16u, 0u);
+    assert_code_stripping_type_layout_generated_byte_stats(generatedCText, ZR_FALSE);
+    assert_code_stripping_method_metadata_generated_byte_stats(generatedCText, ZR_TRUE);
+    assert_code_stripping_function_body_bytes_missing(generatedCText, 2u);
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_preserves_dynamic_dependency_type_spec_token_layout_metadata(void) {
+    TZrByte metadataBlob[512];
+    TZrSize metadataBytes;
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    metadataBytes = build_zrp_metadata_type_spec_token_layout_fixture(metadataBlob, sizeof(metadataBlob));
+    mark_function_dynamic_dependency_type_token(
+            state,
+            function,
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_SPEC, 1u));
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_dynamic_dependency_type_spec_token";
+    options.sourceHash = "aot-c-code-stripping-dynamic-dependency-type-spec-token";
+    options.inputKind = ZR_AOT_INPUT_KIND_BINARY;
+    options.inputHash = "aot-c-code-stripping-dynamic-dependency-type-spec-token";
+    options.embeddedModuleBlob = metadataBlob;
+    options.embeddedModuleBlobLength = metadataBytes;
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "dynamic_dependency_type_spec_token",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, generatedLength);
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_0(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_1(struct SZrState *state)");
+    assert_text_does_not_contain(generatedCText, "static TZrInt64 zr_aot_fn_2(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static const SZrTypeLayout ZrTypeLayout_2 = {");
+    assert_text_contains(generatedCText,
+                         "static const TZrUInt32 zr_aot_type_layout_tokens[] = {\n"
+                         "    0u,\n"
+                         "    0u,\n"
+                         "    0x07000001u,\n"
+                         "};");
+    assert_text_contains(generatedCText, "/* code_stripping.annotationTypeLayoutRoots = 1 */");
+    assert_text_contains(generatedCText, "/* code_stripping.annotationTypeLayoutRoot[0] = 2 */");
+    assert_code_stripping_stats(generatedCText, 3u, 2u, 1u);
+    assert_code_stripping_type_layout_stats(generatedCText, 2u, 2u, 0u);
+    assert_code_stripping_type_layout_byte_stats(generatedCText, 16u, 16u, 0u);
+    assert_code_stripping_type_layout_generated_byte_stats(generatedCText, ZR_FALSE);
+    assert_code_stripping_method_metadata_generated_byte_stats(generatedCText, ZR_TRUE);
+    assert_code_stripping_function_body_bytes_missing(generatedCText, 2u);
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_preserves_dynamic_dependency_field_token_layout_metadata(void) {
+    TZrByte metadataBlob[512];
+    TZrSize metadataBytes;
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    metadataBytes = build_zrp_metadata_field_token_layout_fixture(metadataBlob, sizeof(metadataBlob));
+    mark_function_dynamic_dependency_field_token(
+            state,
+            function,
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 1u));
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_dynamic_dependency_field_token";
+    options.sourceHash = "aot-c-code-stripping-dynamic-dependency-field-token";
+    options.inputKind = ZR_AOT_INPUT_KIND_BINARY;
+    options.inputHash = "aot-c-code-stripping-dynamic-dependency-field-token";
+    options.embeddedModuleBlob = metadataBlob;
+    options.embeddedModuleBlobLength = metadataBytes;
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "dynamic_dependency_field_token",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, generatedLength);
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_0(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_1(struct SZrState *state)");
+    assert_text_does_not_contain(generatedCText, "static TZrInt64 zr_aot_fn_2(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static const SZrTypeLayout ZrTypeLayout_1 = {");
+    assert_text_contains(generatedCText, "static const SZrTypeLayout ZrTypeLayout_2 = {");
+    assert_text_contains(generatedCText,
+                         "static const SZrTypeLayout *const zr_aot_type_layouts[] = {\n"
+                         "    ZR_NULL,\n"
+                         "    &ZrTypeLayout_1,\n"
+                         "    &ZrTypeLayout_2,\n"
+                         "};");
+    assert_text_contains(generatedCText, "/* code_stripping.annotationTypeLayoutRoots = 2 */");
+    assert_text_contains(generatedCText, "/* code_stripping.annotationTypeLayoutRoot[0] = 1 */");
+    assert_text_contains(generatedCText, "/* code_stripping.annotationTypeLayoutRoot[1] = 2 */");
+    assert_code_stripping_stats(generatedCText, 3u, 2u, 1u);
+    assert_code_stripping_type_layout_stats(generatedCText, 2u, 2u, 0u);
+    assert_code_stripping_type_layout_byte_stats(generatedCText, 16u, 16u, 0u);
+    assert_code_stripping_type_layout_generated_byte_stats(generatedCText, ZR_FALSE);
+    assert_code_stripping_method_metadata_generated_byte_stats(generatedCText, ZR_TRUE);
+    assert_code_stripping_function_body_bytes_missing(generatedCText, 2u);
 
     free(generatedCText);
     ZrTests_Runtime_State_Destroy(state);
@@ -904,6 +1530,9 @@ static void test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functio
     TEST_ASSERT_NOT_NULL(state);
     function = create_static_callable_trim_fixture(state);
     TEST_ASSERT_NOT_NULL(function);
+    add_typed_exported_first_child_method_token(state,
+                                                function,
+                                                ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 2u));
     metadataBytesBeforeTrim =
             build_zrp_metadata_method_def_trim_fixture(metadataBlob,
                                                        sizeof(metadataBlob),
@@ -975,6 +1604,37 @@ static void test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functio
     assert_zrp_metadata_size_marker(generatedCText,
                                     "zrpMetadataSectionBytes.constantPool",
                                     (unsigned long long)constantPoolBytesAfterTrim);
+    assert_zrp_metadata_size_marker(generatedCText, "zrpMetadataSectionBytes.manifestExports", 0u);
+    assert_zrp_metadata_size_marker(generatedCText, "zrpMetadataSectionCounts.manifestExports", 0u);
+    assert_text_contains(generatedCText,
+                         "static const TZrUInt32 zr_aot_method_tokens[] = {\n"
+                         "    0u,\n"
+                         "    0x03000001u,\n"
+                         "    0u,\n"
+                         "};");
+    assert_text_contains(generatedCText, "/* code_stripping.memberTokenRemaps = 1 */");
+    assert_text_contains(generatedCText,
+                         "/* code_stripping.memberTokenRemap[0].sourceToken = 0x03000002 */");
+    assert_text_contains(generatedCText,
+                         "/* code_stripping.memberTokenRemap[0].targetToken = 0x03000001 */");
+    assert_text_contains(generatedCText,
+                         "static const SZrAotMemberTokenRemap zr_aot_member_token_remaps[] = {\n"
+                         "    { .sourceToken = 0x03000002u, .targetToken = 0x03000001u },\n"
+                         "};");
+    assert_text_contains(generatedCText,
+                         "    .methodTokenCount = 3,\n"
+                         "    .memberTokenRemaps = zr_aot_member_token_remaps,\n"
+                         "    .memberTokenRemapCount = 1u,\n"
+                         "    .manifestExports = ZR_NULL,\n"
+                         "    .manifestExportCount = 0u,\n"
+                         "    .invokers = zr_aot_reflection_invokers,");
+    assert_text_contains(generatedCText,
+                         "    .methodTokenCount = 3,\n"
+                         "    .memberTokenRemaps = zr_aot_member_token_remaps,\n"
+                         "    .memberTokenRemapCount = 1u,\n"
+                         "    .manifestExports = ZR_NULL,\n"
+                         "    .manifestExportCount = 0u,\n"
+                         "    .typeLayouts = ");
     assert_code_stripping_zrp_metadata_size_marker(generatedCText,
                                                    "zrpMetadataBytesBefore",
                                                    (unsigned long long)metadataBytesBeforeTrim);
@@ -1004,6 +1664,24 @@ static void test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functio
     assert_code_stripping_zrp_metadata_size_marker(generatedCText,
                                                    "zrpMetadataPoolBytesRemoved",
                                                    (unsigned long long)(poolBytesBeforeTrim - poolBytesAfterTrim));
+    assert_code_stripping_zrp_metadata_size_marker(generatedCText,
+                                                   "zrpMetadataSectionBytes.manifestExportsBefore",
+                                                   0u);
+    assert_code_stripping_zrp_metadata_size_marker(generatedCText,
+                                                   "zrpMetadataSectionBytes.manifestExportsAfter",
+                                                   0u);
+    assert_code_stripping_zrp_metadata_size_marker(generatedCText,
+                                                   "zrpMetadataSectionBytes.manifestExportsRemoved",
+                                                   0u);
+    assert_code_stripping_zrp_metadata_size_marker(generatedCText,
+                                                   "zrpMetadataSectionCounts.manifestExportsBefore",
+                                                   0u);
+    assert_code_stripping_zrp_metadata_size_marker(generatedCText,
+                                                   "zrpMetadataSectionCounts.manifestExportsAfter",
+                                                   0u);
+    assert_code_stripping_zrp_metadata_size_marker(generatedCText,
+                                                   "zrpMetadataSectionCounts.manifestExportsRemoved",
+                                                   0u);
     TEST_ASSERT_EQUAL_UINT64((methodDefBytesBeforeTrim - methodDefBytesAfterTrim) +
                                      (stringPoolBytesBeforeTrim - stringPoolBytesAfterTrim) +
                                      (signatureBlobPoolBytesBeforeTrim - signatureBlobPoolBytesAfterTrim) +
@@ -1023,6 +1701,11 @@ static void test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functio
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_code_stripping_option_filters_unreachable_static_callable);
+    RUN_TEST(test_aot_c_code_stripping_preserves_dynamic_dependency_type_layout_metadata);
+    RUN_TEST(test_aot_c_code_stripping_preserves_dynamic_dependency_type_token_layout_metadata);
+    RUN_TEST(test_aot_c_code_stripping_preserves_dynamic_dependency_type_ref_token_layout_metadata);
+    RUN_TEST(test_aot_c_code_stripping_preserves_dynamic_dependency_type_spec_token_layout_metadata);
+    RUN_TEST(test_aot_c_code_stripping_preserves_dynamic_dependency_field_token_layout_metadata);
     RUN_TEST(test_aot_c_code_stripping_option_preserves_exported_callable_root);
     RUN_TEST(test_aot_c_code_stripping_option_preserves_manifest_function_root);
     RUN_TEST(test_aot_c_reports_zrp_metadata_section_table_pool_byte_stats);

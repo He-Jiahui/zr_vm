@@ -105,6 +105,16 @@ New `.zrp` projects should use this shape:
     "plugins": {
       "assembly": "app.plugins",
       "path": "deps/plugins/plugins.zrp"
+    },
+    "mathRange": {
+      "assembly": "zr.math",
+      "minVersionInclusive": "2.0.0",
+      "maxVersionExclusive": "3.0.0",
+      "candidates": [
+        { "path": "deps/math-2.0/math.zrp" },
+        { "path": "deps/math-2.2/math.zrp" },
+        { "path": "deps/math-3.1/math.zrp" }
+      ]
     }
   }
 }
@@ -206,10 +216,24 @@ Each `references` entry is keyed by a local source alias:
 
 `path`
 
-- Required for v1 project references.
-- Points to the referenced `.zrp` file.
+- Required for exact project references.
+- Points to the referenced `.zrp` or `.zrm` provider file.
 - Resolved relative to the current `.zrp` file directory.
 - The loader must normalize the path and reject paths that cannot be opened.
+- Mutually exclusive with `candidates`.
+
+`candidates`
+
+- Optional alternative to `path` for automatic range-based selection.
+- Must be a non-empty array when present.
+- Each item may be a string path or an object with `path` and optional `version`.
+- Candidate paths are resolved relative to the current `.zrp` file directory.
+- The loader probes candidates without adding non-selected candidates to the normalized dependency package table.
+- The selected candidate must match the declared `assembly`, optional exact `version`, and declared
+  `[minVersionInclusive, maxVersionExclusive)` bounds.
+- Automatic ordering requires strict `major.minor.patch` semver; the highest matching candidate is selected.
+- If no candidate matches or a candidate declaration is malformed, loading fails closed.
+- Mutually exclusive with `path`.
 
 ## Compatibility Mapping
 
@@ -374,6 +398,11 @@ typedef struct SZrProjectAssemblyIdentity {
     bool fromCompatibilityFields;
 } SZrProjectAssemblyIdentity;
 
+typedef struct SZrProjectReferenceCandidate {
+    char *manifestPath;
+    char *requestedVersion;
+} SZrProjectReferenceCandidate;
+
 typedef struct SZrProjectReference {
     char *alias;
     char *declaredAssemblyName;
@@ -382,6 +411,8 @@ typedef struct SZrProjectReference {
     char *minVersionInclusive;
     char *maxVersionExclusive;
     char *manifestPath;
+    SZrProjectReferenceCandidate *candidates;
+    size_t candidateCount;
     bool pathFirstCompatibility;
 } SZrProjectReference;
 ```

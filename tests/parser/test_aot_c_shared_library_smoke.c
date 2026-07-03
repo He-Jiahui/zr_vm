@@ -219,6 +219,25 @@ static void test_aot_c_generated_source_compiles_and_exports_module_descriptor(v
 #else
     static const TZrByte embeddedBlob[] = {0x7a, 0x72, 0x6f};
     const char *source =
+            "pub func answer(): int { return 42; }\n"
+            "pub func unsigned_answer(): uint { return 13; }\n"
+            "pub func truth(): bool { return true; }\n"
+            "pub func ratio(): float { return 2.5; }\n"
+            "pub func echo(value: int): int { return value; }\n"
+            "pub func echo_unsigned(value: uint): uint { return value; }\n"
+            "pub func echo_truth(value: bool): bool { return value; }\n"
+            "pub func echo_ratio(value: float): float { return value; }\n"
+            "pub func sum_values(left: int, right: int): int { return left + right; }\n"
+            "pub func sum_unsigned(left: uint, right: uint): uint { return left + right; }\n"
+            "pub func same_truth(left: bool, right: bool): bool { return left == right; }\n"
+            "pub func sum_ratio(left: float, right: float): float { return left + right; }\n"
+            "pub func less_values(left: int, right: int): bool { return left < right; }\n"
+            "pub func unsigned_after(left: uint, right: uint): bool { return left > right; }\n"
+            "pub func ratio_equal(left: float, right: float): bool { return left == right; }\n"
+            "pub func sum_three(left: int, middle: int, right: int): int { return left + middle + right; }\n"
+            "pub func sum_three_unsigned(left: uint, middle: uint, right: uint): uint { return left + middle + right; }\n"
+            "pub func sum_three_ratio(left: float, middle: float, right: float): float { return left + middle + right; }\n"
+            "pub func all_truth(left: bool, middle: bool, right: bool): bool { return left && middle && right; }\n"
             "pub var left: int = 40;\n"
             "pub var right: int = 2;\n"
             "return left + right;\n";
@@ -232,6 +251,40 @@ static void test_aot_c_generated_source_compiles_and_exports_module_descriptor(v
     void *symbol;
     FZrVmGetAotCompiledModule getModule;
     const ZrAotCompiledModule *module;
+    SZrTypeValue reflectionReturn;
+    SZrTypeValue reflectionUnsignedReturn;
+    SZrTypeValue reflectionBoolReturn;
+    SZrTypeValue reflectionFloatReturn;
+    SZrTypeValue reflectionI64OneArg;
+    SZrTypeValue reflectionI64OneArgReturn;
+    SZrTypeValue reflectionU64OneArg;
+    SZrTypeValue reflectionU64OneArgReturn;
+    SZrTypeValue reflectionBoolOneArg;
+    SZrTypeValue reflectionBoolOneArgReturn;
+    SZrTypeValue reflectionF64OneArg;
+    SZrTypeValue reflectionF64OneArgReturn;
+    SZrTypeValue reflectionI64TwoArgs[2];
+    SZrTypeValue reflectionI64TwoArgReturn;
+    SZrTypeValue reflectionU64TwoArgs[2];
+    SZrTypeValue reflectionU64TwoArgReturn;
+    SZrTypeValue reflectionBoolTwoArgs[2];
+    SZrTypeValue reflectionBoolTwoArgReturn;
+    SZrTypeValue reflectionF64TwoArgs[2];
+    SZrTypeValue reflectionF64TwoArgReturn;
+    SZrTypeValue reflectionBoolI64TwoArgs[2];
+    SZrTypeValue reflectionBoolI64TwoArgReturn;
+    SZrTypeValue reflectionBoolU64TwoArgs[2];
+    SZrTypeValue reflectionBoolU64TwoArgReturn;
+    SZrTypeValue reflectionBoolF64TwoArgs[2];
+    SZrTypeValue reflectionBoolF64TwoArgReturn;
+    SZrTypeValue reflectionI64ThreeArgs[3];
+    SZrTypeValue reflectionI64ThreeArgReturn;
+    SZrTypeValue reflectionU64ThreeArgs[3];
+    SZrTypeValue reflectionU64ThreeArgReturn;
+    SZrTypeValue reflectionF64ThreeArgs[3];
+    SZrTypeValue reflectionF64ThreeArgReturn;
+    SZrTypeValue reflectionBoolThreeArgs[3];
+    SZrTypeValue reflectionBoolThreeArgReturn;
     char *generatedCText;
 
     TEST_ASSERT_NOT_NULL(state);
@@ -263,6 +316,162 @@ static void test_aot_c_generated_source_compiles_and_exports_module_descriptor(v
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_publish_exports_boundary */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "#include \"zr_vm_core/value.h\""));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static const TZrUInt32 zr_aot_method_tokens[] = {"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "0x03000001u,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, ".methodTokens = zr_aot_method_tokens,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, ".methodTokenCount = "));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_i64_no_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "method->signature->parameterCount != 0u"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "switch (method->functionIndex)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 1u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_return_value = zr_aot_typed_i64_fn_1();"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Value_InitAsInt(state, outReturn, zr_aot_return_value);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_u64_no_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "method->signature->returnType->baseType != (TZrUInt16)ZR_VALUE_TYPE_UINT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 2u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_return_value = zr_aot_typed_u64_fn_2();"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Value_InitAsUInt(state, outReturn, zr_aot_return_value);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_bool_no_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "method->signature->returnType->baseType != (TZrUInt16)ZR_VALUE_TYPE_BOOL"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 3u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_return_value = zr_aot_typed_bool_fn_3();"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Value_InitAsBool(state, outReturn, zr_aot_return_value);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_bool_no_arg(state, method, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_f64_no_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "method->signature->returnType->baseType != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 4u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_return_value = zr_aot_typed_f64_fn_4();"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Value_InitAsFloat(state, outReturn, zr_aot_return_value);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_f64_no_arg(state, method, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_i64_one_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "method->signature->parameterCount != 1u"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "method->signature->parameterTypes == ZR_NULL"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "method->signature->parameterTypes[0].baseType != (TZrUInt16)ZR_VALUE_TYPE_INT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args == ZR_NULL"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[0].type != (TZrUInt16)ZR_VALUE_TYPE_INT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 5u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_arg0 = args[0].value.nativeObject.nativeInt64;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_return_value = zr_aot_typed_i64_fn_5(zr_aot_arg0);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_i64_one_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_u64_one_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "method->signature->parameterTypes[0].baseType != (TZrUInt16)ZR_VALUE_TYPE_UINT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[0].type != (TZrUInt16)ZR_VALUE_TYPE_UINT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 6u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrUInt64 zr_aot_arg0 = args[0].value.nativeObject.nativeUInt64;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_return_value = zr_aot_typed_u64_fn_6(zr_aot_arg0);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_u64_one_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_bool_one_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "method->signature->parameterTypes[0].baseType != (TZrUInt16)ZR_VALUE_TYPE_BOOL"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[0].type != (TZrUInt16)ZR_VALUE_TYPE_BOOL"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 7u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrBool zr_aot_arg0 = args[0].value.nativeObject.nativeBool;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_return_value = zr_aot_typed_bool_fn_7(zr_aot_arg0);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_bool_one_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_f64_one_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "method->signature->parameterTypes[0].baseType != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[0].type != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 8u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrFloat64 zr_aot_arg0 = args[0].value.nativeObject.nativeDouble;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_return_value = zr_aot_typed_f64_fn_8(zr_aot_arg0);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_f64_one_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_i64_two_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "method->signature->parameterCount != 2u"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "method->signature->parameterTypes[1].baseType != (TZrUInt16)ZR_VALUE_TYPE_INT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[1].type != (TZrUInt16)ZR_VALUE_TYPE_INT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 9u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_arg1 = args[1].value.nativeObject.nativeInt64;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_return_value = zr_aot_typed_i64_fn_9(zr_aot_arg0, zr_aot_arg1);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_i64_two_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_u64_two_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "method->signature->parameterTypes[1].baseType != (TZrUInt16)ZR_VALUE_TYPE_UINT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[1].type != (TZrUInt16)ZR_VALUE_TYPE_UINT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 10u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrUInt64 zr_aot_arg1 = args[1].value.nativeObject.nativeUInt64;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "zr_aot_return_value = zr_aot_typed_u64_fn_10(zr_aot_arg0, zr_aot_arg1);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_u64_two_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_bool_two_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "method->signature->parameterTypes[1].baseType != (TZrUInt16)ZR_VALUE_TYPE_BOOL"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[1].type != (TZrUInt16)ZR_VALUE_TYPE_BOOL"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 11u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrBool zr_aot_arg1 = args[1].value.nativeObject.nativeBool;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "zr_aot_return_value = zr_aot_typed_bool_fn_11(zr_aot_arg0, zr_aot_arg1);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_bool_two_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_f64_two_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "method->signature->parameterTypes[1].baseType != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[1].type != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 12u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrFloat64 zr_aot_arg1 = args[1].value.nativeObject.nativeDouble;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "zr_aot_return_value = zr_aot_typed_f64_fn_12(zr_aot_arg0, zr_aot_arg1);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_f64_two_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_bool_i64_two_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 13u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_arg1 = args[1].value.nativeObject.nativeInt64;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "zr_aot_return_value = zr_aot_typed_bool_fn_13(zr_aot_arg0, zr_aot_arg1);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_bool_i64_two_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_bool_u64_two_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 14u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrUInt64 zr_aot_arg1 = args[1].value.nativeObject.nativeUInt64;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "zr_aot_return_value = zr_aot_typed_bool_fn_14(zr_aot_arg0, zr_aot_arg1);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_bool_u64_two_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_bool_f64_two_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 15u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrFloat64 zr_aot_arg1 = args[1].value.nativeObject.nativeDouble;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "zr_aot_return_value = zr_aot_typed_bool_fn_15(zr_aot_arg0, zr_aot_arg1);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_bool_f64_two_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_i64_three_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "method->signature->parameterCount != 3u"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "method->signature->parameterTypes[2].baseType != (TZrUInt16)ZR_VALUE_TYPE_INT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[2].type != (TZrUInt16)ZR_VALUE_TYPE_INT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 16u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_arg2 = args[2].value.nativeObject.nativeInt64;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "zr_aot_return_value = zr_aot_typed_i64_fn_16(zr_aot_arg0, zr_aot_arg1, zr_aot_arg2);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_i64_three_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_u64_three_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "method->signature->returnType->baseType != (TZrUInt16)ZR_VALUE_TYPE_UINT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "method->signature->parameterTypes[2].baseType != (TZrUInt16)ZR_VALUE_TYPE_UINT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[2].type != (TZrUInt16)ZR_VALUE_TYPE_UINT64"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 17u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrUInt64 zr_aot_arg2 = args[2].value.nativeObject.nativeUInt64;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "zr_aot_return_value = zr_aot_typed_u64_fn_17(zr_aot_arg0, zr_aot_arg1, zr_aot_arg2);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_u64_three_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_f64_three_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "method->signature->returnType->baseType != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "method->signature->parameterTypes[2].baseType != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[2].type != (TZrUInt16)ZR_VALUE_TYPE_DOUBLE"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 18u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrFloat64 zr_aot_arg2 = args[2].value.nativeObject.nativeDouble;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "zr_aot_return_value = zr_aot_typed_f64_fn_18(zr_aot_arg0, zr_aot_arg1, zr_aot_arg2);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_f64_three_arg(state, method, args, outReturn))"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_bool_three_arg("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "method->signature->parameterTypes[2].baseType != (TZrUInt16)ZR_VALUE_TYPE_BOOL"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[2].type != (TZrUInt16)ZR_VALUE_TYPE_BOOL"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 19u:"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrBool zr_aot_arg2 = args[2].value.nativeObject.nativeBool;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "zr_aot_return_value = zr_aot_typed_bool_fn_19(zr_aot_arg0, zr_aot_arg1, zr_aot_arg2);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_bool_three_arg(state, method, args, outReturn))"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PublishModuleExports(state, &frame)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_return"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_publish_exports_direct */"));
@@ -324,9 +533,32 @@ static void test_aot_c_generated_source_compiles_and_exports_module_descriptor(v
     TEST_ASSERT_EQUAL_UINT32(module->functionThunkCount, module->codeRegistration->functionCount);
     TEST_ASSERT_EQUAL_PTR(module->functionThunks, module->codeRegistration->functionPointers);
     TEST_ASSERT_NOT_NULL(module->methodInfos);
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(1u, module->methodInfoCount);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(20u, module->methodInfoCount);
     TEST_ASSERT_EQUAL_UINT32(module->methodInfoCount, module->codeRegistration->methodInfoCount);
     TEST_ASSERT_EQUAL_PTR(module->methodInfos, module->codeRegistration->methodInfos);
+    TEST_ASSERT_NOT_NULL(module->methodTokens);
+    TEST_ASSERT_EQUAL_UINT32(module->methodInfoCount, module->methodTokenCount);
+    TEST_ASSERT_EQUAL_PTR(module->methodTokens, module->codeRegistration->methodTokens);
+    TEST_ASSERT_EQUAL_UINT32(module->methodTokenCount, module->codeRegistration->methodTokenCount);
+    TEST_ASSERT_EQUAL_UINT32(0x03000001u, module->methodTokens[1]);
+    TEST_ASSERT_EQUAL_UINT32(0x03000002u, module->methodTokens[2]);
+    TEST_ASSERT_EQUAL_UINT32(0x03000003u, module->methodTokens[3]);
+    TEST_ASSERT_EQUAL_UINT32(0x03000004u, module->methodTokens[4]);
+    TEST_ASSERT_EQUAL_UINT32(0x03000005u, module->methodTokens[5]);
+    TEST_ASSERT_EQUAL_UINT32(0x03000006u, module->methodTokens[6]);
+    TEST_ASSERT_EQUAL_UINT32(0x03000007u, module->methodTokens[7]);
+    TEST_ASSERT_EQUAL_UINT32(0x03000008u, module->methodTokens[8]);
+    TEST_ASSERT_EQUAL_UINT32(0x03000009u, module->methodTokens[9]);
+    TEST_ASSERT_EQUAL_UINT32(0x0300000Au, module->methodTokens[10]);
+    TEST_ASSERT_EQUAL_UINT32(0x0300000Bu, module->methodTokens[11]);
+    TEST_ASSERT_EQUAL_UINT32(0x0300000Cu, module->methodTokens[12]);
+    TEST_ASSERT_EQUAL_UINT32(0x0300000Du, module->methodTokens[13]);
+    TEST_ASSERT_EQUAL_UINT32(0x0300000Eu, module->methodTokens[14]);
+    TEST_ASSERT_EQUAL_UINT32(0x0300000Fu, module->methodTokens[15]);
+    TEST_ASSERT_EQUAL_UINT32(0x03000010u, module->methodTokens[16]);
+    TEST_ASSERT_EQUAL_UINT32(0x03000011u, module->methodTokens[17]);
+    TEST_ASSERT_EQUAL_UINT32(0x03000012u, module->methodTokens[18]);
+    TEST_ASSERT_EQUAL_UINT32(0x03000013u, module->methodTokens[19]);
     TEST_ASSERT_NOT_NULL(module->codeRegistration->invokers);
     TEST_ASSERT_EQUAL_UINT32(1u, module->codeRegistration->invokerCount);
     TEST_ASSERT_NOT_NULL(module->methodInfos[0]);
@@ -335,6 +567,317 @@ static void test_aot_c_generated_source_compiles_and_exports_module_descriptor(v
     TEST_ASSERT_EQUAL_PTR(module->codeRegistration->invokers[0], module->methodInfos[0]->invoker);
     TEST_ASSERT_EQUAL_UINT8(ZR_AOT_REFLECTION_METADATA_RUNTIME_MAPPING,
                             module->methodInfos[0]->reflectionMetadataLevel);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[1]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[1]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[1]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[1]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[1]);
+    ZrCore_Value_ResetAsNull(&reflectionReturn);
+    module->methodInfos[1]->invoker(state,
+                                    module->functionThunks[1],
+                                    module->methodInfos[1],
+                                    ZR_NULL,
+                                    ZR_NULL,
+                                    &reflectionReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_INT64, (TZrUInt16)reflectionReturn.type);
+    TEST_ASSERT_EQUAL_INT64(42, reflectionReturn.value.nativeObject.nativeInt64);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[2]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[2]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[2]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[2]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[2]);
+    ZrCore_Value_ResetAsNull(&reflectionUnsignedReturn);
+    module->methodInfos[2]->invoker(state,
+                                    module->functionThunks[2],
+                                    module->methodInfos[2],
+                                    ZR_NULL,
+                                    ZR_NULL,
+                                    &reflectionUnsignedReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_UINT64, (TZrUInt16)reflectionUnsignedReturn.type);
+    TEST_ASSERT_EQUAL_UINT64(13u, reflectionUnsignedReturn.value.nativeObject.nativeUInt64);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[3]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[3]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[3]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[3]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[3]);
+    ZrCore_Value_ResetAsNull(&reflectionBoolReturn);
+    module->methodInfos[3]->invoker(state,
+                                    module->functionThunks[3],
+                                    module->methodInfos[3],
+                                    ZR_NULL,
+                                    ZR_NULL,
+                                    &reflectionBoolReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_BOOL, (TZrUInt16)reflectionBoolReturn.type);
+    TEST_ASSERT_TRUE(reflectionBoolReturn.value.nativeObject.nativeBool);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[4]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[4]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[4]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[4]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[4]);
+    ZrCore_Value_ResetAsNull(&reflectionFloatReturn);
+    module->methodInfos[4]->invoker(state,
+                                    module->functionThunks[4],
+                                    module->methodInfos[4],
+                                    ZR_NULL,
+                                    ZR_NULL,
+                                    &reflectionFloatReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_DOUBLE, (TZrUInt16)reflectionFloatReturn.type);
+    TEST_ASSERT_DOUBLE_WITHIN(0.0001, 2.5, reflectionFloatReturn.value.nativeObject.nativeDouble);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[5]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[5]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[5]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[5]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[5]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[5]);
+    ZrCore_Value_InitAsInt(state, &reflectionI64OneArg, 99);
+    ZrCore_Value_ResetAsNull(&reflectionI64OneArgReturn);
+    module->methodInfos[5]->invoker(state,
+                                    module->functionThunks[5],
+                                    module->methodInfos[5],
+                                    ZR_NULL,
+                                    &reflectionI64OneArg,
+                                    &reflectionI64OneArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_INT64, (TZrUInt16)reflectionI64OneArgReturn.type);
+    TEST_ASSERT_EQUAL_INT64(99, reflectionI64OneArgReturn.value.nativeObject.nativeInt64);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[6]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[6]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[6]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[6]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[6]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[6]);
+    ZrCore_Value_InitAsUInt(state, &reflectionU64OneArg, 101u);
+    ZrCore_Value_ResetAsNull(&reflectionU64OneArgReturn);
+    module->methodInfos[6]->invoker(state,
+                                    module->functionThunks[6],
+                                    module->methodInfos[6],
+                                    ZR_NULL,
+                                    &reflectionU64OneArg,
+                                    &reflectionU64OneArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_UINT64, (TZrUInt16)reflectionU64OneArgReturn.type);
+    TEST_ASSERT_EQUAL_UINT64(101u, reflectionU64OneArgReturn.value.nativeObject.nativeUInt64);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[7]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[7]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[7]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[7]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[7]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[7]);
+    ZrCore_Value_InitAsBool(state, &reflectionBoolOneArg, ZR_FALSE);
+    ZrCore_Value_ResetAsNull(&reflectionBoolOneArgReturn);
+    module->methodInfos[7]->invoker(state,
+                                    module->functionThunks[7],
+                                    module->methodInfos[7],
+                                    ZR_NULL,
+                                    &reflectionBoolOneArg,
+                                    &reflectionBoolOneArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_BOOL, (TZrUInt16)reflectionBoolOneArgReturn.type);
+    TEST_ASSERT_FALSE(reflectionBoolOneArgReturn.value.nativeObject.nativeBool);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[8]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[8]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[8]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[8]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[8]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[8]);
+    ZrCore_Value_InitAsFloat(state, &reflectionF64OneArg, 1.75);
+    ZrCore_Value_ResetAsNull(&reflectionF64OneArgReturn);
+    module->methodInfos[8]->invoker(state,
+                                    module->functionThunks[8],
+                                    module->methodInfos[8],
+                                    ZR_NULL,
+                                    &reflectionF64OneArg,
+                                    &reflectionF64OneArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_DOUBLE, (TZrUInt16)reflectionF64OneArgReturn.type);
+    TEST_ASSERT_DOUBLE_WITHIN(0.0001, 1.75, reflectionF64OneArgReturn.value.nativeObject.nativeDouble);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[9]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[9]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[9]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[9]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[9]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[9]);
+    ZrCore_Value_InitAsInt(state, &reflectionI64TwoArgs[0], 20);
+    ZrCore_Value_InitAsInt(state, &reflectionI64TwoArgs[1], 22);
+    ZrCore_Value_ResetAsNull(&reflectionI64TwoArgReturn);
+    module->methodInfos[9]->invoker(state,
+                                    module->functionThunks[9],
+                                    module->methodInfos[9],
+                                    ZR_NULL,
+                                    reflectionI64TwoArgs,
+                                    &reflectionI64TwoArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_INT64, (TZrUInt16)reflectionI64TwoArgReturn.type);
+    TEST_ASSERT_EQUAL_INT64(42, reflectionI64TwoArgReturn.value.nativeObject.nativeInt64);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[10]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[10]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[10]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[10]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[10]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[10]);
+    ZrCore_Value_InitAsUInt(state, &reflectionU64TwoArgs[0], 100u);
+    ZrCore_Value_InitAsUInt(state, &reflectionU64TwoArgs[1], 23u);
+    ZrCore_Value_ResetAsNull(&reflectionU64TwoArgReturn);
+    module->methodInfos[10]->invoker(state,
+                                     module->functionThunks[10],
+                                     module->methodInfos[10],
+                                     ZR_NULL,
+                                     reflectionU64TwoArgs,
+                                     &reflectionU64TwoArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_UINT64, (TZrUInt16)reflectionU64TwoArgReturn.type);
+    TEST_ASSERT_EQUAL_UINT64(123u, reflectionU64TwoArgReturn.value.nativeObject.nativeUInt64);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[11]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[11]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[11]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[11]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[11]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[11]);
+    ZrCore_Value_InitAsBool(state, &reflectionBoolTwoArgs[0], ZR_TRUE);
+    ZrCore_Value_InitAsBool(state, &reflectionBoolTwoArgs[1], ZR_TRUE);
+    ZrCore_Value_ResetAsNull(&reflectionBoolTwoArgReturn);
+    module->methodInfos[11]->invoker(state,
+                                     module->functionThunks[11],
+                                     module->methodInfos[11],
+                                     ZR_NULL,
+                                     reflectionBoolTwoArgs,
+                                     &reflectionBoolTwoArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_BOOL, (TZrUInt16)reflectionBoolTwoArgReturn.type);
+    TEST_ASSERT_TRUE(reflectionBoolTwoArgReturn.value.nativeObject.nativeBool);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[12]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[12]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[12]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[12]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[12]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[12]);
+    ZrCore_Value_InitAsFloat(state, &reflectionF64TwoArgs[0], 1.25);
+    ZrCore_Value_InitAsFloat(state, &reflectionF64TwoArgs[1], 2.5);
+    ZrCore_Value_ResetAsNull(&reflectionF64TwoArgReturn);
+    module->methodInfos[12]->invoker(state,
+                                     module->functionThunks[12],
+                                     module->methodInfos[12],
+                                     ZR_NULL,
+                                     reflectionF64TwoArgs,
+                                     &reflectionF64TwoArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_DOUBLE, (TZrUInt16)reflectionF64TwoArgReturn.type);
+    TEST_ASSERT_DOUBLE_WITHIN(0.0001, 3.75, reflectionF64TwoArgReturn.value.nativeObject.nativeDouble);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[13]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[13]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[13]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[13]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[13]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[13]);
+    ZrCore_Value_InitAsInt(state, &reflectionBoolI64TwoArgs[0], 3);
+    ZrCore_Value_InitAsInt(state, &reflectionBoolI64TwoArgs[1], 7);
+    ZrCore_Value_ResetAsNull(&reflectionBoolI64TwoArgReturn);
+    module->methodInfos[13]->invoker(state,
+                                     module->functionThunks[13],
+                                     module->methodInfos[13],
+                                     ZR_NULL,
+                                     reflectionBoolI64TwoArgs,
+                                     &reflectionBoolI64TwoArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_BOOL, (TZrUInt16)reflectionBoolI64TwoArgReturn.type);
+    TEST_ASSERT_TRUE(reflectionBoolI64TwoArgReturn.value.nativeObject.nativeBool);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[14]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[14]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[14]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[14]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[14]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[14]);
+    ZrCore_Value_InitAsUInt(state, &reflectionBoolU64TwoArgs[0], 9u);
+    ZrCore_Value_InitAsUInt(state, &reflectionBoolU64TwoArgs[1], 4u);
+    ZrCore_Value_ResetAsNull(&reflectionBoolU64TwoArgReturn);
+    module->methodInfos[14]->invoker(state,
+                                     module->functionThunks[14],
+                                     module->methodInfos[14],
+                                     ZR_NULL,
+                                     reflectionBoolU64TwoArgs,
+                                     &reflectionBoolU64TwoArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_BOOL, (TZrUInt16)reflectionBoolU64TwoArgReturn.type);
+    TEST_ASSERT_TRUE(reflectionBoolU64TwoArgReturn.value.nativeObject.nativeBool);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[15]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[15]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[15]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[15]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[15]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[15]);
+    ZrCore_Value_InitAsFloat(state, &reflectionBoolF64TwoArgs[0], 2.5);
+    ZrCore_Value_InitAsFloat(state, &reflectionBoolF64TwoArgs[1], 2.5);
+    ZrCore_Value_ResetAsNull(&reflectionBoolF64TwoArgReturn);
+    module->methodInfos[15]->invoker(state,
+                                     module->functionThunks[15],
+                                     module->methodInfos[15],
+                                     ZR_NULL,
+                                     reflectionBoolF64TwoArgs,
+                                     &reflectionBoolF64TwoArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_BOOL, (TZrUInt16)reflectionBoolF64TwoArgReturn.type);
+    TEST_ASSERT_TRUE(reflectionBoolF64TwoArgReturn.value.nativeObject.nativeBool);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[16]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[16]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[16]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[16]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[16]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[16]);
+    ZrCore_Value_InitAsInt(state, &reflectionI64ThreeArgs[0], 10);
+    ZrCore_Value_InitAsInt(state, &reflectionI64ThreeArgs[1], 20);
+    ZrCore_Value_InitAsInt(state, &reflectionI64ThreeArgs[2], 12);
+    ZrCore_Value_ResetAsNull(&reflectionI64ThreeArgReturn);
+    module->methodInfos[16]->invoker(state,
+                                     module->functionThunks[16],
+                                     module->methodInfos[16],
+                                     ZR_NULL,
+                                     reflectionI64ThreeArgs,
+                                     &reflectionI64ThreeArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_INT64, (TZrUInt16)reflectionI64ThreeArgReturn.type);
+    TEST_ASSERT_EQUAL_INT64(42, reflectionI64ThreeArgReturn.value.nativeObject.nativeInt64);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[17]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[17]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[17]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[17]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[17]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[17]);
+    ZrCore_Value_InitAsUInt(state, &reflectionU64ThreeArgs[0], 50u);
+    ZrCore_Value_InitAsUInt(state, &reflectionU64ThreeArgs[1], 20u);
+    ZrCore_Value_InitAsUInt(state, &reflectionU64ThreeArgs[2], 5u);
+    ZrCore_Value_ResetAsNull(&reflectionU64ThreeArgReturn);
+    module->methodInfos[17]->invoker(state,
+                                     module->functionThunks[17],
+                                     module->methodInfos[17],
+                                     ZR_NULL,
+                                     reflectionU64ThreeArgs,
+                                     &reflectionU64ThreeArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_UINT64, (TZrUInt16)reflectionU64ThreeArgReturn.type);
+    TEST_ASSERT_EQUAL_UINT64(75u, reflectionU64ThreeArgReturn.value.nativeObject.nativeUInt64);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[18]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[18]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[18]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[18]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[18]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[18]);
+    ZrCore_Value_InitAsFloat(state, &reflectionF64ThreeArgs[0], 1.5);
+    ZrCore_Value_InitAsFloat(state, &reflectionF64ThreeArgs[1], 2.25);
+    ZrCore_Value_InitAsFloat(state, &reflectionF64ThreeArgs[2], 3.25);
+    ZrCore_Value_ResetAsNull(&reflectionF64ThreeArgReturn);
+    module->methodInfos[18]->invoker(state,
+                                     module->functionThunks[18],
+                                     module->methodInfos[18],
+                                     ZR_NULL,
+                                     reflectionF64ThreeArgs,
+                                     &reflectionF64ThreeArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_DOUBLE, (TZrUInt16)reflectionF64ThreeArgReturn.type);
+    TEST_ASSERT_DOUBLE_WITHIN(0.0001, 7.0, reflectionF64ThreeArgReturn.value.nativeObject.nativeDouble);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[19]);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[19]->signature);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[19]->signature->returnType);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[19]->signature->parameterTypes);
+    TEST_ASSERT_NOT_NULL(module->methodInfos[19]->invoker);
+    TEST_ASSERT_NOT_NULL(module->functionThunks[19]);
+    ZrCore_Value_InitAsBool(state, &reflectionBoolThreeArgs[0], ZR_TRUE);
+    ZrCore_Value_InitAsBool(state, &reflectionBoolThreeArgs[1], ZR_TRUE);
+    ZrCore_Value_InitAsBool(state, &reflectionBoolThreeArgs[2], ZR_TRUE);
+    ZrCore_Value_ResetAsNull(&reflectionBoolThreeArgReturn);
+    module->methodInfos[19]->invoker(state,
+                                     module->functionThunks[19],
+                                     module->methodInfos[19],
+                                     ZR_NULL,
+                                     reflectionBoolThreeArgs,
+                                     &reflectionBoolThreeArgReturn);
+    TEST_ASSERT_EQUAL_UINT16((TZrUInt16)ZR_VALUE_TYPE_BOOL, (TZrUInt16)reflectionBoolThreeArgReturn.type);
+    TEST_ASSERT_TRUE(reflectionBoolThreeArgReturn.value.nativeObject.nativeBool);
     TEST_ASSERT_NULL(module->typeLayouts);
     TEST_ASSERT_EQUAL_UINT32(0u, module->typeLayoutCount);
     TEST_ASSERT_NULL(module->codeRegistration->typeLayouts);

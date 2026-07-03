@@ -3,6 +3,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/zrp_metadata.h"
 
 #include <string.h>
 
@@ -753,9 +754,130 @@ static TZrMetadataToken backend_aot_c_type_layout_token_from_table(SZrState *sta
     return backend_aot_c_type_layout_type_spec_token_from_table(table, typeName);
 }
 
+static TZrBool backend_aot_c_type_layout_token_is_rooted(const TZrUInt32 *typeLayoutRoots,
+                                                         TZrUInt32 typeLayoutRootCount,
+                                                         TZrUInt32 typeLayoutId) {
+    if (typeLayoutRoots == ZR_NULL || typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 rootIndex = 0u; rootIndex < typeLayoutRootCount; rootIndex++) {
+        if (typeLayoutRoots[rootIndex] == typeLayoutId) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool backend_aot_c_type_layout_token_zrp_section_view(const TZrByte *metadataBlob,
+                                                                TZrSize metadataBlobLength,
+                                                                EZrZrpMetadataSectionKind sectionKind,
+                                                                TZrUInt32 expectedElementSize,
+                                                                SZrZrpMetadataSectionView *outView) {
+    SZrZrpMetadataHeader header;
+
+    if (outView != ZR_NULL) {
+        memset(outView, 0, sizeof(*outView));
+    }
+    if (metadataBlob == ZR_NULL ||
+        metadataBlobLength == 0u ||
+        outView == ZR_NULL ||
+        !ZrCore_ZrpMetadata_ReadHeader(metadataBlob, metadataBlobLength, &header) ||
+        !ZrCore_ZrpMetadata_GetSectionView(metadataBlob, metadataBlobLength, &header, sectionKind, outView) ||
+        outView->elementSize != expectedElementSize) {
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+static TZrMetadataToken backend_aot_c_type_layout_type_def_token_from_metadata_blob(const TZrByte *metadataBlob,
+                                                                                    TZrSize metadataBlobLength,
+                                                                                    TZrUInt32 typeLayoutId) {
+    SZrZrpMetadataSectionView view;
+    TZrMetadataToken token = 0u;
+
+    if (!backend_aot_c_type_layout_token_zrp_section_view(metadataBlob,
+                                                          metadataBlobLength,
+                                                          ZR_ZRP_METADATA_SECTION_TYPE_DEFS,
+                                                          (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow),
+                                                          &view)) {
+        return 0u;
+    }
+
+    for (TZrUInt32 rowIndex = 0u; rowIndex < view.count; rowIndex++) {
+        const SZrZrpMetadataTypeDefRow *row =
+                &((const SZrZrpMetadataTypeDefRow *)(const void *)view.data)[rowIndex];
+
+        if (row->typeLayoutId != typeLayoutId || row->token == 0u) {
+            continue;
+        }
+        if (token != 0u && token != row->token) {
+            return 0u;
+        }
+        token = row->token;
+    }
+
+    return token;
+}
+
+static TZrMetadataToken backend_aot_c_type_layout_type_spec_token_from_metadata_blob(const TZrByte *metadataBlob,
+                                                                                     TZrSize metadataBlobLength,
+                                                                                     TZrUInt32 typeLayoutId) {
+    SZrZrpMetadataSectionView view;
+    TZrMetadataToken token = 0u;
+
+    if (!backend_aot_c_type_layout_token_zrp_section_view(metadataBlob,
+                                                          metadataBlobLength,
+                                                          ZR_ZRP_METADATA_SECTION_TYPE_SPECS,
+                                                          (TZrUInt32)sizeof(SZrZrpMetadataTypeSpecRow),
+                                                          &view)) {
+        return 0u;
+    }
+
+    for (TZrUInt32 rowIndex = 0u; rowIndex < view.count; rowIndex++) {
+        const SZrZrpMetadataTypeSpecRow *row =
+                &((const SZrZrpMetadataTypeSpecRow *)(const void *)view.data)[rowIndex];
+
+        if (row->typeLayoutId != typeLayoutId || row->token == 0u) {
+            continue;
+        }
+        if (token != 0u && token != row->token) {
+            return 0u;
+        }
+        token = row->token;
+    }
+
+    return token;
+}
+
+static TZrMetadataToken backend_aot_c_type_layout_token_from_metadata_blob(const TZrByte *metadataBlob,
+                                                                           TZrSize metadataBlobLength,
+                                                                           TZrUInt32 typeLayoutId) {
+    TZrMetadataToken token;
+
+    if (typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+        return 0u;
+    }
+
+    token = backend_aot_c_type_layout_type_def_token_from_metadata_blob(metadataBlob,
+                                                                        metadataBlobLength,
+                                                                        typeLayoutId);
+    if (token != 0u) {
+        return token;
+    }
+    return backend_aot_c_type_layout_type_spec_token_from_metadata_blob(metadataBlob,
+                                                                        metadataBlobLength,
+                                                                        typeLayoutId);
+}
+
 void backend_aot_write_c_type_layout_token_table(FILE *file,
                                                  SZrState *state,
                                                  const SZrAotFunctionTable *table,
+                                                 const TZrUInt32 *typeLayoutRoots,
+                                                 TZrUInt32 typeLayoutRootCount,
+                                                 const TZrByte *metadataBlob,
+                                                 TZrSize metadataBlobLength,
                                                  TZrUInt32 typeLayoutIndexSpace) {
     if (file == ZR_NULL || state == ZR_NULL || table == ZR_NULL || typeLayoutIndexSpace == 0u) {
         return;
@@ -767,6 +889,12 @@ void backend_aot_write_c_type_layout_token_table(FILE *file,
     for (TZrUInt32 typeLayoutId = 0u; typeLayoutId < typeLayoutIndexSpace; typeLayoutId++) {
         TZrMetadataToken token = backend_aot_c_type_layout_token_from_table(state, table, typeLayoutId);
 
+        if (token == 0u &&
+            backend_aot_c_type_layout_token_is_rooted(typeLayoutRoots, typeLayoutRootCount, typeLayoutId)) {
+            token = backend_aot_c_type_layout_token_from_metadata_blob(metadataBlob,
+                                                                       metadataBlobLength,
+                                                                       typeLayoutId);
+        }
         if (token != 0u) {
             fprintf(file, "    0x%08xu,\n", (unsigned)token);
         } else {

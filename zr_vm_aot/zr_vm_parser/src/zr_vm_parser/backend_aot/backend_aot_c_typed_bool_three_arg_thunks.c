@@ -57,6 +57,16 @@ static TZrBool backend_aot_c_bool_stack_copy_reads_slot(const TZrInstruction *in
     return ZR_TRUE;
 }
 
+static TZrBool backend_aot_c_bool_reset_stack_null_targets_slot(const TZrInstruction *instruction,
+                                                                TZrUInt32 slot) {
+    if (instruction == ZR_NULL ||
+        instruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(RESET_STACK_NULL)) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(instruction->instruction.operandExtra == slot);
+}
+
 static TZrBool backend_aot_c_try_get_bool_arg0_arg1_arg2_short_circuit_and_return(
         const SZrFunction *function) {
     const TZrInstruction *leftCopyInstruction = &function->instructionsList[0];
@@ -92,6 +102,52 @@ static TZrBool backend_aot_c_try_get_bool_arg0_arg1_arg2_short_circuit_and_retur
         !backend_aot_c_bool_stack_copy_reads_slot(rightCopyInstruction, 2u, &rightTempSlot) ||
         !backend_aot_c_bool_stack_copy_reads_slot(finalResultInstruction, rightTempSlot, &finalResultSlot) ||
         finalResultSlot != secondConditionSlot) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(returnInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
+                     returnInstruction->instruction.operand.operand1[0] == finalResultSlot);
+}
+
+static TZrBool backend_aot_c_try_get_bool_arg0_arg1_arg2_short_circuit_and_with_reset_return(
+        const SZrFunction *function) {
+    const TZrInstruction *leftCopyInstruction = &function->instructionsList[0];
+    const TZrInstruction *initialResultInstruction = &function->instructionsList[1];
+    const TZrInstruction *firstJumpIfFalseInstruction = &function->instructionsList[2];
+    const TZrInstruction *middleCopyInstruction = &function->instructionsList[3];
+    const TZrInstruction *middleResultInstruction = &function->instructionsList[4];
+    const TZrInstruction *middleResetInstruction = &function->instructionsList[5];
+    const TZrInstruction *secondConditionCopyInstruction = &function->instructionsList[6];
+    const TZrInstruction *secondJumpIfFalseInstruction = &function->instructionsList[7];
+    const TZrInstruction *rightCopyInstruction = &function->instructionsList[8];
+    const TZrInstruction *finalResultInstruction = &function->instructionsList[9];
+    const TZrInstruction *rightResetInstruction = &function->instructionsList[10];
+    const TZrInstruction *returnInstruction = &function->instructionsList[11];
+    TZrUInt32 leftTempSlot;
+    TZrUInt32 resultSlot;
+    TZrUInt32 middleTempSlot;
+    TZrUInt32 middleResultSlot;
+    TZrUInt32 secondConditionSlot;
+    TZrUInt32 rightTempSlot;
+    TZrUInt32 finalResultSlot;
+
+    if (!backend_aot_c_bool_stack_copy_reads_slot(leftCopyInstruction, 0u, &leftTempSlot) ||
+        !backend_aot_c_bool_stack_copy_reads_slot(initialResultInstruction, leftTempSlot, &resultSlot) ||
+        firstJumpIfFalseInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE) ||
+        firstJumpIfFalseInstruction->instruction.operandExtra != leftTempSlot ||
+        firstJumpIfFalseInstruction->instruction.operand.operand2[0] != 3 ||
+        !backend_aot_c_bool_stack_copy_reads_slot(middleCopyInstruction, 1u, &middleTempSlot) ||
+        !backend_aot_c_bool_stack_copy_reads_slot(middleResultInstruction, middleTempSlot, &middleResultSlot) ||
+        middleResultSlot != resultSlot ||
+        !backend_aot_c_bool_reset_stack_null_targets_slot(middleResetInstruction, middleTempSlot) ||
+        !backend_aot_c_bool_stack_copy_reads_slot(secondConditionCopyInstruction, resultSlot, &secondConditionSlot) ||
+        secondJumpIfFalseInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE) ||
+        secondJumpIfFalseInstruction->instruction.operandExtra != resultSlot ||
+        secondJumpIfFalseInstruction->instruction.operand.operand2[0] != 3 ||
+        !backend_aot_c_bool_stack_copy_reads_slot(rightCopyInstruction, 2u, &rightTempSlot) ||
+        !backend_aot_c_bool_stack_copy_reads_slot(finalResultInstruction, rightTempSlot, &finalResultSlot) ||
+        finalResultSlot != secondConditionSlot ||
+        !backend_aot_c_bool_reset_stack_null_targets_slot(rightResetInstruction, rightTempSlot)) {
         return ZR_FALSE;
     }
 
@@ -186,11 +242,15 @@ static TZrBool backend_aot_c_try_get_bool_arg0_arg1_arg2_logical_return(
     }
 
     if (function->instructionsLength == 12u) {
-        if (logicalOperationCode != ZR_INSTRUCTION_ENUM(LOGICAL_OR)) {
-            return ZR_FALSE;
+        if (logicalOperationCode == ZR_INSTRUCTION_ENUM(LOGICAL_AND)) {
+            return backend_aot_c_try_get_bool_arg0_arg1_arg2_short_circuit_and_with_reset_return(function);
         }
 
-        return backend_aot_c_try_get_bool_arg0_arg1_arg2_short_circuit_or_return(function);
+        if (logicalOperationCode == ZR_INSTRUCTION_ENUM(LOGICAL_OR)) {
+            return backend_aot_c_try_get_bool_arg0_arg1_arg2_short_circuit_or_return(function);
+        }
+
+        return ZR_FALSE;
     }
 
     firstLogicalInstruction = &function->instructionsList[0];

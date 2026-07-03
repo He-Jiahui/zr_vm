@@ -54,13 +54,20 @@ static TZrBool backend_aot_c_try_get_u64_constant_return(const SZrFunction *func
     returnInstructionIndex = 1u;
     if (function->instructionsLength == 3u || function->instructionsLength == 4u) {
         copyInstruction = &function->instructionsList[1];
-        if ((copyInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_STACK) &&
-             copyInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(SET_STACK)) ||
-            copyInstruction->instruction.operand.operand2[0] < 0 ||
-            (TZrUInt32)copyInstruction->instruction.operand.operand2[0] != constantSlot) {
+        if (copyInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(GET_STACK) ||
+            copyInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SET_STACK)) {
+            if (copyInstruction->instruction.operand.operand2[0] < 0 ||
+                (TZrUInt32)copyInstruction->instruction.operand.operand2[0] != constantSlot) {
+                return ZR_FALSE;
+            }
+            returnSlot = copyInstruction->instruction.operandExtra;
+        } else if (copyInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(RESET_STACK_NULL)) {
+            if (copyInstruction->instruction.operandExtra == constantSlot) {
+                return ZR_FALSE;
+            }
+        } else {
             return ZR_FALSE;
         }
-        returnSlot = copyInstruction->instruction.operandExtra;
         returnInstructionIndex = 2u;
     }
     if (function->instructionsLength == 4u) {

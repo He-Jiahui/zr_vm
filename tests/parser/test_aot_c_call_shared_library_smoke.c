@@ -440,9 +440,11 @@ static void test_aot_c_generated_shared_library_executes_static_numeric_call_loc
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrFloat64)2.5;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_f64_no_arg_direct_call */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_f6 = zr_aot_typed_f64_fn_2();"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_stack_copy_sync_u64_local_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_u64 dstSlot=4 srcSlot=5"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_u4 = zr_aot_u5;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_stack_copy_sync_f64_local_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_f64 dstSlot=5 srcSlot=6"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_f5 = zr_aot_f6;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_arith_exec_signed_scalar_operands */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_left_scalar = zr_aot_s7;"));

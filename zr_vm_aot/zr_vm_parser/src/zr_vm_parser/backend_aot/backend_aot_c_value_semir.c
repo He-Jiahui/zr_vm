@@ -129,7 +129,7 @@ static TZrBool backend_aot_try_write_c_value_copy_exec(
             "    /* zr_aot_value_exec_inline_copy dstSlot=%u sourceSlot=%u */\n"
             "    {\n"
             "        const SZrTypeLayout *zr_aot_copy_layout =\n"
-            "                ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function, %u, state);\n"
+            "                ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, %u);\n"
             "        if (zr_aot_copy_layout == ZR_NULL || zr_aot_copy_layout->byteSize != %u) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"

@@ -221,8 +221,7 @@
         "^[^\\s./\\\\@$][^\\s/\\\\@$]*$": {
           "type": "object",
           "required": [
-            "assembly",
-            "path"
+            "assembly"
           ],
           "properties": {
             "assembly": {
@@ -235,6 +234,40 @@
               "type": "string",
               "minLength": 1,
               "description": "Referenced .zrp manifest or .zrm assembly path relative to this manifest."
+            },
+            "candidates": {
+              "type": "array",
+              "minItems": 1,
+              "description": "Ordered candidate .zrp/.zrm paths for automatic range-based selection. The loader chooses the highest candidate version satisfying assembly/version range constraints.",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Candidate .zrp manifest or .zrm assembly path relative to this manifest."
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "path"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Candidate .zrp manifest or .zrm assembly path relative to this manifest."
+                      },
+                      "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^\\s/\\\\]+$",
+                        "description": "Optional expected candidate version. If omitted, the target assembly version is read from the candidate."
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                ]
+              }
             },
             "version": {
               "type": "string",
@@ -255,6 +288,28 @@
               "description": "Exclusive maximum accepted assembly version for emitted AssemblyRef metadata."
             }
           },
+          "oneOf": [
+            {
+              "required": [
+                "path"
+              ],
+              "not": {
+                "required": [
+                  "candidates"
+                ]
+              }
+            },
+            {
+              "required": [
+                "candidates"
+              ],
+              "not": {
+                "required": [
+                  "path"
+                ]
+              }
+            }
+          ],
           "additionalProperties": true
         }
       },
@@ -272,6 +327,19 @@
             "assembly": "zr.math",
             "version": "2.1.0",
             "path": "deps/math/math.zrm"
+          },
+          "mathRange": {
+            "assembly": "zr.math",
+            "minVersionInclusive": "2.0.0",
+            "maxVersionExclusive": "3.0.0",
+            "candidates": [
+              {
+                "path": "deps/math-2.0/math.zrp"
+              },
+              {
+                "path": "deps/math-2.2/math.zrp"
+              }
+            ]
           }
         }
       ]
@@ -437,6 +505,52 @@
             "arguments": [
               "Foo"
             ]
+          }
+        ]
+      ]
+    },
+    "exports": {
+      "type": "array",
+      "description": "Optional public metadata export declarations. These declarations identify type, method, and field targets that later AOT/zrp stages may publish into cross-module export metadata.",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "target"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "type",
+              "method",
+              "field"
+            ],
+            "description": "Export target category."
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\s/\\\\@$]+(?:\\.[^\\s/\\\\@$.]+)*$",
+            "description": "Type, method, or field declaration target to publish."
+          }
+        },
+        "additionalProperties": true
+      },
+      "examples": [
+        [
+          {
+            "kind": "type",
+            "target": "Widget"
+          },
+          {
+            "kind": "method",
+            "target": "Widget.run"
+          },
+          {
+            "kind": "field",
+            "target": "Widget.value"
           }
         ]
       ]

@@ -14,9 +14,11 @@
 #include "zr_vm_common/zr_hash_conf.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/aot_runtime.h"
 #include "zr_vm_library/project.h"
+#include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
 
 #ifndef ZR_VM_TESTS_C_COMPILER
@@ -34,6 +36,43 @@
 void setUp(void) {}
 
 void tearDown(void) {}
+
+static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
+    SZrString *sourceName;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_NOT_NULL(sourceNameText);
+
+    sourceName = ZrCore_String_Create(state, (TZrNativeString)sourceNameText, strlen(sourceNameText));
+    TEST_ASSERT_NOT_NULL(sourceName);
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static void rewrite_typed_numeric_equality_to_generic(SZrFunction *function) {
+    TZrUInt32 rewrittenCount = 0u;
+    TZrUInt32 instructionIndex;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(function->instructionsList);
+
+    for (instructionIndex = 0u; instructionIndex < function->instructionsLength; instructionIndex++) {
+        TZrInstruction *instruction = &function->instructionsList[instructionIndex];
+        EZrInstructionCode opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+
+        if (opcode == ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_UNSIGNED) ||
+            opcode == ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_FLOAT)) {
+            instruction->instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL);
+            rewrittenCount++;
+        } else if (opcode == ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_UNSIGNED) ||
+                   opcode == ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_FLOAT)) {
+            instruction->instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL);
+            rewrittenCount++;
+        }
+    }
+
+    TEST_ASSERT_EQUAL_UINT32(4u, rewrittenCount);
+}
 
 #if defined(ZR_PLATFORM_UNIX)
 static int run_command_expect_success(const char *command) {
@@ -168,6 +207,110 @@ static SZrFunction *create_generic_bool_equality_local_function(SZrState *state)
     ZrCore_Value_InitAsInt(state, &function->constantValueList[4], 91);
 
     function->stackSize = 6u;
+    function->parameterCount = 0u;
+    function->hasVariableArguments = ZR_FALSE;
+    function->closureValueLength = 0u;
+    return function;
+}
+
+static SZrFunction *create_generic_i64_equality_local_function(SZrState *state) {
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(TZrInstruction) * 11u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->instructionsList);
+    function->instructionsList[0] = create_get_constant_instruction(0u, 0);
+    function->instructionsList[1] = create_get_constant_instruction(1u, 1);
+    function->instructionsList[2] = create_get_constant_instruction(4u, 2);
+    function->instructionsList[3] = create_generic_bool_compare_instruction(
+            ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL), 2u, 0u, 1u);
+    function->instructionsList[4] = create_jump_if_bool_false_instruction(2u, 4);
+    function->instructionsList[5] = create_generic_bool_compare_instruction(
+            ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL), 3u, 0u, 4u);
+    function->instructionsList[6] = create_jump_if_bool_false_instruction(3u, 2);
+    function->instructionsList[7] = create_get_constant_instruction(5u, 3);
+    function->instructionsList[8] = create_return_instruction(1u, 5u);
+    function->instructionsList[9] = create_get_constant_instruction(5u, 4);
+    function->instructionsList[10] = create_return_instruction(1u, 5u);
+    function->instructionsLength = 11u;
+
+    function->constantValueList = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrTypeValue) * 5u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->constantValueList);
+    function->constantValueLength = 5u;
+    ZrCore_Value_InitAsInt(state, &function->constantValueList[0], 42);
+    ZrCore_Value_InitAsInt(state, &function->constantValueList[1], 42);
+    ZrCore_Value_InitAsInt(state, &function->constantValueList[2], 7);
+    ZrCore_Value_InitAsInt(state, &function->constantValueList[3], 17);
+    ZrCore_Value_InitAsInt(state, &function->constantValueList[4], 91);
+
+    function->stackSize = 6u;
+    function->parameterCount = 0u;
+    function->hasVariableArguments = ZR_FALSE;
+    function->closureValueLength = 0u;
+    return function;
+}
+
+static SZrFunction *create_generic_u64_f64_equality_local_function(SZrState *state) {
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(TZrInstruction) * 18u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->instructionsList);
+    function->instructionsList[0] = create_get_constant_instruction(0u, 0);
+    function->instructionsList[1] = create_get_constant_instruction(1u, 1);
+    function->instructionsList[2] = create_get_constant_instruction(4u, 2);
+    function->instructionsList[3] = create_generic_bool_compare_instruction(
+            ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL), 2u, 0u, 1u);
+    function->instructionsList[4] = create_jump_if_bool_false_instruction(2u, 11);
+    function->instructionsList[5] = create_generic_bool_compare_instruction(
+            ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL), 3u, 0u, 4u);
+    function->instructionsList[6] = create_jump_if_bool_false_instruction(3u, 9);
+    function->instructionsList[7] = create_get_constant_instruction(6u, 3);
+    function->instructionsList[8] = create_get_constant_instruction(7u, 4);
+    function->instructionsList[9] = create_get_constant_instruction(8u, 5);
+    function->instructionsList[10] = create_generic_bool_compare_instruction(
+            ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL), 9u, 6u, 7u);
+    function->instructionsList[11] = create_jump_if_bool_false_instruction(9u, 4);
+    function->instructionsList[12] = create_generic_bool_compare_instruction(
+            ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL), 10u, 6u, 8u);
+    function->instructionsList[13] = create_jump_if_bool_false_instruction(10u, 2);
+    function->instructionsList[14] = create_get_constant_instruction(5u, 6);
+    function->instructionsList[15] = create_return_instruction(1u, 5u);
+    function->instructionsList[16] = create_get_constant_instruction(5u, 7);
+    function->instructionsList[17] = create_return_instruction(1u, 5u);
+    function->instructionsLength = 18u;
+
+    function->constantValueList = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrTypeValue) * 8u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->constantValueList);
+    function->constantValueLength = 8u;
+    ZrCore_Value_InitAsUInt(state, &function->constantValueList[0], 42u);
+    ZrCore_Value_InitAsUInt(state, &function->constantValueList[1], 42u);
+    ZrCore_Value_InitAsUInt(state, &function->constantValueList[2], 7u);
+    ZrCore_Value_InitAsFloat(state, &function->constantValueList[3], 2.5);
+    ZrCore_Value_InitAsFloat(state, &function->constantValueList[4], 2.5);
+    ZrCore_Value_InitAsFloat(state, &function->constantValueList[5], 3.5);
+    ZrCore_Value_InitAsInt(state, &function->constantValueList[6], 17);
+    ZrCore_Value_InitAsInt(state, &function->constantValueList[7], 91);
+
+    function->stackSize = 11u;
     function->parameterCount = 0u;
     function->hasVariableArguments = ZR_FALSE;
     function->closureValueLength = 0u;
@@ -341,8 +484,501 @@ static void test_aot_c_generated_shared_library_executes_generic_bool_equality_l
 #endif
 }
 
+static void test_aot_c_generated_shared_library_executes_generic_i64_equality_local_branch(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C generic i64 equality shared-library smoke validates the Unix dlopen toolchain path");
+#else
+    const char *projectJson =
+            "{"
+            "\"name\":\"aot-runtime-generic-i64-equality-smoke\","
+            "\"source\":\"src\","
+            "\"binary\":\"bin\","
+            "\"entry\":\"main\""
+            "}";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrLibrary_Project *project;
+    SZrBinaryWriterOptions binaryOptions;
+    SZrAotWriterOptions aotOptions;
+    SZrTypeValue result;
+    TZrBytePtr embeddedBlob = ZR_NULL;
+    TZrSize embeddedBlobLength = 0;
+    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar zroPath[ZR_TESTS_PATH_MAX];
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+    char command[4096];
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_generic_i64_equality_local_function(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_i64_equality_local_project",
+                                                       "runtime_generic_i64_equality_smoke",
+                                                       ".zrp",
+                                                       projectPath,
+                                                       sizeof(projectPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_i64_equality_local_project/src",
+                                                       "main",
+                                                       ".zr",
+                                                       sourcePath,
+                                                       sizeof(sourcePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_i64_equality_local_project/bin",
+                                                       "main",
+                                                       ".zro",
+                                                       zroPath,
+                                                       sizeof(zroPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_i64_equality_local_project/bin/aot_c/src",
+                                                       "main",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_i64_equality_local_project/bin/aot_c/lib",
+                                                       "zrvm_aot_main",
+                                                       ".so",
+                                                       sharedLibraryPath,
+                                                       sizeof(sharedLibraryPath)));
+
+    write_text_file_or_fail(projectPath, projectJson);
+    write_text_file_or_fail(sourcePath, "return 17;\n");
+
+    memset(&binaryOptions, 0, sizeof(binaryOptions));
+    binaryOptions.moduleName = "main";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
+    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
+    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(zroPath, &embeddedBlob, &embeddedBlobLength));
+    TEST_ASSERT_NOT_NULL(embeddedBlob);
+    TEST_ASSERT_GREATER_THAN_UINT64(0u, embeddedBlobLength);
+
+    memset(&aotOptions, 0, sizeof(aotOptions));
+    aotOptions.moduleName = "main";
+    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
+    aotOptions.inputHash = zroHash;
+    aotOptions.embeddedModuleBlob = embeddedBlob;
+    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
+    aotOptions.requireExecutableLowering = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_equal"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not_equal"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_i64_compare_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b2 = (TZrBool)((zr_aot_s0 == zr_aot_s1) != 0u);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b3 = (TZrBool)((zr_aot_s0 != zr_aot_s4) != 0u);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b2) {"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b3) {"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual(state, &frame, 2, 0, 1)"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(state, &frame, 3, 0, 4)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, 2"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, 3"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "frame.slotBase[0].value"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "frame.slotBase[1].value"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "frame.slotBase[4].value"));
+    free(generatedCText);
+
+    snprintf(command,
+             sizeof(command),
+             "\"%s\" -std=c11 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "-I\"%s/zr_vm_common/include\" "
+             "-I\"%s/zr_vm_core/include\" "
+             "-I\"%s/zr_vm_library/include\" "
+             "\"%s\" "
+             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
+             "-lzr_vm_library -lzr_vm_core "
+             "-o \"%s\"",
+             ZR_VM_TESTS_C_COMPILER,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             generatedCPath,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             sharedLibraryPath);
+    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
+    TEST_ASSERT_NOT_NULL(project);
+    state->global->userData = project;
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
+                                                          ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
+                                                          ZR_TRUE));
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result),
+                             ZrLibrary_AotRuntime_GetLastError(state->global));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+    TEST_ASSERT_EQUAL_INT64(17, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C, ZrLibrary_AotRuntime_GetExecutedVia(state->global));
+
+    state->global->userData = ZR_NULL;
+    ZrLibrary_Project_Free(state, project);
+    free(embeddedBlob);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
+static void test_aot_c_generated_shared_library_executes_generic_u64_f64_equality_local_branch(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C generic u64/f64 equality shared-library smoke validates the Unix dlopen toolchain path");
+#else
+    const char *projectJson =
+            "{"
+            "\"name\":\"aot-runtime-generic-u64-f64-equality-smoke\","
+            "\"source\":\"src\","
+            "\"binary\":\"bin\","
+            "\"entry\":\"main\""
+            "}";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrLibrary_Project *project;
+    SZrBinaryWriterOptions binaryOptions;
+    SZrAotWriterOptions aotOptions;
+    SZrTypeValue result;
+    TZrBytePtr embeddedBlob = ZR_NULL;
+    TZrSize embeddedBlobLength = 0;
+    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar zroPath[ZR_TESTS_PATH_MAX];
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+    char command[4096];
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_generic_u64_f64_equality_local_function(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_u64_f64_equality_local_project",
+                                                       "runtime_generic_u64_f64_equality_smoke",
+                                                       ".zrp",
+                                                       projectPath,
+                                                       sizeof(projectPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_u64_f64_equality_local_project/src",
+                                                       "main",
+                                                       ".zr",
+                                                       sourcePath,
+                                                       sizeof(sourcePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_u64_f64_equality_local_project/bin",
+                                                       "main",
+                                                       ".zro",
+                                                       zroPath,
+                                                       sizeof(zroPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_u64_f64_equality_local_project/bin/aot_c/src",
+                                                       "main",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_u64_f64_equality_local_project/bin/aot_c/lib",
+                                                       "zrvm_aot_main",
+                                                       ".so",
+                                                       sharedLibraryPath,
+                                                       sizeof(sharedLibraryPath)));
+
+    write_text_file_or_fail(projectPath, projectJson);
+    write_text_file_or_fail(sourcePath, "return 17;\n");
+
+    memset(&binaryOptions, 0, sizeof(binaryOptions));
+    binaryOptions.moduleName = "main";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
+    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
+    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(zroPath, &embeddedBlob, &embeddedBlobLength));
+    TEST_ASSERT_NOT_NULL(embeddedBlob);
+    TEST_ASSERT_GREATER_THAN_UINT64(0u, embeddedBlobLength);
+
+    memset(&aotOptions, 0, sizeof(aotOptions));
+    aotOptions.moduleName = "main";
+    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
+    aotOptions.inputHash = zroHash;
+    aotOptions.embeddedModuleBlob = embeddedBlob;
+    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
+    aotOptions.requireExecutableLowering = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_equal"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not_equal"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_u64_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_u64_compare_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_f64_compare_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b2 = (TZrBool)((zr_aot_u0 == zr_aot_u1) != 0u);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b3 = (TZrBool)((zr_aot_u0 != zr_aot_u4) != 0u);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b9 = (TZrBool)((zr_aot_f6 == zr_aot_f7) != 0u);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b10 = (TZrBool)((zr_aot_f6 != zr_aot_f8) != 0u);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b2) {"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b3) {"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b9) {"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b10) {"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual(state, &frame, 2, 0, 1)"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(state, &frame, 3, 0, 4)"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual(state, &frame, 9, 6, 7)"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(state, &frame, 10, 6, 8)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, 2"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, 3"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, 9"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, 10"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "frame.slotBase[0].value"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "frame.slotBase[1].value"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "frame.slotBase[4].value"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "frame.slotBase[6].value"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "frame.slotBase[7].value"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "frame.slotBase[8].value"));
+    free(generatedCText);
+
+    snprintf(command,
+             sizeof(command),
+             "\"%s\" -std=c11 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "-I\"%s/zr_vm_common/include\" "
+             "-I\"%s/zr_vm_core/include\" "
+             "-I\"%s/zr_vm_library/include\" "
+             "\"%s\" "
+             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
+             "-lzr_vm_library -lzr_vm_core "
+             "-o \"%s\"",
+             ZR_VM_TESTS_C_COMPILER,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             generatedCPath,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             sharedLibraryPath);
+    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
+    TEST_ASSERT_NOT_NULL(project);
+    state->global->userData = project;
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
+                                                          ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
+                                                          ZR_TRUE));
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result),
+                             ZrLibrary_AotRuntime_GetLastError(state->global));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+    TEST_ASSERT_EQUAL_INT64(17, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C, ZrLibrary_AotRuntime_GetExecutedVia(state->global));
+
+    state->global->userData = ZR_NULL;
+    ZrLibrary_Project_Free(state, project);
+    free(embeddedBlob);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
+static void test_aot_c_generated_shared_library_executes_generic_call_result_equality_local_branch(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C generic call-result equality shared-library smoke validates the Unix dlopen toolchain path");
+#else
+    const char *source =
+            "func unsignedFortyTwo(): uint {\n"
+            "    var value: uint = 42;\n"
+            "    return value;\n"
+            "}\n"
+            "func unsignedAlsoFortyTwo(): uint {\n"
+            "    var value: uint = 42;\n"
+            "    return value;\n"
+            "}\n"
+            "func unsignedSeven(): uint {\n"
+            "    var value: uint = 7;\n"
+            "    return value;\n"
+            "}\n"
+            "func floatTwoPointFive(): float {\n"
+            "    var value: float = 2.5;\n"
+            "    return value;\n"
+            "}\n"
+            "func floatAlsoTwoPointFive(): float {\n"
+            "    var value: float = 2.5;\n"
+            "    return value;\n"
+            "}\n"
+            "func floatThreePointFive(): float {\n"
+            "    var value: float = 3.5;\n"
+            "    return value;\n"
+            "}\n"
+            "var sameUnsigned: bool = unsignedFortyTwo() == unsignedAlsoFortyTwo();\n"
+            "var differentUnsigned: bool = unsignedFortyTwo() != unsignedSeven();\n"
+            "var sameFloat: bool = floatTwoPointFive() == floatAlsoTwoPointFive();\n"
+            "var differentFloat: bool = floatTwoPointFive() != floatThreePointFive();\n"
+            "if (!sameUnsigned) {\n"
+            "    return 91;\n"
+            "}\n"
+            "if (!differentUnsigned) {\n"
+            "    return 92;\n"
+            "}\n"
+            "if (!sameFloat) {\n"
+            "    return 93;\n"
+            "}\n"
+            "if (!differentFloat) {\n"
+            "    return 94;\n"
+            "}\n"
+            "return 17;\n";
+    const char *projectJson =
+            "{"
+            "\"name\":\"aot-runtime-generic-call-result-equality-smoke\","
+            "\"source\":\"src\","
+            "\"binary\":\"bin\","
+            "\"entry\":\"main\""
+            "}";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrLibrary_Project *project;
+    SZrBinaryWriterOptions binaryOptions;
+    SZrAotWriterOptions aotOptions;
+    SZrTypeValue result;
+    TZrBytePtr embeddedBlob = ZR_NULL;
+    TZrSize embeddedBlobLength = 0;
+    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar zroPath[ZR_TESTS_PATH_MAX];
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+    char command[4096];
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_source(state, source, "main.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    rewrite_typed_numeric_equality_to_generic(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_call_result_equality_local_project",
+                                                       "runtime_generic_call_result_equality_smoke",
+                                                       ".zrp",
+                                                       projectPath,
+                                                       sizeof(projectPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_call_result_equality_local_project/src",
+                                                       "main",
+                                                       ".zr",
+                                                       sourcePath,
+                                                       sizeof(sourcePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_call_result_equality_local_project/bin",
+                                                       "main",
+                                                       ".zro",
+                                                       zroPath,
+                                                       sizeof(zroPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_call_result_equality_local_project/bin/aot_c/src",
+                                                       "main",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_shared_library",
+                                                       "generic_call_result_equality_local_project/bin/aot_c/lib",
+                                                       "zrvm_aot_main",
+                                                       ".so",
+                                                       sharedLibraryPath,
+                                                       sizeof(sharedLibraryPath)));
+
+    write_text_file_or_fail(projectPath, projectJson);
+    write_text_file_or_fail(sourcePath, source);
+
+    memset(&binaryOptions, 0, sizeof(binaryOptions));
+    binaryOptions.moduleName = "main";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(state, function, zroPath, &binaryOptions));
+    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
+    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(zroPath, &embeddedBlob, &embeddedBlobLength));
+    TEST_ASSERT_NOT_NULL(embeddedBlob);
+    TEST_ASSERT_GREATER_THAN_UINT64(0u, embeddedBlobLength);
+
+    memset(&aotOptions, 0, sizeof(aotOptions));
+    aotOptions.moduleName = "main";
+    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
+    aotOptions.inputHash = zroHash;
+    aotOptions.embeddedModuleBlob = embeddedBlob;
+    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
+    aotOptions.requireExecutableLowering = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_equal"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not_equal"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_u64_no_arg_direct_call */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_f64_no_arg_direct_call */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrUInt64 zr_aot_typed_u64_fn_3(void);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrUInt64)7;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_u64_compare_scalar_local"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_f64_compare_scalar_local"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_u64_no_arg_direct_call_sync_stack_slot */"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_f64_no_arg_direct_call_sync_stack_slot */"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual(state, &frame"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(state, &frame"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_generic_logical_sync_bool_local_boundary"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_direct_static_function_call_sync_bool_local_boundary"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
+    free(generatedCText);
+
+    snprintf(command,
+             sizeof(command),
+             "\"%s\" -std=c11 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "-I\"%s/zr_vm_common/include\" "
+             "-I\"%s/zr_vm_core/include\" "
+             "-I\"%s/zr_vm_library/include\" "
+             "\"%s\" "
+             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
+             "-lzr_vm_library -lzr_vm_core "
+             "-o \"%s\"",
+             ZR_VM_TESTS_C_COMPILER,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             generatedCPath,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             sharedLibraryPath);
+    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
+    TEST_ASSERT_NOT_NULL(project);
+    state->global->userData = project;
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
+                                                          ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
+                                                          ZR_TRUE));
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result),
+                             ZrLibrary_AotRuntime_GetLastError(state->global));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+    TEST_ASSERT_EQUAL_INT64(17, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C, ZrLibrary_AotRuntime_GetExecutedVia(state->global));
+
+    state->global->userData = ZR_NULL;
+    ZrLibrary_Project_Free(state, project);
+    free(embeddedBlob);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_generic_bool_equality_local_branch);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_generic_i64_equality_local_branch);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_generic_u64_f64_equality_local_branch);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_generic_call_result_equality_local_branch);
     return UNITY_END();
 }

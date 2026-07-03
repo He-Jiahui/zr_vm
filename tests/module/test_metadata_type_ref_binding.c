@@ -19,6 +19,7 @@
 #define TEST_PROVIDER_TYPE_DEF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u)
 #define TEST_PROVIDER_TYPE_DEF_SIGNATURE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 2u)
 #define TEST_PROVIDER_MEMBER_DEF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 1u)
+#define TEST_PROVIDER_MANIFEST_MEMBER_DEF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 2u)
 #define TEST_PROVIDER_MEMBER_DEF_SIGNATURE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 3u)
 #define TEST_CALLER_TYPE_REF_HASH ((TZrUInt64)0x1020304050607080ULL)
 #define TEST_PROVIDER_TYPE_DEF_HASH ((TZrUInt64)0x8877665544332211ULL)
@@ -156,7 +157,10 @@ static SZrFunction *create_provider_type_def_fixture(SZrState *state) {
     return function;
 }
 
-static void attach_provider_export_symbol(SZrState *state, SZrFunction *function, SZrString *symbolName) {
+static void attach_provider_export_symbol_with_member_token(SZrState *state,
+                                                            SZrFunction *function,
+                                                            SZrString *symbolName,
+                                                            TZrMetadataToken memberToken) {
     SZrFunctionTypedExportSymbol *symbol;
 
     function->typedExportedSymbols = (SZrFunctionTypedExportSymbol *)ZrCore_Memory_RawMallocWithType(
@@ -173,9 +177,13 @@ static void attach_provider_export_symbol(SZrState *state, SZrFunction *function
     symbol->symbolKind = ZR_FUNCTION_TYPED_SYMBOL_FUNCTION;
     symbol->exportKind = ZR_MODULE_EXPORT_KIND_FUNCTION;
     symbol->readiness = ZR_MODULE_EXPORT_READY_DECLARATION;
-    symbol->metadataToken = TEST_PROVIDER_MEMBER_DEF_TOKEN;
+    symbol->metadataToken = memberToken;
     symbol->signatureToken = TEST_PROVIDER_MEMBER_DEF_SIGNATURE_TOKEN;
     symbol->signatureHash = TEST_PROVIDER_MEMBER_DEF_HASH;
+}
+
+static void attach_provider_export_symbol(SZrState *state, SZrFunction *function, SZrString *symbolName) {
+    attach_provider_export_symbol_with_member_token(state, function, symbolName, TEST_PROVIDER_MEMBER_DEF_TOKEN);
 }
 
 static void attach_caller_import_effect(SZrState *state,
@@ -316,6 +324,63 @@ static void test_type_ref_binding_mismatch_records_loader_diagnostic(void) {
     TEST_ASSERT_NOT_NULL(strstr(diagnostic, "layoutMismatches=1"));
     TEST_ASSERT_NOT_NULL(strstr(diagnostic, "firstLayoutMismatchTypeRefToken="));
     TEST_ASSERT_NULL(ZrCore_Function_FindModuleMetadataBinding(callerFunction, TEST_CALLER_TYPE_REF_TOKEN));
+
+    ZrCore_Function_Free(state, callerFunction);
+    ZrCore_Function_Free(state, providerFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_import_signature_rejects_manifest_export_token_drift(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *callerFunction;
+    SZrFunction *providerFunction;
+    SZrObjectModule *providerModule;
+    SZrString *moduleName;
+    SZrString *symbolName;
+    const SZrAotManifestExportEntry manifestExports[1] = {
+            {
+                    ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_METHOD,
+                    ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_MEMBER_TOKEN,
+                    "Factory.make",
+                    0u,
+                    TEST_PROVIDER_MANIFEST_MEMBER_DEF_TOKEN,
+            },
+    };
+    SZrAotCodeRegistration registration = {0};
+
+    TEST_ASSERT_NOT_NULL(state);
+    moduleName = ZrCore_String_CreateFromNative(state, "manifest.provider");
+    symbolName = ZrCore_String_CreateFromNative(state, "Factory.make");
+    TEST_ASSERT_NOT_NULL(moduleName);
+    TEST_ASSERT_NOT_NULL(symbolName);
+
+    callerFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(callerFunction);
+    attach_caller_import_effect(state, callerFunction, moduleName, symbolName);
+
+    providerFunction = create_provider_type_def_fixture(state);
+    attach_provider_export_symbol_with_member_token(state,
+                                                    providerFunction,
+                                                    symbolName,
+                                                    TEST_PROVIDER_MEMBER_DEF_TOKEN);
+
+    providerModule = ZrCore_Module_Create(state);
+    TEST_ASSERT_NOT_NULL(providerModule);
+    ZrCore_Module_SetInfo(state,
+                          providerModule,
+                          moduleName,
+                          ZrCore_Module_CalculatePathHash(state, moduleName),
+                          moduleName);
+    ZrCore_Reflection_AttachModuleRuntimeMetadata(state, providerModule, providerFunction);
+    registration.manifestExports = manifestExports;
+    registration.manifestExportCount = 1u;
+    TEST_ASSERT_NOT_NULL(ZrCore_Module_AttachMetadataRuntime(providerModule, providerFunction, &registration));
+
+    TEST_ASSERT_FALSE(zr_module_import_signature_verify(state,
+                                                        callerFunction,
+                                                        moduleName,
+                                                        providerModule,
+                                                        ZR_NULL));
 
     ZrCore_Function_Free(state, callerFunction);
     ZrCore_Function_Free(state, providerFunction);
@@ -825,6 +890,7 @@ int main(void) {
     RUN_TEST(test_targeted_type_ref_binds_to_provider_type_def_identity);
     RUN_TEST(test_type_ref_binding_reports_layout_mismatch_without_partial_binding);
     RUN_TEST(test_type_ref_binding_mismatch_records_loader_diagnostic);
+    RUN_TEST(test_import_signature_rejects_manifest_export_token_drift);
     RUN_TEST(test_import_target_signature_emits_stable_provider_type_ref);
     RUN_TEST(test_nested_generic_import_target_signature_emits_provider_type_ref);
     RUN_TEST(test_explicit_import_type_annotation_emits_provider_type_ref);

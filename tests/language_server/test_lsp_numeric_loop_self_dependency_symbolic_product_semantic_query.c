@@ -307,6 +307,21 @@ static const TZrChar *subtractive_constant_product_factor_content(void) {
            "}\n";
 }
 
+static const TZrChar *target_self_canceling_product_factor_content(void) {
+    return "func calc(flag: bool, seed: u8): int {\n"
+           "    var narrowed: int = 5;\n"
+           "    var other: int = 0;\n"
+           "    var step: int = (seed % 3) + 1;\n"
+           "    var factor: int = (seed % 5) - 2;\n"
+           "    while (flag) {\n"
+           "        narrowed = narrowed + ((step * ((narrowed - narrowed) * factor)) + step);\n"
+           "        other = narrowed;\n"
+           "    }\n"
+           "    narrowed + 0;\n"
+           "    return other + 0;\n"
+           "}\n";
+}
+
 static TZrBool
 test_local_expression_query_keeps_target_reading_symbolic_associative_commutative_product_exact_cancel(
         SZrState *state) {
@@ -559,6 +574,34 @@ test_local_expression_query_keeps_target_reading_symbolic_subtractive_constant_p
     return narrowedPassed && otherPassed;
 }
 
+static TZrBool
+test_local_expression_query_widens_target_reading_symbolic_target_self_canceling_product_factor_positive_residual(
+        SZrState *state) {
+    const TZrChar *content = target_self_canceling_product_factor_content();
+    TZrBool narrowedPassed;
+    TZrBool otherPassed;
+
+    narrowedPassed = run_assignment_range_case_at(
+            state,
+            "while self-dependent target-reading symbolic target self-canceling product factor positive residual target assignment dataflow",
+            "file:///local_while_self_dependent_target_reading_symbolic_target_self_canceling_product_factor_positive_residual_target_numeric_range_fact.zr",
+            content,
+            "narrowed + 0",
+            strlen("narrowed "),
+            5,
+            ZR_TYPE_RANGE_INT64_MAX);
+    otherPassed = run_assignment_range_case_at(
+            state,
+            "while self-dependent target-reading symbolic target self-canceling product factor positive residual observer assignment dataflow",
+            "file:///local_while_self_dependent_target_reading_symbolic_target_self_canceling_product_factor_positive_residual_observer_numeric_range_fact.zr",
+            content,
+            "return other + 0",
+            strlen("return other "),
+            0,
+            ZR_TYPE_RANGE_INT64_MAX);
+    return narrowedPassed && otherPassed;
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -572,6 +615,7 @@ int main(void) {
     TZrBool targetReadingSymbolicModuloConstantProductFactorExactCancelPassed;
     TZrBool targetReadingSymbolicAdditiveConstantProductFactorExactCancelPassed;
     TZrBool targetReadingSymbolicSubtractiveConstantProductFactorExactCancelPassed;
+    TZrBool targetReadingSymbolicTargetSelfCancelingProductFactorPositiveResidualPassed;
 
     memset(&callbacks, 0, sizeof(callbacks));
     global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
@@ -630,6 +674,11 @@ int main(void) {
                 state);
     printf("%s: LSP Local Expression Query Keeps Self-Dependent Target-Reading Symbolic Subtractive Constant Product Factor Exact Cancel\n",
            targetReadingSymbolicSubtractiveConstantProductFactorExactCancelPassed ? "PASS" : "FAIL");
+    targetReadingSymbolicTargetSelfCancelingProductFactorPositiveResidualPassed =
+        test_local_expression_query_widens_target_reading_symbolic_target_self_canceling_product_factor_positive_residual(
+                state);
+    printf("%s: LSP Local Expression Query Widens Self-Dependent Target-Reading Symbolic Target Self-Canceling Product Factor Positive Residual\n",
+           targetReadingSymbolicTargetSelfCancelingProductFactorPositiveResidualPassed ? "PASS" : "FAIL");
 
     ZrCore_GlobalState_Free(global);
     return targetReadingSymbolicAssociativeCommutativeProductExactCancelPassed &&
@@ -640,7 +689,8 @@ int main(void) {
                    targetReadingSymbolicDividedConstantProductFactorExactCancelPassed &&
                    targetReadingSymbolicModuloConstantProductFactorExactCancelPassed &&
                    targetReadingSymbolicAdditiveConstantProductFactorExactCancelPassed &&
-                   targetReadingSymbolicSubtractiveConstantProductFactorExactCancelPassed
+                   targetReadingSymbolicSubtractiveConstantProductFactorExactCancelPassed &&
+                   targetReadingSymbolicTargetSelfCancelingProductFactorPositiveResidualPassed
            ? 0
            : 1;
 }

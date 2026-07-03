@@ -127,6 +127,49 @@ static TZrBool type_inference_int64_mul(TZrInt64 left, TZrInt64 right, TZrInt64 
     return ZR_TRUE;
 }
 
+static TZrBool type_inference_int64_shift_left_nonnegative_range(TZrInt64 leftMin,
+                                                                 TZrInt64 leftMax,
+                                                                 TZrInt64 rightMin,
+                                                                 TZrInt64 rightMax,
+                                                                 TZrInt64 *outMinValue,
+                                                                 TZrInt64 *outMaxValue) {
+    if (outMinValue == ZR_NULL ||
+        outMaxValue == ZR_NULL ||
+        leftMin < 0 ||
+        leftMax < leftMin ||
+        rightMin < 0 ||
+        rightMax < rightMin ||
+        rightMax >= 63 ||
+        leftMax > (ZR_TYPE_RANGE_INT64_MAX >> (unsigned int)rightMax)) {
+        return ZR_FALSE;
+    }
+
+    *outMinValue = (TZrInt64)((TZrUInt64)leftMin << (unsigned int)rightMin);
+    *outMaxValue = (TZrInt64)((TZrUInt64)leftMax << (unsigned int)rightMax);
+    return ZR_TRUE;
+}
+
+static TZrBool type_inference_int64_shift_right_nonnegative_range(TZrInt64 leftMin,
+                                                                  TZrInt64 leftMax,
+                                                                  TZrInt64 rightMin,
+                                                                  TZrInt64 rightMax,
+                                                                  TZrInt64 *outMinValue,
+                                                                  TZrInt64 *outMaxValue) {
+    if (outMinValue == ZR_NULL ||
+        outMaxValue == ZR_NULL ||
+        leftMin < 0 ||
+        leftMax < leftMin ||
+        rightMin < 0 ||
+        rightMax < rightMin ||
+        rightMax >= 63) {
+        return ZR_FALSE;
+    }
+
+    *outMinValue = (TZrInt64)((TZrUInt64)leftMin >> (unsigned int)rightMax);
+    *outMaxValue = (TZrInt64)((TZrUInt64)leftMax >> (unsigned int)rightMin);
+    return ZR_TRUE;
+}
+
 static TZrBool type_inference_int64_div(TZrInt64 left, TZrInt64 right, TZrInt64 *outValue) {
     if (outValue == ZR_NULL || right == 0) {
         return ZR_FALSE;
@@ -464,6 +507,32 @@ void type_inference_apply_binary_numeric_range(SZrState *state,
                                             rightType->maxValue,
                                             &minValue,
                                             &maxValue)) {
+            result->hasRangeConstraint = ZR_FALSE;
+            return;
+        }
+        result->minValue = minValue;
+        result->maxValue = maxValue;
+        result->hasRangeConstraint = ZR_TRUE;
+    } else if (strcmp(op, "<<") == 0) {
+        if (!type_inference_int64_shift_left_nonnegative_range(leftType->minValue,
+                                                               leftType->maxValue,
+                                                               rightType->minValue,
+                                                               rightType->maxValue,
+                                                               &minValue,
+                                                               &maxValue)) {
+            result->hasRangeConstraint = ZR_FALSE;
+            return;
+        }
+        result->minValue = minValue;
+        result->maxValue = maxValue;
+        result->hasRangeConstraint = ZR_TRUE;
+    } else if (strcmp(op, ">>") == 0) {
+        if (!type_inference_int64_shift_right_nonnegative_range(leftType->minValue,
+                                                                 leftType->maxValue,
+                                                                 rightType->minValue,
+                                                                 rightType->maxValue,
+                                                                 &minValue,
+                                                                 &maxValue)) {
             result->hasRangeConstraint = ZR_FALSE;
             return;
         }

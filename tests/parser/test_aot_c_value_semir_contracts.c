@@ -183,18 +183,22 @@ static void test_aot_c_value_semir_field_lowering_lives_in_focused_module(void) 
 static void test_aot_c_value_semir_inline_struct_field_transfer_uses_layout_copy_for_non_pod(void) {
     static const char *const fieldSourceNeedles[] = {
             "const SZrTypeLayout *zr_aot_field_layout =",
-            "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function",
+            "ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function",
             "fieldLayout->typeLayoutId",
             "zr_aot_field_layout->byteSize != %u",
             "ZrCore_TypeLayout_CanRawCopy(zr_aot_field_layout)",
             "zr_aot_value_exec_field_inline_struct_copy",
             "ZrCore_TypeLayout_CopyInline(state,",
     };
+    static const char *const fieldSourceForbiddenNeedles[] = {
+            "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function",
+    };
     char *fieldSourceText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c");
 
     TEST_ASSERT_NOT_NULL(fieldSourceText);
     assert_text_contains_all(fieldSourceText, fieldSourceNeedles, ARRAY_COUNT(fieldSourceNeedles));
+    assert_text_contains_none(fieldSourceText, fieldSourceForbiddenNeedles, ARRAY_COUNT(fieldSourceForbiddenNeedles));
 
     free(fieldSourceText);
 }

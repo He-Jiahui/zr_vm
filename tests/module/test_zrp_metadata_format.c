@@ -4,6 +4,7 @@
 
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/zrp_metadata.h"
+#include "zr_vm_common/zr_aot_abi.h"
 
 void setUp(void) {}
 
@@ -44,8 +45,8 @@ static void test_zrp_metadata_header_roundtrips_tables_and_pools(void) {
     TEST_ASSERT_EQUAL_UINT16(ZR_ZRP_METADATA_VERSION, header.version);
     TEST_ASSERT_EQUAL_UINT16(ZR_ZRP_METADATA_HEADER_SIZE, header.headerSize);
     TEST_ASSERT_EQUAL_UINT32(ZR_ZRP_METADATA_SECTION_COUNT, header.sectionCount);
-    TEST_ASSERT_EQUAL_UINT32(12u, ZR_ZRP_METADATA_SECTION_COUNT);
-    TEST_ASSERT_EQUAL_UINT32(208u, ZR_ZRP_METADATA_HEADER_SIZE);
+    TEST_ASSERT_EQUAL_UINT32(13u, ZR_ZRP_METADATA_SECTION_COUNT);
+    TEST_ASSERT_EQUAL_UINT32(224u, ZR_ZRP_METADATA_HEADER_SIZE);
     TEST_ASSERT_EQUAL_INT(ZR_ZRP_METADATA_SECTION_TYPE_DEFS, 1);
     TEST_ASSERT_EQUAL_INT(ZR_ZRP_METADATA_SECTION_METHOD_DEFS, 2);
     TEST_ASSERT_EQUAL_INT(ZR_ZRP_METADATA_SECTION_FIELD_DEFS, 3);
@@ -54,6 +55,10 @@ static void test_zrp_metadata_header_roundtrips_tables_and_pools(void) {
     TEST_ASSERT_EQUAL_INT(ZR_ZRP_METADATA_SECTION_TYPE_SPECS, 6);
     TEST_ASSERT_EQUAL_INT(ZR_ZRP_METADATA_SECTION_METHOD_SPECS, 7);
     TEST_ASSERT_EQUAL_INT(ZR_ZRP_METADATA_SECTION_MODULE_REFS, 8);
+    TEST_ASSERT_EQUAL_INT(ZR_ZRP_METADATA_SECTION_STRING_POOL, 9);
+    TEST_ASSERT_EQUAL_INT(ZR_ZRP_METADATA_SECTION_SIGNATURE_BLOB_POOL, 10);
+    TEST_ASSERT_EQUAL_INT(ZR_ZRP_METADATA_SECTION_CONSTANT_POOL, 11);
+    TEST_ASSERT_EQUAL_INT(ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS, 12);
 
     nextOffset = ZR_ZRP_METADATA_HEADER_SIZE;
     set_counted_section(&header.tokenRecords,
@@ -121,6 +126,7 @@ static void test_zrp_metadata_header_roundtrips_tables_and_pools(void) {
     assert_section_equal(&header.stringPool, &decoded.stringPool);
     assert_section_equal(&header.signatureBlobPool, &decoded.signatureBlobPool);
     assert_section_equal(&header.constantPool, &decoded.constantPool);
+    assert_section_equal(&header.manifestExports, &decoded.manifestExports);
 }
 
 static void test_zrp_metadata_header_rejects_wrong_definition_table_element_size(void) {
@@ -777,6 +783,181 @@ static void test_zrp_metadata_definition_table_rows_validate_cross_table_ranges(
     TEST_ASSERT_FALSE(ZrCore_ZrpMetadata_ValidateDefinitionTables(bytes, sizeof(bytes), &decoded));
 }
 
+static void test_zrp_metadata_field_default_values_validate_constant_pool_slices(void) {
+    SZrZrpMetadataHeader header;
+    SZrZrpMetadataHeader decoded;
+    SZrZrpMetadataTypeDefRow *typeRows;
+    SZrZrpMetadataFieldDefRow *fieldRows;
+    TZrMetadataToken typeToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u);
+    TZrMetadataToken fieldToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 1u);
+    TZrUInt32 nextOffset;
+    TZrByte bytes[ZR_ZRP_METADATA_HEADER_SIZE + 256u] = {0};
+
+    ZrCore_ZrpMetadata_InitHeader(&header);
+    nextOffset = ZR_ZRP_METADATA_HEADER_SIZE;
+    set_counted_section(&header.typeDefs,
+                        &nextOffset,
+                        1u,
+                        (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow));
+    set_counted_section(&header.fieldDefs,
+                        &nextOffset,
+                        1u,
+                        (TZrUInt32)sizeof(SZrZrpMetadataFieldDefRow));
+    set_counted_section(&header.constantPool, &nextOffset, 8u, 1u);
+
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteHeader(bytes, sizeof(bytes), &header));
+    typeRows = (SZrZrpMetadataTypeDefRow *)(void *)(bytes + header.typeDefs.offset);
+    fieldRows = (SZrZrpMetadataFieldDefRow *)(void *)(bytes + header.fieldDefs.offset);
+
+    typeRows[0].token = typeToken;
+    typeRows[0].firstFieldDefIndex = 0u;
+    typeRows[0].fieldDefCount = 1u;
+    fieldRows[0].token = fieldToken;
+    fieldRows[0].ownerTypeToken = typeToken;
+    fieldRows[0].defaultValueConstantPoolOffset = 2u;
+    fieldRows[0].defaultValueConstantPoolLength = 4u;
+
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_ReadHeader(bytes, sizeof(bytes), &decoded));
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_ValidateDefinitionTables(bytes, sizeof(bytes), &decoded));
+
+    fieldRows[0].defaultValueConstantPoolOffset = 6u;
+    fieldRows[0].defaultValueConstantPoolLength = 3u;
+    TEST_ASSERT_FALSE(ZrCore_ZrpMetadata_ValidateDefinitionTables(bytes, sizeof(bytes), &decoded));
+
+    fieldRows[0].defaultValueConstantPoolOffset = 0u;
+    fieldRows[0].defaultValueConstantPoolLength = 0u;
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_ValidateDefinitionTables(bytes, sizeof(bytes), &decoded));
+
+    fieldRows[0].defaultValueConstantPoolOffset = 1u;
+    fieldRows[0].defaultValueConstantPoolLength = 0u;
+    TEST_ASSERT_FALSE(ZrCore_ZrpMetadata_ValidateDefinitionTables(bytes, sizeof(bytes), &decoded));
+}
+
+static void test_zrp_metadata_manifest_exports_roundtrip_and_validate_token_shapes(void) {
+    static const TZrByte stringPayload[] = {'M', 'a', 't', 'h', 0u, 'a', 'd', 'd', 0u, 's', 'e', 'e', 'd', 0u};
+    SZrZrpMetadataHeader header;
+    SZrZrpMetadataHeader decoded;
+    SZrZrpMetadataSectionView view;
+    SZrZrpMetadataManifestExportRow exportRows[6];
+    TZrUInt32 nextOffset;
+    TZrByte bytes[ZR_ZRP_METADATA_HEADER_SIZE + 512u] = {0};
+
+    ZrCore_ZrpMetadata_InitHeader(&header);
+    nextOffset = ZR_ZRP_METADATA_HEADER_SIZE;
+    set_counted_section(&header.stringPool,
+                        &nextOffset,
+                        (TZrUInt32)sizeof(stringPayload),
+                        1u);
+    set_counted_section(&header.manifestExports,
+                        &nextOffset,
+                        6u,
+                        (TZrUInt32)sizeof(SZrZrpMetadataManifestExportRow));
+
+    memset(exportRows, 0, sizeof(exportRows));
+    exportRows[0].kind = ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_TYPE;
+    exportRows[0].flags = ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_TYPE_TOKEN;
+    exportRows[0].targetStringOffset = 0u;
+    exportRows[0].typeToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u);
+    exportRows[1].kind = ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_METHOD;
+    exportRows[1].flags = ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_MEMBER_TOKEN;
+    exportRows[1].targetStringOffset = 5u;
+    exportRows[1].memberToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 1u);
+    exportRows[2].kind = ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_FIELD;
+    exportRows[2].flags = ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_MEMBER_TOKEN;
+    exportRows[2].targetStringOffset = 9u;
+    exportRows[2].memberToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 2u);
+    exportRows[3].kind = ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_TYPE;
+    exportRows[3].targetStringOffset = 0u;
+    exportRows[4].kind = ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_METHOD;
+    exportRows[4].targetStringOffset = 5u;
+    exportRows[5].kind = ZR_AOT_MANIFEST_EXPORT_ENTRY_KIND_FIELD;
+    exportRows[5].targetStringOffset = 9u;
+
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteHeader(bytes, sizeof(bytes), &header));
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WritePoolPayload(bytes,
+                                                         sizeof(bytes),
+                                                         &header,
+                                                         ZR_ZRP_METADATA_SECTION_STRING_POOL,
+                                                         stringPayload,
+                                                         (TZrUInt32)sizeof(stringPayload)));
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteDefinitionTablePayload(
+            bytes,
+            sizeof(bytes),
+            &header,
+            ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS,
+            exportRows,
+            6u,
+            (TZrUInt32)sizeof(SZrZrpMetadataManifestExportRow)));
+
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_ReadHeader(bytes, sizeof(bytes), &decoded));
+    memset(&view, 0, sizeof(view));
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_GetSectionView(bytes,
+                                                       sizeof(bytes),
+                                                       &decoded,
+                                                       ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS,
+                                                       &view));
+    TEST_ASSERT_EQUAL_PTR(bytes + decoded.manifestExports.offset, view.data);
+    TEST_ASSERT_EQUAL_UINT32(6u, view.count);
+    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)sizeof(SZrZrpMetadataManifestExportRow), view.elementSize);
+    TEST_ASSERT_EQUAL_INT(0, memcmp(exportRows, view.data, sizeof(exportRows)));
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_ValidateDefinitionTables(bytes, sizeof(bytes), &decoded));
+
+    exportRows[0].flags = ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_MEMBER_TOKEN;
+    exportRows[0].typeToken = 0u;
+    exportRows[0].memberToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 1u);
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteDefinitionTablePayload(
+            bytes,
+            sizeof(bytes),
+            &decoded,
+            ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS,
+            exportRows,
+            6u,
+            (TZrUInt32)sizeof(SZrZrpMetadataManifestExportRow)));
+    TEST_ASSERT_FALSE(ZrCore_ZrpMetadata_ValidateDefinitionTables(bytes, sizeof(bytes), &decoded));
+
+    exportRows[0].flags = ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_TYPE_TOKEN;
+    exportRows[0].typeToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u);
+    exportRows[0].memberToken = 0u;
+    exportRows[1].flags = ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_TYPE_TOKEN;
+    exportRows[1].typeToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u);
+    exportRows[1].memberToken = 0u;
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteDefinitionTablePayload(
+            bytes,
+            sizeof(bytes),
+            &decoded,
+            ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS,
+            exportRows,
+            6u,
+            (TZrUInt32)sizeof(SZrZrpMetadataManifestExportRow)));
+    TEST_ASSERT_FALSE(ZrCore_ZrpMetadata_ValidateDefinitionTables(bytes, sizeof(bytes), &decoded));
+
+    exportRows[1].flags = ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_MEMBER_TOKEN;
+    exportRows[1].typeToken = 0u;
+    exportRows[1].memberToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 1u);
+    exportRows[2].targetStringOffset = (TZrUInt32)sizeof(stringPayload);
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteDefinitionTablePayload(
+            bytes,
+            sizeof(bytes),
+            &decoded,
+            ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS,
+            exportRows,
+            6u,
+            (TZrUInt32)sizeof(SZrZrpMetadataManifestExportRow)));
+    TEST_ASSERT_FALSE(ZrCore_ZrpMetadata_ValidateDefinitionTables(bytes, sizeof(bytes), &decoded));
+
+    exportRows[2].targetStringOffset = 9u;
+    exportRows[3].typeToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u);
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteDefinitionTablePayload(
+            bytes,
+            sizeof(bytes),
+            &decoded,
+            ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS,
+            exportRows,
+            6u,
+            (TZrUInt32)sizeof(SZrZrpMetadataManifestExportRow)));
+    TEST_ASSERT_FALSE(ZrCore_ZrpMetadata_ValidateDefinitionTables(bytes, sizeof(bytes), &decoded));
+}
+
 static void test_zrp_metadata_header_rejects_invalid_mmap_view(void) {
     SZrZrpMetadataHeader header;
     TZrByte bytes[ZR_ZRP_METADATA_HEADER_SIZE] = {0};
@@ -821,6 +1002,8 @@ int main(void) {
     RUN_TEST(test_zrp_metadata_validates_signature_blob_structure);
     RUN_TEST(test_zrp_metadata_definition_table_rows_validate_token_tags);
     RUN_TEST(test_zrp_metadata_definition_table_rows_validate_cross_table_ranges);
+    RUN_TEST(test_zrp_metadata_field_default_values_validate_constant_pool_slices);
+    RUN_TEST(test_zrp_metadata_manifest_exports_roundtrip_and_validate_token_shapes);
     RUN_TEST(test_zrp_metadata_header_rejects_invalid_mmap_view);
     return UNITY_END();
 }

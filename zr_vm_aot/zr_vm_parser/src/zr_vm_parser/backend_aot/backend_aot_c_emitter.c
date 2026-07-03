@@ -1,5 +1,6 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_function_body.h"
+#include "backend_aot_c_annotation_warnings.h"
 #include "backend_aot_c_typed_bool_thunks.h"
 #include "backend_aot_c_typed_f64_thunks.h"
 #include "backend_aot_c_typed_i64_thunks.h"
@@ -7,9 +8,12 @@
 #include "backend_aot_c_generic_monomorphization.h"
 #include "backend_aot_c_generic_sharing.h"
 #include "backend_aot_c_method_metadata.h"
+#include "backend_aot_c_reflection_invokers.h"
 #include "backend_aot_c_runtime_fallback.h"
 #include "backend_aot_c_type_layouts.h"
 #include "backend_aot_c_zrp_metadata_prune.h"
+#include "backend_aot_c_zrp_metadata_member_token.h"
+#include "backend_aot_c_zrp_metadata_publication.h"
 #include "backend_aot_c_zrp_metadata_size.h"
 #include "backend_aot_internal.h"
 #include "backend_aot_reachability_function_graph.h"
@@ -194,6 +198,169 @@ static void backend_aot_write_manifest_generic_roots(FILE *file, const SZrAotWri
     }
 }
 
+static const TZrChar *backend_aot_manifest_export_kind_name(EZrAotManifestExportDeclarationKind kind) {
+    switch (kind) {
+        case ZR_AOT_MANIFEST_EXPORT_DECLARATION_TYPE:
+            return "type";
+        case ZR_AOT_MANIFEST_EXPORT_DECLARATION_METHOD:
+            return "method";
+        case ZR_AOT_MANIFEST_EXPORT_DECLARATION_FIELD:
+            return "field";
+        default:
+            return "unknown";
+    }
+}
+
+static void backend_aot_write_manifest_export_declarations(FILE *file, const SZrAotWriterOptions *options) {
+    TZrUInt32 exportCount = options != ZR_NULL ? options->manifestExportDeclarationCount : 0u;
+
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file, "/* manifest.exports = %u */\n", (unsigned)exportCount);
+    if (exportCount > 0u &&
+        (options == ZR_NULL || options->manifestExportDeclarations == ZR_NULL)) {
+        return;
+    }
+
+    for (TZrUInt32 exportIndex = 0u; exportIndex < exportCount; exportIndex++) {
+        const SZrAotManifestExportDeclaration *declaration = &options->manifestExportDeclarations[exportIndex];
+        const TZrChar *target = declaration->target != ZR_NULL ? declaration->target : "";
+
+        fprintf(file,
+                "/* manifest.export[%u] kind=%s target=%s */\n",
+                (unsigned)exportIndex,
+                backend_aot_manifest_export_kind_name(declaration->kind),
+                target);
+        if (declaration->hasTypeTokenBinding) {
+            fprintf(file,
+                    "/* manifest.export[%u].typeToken = 0x%08x */\n",
+                    (unsigned)exportIndex,
+                    (unsigned)declaration->typeToken);
+        }
+        if (declaration->hasMemberTokenBinding) {
+            fprintf(file,
+                    "/* manifest.export[%u].memberToken = 0x%08x */\n",
+                    (unsigned)exportIndex,
+                    (unsigned)declaration->memberToken);
+        }
+    }
+}
+
+static TZrUInt32 backend_aot_manifest_export_entry_count(const SZrAotCEmbeddedZrpMetadata *metadata) {
+    if (metadata == ZR_NULL || metadata->manifestExportEntries == ZR_NULL) {
+        return 0u;
+    }
+    return metadata->manifestExportCount;
+}
+
+static const TZrChar *backend_aot_manifest_export_table_name(const SZrAotCEmbeddedZrpMetadata *metadata) {
+    return backend_aot_manifest_export_entry_count(metadata) > 0u ? "zr_aot_manifest_exports" : "ZR_NULL";
+}
+
+static void backend_aot_write_c_string_literal(FILE *file, const TZrChar *text) {
+    const unsigned char *cursor;
+
+    if (file == ZR_NULL) {
+        return;
+    }
+    if (text == ZR_NULL) {
+        fprintf(file, "ZR_NULL");
+        return;
+    }
+
+    fputc('"', file);
+    for (cursor = (const unsigned char *)(const void *)text; *cursor != '\0'; cursor++) {
+        switch (*cursor) {
+            case '\\':
+                fprintf(file, "\\\\");
+                break;
+            case '"':
+                fprintf(file, "\\\"");
+                break;
+            case '\n':
+                fprintf(file, "\\n");
+                break;
+            case '\r':
+                fprintf(file, "\\r");
+                break;
+            case '\t':
+                fprintf(file, "\\t");
+                break;
+            default:
+                if (*cursor >= 32u && *cursor <= 126u) {
+                    fputc((int)*cursor, file);
+                } else {
+                    fprintf(file, "\\%03o", (unsigned)*cursor);
+                }
+                break;
+        }
+    }
+    fputc('"', file);
+}
+
+static void backend_aot_write_manifest_export_table_markers(FILE *file,
+                                                            const SZrAotCEmbeddedZrpMetadata *metadata) {
+    TZrUInt32 count;
+
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    count = backend_aot_manifest_export_entry_count(metadata);
+    fprintf(file, "/* manifest.exportTableEntries = %u */\n", (unsigned)count);
+    for (TZrUInt32 index = 0u; index < count; index++) {
+        const SZrAotManifestExportEntry *entry = &metadata->manifestExportEntries[index];
+        fprintf(file,
+                "/* manifest.exportTable[%u] kind=%u target=%s */\n",
+                (unsigned)index,
+                (unsigned)entry->kind,
+                entry->target != ZR_NULL ? entry->target : "");
+        if ((entry->flags & ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_TYPE_TOKEN) != 0u) {
+            fprintf(file,
+                    "/* manifest.exportTable[%u].typeToken = 0x%08x */\n",
+                    (unsigned)index,
+                    (unsigned)entry->typeToken);
+        }
+        if ((entry->flags & ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_MEMBER_TOKEN) != 0u) {
+            fprintf(file,
+                    "/* manifest.exportTable[%u].memberToken = 0x%08x */\n",
+                    (unsigned)index,
+                    (unsigned)entry->memberToken);
+        }
+    }
+}
+
+static void backend_aot_write_manifest_export_table(FILE *file,
+                                                    const SZrAotCEmbeddedZrpMetadata *metadata) {
+    TZrUInt32 count;
+
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    count = backend_aot_manifest_export_entry_count(metadata);
+    if (count == 0u) {
+        return;
+    }
+
+    fprintf(file, "static const SZrAotManifestExportEntry zr_aot_manifest_exports[] = {\n");
+    for (TZrUInt32 index = 0u; index < count; index++) {
+        const SZrAotManifestExportEntry *entry = &metadata->manifestExportEntries[index];
+        fprintf(file,
+                "    { .kind = %uu, .flags = %uu, .target = ",
+                (unsigned)entry->kind,
+                (unsigned)entry->flags);
+        backend_aot_write_c_string_literal(file, entry->target);
+        fprintf(file,
+                ", .typeToken = 0x%08xu, .memberToken = 0x%08xu },\n",
+                (unsigned)entry->typeToken,
+                (unsigned)entry->memberToken);
+    }
+    fprintf(file, "};\n");
+}
+
 static TZrBool backend_aot_manifest_generic_roots_closed_for_full_aot(const SZrAotWriterOptions *options) {
     TZrUInt32 rootCount;
 
@@ -258,6 +425,64 @@ static void backend_aot_write_embedded_blob_c(FILE *file, const TZrByte *blob, T
         }
     } else {
         fprintf(file, "    0x%02x\n", 0x00u);
+    }
+    fprintf(file, "};\n");
+}
+
+static TZrUInt32 backend_aot_member_token_remap_count(const SZrAotCEmbeddedZrpMetadata *metadata) {
+    if (metadata == ZR_NULL || metadata->memberTokenRemapEntries == ZR_NULL) {
+        return 0u;
+    }
+    return metadata->memberTokenRemapCount;
+}
+
+static const TZrChar *backend_aot_member_token_remap_table_name(const SZrAotCEmbeddedZrpMetadata *metadata) {
+    return backend_aot_member_token_remap_count(metadata) > 0u ? "zr_aot_member_token_remaps" : "ZR_NULL";
+}
+
+static void backend_aot_write_member_token_remap_markers(FILE *file,
+                                                         const SZrAotCEmbeddedZrpMetadata *metadata) {
+    TZrUInt32 count;
+
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    count = backend_aot_member_token_remap_count(metadata);
+    fprintf(file, "/* code_stripping.memberTokenRemaps = %u */\n", (unsigned)count);
+    for (TZrUInt32 index = 0u; index < count; index++) {
+        const SZrAotCZrpMemberTokenRemapEntry *entry = &metadata->memberTokenRemapEntries[index];
+        fprintf(file,
+                "/* code_stripping.memberTokenRemap[%u].sourceToken = 0x%08x */\n",
+                (unsigned)index,
+                (unsigned)entry->sourceToken);
+        fprintf(file,
+                "/* code_stripping.memberTokenRemap[%u].targetToken = 0x%08x */\n",
+                (unsigned)index,
+                (unsigned)entry->targetToken);
+    }
+}
+
+static void backend_aot_write_member_token_remap_table(FILE *file,
+                                                       const SZrAotCEmbeddedZrpMetadata *metadata) {
+    TZrUInt32 count;
+
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    count = backend_aot_member_token_remap_count(metadata);
+    if (count == 0u) {
+        return;
+    }
+
+    fprintf(file, "static const SZrAotMemberTokenRemap zr_aot_member_token_remaps[] = {\n");
+    for (TZrUInt32 index = 0u; index < count; index++) {
+        const SZrAotCZrpMemberTokenRemapEntry *entry = &metadata->memberTokenRemapEntries[index];
+        fprintf(file,
+                "    { .sourceToken = 0x%08xu, .targetToken = 0x%08xu },\n",
+                (unsigned)entry->sourceToken,
+                (unsigned)entry->targetToken);
     }
     fprintf(file, "};\n");
 }
@@ -339,9 +564,24 @@ static void backend_aot_write_c_guard_macro(FILE *file) {
             "    } while (0)\n");
 }
 
+static void backend_aot_release_annotation_roots(SZrState *state,
+                                                 TZrUInt32 *annotationRoots,
+                                                 TZrUInt32 annotationRootCapacity) {
+    if (state == ZR_NULL || state->global == ZR_NULL || annotationRoots == ZR_NULL ||
+        annotationRootCapacity == 0u) {
+        return;
+    }
+    ZrCore_Memory_RawFreeWithType(state->global,
+                                  annotationRoots,
+                                  sizeof(TZrUInt32) * annotationRootCapacity,
+                                  ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+}
+
 static TZrBool backend_aot_apply_code_stripping(SZrState *state,
                                                 SZrAotFunctionTable *functionTable,
-                                                const SZrAotWriterOptions *options) {
+                                                const SZrAotWriterOptions *options,
+                                                const TZrUInt32 *annotationRoots,
+                                                TZrUInt32 annotationRootCount) {
     SZrAotReachabilityMark *marks = ZR_NULL;
     SZrAotReachabilityEdge *edges = ZR_NULL;
     TZrUInt32 *queue = ZR_NULL;
@@ -403,6 +643,8 @@ static TZrBool backend_aot_apply_code_stripping(SZrState *state,
     if (marks != ZR_NULL && queue != ZR_NULL && roots != ZR_NULL && rootReasons != ZR_NULL && edges != ZR_NULL &&
         backend_aot_compute_static_callable_reachability(state,
                                                          functionTable,
+                                                         annotationRoots,
+                                                         annotationRootCount,
                                                          manifestRoots,
                                                          manifestRootCount,
                                                          roots,
@@ -478,6 +720,11 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     TZrUInt32 typeLayoutCountRemovedByStripping;
     TZrUInt32 trimRuntimeFallbackWarningCount;
     TZrUInt32 trimRuntimeFallbackSuppressedCount;
+    TZrUInt32 trimRuntimeFallbackWarningReasonMask;
+    TZrUInt32 trimRuntimeFallbackSuppressedReasonMask;
+    TZrUInt32 trimAnnotationWarningCount;
+    TZrUInt32 trimAnnotationSuppressedCount;
+    TZrUInt32 trimAnnotationWarningTotal;
     SZrAotCEmbeddedZrpMetadata embeddedZrpMetadata;
     SZrAotZrpMetadataSizeStats zrpMetadataSizeBeforeStripping;
     SZrAotZrpMetadataSizeStats zrpMetadataSizeAfterStripping;
@@ -491,10 +738,17 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     unsigned long long methodMetadataGeneratedBytesAfterStripping;
     unsigned long long methodMetadataGeneratedBytesRemovedByStripping;
     unsigned long long retainedFunctionBodyBytesTotal = 0u;
+    TZrUInt32 *annotationRoots = ZR_NULL;
+    TZrUInt32 annotationRootCount = 0u;
+    TZrUInt32 annotationRootCapacity = 0u;
+    TZrUInt32 *annotationTypeLayoutRoots = ZR_NULL;
+    TZrUInt32 annotationTypeLayoutRootCount = 0u;
+    TZrUInt32 annotationTypeLayoutRootCapacity = 0u;
     TZrBool requireExecutableLowering;
     TZrBool requireFullAot;
     TZrBool enableCodeStripping;
     TZrBool stripGeneratedSymbols;
+    TZrBool suppressAnnotationWarnings;
     TZrUInt8 reflectionMetadataLevel;
     TZrUInt32 suppressedRuntimeFallbackWarningReasonMask;
     TZrBool success = ZR_FALSE;
@@ -535,23 +789,88 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     requireFullAot = backend_aot_option_require_full_aot(options);
     enableCodeStripping = backend_aot_option_enable_code_stripping(options);
     stripGeneratedSymbols = backend_aot_option_strip_generated_symbols(options);
+    suppressAnnotationWarnings = backend_aot_option_suppress_annotation_warnings(options);
     reflectionMetadataLevel = backend_aot_option_reflection_metadata_level(options);
     suppressedRuntimeFallbackWarningReasonMask =
             backend_aot_option_runtime_fallback_warning_suppression_mask(options);
     functionCountBeforeStripping = functionTable.count;
-    typeLayoutCountBeforeStripping = backend_aot_c_type_layout_count_referenced(&functionTable);
-    typeLayoutBytesBeforeStripping = backend_aot_c_type_layout_payload_bytes_referenced(&functionTable);
+    annotationTypeLayoutRootCapacity = backend_aot_function_table_index_space(&functionTable);
+    if (annotationTypeLayoutRootCapacity > 0u) {
+        annotationTypeLayoutRoots = (TZrUInt32 *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(TZrUInt32) * annotationTypeLayoutRootCapacity,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (annotationTypeLayoutRoots == ZR_NULL ||
+            !backend_aot_c_type_layout_collect_dynamic_dependency_roots(state,
+                                                                        &functionTable,
+                                                                        options != ZR_NULL
+                                                                                ? options->embeddedModuleBlob
+                                                                                : ZR_NULL,
+                                                                        options != ZR_NULL
+                                                                                ? options->embeddedModuleBlobLength
+                                                                                : 0u,
+                                                                        annotationTypeLayoutRoots,
+                                                                        annotationTypeLayoutRootCapacity,
+                                                                        &annotationTypeLayoutRootCount)) {
+            fclose(file);
+            remove(filename);
+            backend_aot_release_annotation_roots(state,
+                                                 annotationTypeLayoutRoots,
+                                                 annotationTypeLayoutRootCapacity);
+            backend_aot_release_function_table(state, &functionTable);
+            backend_aot_exec_ir_release_module(state, &module);
+            return ZR_FALSE;
+        }
+    }
+    typeLayoutCountBeforeStripping = backend_aot_c_type_layout_count_referenced(state,
+                                                                               &functionTable,
+                                                                               annotationTypeLayoutRoots,
+                                                                               annotationTypeLayoutRootCount);
+    typeLayoutBytesBeforeStripping = backend_aot_c_type_layout_payload_bytes_referenced(state,
+                                                                                       &functionTable,
+                                                                                       annotationTypeLayoutRoots,
+                                                                                       annotationTypeLayoutRootCount);
     typeLayoutGeneratedBytesBeforeStripping =
-            backend_aot_c_type_layout_generated_bytes_referenced(state, &functionTable);
+            backend_aot_c_type_layout_generated_bytes_referenced(state,
+                                                                 &functionTable,
+                                                                 annotationTypeLayoutRoots,
+                                                                 annotationTypeLayoutRootCount);
     methodMetadataGeneratedBytesBeforeStripping =
             backend_aot_c_method_metadata_generated_bytes_referenced(state,
                                                                      &functionTable,
                                                                      &module,
                                                                      reflectionMetadataLevel);
+    annotationRootCapacity = backend_aot_function_table_index_space(&functionTable);
+    if (annotationRootCapacity > 0u) {
+        annotationRoots = (TZrUInt32 *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                                       sizeof(TZrUInt32) * annotationRootCapacity,
+                                                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (annotationRoots == ZR_NULL ||
+            !backend_aot_collect_reflection_annotation_roots(state,
+                                                             &functionTable,
+                                                             annotationRoots,
+                                                             annotationRootCapacity,
+                                                             &annotationRootCount)) {
+            fclose(file);
+            remove(filename);
+            backend_aot_release_annotation_roots(state,
+                                                 annotationTypeLayoutRoots,
+                                                 annotationTypeLayoutRootCapacity);
+            backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
+            backend_aot_release_function_table(state, &functionTable);
+            backend_aot_exec_ir_release_module(state, &module);
+            return ZR_FALSE;
+        }
+    }
     backend_aot_collect_zrp_metadata_size_stats(options, &zrpMetadataSizeBeforeStripping);
-    if (enableCodeStripping && !backend_aot_apply_code_stripping(state, &functionTable, options)) {
+    if (enableCodeStripping &&
+        !backend_aot_apply_code_stripping(state, &functionTable, options, annotationRoots, annotationRootCount)) {
         fclose(file);
         remove(filename);
+        backend_aot_release_annotation_roots(state,
+                                             annotationTypeLayoutRoots,
+                                             annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
         backend_aot_release_function_table(state, &functionTable);
         backend_aot_exec_ir_release_module(state, &module);
         return ZR_FALSE;
@@ -561,10 +880,19 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
             functionCountBeforeStripping >= functionCountAfterStripping
                     ? functionCountBeforeStripping - functionCountAfterStripping
                     : 0u;
-    typeLayoutCountAfterStripping = backend_aot_c_type_layout_count_referenced(&functionTable);
-    typeLayoutBytesAfterStripping = backend_aot_c_type_layout_payload_bytes_referenced(&functionTable);
+    typeLayoutCountAfterStripping = backend_aot_c_type_layout_count_referenced(state,
+                                                                              &functionTable,
+                                                                              annotationTypeLayoutRoots,
+                                                                              annotationTypeLayoutRootCount);
+    typeLayoutBytesAfterStripping = backend_aot_c_type_layout_payload_bytes_referenced(state,
+                                                                                      &functionTable,
+                                                                                      annotationTypeLayoutRoots,
+                                                                                      annotationTypeLayoutRootCount);
     typeLayoutGeneratedBytesAfterStripping =
-            backend_aot_c_type_layout_generated_bytes_referenced(state, &functionTable);
+            backend_aot_c_type_layout_generated_bytes_referenced(state,
+                                                                 &functionTable,
+                                                                 annotationTypeLayoutRoots,
+                                                                 annotationTypeLayoutRootCount);
     methodMetadataGeneratedBytesAfterStripping =
             backend_aot_c_method_metadata_generated_bytes_referenced(state,
                                                                      &functionTable,
@@ -576,6 +904,25 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
                                                      &embeddedZrpMetadata)) {
         fclose(file);
         remove(filename);
+        backend_aot_release_annotation_roots(state,
+                                             annotationTypeLayoutRoots,
+                                             annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_zrp_manifest_export_table_build(
+                &embeddedZrpMetadata,
+                options != ZR_NULL ? options->manifestExportDeclarations : ZR_NULL,
+                options != ZR_NULL ? options->manifestExportDeclarationCount : 0u)) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_annotation_roots(state,
+                                             annotationTypeLayoutRoots,
+                                             annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
+        backend_aot_c_release_embedded_zrp_metadata(&embeddedZrpMetadata);
         backend_aot_release_function_table(state, &functionTable);
         backend_aot_exec_ir_release_module(state, &module);
         return ZR_FALSE;
@@ -603,17 +950,31 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     if (functionIndexSpace == 0u) {
         fclose(file);
         remove(filename);
+        backend_aot_release_annotation_roots(state,
+                                             annotationTypeLayoutRoots,
+                                             annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
         backend_aot_c_release_embedded_zrp_metadata(&embeddedZrpMetadata);
         backend_aot_release_function_table(state, &functionTable);
         backend_aot_exec_ir_release_module(state, &module);
         return ZR_FALSE;
     }
-    typeLayoutIndexSpace = backend_aot_c_type_layout_index_space(state, &functionTable);
-    gcDescriptorIndexSpace = backend_aot_c_type_layout_gc_descriptor_index_space(state, &functionTable);
+    typeLayoutIndexSpace = backend_aot_c_type_layout_index_space(state,
+                                                                 &functionTable,
+                                                                 annotationTypeLayoutRoots,
+                                                                 annotationTypeLayoutRootCount);
+    gcDescriptorIndexSpace = backend_aot_c_type_layout_gc_descriptor_index_space(state,
+                                                                                &functionTable,
+                                                                                annotationTypeLayoutRoots,
+                                                                                annotationTypeLayoutRootCount);
 
     if (requireFullAot && !backend_aot_c_validate_full_aot_runtime_closure(state, &functionTable, &module)) {
         fclose(file);
         remove(filename);
+        backend_aot_release_annotation_roots(state,
+                                             annotationTypeLayoutRoots,
+                                             annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
         backend_aot_c_release_embedded_zrp_metadata(&embeddedZrpMetadata);
         backend_aot_release_function_table(state, &functionTable);
         backend_aot_exec_ir_release_module(state, &module);
@@ -629,6 +990,29 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
                                                                      &functionTable,
                                                                      &module,
                                                                      suppressedRuntimeFallbackWarningReasonMask);
+    trimRuntimeFallbackWarningReasonMask =
+            backend_aot_c_runtime_fallback_warning_reason_mask(state,
+                                                               &functionTable,
+                                                               &module,
+                                                               suppressedRuntimeFallbackWarningReasonMask);
+    trimRuntimeFallbackSuppressedReasonMask =
+            backend_aot_c_suppressed_runtime_fallback_warning_reason_mask(state,
+                                                                          &functionTable,
+                                                                          &module,
+                                                                          suppressedRuntimeFallbackWarningReasonMask);
+    trimAnnotationWarningCount =
+            enableCodeStripping
+                    ? backend_aot_c_count_annotation_warnings(state, &functionTable)
+                    : 0u;
+    trimAnnotationSuppressedCount =
+            enableCodeStripping
+                    ? backend_aot_c_count_suppressed_annotation_warnings(state, &functionTable)
+                    : 0u;
+    trimAnnotationWarningTotal = trimAnnotationWarningCount + trimAnnotationSuppressedCount;
+    if (suppressAnnotationWarnings) {
+        trimAnnotationWarningCount = 0u;
+        trimAnnotationSuppressedCount = trimAnnotationWarningTotal;
+    }
 
     if (requireExecutableLowering || backend_aot_report_first_unsupported_instruction("aot_c", moduleName, &functionTable)) {
         for (TZrUInt32 functionIndex = 0; functionIndex < functionTable.count; functionIndex++) {
@@ -637,6 +1021,10 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
                 backend_aot_report_first_unsupported_instruction("aot_c", moduleName, &functionTable);
                 fclose(file);
                 remove(filename);
+                backend_aot_release_annotation_roots(state,
+                                                     annotationTypeLayoutRoots,
+                                                     annotationTypeLayoutRootCapacity);
+                backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
                 backend_aot_c_release_embedded_zrp_metadata(&embeddedZrpMetadata);
                 backend_aot_release_function_table(state, &functionTable);
                 backend_aot_exec_ir_release_module(state, &module);
@@ -686,16 +1074,51 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file,
             "/* code_stripping.methodMetadataGeneratedBytesRemoved = %llu */\n",
             methodMetadataGeneratedBytesRemovedByStripping);
+    fprintf(file, "/* code_stripping.annotationRoots = %u */\n", (unsigned)annotationRootCount);
+    for (TZrUInt32 annotationRootIndex = 0u; annotationRootIndex < annotationRootCount; annotationRootIndex++) {
+        fprintf(file,
+                "/* code_stripping.annotationRoot[%u] = %u */\n",
+                (unsigned)annotationRootIndex,
+                (unsigned)annotationRoots[annotationRootIndex]);
+    }
+    fprintf(file,
+            "/* code_stripping.annotationTypeLayoutRoots = %u */\n",
+            (unsigned)annotationTypeLayoutRootCount);
+    for (TZrUInt32 annotationTypeLayoutRootIndex = 0u;
+         annotationTypeLayoutRootIndex < annotationTypeLayoutRootCount;
+         annotationTypeLayoutRootIndex++) {
+        fprintf(file,
+                "/* code_stripping.annotationTypeLayoutRoot[%u] = %u */\n",
+                (unsigned)annotationTypeLayoutRootIndex,
+                (unsigned)annotationTypeLayoutRoots[annotationTypeLayoutRootIndex]);
+    }
     backend_aot_write_code_stripping_zrp_metadata_size_deltas(file,
                                                               &zrpMetadataSizeBeforeStripping,
                                                               &zrpMetadataSizeAfterStripping);
     backend_aot_write_manifest_generic_roots(file, options);
+    backend_aot_write_manifest_export_declarations(file, options);
+    backend_aot_write_manifest_export_table_markers(file, &embeddedZrpMetadata);
+    fprintf(file,
+            "/* trim_warnings.annotationCount = %u */\n",
+            (unsigned)trimAnnotationWarningCount);
+    fprintf(file,
+            "/* trim_warnings.annotationSuppressedCount = %u */\n",
+            (unsigned)trimAnnotationSuppressedCount);
+    if (enableCodeStripping && !suppressAnnotationWarnings) {
+        backend_aot_write_c_annotation_warnings(file, state, &functionTable);
+    }
     fprintf(file,
             "/* trim_warnings.runtimeFallbackCount = %u */\n",
             (unsigned)trimRuntimeFallbackWarningCount);
     fprintf(file,
             "/* trim_warnings.runtimeFallbackSuppressedCount = %u */\n",
             (unsigned)trimRuntimeFallbackSuppressedCount);
+    fprintf(file,
+            "/* trim_warnings.runtimeFallbackReasonMask = %u */\n",
+            (unsigned)trimRuntimeFallbackWarningReasonMask);
+    fprintf(file,
+            "/* trim_warnings.runtimeFallbackSuppressedReasonMask = %u */\n",
+            (unsigned)trimRuntimeFallbackSuppressedReasonMask);
     backend_aot_write_c_trim_warnings(file,
                                       state,
                                       &functionTable,
@@ -706,6 +1129,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file, "/* aot_size.embeddedModuleBytes = %llu */\n",
             (unsigned long long)embeddedZrpMetadata.length);
     backend_aot_write_zrp_metadata_size_stats(file, &zrpMetadataSizeAfterStripping);
+    backend_aot_write_member_token_remap_markers(file, &embeddedZrpMetadata);
     fprintf(file, "#include \"zr_vm_common/zr_aot_abi.h\"\n");
     fprintf(file, "#include \"zr_vm_common/zr_ast_constants.h\"\n");
     fprintf(file, "#include \"zr_vm_core/call_info.h\"\n");
@@ -718,12 +1142,14 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file, "#include \"zr_vm_core/gc.h\"\n");
     fprintf(file, "#include \"zr_vm_core/global.h\"\n");
     fprintf(file, "#include \"zr_vm_core/meta.h\"\n");
+    fprintf(file, "#include \"zr_vm_core/metadata_runtime.h\"\n");
     fprintf(file, "#include \"zr_vm_core/module.h\"\n");
     fprintf(file, "#include \"zr_vm_core/object.h\"\n");
     fprintf(file, "#include \"zr_vm_core/ownership.h\"\n");
     fprintf(file, "#include \"zr_vm_core/reflection.h\"\n");
     fprintf(file, "#include \"zr_vm_core/string.h\"\n");
     fprintf(file, "#include \"zr_vm_core/type_layout.h\"\n");
+    fprintf(file, "#include \"zr_vm_core/value.h\"\n");
     fprintf(file, "#include \"zr_vm_library/aot_runtime.h\"\n");
     fprintf(file, "#include <math.h>\n");
     fprintf(file, "#include <stddef.h>\n");
@@ -744,10 +1170,31 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
                                       embeddedZrpMetadata.blob,
                                       embeddedZrpMetadata.length);
     fprintf(file, "\n");
-    backend_aot_write_c_type_layout_declarations(file, state, &functionTable);
-    backend_aot_write_c_type_layout_gc_descriptor_table(file, state, &functionTable, gcDescriptorIndexSpace);
-    backend_aot_write_c_type_layout_registration_table(file, state, &functionTable, typeLayoutIndexSpace);
-    backend_aot_write_c_type_layout_token_table(file, state, &functionTable, typeLayoutIndexSpace);
+    backend_aot_write_c_type_layout_declarations(file,
+                                                 state,
+                                                 &functionTable,
+                                                 annotationTypeLayoutRoots,
+                                                 annotationTypeLayoutRootCount);
+    backend_aot_write_c_type_layout_gc_descriptor_table(file,
+                                                        state,
+                                                        &functionTable,
+                                                        annotationTypeLayoutRoots,
+                                                        annotationTypeLayoutRootCount,
+                                                        gcDescriptorIndexSpace);
+    backend_aot_write_c_type_layout_registration_table(file,
+                                                       state,
+                                                       &functionTable,
+                                                       annotationTypeLayoutRoots,
+                                                       annotationTypeLayoutRootCount,
+                                                       typeLayoutIndexSpace);
+    backend_aot_write_c_type_layout_token_table(file,
+                                                state,
+                                                &functionTable,
+                                                annotationTypeLayoutRoots,
+                                                annotationTypeLayoutRootCount,
+                                                embeddedZrpMetadata.blob,
+                                                embeddedZrpMetadata.length,
+                                                typeLayoutIndexSpace);
     backend_aot_write_c_generic_monomorphization_layouts(file, state, &functionTable);
     fprintf(file, "\n");
     backend_aot_write_c_function_forward_decls(file, &functionTable);
@@ -759,11 +1206,20 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     backend_aot_write_c_typed_i64_thunk_forward_decls(file, &functionTable);
     backend_aot_write_c_typed_u64_thunk_forward_decls(file, &functionTable);
     fprintf(file, "\n");
-    backend_aot_write_c_reflection_invokers(file);
+    backend_aot_write_c_reflection_invokers(file, &functionTable);
     fprintf(file, "\n");
     backend_aot_write_c_method_infos(file, state, &functionTable, &module, reflectionMetadataLevel);
     fprintf(file, "\n");
     backend_aot_write_c_method_info_table(file, &functionTable, functionIndexSpace);
+    fprintf(file, "\n");
+    backend_aot_write_c_method_token_table(file,
+                                           &functionTable,
+                                           &embeddedZrpMetadata,
+                                           functionIndexSpace);
+    fprintf(file, "\n");
+    backend_aot_write_member_token_remap_table(file, &embeddedZrpMetadata);
+    fprintf(file, "\n");
+    backend_aot_write_manifest_export_table(file, &embeddedZrpMetadata);
     fprintf(file, "\n");
     backend_aot_write_c_function_table(file, &functionTable, functionIndexSpace);
     fprintf(file, "\n");
@@ -811,6 +1267,14 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file, "    .functionPointers = zr_aot_function_thunks,\n");
     fprintf(file, "    .methodInfos = zr_aot_method_infos,\n");
     fprintf(file, "    .methodInfoCount = %u,\n", (unsigned)functionIndexSpace);
+    fprintf(file, "    .methodTokens = zr_aot_method_tokens,\n");
+    fprintf(file, "    .methodTokenCount = %u,\n", (unsigned)functionIndexSpace);
+    fprintf(file, "    .memberTokenRemaps = %s,\n", backend_aot_member_token_remap_table_name(&embeddedZrpMetadata));
+    fprintf(file, "    .memberTokenRemapCount = %uu,\n",
+            (unsigned)backend_aot_member_token_remap_count(&embeddedZrpMetadata));
+    fprintf(file, "    .manifestExports = %s,\n", backend_aot_manifest_export_table_name(&embeddedZrpMetadata));
+    fprintf(file, "    .manifestExportCount = %uu,\n",
+            (unsigned)backend_aot_manifest_export_entry_count(&embeddedZrpMetadata));
     fprintf(file, "    .invokers = zr_aot_reflection_invokers,\n");
     fprintf(file, "    .invokerCount = 1u,\n");
     fprintf(file, "    .typeLayouts = %s,\n", typeLayoutIndexSpace > 0u ? "zr_aot_type_layouts" : "ZR_NULL");
@@ -844,6 +1308,14 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     }
     fprintf(file, "    .methodInfos = zr_aot_method_infos,\n");
     fprintf(file, "    .methodInfoCount = %u,\n", (unsigned)functionIndexSpace);
+    fprintf(file, "    .methodTokens = zr_aot_method_tokens,\n");
+    fprintf(file, "    .methodTokenCount = %u,\n", (unsigned)functionIndexSpace);
+    fprintf(file, "    .memberTokenRemaps = %s,\n", backend_aot_member_token_remap_table_name(&embeddedZrpMetadata));
+    fprintf(file, "    .memberTokenRemapCount = %uu,\n",
+            (unsigned)backend_aot_member_token_remap_count(&embeddedZrpMetadata));
+    fprintf(file, "    .manifestExports = %s,\n", backend_aot_manifest_export_table_name(&embeddedZrpMetadata));
+    fprintf(file, "    .manifestExportCount = %uu,\n",
+            (unsigned)backend_aot_manifest_export_entry_count(&embeddedZrpMetadata));
     fprintf(file, "    .typeLayouts = %s,\n", typeLayoutIndexSpace > 0u ? "zr_aot_type_layouts" : "ZR_NULL");
     fprintf(file, "    .typeLayoutCount = %u,\n", (unsigned)typeLayoutIndexSpace);
     fprintf(file, "    .typeLayoutTokens = %s,\n", typeLayoutIndexSpace > 0u ? "zr_aot_type_layout_tokens" : "ZR_NULL");
@@ -857,8 +1329,23 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file, "    return &zr_aot_module;\n");
     fprintf(file, "}\n");
 
-    fclose(file);
+    if (fclose(file) != 0 ||
+        !backend_aot_c_publish_compacted_zrp_metadata(options, &embeddedZrpMetadata)) {
+        remove(filename);
+        backend_aot_release_annotation_roots(state,
+                                             annotationTypeLayoutRoots,
+                                             annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
+        backend_aot_c_release_embedded_zrp_metadata(&embeddedZrpMetadata);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
     success = ZR_TRUE;
+    backend_aot_release_annotation_roots(state,
+                                         annotationTypeLayoutRoots,
+                                         annotationTypeLayoutRootCapacity);
+    backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
     backend_aot_c_release_embedded_zrp_metadata(&embeddedZrpMetadata);
     backend_aot_release_function_table(state, &functionTable);
     backend_aot_exec_ir_release_module(state, &module);

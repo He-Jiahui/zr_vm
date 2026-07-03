@@ -629,9 +629,8 @@ TZrBool ZrLibrary_AotRuntime_CallInlineStruct(SZrState *state,
         return ZR_FALSE;
     }
 
-    returnLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame->function,
-                                                                   destinationTypeLayoutId,
-                                                                   state);
+    returnLayout = ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function,
+                                                                    destinationTypeLayoutId);
     if (returnLayout == ZR_NULL || returnLayout->kind != ZR_TYPE_LAYOUT_KIND_STRUCT ||
         returnLayout->byteSize != destinationByteSize) {
         aot_runtime_fail(state, runtimeState, "generated AOT inline struct typed call failed");
@@ -797,9 +796,8 @@ TZrBool ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge(
         return ZR_FALSE;
     }
 
-    returnLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame->function,
-                                                                   destinationTypeLayoutId,
-                                                                   state);
+    returnLayout = ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function,
+                                                                    destinationTypeLayoutId);
     if (returnLayout == ZR_NULL || returnLayout->kind != ZR_TYPE_LAYOUT_KIND_STRUCT ||
         returnLayout->byteSize != destinationByteSize) {
         aot_runtime_fail(state, runtimeState, "generated AOT %s deopt failed", label);
@@ -929,7 +927,7 @@ TZrBool ZrLibrary_AotRuntime_ReturnInlineStruct(SZrState *state,
         return ZR_FALSE;
     }
 
-    returnLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame->function, sourceTypeLayoutId, state);
+    returnLayout = ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function, sourceTypeLayoutId);
     callInfo = frame->callInfo != ZR_NULL ? frame->callInfo : state->callInfoList;
     returnSource = (TZrStackValuePointer)((TZrByte *)frame->slotBase + sourceByteOffset);
     if (returnLayout == ZR_NULL || returnLayout->kind != ZR_TYPE_LAYOUT_KIND_STRUCT ||

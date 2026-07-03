@@ -9,6 +9,7 @@
 
 #define TEST_TYPE_DEF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u)
 #define TEST_TYPE_DEF_SIGNATURE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 1u)
+#define TEST_TYPE_REF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 1u)
 #define TEST_TYPE_SPEC_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_SPEC, 1u)
 #define TEST_TYPE_SPEC_SIGNATURE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 2u)
 
@@ -161,6 +162,18 @@ static void populate_typedef_record(SZrFunction *metadataFunction, SZrMetadataTo
     record->layoutHash = 0x445566778899AABBULL;
     metadataFunction->metadataTokenRecords = record;
     metadataFunction->metadataTokenRecordLength = 1u;
+}
+
+static void populate_typedef_typeref_records(SZrFunction *metadataFunction,
+                                             SZrMetadataTokenRecord *localRecord,
+                                             SZrMetadataTokenRecord *moduleRecord) {
+    populate_typedef_record(metadataFunction, localRecord);
+    moduleRecord->token = TEST_TYPE_REF_TOKEN;
+    moduleRecord->targetMetadataToken = TEST_TYPE_DEF_TOKEN;
+    moduleRecord->layoutVersion = localRecord->layoutVersion;
+    moduleRecord->layoutHash = localRecord->layoutHash;
+    metadataFunction->moduleMetadataTokenRecords = moduleRecord;
+    metadataFunction->moduleMetadataTokenRecordLength = 1u;
 }
 
 static void test_metadata_runtime_reads_typespec_layout_binding_view(void) {
@@ -334,6 +347,104 @@ static void test_metadata_runtime_resolves_typedef_token_layout_with_cache(void)
     resolvedLayout = ZrCore_MetadataRuntime_ResolveTypeTokenLayout(runtime, TEST_TYPE_DEF_TOKEN, &typeLayoutId);
     TEST_ASSERT_EQUAL_PTR(&typeDefLayout, resolvedLayout);
     TEST_ASSERT_EQUAL_UINT32(42u, typeLayoutId);
+}
+
+static void test_metadata_runtime_resolves_typeref_token_layout_via_target_typedef_with_cache(void) {
+    SZrObjectModule module = {0};
+    SZrFunction metadataFunction = {0};
+    SZrMetadataTokenRecord localRecord = {0};
+    SZrMetadataTokenRecord moduleRecord = {0};
+    SZrAotCodeRegistration registration = {0};
+    SZrTypeLayout typeDefLayout = {0};
+    const SZrTypeLayout *registeredLayouts[43] = {0};
+    const SZrTypeLayout *resolvedLayout;
+    SZrMetadataRuntime *runtime;
+    TZrUInt32 typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    TZrByte bytes[ZR_ZRP_METADATA_HEADER_SIZE + sizeof(SZrZrpMetadataTypeDefRow)] = {0};
+
+    populate_typedef_typeref_records(&metadataFunction, &localRecord, &moduleRecord);
+    typeDefLayout.cTypeId = 42u;
+    typeDefLayout.byteSize = 32u;
+    registeredLayouts[42] = &typeDefLayout;
+    registration.typeLayouts = registeredLayouts;
+    registration.typeLayoutCount = 43u;
+    write_typedef_layout_metadata(bytes, sizeof(bytes), 42u);
+
+    runtime = ZrCore_Module_AttachMetadataRuntime(&module, &metadataFunction, &registration);
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_AttachZrpMetadata(runtime, bytes, sizeof(bytes)));
+
+    TEST_ASSERT_EQUAL_PTR(&typeDefLayout,
+                          ZrCore_MetadataRuntime_ResolveTypeTokenLayout(runtime,
+                                                                        TEST_TYPE_REF_TOKEN,
+                                                                        ZR_NULL));
+
+    resolvedLayout = ZrCore_MetadataRuntime_ResolveTypeTokenLayout(runtime, TEST_TYPE_REF_TOKEN, &typeLayoutId);
+    TEST_ASSERT_EQUAL_PTR(&typeDefLayout, resolvedLayout);
+    TEST_ASSERT_EQUAL_UINT32(42u, typeLayoutId);
+    TEST_ASSERT_EQUAL_UINT32(32u, resolvedLayout->byteSize);
+
+    registeredLayouts[42] = ZR_NULL;
+    typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    resolvedLayout = ZrCore_MetadataRuntime_ResolveTypeTokenLayout(runtime, TEST_TYPE_REF_TOKEN, &typeLayoutId);
+    TEST_ASSERT_EQUAL_PTR(&typeDefLayout, resolvedLayout);
+    TEST_ASSERT_EQUAL_UINT32(42u, typeLayoutId);
+}
+
+static void test_metadata_runtime_typeref_token_layout_rejects_layout_identity_mismatch(void) {
+    SZrObjectModule module = {0};
+    SZrFunction metadataFunction = {0};
+    SZrMetadataTokenRecord localRecord = {0};
+    SZrMetadataTokenRecord moduleRecord = {0};
+    SZrAotCodeRegistration registration = {0};
+    SZrTypeLayout typeDefLayout = {0};
+    const SZrTypeLayout *registeredLayouts[43] = {0};
+    SZrMetadataRuntime *runtime;
+    TZrUInt32 typeLayoutId = 42u;
+    TZrByte bytes[ZR_ZRP_METADATA_HEADER_SIZE + sizeof(SZrZrpMetadataTypeDefRow)] = {0};
+
+    populate_typedef_typeref_records(&metadataFunction, &localRecord, &moduleRecord);
+    moduleRecord.layoutHash ^= 0x1u;
+    typeDefLayout.cTypeId = 42u;
+    typeDefLayout.byteSize = 32u;
+    registeredLayouts[42] = &typeDefLayout;
+    registration.typeLayouts = registeredLayouts;
+    registration.typeLayoutCount = 43u;
+    write_typedef_layout_metadata(bytes, sizeof(bytes), 42u);
+
+    runtime = ZrCore_Module_AttachMetadataRuntime(&module, &metadataFunction, &registration);
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_AttachZrpMetadata(runtime, bytes, sizeof(bytes)));
+
+    TEST_ASSERT_NULL(ZrCore_MetadataRuntime_ResolveTypeTokenLayout(runtime, TEST_TYPE_REF_TOKEN, &typeLayoutId));
+    TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE, typeLayoutId);
+}
+
+static void test_metadata_runtime_typeref_token_layout_rejects_module_identity_mismatch(void) {
+    SZrObjectModule module = {0};
+    SZrFunction metadataFunction = {0};
+    SZrMetadataTokenRecord localRecord = {0};
+    SZrMetadataTokenRecord moduleRecord = {0};
+    SZrAotCodeRegistration registration = {0};
+    SZrTypeLayout typeDefLayout = {0};
+    const SZrTypeLayout *registeredLayouts[43] = {0};
+    SZrMetadataRuntime *runtime;
+    TZrUInt32 typeLayoutId = 42u;
+    TZrByte bytes[ZR_ZRP_METADATA_HEADER_SIZE + sizeof(SZrZrpMetadataTypeDefRow)] = {0};
+
+    metadataFunction.moduleSignatureHash = 0x1122334455667788ULL;
+    populate_typedef_typeref_records(&metadataFunction, &localRecord, &moduleRecord);
+    moduleRecord.targetModuleSignatureHash = 0x8877665544332211ULL;
+    typeDefLayout.cTypeId = 42u;
+    typeDefLayout.byteSize = 32u;
+    registeredLayouts[42] = &typeDefLayout;
+    registration.typeLayouts = registeredLayouts;
+    registration.typeLayoutCount = 43u;
+    write_typedef_layout_metadata(bytes, sizeof(bytes), 42u);
+
+    runtime = ZrCore_Module_AttachMetadataRuntime(&module, &metadataFunction, &registration);
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_AttachZrpMetadata(runtime, bytes, sizeof(bytes)));
+
+    TEST_ASSERT_NULL(ZrCore_MetadataRuntime_ResolveTypeTokenLayout(runtime, TEST_TYPE_REF_TOKEN, &typeLayoutId));
+    TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE, typeLayoutId);
 }
 
 static void test_metadata_runtime_type_token_layout_does_not_fallback_to_prototype_cache(void) {
@@ -844,6 +955,9 @@ int main(void) {
     RUN_TEST(test_metadata_runtime_reads_typespec_layout_binding_view);
     RUN_TEST(test_metadata_runtime_typespec_layout_binding_does_not_fallback_to_prototype_cache);
     RUN_TEST(test_metadata_runtime_resolves_typedef_token_layout_with_cache);
+    RUN_TEST(test_metadata_runtime_resolves_typeref_token_layout_via_target_typedef_with_cache);
+    RUN_TEST(test_metadata_runtime_typeref_token_layout_rejects_layout_identity_mismatch);
+    RUN_TEST(test_metadata_runtime_typeref_token_layout_rejects_module_identity_mismatch);
     RUN_TEST(test_metadata_runtime_type_token_layout_does_not_fallback_to_prototype_cache);
     RUN_TEST(test_metadata_runtime_resolves_typedef_layout_id_token_with_cache);
     RUN_TEST(test_metadata_runtime_layout_id_token_does_not_fallback_to_prototype_cache);

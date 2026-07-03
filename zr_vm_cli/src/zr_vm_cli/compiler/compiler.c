@@ -885,6 +885,22 @@ static TZrBool zr_cli_reconcile_optional_intermediate_output(const SZrCliModuleR
     return ZrCli_Project_RemoveFileIfExists(record->zriPath);
 }
 
+static TZrBool zr_cli_remove_aot_metadata_sidecar_for_c_path(const TZrChar *aotCPath) {
+    TZrChar metadataPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    if (aotCPath == ZR_NULL || aotCPath[0] == '\0') {
+        return ZR_TRUE;
+    }
+
+    if (!ZrCli_Project_ResolveAotCompactedMetadataPathFromAotCPath(aotCPath,
+                                                                   metadataPath,
+                                                                   sizeof(metadataPath))) {
+        return ZR_FALSE;
+    }
+
+    return ZrCli_Project_RemoveFileIfExists(metadataPath);
+}
+
 static TZrBool zr_cli_reconcile_optional_aot_c_output(const SZrCliModuleRecord *record,
                                                       TZrBool emitAotC) {
     if (record == ZR_NULL) {
@@ -895,7 +911,8 @@ static TZrBool zr_cli_reconcile_optional_aot_c_output(const SZrCliModuleRecord *
         return ZR_TRUE;
     }
 
-    return ZrCli_Project_RemoveFileIfExists(record->aotCPath);
+    return ZrCli_Project_RemoveFileIfExists(record->aotCPath) &&
+           zr_cli_remove_aot_metadata_sidecar_for_c_path(record->aotCPath);
 }
 
 static TZrBool zr_cli_reconcile_optional_outputs(SZrState *state,
@@ -1103,6 +1120,7 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
             ZrCli_Project_RemoveFileIfExists(entry->zroPath);
             ZrCli_Project_RemoveFileIfExists(entry->zriPath);
             ZrCli_Project_RemoveFileIfExists(entry->aotCPath);
+            zr_cli_remove_aot_metadata_sidecar_for_c_path(entry->aotCPath);
             localSummary.removedCount++;
         }
 

@@ -4,6 +4,7 @@ related_code:
   - zr_vm_library/src/zr_vm_library/zrm.c
   - zr_vm_library/include/zr_vm_library/project.h
   - zr_vm_library/src/zr_vm_library/project/project.c
+  - zr_vm_library/src/zr_vm_library/project/project_import_provider_location.c
   - zr_vm_library/src/zr_vm_library/project/project_import_resolver.c
   - zr_vm_cli/src/zr_vm_cli/command/command.c
   - zr_vm_cli/src/zr_vm_cli/command/command.h
@@ -20,6 +21,7 @@ implementation_files:
   - zr_vm_library/include/zr_vm_library/zrm.h
   - zr_vm_library/src/zr_vm_library/zrm.c
   - zr_vm_library/src/zr_vm_library/project/project.c
+  - zr_vm_library/src/zr_vm_library/project/project_import_provider_location.c
   - zr_vm_library/src/zr_vm_library/project/project_import_resolver.c
   - zr_vm_cli/src/zr_vm_cli/command/command.c
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
@@ -41,6 +43,14 @@ tests:
   - tests/system/test_system_assembly_module.c
   - tests/module/test_module_system.c
   - tests/acceptance/2026-06-19-zrm-assembly-container.md
+  - tests/acceptance/2026-07-02-aot-11-s7zj-provider-import-location-discovery.md
+  - tests/acceptance/2026-07-02-aot-11-s7zk-provider-aot-load-request.md
+  - tests/acceptance/2026-07-02-aot-11-s7zl-provider-aot-runtime-load-request.md
+  - tests/acceptance/2026-07-02-aot-11-s7zm-provider-aot-dynamic-library-success.md
+  - tests/acceptance/2026-07-02-aot-11-s7zn-provider-version-selection-range-guard.md
+  - tests/library/test_project_import_aot_provider_runtime.c
+  - tests/library/test_project_import_provider_version_selection.c
+  - tests/parser/test_aot_c_provider_shared_library_smoke.c
 doc_type: module-detail
 ---
 
@@ -89,7 +99,17 @@ Project manifests can declare assembly output and resources:
 
 If `assembly.output` is omitted, `ZrLibrary_Project_ResolveAssemblyOutputPath()` resolves the default to `<binary>/<assembly-name>.zrm` relative to the project manifest directory.
 
-`references.<alias>.path` accepts either a `.zrp` project manifest or a `.zrm` assembly. A `.zrm` reference is opened during manifest parse, validated against the declared `assembly` and optional `version`, and then used to resolve imports such as `$mathLocal@2.1.0/ops/sum` to `modules/ops/sum.zro` inside the archive.
+`references.<alias>.path` accepts either a `.zrp` project manifest or a `.zrm` assembly. A `.zrm` reference is opened during manifest parse, validated against the declared `assembly` and optional `version`, and then used to resolve imports such as `$mathLocal@2.1.0/ops/sum` to `modules/ops/sum.zro` inside the archive. When the actual provider version and declared min/max are strict `major.minor.patch` values, manifest parsing also rejects invalid or out-of-range `[min, max)` declarations for both `.zrp` and `.zrm` references.
+
+`ZrLibrary_Project_ResolveImportProviderLocation()` is the AOT-facing discovery API for referenced providers. It resolves the same import specifier to the canonical provider module key plus the declared assembly identity/version range. For `.zrm` references it returns the open archive and module entry; for `.zrp` project references it returns source, binary, and intermediate module paths. Exact aliases can point at multiple versions of the same assembly and resolve to distinct canonical provider keys. This is location discovery only: automatic range-based candidate selection remains separate.
+
+`ZrLibrary_Project_ResolveImportProviderAotLoadRequest()` converts that provider location into a loader-facing request record. For `.zrp` references it carries the backend kind, descriptor-local module name, source/binary/intermediate module paths, and the backend-specific dynamic-library path under `aot_c` or `aot_llvm`. For `.zrm` references it mirrors the archive and entry pointers and deliberately leaves `libraryPath` empty so archive entries are not treated as filesystem dynamic libraries. This is request planning only; runtime dynamic loading is still a later AOT/runtime stage.
+
+Strict AOT module loading now consumes that request for canonical provider imports. For `.zrp` references, the runtime uses the provider project's AOT library path and validates the descriptor against the provider-local module name while keeping the canonical `$alias@version/module` cache key. `.zrm` archive entries remain unsupported as dynamic libraries at this layer and fail closed with an explicit diagnostic.
+
+The generated provider dynamic-library success path is covered by `tests/parser/test_aot_c_provider_shared_library_smoke.c`: it builds a provider `.zrp` module into the exact `bin/aot_c/lib/zrvm_aot_<module>.so` path, imports the canonical provider key through strict AOT C, and verifies the canonical cache entry plus exported value publication. This confirms `.zrp` provider filesystem artifacts work; `.zrm` archive entries still require a separate archive-aware AOT loader design.
+
+`tests/library/test_project_import_provider_version_selection.c` covers exact alias/version selection for multiple `.zrp` references to the same assembly and the strict declared range guard shared by `.zrp` and `.zrm` references. It does not implement automatic candidate search across installed provider versions.
 
 ## CLI Packaging
 
@@ -117,7 +137,8 @@ This is intentionally project-assembly scoped. `.zro` execution without an emitt
 ## Test Coverage
 
 - `tests/library/test_zrm_container.c` verifies manifest writing, module/resource entry names, compression mode, byte extraction, duplicate rejection, unsafe logical name rejection, missing manifest rejection, corrupt ZIP rejection, and manifest entry path traversal rejection.
-- `tests/library/test_project_import_resolver.c` verifies `assembly.output`, project resources, `.zrm` references, `$alias@version/module` resolution, and loading a module `.zro` from inside the container.
+- `tests/library/test_project_import_resolver.c` verifies `assembly.output`, project resources, `.zrm` references, `$alias@version/module` resolution, provider-location discovery and AOT load-request planning for `.zrp` and `.zrm` references, and loading a module `.zro` from inside the container.
+- `tests/library/test_project_import_provider_version_selection.c` verifies multi-version `.zrp` provider exact alias/version selection and strict declared range rejection.
 - `tests/cli/test_cli_args.c` verifies `--emit-zrm` parsing and compile-only validation.
 - `tests/cli/test_cli_project_incremental.c` verifies `--emit-zrm` packages reachable modules and resources and that the resulting `.zrm` can be opened and read.
 - `tests/cli/test_cli_zrm_fixture.c` builds a provider `.zrm`, references it from a consumer project, runs a consumer module that imports the provider module from the referenced assembly and reads its exported `answer`, then runs a second consumer module that reads the current project `.zrm` resource through `zr.system.assembly`.

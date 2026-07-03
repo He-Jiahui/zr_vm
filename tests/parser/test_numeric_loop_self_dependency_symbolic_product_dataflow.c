@@ -593,6 +593,68 @@ test_while_self_dependent_target_reading_symbolic_subtractive_constant_product_f
     destroy_compiler_state(cs);
 }
 
+static void
+test_while_self_dependent_target_reading_symbolic_target_self_canceling_product_factor_widens_upward(void) {
+    SZrCompilerState *cs = create_compiler_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *whileStatement;
+    SZrAstNode *targetExpression;
+    SZrAstNode *observerExpression;
+    SZrInferredType whileType;
+    SZrInferredType targetResult;
+    SZrInferredType observerResult;
+    const char *source =
+            "while (flag) {\n"
+            "    narrowed = narrowed + ((step * ((narrowed - narrowed) * factor)) + step);\n"
+            "    other = narrowed;\n"
+            "}\n"
+            "narrowed + 0;\n"
+            "other + 0;\n";
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            "numeric_while_self_dependent_symbolic_target_self_canceling_product_factor_positive_residual_dataflow_test.zr",
+            strlen("numeric_while_self_dependent_symbolic_target_self_canceling_product_factor_positive_residual_dataflow_test.zr"));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    whileStatement = statement_at(ast, 0);
+    targetExpression = expression_statement_expression(statement_at(ast, 1));
+    observerExpression = expression_statement_expression(statement_at(ast, 2));
+    register_bool_variable(cs, "flag");
+    register_int64_range_variable(cs, "narrowed", 5, 5);
+    register_int64_range_variable(cs, "other", 0, 0);
+    register_int64_range_variable(cs, "step", 1, 3);
+    register_int64_range_variable(cs, "factor", -2, 2);
+
+    ZrParser_InferredType_Init(g_state, &whileType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &targetResult, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &observerResult, ZR_VALUE_TYPE_OBJECT);
+
+    TEST_ASSERT_NOT_NULL(whileStatement);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileStatement->type);
+    TEST_ASSERT_NOT_NULL(targetExpression);
+    TEST_ASSERT_NOT_NULL(observerExpression);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, whileStatement, &whileType));
+    assert_int64_range_result_and_fact(
+            cs,
+            targetExpression,
+            &targetResult,
+            5,
+            ZR_TYPE_RANGE_INT64_MAX);
+    assert_int64_range_result_and_fact(
+            cs,
+            observerExpression,
+            &observerResult,
+            0,
+            ZR_TYPE_RANGE_INT64_MAX);
+
+    ZrParser_InferredType_Free(g_state, &observerResult);
+    ZrParser_InferredType_Free(g_state, &targetResult);
+    ZrParser_InferredType_Free(g_state, &whileType);
+    ZrParser_Ast_Free(g_state, ast);
+    destroy_compiler_state(cs);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(
@@ -613,5 +675,7 @@ int main(void) {
             test_while_self_dependent_target_reading_symbolic_additive_constant_product_factor_cancels_exactly);
     RUN_TEST(
             test_while_self_dependent_target_reading_symbolic_subtractive_constant_product_factor_cancels_exactly);
+    RUN_TEST(
+            test_while_self_dependent_target_reading_symbolic_target_self_canceling_product_factor_widens_upward);
     return UNITY_END();
 }

@@ -2,6 +2,7 @@
 
 #include "backend_aot_c_generic_sharing.h"
 #include "backend_aot_c_scalar_locals.h"
+#include "backend_aot_c_zrp_metadata_member_token.h"
 #include "backend_aot_internal.h"
 
 #include "zr_vm_common/zr_aot_abi.h"
@@ -26,6 +27,54 @@ static const SZrAotFunctionEntry *backend_aot_c_method_metadata_find_entry_by_fl
     }
 
     return ZR_NULL;
+}
+
+static const SZrFunction *backend_aot_c_method_metadata_root_function(const SZrAotFunctionTable *table) {
+    const SZrAotFunctionEntry *rootEntry =
+            backend_aot_c_method_metadata_find_entry_by_flat_index(table, ZR_AOT_FUNCTION_TREE_ROOT_INDEX);
+    return rootEntry != ZR_NULL ? rootEntry->function : ZR_NULL;
+}
+
+static TZrMetadataToken backend_aot_c_method_token_for_function(
+        const SZrAotFunctionTable *table,
+        const SZrAotCEmbeddedZrpMetadata *embeddedZrpMetadata,
+        const SZrFunction *function) {
+    const SZrFunction *rootFunction;
+
+    if (table == ZR_NULL || function == ZR_NULL) {
+        return 0u;
+    }
+
+    rootFunction = backend_aot_c_method_metadata_root_function(table);
+    if (rootFunction == ZR_NULL ||
+        rootFunction->childFunctionList == ZR_NULL ||
+        rootFunction->typedExportedSymbols == ZR_NULL) {
+        return 0u;
+    }
+
+    for (TZrUInt32 symbolIndex = 0u; symbolIndex < rootFunction->typedExportedSymbolLength; symbolIndex++) {
+        const SZrFunctionTypedExportSymbol *symbol = &rootFunction->typedExportedSymbols[symbolIndex];
+        const SZrFunction *childFunction;
+
+        if (symbol->symbolKind != ZR_FUNCTION_TYPED_SYMBOL_FUNCTION ||
+            symbol->exportKind != ZR_MODULE_EXPORT_KIND_FUNCTION ||
+            symbol->metadataToken == 0u ||
+            symbol->callableChildIndex == ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE ||
+            symbol->callableChildIndex >= rootFunction->childFunctionLength) {
+            continue;
+        }
+
+        childFunction = &rootFunction->childFunctionList[symbol->callableChildIndex];
+        if (childFunction == function) {
+            TZrMetadataToken token = symbol->metadataToken;
+            if (!backend_aot_c_embedded_zrp_metadata_remap_member_token(embeddedZrpMetadata, &token)) {
+                return 0u;
+            }
+            return token;
+        }
+    }
+
+    return 0u;
 }
 
 static const TZrChar *backend_aot_c_reflection_metadata_level_name(TZrUInt8 reflectionMetadataLevel) {
@@ -286,31 +335,6 @@ static void backend_aot_write_c_signature(FILE *file,
             "    .hasVarArgs = (TZrUInt8)%uu,\n",
             function != ZR_NULL && function->hasVariableArguments ? 1u : 0u);
     fprintf(file, "};\n");
-}
-
-void backend_aot_write_c_reflection_invokers(FILE *file) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "static void zr_aot_invoker_entry_thunk(struct SZrState *state,\n"
-            "                                      FZrAotEntryThunk target,\n"
-            "                                      const SZrAotMethodInfo *method,\n"
-            "                                      SZrTypeValue *self,\n"
-            "                                      SZrTypeValue *args,\n"
-            "                                      SZrTypeValue *outReturn) {\n"
-            "    (void)method;\n"
-            "    (void)self;\n"
-            "    (void)args;\n"
-            "    (void)outReturn;\n"
-            "    if (target != ZR_NULL) {\n"
-            "        (void)target(state);\n"
-            "    }\n"
-            "}\n"
-            "static const FZrAotReflectionInvoker zr_aot_reflection_invokers[] = {\n"
-            "    zr_aot_invoker_entry_thunk,\n"
-            "};\n");
 }
 
 static TZrUInt32 backend_aot_c_method_info_register_frame_bytes(const SZrAotExecIrFunction *functionIr) {
@@ -595,6 +619,37 @@ void backend_aot_write_c_method_info_table(FILE *file,
             fprintf(file, "    &zr_aot_method_info_%u,\n", (unsigned)entry->flatIndex);
         } else {
             fprintf(file, "    ZR_NULL,\n");
+        }
+    }
+    fprintf(file, "};\n");
+}
+
+void backend_aot_write_c_method_token_table(FILE *file,
+                                            const SZrAotFunctionTable *table,
+                                            const SZrAotCEmbeddedZrpMetadata *embeddedZrpMetadata,
+                                            TZrUInt32 functionIndexSpace) {
+    TZrUInt32 index;
+
+    if (file == ZR_NULL || table == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "/* AOT metadata token table indexed by functionIndex. */\n"
+            "static const TZrUInt32 zr_aot_method_tokens[] = {\n");
+    for (index = 0u; index < functionIndexSpace; index++) {
+        const SZrAotFunctionEntry *entry =
+                backend_aot_c_method_metadata_find_entry_by_flat_index(table, index);
+        TZrMetadataToken token = entry != ZR_NULL
+                                         ? backend_aot_c_method_token_for_function(table,
+                                                                                   embeddedZrpMetadata,
+                                                                                   entry->function)
+                                         : 0u;
+
+        if (token != 0u) {
+            fprintf(file, "    0x%08xu,\n", (unsigned)token);
+        } else {
+            fprintf(file, "    0u,\n");
         }
     }
     fprintf(file, "};\n");

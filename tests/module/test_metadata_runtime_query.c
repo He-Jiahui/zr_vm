@@ -183,6 +183,7 @@ static void test_module_metadata_runtime_attaches_code_registration(void) {
     };
     SZrAotMethodInfo methodInfo = {0};
     const SZrAotMethodInfo *methodInfos[1] = {&methodInfo};
+    TZrUInt32 methodTokens[1] = {0x06000001u};
     FZrAotReflectionInvoker invokers[1] = {test_metadata_runtime_aot_invoker};
     const SZrAotGcDescriptor *gcDescriptors[1] = {ZR_NULL};
     SZrAotCodeRegistration registration = {0};
@@ -192,6 +193,8 @@ static void test_module_metadata_runtime_attaches_code_registration(void) {
     registration.functionPointers = functionPointers;
     registration.methodInfos = methodInfos;
     registration.methodInfoCount = 1u;
+    registration.methodTokens = methodTokens;
+    registration.methodTokenCount = 1u;
     registration.invokers = invokers;
     registration.invokerCount = 1u;
     registration.typeLayoutCount = 3u;
@@ -209,9 +212,42 @@ static void test_module_metadata_runtime_attaches_code_registration(void) {
     TEST_ASSERT_EQUAL_PTR(&registration, runtime->codeRegistration);
     TEST_ASSERT_EQUAL_UINT32(2u, runtime->functionCount);
     TEST_ASSERT_EQUAL_UINT32(1u, runtime->methodInfoCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, runtime->methodTokenCount);
     TEST_ASSERT_EQUAL_UINT32(1u, runtime->invokerCount);
     TEST_ASSERT_EQUAL_UINT32(3u, runtime->typeLayoutCount);
     TEST_ASSERT_EQUAL_UINT32(1u, runtime->gcDescriptorCount);
+}
+
+static void test_metadata_runtime_rewrites_typed_export_member_tokens_from_registration_remap(void) {
+    SZrObjectModule module = {0};
+    SZrFunction metadataFunction = {0};
+    SZrFunctionTypedExportSymbol exportedSymbols[3] = {0};
+    const TZrMetadataToken sourceToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 7u);
+    const TZrMetadataToken targetToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 2u);
+    const TZrMetadataToken retainedToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 1u);
+    SZrAotMemberTokenRemap memberTokenRemaps[1] = {{sourceToken, targetToken}};
+    SZrAotCodeRegistration registration = {0};
+    SZrMetadataRuntime *runtime;
+
+    exportedSymbols[0].metadataToken = sourceToken;
+    exportedSymbols[0].signatureToken = TEST_MEMBER_DEF_SIGNATURE_TOKEN;
+    exportedSymbols[1].metadataToken = retainedToken;
+    exportedSymbols[1].signatureToken = TEST_MEMBER_DEF_SIGNATURE_TOKEN;
+    exportedSymbols[2].metadataToken = TEST_MODULE_TOKEN;
+    exportedSymbols[2].signatureToken = TEST_MODULE_SIGNATURE_TOKEN;
+    metadataFunction.typedExportedSymbols = exportedSymbols;
+    metadataFunction.typedExportedSymbolLength = 3u;
+
+    registration.memberTokenRemaps = memberTokenRemaps;
+    registration.memberTokenRemapCount = 1u;
+
+    runtime = ZrCore_Module_AttachMetadataRuntime(&module, &metadataFunction, &registration);
+
+    TEST_ASSERT_NOT_NULL(runtime);
+    TEST_ASSERT_EQUAL_UINT32(1u, runtime->memberTokenRemapCount);
+    TEST_ASSERT_EQUAL_UINT32(targetToken, exportedSymbols[0].metadataToken);
+    TEST_ASSERT_EQUAL_UINT32(retainedToken, exportedSymbols[1].metadataToken);
+    TEST_ASSERT_EQUAL_UINT32(TEST_MODULE_TOKEN, exportedSymbols[2].metadataToken);
 }
 
 static void test_metadata_runtime_resolves_method_records_lazily(void) {
@@ -1160,6 +1196,7 @@ static void test_metadata_runtime_reads_method_spec_signature_view(void) {
     TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_ReadMethodSpecSignatureView(runtime, TEST_METHOD_SPEC_TOKEN, &view));
 
     TEST_ASSERT_EQUAL_UINT32(TEST_METHOD_SPEC_TOKEN, view.methodSpecToken);
+    TEST_ASSERT_EQUAL_PTR(&functionRecords[1], view.methodSpecRecord);
     TEST_ASSERT_EQUAL_UINT32(TEST_MEMBER_DEF_TOKEN, view.methodToken);
     TEST_ASSERT_EQUAL_PTR(&functionRecords[0], view.methodRecord);
     TEST_ASSERT_EQUAL_UINT64(functionRecords[1].signatureHash, view.signatureHash);
@@ -1176,6 +1213,118 @@ static void test_metadata_runtime_reads_method_spec_signature_view(void) {
                                                                  &argumentNodeView));
     TEST_ASSERT_EQUAL_INT(ZR_METADATA_SIGNATURE_NODE_PRIMITIVE, argumentNodeView.node);
     TEST_ASSERT_EQUAL_UINT32((TZrUInt32)ZR_VALUE_TYPE_INT64, argumentNodeView.payload0);
+}
+
+static void test_metadata_runtime_reads_method_spec_generic_argument_view(void) {
+    static const TZrByte methodSpecSignature[] = {
+            ZR_METADATA_SIGNATURE_NODE_GENERIC_INST,
+            ZR_METADATA_SIGNATURE_NODE_MEMBER_REF,
+            (TZrByte)(TEST_MEMBER_DEF_TOKEN & 0xFFu),
+            (TZrByte)((TEST_MEMBER_DEF_TOKEN >> 8u) & 0xFFu),
+            (TZrByte)((TEST_MEMBER_DEF_TOKEN >> 16u) & 0xFFu),
+            (TZrByte)((TEST_MEMBER_DEF_TOKEN >> 24u) & 0xFFu),
+            2u, 0u, 0u, 0u,
+            ZR_METADATA_SIGNATURE_NODE_PRIMITIVE,
+            (TZrByte)ZR_VALUE_TYPE_INT64, 0u, 0u, 0u,
+            ZR_METADATA_SIGNATURE_NODE_TYPE_REF,
+            (TZrByte)ZR_VALUE_TYPE_OBJECT, 0u, 0u, 0u,
+            23u, 0u, 0u, 0u,
+    };
+    static const TZrByte argumentTypeRefSignature[] = {
+            ZR_METADATA_SIGNATURE_NODE_TYPE_REF,
+            (TZrByte)ZR_VALUE_TYPE_OBJECT, 0u, 0u, 0u,
+            23u, 0u, 0u, 0u,
+    };
+    SZrObjectModule module = {0};
+    SZrFunction metadataFunction = {0};
+    SZrMetadataTokenRecord functionRecords[2] = {0};
+    SZrMetadataTokenRecord moduleRecords[2] = {0};
+    SZrAotCodeRegistration registration = {0};
+    SZrMetadataRuntime *runtime;
+    SZrMetadataRuntimeMethodSpecGenericArgumentView argumentView;
+    SZrZrpMetadataHeader header;
+    TZrUInt32 nextOffset;
+    TZrByte signaturePayload[sizeof(methodSpecSignature) + sizeof(argumentTypeRefSignature)] = {0};
+    TZrByte bytes[ZR_ZRP_METADATA_HEADER_SIZE + sizeof(signaturePayload)] = {0};
+
+    functionRecords[0].token = TEST_MEMBER_DEF_TOKEN;
+    functionRecords[0].relatedToken = TEST_MEMBER_DEF_SIGNATURE_TOKEN;
+    functionRecords[0].signatureHash = 0x5555666677778888ULL;
+    functionRecords[1].token = TEST_METHOD_SPEC_TOKEN;
+    functionRecords[1].relatedToken = TEST_MEMBER_DEF_TOKEN;
+    functionRecords[1].ownerToken = TEST_MEMBER_DEF_TOKEN;
+    functionRecords[1].signatureBlobOffset = 0u;
+    functionRecords[1].signatureBlobLength = (TZrUInt32)sizeof(methodSpecSignature);
+    functionRecords[1].signatureHash = 0x33445566778899AAULL;
+    metadataFunction.metadataTokenRecords = functionRecords;
+    metadataFunction.metadataTokenRecordLength = 2u;
+
+    moduleRecords[0].token = TEST_GENERIC_ARG_TYPE_REF_TOKEN;
+    moduleRecords[0].relatedToken = TEST_GENERIC_ARG_TYPE_REF_SIGNATURE_TOKEN;
+    moduleRecords[0].signatureHash = 0x0102030405060708ULL;
+    moduleRecords[1].token = TEST_GENERIC_ARG_TYPE_REF_SIGNATURE_TOKEN;
+    moduleRecords[1].relatedToken = TEST_GENERIC_ARG_TYPE_REF_TOKEN;
+    moduleRecords[1].ownerToken = TEST_GENERIC_ARG_TYPE_REF_TOKEN;
+    moduleRecords[1].signatureBlobOffset = (TZrUInt32)sizeof(methodSpecSignature);
+    moduleRecords[1].signatureBlobLength = (TZrUInt32)sizeof(argumentTypeRefSignature);
+    moduleRecords[1].signatureHash = moduleRecords[0].signatureHash;
+    metadataFunction.moduleMetadataTokenRecords = moduleRecords;
+    metadataFunction.moduleMetadataTokenRecordLength = 2u;
+
+    memcpy(signaturePayload, methodSpecSignature, sizeof(methodSpecSignature));
+    memcpy(signaturePayload + sizeof(methodSpecSignature),
+           argumentTypeRefSignature,
+           sizeof(argumentTypeRefSignature));
+
+    ZrCore_ZrpMetadata_InitHeader(&header);
+    nextOffset = ZR_ZRP_METADATA_HEADER_SIZE;
+    set_runtime_test_counted_section(&header.signatureBlobPool,
+                                     &nextOffset,
+                                     (TZrUInt32)sizeof(signaturePayload),
+                                     1u);
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteHeader(bytes, sizeof(bytes), &header));
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WritePoolPayload(bytes,
+                                                        sizeof(bytes),
+                                                        &header,
+                                                        ZR_ZRP_METADATA_SECTION_SIGNATURE_BLOB_POOL,
+                                                        signaturePayload,
+                                                        (TZrUInt32)sizeof(signaturePayload)));
+
+    runtime = ZrCore_Module_AttachMetadataRuntime(&module, &metadataFunction, &registration);
+
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadMethodSpecGenericArgumentView(
+            ZR_NULL, TEST_METHOD_SPEC_TOKEN, 0u, &argumentView));
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadMethodSpecGenericArgumentView(
+            runtime, TEST_METHOD_SPEC_TOKEN, 0u, ZR_NULL));
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadMethodSpecGenericArgumentView(
+            runtime, TEST_MEMBER_DEF_TOKEN, 0u, &argumentView));
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadMethodSpecGenericArgumentView(
+            runtime, TEST_METHOD_SPEC_TOKEN, 0u, &argumentView));
+
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_AttachZrpMetadata(runtime, bytes, sizeof(bytes)));
+
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_ReadMethodSpecGenericArgumentView(
+            runtime, TEST_METHOD_SPEC_TOKEN, 0u, &argumentView));
+    TEST_ASSERT_EQUAL_UINT32(TEST_METHOD_SPEC_TOKEN, argumentView.signatureView.methodSpecToken);
+    TEST_ASSERT_EQUAL_UINT32(TEST_MEMBER_DEF_TOKEN, argumentView.signatureView.methodToken);
+    TEST_ASSERT_EQUAL_PTR(&functionRecords[0], argumentView.signatureView.methodRecord);
+    TEST_ASSERT_EQUAL_UINT32(0u, argumentView.argumentIndex);
+    TEST_ASSERT_EQUAL_INT(ZR_METADATA_SIGNATURE_NODE_PRIMITIVE, argumentView.argumentNode.node);
+    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)ZR_VALUE_TYPE_INT64, argumentView.argumentNode.payload0);
+    TEST_ASSERT_EQUAL_UINT32(0u, argumentView.argumentToken);
+    TEST_ASSERT_NULL(argumentView.argumentRecord);
+
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_ReadMethodSpecGenericArgumentView(
+            runtime, TEST_METHOD_SPEC_TOKEN, 1u, &argumentView));
+    TEST_ASSERT_EQUAL_UINT32(1u, argumentView.argumentIndex);
+    TEST_ASSERT_EQUAL_INT(ZR_METADATA_SIGNATURE_NODE_TYPE_REF, argumentView.argumentNode.node);
+    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)ZR_VALUE_TYPE_OBJECT, argumentView.argumentNode.payload0);
+    TEST_ASSERT_EQUAL_UINT32(23u, argumentView.argumentNode.payload1);
+    TEST_ASSERT_EQUAL_UINT32(TEST_GENERIC_ARG_TYPE_REF_TOKEN, argumentView.argumentToken);
+    TEST_ASSERT_EQUAL_PTR(&moduleRecords[0], argumentView.argumentRecord);
+
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadMethodSpecGenericArgumentView(
+            runtime, TEST_METHOD_SPEC_TOKEN, 2u, &argumentView));
 }
 
 static void test_metadata_runtime_reads_typedef_layout_binding_view(void) {
@@ -1456,12 +1605,207 @@ static void test_metadata_runtime_fielddef_layout_binding_does_not_fallback_to_p
             runtime, TEST_FIELD_DEF_TOKEN, &view));
 }
 
+static void test_metadata_runtime_reads_generic_param_and_constraint_views(void) {
+    static const TZrByte constraintSignature[] = {
+            ZR_METADATA_SIGNATURE_NODE_TYPE_REF,
+            (TZrByte)ZR_VALUE_TYPE_OBJECT, 0u, 0u, 0u,
+            19u, 0u, 0u, 0u,
+    };
+    SZrObjectModule module = {0};
+    SZrFunction metadataFunction = {0};
+    SZrMetadataTokenRecord functionRecords[2] = {0};
+    SZrMetadataTokenRecord moduleRecords[1] = {0};
+    SZrAotCodeRegistration registration = {0};
+    SZrMetadataRuntime *runtime;
+    SZrMetadataRuntimeGenericParamView genericParamView;
+    SZrMetadataRuntimeGenericParamConstraintView constraintView;
+    SZrZrpMetadataHeader header;
+    TZrUInt32 nextOffset;
+    TZrByte bytes[ZR_ZRP_METADATA_HEADER_SIZE +
+                  sizeof(SZrZrpMetadataTypeDefRow) +
+                  sizeof(SZrZrpMetadataMethodDefRow) +
+                  (sizeof(SZrZrpMetadataGenericParamRow) * 3u) +
+                  (sizeof(SZrZrpMetadataGenericParamConstraintRow) * 3u) +
+                  sizeof(constraintSignature)] = {0};
+    SZrZrpMetadataTypeDefRow *typeRows;
+    SZrZrpMetadataMethodDefRow *methodRows;
+    SZrZrpMetadataGenericParamRow *genericParamRows;
+    SZrZrpMetadataGenericParamConstraintRow *constraintRows;
+
+    functionRecords[0].token = TEST_TYPE_DEF_TOKEN;
+    functionRecords[0].relatedToken = TEST_TYPE_DEF_SIGNATURE_TOKEN;
+    functionRecords[1].token = TEST_MEMBER_DEF_TOKEN;
+    functionRecords[1].relatedToken = TEST_MEMBER_DEF_SIGNATURE_TOKEN;
+    functionRecords[1].ownerToken = TEST_TYPE_DEF_TOKEN;
+    metadataFunction.metadataTokenRecords = functionRecords;
+    metadataFunction.metadataTokenRecordLength = 2u;
+
+    moduleRecords[0].token = TEST_TYPE_REF_TOKEN;
+    moduleRecords[0].relatedToken = TEST_TYPE_REF_SIGNATURE_TOKEN;
+    metadataFunction.moduleMetadataTokenRecords = moduleRecords;
+    metadataFunction.moduleMetadataTokenRecordLength = 1u;
+
+    ZrCore_ZrpMetadata_InitHeader(&header);
+    nextOffset = ZR_ZRP_METADATA_HEADER_SIZE;
+    set_runtime_test_counted_section(&header.typeDefs,
+                                     &nextOffset,
+                                     1u,
+                                     (TZrUInt32)sizeof(SZrZrpMetadataTypeDefRow));
+    set_runtime_test_counted_section(&header.methodDefs,
+                                     &nextOffset,
+                                     1u,
+                                     (TZrUInt32)sizeof(SZrZrpMetadataMethodDefRow));
+    set_runtime_test_counted_section(&header.genericParams,
+                                     &nextOffset,
+                                     3u,
+                                     (TZrUInt32)sizeof(SZrZrpMetadataGenericParamRow));
+    set_runtime_test_counted_section(&header.genericParamConstraints,
+                                     &nextOffset,
+                                     3u,
+                                     (TZrUInt32)sizeof(SZrZrpMetadataGenericParamConstraintRow));
+    set_runtime_test_counted_section(&header.signatureBlobPool,
+                                     &nextOffset,
+                                     (TZrUInt32)sizeof(constraintSignature),
+                                     1u);
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WriteHeader(bytes, sizeof(bytes), &header));
+    TEST_ASSERT_TRUE(ZrCore_ZrpMetadata_WritePoolPayload(bytes,
+                                                        sizeof(bytes),
+                                                        &header,
+                                                        ZR_ZRP_METADATA_SECTION_SIGNATURE_BLOB_POOL,
+                                                        constraintSignature,
+                                                        (TZrUInt32)sizeof(constraintSignature)));
+
+    typeRows = (SZrZrpMetadataTypeDefRow *)(void *)(bytes + header.typeDefs.offset);
+    methodRows = (SZrZrpMetadataMethodDefRow *)(void *)(bytes + header.methodDefs.offset);
+    genericParamRows = (SZrZrpMetadataGenericParamRow *)(void *)(bytes + header.genericParams.offset);
+    constraintRows = (SZrZrpMetadataGenericParamConstraintRow *)(void *)(bytes +
+                                                                         header.genericParamConstraints.offset);
+
+    typeRows[0].token = TEST_TYPE_DEF_TOKEN;
+    typeRows[0].firstMethodDefIndex = 0u;
+    typeRows[0].methodDefCount = 1u;
+    typeRows[0].firstGenericParamIndex = 0u;
+    typeRows[0].genericParamCount = 2u;
+
+    methodRows[0].token = TEST_MEMBER_DEF_TOKEN;
+    methodRows[0].ownerTypeToken = TEST_TYPE_DEF_TOKEN;
+    methodRows[0].firstGenericParamIndex = 2u;
+    methodRows[0].genericParamCount = 1u;
+
+    genericParamRows[0].ownerToken = TEST_TYPE_DEF_TOKEN;
+    genericParamRows[0].nameStringOffset = 11u;
+    genericParamRows[0].parameterIndex = 0u;
+    genericParamRows[0].firstConstraintIndex = 0u;
+    genericParamRows[0].constraintCount = 2u;
+    genericParamRows[0].flags = 0xA1u;
+    genericParamRows[1].ownerToken = TEST_TYPE_DEF_TOKEN;
+    genericParamRows[1].nameStringOffset = 13u;
+    genericParamRows[1].parameterIndex = 1u;
+    genericParamRows[1].firstConstraintIndex = 2u;
+    genericParamRows[1].constraintCount = 0u;
+    genericParamRows[2].ownerToken = TEST_MEMBER_DEF_TOKEN;
+    genericParamRows[2].nameStringOffset = 17u;
+    genericParamRows[2].parameterIndex = 0u;
+    genericParamRows[2].firstConstraintIndex = 2u;
+    genericParamRows[2].constraintCount = 1u;
+    genericParamRows[2].flags = 0xB2u;
+
+    constraintRows[0].genericParamIndex = 0u;
+    constraintRows[0].constraintTypeToken = TEST_TYPE_REF_TOKEN;
+    constraintRows[0].signatureBlobOffset = 0u;
+    constraintRows[0].signatureBlobLength = (TZrUInt32)sizeof(constraintSignature);
+    constraintRows[1].genericParamIndex = 0u;
+    constraintRows[1].constraintTypeToken = TEST_TYPE_DEF_TOKEN;
+    constraintRows[2].genericParamIndex = 2u;
+    constraintRows[2].constraintTypeToken = TEST_TYPE_REF_TOKEN;
+    constraintRows[2].signatureBlobOffset = 0u;
+    constraintRows[2].signatureBlobLength = (TZrUInt32)sizeof(constraintSignature);
+
+    runtime = ZrCore_Module_AttachMetadataRuntime(&module, &metadataFunction, &registration);
+
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadGenericParamView(ZR_NULL,
+                                                                  TEST_TYPE_DEF_TOKEN,
+                                                                  0u,
+                                                                  &genericParamView));
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadGenericParamView(runtime,
+                                                                  TEST_TYPE_DEF_TOKEN,
+                                                                  0u,
+                                                                  ZR_NULL));
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadGenericParamView(runtime,
+                                                                  TEST_TYPE_DEF_TOKEN,
+                                                                  0u,
+                                                                  &genericParamView));
+
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_AttachZrpMetadata(runtime, bytes, sizeof(bytes)));
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_ReadGenericParamView(runtime,
+                                                                 TEST_TYPE_DEF_TOKEN,
+                                                                 0u,
+                                                                 &genericParamView));
+    TEST_ASSERT_EQUAL_UINT32(TEST_TYPE_DEF_TOKEN, genericParamView.ownerToken);
+    TEST_ASSERT_EQUAL_PTR(&functionRecords[0], genericParamView.ownerRecord);
+    TEST_ASSERT_EQUAL_PTR(&genericParamRows[0], genericParamView.genericParamRow);
+    TEST_ASSERT_EQUAL_UINT32(0u, genericParamView.genericParamIndex);
+    TEST_ASSERT_EQUAL_UINT32(0u, genericParamView.parameterIndex);
+    TEST_ASSERT_EQUAL_UINT32(11u, genericParamView.nameStringOffset);
+    TEST_ASSERT_EQUAL_UINT32(0u, genericParamView.firstConstraintIndex);
+    TEST_ASSERT_EQUAL_UINT32(2u, genericParamView.constraintCount);
+    TEST_ASSERT_EQUAL_UINT32(0xA1u, genericParamView.flags);
+
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_ReadGenericParamConstraintView(runtime,
+                                                                           TEST_TYPE_DEF_TOKEN,
+                                                                           0u,
+                                                                           0u,
+                                                                           &constraintView));
+    TEST_ASSERT_EQUAL_UINT32(TEST_TYPE_REF_TOKEN, constraintView.constraintTypeToken);
+    TEST_ASSERT_EQUAL_PTR(&moduleRecords[0], constraintView.constraintTypeRecord);
+    TEST_ASSERT_EQUAL_PTR(&constraintRows[0], constraintView.constraintRow);
+    TEST_ASSERT_EQUAL_UINT32(0u, constraintView.constraintIndex);
+    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)sizeof(constraintSignature),
+                             (TZrUInt32)constraintView.signatureBlob.byteLength);
+    TEST_ASSERT_EQUAL_PTR(bytes + header.signatureBlobPool.offset, constraintView.signatureBlob.data);
+
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_ReadGenericParamConstraintView(runtime,
+                                                                           TEST_TYPE_DEF_TOKEN,
+                                                                           0u,
+                                                                           1u,
+                                                                           &constraintView));
+    TEST_ASSERT_EQUAL_UINT32(TEST_TYPE_DEF_TOKEN, constraintView.constraintTypeToken);
+    TEST_ASSERT_EQUAL_PTR(&functionRecords[0], constraintView.constraintTypeRecord);
+    TEST_ASSERT_EQUAL_PTR(&constraintRows[1], constraintView.constraintRow);
+    TEST_ASSERT_EQUAL_UINT32(1u, constraintView.constraintIndex);
+    TEST_ASSERT_EQUAL_UINT32(0u, (TZrUInt32)constraintView.signatureBlob.byteLength);
+    TEST_ASSERT_NULL(constraintView.signatureBlob.data);
+
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_ReadGenericParamView(runtime,
+                                                                 TEST_MEMBER_DEF_TOKEN,
+                                                                 0u,
+                                                                 &genericParamView));
+    TEST_ASSERT_EQUAL_UINT32(TEST_MEMBER_DEF_TOKEN, genericParamView.ownerToken);
+    TEST_ASSERT_EQUAL_PTR(&functionRecords[1], genericParamView.ownerRecord);
+    TEST_ASSERT_EQUAL_PTR(&genericParamRows[2], genericParamView.genericParamRow);
+    TEST_ASSERT_EQUAL_UINT32(2u, genericParamView.genericParamIndex);
+    TEST_ASSERT_EQUAL_UINT32(17u, genericParamView.nameStringOffset);
+    TEST_ASSERT_EQUAL_UINT32(1u, genericParamView.constraintCount);
+    TEST_ASSERT_EQUAL_UINT32(0xB2u, genericParamView.flags);
+
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadGenericParamView(runtime,
+                                                                  TEST_TYPE_DEF_TOKEN,
+                                                                  99u,
+                                                                  &genericParamView));
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadGenericParamConstraintView(runtime,
+                                                                           TEST_TYPE_DEF_TOKEN,
+                                                                           0u,
+                                                                           2u,
+                                                                           &constraintView));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_function_metadata_records_can_be_queried_by_token);
     RUN_TEST(test_module_metadata_records_are_queried_from_entry_ref_table);
     RUN_TEST(test_signature_query_requires_related_signature_owner_pair);
     RUN_TEST(test_module_metadata_runtime_attaches_code_registration);
+    RUN_TEST(test_metadata_runtime_rewrites_typed_export_member_tokens_from_registration_remap);
     RUN_TEST(test_metadata_runtime_resolves_method_records_lazily);
     RUN_TEST(test_metadata_runtime_resolves_type_records_lazily);
     RUN_TEST(test_metadata_runtime_resolves_signature_records_lazily);
@@ -1476,9 +1820,11 @@ int main(void) {
     RUN_TEST(test_metadata_runtime_reads_type_spec_generic_typedef_base_binding_view);
     RUN_TEST(test_metadata_runtime_reads_type_spec_generic_argument_binding_view);
     RUN_TEST(test_metadata_runtime_reads_method_spec_signature_view);
+    RUN_TEST(test_metadata_runtime_reads_method_spec_generic_argument_view);
     RUN_TEST(test_metadata_runtime_reads_typedef_layout_binding_view);
     RUN_TEST(test_metadata_runtime_typedef_layout_binding_uses_code_registration_registry);
     RUN_TEST(test_metadata_runtime_reads_fielddef_layout_binding_view);
     RUN_TEST(test_metadata_runtime_fielddef_layout_binding_does_not_fallback_to_prototype_cache);
+    RUN_TEST(test_metadata_runtime_reads_generic_param_and_constraint_views);
     return UNITY_END();
 }

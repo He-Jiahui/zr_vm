@@ -17,6 +17,14 @@ TZrUInt32 backend_aot_c_count_suppressed_runtime_fallback_warnings(SZrState *sta
                                                                    const SZrAotFunctionTable *functionTable,
                                                                    const SZrAotExecIrModule *module,
                                                                    TZrUInt32 suppressedReasonMask);
+TZrUInt32 backend_aot_c_runtime_fallback_warning_reason_mask(SZrState *state,
+                                                             const SZrAotFunctionTable *functionTable,
+                                                             const SZrAotExecIrModule *module,
+                                                             TZrUInt32 suppressedReasonMask);
+TZrUInt32 backend_aot_c_suppressed_runtime_fallback_warning_reason_mask(SZrState *state,
+                                                                        const SZrAotFunctionTable *functionTable,
+                                                                        const SZrAotExecIrModule *module,
+                                                                        TZrUInt32 suppressedReasonMask);
 void backend_aot_write_c_trim_warnings(FILE *file,
                                        SZrState *state,
                                        const SZrAotFunctionTable *functionTable,

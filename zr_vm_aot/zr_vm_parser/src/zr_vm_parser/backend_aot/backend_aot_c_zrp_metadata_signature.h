@@ -20,6 +20,8 @@ typedef struct SZrAotCZrpSignatureBlobRemap {
     TZrUInt32 sourceByteLength;
 } SZrAotCZrpSignatureBlobRemap;
 
+typedef struct SZrAotCZrpStringPoolRemap SZrAotCZrpStringPoolRemap;
+
 TZrBool backend_aot_c_zrp_signature_blob_remap_init(SZrAotCZrpSignatureBlobRemap *remap,
                                                     TZrUInt32 capacity,
                                                     TZrUInt32 sourceByteLength);
@@ -32,6 +34,7 @@ TZrBool backend_aot_c_zrp_build_signature_blob_remap(
         TZrUInt32 tokenRecordCount,
         const SZrZrpMetadataTypeDefRow *typeRows,
         TZrUInt32 typeCount,
+        TZrUInt32 retainedTypeDefCount,
         const SZrZrpMetadataMethodDefRow *methodRows,
         TZrUInt32 methodCount,
         const SZrZrpMetadataFieldDefRow *fieldRows,
@@ -42,8 +45,52 @@ TZrBool backend_aot_c_zrp_build_signature_blob_remap(
         TZrUInt32 genericParamConstraintCount,
         const SZrZrpMetadataTypeSpecRow *typeSpecRows,
         TZrUInt32 typeSpecCount,
+        const SZrZrpMetadataModuleRefRow *moduleRefRows,
+        TZrUInt32 moduleRefCount,
         const SZrZrpMetadataMethodSpecRow *methodSpecRows,
         TZrUInt32 methodSpecCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount);
+
+TZrBool backend_aot_c_zrp_remap_retained_signature_token(
+        TZrMetadataToken *token,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataTypeDefRow *typeRows,
+        TZrUInt32 typeCount,
+        const SZrZrpMetadataTypeSpecRow *typeSpecRows,
+        TZrUInt32 typeSpecCount,
+        const SZrZrpMetadataModuleRefRow *moduleRefRows,
+        TZrUInt32 moduleRefCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataFieldDefRow *fieldRows,
+        TZrUInt32 fieldCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount);
+
+TZrBool backend_aot_c_zrp_remap_retained_signature_tokens_in_record(
+        SZrMetadataTokenRecord *record,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataTypeDefRow *typeRows,
+        TZrUInt32 typeCount,
+        const SZrZrpMetadataTypeSpecRow *typeSpecRows,
+        TZrUInt32 typeSpecCount,
+        const SZrZrpMetadataModuleRefRow *moduleRefRows,
+        TZrUInt32 moduleRefCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataFieldDefRow *fieldRows,
+        TZrUInt32 fieldCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 retainedMethodDefCount);
 
@@ -62,9 +109,43 @@ TZrBool backend_aot_c_zrp_rewrite_retained_method_spec_signature_blobs(
         TZrUInt32 methodCount,
         const SZrZrpMetadataFieldDefRow *fieldRows,
         TZrUInt32 fieldCount,
+        const SZrZrpMetadataTypeDefRow *typeRows,
+        TZrUInt32 typeCount,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 retainedMethodDefCount,
         const SZrAotCZrpSignatureBlobRemap *signatureRemap);
+
+TZrBool backend_aot_c_zrp_rewrite_retained_signature_type_def_tokens(
+        TZrByte *targetBlob,
+        const SZrZrpMetadataHeader *targetHeader,
+        const SZrZrpMetadataTypeDefRow *typeRows,
+        TZrUInt32 typeCount,
+        const SZrZrpMetadataTypeSpecRow *typeSpecRows,
+        TZrUInt32 typeSpecCount,
+        const SZrZrpMetadataModuleRefRow *moduleRefRows,
+        TZrUInt32 moduleRefCount,
+        const SZrMetadataTokenRecord *tokenRecords,
+        TZrUInt32 tokenRecordCount,
+        const SZrZrpMetadataMethodDefRow *methodRows,
+        TZrUInt32 methodCount,
+        const SZrZrpMetadataFieldDefRow *fieldRows,
+        TZrUInt32 fieldCount,
+        const SZrZrpMetadataGenericParamRow *genericParamRows,
+        TZrUInt32 genericParamCount,
+        const SZrZrpMetadataGenericParamConstraintRow *genericParamConstraintRows,
+        TZrUInt32 genericParamConstraintCount,
+        const SZrAotFunctionTable *functionTable,
+        TZrUInt32 retainedMethodDefCount,
+        const TZrByte *sourceSignatureBlobPool,
+        TZrUInt32 sourceSignatureBlobPoolBytes,
+        const SZrAotCZrpSignatureBlobRemap *signatureRemap,
+        const SZrAotCZrpStringPoolRemap *stringRemap);
 
 TZrBool backend_aot_c_zrp_remap_signature_blob_offset(TZrUInt32 *signatureBlobOffset,
                                                       TZrUInt32 signatureBlobLength,

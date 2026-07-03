@@ -5,9 +5,9 @@
 #include "zr_vm_core/metadata_token.h"
 
 #define ZR_ZRP_METADATA_MAGIC ((TZrUInt32)0x4D50525Au)
-#define ZR_ZRP_METADATA_VERSION ((TZrUInt16)2u)
-#define ZR_ZRP_METADATA_SECTION_COUNT 12u
-#define ZR_ZRP_METADATA_HEADER_SIZE 208u
+#define ZR_ZRP_METADATA_VERSION ((TZrUInt16)4u)
+#define ZR_ZRP_METADATA_SECTION_COUNT 13u
+#define ZR_ZRP_METADATA_HEADER_SIZE 224u
 
 typedef enum EZrZrpMetadataSectionKind {
     ZR_ZRP_METADATA_SECTION_TOKEN_RECORDS = 0,
@@ -21,7 +21,8 @@ typedef enum EZrZrpMetadataSectionKind {
     ZR_ZRP_METADATA_SECTION_MODULE_REFS = 8,
     ZR_ZRP_METADATA_SECTION_STRING_POOL = 9,
     ZR_ZRP_METADATA_SECTION_SIGNATURE_BLOB_POOL = 10,
-    ZR_ZRP_METADATA_SECTION_CONSTANT_POOL = 11
+    ZR_ZRP_METADATA_SECTION_CONSTANT_POOL = 11,
+    ZR_ZRP_METADATA_SECTION_MANIFEST_EXPORTS = 12
 } EZrZrpMetadataSectionKind;
 
 typedef struct SZrZrpMetadataSection {
@@ -83,6 +84,8 @@ typedef struct SZrZrpMetadataFieldDefRow {
     TZrUInt32 nameStringOffset;
     TZrUInt32 signatureBlobOffset;
     TZrUInt32 signatureBlobLength;
+    TZrUInt32 defaultValueConstantPoolOffset;
+    TZrUInt32 defaultValueConstantPoolLength;
     TZrUInt32 byteOffset;
     TZrUInt32 typeLayoutId;
     TZrUInt32 flags;
@@ -128,6 +131,14 @@ typedef struct SZrZrpMetadataModuleRefRow {
     TZrUInt64 moduleSignatureHash;
 } SZrZrpMetadataModuleRefRow;
 
+typedef struct SZrZrpMetadataManifestExportRow {
+    TZrUInt32 kind;
+    TZrUInt32 flags;
+    TZrUInt32 targetStringOffset;
+    TZrMetadataToken typeToken;
+    TZrMetadataToken memberToken;
+} SZrZrpMetadataManifestExportRow;
+
 typedef struct SZrZrpMetadataHeader {
     TZrUInt32 magic;
     TZrUInt16 version;
@@ -146,6 +157,7 @@ typedef struct SZrZrpMetadataHeader {
     SZrZrpMetadataSection stringPool;
     SZrZrpMetadataSection signatureBlobPool;
     SZrZrpMetadataSection constantPool;
+    SZrZrpMetadataSection manifestExports;
 } SZrZrpMetadataHeader;
 
 ZR_CORE_API void ZrCore_ZrpMetadata_InitHeader(SZrZrpMetadataHeader *header);

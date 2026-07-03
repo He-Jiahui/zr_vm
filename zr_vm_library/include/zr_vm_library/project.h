@@ -5,6 +5,7 @@
 #ifndef ZR_VM_LIBRARY_PROJECT_H
 #define ZR_VM_LIBRARY_PROJECT_H
 
+#include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_library/conf.h"
 #include "zr_vm_library/zrm.h"
 
@@ -53,6 +54,36 @@ typedef struct SZrLibrary_ProjectDependencyPackage {
     TZrBool zrmArchiveOpen;
 } SZrLibrary_ProjectDependencyPackage;
 
+typedef struct SZrLibrary_ProjectImportProviderLocation {
+    EZrLibrary_ProjectDependencyPackageArtifactKind artifactKind;
+    SZrString *assemblyName;
+    SZrString *requestedVersion;
+    SZrString *minVersionInclusive;
+    SZrString *maxVersionExclusive;
+    const SZrLibrary_ZrmArchive *archive;
+    const SZrLibrary_ZrmEntryInfo *entry;
+    TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar binaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar intermediatePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+} SZrLibrary_ProjectImportProviderLocation;
+
+typedef struct SZrLibrary_ProjectImportProviderAotLoadRequest {
+    EZrAotBackendKind backendKind;
+    EZrLibrary_ProjectDependencyPackageArtifactKind artifactKind;
+    SZrString *assemblyName;
+    SZrString *requestedVersion;
+    SZrString *minVersionInclusive;
+    SZrString *maxVersionExclusive;
+    const SZrLibrary_ZrmArchive *archive;
+    const SZrLibrary_ZrmEntryInfo *entry;
+    TZrChar resolvedModuleKey[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar descriptorModuleName[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar binaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar intermediatePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar libraryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+} SZrLibrary_ProjectImportProviderAotLoadRequest;
+
 typedef struct SZrLibrary_ProjectResource {
     SZrString *logicalName;
     SZrString *sourcePath;
@@ -93,6 +124,17 @@ typedef struct SZrLibrary_ProjectPreserveRule {
     TZrBool featureValue;
 } SZrLibrary_ProjectPreserveRule;
 
+typedef enum EZrLibrary_ProjectExportDeclarationKind {
+    ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_TYPE = 1,
+    ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_METHOD = 2,
+    ZR_LIBRARY_PROJECT_EXPORT_DECLARATION_FIELD = 3
+} EZrLibrary_ProjectExportDeclarationKind;
+
+typedef struct SZrLibrary_ProjectExportDeclaration {
+    EZrLibrary_ProjectExportDeclarationKind kind;
+    SZrString *target;
+} SZrLibrary_ProjectExportDeclaration;
+
 struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     TZrUInt64 signature;
     SZrString *file;
@@ -128,6 +170,9 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     SZrLibrary_ProjectPreserveRule *preserveRules;
     TZrSize preserveRuleCount;
     TZrSize preserveRuleCapacity;
+    SZrLibrary_ProjectExportDeclaration *exportDeclarations;
+    TZrSize exportDeclarationCount;
+    TZrSize exportDeclarationCapacity;
     SZrLibrary_ProjectDependencyPackage *dependencyPackages;
     TZrSize dependencyPackageCount;
     TZrSize dependencyPackageCapacity;
@@ -173,6 +218,25 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_GetDependencyImportVersionRange(
         SZrString **outRequestedVersion,
         SZrString **outMinVersionInclusive,
         SZrString **outMaxVersionExclusive);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportProviderLocation(
+        const SZrLibrary_Project *project,
+        const TZrChar *currentModuleKey,
+        const TZrChar *rawSpecifier,
+        TZrChar *resolvedModuleKey,
+        TZrSize resolvedModuleKeySize,
+        SZrLibrary_ProjectImportProviderLocation *outLocation,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportProviderAotLoadRequest(
+        const SZrLibrary_Project *project,
+        const TZrChar *currentModuleKey,
+        const TZrChar *rawSpecifier,
+        EZrAotBackendKind backendKind,
+        SZrLibrary_ProjectImportProviderAotLoadRequest *outRequest,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveSourcePath(const SZrLibrary_Project *project,
                                                            const TZrChar *moduleName,

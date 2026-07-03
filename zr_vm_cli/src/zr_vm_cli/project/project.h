@@ -68,6 +68,13 @@ TZrBool ZrCli_Project_ResolveAotCPath(const SZrCliProjectContext *context,
                                       const TZrChar *moduleName,
                                       TZrChar *buffer,
                                       TZrSize bufferSize);
+TZrBool ZrCli_Project_ResolveAotCompactedMetadataPathFromAotCPath(const TZrChar *aotCPath,
+                                                                  TZrChar *buffer,
+                                                                  TZrSize bufferSize);
+TZrBool ZrCli_Project_ResolveAotCompactedMetadataPath(const SZrCliProjectContext *context,
+                                                      const TZrChar *moduleName,
+                                                      TZrChar *buffer,
+                                                      TZrSize bufferSize);
 TZrBool ZrCli_Project_OpenFileIo(SZrState *state, const TZrChar *path, TZrBool isBinary, SZrIo *io);
 
 TZrBool ZrCli_Project_EnsureParentDirectory(const TZrChar *filePath);
