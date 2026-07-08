@@ -21,6 +21,22 @@ TZrBool backend_aot_c_null_constant_consumed_by_local_jump_if(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,
         TZrUInt32 getConstantInstructionIndex);
+TZrBool backend_aot_c_null_constant_consumed_by_local_stack_copy_logical_not(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 getConstantInstructionIndex);
+TZrBool backend_aot_c_null_constant_consumed_by_local_stack_copy_jump_if(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 getConstantInstructionIndex);
+TZrBool backend_aot_c_null_constant_stack_copy_consumed_by_local_logical_not(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 copiedSlot,
+        TZrUInt32 stackCopyInstructionIndex);
+TZrBool backend_aot_c_null_constant_stack_copy_consumed_by_local_jump_if(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 copiedSlot,
+        TZrUInt32 stackCopyInstructionIndex);
 TZrBool backend_aot_c_bool_constant_consumed_by_local_logical_not(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,
@@ -41,10 +57,50 @@ TZrBool backend_aot_c_string_constant_consumed_by_local_jump_if(
         TZrUInt32 sourceSlot,
         TZrUInt32 getConstantInstructionIndex,
         TZrBool *outTruthy);
+TZrBool backend_aot_c_string_constant_consumed_by_local_stack_copy_logical_not(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 getConstantInstructionIndex,
+        TZrBool *outTruthy);
+TZrBool backend_aot_c_string_constant_consumed_by_local_stack_copy_jump_if(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 getConstantInstructionIndex,
+        TZrBool *outTruthy);
+TZrBool backend_aot_c_string_constant_stack_copy_consumed_by_local_logical_not(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 copiedSlot,
+        TZrUInt32 stackCopyInstructionIndex,
+        TZrBool *outTruthy);
+TZrBool backend_aot_c_string_constant_stack_copy_consumed_by_local_jump_if(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 copiedSlot,
+        TZrUInt32 stackCopyInstructionIndex,
+        TZrBool *outTruthy);
 TZrBool backend_aot_c_reset_null_consumed_by_local_jump_if(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,
         TZrUInt32 resetInstructionIndex);
+TZrBool backend_aot_c_reset_null_consumed_by_local_logical_not(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 resetInstructionIndex);
+TZrBool backend_aot_c_reset_null_consumed_by_local_stack_copy_logical_not(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 resetInstructionIndex);
+TZrBool backend_aot_c_reset_null_consumed_by_local_stack_copy_jump_if(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 resetInstructionIndex);
+TZrBool backend_aot_c_reset_null_stack_copy_consumed_by_local_logical_not(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 copiedSlot,
+        TZrUInt32 stackCopyInstructionIndex);
+TZrBool backend_aot_c_reset_null_stack_copy_consumed_by_local_jump_if(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 copiedSlot,
+        TZrUInt32 stackCopyInstructionIndex);
 TZrBool backend_aot_c_can_emit_typed_i64_no_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_i64_one_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_i64_two_arg_thunk(const SZrFunction *function);
@@ -102,9 +158,32 @@ void backend_aot_write_c_direct_stack_copy(FILE *file,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 sourceSlot,
                                            TZrBool skipScalarLocalSync);
+void backend_aot_write_c_null_constant_stack_copy_local_logical_not_skip(FILE *file,
+                                                                         TZrUInt32 destinationSlot,
+                                                                         TZrUInt32 sourceSlot);
+void backend_aot_write_c_null_constant_stack_copy_local_jump_if_skip(FILE *file,
+                                                                     TZrUInt32 destinationSlot,
+                                                                     TZrUInt32 sourceSlot);
+void backend_aot_write_c_string_constant_stack_copy_local_logical_not_skip(FILE *file,
+                                                                           TZrUInt32 destinationSlot,
+                                                                           TZrUInt32 sourceSlot);
+void backend_aot_write_c_string_constant_stack_copy_local_jump_if_skip(FILE *file,
+                                                                       TZrUInt32 destinationSlot,
+                                                                       TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_reset_stack_null(FILE *file, TZrUInt32 destinationSlot);
 void backend_aot_write_c_reset_stack_null_scalar_local_skip(FILE *file, TZrUInt32 destinationSlot);
+void backend_aot_write_c_reset_stack_null_local_logical_not_skip(FILE *file, TZrUInt32 destinationSlot);
 void backend_aot_write_c_reset_stack_null_local_jump_if_skip(FILE *file, TZrUInt32 destinationSlot);
+void backend_aot_write_c_reset_null_stack_copy_local_logical_not_reset_skip(FILE *file,
+                                                                            TZrUInt32 destinationSlot);
+void backend_aot_write_c_reset_null_stack_copy_local_jump_if_reset_skip(FILE *file,
+                                                                        TZrUInt32 destinationSlot);
+void backend_aot_write_c_reset_null_stack_copy_local_logical_not_skip(FILE *file,
+                                                                      TZrUInt32 destinationSlot,
+                                                                      TZrUInt32 sourceSlot);
+void backend_aot_write_c_reset_null_stack_copy_local_jump_if_skip(FILE *file,
+                                                                  TZrUInt32 destinationSlot,
+                                                                  TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_reset_stack_null2(FILE *file, TZrUInt32 firstSlot, TZrUInt32 secondSlot);
 void backend_aot_write_c_reset_stack_null2_scalar_local_skip(FILE *file,
                                                              TZrUInt32 firstSlot,
@@ -221,12 +300,14 @@ void backend_aot_write_c_direct_add(FILE *file,
                                     const SZrAotExecIrFunction *functionIr,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
-                                    TZrUInt32 rightSlot);
+                                    TZrUInt32 rightSlot,
+                                    TZrUInt32 execInstructionIndex);
 void backend_aot_write_c_direct_sub(FILE *file,
                                     const SZrAotExecIrFunction *functionIr,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
-                                    TZrUInt32 rightSlot);
+                                    TZrUInt32 rightSlot,
+                                    TZrUInt32 execInstructionIndex);
 void backend_aot_write_c_direct_sub_signed(FILE *file,
                                            const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
@@ -393,7 +474,8 @@ void backend_aot_write_c_direct_mul(FILE *file,
                                     const SZrAotExecIrFunction *functionIr,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
-                                    TZrUInt32 rightSlot);
+                                    TZrUInt32 rightSlot,
+                                    TZrUInt32 execInstructionIndex);
 void backend_aot_write_c_direct_sub_int(FILE *file,
                                         TZrUInt32 destinationSlot,
                                         TZrUInt32 leftSlot,
@@ -443,7 +525,8 @@ void backend_aot_write_c_direct_bitwise_shift_right(FILE *file,
 void backend_aot_write_c_direct_neg(FILE *file,
                                     const SZrAotExecIrFunction *functionIr,
                                     TZrUInt32 destinationSlot,
-                                    TZrUInt32 sourceSlot);
+                                    TZrUInt32 sourceSlot,
+                                    TZrUInt32 execInstructionIndex);
 void backend_aot_write_c_direct_neg_signed(FILE *file,
                                            const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
@@ -643,7 +726,8 @@ void backend_aot_write_c_direct_mod(FILE *file,
                                     const SZrAotExecIrFunction *functionIr,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
-                                    TZrUInt32 rightSlot);
+                                    TZrUInt32 rightSlot,
+                                    TZrUInt32 execInstructionIndex);
 void backend_aot_write_c_direct_mod_signed(FILE *file,
                                            const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
@@ -676,7 +760,8 @@ void backend_aot_write_c_direct_div(FILE *file,
                                     const SZrAotExecIrFunction *functionIr,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
-                                    TZrUInt32 rightSlot);
+                                    TZrUInt32 rightSlot,
+                                    TZrUInt32 execInstructionIndex);
 void backend_aot_write_c_direct_div_signed(FILE *file,
                                            const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,

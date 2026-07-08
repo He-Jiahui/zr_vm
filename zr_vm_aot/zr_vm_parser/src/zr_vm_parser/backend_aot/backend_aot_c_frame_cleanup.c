@@ -1,6 +1,7 @@
 #include "backend_aot_c_frame_cleanup.h"
 
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/type_layout.h"
 
 static TZrBool backend_aot_c_frame_cleanup_layout_needs_drop(
         const SZrAotExecIrFrameSlotLayout *layout) {
@@ -10,15 +11,58 @@ static TZrBool backend_aot_c_frame_cleanup_layout_needs_drop(
                      layout->byteSize > 0u);
 }
 
-TZrBool backend_aot_c_frame_cleanup_would_emit(const SZrAotExecIrFrameLayout *frameLayout) {
-    TZrUInt32 layoutIndex;
+static const SZrTypeLayout *backend_aot_c_frame_cleanup_resolve_layout(
+        SZrState *state,
+        const SZrAotExecIrFunction *functionIr,
+        const SZrAotExecIrFrameSlotLayout *layout) {
+    if (state == ZR_NULL ||
+        functionIr == ZR_NULL ||
+        functionIr->function == ZR_NULL ||
+        layout == ZR_NULL) {
+        return ZR_NULL;
+    }
 
-    if (frameLayout == ZR_NULL || frameLayout->slotLayouts == ZR_NULL) {
+    return ZrCore_Function_ResolvePrototypeFrameTypeLayout(functionIr->function,
+                                                           layout->typeLayoutId,
+                                                           state);
+}
+
+static TZrBool backend_aot_c_frame_cleanup_layout_needs_drop_for_function(
+        SZrState *state,
+        const SZrAotExecIrFunction *functionIr,
+        const SZrAotExecIrFrameSlotLayout *layout) {
+    const SZrTypeLayout *typeLayout;
+
+    if (!backend_aot_c_frame_cleanup_layout_needs_drop(layout)) {
+        return ZR_FALSE;
+    }
+
+    typeLayout = backend_aot_c_frame_cleanup_resolve_layout(state, functionIr, layout);
+    if (typeLayout == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    return (TZrBool)(typeLayout->dropKind != (TZrUInt8)ZR_TYPE_LAYOUT_DROP_KIND_NONE);
+}
+
+TZrBool backend_aot_c_frame_cleanup_would_emit_for_function(SZrState *state,
+                                                            const SZrAotExecIrFunction *functionIr) {
+    TZrUInt32 layoutIndex;
+    const SZrAotExecIrFrameLayout *frameLayout;
+
+    if (functionIr == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    frameLayout = &functionIr->frameLayout;
+    if (frameLayout->slotLayouts == ZR_NULL) {
         return ZR_FALSE;
     }
 
     for (layoutIndex = 0u; layoutIndex < frameLayout->slotLayoutCount; layoutIndex++) {
-        if (backend_aot_c_frame_cleanup_layout_needs_drop(&frameLayout->slotLayouts[layoutIndex])) {
+        if (backend_aot_c_frame_cleanup_layout_needs_drop_for_function(state,
+                                                                       functionIr,
+                                                                       &frameLayout->slotLayouts[layoutIndex])) {
             return ZR_TRUE;
         }
     }
@@ -38,17 +82,25 @@ void backend_aot_write_c_frame_root_cleanup(FILE *file) {
             "    }\n");
 }
 
-void backend_aot_write_c_frame_cleanup(FILE *file, const SZrAotExecIrFrameLayout *frameLayout) {
+void backend_aot_write_c_frame_cleanup(FILE *file,
+                                       SZrState *state,
+                                       const SZrAotExecIrFunction *functionIr) {
     TZrUInt32 reverseIndex;
+    const SZrAotExecIrFrameLayout *frameLayout;
 
-    if (file == ZR_NULL || frameLayout == ZR_NULL || frameLayout->slotLayouts == ZR_NULL) {
+    if (file == ZR_NULL || functionIr == ZR_NULL) {
+        return;
+    }
+
+    frameLayout = &functionIr->frameLayout;
+    if (frameLayout->slotLayouts == ZR_NULL) {
         return;
     }
 
     for (reverseIndex = frameLayout->slotLayoutCount; reverseIndex > 0u; reverseIndex--) {
         const SZrAotExecIrFrameSlotLayout *layout = &frameLayout->slotLayouts[reverseIndex - 1u];
 
-        if (!backend_aot_c_frame_cleanup_layout_needs_drop(layout)) {
+        if (!backend_aot_c_frame_cleanup_layout_needs_drop_for_function(state, functionIr, layout)) {
             continue;
         }
 

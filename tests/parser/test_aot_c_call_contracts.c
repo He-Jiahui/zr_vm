@@ -119,6 +119,7 @@ static void test_aot_c_source_lowers_quickened_dynamic_calls_to_direct_core_call
             "TZrUInt32 deoptId",
             "zr_aot_direct_dynamic_function_call",
             "zr_aot_dynamic_deopt_bridge deopt=%u",
+            "zr_aot_call_result_sync_compact",
             "ZrLibrary_AotRuntime_CallDynamicDeoptBridge(state,",
             "backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot)",
@@ -164,6 +165,12 @@ static void test_aot_c_source_lowers_quickened_dynamic_calls_to_direct_core_call
             "ZrCore_Function_CallAndRestoreAnchor(state, &zr_aot_call_anchor, 1)",
             "*zr_aot_destination_value = *zr_aot_result_value;",
     };
+    static const char *const forbiddenCallBoundaryNeedles[] = {
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u));",
+    };
     char *emitterHeaderText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *functionHeaderText = read_repo_text_file_owned("zr_vm_core/include/zr_vm_core/function.h");
@@ -191,6 +198,7 @@ static void test_aot_c_source_lowers_quickened_dynamic_calls_to_direct_core_call
     assert_text_contains_all(functionHeaderText, functionNeedles, ARRAY_COUNT(functionNeedles));
     assert_text_contains_all(stackHeaderText, stackNeedles, ARRAY_COUNT(stackNeedles));
     assert_text_contains_all(callBoundaryText, callBoundaryNeedles, ARRAY_COUNT(callBoundaryNeedles));
+    assert_text_contains_none(callBoundaryText, forbiddenCallBoundaryNeedles, ARRAY_COUNT(forbiddenCallBoundaryNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
     assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
@@ -212,6 +220,7 @@ static void test_aot_c_source_lowers_generic_function_calls_to_direct_core_calls
             "backend_aot_write_c_direct_function_call(FILE *file,",
             "const SZrAotExecIrFunction *functionIr,",
             "zr_aot_direct_function_call",
+            "zr_aot_call_result_sync_compact",
             "ZrLibrary_AotRuntime_CallStackValue(state,",
             "backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot)",
@@ -232,6 +241,12 @@ static void test_aot_c_source_lowers_generic_function_calls_to_direct_core_calls
             "ZrCore_Function_CallAndRestoreAnchor(state, &zr_aot_call_anchor, 1)",
             "*zr_aot_destination_value = *zr_aot_result_value;",
     };
+    static const char *const forbiddenCallBoundaryNeedles[] = {
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u));",
+    };
     char *callLoweringText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
     char *callBoundaryText = read_repo_text_file_owned(
@@ -241,6 +256,7 @@ static void test_aot_c_source_lowers_generic_function_calls_to_direct_core_calls
     TEST_ASSERT_NOT_NULL(callBoundaryText);
 
     assert_text_contains_all(callBoundaryText, callBoundaryNeedles, ARRAY_COUNT(callBoundaryNeedles));
+    assert_text_contains_none(callBoundaryText, forbiddenCallBoundaryNeedles, ARRAY_COUNT(forbiddenCallBoundaryNeedles));
     assert_text_contains_none(callLoweringText, forbiddenCallLoweringNeedles, ARRAY_COUNT(forbiddenCallLoweringNeedles));
 
     free(callLoweringText);
@@ -252,6 +268,7 @@ static void test_aot_c_source_lowers_static_direct_calls_to_direct_core_calls(vo
             "backend_aot_write_c_static_direct_function_call(FILE *file,",
             "const SZrAotExecIrFunction *functionIr",
             "zr_aot_direct_static_function_call",
+            "zr_aot_call_result_sync_compact",
             "ZrLibrary_AotRuntime_CallStaticDirect(state,",
             "backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot)",
@@ -326,6 +343,12 @@ static void test_aot_c_source_lowers_static_direct_calls_to_direct_core_calls(vo
             "ZrLibrary_AotRuntime_PrepareStaticDirectCall",
             "ZrLibrary_AotRuntime_FinishDirectCall",
     };
+    static const char *const forbiddenCallBoundaryNeedles[] = {
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u));",
+    };
     char *callLoweringText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
     char *callBoundaryText = read_repo_text_file_owned(
@@ -343,6 +366,7 @@ static void test_aot_c_source_lowers_static_direct_calls_to_direct_core_calls(vo
     TEST_ASSERT_NOT_NULL(scalarLocalsText);
 
     assert_text_contains_all(callBoundaryText, callBoundaryNeedles, ARRAY_COUNT(callBoundaryNeedles));
+    assert_text_contains_none(callBoundaryText, forbiddenCallBoundaryNeedles, ARRAY_COUNT(forbiddenCallBoundaryNeedles));
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
     assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
     assert_text_contains_all(scalarLocalsText, scalarLocalsNeedles, ARRAY_COUNT(scalarLocalsNeedles));
@@ -435,10 +459,14 @@ static void test_aot_c_source_wraps_i64_typed_direct_calls_with_metadata_guard(v
     };
     static const char *const callLoweringNeedles[] = {
             "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, %u)",
+            "zr_aot_static_typed_direct_call_deopt_sync_compact",
             "ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,",
             "zr_aot_static_i64_one_arg_direct_call_metadata_guard",
             "zr_aot_static_i64_two_arg_direct_call_metadata_guard",
             "ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u)",
+    };
+    static const char *const forbiddenCallLoweringNeedles[] = {
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u));",
     };
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
     char *runtimeSourceText = read_repo_text_file_owned(
@@ -453,6 +481,7 @@ static void test_aot_c_source_wraps_i64_typed_direct_calls_with_metadata_guard(v
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
     assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
     assert_text_contains_all(callLoweringText, callLoweringNeedles, ARRAY_COUNT(callLoweringNeedles));
+    assert_text_contains_none(callLoweringText, forbiddenCallLoweringNeedles, ARRAY_COUNT(forbiddenCallLoweringNeedles));
 
     free(runtimeHeaderText);
     free(runtimeSourceText);
@@ -464,8 +493,12 @@ static void test_aot_c_source_wraps_u64_typed_direct_calls_with_metadata_guard(v
             "zr_aot_static_u64_one_arg_direct_call_metadata_guard",
             "zr_aot_static_u64_two_arg_direct_call_metadata_guard",
             "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, %u)",
+            "zr_aot_static_typed_direct_call_deopt_sync_compact",
             "ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,",
             "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u)",
+    };
+    static const char *const forbiddenCallLoweringNeedles[] = {
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u));",
     };
     char *callLoweringText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
@@ -473,6 +506,7 @@ static void test_aot_c_source_wraps_u64_typed_direct_calls_with_metadata_guard(v
     TEST_ASSERT_NOT_NULL(callLoweringText);
 
     assert_text_contains_all(callLoweringText, callLoweringNeedles, ARRAY_COUNT(callLoweringNeedles));
+    assert_text_contains_none(callLoweringText, forbiddenCallLoweringNeedles, ARRAY_COUNT(forbiddenCallLoweringNeedles));
 
     free(callLoweringText);
 }
@@ -482,8 +516,12 @@ static void test_aot_c_source_wraps_f64_typed_direct_calls_with_metadata_guard(v
             "zr_aot_static_f64_one_arg_direct_call_metadata_guard",
             "zr_aot_static_f64_two_arg_direct_call_metadata_guard",
             "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, %u)",
+            "zr_aot_static_typed_direct_call_deopt_sync_compact",
             "ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,",
             "ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u)",
+    };
+    static const char *const forbiddenCallLoweringNeedles[] = {
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u));",
     };
     char *callLoweringText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
@@ -491,6 +529,7 @@ static void test_aot_c_source_wraps_f64_typed_direct_calls_with_metadata_guard(v
     TEST_ASSERT_NOT_NULL(callLoweringText);
 
     assert_text_contains_all(callLoweringText, callLoweringNeedles, ARRAY_COUNT(callLoweringNeedles));
+    assert_text_contains_none(callLoweringText, forbiddenCallLoweringNeedles, ARRAY_COUNT(forbiddenCallLoweringNeedles));
 
     free(callLoweringText);
 }
@@ -503,8 +542,12 @@ static void test_aot_c_source_wraps_bool_typed_direct_calls_with_metadata_guard(
             "zr_aot_static_u64_bool_two_arg_direct_call_metadata_guard",
             "zr_aot_static_f64_bool_two_arg_direct_call_metadata_guard",
             "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, %u)",
+            "zr_aot_static_typed_direct_call_deopt_sync_compact",
             "ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,",
             "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u)",
+    };
+    static const char *const forbiddenBoolCallLoweringNeedles[] = {
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u));",
     };
     char *boolCallLoweringText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_bool_calls.c");
@@ -514,6 +557,9 @@ static void test_aot_c_source_wraps_bool_typed_direct_calls_with_metadata_guard(
     assert_text_contains_all(boolCallLoweringText,
                              boolCallLoweringNeedles,
                              ARRAY_COUNT(boolCallLoweringNeedles));
+    assert_text_contains_none(boolCallLoweringText,
+                              forbiddenBoolCallLoweringNeedles,
+                              ARRAY_COUNT(forbiddenBoolCallLoweringNeedles));
 
     free(boolCallLoweringText);
 }

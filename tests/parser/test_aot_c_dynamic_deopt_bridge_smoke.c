@@ -143,6 +143,24 @@ static SZrFunction *create_dynamic_deopt_call_boundary_function(SZrState *state)
     return create_dynamic_deopt_boundary_function(state, create_dynamic_call_instruction(6u, 2u, 3u), 6u, 8u);
 }
 
+static void attach_i64_typed_local_binding(SZrState *state, SZrFunction *function, TZrUInt32 stackSlot) {
+    SZrFunctionTypedLocalBinding *binding;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+    binding = (SZrFunctionTypedLocalBinding *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionTypedLocalBinding),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(binding);
+    memset(binding, 0, sizeof(*binding));
+    binding->stackSlot = stackSlot;
+    binding->type.baseType = ZR_VALUE_TYPE_INT64;
+    binding->type.staticCType = ZR_STATIC_C_TYPE_I64;
+    function->typedLocalBindings = binding;
+    function->typedLocalBindingLength = 1u;
+}
+
 static SZrFunction *create_dynamic_member_deopt_boundary_function(SZrState *state) {
     return create_dynamic_deopt_boundary_function(state, create_dynamic_member_get_instruction(5u, 1u, 2u), 5u, 8u);
 }
@@ -214,6 +232,7 @@ static void test_aot_c_generated_shared_library_compiles_semir_dynamic_deopt_bri
     TEST_ASSERT_NOT_NULL(state);
     function = create_dynamic_deopt_call_boundary_function(state);
     TEST_ASSERT_NOT_NULL(function);
+    attach_i64_typed_local_binding(state, function, 6u);
     TEST_ASSERT_TRUE(compiler_build_function_semir_metadata(state, function));
     TEST_ASSERT_EQUAL_UINT32(1u, function->semIrDeoptTableLength);
 
@@ -247,7 +266,11 @@ static void test_aot_c_generated_shared_library_compiles_semir_dynamic_deopt_bri
                                 "/* trim_warning.runtimeFallback[0] function=0 instruction=0 sourceFile=\"dynamic_deopt_bridge.zr\" sourceLine=41 sourceLineEnd=43 sourceColumn=7 sourceColumnEnd=19 reasonFlag=1 reason=dynamic-call */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "DYN_CALL"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_dynamic_deopt_bridge deopt="));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_call_result_sync_compact */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallDynamicDeoptBridge(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_dynamic_function_call_sync_i64_local_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, 6, &zr_aot_s6)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame,"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_direct_function_call */"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
     free(generatedCText);
@@ -592,6 +615,7 @@ static void test_aot_c_generated_shared_library_compiles_dynamic_value_access_de
                                 "/* trim_warning.runtimeFallback[0] function=0 instruction=0 sourceFile=\"dynamic_deopt_bridge.zr\" sourceLine=41 sourceLineEnd=43 sourceColumn=7 sourceColumnEnd=19 reasonFlag=2 reason=dynamic-value-access */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_dynamic_get_member_boundary"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, expectedDeoptMarker));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_dynamic_deopt_bridge_compact"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GetMember(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_UnsupportedDynamicValueAccess(state,"));
@@ -636,6 +660,7 @@ static void test_aot_c_generated_shared_library_compiles_dynamic_value_access_de
                                 "/* trim_warning.runtimeFallback[0] function=0 instruction=0 sourceFile=\"dynamic_deopt_bridge.zr\" sourceLine=41 sourceLineEnd=43 sourceColumn=7 sourceColumnEnd=19 reasonFlag=2 reason=dynamic-value-access */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_dynamic_get_by_index_boundary"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, expectedDeoptMarker));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_dynamic_deopt_bridge_compact"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GetByIndex(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_UnsupportedDynamicValueAccess(state,"));

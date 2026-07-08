@@ -1,0 +1,10 @@
+#ifndef ZR_VM_TESTS_LANGUAGE_SERVER_TEST_LSP_BZMS_PRIVATE_NOT_MASK_OR_COUNTERPART_DEEP_QUERY_CASES_H
+#define ZR_VM_TESTS_LANGUAGE_SERVER_TEST_LSP_BZMS_PRIVATE_NOT_MASK_OR_COUNTERPART_DEEP_QUERY_CASES_H
+
+#include "zr_vm_common/zr_common_conf.h"
+#include "zr_vm_common/zr_type_conf.h"
+#include "zr_vm_core/state.h"
+
+TZrBool ZrVmTest_LspRunBzmsPrivateNotMaskOrCounterpartDeepQueries(SZrState *state);
+
+#endif

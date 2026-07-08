@@ -35,7 +35,8 @@ void backend_aot_write_c_frame_setup(FILE *file,
                                      TZrBool includeFrameDescriptor,
                                      TZrBool includeGcRootFrame) {
     TZrUInt32 frameByteSize = backend_aot_c_frame_setup_register_frame_bytes(frameLayout);
-    TZrBool includeStackFrameSetup = (TZrBool)(includeFrameDescriptor || frameByteSize > 0u);
+    TZrBool includeStackFrameSetup =
+            (TZrBool)(includeFrameDescriptor || frameByteSize > 0u || includeGcRootFrame);
 
     if (file == ZR_NULL) {
         return;
@@ -120,14 +121,15 @@ void backend_aot_write_c_frame_setup(FILE *file,
 
     if (includeGcRootFrame) {
         fprintf(file,
-                "    if (zr_aot_context.methodInfo != ZR_NULL &&\n"
-                "        zr_aot_context.methodInfo->gcRootMap != ZR_NULL) {\n"
+                "    /* zr_aot_gc_root_frame_static_map_push */\n"
+                "    {\n"
                 "        ZR_AOT_C_GUARD(ZrCore_Gc_AotRootFramePush(state,\n"
                 "                                                  &zr_aot_gc_root_frame,\n"
                 "                                                  zr_aot_slot_base,\n"
-                "                                                  zr_aot_context.methodInfo->gcRootMap));\n"
+                "                                                  &zr_aot_gc_root_map_%u));\n"
                 "        zr_aot_has_gc_root_frame = ZR_TRUE;\n"
-                "    }\n");
+                "    }\n",
+                (unsigned)functionIndex);
     }
 
     if (includeFrameDescriptor) {

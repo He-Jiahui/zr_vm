@@ -27,6 +27,18 @@ const SZrTypeBinding *type_inference_bitwise_identity_expression_binding(
 TZrBool type_inference_bitwise_identity_expression_is_exact_zero_value(
         SZrCompilerState *cs,
         const SZrAstNode *expression);
+TZrBool type_inference_bitwise_identity_expression_supported_nonnegative_range(
+        SZrCompilerState *cs,
+        const SZrAstNode *expression,
+        TZrInt64 *outMinValue,
+        TZrInt64 *outMaxValue);
+TZrBool type_inference_bitwise_identity_mask_range(
+        TZrInt64 leftMinValue,
+        TZrInt64 leftMaxValue,
+        TZrInt64 rightMinValue,
+        TZrInt64 rightMaxValue,
+        TZrInt64 *outMinValue,
+        TZrInt64 *outMaxValue);
 TZrBool type_inference_bitwise_identity_expression_direct_int64_range(
         SZrCompilerState *cs,
         const SZrAstNode *expression,
@@ -42,12 +54,47 @@ TZrBool type_inference_bitwise_identity_expression_unary_minus_direct_int64_rang
         const SZrAstNode *expression,
         TZrInt64 *outMinValue,
         TZrInt64 *outMaxValue);
+TZrBool type_inference_bitwise_identity_expression_basic_zero_minus_chain_leaf_int64_range(
+        SZrCompilerState *cs,
+        const SZrAstNode *expression,
+        TZrInt64 *outMinValue,
+        TZrInt64 *outMaxValue);
+TZrBool type_inference_bitwise_identity_expression_zero_wrapped_or_unary_minus_zero_wrapped_or_basic_zero_minus_direct_int64_range(
+        SZrCompilerState *cs,
+        const SZrAstNode *expression,
+        TZrInt64 *outMinValue,
+        TZrInt64 *outMaxValue);
 TZrBool type_inference_bitwise_identity_expression_bitwise_not_direct_int64_range(
         SZrCompilerState *cs,
         const SZrAstNode *expression,
         TZrInt64 *outMinValue,
         TZrInt64 *outMaxValue);
+TZrBool type_inference_bitwise_identity_expression_zero_wrapped_bitwise_not_direct_int64_range(
+        SZrCompilerState *cs,
+        const SZrAstNode *expression,
+        TZrInt64 *outMinValue,
+        TZrInt64 *outMaxValue);
+TZrBool type_inference_bitwise_identity_expression_zero_minus_bitwise_not_exact_signed_all_ones_operand_int64_range(
+        SZrCompilerState *cs,
+        const SZrAstNode *expression,
+        TZrInt64 *outMinValue,
+        TZrInt64 *outMaxValue);
+TZrBool type_inference_bitwise_identity_expression_unary_minus_zero_minus_bitwise_not_exact_signed_all_ones_operand_int64_range(
+        SZrCompilerState *cs,
+        const SZrAstNode *expression,
+        TZrInt64 *outMinValue,
+        TZrInt64 *outMaxValue);
 TZrBool type_inference_bitwise_identity_expression_zero_minus_direct_int64_range(
+        SZrCompilerState *cs,
+        const SZrAstNode *expression,
+        TZrInt64 *outMinValue,
+        TZrInt64 *outMaxValue);
+TZrBool type_inference_bitwise_identity_expression_zero_minus_signed_same_identifier_range(
+        SZrCompilerState *cs,
+        const SZrAstNode *expression,
+        TZrInt64 *outMinValue,
+        TZrInt64 *outMaxValue);
+TZrBool type_inference_bitwise_identity_expression_unary_minus_zero_minus_signed_same_identifier_range(
         SZrCompilerState *cs,
         const SZrAstNode *expression,
         TZrInt64 *outMinValue,

@@ -369,6 +369,1512 @@ before/after 速查（与 `04`§2 降级表合并使用）：
 
 ##状态与产出记录
 
+- 2026-07-06 07:35:26 +08:00 · M1.5 / 07-S6 GC reference register stage acceptance ·
+  状态：07-S6 计划验收完成（覆盖当前生成的 conversion reference-local 路径）；07-S7 与 08~12
+  继续进行中。完成项目：reference-local 生成链已形成 `SZrRawObject *` 结构体字段、独立
+  `LOCAL_ADDRESS` root map/root frame、写入后 safepoint GC debt 窗口和 truthiness 前 raw-object
+  消费路径；ordinary VM-stack `FRAME_BYTE_OFFSET` roots 与 local-address roots 保持两个 frame/base。
+  验证：WSL GCC generated-C smoke/contracts 为 logical-not 8/0、jump-if 9/0、source contracts 24/0、
+  logical contracts 4/0、frame setup contracts 1/0；WSL Clang 同组 8/0、9/0、24/0、4/0、1/0；
+  Windows MSVC Debug build 通过，Unix-only smoke expected ignored 且 0 failures，source/logical/frame
+  setup contracts 为 24/0、4/0、1/0。AOT GC root-frame runtime matrix 在 WSL GCC、WSL Clang、
+  Windows MSVC Debug 均为 6/0，覆盖 frame-byte root、LOCAL_ADDRESS raw-object root、safepoint debt、
+  write barrier 与 native pin。产出：
+  `tests/acceptance/2026-07-06-aot-07-s6-gc-reference-register-stage-acceptance.md`。
+  备注：更长 soak/stress 与更多 object-allocation 形态作为后续强化项；下一阶段按计划进入 07-S7
+  反退化 CI、SZrValue 计数和性能门槛。
+
+- 2026-07-06 07:29:17 +08:00 · M1.5 / 07-S6 reference-local safepoint GC pressure ·
+  状态：conversion reference-local 写入后 safepoint/GC 压力子切片完成；
+  07-S6 部分完成，07~12 总目标继续进行中。完成项目：
+  `backend_aot_write_c_direct_to_string()` / `backend_aot_write_c_direct_to_object()` 在
+  `zr_aot_ref_locals.oN` 写入后立即发射 `/* zr_aot_gc_safepoint_reference_local */` 与
+  `ZrCore_Gc_SafePoint(state)`；logical-not 与 jump-if 的 dynamic string/object smoke 现在断言
+  marker 位于 reference-local 写入之后、`ZR_CAST_STRING(...)` / object truthiness 使用之前，并在运行时设置
+  generational GC debt，要求 `gcLastStepWork > 0`。RED：WSL GCC logical-not smoke 8/2、source contracts
+  24/1。GREEN：WSL GCC focused direct run 通过 logical-not 8/0、jump-if 9/0、source contracts 24/0、
+  logical contracts 4/0、frame setup contracts 1/0；WSL Clang 同组 build/direct run 通过
+  8/0、9/0、24/0、4/0、1/0（仅既有 smoke-helper `const char *` 到 `TZrNativeString` 警告）；
+  Windows MSVC Debug 同组 build 通过，两个 Unix-only smoke expected ignored 且 0 failures，
+  source/logical/frame setup contracts 为 24/0、4/0、1/0。生成 C 检查确认 safepoint 位于
+  `zr_aot_ref_locals.o2` 写入之后。产出：
+  `tests/acceptance/2026-07-06-aot-07-s6-reference-local-safepoint-gc-pressure.md`。
+  备注：本切片覆盖受控 GC debt/safepoint 窗口；更长 GC stress、exports/frame cleanup、in/out writeback、
+  性能计数和完整 07-S6/07~12 验收仍待后续。
+
+- 2026-07-06 06:54:43 +08:00 · M1.5 / 07-S6 reference-local LOCAL_ADDRESS root frame ·
+  状态：conversion reference-local 的 local-address root-map/root-frame 子切片完成；
+  07-S6 部分完成，07~12 总目标继续进行中。完成项目：`backend_aot_c_reference_locals.c/.h`
+  现在为每个含 `TO_STRING` / `TO_OBJECT` destination 的 AOT 函数生成
+  `zr_aot_ref_root_slots_%u` / `zr_aot_ref_root_map_%u`，root slot 使用
+  `offsetof(SZrAotReferenceLocals_<flatIndex>, oN)` 与
+  `ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS`；函数体在 `zr_aot_ref_locals` 声明后推送
+  `zr_aot_ref_gc_root_frame`，base 为 `(TZrStackValuePointer)(void *)&zr_aot_ref_locals`，
+  exit cleanup 在普通 VM stack root frame 之前弹出该 local-address frame。
+  RED：WSL GCC logical-not smoke 8/2、jump-if smoke 9/2、source contracts 24/1。
+  GREEN：WSL GCC focused build 通过并运行 logical-not 8/0、jump-if 9/0、source contracts 24/0、
+  logical contracts 4/0、frame setup contracts 1/0；WSL Clang 同组 build 通过并运行
+  8/0、9/0、24/0、4/0、1/0；Windows MSVC Debug 同组 build 通过，两个 Unix-only smoke
+  expected ignored 且 0 failures，logical/source/frame setup contracts 为 4/0、24/0、1/0。
+  产出：`tests/acceptance/2026-07-06-aot-07-s6-reference-local-address-root-frame.md`。
+  备注：本切片刻意保持 `methodInfo.gcRootMap` 只指向 VM stack `FRAME_BYTE_OFFSET` roots；
+  `zr_aot_ref_root_map_%u` 只由独立 local-address root frame 使用，避免把
+  `LOCAL_ADDRESS` 与 `FRAME_BYTE_OFFSET` 混在同一个 base。GC 压力/root 正确性更广覆盖、
+  exports/frame cleanup、in/out writeback、性能计数和完整 07-S6/07~12 验收仍待后续。
+
+- 2026-07-06 06:19:50 +08:00 · M1.5 / 07-S6 reference-local struct frame preparation ·
+  状态：conversion reference-local 结构体帧准备子切片完成；
+  07-S6 部分完成，07~12 总目标继续进行中。完成项目：`backend_aot_c_reference_locals.c/.h`
+  现在为每个含 `TO_STRING` / `TO_OBJECT` destination 的 AOT 函数生成 file-scope
+  `SZrAotReferenceLocals_<flatIndex>` typedef，并在函数体中声明
+  `SZrAotReferenceLocals_<flatIndex> zr_aot_ref_locals = { ZR_NULL };`。
+  `backend_aot_write_c_direct_to_string()` / `backend_aot_write_c_direct_to_object()` 继续保留 runtime
+  conversion boundary，但转换结果写入 `zr_aot_ref_locals.oN`；string/object immediate `LOGICAL_NOT`
+  与 `JUMP_IF` truthiness 也直接读取 `zr_aot_ref_locals.oN`。顶层 emitter 在 function forward decls 后、
+  metadata/thunk sections 前发射引用本地结构体，为后续 `offsetof(..., oN)` root-map 计算做准备。
+  RED：WSL GCC logical-not smoke 8/2、jump-if smoke 9/2、logical contracts 4/1、source contracts 24/1。
+  GREEN：WSL GCC focused build 通过，logical-not 8/0、jump-if 9/0、logical contracts 4/0、source contracts 24/0；
+  WSL Clang 同组 build 通过且运行 8/0、9/0、4/0、24/0；Windows MSVC Debug 同组 build 通过，
+  两个 Unix-only smoke 运行体 expected ignored 且 0 failures，logical/source contracts 4/0 与 24/0。
+  产出：`tests/acceptance/2026-07-06-aot-07-s6-reference-local-struct-frame-prep.md`。
+  备注：本切片不发射 `LOCAL_ADDRESS` root map，也不推送单独 local-address root frame；当前 AOT root frame
+  只有一个 base，不能安全混合 VM stack byte roots 与 C-local address roots。GC 压力/root 正确性更广覆盖、
+  exports/frame cleanup、in/out writeback、性能计数和完整 07-S6/07~12 验收仍待后续。
+
+- 2026-07-06 05:54:47 +08:00 · M1.5 / 07-S6 conversion reference-local reuse ·
+  状态：`TO_STRING` / `TO_OBJECT` destination 的 `SZrRawObject *zr_aot_oN` reference-local 声明与复用子切片完成；
+  07-S6 部分完成，07~12 总目标继续进行中。完成项目：新增 `backend_aot_c_reference_locals.c/.h`，
+  在函数 prologue 后、首个 block label 前扫描 `TO_STRING` / `TO_OBJECT` destination 并声明一次
+  `SZrRawObject *zr_aot_oN = ZR_NULL;`。`backend_aot_write_c_direct_to_string()` 与
+  `backend_aot_write_c_direct_to_object()` 保持 runtime conversion boundary，随后校验 destination slot 并填充
+  `zr_aot_oN`；immediate `LOGICAL_NOT` / `JUMP_IF` 的 string/object truthiness helper 现在直接消费
+  `zr_aot_oN`，不再在 truthiness 阶段重新读取 `frame.slotBase + N`。RED：WSL GCC logical-not smoke
+  8 tests / 2 failures、jump-if smoke 9 tests / 2 failures。GREEN：WSL GCC logical-not 8/0、jump-if
+  9/0、logical contracts 4/0、source contracts 24/0；WSL Clang logical-not 8/0、jump-if 9/0；
+  Windows MSVC Debug 两个目标构建通过，运行结果分别为 8/9 expected Unix-only ignores、0 failures。产出：
+  `tests/acceptance/2026-07-06-aot-07-s6-conversion-reference-local-reuse.md`。
+  备注：本切片只把 conversion result 推进到生成 C 局部 `SZrRawObject*` 并供紧邻 truthiness 使用；
+  root-mapped 持久引用寄存器、LOCAL_ADDRESS root map 发射、GC 压力/root 正确性更广覆盖、exports/frame cleanup、
+  in/out writeback、性能计数和完整 07-S6/07~12 验收仍待后续。
+
+- 2026-07-06 05:24:51 +08:00 · M1.5 / 07-S6 string-slot truthiness raw-object local ·
+  状态：`TO_STRING` 后紧邻 `LOGICAL_NOT` / `JUMP_IF` 的 string-slot truthiness 本地化子切片完成；
+  07-S6 部分完成，07~12 总目标继续进行中。完成项目：`backend_aot_c_write_string_slot_truthiness()`
+  在完成 `SZrTypeValue` string 边界 slot 校验后，先把 `value.object` 抽入
+  `SZrRawObject *zr_aot_string_slot_object`，再用该 raw object 调 `ZR_CAST_STRING()` 与
+  `ZrCore_String_GetByteLength()`；生成 C 不再直接把 `zr_aot_string_slot_value->value.object` 传给 cast。
+  RED：WSL GCC logical-not smoke 在新增 raw-object local 断言后 8 tests / 1 failure。GREEN：WSL GCC
+  logical-not smoke 8/0、jump-if smoke 9/0；WSL Clang 同组 8/0 与 9/0；Windows MSVC Debug 两个目标构建通过，
+  运行结果分别为 8/9 expected Unix-only ignores、0 failures。产出：
+  `tests/acceptance/2026-07-06-aot-07-s6-string-slot-truthiness-raw-object-local.md`。
+  备注：本切片只收窄 immediate string truthiness 的生成模板；`TO_STRING` 边界仍负责写回 frame slot，
+  持久引用寄存器声明、LOCAL_ADDRESS root map 发射、GC 压力/root 正确性更广覆盖、exports/frame cleanup、
+  in/out writeback、性能计数和完整 07-S6/07~12 验收仍待后续。
+
+- 2026-07-06 05:15:29 +08:00 · M1.5 / 07-S6 object-slot truthiness raw-object local ·
+  状态：`TO_OBJECT` 后紧邻 `LOGICAL_NOT` / `JUMP_IF` 的 object-slot truthiness 本地化子切片完成；
+  07-S6 部分完成，07~12 总目标继续进行中。完成项目：`backend_aot_c_write_object_slot_truthiness()` 仍保留
+  必要的 `SZrTypeValue` 边界 slot 校验，但不再直接用 tag 分支写 `zr_aot_object_slot_truthy = ZR_TRUE`；
+  生成 C 现在先抽出 `SZrRawObject *zr_aot_object_slot_object`，再用
+  `zr_aot_object_slot_object != ZR_NULL` 计算 truthiness，向 07-S6 的裸 object 引用寄存器形态收敛。
+  RED：WSL GCC 两个 focused smoke 在新增 raw-object local 断言后分别 8 tests / 1 failure 与
+  9 tests / 1 failure。GREEN：WSL GCC logical-not smoke 8/0、jump-if smoke 9/0；WSL Clang 同组 8/0 与 9/0；
+  Windows MSVC Debug 两个目标构建通过，运行结果分别为 8/9 expected Unix-only ignores、0 failures。产出：
+  `tests/acceptance/2026-07-06-aot-07-s6-object-slot-truthiness-raw-object-local.md`。
+  备注：本切片只收窄 immediate object truthiness 的生成模板；`TO_OBJECT` 边界仍负责写回 frame slot，
+  持久引用寄存器声明、LOCAL_ADDRESS root map 发射、GC 压力/root 正确性更广覆盖、exports/frame cleanup、
+  in/out writeback、性能计数和完整 07-S6/07~12 验收仍待后续。
+
+- 2026-07-06 04:56:47 +08:00 · M1.5 / 07-S6 + 09-S2 LOCAL_ADDRESS root runtime support ·
+  状态：local-address GC root 的运行期 mark/rewrite 支持完成、07-S6/09-S2 扩展子切片完成；07~12 总目标继续进行中。
+  完成项目：`gc_mark.c` 和 `gc_cycle.c` 的 AOT root-frame visitor 现在按 `locationKind` 分派：
+  `FRAME_BYTE_OFFSET` 继续解析 `SZrTypeValue` 栈 slot，`LOCAL_ADDRESS` 解析 `frameBase + frameByteOffset`
+  为 `SZrRawObject **` C local root slot。标记阶段对非空 raw object 调用 `garbage_collector_mark_object()`；
+  搬迁重写阶段复用 `garbage_collector_rewrite_raw_object_slot_counted()`，让 minor GC 后的 local-address root
+  指向 survivor object。`tests/core/test_aot_gc_root_frame.c` 新增 local-address root 用例，覆盖 mark 与 rewrite。
+  RED：WSL GCC `zr_vm_aot_gc_root_frame_test` 新用例失败，6 tests / 1 failure，旧实现只处理 frame-byte-offset root。
+  GREEN：WSL GCC 6/0、WSL Clang 6/0、MSVC Debug 6/0。产出：
+  `tests/acceptance/2026-07-06-aot-09-s2-local-address-root-runtime-support.md`。
+  备注：本切片只补齐 ABI 已预留 location kind 的运行期支持；AOT 生成器发射 local-address root map、GC 压力/root 正确性更广覆盖、
+  exports/frame cleanup、in/out writeback、性能计数和完整 07-S6/07~12 验收仍待后续。
+
+- 2026-07-06 04:45:41 +08:00 · M1.5 / 07-S6 GC-root-only frame setup retention ·
+  状态：GC root frame 需要但 frame descriptor/byte-frame 可省略时的 setup 保留门禁完成、07-S6 部分完成；
+  07~12 总目标继续进行中。完成项目：`backend_aot_write_c_frame_setup()` 的 `includeStackFrameSetup` 判定现在把
+  `includeGcRootFrame` 纳入条件，即
+  `includeFrameDescriptor || frameByteSize > 0u || includeGcRootFrame`；后续 register/local-address GC roots 即使没有
+  byte-frame 或 `ZrAotGeneratedFrame frame`，也不会因为 zero-byte/descriptor-free 入口而跳过 root-frame push 所需的
+  setup。frame setup contract 锁定该门禁，保留上一切片的静态 `&zr_aot_gc_root_map_%u` push 形态。RED：WSL GCC
+  frame setup contracts 在新增 `includeGcRootFrame` 门禁断言后 1 test / 1 failure。GREEN：WSL GCC frame setup
+  contracts 1/0，value-type shared-library smoke 5/0；WSL Clang frame setup contracts 1/0，value-type smoke 5/0；
+  MSVC Debug frame setup contracts 1/0，value-type smoke 5 tests / 0 failures / 1 expected Unix-only ignore。产出：
+  `tests/acceptance/2026-07-06-aot-07-s6-gc-root-only-frame-setup-retention.md`。
+  备注：本切片只保证 root-frame setup 不被提前剪掉；LOCAL_ADDRESS root map 发射、GC 压力/root 正确性、exports/frame
+  cleanup 更广覆盖、in/out writeback、性能计数和完整 07-S6/07~12 验收仍待后续。
+
+- 2026-07-06 04:34:25 +08:00 · M1.5 / 07-S6 POD no-drop frame cleanup elision ·
+  状态：POD inline-struct frame cleanup 省略子切片完成、07-S6 部分完成；
+  07~12 总目标继续进行中。完成项目：`backend_aot_c_frame_cleanup_would_emit_for_function(state, functionIr)`
+  现在按函数原型 frame type layout 解析每个 inline-struct frame slot 的静态 layout，并在
+  `dropKind == ZR_TYPE_LAYOUT_DROP_KIND_NONE` 时判定该 slot 不需要 frame cleanup；layout 解析失败时仍保守保留
+  cleanup。`backend_aot_write_c_frame_cleanup(file, state, functionIr)` 使用同一谓词，保证 prologue 的
+  `zr_aot_frame_started` / `zr_aot_skip_drop_slot` 与 exit cleanup 输出一致。POD value-type generated C 现在不再输出
+  `zr_aot_frame_started`、`zr_aot_skip_drop_slot`、`zr_aot_value_frame_drop` 或
+  `ZrCore_TypeLayout_DropInline(state, ...)`，ref/drop layout 仍保留 cleanup。RED：WSL GCC source contracts
+  24 tests / 1 failure，frame setup contracts 1/1，value-type smoke 5/1；分别证明旧 API、旧 function-body 调用和 POD
+  generated-C cleanup 仍存在。GREEN：WSL GCC/Clang source contracts 均 24/0；frame setup contracts 均 1/0；
+  value-type shared-library smoke 均 5/0；MSVC Debug source contracts 24/0、frame setup contracts 1/0、value-type smoke
+  5 tests / 0 failures / 1 expected Unix-only ignore。生成物检查确认 `pod_struct.c` 只保留 `.dropKind = 0u`，未见 frame
+  cleanup 变量/helper/drop 调用；`ref_struct.c` 仍含 `.dropKind = 1u`、frame-start/skip-drop 变量、
+  `zr_aot_value_frame_drop` 与 `ZrCore_TypeLayout_DropInline`。产出：
+  `tests/acceptance/2026-07-06-aot-07-s6-pod-no-drop-frame-cleanup-elision.md`。
+  备注：本切片只省略静态 no-drop POD frame cleanup；GC 压力/root 正确性、exports/frame cleanup 更广覆盖、
+  in/out writeback、性能计数和完整 07-S6/07~12 验收仍待后续。
+
+- 2026-07-06 04:21:03 +08:00 · M1.5 / 07-S6 GC root frame static map push ·
+  状态：GC root frame push 的运行期 methodInfo->gcRootMap 分支消除子切片完成、07-S6 部分完成；
+  07~12 总目标继续进行中。完成项目：`backend_aot_write_c_frame_setup()` 在调用方已证明
+  `needsGcRootFrame` 时，不再在生成 C 里发出 `zr_aot_context.methodInfo != ZR_NULL &&
+  zr_aot_context.methodInfo->gcRootMap != ZR_NULL` 的运行期分支，而是输出
+  `zr_aot_gc_root_frame_static_map_push` marker，并把 `ZrCore_Gc_AotRootFramePush(...)` 的 root map
+  实参直接绑定为 `&zr_aot_gc_root_map_%u`。source contract 现在要求静态 map push marker，并禁止
+  frame setup source 中继续读取 `zr_aot_context.methodInfo->gcRootMap`。value-type shared-library smoke
+  对 ref struct 生成物要求 root slots/root map、静态 push marker、`&zr_aot_gc_root_map_` 实参和 balanced pop，
+  并禁止 methodInfo root map 查找；POD struct 继续要求无 root map、无 root frame push/pop、无静态 push marker。
+  RED：WSL GCC frame setup contracts 在新增 marker/禁止 runtime lookup 后 1 test / 1 failure；
+  value-type smoke 在新增 generated-C 静态 push 断言后 5 tests / 1 failure。GREEN：WSL GCC/Clang frame setup
+  contracts 均 1/0；WSL GCC/Clang value-type shared-library smoke 均 5/0；MSVC Debug frame setup contracts 1/0，
+  value-type smoke 5 tests / 0 failures / 1 expected Unix-only ignore。生成物检查确认
+  `ref_struct.c` 中 root frame push 直接使用 `&zr_aot_gc_root_map_0` / `&zr_aot_gc_root_map_1`，POD 生成物没有
+  root frame 相关代码。产出：
+  `tests/acceptance/2026-07-06-aot-07-s6-gc-root-frame-static-map-push.md`。
+  备注：本切片只收窄 GC root frame push 的生成形态；exports/frame cleanup、in/out writeback、性能计数和完整
+  07-S6/07~12 验收仍待后续。
+
+- 2026-07-06 04:11:00 +08:00 · M1.5 / 07-S5 full-AOT i64/f64 scalar typed direct-call matrix guardrail ·
+  状态：i64/f64 full-AOT scalar typed direct-call 矩阵验收护栏完成、07-S5 部分完成；07~12 总目标继续进行中。
+  完成项目：i64 typed-direct shared-library smoke 的 5 个 no-arg / one-arg / two-arg case 现在全部以
+  `requireFullAot = ZR_TRUE` 生成，并要求对应 `zr_aot_static_i64_*_direct_call_full_aot` marker，同时禁止
+  `CanUseTypedDirectCall`、`DeoptTypedDirectCall` 与 `SyncSignedIntLocal`。f64 typed-direct shared-library
+  smoke harness 现在统一启用 full-AOT，19 个 no-arg / result-boundary / one-arg arithmetic / two-arg arithmetic /
+  three-arg arithmetic case 均要求对应 `zr_aot_static_f64_*_direct_call_full_aot` marker，并禁止
+  `CanUseTypedDirectCall`、`DeoptTypedDirectCall` 与 `SyncFloatLocal`。生产生成器未改动；此前 scalar
+  full-AOT direct-call 实现已能覆盖这些路径，本切片把 i64/f64 代表断言提升为完整回归门，与前一轮 bool/u64
+  矩阵护栏对齐。RED：不适用，本护栏扩展直接 GREEN。GREEN：WSL GCC/Clang i64 typed-direct smoke 均 5/0；
+  WSL GCC/Clang f64 typed-direct smoke 均 19/0；MSVC Debug i64/f64 smoke 构建通过，分别 5/19 个 Unix-only
+  用例 expected ignored / 0 failures。生成物检查确认 i64 two-arg 与 f64 three-arg generated C 含 full-AOT marker
+  和直接 typed thunk assignment，未见 targeted metadata guard/deopt/sync helper。产出：
+  `tests/acceptance/2026-07-06-aot-07-s5-full-aot-i64-f64-typed-direct-call-matrix-guardrail.md`。
+  备注：该护栏不声明完整 07-S5 完成；in/out writeback、GC roots/exports/frame cleanup、性能计数和完整
+  07-S5 验收仍待后续。
+
+- 2026-07-06 04:01:42 +08:00 · M1.5 / 07-S5 call-result runtime helper sync compact guard ·
+  状态：CallStackValue / CallStaticDirect / CallDynamicDeoptBridge result sync guard 压缩子切片完成、07-S5
+  部分完成；07~12 总目标继续进行中。完成项目：`backend_aot_c_call_boundaries.c` 现在只在 call result
+  需要回写 typed scalar local 时发出 `zr_aot_call_result_sync_compact`，并把 `CallStackValue(...)` /
+  `CallStaticDirect(...)` / `CallDynamicDeoptBridge(...)` 与对应 `SyncSignedIntLocal` /
+  `SyncUnsignedIntLocal` / `SyncFloatLocal` / `SyncBoolLocal` 合并到同一个 `ZR_AOT_C_GUARD(... && ...)`。
+  没有 typed destination sync 的 call boundary 保持旧的单 helper guard，且不带 compact marker。RED：WSL GCC
+  `zr_vm_aot_c_call_contracts_test` 在新增 quickened dynamic / generic / static-direct compact marker
+  和禁止独立 sync guard 断言后 8 tests / 3 failures；中途把动态 callable smoke 误标为 typed result 时暴露
+  expected int / actual object mismatch，随后改为静态 typed `maybeAdd` 结果用例。GREEN：WSL GCC/Clang call
+  contracts 均 8/0；WSL GCC/Clang source contracts 均 24/0；WSL GCC/Clang call shared-library smoke 均 5/0；
+  WSL GCC/Clang dynamic deopt bridge smoke 均 7/0；MSVC Debug call contracts 8/0、source contracts 24/0、
+  call smoke 5 expected Unix-only ignores / 0 failures、dynamic smoke 7 expected Unix-only ignores / 0 failures。
+  生成物检查确认 static direct call 与 dynamic deopt bridge generated C 均含 compact marker，并生成单个
+  `Call* && SyncSignedIntLocal` guard。产出：
+  `tests/acceptance/2026-07-06-aot-07-s5-call-result-sync-compact-guard.md`。
+  备注：本切片只压缩 call-result sync bridge；in/out writeback、GC roots/exports/frame cleanup、性能计数和完整
+  07-S5 验收仍待后续。
+
+- 2026-07-06 03:31:13 +08:00 · M1.5 / 07-S5 typed direct-call deopt sync compact guard ·
+  状态：non-full-AOT scalar typed direct-call fallback 模板压缩子切片完成、07-S5 部分完成；
+  07~12 总目标继续进行中。完成项目：i64/u64/f64/bool typed direct-call metadata guarded fallback
+  保持 `CanUseTypedDirectCall` 快速检查，但 deopt 分支现在发出
+  `zr_aot_static_typed_direct_call_deopt_sync_compact` marker，并把
+  `DeoptTypedDirectCall(...)` 与对应 `SyncSignedIntLocal` / `SyncUnsignedIntLocal` /
+  `SyncFloatLocal` / `SyncBoolLocal` 合并到同一个 `ZR_AOT_C_GUARD(... && ...)`。这减少了
+  non-full-AOT fallback 的 generated guard 数量，同时保留 metadata drift 安全和 result local 回读。
+  RED：WSL GCC `zr_vm_aot_c_call_contracts_test` 在新增 compact marker 和禁止独立 sync guard
+  后 8 tests / 4 failures。GREEN：WSL GCC/Clang call contracts 均 8/0；WSL GCC/Clang
+  typed-call contracts 均 4/0；WSL GCC/Clang i64 typed-direct smoke 均 5/0；WSL GCC/Clang
+  f64 typed-direct smoke 均 19/0；WSL GCC/Clang source contracts 均 24/0；MSVC Debug call
+  contracts 8/0、typed-call contracts 4/0、i64 smoke 5 tests / 0 failures / 5 expected
+  Unix-only ignores、f64 smoke 19 tests / 0 failures / 19 expected Unix-only ignores、source
+  contracts 24/0。生成物检查确认 i64/f64 non-full-AOT generated C 中 deopt fallback 含 compact
+  marker 和单个 `DeoptTypedDirectCall(...) && Sync*Local(...)` guard。产出：
+  `tests/acceptance/2026-07-06-aot-07-s5-typed-direct-call-deopt-sync-compact-guard.md`。
+  备注：本切片只压缩 non-full-AOT typed direct-call fallback；in/out writeback、GC
+  roots/exports/frame cleanup、性能计数和完整 07-S5 验收仍待后续。
+
+- 2026-07-06 03:11:05 +08:00 · M1.5 / 07-S5 dynamic value-access compact deopt bridge ·
+  状态：动态 member/index value-access deopt bridge 压缩子切片完成、07-S5 部分完成；
+  07~12 总目标继续进行中。完成项目：`backend_aot_write_c_dynamic_value_access_deopt_bridge()`
+  现在发出 `zr_aot_value_dynamic_deopt_bridge_compact` marker，并把
+  `ValidateDynamicDeoptBridge(...)` 与后续 `GetMember` / `SetMember` / `GetMemberSlot` /
+  `SetMemberSlot` / `GetByIndex` / `SetByIndex` runtime helper 合并到同一个
+  `ZR_AOT_C_GUARD(... && ...)` 表达式中。new-owner no-write-barrier member/index helper 同步采用同一
+  compact bridge 形态；unsupported dynamic value access fallback 不变。RED：WSL GCC
+  `zr_vm_aot_c_dynamic_deopt_bridge_smoke_test` 在新增 compact marker 断言后 7/1 失败。
+  GREEN：WSL GCC/Clang dynamic deopt bridge smoke 均 7/0；WSL GCC/Clang global contracts
+  均 9/0；MSVC Debug dynamic smoke 7 tests / 0 failures / 7 expected Unix-only ignores；
+  MSVC Debug global contracts 9/0。生成物检查确认 `dynamic_member_deopt_bridge.c` 与
+  `dynamic_index_deopt_bridge.c` 含 compact marker 和单个
+  `ValidateDynamicDeoptBridge(...) && GetMember/GetByIndex(...)` guard。产出：
+  `tests/acceptance/2026-07-06-aot-07-s5-dynamic-value-access-compact-deopt-bridge.md`。
+  备注：本切片只压缩动态 value-access deopt bridge 模板；in/out writeback、GC
+  roots/exports/frame cleanup、性能计数和完整 07-S5 验收仍待后续。
+
+- 2026-07-06 02:57:38 +08:00 · M1.5 / 07-S5 full-AOT scalar typed direct-call matrix guardrail ·
+  状态：验收护栏子切片完成、07-S5 部分完成；07~12 总目标继续进行中。完成项目：
+  bool/u64 typed direct-call shared-library smoke 的所有现有 case 现在都以 `requireFullAot = ZR_TRUE`
+  运行，并要求对应 `*_direct_call_full_aot` marker，同时禁止 `CanUseTypedDirectCall`、
+  `DeoptTypedDirectCall` 与标量 `Sync*Local` runtime helper。bool 矩阵覆盖 28 个 no-arg、
+  result-boundary、one-arg、two/three-arg bool 与 i64/u64/f64 bool-return comparison 形态；u64
+  矩阵覆盖 25 个 no-arg、result-boundary、one-arg arithmetic/bitwise const、two-arg arithmetic/bitwise
+  与 three-arg arithmetic/bitwise 形态。生产生成器未改动；此前 scalar full-AOT direct-call
+  实现已能覆盖这些路径，本切片把代表断言提升为完整回归门。RED：不适用，本护栏扩展直接 GREEN。
+  GREEN：WSL GCC bool typed-direct smoke 28/0、u64 typed-direct smoke 25/0；WSL Clang 同两目标
+  28/0 与 25/0；MSVC Debug bool/u64 smoke 构建通过且分别 28/25 个 Unix-only 用例 expected ignored /
+  0 failures；MSVC Debug typed-call contracts 4/0。产出：
+  `tests/acceptance/2026-07-06-aot-07-s5-full-aot-scalar-typed-direct-call-matrix-guardrail.md`。
+  备注：该护栏不声明完整 07-S5 完成；in/out writeback、动态 value access、GC
+  roots/exports/frame cleanup、性能计数和完整 07-S5 验收仍待后续。
+
+- 2026-07-06 02:45:48 +08:00 · M1.5 / 07-S5 full-AOT inline struct typed-call boundaries ·
+  状态：子切片完成、07-S5 部分完成；07~12 总目标继续进行中。完成项目：
+  full-AOT generic shared 与 ordinary static inline-struct `CALL_TYPED` callsite 在 `requireFullAot`
+  下不再生成
+  `zr_aot_value_exec_call_typed_metadata_guard`、`CanUseTypedDirectCall` 和
+  `CallInlineStructDynamicDeoptBridge` drift deopt。生成器直接输出
+  `zr_aot_value_exec_call_typed_inline_struct_full_aot_direct` 标记，并用固定
+  `zr_aot_fn_N` thunk 调 `ZrLibrary_AotRuntime_CallInlineStruct(state, ...)` 完成 inline struct
+  result boundary。非 full-AOT 路径仍保留 metadata guard/deopt，用于元数据漂移与缺实例安全。
+  RED：WSL GCC `zr_vm_aot_c_generic_call_typed_test` 在缺少 full-AOT inline-struct direct marker
+  时 7/1 失败；WSL GCC `zr_vm_aot_c_call_shared_library_smoke_test` 在普通 static inline-struct
+  call smoke 切到 full-AOT 后因缺少同一 marker 5/1 失败。GREEN：WSL GCC/Clang generic call typed
+  均 7/0；WSL GCC/Clang call shared-library smoke 均 5/0；WSL GCC/Clang typed-call contracts
+  均 4/0；WSL GCC value SemIR contracts 4/0、source contracts 24/0；MSVC Debug generic call typed
+  7 tests / 0 failures / 3 expected Unix-only ignores；MSVC Debug call shared-library smoke
+  5 tests / 0 failures / 5 expected Unix-only ignores；MSVC Debug
+  value SemIR contracts 4/0、source contracts 24/0。生成物检查确认 targeted full-AOT
+  generated C 含 inline-struct full-AOT marker 和 `CallInlineStruct(state,`，未见 targeted
+  metadata guard、`CanUseTypedDirectCall`、inline struct dynamic deopt、drift error 或缺实例 deopt。
+  产出：`tests/acceptance/2026-07-06-aot-07-s5-full-aot-inline-struct-typed-call-boundary.md`。
+  备注：本切片只收口 full-AOT inline-struct callsite 的 metadata guard/deopt；普通
+  non-full-AOT inline-struct drift fallback、in/out writeback、动态 value access、GC
+  roots/exports/frame cleanup、性能计数和完整 07-S5 验收仍待后续。
+
+- 2026-07-06 02:21:09 +08:00 · M1.5 / 07-S5 full-AOT mixed bool-return typed direct-call boundary ·
+  状态：子切片完成、07-S5 部分完成；07~12 总目标继续进行中。完成项目：
+  full-AOT typed direct-call fast path 现在覆盖 mixed i64/u64/f64 two-arg 参数返回 bool 的 direct
+  call。新增模板把 bool destination local `zr_aot_bD` 与参数 local 前缀 `zr_aot_s/u/fA`
+  分开，生成 `zr_aot_static_i64_bool_two_arg_direct_call_full_aot`、
+  `zr_aot_static_u64_bool_two_arg_direct_call_full_aot`、
+  `zr_aot_static_f64_bool_two_arg_direct_call_full_aot` 和
+  `zr_aot_bD = zr_aot_typed_bool_fn_N(zr_aot_s/u/fA, zr_aot_s/u/fB);`，不再包
+  `CanUseTypedDirectCall` metadata guard、`DeoptTypedDirectCall` 或 `SyncBoolLocal` result sync。
+  bool shared-library smoke harness 新增 full-AOT marker/guard 禁止字段，并给 28 个既有 case
+  补齐默认字段；i64 less、u64 less、f64 less 三个代表 case 切到 `requireFullAot`。RED：
+  WSL GCC bool typed-direct smoke 在缺少
+  `/* zr_aot_static_i64_bool_two_arg_direct_call_full_aot */` 时 28/1 失败。GREEN：
+  WSL GCC bool typed-direct smoke 28/0；WSL Clang 同目标 28/0；WSL GCC/Clang typed-call
+  contracts 均 4/0；MSVC Debug typed-call contracts 4/0；MSVC Debug bool typed-direct smoke
+  构建通过且 28 个 Unix-only 用例 expected ignored / 0 failures。生成物检查确认 i64/u64/f64
+  三个 targeted bool-return project 只含 full-AOT marker 与 direct bool thunk call，未见 targeted
+  `CanUseTypedDirectCall`、`DeoptTypedDirectCall`、`SyncBoolLocal` 或 `zr_aot_typed_destination`。
+  产出：`tests/acceptance/2026-07-06-aot-07-s5-full-aot-mixed-bool-return-typed-direct-call-boundary.md`。
+  备注：本切片收口 scalar typed-to-typed direct-call metadata guard；inline structs、in/out
+  writeback、动态 value access、GC roots/exports/frame cleanup、性能计数和完整 07-S5 验收仍待后续。
+
+- 2026-07-06 02:07:36 +08:00 · M1.5 / 07-S5 full-AOT two/three-arg typed direct-call boundary ·
+  状态：子切片完成、07-S5 部分完成；07~12 总目标继续进行中。完成项目：
+  `backend_aot_try_write_c_static_direct_typed_function_call()` 的 full-AOT fast path 从一参扩展到
+  同类型 bool/i64/u64/f64 two/three-arg typed direct call。生成器在既有 can-write 证明成立后，
+  直接输出 `zr_aot_static_*_two_arg_direct_call_full_aot` /
+  `zr_aot_static_*_three_arg_direct_call_full_aot` 标记和 scalar thunk assignment；当 thunk 需要
+  `state` 处理除零等运行期错误时，full-AOT 模板保留 `zr_aot_typed_*_fn_N(state, ...)` 调用形态。
+  u64 shared-library smoke 覆盖 state-free two-arg sum、stateful two-arg divide、state-free
+  three-arg add、stateful three-arg divide，并拒绝 targeted metadata guard/deopt、
+  `SyncUnsignedIntLocal` 与 typed-destination 写入。RED：WSL GCC u64 typed-direct smoke 在缺少
+  `/* zr_aot_static_u64_two_arg_direct_call_full_aot */` 时 25/1 失败。GREEN：实现后首次
+  GCC 复跑在 180 秒窗口超时，延长窗口后 WSL GCC u64 typed-direct smoke 25/0；WSL Clang 同目标
+  25/0；WSL GCC/Clang typed-call contracts 均 4/0；MSVC Debug typed-call contracts 4/0；
+  MSVC Debug u64 typed-direct smoke 构建通过且 25 个 Unix-only 用例 expected ignored / 0 failures。
+  生成物检查确认 four-shape u64 generated C 分别包含无 `state` 和有 `state` 的 two/three-arg
+  direct thunk 调用，且未见 targeted `CanUseTypedDirectCall`、`DeoptTypedDirectCall`、
+  `SyncUnsignedIntLocal` 或 `zr_aot_typed_destination`。产出：
+  `tests/acceptance/2026-07-06-aot-07-s5-full-aot-two-three-arg-typed-direct-call-boundary.md`。
+  备注：mixed-argument bool-return direct-call route 暂保留 metadata-guarded path；inline structs、
+  in/out writeback、动态 value access、GC roots/exports/frame cleanup、性能计数和完整 07-S5 验收仍待后续。
+
+- 2026-07-06 01:46:11 +08:00 · M1.5 / 07-S5 full-AOT one-arg typed direct-call boundary ·
+  状态：子切片完成、07-S5 部分完成；07~12 总目标继续进行中。完成项目：
+  `backend_aot_try_write_c_static_direct_typed_function_call()` 现在接收 `requireFullAot`。
+  full-AOT 且 bool/i64/u64/f64 一参 typed direct call 已被 can-write 证明时，生成器直接输出
+  `zr_aot_static_*_one_arg_direct_call_full_aot` 标记和
+  `zr_aot_*D = zr_aot_typed_*_fn_N(zr_aot_*A);` 标量局部赋值，不再进入
+  `CanUseTypedDirectCall` metadata guard、`DeoptTypedDirectCall` 回退或 result-slot
+  `Sync*Local` 同步。u64 shared-library smoke 的一参 identity case 切到 `requireFullAot`，
+  并显式拒绝 typed direct-call metadata guard/deopt、`SyncUnsignedIntLocal` 和
+  typed-destination `SZrTypeValue` 写入；同一 harness 的非 full-AOT cases 显式补齐默认字段，
+  避免干净编译出现缺省初始化告警。RED：WSL GCC u64 typed-direct smoke 在缺少
+  `/* zr_aot_static_u64_one_arg_direct_call_full_aot */` 时 25/1 失败。GREEN：
+  WSL GCC u64 typed-direct smoke 25/0；WSL Clang 同目标 25/0；WSL GCC/Clang
+  `zr_vm_aot_c_typed_call_contracts_test` 均 4/0；MSVC Debug typed-call contracts 4/0；
+  MSVC Debug u64 typed-direct smoke 构建通过且 25 个 Unix-only 用例 expected ignored / 0 failures。
+  生成物检查：`runtime_static_u64_one_arg_project` 的 generated C 含
+  `zr_aot_static_u64_one_arg_direct_call_full_aot` 和
+  `zr_aot_u4 = zr_aot_typed_u64_fn_1(zr_aot_u5);`，未见 targeted
+  `CanUseTypedDirectCall`、`DeoptTypedDirectCall`、`SyncUnsignedIntLocal` 或
+  `zr_aot_typed_destination`。产出：
+  `tests/acceptance/2026-07-06-aot-07-s5-full-aot-one-arg-typed-direct-call-boundary.md`。
+  备注：本切片只覆盖可证明的一参 scalar typed direct call；two/three-arg full-AOT guard 消除、
+  inline structs、in/out writeback、动态 value access、GC roots/exports/frame cleanup、性能计数和完整
+  07-S5 验收仍待后续。
+
+- 2026-07-06 01:28:16 +08:00 · M1.5 / 07-S5 full-AOT no-arg typed direct-call result boundary ·
+  状态：子切片完成、07-S5 部分完成；07~12 总目标继续进行中。完成项目：
+  `backend_aot_try_write_c_static_direct_typed_no_arg_function_call()` 现在从函数体接收
+  `requireFullAot`，在 full-AOT 且 bool/i64/u64/f64 无参 typed direct call 可证明时，直接输出
+  `zr_aot_static_*_no_arg_direct_call_full_aot` 标记和 `zr_aot_*D = zr_aot_typed_*_fn_N();`
+  标量局部赋值，不再生成 `ZrLibrary_AotRuntime_CanUseTypedDirectCall` 元数据 guard、
+  `ZrLibrary_AotRuntime_DeoptTypedDirectCall` 回退或回退路径上的 `Sync*Local` result-slot
+  同步。`test_aot_c_generated_shared_library_executes_static_numeric_call_local_only_path` 切到
+  `requireFullAot = ZR_TRUE`，锁定 u64/f64 无参 direct-call result 经后续 scalar stack-copy
+  继续保持本地值流，同时拒绝 metadata guard/deopt/sync 与 `SZrTypeValue` typed-destination 写入。
+  RED：WSL GCC call shared-library smoke 在缺少
+  `/* zr_aot_static_u64_no_arg_direct_call_full_aot */` 时 5/1 失败。GREEN：WSL GCC 同目标
+  5/0，WSL Clang 同目标 5/0；WSL GCC/Clang `zr_vm_aot_c_typed_call_contracts_test` 均 4/0；
+  MSVC Debug call shared-library smoke 构建通过且 5 个 Unix-only 用例 expected ignored / 0 failures，
+  MSVC Debug typed-call contracts 4/0。生成物 grep 只看到 u64/f64 full-AOT direct-call 标记，
+  未见 targeted `CanUseTypedDirectCall`、`DeoptTypedDirectCall`、`SyncUnsignedIntLocal` 或
+  `SyncFloatLocal`。产出：
+  `tests/acceptance/2026-07-06-aot-07-s5-full-aot-no-arg-typed-direct-call-boundary.md`。
+  备注：非 full-AOT 的 typed direct-call metadata guard/deopt 回退仍保留，用于动态元数据漂移安全；
+  本切片只消除 full-AOT 已固定元数据的 call-result/direct-call 边界同步。inline structs、in/out
+  writeback、动态 value access、GC roots/exports/frame cleanup、性能计数和完整 07-S5 验收仍待后续。
+
+- 2026-07-06 01:13:37 +08:00 · M1.5 / 07-S3/S4 generic equality zero-frame body guardrail ·
+  状态：子切片审计与回归门完成、07-S3/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `tests/parser/test_aot_c_generic_bool_equality_local_smoke.c` 新增
+  `assert_generic_equality_generated_c_uses_zero_frame_scalar_body()`，把 bool/i64/u64+f64/mixed primitive
+  四个纯本地标量 generic equality 用例锁定为 `.registerFrameBytes = 0u`、
+  `value SemIR lowering frameByteSize=0`，并禁止输出
+  `/* zr_aot_generated_frame_setup */`、`ZrAotGeneratedFrame frame = {0};`、`frame.slotBase`、
+  `ZrCore_Function_CheckStackAndGc(` 和 stack reset frame setup。审计结论：这些 pure equality
+  生成物当前已满足 07-S3/S4 零 frame body；`generic_call_result_equality_local_project` 与
+  `numeric_arithmetic_project` 仍带 call-result/direct-call boundary sync 和 slot layout，按计划归入后续
+  07-S5/更广 value-copy migration，而不是本切片强制归零。RED/GREEN：本切片为已 GREEN 行为加硬
+  guardrail，未修改 production；focused WSL GCC 初跑 5/0，WSL Clang 5/0，MSVC Debug 构建通过且
+  5 个 Unix-only shared-library 用例 expected ignored / 0 failures。产出：
+  `tests/acceptance/2026-07-06-aot-07-s3-s4-generic-equality-zero-frame-guardrail.md`。
+  备注：该切片只锁定 pure primitive generic equality 的 zero-frame body；call-result 边界、dynamic/string/object
+  truthiness、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing 剩余形态、
+  性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-06 00:58:36 +08:00 · M1.5 / 07-S3/S4 generic numeric unsigned constants zero-frame body local ·
+  状态：子切片完成、07-S3/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  unsigned `GET_CONSTANT` 现在在 proven u64 scalar-local destination 上与 signed/f64 常量一样参与
+  `backend_aot_c_frame_descriptor.c` local-only 判定；generic u64 `SUB`/`MUL`/`DIV`/`MOD`
+  也被列为 u64 local consumers，避免 u64 常量和后续 mixed numeric bodies 因 consumer proof 脱节而
+  重新生成 primitive constant/value-slot fallback。生成 C 对 u64 `ADD`/`SUB`/`MUL`/`DIV`/`MOD`、
+  u64 result-stack-copy `MUL`、mixed i64/u64 `ADD`/`SUB`/`MUL`/`DIV`/`MOD` 与 result-stack-copy
+  `MUL`、mixed u64/f64 `ADD`/`SUB`/`MUL`/`DIV`/`MOD` 均保持 `.registerFrameBytes = 0u`、
+  `value SemIR lowering frameByteSize=0`，且不输出 `/* zr_aot_generated_frame_setup */`、
+  `ZrAotGeneratedFrame frame = {0};`、`frame.slotBase`、stack/GC check 或 primitive constant fallback。
+  RED：给 u64 ADD/SUB 追加 zero-frame generated-C 断言后，unsigned constant 未进入 frame descriptor
+  local-only；继续扩到 u64 SUB/MUL/DIV/MOD 后发现 generic u64 consumer 只覆盖 ADD/NEG。
+  GREEN：frame descriptor 接受 `ZR_VALUE_IS_TYPE_UNSIGNED_INT(...)` 常量、typed unsigned
+  `ADD_UNSIGNED`/`SUB_UNSIGNED`/`MUL_UNSIGNED`/`DIV_UNSIGNED`/`MOD_UNSIGNED` gate；scalar locals
+  同步覆盖 generic SUB/MUL/DIV/MOD 与 typed unsigned read proof；source contract 锁定 unsigned
+  constant gate、typed unsigned opcode gate 与 u64 consumer markers。验证：WSL GCC generic numeric
+  smoke 50/0；WSL Clang generic numeric smoke 50/0；WSL GCC frame setup contracts 1/0；
+  WSL Clang frame setup contracts 1/0；MSVC Debug generic numeric smoke 50 expected ignored / 0 failures；
+  MSVC Debug frame setup contracts 1/0。生成物扫描：zero-register-frame generated files 中 frame setup
+  marker 命中 0；u64/mixed generated files 中 primitive constant fallback 命中 0。产出：
+  `tests/acceptance/2026-07-06-aot-07-s3-s4-generic-numeric-unsigned-constant-zero-frame-local.md`。
+  备注：该切片只关闭 proven unsigned/generic numeric scalar-local 常量与相关 mixed numeric body 的
+  zero-frame gate；dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、
+  byte-frame narrowing 剩余形态、性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-06 00:14:47 +08:00 · M1.5 / 07-S3/S4 generic numeric zero-frame body local ·
+  状态：子切片完成、07-S3/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  将 generic numeric `ADD`/`ADD_STRING`/`SUB`/`MUL`/`DIV`/`MOD`/`NEG` 的 proven scalar-local
+  形态纳入 `backend_aot_c_frame_descriptor.c` 的 local-only 判定，使 `.registerFrameBytes = 0u`
+  且 `value SemIR lowering frameByteSize=0` 的纯标量函数体不再生成
+  `/* zr_aot_generated_frame_setup */`、`ZrAotGeneratedFrame frame = {0};`、
+  `ZrCore_Function_CheckStackAndGc(...)` 或 `frame.slotBase = zr_aot_slot_base;`。
+  RED：在 result-copy guarded `DIV`/`MOD` 矩阵测试上追加 zero-frame generated-C 断言后，
+  WSL GCC generic numeric smoke 出现 4 个失败，均命中仍存在 frame setup marker。GREEN：
+  frame descriptor 现在镜像 generic numeric lowering 的 same-kind i64/u64/f64、mixed i64/u64
+  signed-result、mixed f64+integer 与 unary `NEG` 标量证明；source contract 锁定 binary/unary
+  helper 与 `ADD`/`ADD_STRING`/`DIV`/`MOD`/`NEG` gate。验证：WSL GCC generic numeric smoke
+  50/0；WSL Clang generic numeric smoke 50/0；WSL GCC frame setup contracts 1/0；
+  MSVC Debug generic numeric smoke 50 expected ignored / 0 failures；MSVC Debug frame setup
+  contracts 1/0。产出：
+  `tests/acceptance/2026-07-06-aot-07-s3-s4-generic-numeric-zero-frame-body-local.md`。
+  备注：该切片只关闭 proven generic numeric scalar-local body 的 frame setup elision；
+  dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、
+  byte-frame narrowing 剩余形态、性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 23:54:29 +08:00 · M1.5 / 07-S2/S4 generic numeric result stack-copy guarded DIV/MOD matrix coverage ·
+  状态：子切片覆盖闭环完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  在前两条 result-copy guard 覆盖基础上补齐 f64 `MOD` 左/右 copied-result 与 i64 `DIV` 左/右
+  copied-result 四个 shared-library smoke：`ADD -> SET_STACK -> MOD`、`ADD -> SET_STACK -> MOD(right copied result)`、
+  `ADD -> SET_STACK -> DIV`、`ADD -> SET_STACK -> DIV(right copied result)`。该覆盖首跑在 WSL
+  GCC/Clang 为 GREEN，不作为新的 production RED；本切片未修改生产代码。生成 C 对 f64 `MOD`
+  输出 `zr_aot_generic_numeric_f64_mod_scalar_local`，分别保留 `if (zr_aot_f3 == (TZrFloat64)0.0)` /
+  `zr_aot_f5 = fmod(zr_aot_f4, zr_aot_f3);` 与 `if (zr_aot_f4 == (TZrFloat64)0.0)` /
+  `zr_aot_f5 = fmod(zr_aot_f3, zr_aot_f4);`；对 i64 `DIV` 输出
+  `zr_aot_generic_numeric_i64_div_scalar_local`，分别保留 `if (zr_aot_s3 == (TZrInt64)0)` /
+  `zr_aot_s5 = zr_aot_s4 / zr_aot_s3;` 与 `if (zr_aot_s4 == (TZrInt64)0)` /
+  `zr_aot_s5 = zr_aot_s3 / zr_aot_s4;`，且不调用 targeted `CopyStack`、`GenericNumericDiv` /
+  `GenericNumericMod`、sync boundary 或 generic numeric binary boundary，也不 materialize copied slot 4
+  的 value slot。MSVC 初次复核暴露测试辅助函数签名把 `EZrInstructionCode` 泄漏到 Windows 路径；
+  已将新 guarded assertion helpers 限定在 `ZR_PLATFORM_UNIX` 下，并为四个新测试补齐 Windows expected
+  ignore 分支。验证：WSL GCC generic numeric smoke 50/0；WSL Clang generic numeric smoke 50/0；
+  MSVC Debug generic numeric shared-library smoke 构建通过，0 failures / 50 expected ignores。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-result-stack-copy-div-mod-matrix-local.md`。
+  备注：straight-line result-copy feeding guarded `DIV`/`MOD` 的 f64/i64 左/右操作数矩阵已收口；
+  dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、
+  性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 23:41:38 +08:00 · M1.5 / 07-S2/S4 generic numeric result stack-copy right DIV/MOD guard coverage ·
+  状态：子切片覆盖闭环完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  新增 `GET_CONSTANT float -> GET_CONSTANT float -> ADD -> SET_STACK -> GET_CONSTANT float -> DIV(right copied result) -> RETURN`
+  与 `GET_CONSTANT int -> GET_CONSTANT int -> ADD -> SET_STACK -> GET_CONSTANT int -> MOD(right copied result) -> RETURN`
+  shared-library smoke，覆盖 copied generic numeric result 作为后续 guarded `DIV`/`MOD` 右操作数。该覆盖未触发
+  production RED，本切片未再修改生产代码；首次 WSL GCC 命令在 120s 预算内超时且未产出测试结果，延长超时后
+  GREEN。生成 C 对 f64 路径输出 `zr_aot_scalar_stack_copy_f64 dstSlot=4 srcSlot=2` /
+  `zr_aot_f4 = zr_aot_f2;`、`zr_aot_generic_numeric_f64_div_scalar_local`、
+  `if (zr_aot_f4 == (TZrFloat64)0.0)` 与 `zr_aot_f5 = zr_aot_f3 / zr_aot_f4;`；对 i64 路径输出
+  `zr_aot_scalar_stack_copy_i64 dstSlot=4 srcSlot=2` / `zr_aot_s4 = zr_aot_s2;`、
+  `zr_aot_generic_numeric_i64_mod_scalar_local`、`if (zr_aot_s4 == (TZrInt64)0)` 与
+  `zr_aot_s5 = zr_aot_s3 % zr_aot_s4;`，且不调用 targeted `CopyStack`、
+  `GenericNumericDiv`/`GenericNumericMod`、sync boundary 或 generic numeric binary boundary，
+  也不 materialize copied slot 4 的 value slot。验证：WSL GCC generic numeric smoke 46/0；
+  WSL Clang generic numeric smoke 46/0；MSVC Debug generic numeric shared-library smoke 构建通过，
+  0 failures / 46 expected ignores。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-result-stack-copy-right-div-mod-guard-local.md`。
+  备注：straight-line result-copy feeding right-hand guarded `DIV`/`MOD` 的 f64/i64 覆盖已收口；
+  dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、
+  性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 23:31:33 +08:00 · M1.5 / 07-S2/S4 generic numeric result stack-copy DIV/MOD guard coverage ·
+  状态：子切片覆盖闭环完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  新增 `GET_CONSTANT float -> GET_CONSTANT float -> ADD -> SET_STACK -> GET_CONSTANT float -> DIV -> RETURN`
+  与 `GET_CONSTANT int -> GET_CONSTANT int -> ADD -> SET_STACK -> GET_CONSTANT int -> MOD -> RETURN`
+  shared-library smoke，覆盖 copied generic numeric result feeding later guarded `DIV`/`MOD`。该覆盖首跑即
+  GREEN，不作为新的 production RED，本切片未再修改生产代码。生成 C 对 f64 路径输出
+  `zr_aot_generic_numeric_f64_add_scalar_local` / `zr_aot_f2 = zr_aot_f0 + zr_aot_f1;`、
+  `zr_aot_scalar_stack_copy_f64 dstSlot=4 srcSlot=2` / `zr_aot_f4 = zr_aot_f2;`、
+  `zr_aot_generic_numeric_f64_div_scalar_local`、`if (zr_aot_f3 == (TZrFloat64)0.0)` 与
+  `zr_aot_f5 = zr_aot_f4 / zr_aot_f3;`；对 i64 路径输出
+  `zr_aot_generic_numeric_i64_add_scalar_local` / `zr_aot_s2 = zr_aot_s0 + zr_aot_s1;`、
+  `zr_aot_scalar_stack_copy_i64 dstSlot=4 srcSlot=2` / `zr_aot_s4 = zr_aot_s2;`、
+  `zr_aot_generic_numeric_i64_mod_scalar_local`、`if (zr_aot_s3 == (TZrInt64)0)` 与
+  `zr_aot_s5 = zr_aot_s4 % zr_aot_s3;`，且不调用 targeted `CopyStack`、
+  `GenericNumericDiv`/`GenericNumericMod`、sync boundary 或 generic numeric binary boundary，
+  也不 materialize copied slot 4 的 value slot。验证：WSL GCC generic numeric smoke 44/0；
+  WSL Clang generic numeric smoke 44/0；MSVC Debug generic numeric shared-library smoke 构建通过，
+  0 failures / 44 expected ignores。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-result-stack-copy-div-mod-guard-local.md`。
+  备注：straight-line result-copy feeding later guarded `DIV`/`MOD` 的 f64/i64 覆盖已收口；
+  dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、
+  性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 23:19:38 +08:00 · M1.5 / 07-S2/S4 generic numeric mixed u64/f64 result stack-copy MUL coverage ·
+  状态：子切片覆盖闭环完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT uint -> GET_CONSTANT float -> ADD -> SET_STACK -> GET_CONSTANT float -> MUL -> RETURN`
+  新增 executable smoke，确认上一条 mixed-f64 result-copy proof 已覆盖 unsigned integer + f64 promotion。生成 C 保留
+  `zr_aot_scalar_constant_u64_local` 与 `zr_aot_scalar_constant_f64_local`，输出
+  `zr_aot_generic_numeric_mixed_f64_add_scalar_local` / `zr_aot_f2 = (TZrFloat64)zr_aot_u0 + zr_aot_f1;`、
+  `zr_aot_scalar_stack_copy_f64 dstSlot=4 srcSlot=2` / `zr_aot_f4 = zr_aot_f2;`，以及
+  `zr_aot_generic_numeric_f64_mul_scalar_local` / `zr_aot_f5 = zr_aot_f4 * zr_aot_f3;`，且不调用 targeted
+  `CopyStack`、`GenericNumericMul`、`SyncFloatLocal`，也不 materialize copied slot 4 的 value slot。
+  该覆盖首跑即 GREEN，不作为新的 production RED，本切片未再修改生产代码。验证：WSL GCC generic numeric smoke
+  42/0；WSL Clang generic numeric smoke 42/0；MSVC Debug generic numeric shared-library smoke 构建通过，
+  0 failures / 42 expected ignores。上一条 production GREEN 已覆盖相邻矩阵：WSL GCC/Clang generic numeric
+  contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、
+  generic bool equality 5/0、generic equality stack-copy 4/0、generic not-equal stack-copy jump-if 1/0、
+  call-result stack-copy equality 1/0；MSVC Debug contracts 1/0、24/0、2/0，Unix-only adjacent smokes 均为
+  0 failures / expected ignores。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-mixed-u64-f64-result-stack-copy-mul-local.md`。
+  备注：straight-line mixed u64/f64 generic numeric result-copy feeding later `MUL` 已收口；
+  dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、
+  性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 23:12:16 +08:00 · M1.5 / 07-S2/S4 generic numeric mixed i64/f64 result stack-copy MUL local ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT int -> GET_CONSTANT float -> ADD -> SET_STACK -> GET_CONSTANT float -> MUL -> RETURN`
+  新增 executable smoke 并完成 RED/GREEN。RED 显示 initial mixed ADD 与 result stack-copy 已本地化，但 copied
+  mixed-f64 result feeding later `MUL` 的 proof 不完整，后续仍回退到
+  `ZrLibrary_AotRuntime_GenericNumericMul(state, &frame, 5, 4, 3)`。GREEN：`backend_aot_c_scalar_locals.c`
+  的 f64 before-instruction value-kind proof 现在可将 generic numeric binary 的一侧 f64 + 另一侧 i64/u64
+  证明为 f64 result，使 mixed i64/f64 result-copy 后的 slot 仍可被后续 f64 consumer 追溯。生成 C 保留
+  `zr_aot_scalar_constant_i64_local` 与 `zr_aot_scalar_constant_f64_local`，输出
+  `zr_aot_generic_numeric_mixed_f64_add_scalar_local` / `zr_aot_f2 = (TZrFloat64)zr_aot_s0 + zr_aot_f1;`、
+  `zr_aot_scalar_stack_copy_f64 dstSlot=4 srcSlot=2` / `zr_aot_f4 = zr_aot_f2;`，以及
+  `zr_aot_generic_numeric_f64_mul_scalar_local` / `zr_aot_f5 = zr_aot_f4 * zr_aot_f3;`，且不调用 targeted
+  `CopyStack`、`GenericNumericMul`、`SyncFloatLocal`，也不 materialize copied slot 4 的 value slot。
+  验证：WSL GCC generic numeric smoke 41/0、generic numeric contracts 1/0、source contracts 24/0、
+  power smoke 1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、generic bool equality 5/0、generic
+  equality stack-copy 4/0、generic not-equal stack-copy jump-if 1/0、call-result stack-copy equality 1/0；
+  WSL Clang 同组 41/0、1/0、24/0、1/0、2/0、8/0、5/0、4/0、1/0、1/0；MSVC Debug focused targets
+  构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures / 41 expected ignores、
+  power 0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、generic bool
+  equality 0 failures / 5 expected ignores、generic equality stack-copy 0 failures / 4 expected ignores、
+  generic not-equal stack-copy jump-if 0 failures / 1 expected ignore、call-result stack-copy equality
+  0 failures / 1 expected ignore。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-mixed-i64-f64-result-stack-copy-mul-local.md`。
+  备注：straight-line mixed i64/f64 generic numeric result-copy feeding later `MUL` 已收口；
+  dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、
+  性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 22:45:37 +08:00 · M1.5 / 07-S2/S4 generic numeric mixed i64/u64 result stack-copy MUL coverage ·
+  状态：子切片覆盖闭环完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT int -> GET_CONSTANT uint -> ADD -> SET_STACK -> GET_CONSTANT uint -> MUL -> RETURN`
+  新增 executable smoke，确认 integer value-kind proof 已覆盖 mixed i64/u64 signed-result copy。生成 C 保留
+  `zr_aot_scalar_constant_i64_local` 与 `zr_aot_scalar_constant_u64_local`，输出
+  `zr_aot_generic_numeric_mixed_i64_u64_add_scalar_local` / `zr_aot_s2 = zr_aot_s0 + (TZrInt64)zr_aot_u1;`、
+  `zr_aot_scalar_stack_copy_i64 dstSlot=4 srcSlot=2` / `zr_aot_s4 = zr_aot_s2;`，以及
+  `zr_aot_generic_numeric_mixed_i64_u64_mul_scalar_local` / `zr_aot_s5 = zr_aot_s4 * (TZrInt64)zr_aot_u3;`，
+  且不调用 targeted `CopyStack`、`GenericNumericMul`、`SyncSignedIntLocal`，不声明误判的
+  `TZrFloat64 zr_aot_f4`，也不 materialize copied slot 4 的 value slot。该覆盖首跑即 GREEN，不作为新的
+  production RED，本切片未再修改生产代码。验证：WSL GCC generic numeric smoke 40/0、generic numeric
+  contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、
+  generic bool equality 5/0、generic equality stack-copy 4/0、generic not-equal stack-copy jump-if 1/0、
+  call-result stack-copy equality 1/0；WSL Clang 同组 40/0、1/0、24/0、1/0、2/0、8/0、5/0、4/0、1/0、1/0；
+  MSVC Debug focused targets 构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke
+  0 failures / 40 expected ignores、power 0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8
+  expected ignores、generic bool equality 0 failures / 5 expected ignores、generic equality stack-copy
+  0 failures / 4 expected ignores、generic not-equal stack-copy jump-if 0 failures / 1 expected ignore、
+  call-result stack-copy equality 0 failures / 1 expected ignore。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-mixed-i64-u64-result-stack-copy-mul-local.md`。
+  备注：straight-line mixed i64/u64 generic numeric result-copy feeding later `MUL` 已收口；
+  dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、
+  性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 22:25:01 +08:00 · M1.5 / 07-S2/S4 generic numeric u64 result stack-copy MUL coverage ·
+  状态：子切片覆盖闭环完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT uint -> GET_CONSTANT uint -> ADD -> SET_STACK -> GET_CONSTANT uint -> MUL -> RETURN`
+  新增 executable smoke，确认上一条 i64 RED/GREEN 引入的 integer value-kind proof 已覆盖 u64 generic
+  numeric result-copy：生成 C 保留 `zr_aot_scalar_constant_u64_local`，输出
+  `zr_aot_generic_numeric_u64_add_scalar_local` / `zr_aot_u2 = zr_aot_u0 + zr_aot_u1;`、
+  `zr_aot_scalar_stack_copy_u64 dstSlot=4 srcSlot=2` / `zr_aot_u4 = zr_aot_u2;`，以及
+  `zr_aot_generic_numeric_u64_mul_scalar_local` / `zr_aot_u5 = zr_aot_u4 * zr_aot_u3;`，且不调用 targeted
+  `CopyStack`、`GenericNumericMul`、`SyncUnsignedIntLocal`，不声明误判的 `TZrFloat64 zr_aot_f4`，也不
+  materialize copied slot 4 的 value slot。该覆盖首跑即 GREEN，不作为新的 production RED，本切片未再修改生产代码。
+  验证：WSL GCC generic numeric smoke 39/0、generic numeric contracts 1/0、source contracts 24/0、
+  power smoke 1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、generic bool equality 5/0、generic
+  equality stack-copy 4/0、generic not-equal stack-copy jump-if 1/0、call-result stack-copy equality 1/0；
+  WSL Clang 同组 39/0、1/0、24/0、1/0、2/0、8/0、5/0、4/0、1/0、1/0；MSVC Debug focused targets
+  构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures / 39 expected ignores、
+  power 0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、generic bool
+  equality 0 failures / 5 expected ignores、generic equality stack-copy 0 failures / 4 expected ignores、
+  generic not-equal stack-copy jump-if 0 failures / 1 expected ignore、call-result stack-copy equality
+  0 failures / 1 expected ignore。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-u64-result-stack-copy-mul-local.md`。
+  备注：straight-line u64 generic numeric result-copy feeding later `MUL` 已收口；dynamic/unproven operands、
+  更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整
+  zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 22:05:29 +08:00 · M1.5 / 07-S2/S4 generic numeric i64 result stack-copy MUL local ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT int -> GET_CONSTANT int -> ADD -> SET_STACK -> GET_CONSTANT int -> MUL -> RETURN`
+  新增 executable smoke 并完成 RED/GREEN。RED 显示 copied i64 generic numeric result 未被 value-kind
+  proof 识别：生成 C 仍走 `GenericNumericAdd` + `SyncSignedIntLocal`、targeted `CopyStack`，后续
+  `MUL` 回退到 `GenericNumericMul`，且 copied slot 4 被错误声明为 `TZrFloat64 zr_aot_f4`。GREEN：
+  `backend_aot_c_scalar_locals.c` 新增整数 value-kind before-instruction proof，能跨 i64/u64 常量、
+  generic numeric binary result、mixed i64/u64 signed result、generic NEG-to-i64 result、conversion/result
+  与 stack-copy 回溯；i64/u64 generic numeric operand proof 接受 copied proven integer results；
+  stack-copy destination recording 在 slotKinds 尚未记录 generic result 时回溯 sourceKind；stack-copy
+  consumer classification 增加 explicit i64 generic numeric binary 分支，避免 copied i64 operand 落入 f64
+  consumer。生成 C 现在输出 `zr_aot_generic_numeric_i64_add_scalar_local` / `zr_aot_s2 = zr_aot_s0 + zr_aot_s1;`、
+  `zr_aot_scalar_stack_copy_i64 dstSlot=4 srcSlot=2` / `zr_aot_s4 = zr_aot_s2;`、以及
+  `zr_aot_generic_numeric_i64_mul_scalar_local` / `zr_aot_s5 = zr_aot_s4 * zr_aot_s3;`，且不调用 targeted
+  `CopyStack`、`GenericNumericMul`、`SyncSignedIntLocal` 或 copied slot 4 的 value-slot materialization。
+  验证：WSL GCC generic numeric smoke 38/0、generic numeric contracts 1/0、source contracts 24/0、
+  power smoke 1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、generic bool equality 5/0、generic
+  equality stack-copy 4/0、generic not-equal stack-copy jump-if 1/0、call-result stack-copy equality 1/0；
+  WSL Clang 同组 38/0、1/0、24/0、1/0、2/0、8/0、5/0、4/0、1/0、1/0；MSVC Debug focused targets
+  构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures / 38 expected ignores、
+  power 0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、generic bool
+  equality 0 failures / 5 expected ignores、generic equality stack-copy 0 failures / 4 expected ignores、
+  generic not-equal stack-copy jump-if 0 failures / 1 expected ignore、call-result stack-copy equality
+  0 failures / 1 expected ignore。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-i64-result-stack-copy-mul-local.md`。
+  备注：straight-line i64 generic numeric result-copy feeding later `MUL` 已收口；dynamic/unproven operands、
+  更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整
+  zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 21:30:48 +08:00 · M1.5 / 07-S2/S4 generic numeric f64 chained result stack-copy MUL coverage ·
+  状态：子切片覆盖闭环完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT float -> GET_CONSTANT float -> DIV -> SET_STACK -> SET_STACK -> GET_CONSTANT float -> MUL -> RETURN`
+  新增 executable smoke，确认既有 f64-before-instruction 与 stack-copy chain proof 已能跨两个连续 value-copy hop
+  保持 f64 scalar-local：生成 C 输出 `zr_aot_generic_numeric_f64_div_scalar_local`、
+  `zr_aot_scalar_stack_copy_f64 dstSlot=4 srcSlot=2` / `zr_aot_f4 = zr_aot_f2;`、
+  `zr_aot_scalar_stack_copy_f64 dstSlot=6 srcSlot=4` / `zr_aot_f6 = zr_aot_f4;`，以及
+  `zr_aot_generic_numeric_f64_mul_scalar_local` / `zr_aot_f7 = zr_aot_f6 * zr_aot_f3;`，且不调用 targeted
+  `CopyStack`、`GenericNumericMul`、`SyncFloatLocal` 或 copied slots 4/6 的 value-slot materialization。该覆盖首跑即
+  GREEN，不作为 production RED，本切片未修改生产代码。验证：WSL GCC generic numeric smoke 37/0、generic numeric
+  contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、generic bool
+  equality 5/0、generic equality stack-copy 4/0、generic not-equal stack-copy jump-if 1/0、call-result stack-copy
+  equality 1/0；WSL Clang 同组 37/0、1/0、24/0、1/0、2/0、8/0、5/0、4/0、1/0、1/0；MSVC Debug focused targets
+  构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures / 37 expected ignores、power
+  0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、generic bool equality
+  0 failures / 5 expected ignores、generic equality stack-copy 0 failures / 4 expected ignores、generic not-equal
+  stack-copy jump-if 0 failures / 1 expected ignore、call-result stack-copy equality 0 failures / 1 expected ignore。
+  产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-f64-chained-result-stack-copy-local.md`。
+  备注：straight-line f64 chained result-copy feeding later `MUL` 已收口；dynamic/unproven operands、更广
+  value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整 zero-frame typed
+  bodies 仍待后续。
+
+- 2026-07-05 21:04:58 +08:00 · M1.5 / 07-S2/S4 generic numeric mixed u64+f64 coverage + mixed i64/u64 live proof ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT uint -> GET_CONSTANT float -> ADD/SUB/MUL/DIV/MOD -> RETURN` 补齐 executable smoke 覆盖，并确认
+  既有 mixed-f64 scalar-local lowering 已覆盖该常量形态：生成 C 保留 `zr_aot_scalar_constant_u64_local` 与
+  `zr_aot_scalar_constant_f64_local`，输出 `zr_aot_generic_numeric_mixed_f64_*_scalar_local` markers、direct f64
+  expressions、DIV/MOD 零检查与 `"divide by zero"` / `"modulo by zero"`，且不调用 targeted generic numeric runtime
+  boundary 或 `SyncFloatLocal`。该 u64/f64 覆盖首跑即 GREEN，不作为 production RED。另在 scalar-local proof 审计中
+  发现 mixed i64/u64 live-consumer 证明缺口：i64/u64 consumer readers 对 `SUB/MUL/DIV/MOD` 未一致纳入
+  `backend_aot_c_scalar_locals_generic_numeric_mixed_i64_u64_binary_reads_slot(...)`，且 u64 `DIV/MOD` 仍可能落到
+  broad slot-mention proof。已将 i64/u64 consumer proof 统一到 ADD/SUB/MUL/DIV/MOD：同类 i64/u64 proof、mixed i64/u64
+  proof、mixed-f64 proof 现在按 local kind 一致检查。RED：WSL GCC generic numeric contracts 1 项中新增 source
+  contract 先失败，提示缺少 DIV/MOD u64 consumer branch。GREEN：WSL GCC generic numeric smoke 36/0、generic numeric
+  contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、generic bool
+  equality 5/0、generic equality stack-copy 4/0、generic not-equal stack-copy jump-if 1/0、call-result stack-copy
+  equality 1/0；WSL Clang 同组 36/0、1/0、24/0、1/0、2/0、8/0、5/0、4/0、1/0、1/0；MSVC Debug focused targets 构建通过，
+  contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures / 36 expected ignores、power 0 failures /
+  1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、generic bool equality 0 failures /
+  5 expected ignores、generic equality stack-copy 0 failures / 4 expected ignores、generic not-equal stack-copy jump-if
+  0 failures / 1 expected ignore、call-result stack-copy equality 0 failures / 1 expected ignore。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-mixed-u64-f64-coverage-and-mixed-i64-u64-live-proof.md`。
+  备注：proven mixed u64/f64 constant coverage 与 mixed i64/u64 live proof 已收口；dynamic/unproven operands、
+  更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整 zero-frame typed
+  bodies 仍待后续。
+
+- 2026-07-05 20:20:17 +08:00 · M1.5 / 07-S2/S4 generic numeric mixed i64+u64 DIV/MOD local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT int -> GET_CONSTANT uint -> DIV/MOD -> RETURN` 现在沿用 runtime 的 mixed integer signed-result
+  语义输出 i64 结果，并保留除零/取模零错误语义。生成 C 保留 `zr_aot_scalar_constant_i64_local` 与
+  `zr_aot_scalar_constant_u64_local`，输出 `zr_aot_generic_numeric_mixed_i64_u64_div_scalar_local` /
+  `zr_aot_generic_numeric_mixed_i64_u64_mod_scalar_local`、`if ((TZrInt64)zr_aot_u1 == (TZrInt64)0)`、
+  `"divide by zero"` / `"modulo by zero"`、`zr_aot_s2 = zr_aot_s0 / (TZrInt64)zr_aot_u1;` /
+  `zr_aot_s2 = zr_aot_s0 % (TZrInt64)zr_aot_u1;`，并 direct i64 return；不再为这些 proven mixed integer
+  形态调用 `ZrLibrary_AotRuntime_GenericNumericDiv(state, &frame, 2, 0, 1)`、
+  `ZrLibrary_AotRuntime_GenericNumericMod(state, &frame, 2, 0, 1)` 或 `SyncSignedIntLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 guarded mixed i64/u64 DIV/MOD helpers，在同类 i64/u64
+  尝试后、f64/fallback 前发 direct i64 expression；`backend_aot_c_scalar_locals.c` 将 mixed i64/u64 opcode proof
+  从 ADD/SUB/MUL 扩到 ADD/SUB/MUL/DIV/MOD，使 immediate i64/u64 constants、i64 destination declaration、
+  exec-write 与 i64/u64 consumer proof 能共同证明本地路径。RED：新增 mixed i64+u64 DIV/MOD smoke 后，WSL GCC
+  generic numeric smoke 31 项中新增两个用例失败，生成物仍走 `GenericNumericDiv` / `GenericNumericMod` boundary，
+  缺少 mixed i64/u64 local marker、zero guard 和 signed-result direct expressions。GREEN：WSL GCC generic numeric
+  smoke 31/0、generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、
+  generic LOGICAL_NOT 8/0、generic bool equality 5/0、generic equality stack-copy 4/0、generic not-equal stack-copy
+  jump-if 1/0、call-result stack-copy equality 1/0；WSL Clang 同组 31/0、1/0、24/0、1/0、2/0、8/0、5/0、4/0、1/0、1/0；
+  MSVC Debug focused targets 构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures /
+  31 expected ignores、power 0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、
+  generic bool equality 0 failures / 5 expected ignores、generic equality stack-copy 0 failures / 4 expected ignores、
+  generic not-equal stack-copy jump-if 0 failures / 1 expected ignore、call-result stack-copy equality 0 failures /
+  1 expected ignore。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-mixed-i64-u64-div-mod-local.md`。
+  备注：proven mixed i64/u64 scalar-local generic ADD/SUB/MUL/DIV/MOD 已收口；mixed u64/f64、dynamic/unproven
+  operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整
+  zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 19:49:11 +08:00 · M1.5 / 07-S2/S4 generic numeric mixed i64+u64 SUB/MUL local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT int -> GET_CONSTANT uint -> SUB/MUL -> RETURN` 现在沿用 runtime 的 mixed integer signed-result
+  语义输出 i64 结果。生成 C 保留 `zr_aot_scalar_constant_i64_local` 与
+  `zr_aot_scalar_constant_u64_local`，分别输出 `zr_aot_generic_numeric_mixed_i64_u64_sub_scalar_local` /
+  `zr_aot_generic_numeric_mixed_i64_u64_mul_scalar_local` 和
+  `zr_aot_s2 = zr_aot_s0 - (TZrInt64)zr_aot_u1;` /
+  `zr_aot_s2 = zr_aot_s0 * (TZrInt64)zr_aot_u1;`，并 direct i64 return；不再为这些 proven mixed integer
+  形态调用 `ZrLibrary_AotRuntime_GenericNumericSub(state, &frame, 2, 0, 1)`、
+  `ZrLibrary_AotRuntime_GenericNumericMul(state, &frame, 2, 0, 1)` 或 `SyncSignedIntLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 将现有 guarded mixed i64/u64 signed-result helper 接入
+  SUB/MUL，在同类 i64/u64 尝试后、f64/fallback 前发 direct i64 expression；
+  `backend_aot_c_scalar_locals.c` 将 mixed i64/u64 opcode proof 从 ADD 扩到 ADD/SUB/MUL，使 immediate i64/u64
+  constants、i64 destination declaration、exec-write 与 i64/u64 consumer proof 能共同证明本地路径。RED：新增
+  mixed i64+u64 SUB/MUL smoke 后，WSL GCC generic numeric smoke 29 项中新增两个用例失败，生成物仍走
+  `GenericNumericSub` / `GenericNumericMul` boundary，缺少 mixed i64/u64 local marker 和 signed-result direct
+  expressions。GREEN：WSL GCC generic numeric smoke 29/0、generic numeric contracts 1/0、source contracts 24/0、
+  power smoke 1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、generic bool equality 5/0、generic equality
+  stack-copy 4/0、generic not-equal stack-copy jump-if 1/0、call-result stack-copy equality 1/0；WSL Clang 同组
+  29/0、1/0、24/0、1/0、2/0、8/0、5/0、4/0、1/0、1/0，Clang 构建尾部出现短暂 clock-skew warning 但目标构建和测试均
+  exit 0；MSVC Debug focused targets 构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke
+  0 failures / 29 expected ignores、power 0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8
+  expected ignores、generic bool equality 0 failures / 5 expected ignores、generic equality stack-copy 0 failures /
+  4 expected ignores、generic not-equal stack-copy jump-if 0 failures / 1 expected ignore、call-result stack-copy
+  equality 0 failures / 1 expected ignore。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-mixed-i64-u64-sub-mul-local.md`。
+  备注：本切片关闭 proven mixed i64/u64 scalar-local generic ADD/SUB/MUL 中的 SUB/MUL；mixed i64/u64 DIV/MOD、
+  mixed u64/f64、dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、
+  byte-frame narrowing、性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 19:11:42 +08:00 · M1.5 / 07-S2/S4 generic numeric mixed i64+u64 ADD local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT int -> GET_CONSTANT uint -> ADD -> RETURN` 现在按既有 runtime 的 mixed integer 语义输出
+  signed i64 结果：非双 unsigned 且非 float 的 generic numeric binary 走 i64 提取/转换语义。生成 C 保留
+  `zr_aot_scalar_constant_i64_local` 与 `zr_aot_scalar_constant_u64_local`，输出
+  `zr_aot_generic_numeric_mixed_i64_u64_add_scalar_local` 和
+  `zr_aot_s2 = zr_aot_s0 + (TZrInt64)zr_aot_u1;`，并 direct i64 return；不再为该 proven mixed integer
+  形态调用 `zr_aot_arith_exec_generic_numeric_binary_boundary`、
+  `ZrLibrary_AotRuntime_GenericNumericAdd(state, &frame, 2, 0, 1)` 或 `SyncSignedIntLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 guarded mixed i64/u64 ADD helper，在同类 i64/u64
+  尝试后、f64/fallback 前发 direct i64 expression；`backend_aot_c_scalar_locals.c` 新增 mixed i64/u64 operand
+  proof、destination declaration、exec-write 和 i64/u64 consumer proof，使 immediate i64/u64 constants 和 i64
+  destination 能进入本地生成路径。RED：新增 mixed i64+u64 ADD smoke 后，WSL GCC generic numeric smoke 27 项中新增一个
+  用例失败，生成物仍走 `GenericNumericAdd` boundary，缺少 mixed i64/u64 local marker 和 signed-result direct
+  expression。GREEN：WSL GCC generic numeric smoke 27/0、generic numeric contracts 1/0、source contracts 24/0、
+  power smoke 1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、generic bool equality 5/0、generic equality
+  stack-copy 4/0、generic not-equal stack-copy jump-if 1/0、call-result stack-copy equality 1/0；WSL Clang 同组
+  27/0、1/0、24/0、1/0、2/0、8/0、5/0、4/0、1/0、1/0；MSVC Debug focused targets 构建通过，contracts 1/0、24/0、2/0，
+  Unix-only generic numeric smoke 0 failures / 27 expected ignores、power 0 failures / 1 expected ignore、generic
+  LOGICAL_NOT 0 failures / 8 expected ignores、generic bool equality 0 failures / 5 expected ignores、generic equality
+  stack-copy 0 failures / 4 expected ignores、generic not-equal stack-copy jump-if 0 failures / 1 expected ignore、
+  call-result stack-copy equality 0 failures / 1 expected ignore。scoped `git diff --check` exit 0，仅既有 LF/CRLF
+  提示。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-mixed-i64-u64-add-local.md`。
+  备注：本切片只关闭 proven mixed i64/u64 scalar-local generic ADD；mixed i64/u64 SUB/MUL/DIV/MOD、mixed u64/f64、
+  dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和
+  完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 18:34:46 +08:00 · M1.5 / 07-S2/S4 generic numeric mixed i64+f64 DIV/MOD local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT int -> GET_CONSTANT float -> DIV/MOD -> RETURN` 现在按既有 runtime 的 float promotion 语义输出
+  f64 结果，并保留除零/取模零错误语义。生成 C 保留 `zr_aot_scalar_constant_i64_local` 与
+  `zr_aot_scalar_constant_f64_local`，输出 `zr_aot_generic_numeric_mixed_f64_div_scalar_local` /
+  `zr_aot_generic_numeric_mixed_f64_mod_scalar_local`、`if (zr_aot_f1 == (TZrFloat64)0.0)`、
+  `"divide by zero"` / `"modulo by zero"`、`zr_aot_f2 = (TZrFloat64)zr_aot_s0 / zr_aot_f1;` /
+  `zr_aot_f2 = fmod((TZrFloat64)zr_aot_s0, zr_aot_f1);`，并 direct f64 return；不再为这些 proven mixed 形态调用
+  `ZrLibrary_AotRuntime_GenericNumericDiv(state, &frame, 2, 0, 1)`、
+  `ZrLibrary_AotRuntime_GenericNumericMod(state, &frame, 2, 0, 1)` 或 `SyncFloatLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 guarded mixed f64 DIV/MOD helpers；
+  `backend_aot_c_scalar_locals.c` 将 mixed f64 operand proof、destination declaration、exec-write 和 consumer proof
+  扩展到 DIV/MOD。RED：新增 mixed i64+f64 DIV/MOD smoke 后，WSL GCC generic numeric smoke 26 项中新增两个用例失败，
+  生成物仍走 `GenericNumericDiv` / `GenericNumericMod` boundary。GREEN：WSL GCC generic numeric smoke 26/0、
+  generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、
+  generic bool equality 5/0、generic equality stack-copy 4/0、generic not-equal stack-copy jump-if 1/0、
+  call-result stack-copy equality 1/0；WSL Clang 同组 26/0、1/0、24/0、1/0、2/0、8/0、5/0、4/0、1/0、1/0；
+  MSVC Debug focused targets 构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures / 26
+  expected ignores，其他相邻 Unix-only smoke 均 0 failures / expected ignores。scoped `git diff --check` exit 0，
+  仅既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-mixed-i64-f64-div-mod-local.md`。
+  备注：本切片关闭 proven mixed i64/f64 scalar-local generic ADD/SUB/MUL/DIV/MOD；mixed u64/f64、mixed i64/u64
+  integer arithmetic、dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、
+  byte-frame narrowing、性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 18:08:52 +08:00 · M1.5 / 07-S2/S4 generic numeric mixed i64+f64 SUB/MUL local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT int -> GET_CONSTANT float -> SUB/MUL -> RETURN` 现在按既有 runtime 的 float promotion 语义输出
+  f64 结果。生成 C 保留 `zr_aot_scalar_constant_i64_local` 与 `zr_aot_scalar_constant_f64_local`，输出
+  `zr_aot_generic_numeric_mixed_f64_sub_scalar_local` / `zr_aot_generic_numeric_mixed_f64_mul_scalar_local`、
+  `zr_aot_f2 = (TZrFloat64)zr_aot_s0 - zr_aot_f1;` / `zr_aot_f2 = (TZrFloat64)zr_aot_s0 * zr_aot_f1;`，
+  并 direct f64 return；不再为这些 proven mixed 形态调用
+  `zr_aot_arith_exec_generic_numeric_binary_boundary`、`ZrLibrary_AotRuntime_GenericNumericSub(state, &frame, 2, 0, 1)`、
+  `ZrLibrary_AotRuntime_GenericNumericMul(state, &frame, 2, 0, 1)` 或 `SyncFloatLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 将 mixed f64 ADD helper 泛化为
+  ADD/SUB/MUL 共用的 binary helper，并通过 operator token 输出 direct f64 expression；
+  `backend_aot_c_scalar_locals.c` 将 mixed f64 ADD operand proof、destination declaration、exec-write 和 consumer
+  proof 泛化为 ADD/SUB/MUL，使 immediate i64/f64 constants 和 f64 destination 都能跳过 value slot。
+  RED：新增 mixed i64+f64 SUB/MUL smoke 后，WSL GCC generic numeric smoke 24 项中新增两个用例失败，生成物仍走
+  `GenericNumericSub` / `GenericNumericMul` boundary，缺少 mixed f64 local marker 和 direct cast 表达式。
+  GREEN：WSL GCC generic numeric smoke 24/0、generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、
+  power contracts 2/0、generic LOGICAL_NOT 8/0、generic bool equality 5/0、generic equality stack-copy 4/0、
+  generic not-equal stack-copy jump-if 1/0、call-result stack-copy equality 1/0；WSL Clang 同组
+  24/0、1/0、24/0、1/0、2/0、8/0、5/0、4/0、1/0、1/0；MSVC Debug focused targets 构建通过，
+  contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures / 24 expected ignores、power 0 failures / 1
+  expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、generic bool equality 0 failures / 5 expected
+  ignores、generic equality stack-copy 0 failures / 4 expected ignores、generic not-equal stack-copy jump-if 0 failures /
+  1 expected ignore、call-result stack-copy equality 0 failures / 1 expected ignore。scoped `git diff --check` exit 0，
+  仅既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-mixed-i64-f64-sub-mul-local.md`。
+  备注：本切片只关闭 proven mixed i64/f64 scalar-local generic SUB/MUL；mixed DIV/MOD、mixed u64/f64、
+  mixed i64/u64 integer arithmetic、dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame
+  cleanup、byte-frame narrowing、性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 17:40:01 +08:00 · M1.5 / 07-S2/S4 generic numeric mixed i64+f64 ADD local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT int -> GET_CONSTANT float -> ADD -> RETURN` 现在按既有 runtime 的 float promotion 语义输出
+  f64 结果。生成 C 保留 `zr_aot_scalar_constant_i64_local` 与 `zr_aot_scalar_constant_f64_local`，输出
+  `zr_aot_generic_numeric_mixed_f64_add_scalar_local` 和
+  `zr_aot_f2 = (TZrFloat64)zr_aot_s0 + zr_aot_f1;`，并 direct f64 return；不再为该 proven mixed 形态调用
+  `zr_aot_arith_exec_generic_numeric_binary_boundary`、
+  `ZrLibrary_AotRuntime_GenericNumericAdd(state, &frame, 2, 0, 1)` 或 `SyncFloatLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 mixed f64 ADD helper，并只在一侧为 f64、另一侧为
+  i64/u64 且两侧都已 written-before 时发 direct f64 expression；`backend_aot_c_scalar_locals.c` 新增 mixed
+  f64 ADD operand proof、destination declaration、exec-write 和 consumer proof，使 immediate i64/f64 constants 和
+  f64 destination 都能跳过 value slot。RED：新增 mixed i64+f64 ADD smoke 后，WSL GCC generic numeric smoke
+  22 项中新增一个用例失败，生成物仍走 `GenericNumericAdd` boundary，缺少 mixed f64 local marker 和 direct cast
+  表达式。GREEN：WSL GCC generic numeric smoke 22/0、generic numeric contracts 1/0、source contracts 24/0、
+  power smoke 1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang
+  同组 22/0、1/0、24/0、1/0、2/0、8/0、4/0；MSVC Debug focused targets 构建通过，contracts 1/0、24/0、2/0，
+  Unix-only generic numeric smoke 0 failures / 22 expected ignores、power 0 failures / 1 expected ignore、generic
+  LOGICAL_NOT 0 failures / 8 expected ignores、generic equality stack-copy 0 failures / 4 expected ignores。scoped
+  `git diff --check` exit 0，仅既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-mixed-i64-f64-add-local.md`。
+  备注：本切片只关闭 proven mixed i64/f64 scalar-local generic ADD；mixed SUB/MUL/DIV/MOD、mixed u64/f64、
+  mixed i64/u64 integer arithmetic、dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame
+  cleanup、byte-frame narrowing、性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 17:14:13 +08:00 · M1.5 / 07-S2/S4 generic numeric u64 NEG-to-i64 local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT uint -> NEG -> RETURN` 现在按既有 runtime 语义把 unsigned 源降级为 signed i64 结果，而不是
+  u64 wraparound。生成 C 保留 `zr_aot_scalar_constant_u64_local`，输出
+  `zr_aot_generic_numeric_u64_neg_to_i64_scalar_local` 和 `zr_aot_s1 = -(TZrInt64)zr_aot_u0;`，并 direct i64 return；
+  不再为该 proven u64 source 形态调用 `zr_aot_arith_exec_generic_numeric_unary_boundary`、
+  `ZrLibrary_AotRuntime_GenericNumericNeg(state, &frame, 1, 0)` 或 `SyncSignedIntLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 u64-source/i64-destination NEG helper，并在
+  NEG lowering 中按 i64 -> u64-to-i64 -> f64 -> runtime fallback 顺序尝试；
+  `backend_aot_c_scalar_locals.c` 新增 u64 NEG-to-i64 source operand proof、destination declaration、exec-write 和
+  consumer proof，使 immediate u64 constants 能作为 unary NEG 的 local source，同时让目的槽保持 i64 单一真相。
+  RED：新增 unsigned u64 NEG-to-i64 smoke 后，WSL GCC generic numeric smoke 21 项中新增一个用例失败，生成物缺少
+  u64 NEG-to-i64 local marker 和 direct cast-negate 表达式。GREEN：WSL GCC generic numeric smoke 21/0、generic
+  numeric contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、
+  generic equality stack-copy 4/0；WSL Clang 同组 21/0、1/0、24/0、1/0、2/0、8/0、4/0；MSVC Debug focused targets
+  构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures / 21 expected ignores、power
+  0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、generic equality stack-copy
+  0 failures / 4 expected ignores。scoped `git diff --check` exit 0，仅既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-u64-neg-to-i64-local.md`。
+  备注：本切片关闭 proven u64 scalar-local generic NEG 的 signed-result 形态；mixed numeric、dynamic/unproven
+  operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整
+  zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 16:52:54 +08:00 · M1.5 / 07-S2/S4 generic numeric u64 DIV/MOD local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT uint -> GET_CONSTANT uint -> DIV/MOD -> RETURN` 现在能在 destination/left/right 均已证明为
+  u64 scalar local 时输出本地 generic numeric unsigned DIV/MOD。生成 C 包含 `zr_aot_scalar_constant_u64_local`、
+  `zr_aot_generic_numeric_u64_div_scalar_local` / `zr_aot_generic_numeric_u64_mod_scalar_local`、
+  `if (zr_aot_u1 == (TZrUInt64)0u)`、`"divide by zero"` / `"modulo by zero"` guard、
+  `zr_aot_u2 = zr_aot_u0 / zr_aot_u1;` / `zr_aot_u2 = zr_aot_u0 % zr_aot_u1;` 和 direct u64 return；
+  不再为这些 proven u64 形态调用 `zr_aot_arith_exec_generic_numeric_binary_boundary`、
+  `ZrLibrary_AotRuntime_GenericNumericDiv(state, &frame, 2, 0, 1)`、
+  `ZrLibrary_AotRuntime_GenericNumericMod(state, &frame, 2, 0, 1)` 或 `SyncUnsignedIntLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 guarded u64 DIV/MOD scalar-local helpers，并在
+  DIV/MOD lowering 中先尝试 i64、再尝试 u64、再尝试既有 f64、最后保留 runtime fallback；
+  `backend_aot_c_scalar_locals.c` 将 u64 generic numeric binary opcode proof 从 ADD/SUB/MUL 扩展为
+  ADD/SUB/MUL/DIV/MOD，使 immediate u64 constants、destination declaration、exec-write 和 consumer proof
+  覆盖完整 unsigned 二元运算集合。RED：新增 unsigned u64 DIV/MOD smoke 后，WSL GCC generic numeric smoke 20 项中
+  新增两个用例失败，生成物缺少 u64 DIV/MOD local marker、zero guard 和 direct 表达式。GREEN：WSL GCC generic
+  numeric smoke 20/0、generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、
+  generic LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang 同组 20/0、1/0、24/0、1/0、2/0、8/0、4/0；
+  MSVC Debug focused targets 构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures /
+  20 expected ignores、power 0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、
+  generic equality stack-copy 0 failures / 4 expected ignores。scoped `git diff --check` exit 0，仅既有 LF/CRLF
+  提示。产出：`tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-u64-div-mod-local.md`。
+  备注：本切片关闭 proven u64 scalar-local generic ADD/SUB/MUL/DIV/MOD；mixed numeric、dynamic/unproven operands、
+  更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整 zero-frame typed
+  bodies 仍待后续。
+
+- 2026-07-05 16:37:34 +08:00 · M1.5 / 07-S2/S4 generic numeric u64 SUB/MUL local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT uint -> GET_CONSTANT uint -> SUB/MUL -> RETURN` 现在能在 destination/left/right 均已证明为
+  u64 scalar local 时输出本地 generic numeric unsigned SUB/MUL。生成 C 包含 `zr_aot_scalar_constant_u64_local`、
+  `zr_aot_generic_numeric_u64_sub_scalar_local` / `zr_aot_generic_numeric_u64_mul_scalar_local`、
+  `zr_aot_u2 = zr_aot_u0 - zr_aot_u1;` / `zr_aot_u2 = zr_aot_u0 * zr_aot_u1;` 和 direct u64 return；不再为这些
+  proven u64 形态调用 `zr_aot_arith_exec_generic_numeric_binary_boundary`、
+  `ZrLibrary_AotRuntime_GenericNumericSub(state, &frame, 2, 0, 1)`、
+  `ZrLibrary_AotRuntime_GenericNumericMul(state, &frame, 2, 0, 1)` 或 `SyncUnsignedIntLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 在 SUB/MUL lowering 中复用 guarded u64 binary scalar-local
+  helper，并保持 i64 -> u64 -> f64 -> runtime fallback 顺序；`backend_aot_c_scalar_locals.c` 将 u64 generic numeric
+  binary opcode proof 从 ADD 扩展为 ADD/SUB/MUL，使 immediate u64 constants、destination declaration、exec-write 和
+  consumer proof 共同覆盖非除法 unsigned 二元运算。RED：新增 unsigned u64 SUB/MUL smoke 后，WSL GCC generic numeric
+  smoke 18 项中新增两个用例失败，生成物缺少 u64 SUB/MUL local marker 和 direct 表达式。GREEN：WSL GCC generic numeric
+  smoke 18/0、generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、generic
+  LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang 同组 18/0、1/0、24/0、1/0、2/0、8/0、4/0；MSVC Debug
+  focused targets 构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures / 18 expected ignores、
+  power 0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、generic equality stack-copy
+  0 failures / 4 expected ignores。scoped `git diff --check` exit 0，仅既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-u64-sub-mul-local.md`。
+  备注：本切片只关闭 proven u64 scalar-local generic SUB/MUL；u64 DIV/MOD、mixed numeric、
+  dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整
+  zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 15:55:37 +08:00 · M1.5 / 07-S2/S4 generic numeric u64 ADD local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT uint -> GET_CONSTANT uint -> ADD -> RETURN` 现在能在 destination/left/right 均已证明为
+  u64 scalar local 时输出本地 generic numeric unsigned ADD。生成 C 包含 `zr_aot_scalar_constant_u64_local`、
+  `zr_aot_generic_numeric_u64_add_scalar_local`、`zr_aot_u2 = zr_aot_u0 + zr_aot_u1;` 和 direct u64 return；
+  不再为该 proven u64 形态调用 `zr_aot_arith_exec_generic_numeric_binary_boundary`、
+  `ZrLibrary_AotRuntime_GenericNumericAdd(state, &frame, 2, 0, 1)` 或 `SyncUnsignedIntLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 guarded u64 binary scalar-local helper，并在 ADD
+  lowering 中先尝试 i64、再尝试 u64、再尝试既有 f64、最后保留 runtime fallback；
+  `backend_aot_c_scalar_locals.c` 新增 u64 generic ADD operand preservation、destination declaration、exec-write 和
+  consumer proof，并收窄 stack-copy consumer kind，使 generic u64 ADD 只有在 copied candidate 已含 U64 时才抢占，
+  避免回归既有 f64 stack-copy ADD。RED：新增 unsigned u64 ADD smoke 后，WSL GCC generic numeric smoke 16 项中
+  新增用例失败，生成物缺少 u64 local marker 和 direct 表达式；首次实现后相邻 f64 result stack-copy ADD smoke 暴露
+  misclassified `zr_aot_u4` / `CopyStack` 回归，随后以 candidateKind guard 修复。GREEN：WSL GCC generic numeric
+  smoke 16/0、generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、generic
+  LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang 同组 16/0、1/0、24/0、1/0、2/0、8/0、4/0；MSVC Debug
+  focused targets 构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures / 16 expected ignores、
+  power 0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、generic equality stack-copy
+  0 failures / 4 expected ignores。scoped `git diff --check` exit 0，仅既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-u64-add-local.md`。
+  备注：本切片只关闭 proven u64 scalar-local generic ADD；u64 SUB/MUL/DIV/MOD、mixed numeric、
+  dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整
+  zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 08:46:37 +08:00 · M1.5 / 07-S2/S4 generic numeric i64 DIV/MOD local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT int -> GET_CONSTANT int -> DIV/MOD -> RETURN` 现在能在 destination/left/right 均已证明为
+  i64 scalar local 时输出本地 generic numeric signed DIV/MOD。生成 C 包含
+  `zr_aot_scalar_constant_i64_local`、`zr_aot_generic_numeric_i64_div_scalar_local` /
+  `zr_aot_generic_numeric_i64_mod_scalar_local`、`if (zr_aot_s1 == (TZrInt64)0)`、
+  `"divide by zero"` / `"modulo by zero"` guard、`zr_aot_s2 = zr_aot_s0 / zr_aot_s1;` /
+  `zr_aot_s2 = zr_aot_s0 % zr_aot_s1;` 和 direct i64 return；不再为这些 proven i64 形态调用
+  `zr_aot_arith_exec_generic_numeric_binary_boundary`、`ZrLibrary_AotRuntime_GenericNumericDiv(state, &frame, 2, 0, 1)`、
+  `ZrLibrary_AotRuntime_GenericNumericMod(state, &frame, 2, 0, 1)` 或 `SyncSignedIntLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 guarded i64 DIV/MOD scalar-local helpers，并在 DIV/MOD
+  lowering 中先尝试 i64、再尝试既有 f64、最后保留 runtime fallback；`backend_aot_c_scalar_locals.c` 将 ADD/SUB/MUL
+  i64 generic numeric binary opcode proof 扩展为 ADD/SUB/MUL/DIV/MOD，并复用同一套 i64 operand preservation、
+  destination declaration、exec-write 和 consumer proof。RED：新增 signed i64 DIV/MOD smoke 后，WSL GCC generic
+  numeric smoke 15 项中新增两个用例失败，生成物缺少 DIV/MOD i64 local marker、zero guard 和 direct 表达式。
+  GREEN：WSL GCC generic numeric smoke 15/0、generic numeric contracts 1/0、source contracts 24/0、power smoke
+  1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang 同组 15/0、1/0、
+  24/0、1/0、2/0、8/0、4/0；MSVC Debug focused targets 构建通过，contracts 1/0、24/0、2/0，Unix-only generic
+  numeric smoke 0 failures / 15 expected ignores、power 0 failures / 1 expected ignore、generic LOGICAL_NOT
+  0 failures / 8 expected ignores、generic equality stack-copy 0 failures / 4 expected ignores。scoped
+  `git diff --check` exit 0，仅既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-i64-div-mod-local.md`。
+  备注：本切片只关闭 proven i64 scalar-local generic DIV/MOD；u64 generic numeric、mixed numeric、
+  dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整
+  zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 08:25:36 +08:00 · M1.5 / 07-S2/S4 generic numeric i64 NEG local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT int -> NEG -> RETURN` 现在能在 source/destination 均已证明为 i64 scalar local 时输出本地
+  generic numeric signed NEG。生成 C 包含 `zr_aot_scalar_constant_i64_local`、
+  `zr_aot_generic_numeric_i64_neg_scalar_local`、`zr_aot_s1 = -zr_aot_s0;` 和 direct i64 return；
+  不再为该 proven i64 形态调用 `zr_aot_arith_exec_generic_numeric_unary_boundary`、
+  `ZrLibrary_AotRuntime_GenericNumericNeg(state, &frame, 1, 0)` 或 `SyncSignedIntLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 guarded i64 unary NEG scalar-local helper，并在 NEG
+  lowering 中先尝试 i64、再尝试既有 f64、最后保留 runtime fallback；`backend_aot_c_scalar_locals.c` 新增 i64
+  generic numeric unary operand preservation、destination declaration、exec-write 和 consumer proof。RED：新增
+  signed i64 NEG smoke 后，WSL GCC generic numeric smoke 13 项中新增用例失败，生成物缺少 NEG i64 local marker
+  和 direct 表达式。GREEN：WSL GCC generic numeric smoke 13/0、generic numeric contracts 1/0、source contracts
+  24/0、power smoke 1/0、power contracts 2/0、generic LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL
+  Clang 同组 13/0、1/0、24/0、1/0、2/0、8/0、4/0；MSVC Debug focused targets 构建通过，contracts
+  1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures / 13 expected ignores、power 0 failures / 1
+  expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、generic equality stack-copy 0 failures /
+  4 expected ignores。scoped `git diff --check` exit 0，仅既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-i64-neg-local.md`。
+  备注：本切片只关闭 proven i64 scalar-local generic NEG；i64 DIV/MOD、u64 generic numeric、mixed numeric、
+  dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整
+  zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 08:01:28 +08:00 · M1.5 / 07-S2/S4 generic numeric i64 SUB/MUL local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT int -> GET_CONSTANT int -> SUB/MUL -> RETURN` 现在能在 destination/left/right 均已证明为
+  i64 scalar local 时输出本地 generic numeric signed SUB/MUL。生成 C 包含 `zr_aot_scalar_constant_i64_local`、
+  `zr_aot_generic_numeric_i64_sub_scalar_local` / `zr_aot_generic_numeric_i64_mul_scalar_local`、
+  `zr_aot_s2 = zr_aot_s0 - zr_aot_s1;` / `zr_aot_s2 = zr_aot_s0 * zr_aot_s1;` 和 direct i64 return；
+  不再为这些 proven i64 形态调用 `zr_aot_arith_exec_generic_numeric_binary_boundary`、
+  `ZrLibrary_AotRuntime_GenericNumericSub(state, &frame, 2, 0, 1)`、
+  `ZrLibrary_AotRuntime_GenericNumericMul(state, &frame, 2, 0, 1)` 或 `SyncSignedIntLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 复用 guarded i64 binary scalar-local helper，并在 SUB/MUL
+  lowering 中先尝试 i64、再尝试既有 f64、最后保留 runtime fallback；`backend_aot_c_scalar_locals.c` 新增
+  ADD/SUB/MUL 共享的 i64 generic numeric binary opcode helper，并将 i64 operand preservation、destination
+  declaration、exec-write 和 consumer proof 扩展到 SUB/MUL。RED：新增 signed i64 SUB/MUL smoke 后，WSL GCC
+  generic numeric smoke 12 项中新增两个用例失败，生成物缺少 SUB/MUL i64 local marker 和 direct 表达式；contract
+  目标也先因缺少 `zr_aot_generic_numeric_i64_sub_scalar_local` 失败。GREEN：WSL GCC generic numeric smoke
+  12/0、generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、generic
+  LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang 同组 12/0、1/0、24/0、1/0、2/0、8/0、4/0；
+  MSVC Debug focused targets 构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures /
+  12 expected ignores、power 0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、
+  generic equality stack-copy 0 failures / 4 expected ignores。scoped `git diff --check` exit 0，仅既有 LF/CRLF
+  提示。产出：`tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-i64-sub-mul-local.md`。
+  备注：本切片只关闭 proven i64 scalar-local generic SUB/MUL；i64 DIV/MOD/NEG、u64 generic numeric、mixed
+  numeric、dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame
+  narrowing、性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 07:31:18 +08:00 · M1.5 / 07-S2/S4 generic numeric i64 ADD local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT int -> GET_CONSTANT int -> ADD -> RETURN` 现在能在 destination/left/right 均已证明为 i64
+  scalar local 时输出本地 generic numeric signed ADD。生成 C 包含 `zr_aot_scalar_constant_i64_local`、
+  `zr_aot_generic_numeric_i64_add_scalar_local`、`zr_aot_s2 = zr_aot_s0 + zr_aot_s1;` 和 direct i64 return；
+  不再为该 proven i64 形态调用 `zr_aot_arith_exec_generic_numeric_binary_boundary`、
+  `ZrLibrary_AotRuntime_GenericNumericAdd(state, &frame, 2, 0, 1)` 或 `SyncSignedIntLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 guarded i64 ADD scalar-local helper，并在 ADD lowering
+  中先尝试 i64、再尝试既有 f64、最后保留 runtime fallback；`backend_aot_c_scalar_locals.c` 新增 i64 generic ADD
+  operand preservation、destination declaration、exec-write 和 consumer proof。RED：新增 signed i64 ADD smoke 后，
+  WSL GCC generic numeric smoke 10 项中新增用例失败，生成物仍走 `GenericNumericAdd` boundary，缺少
+  `zr_aot_generic_numeric_i64_add_scalar_local` 和 `zr_aot_s2 = zr_aot_s0 + zr_aot_s1;`。GREEN：WSL GCC generic
+  numeric smoke 10/0、generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、
+  generic LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang 同组 10/0、1/0、24/0、1/0、2/0、8/0、4/0；
+  MSVC Debug focused targets 构建通过，contracts 1/0、24/0、2/0，Unix-only generic numeric smoke 0 failures /
+  10 expected ignores、power 0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、
+  generic equality stack-copy 0 failures / 4 expected ignores。scoped `git diff --check` exit 0，仅既有 LF/CRLF
+  提示。产出：`tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-i64-add-local.md`。
+  备注：本切片只关闭 proven i64 scalar-local generic ADD；i64 SUB/MUL/DIV/MOD/NEG、u64 generic numeric、mixed
+  numeric、dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame
+  narrowing、性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 06:45:19 +08:00 · M1.5 / 07-S2/S4 generic numeric f64 NEG local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT float -> NEG -> RETURN` 现在能在 source slot 已证明为 f64 scalar local 时输出本地一元
+  numeric fold。生成 C 包含 `zr_aot_scalar_constant_f64_local`、`zr_aot_f0 = (TZrFloat64)7.5;`、
+  `zr_aot_generic_numeric_f64_neg_scalar_local` 和 `zr_aot_f1 = -zr_aot_f0;`；不再为该 proven f64
+  形态调用 `zr_aot_arith_exec_generic_numeric_unary_boundary`、
+  `ZrLibrary_AotRuntime_GenericNumericNeg(state, &frame, 1, 0)` 或 `SyncFloatLocal`。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 guarded f64 NEG scalar-local helper，
+  `backend_aot_c_scalar_locals.c` 将 generic NEG 纳入 f64 destination/write/consumer proof，并让
+  immediate f64 constants 在后续 NEG consumer 下保留为 scalar locals。RED：新增 NEG smoke 后，WSL GCC
+  generic numeric smoke 8 项中新增用例失败，生成物仍走 `GenericNumericNeg` boundary，且缺少
+  `zr_aot_scalar_constant_f64_local` / `zr_aot_generic_numeric_f64_neg_scalar_local`。GREEN：WSL GCC
+  generic numeric smoke 8/0、generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、
+  power contracts 2/0、generic LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang 同组
+  8/0、1/0、24/0、1/0、2/0、8/0、4/0；Windows MSVC Debug 构建 focused targets，contracts
+  1/0、24/0、2/0 通过，Unix-only generic numeric smoke 0 failures / 8 expected ignores、power smoke
+  0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、generic equality
+  stack-copy 0 failures / 4 expected ignores。scoped `git diff --check` exit 0，仅既有 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-f64-neg-local.md`。
+  备注：本切片只关闭 proven f64 scalar-local generic NEG；dynamic/unproven operands、更广
+  value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整
+  zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 06:05:04 +08:00 · M1.5 / 07-S2/S4 generic numeric f64 result stack-copy ADD local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT float -> GET_CONSTANT float -> DIV -> SET_STACK -> GET_CONSTANT float -> ADD -> RETURN`
+  现在能把 prior generic numeric f64 result 经 `SET_STACK` copy 后继续作为后续 generic numeric f64
+  ADD operand 使用。生成 C 包含 `zr_aot_generic_numeric_f64_div_scalar_local`、
+  `zr_aot_f2 = zr_aot_f0 / zr_aot_f1;`、`zr_aot_scalar_stack_copy_f64 dstSlot=4 srcSlot=2`、
+  `zr_aot_f4 = zr_aot_f2;`、`zr_aot_scalar_constant_f64_local`、`zr_aot_generic_numeric_f64_add_scalar_local`
+  和 `zr_aot_f5 = zr_aot_f4 + zr_aot_f3;`；不再为该 proven copied-result 形态调用
+  `ZrLibrary_AotRuntime_CopyStack`、`ZrLibrary_AotRuntime_GenericNumericAdd` 或 `SyncFloatLocal`。
+  `backend_aot_c_scalar_locals.c` 新增 f64-before-instruction proof，允许 generic numeric 常量 operand
+  识别“另一个 operand 是由 prior f64 generic numeric result copy 而来”的窄证明链。RED：新增
+  result-stack-copy ADD smoke 后，WSL GCC generic numeric smoke 7 项中新增用例失败；生成物已本地化
+  DIV 和 result copy，但仍缺少 `zr_aot_generic_numeric_f64_add_scalar_local`，并回落到
+  `GenericNumericAdd(state, &frame, 5, 4, 3)`。GREEN：WSL GCC generic numeric smoke 7/0、
+  generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、
+  generic LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang 同组 7/0、1/0、24/0、1/0、
+  2/0、8/0、4/0；Windows MSVC Debug 构建 focused targets，contracts 1/0、24/0、2/0 通过，
+  Unix-only generic numeric smoke 0 failures / 7 expected ignores、power smoke 0 failures / 1 expected ignore、
+  generic LOGICAL_NOT 0 failures / 8 expected ignores、generic equality stack-copy 0 failures / 4 expected ignores。
+  scoped `git diff --check` exit 0，仅既有 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-f64-result-stack-copy-add-local.md`。
+  备注：本切片只关闭 prior f64 generic numeric result 经一次 stack-copy 后参与后续 ADD 的窄形态；
+  right-side result copy、链式 copy、其他 copied arithmetic variants、dynamic/unproven operands、更广
+  value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整 zero-frame
+  typed bodies 仍待后续。
+
+- 2026-07-05 05:17:00 +08:00 · M1.5 / 07-S2/S4 generic numeric f64 stack-copy DIV local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：
+  `GET_CONSTANT float -> SET_STACK -> GET_CONSTANT float -> DIV -> RETURN` 现在能将 copied left f64
+  operand 保持在 C scalar locals 中，生成 `zr_aot_scalar_stack_copy_f64 dstSlot=3 srcSlot=0`、
+  `zr_aot_f3 = zr_aot_f0;`、`zr_aot_generic_numeric_f64_div_scalar_local`、除零检查和
+  `zr_aot_f2 = zr_aot_f3 / zr_aot_f1;`；不再为该 proven copied-f64 形态调用
+  `ZrLibrary_AotRuntime_CopyStack`、`ZrLibrary_AotRuntime_GenericNumericDiv` 或
+  `SyncFloatLocal`。`backend_aot_c_scalar_locals.c` 新增 stack-copy source constant kind proof，
+  并把 stack-copy destination recording 放在 generic numeric destination recording 之前，使
+  copied f64 槽能参与后续 generic numeric destination/exec-write 证明。RED：新增 stack-copy-left
+  DIV smoke 后，WSL GCC generic numeric smoke 6 项中新增用例失败，生成 C 已有 `zr_aot_f3 = zr_aot_f0;`
+  但仍缺少 `zr_aot_generic_numeric_f64_div_scalar_local`，并回落到
+  `GenericNumericDiv(state, &frame, 2, 3, 1)`。GREEN：WSL GCC generic numeric smoke 6/0、
+  generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、
+  generic LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang 同组 6/0、1/0、24/0、1/0、
+  2/0、8/0、4/0；Windows MSVC Debug 构建 focused smoke/contract/regression targets，contracts
+  1/0、24/0、2/0 通过，Unix-only generic numeric smoke 0 failures / 6 expected ignores、power smoke
+  0 failures / 1 expected ignore、generic LOGICAL_NOT 0 failures / 8 expected ignores、generic equality
+  stack-copy 0 failures / 4 expected ignores。scoped `git diff --check` exit 0，仅既有 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-f64-stack-copy-div-local.md`。
+  备注：本切片只关闭 left stack-copy copied-f64 generic DIV；right stack-copy、其他 generic numeric
+  copy 形态、dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、
+  byte-frame narrowing、性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 04:28:30 +08:00 · M1.5 / 07-S2/S4 generic numeric f64 DIV local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：将
+  `GET_CONSTANT float -> GET_CONSTANT float -> DIV -> RETURN` 的 generic numeric f64 除法纳入
+  保守本地折叠。生成 C 现在输出 `zr_aot_generic_numeric_f64_div_scalar_local`、除零检查
+  `ZrCore_Debug_RunError(state, "divide by zero")` 和 `zr_aot_f2 = zr_aot_f0 / zr_aot_f1;`；不再为已证明
+  f64 local 链路调用 `ZrLibrary_AotRuntime_GenericNumericDiv`、输出
+  `zr_aot_generic_numeric_sync_f64_local_boundary` / `SyncFloatLocal`，也不再读取 float operand tag。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 guarded f64 DIV local helper，并在证明失败时保留
+  runtime boundary fallback；`backend_aot_c_scalar_locals.c` 将 generic DIV 纳入 f64 operand、
+  destination、exec-write 与 consumer proof；`backend_aot_c_function_body.c` / `backend_aot_c_emitter.h`
+  将 `instructionIndex` 传入 DIV lowering。RED：focused smoke 新增 DIV 用例后，generic numeric smoke
+  5 项中只有 DIV 失败，失败于缺少 f64 DIV local marker，生成 C 仍调用 `GenericNumericDiv`。GREEN：
+  WSL GCC generic numeric smoke 5/0、generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、
+  power contracts 2/0、generic LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang generic numeric
+  smoke 5/0、generic numeric contracts 1/0、source contracts 24/0、power contracts 2/0、generic LOGICAL_NOT 8/0、
+  generic equality stack-copy 4/0；Windows MSVC Debug 构建 focused smoke/contract/regression targets，并通过
+  generic numeric contracts 1/0、source contracts 24/0、power contracts 2/0；Unix-only generic numeric smoke
+  0 failures / 5 expected ignores，generic LOGICAL_NOT 0 failures / 8 expected ignores，generic equality
+  stack-copy 0 failures / 4 expected ignores；scoped `git diff --check` exit 0，仅既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-f64-div-local.md`。
+  备注：本切片关闭 proven f64 scalar-local generic DIV，与 ADD/SUB/MUL/MOD 共同覆盖五种 f64 二元
+  generic numeric local fold；dynamic/unproven operands、更广 value-copy migration、GC roots/exports/frame cleanup、
+  byte-frame narrowing、性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-05 03:38:44 +08:00 · M1.5 / 07-S2/S4 generic numeric f64 SUB/MUL local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：将
+  `GET_CONSTANT float -> GET_CONSTANT float -> SUB/MUL -> RETURN` 的 generic numeric f64 减法/乘法纳入
+  保守本地折叠。生成 C 现在输出 `zr_aot_generic_numeric_f64_sub_scalar_local` /
+  `zr_aot_generic_numeric_f64_mul_scalar_local`，并分别发射 `zr_aot_f2 = zr_aot_f0 - zr_aot_f1;` /
+  `zr_aot_f2 = zr_aot_f0 * zr_aot_f1;`；不再为已证明 f64 local 链路调用
+  `ZrLibrary_AotRuntime_GenericNumericSub` / `ZrLibrary_AotRuntime_GenericNumericMul`、输出
+  `zr_aot_generic_numeric_sync_f64_local_boundary` / `SyncFloatLocal`，也不再读取 float operand tag。
+  f64 binary local helper 增加 operator token，ADD/SUB/MUL 共用同一 proof；`backend_aot_c_scalar_locals.c`
+  将 generic SUB/MUL 纳入 f64 operand、destination、exec-write 与 consumer proof；`backend_aot_c_function_body.c`
+  / `backend_aot_c_emitter.h` 将 `instructionIndex` 传入 SUB/MUL lowering。RED：focused smoke 新增 SUB/MUL
+  用例后失败于缺少 f64 SUB/MUL local marker，生成 C 仍调用 `GenericNumericSub` / `GenericNumericMul`。GREEN：
+  WSL GCC generic numeric smoke 4/0、generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、
+  power contracts 2/0、generic LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang generic numeric smoke
+  4/0、generic numeric contracts 1/0、source contracts 24/0、power contracts 2/0、generic LOGICAL_NOT 8/0、
+  generic equality stack-copy 4/0；Windows MSVC Debug 构建 focused smoke/contract/regression targets，并通过
+  generic numeric contracts 1/0、source contracts 24/0、power contracts 2/0；Unix-only generic numeric smoke
+  0 failures / 4 expected ignores，generic LOGICAL_NOT 0 failures / 8 expected ignores，generic equality
+  stack-copy 0 failures / 4 expected ignores；scoped `git diff --check` exit 0，仅既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-05-aot-07-s2-s4-generic-numeric-f64-sub-mul-local.md`。
+  备注：本切片只关闭 proven f64 scalar-local generic SUB/MUL；generic DIV、dynamic/unproven operands、
+  更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整
+  zero-frame typed bodies 仍待后续。
+
+- 2026-07-04 13:10:12 +08:00 · M1.5 / 07-S2/S4 generic numeric f64 ADD local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：将
+  `GET_CONSTANT float -> GET_CONSTANT float -> ADD -> RETURN` 的 generic numeric f64 加法纳入
+  保守本地折叠。生成 C 现在输出 `zr_aot_scalar_constant_f64_local`、
+  `zr_aot_generic_numeric_f64_add_scalar_local` 和 `zr_aot_f2 = zr_aot_f0 + zr_aot_f1;`，
+  不再为该已证明 f64 local 链路调用 `ZrLibrary_AotRuntime_GenericNumericAdd`、输出
+  `zr_aot_generic_numeric_sync_f64_local_boundary` / `SyncFloatLocal`，也不再读取 float operand tag。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 f64 binary local helper，并在证明失败时保留
+  runtime boundary fallback；`backend_aot_c_scalar_locals.c` 将 generic ADD 纳入 f64 operand、destination、
+  exec-write 与 consumer proof；`backend_aot_c_function_body.c` / `backend_aot_c_emitter.h` 将
+  `instructionIndex` 传入 ADD lowering 以支持 written-before 判定。RED：focused smoke 新增 ADD 用例后
+  失败于缺少 f64 ADD local marker，生成 C 仍调用 `GenericNumericAdd(state, &frame, 2, 0, 1)`。GREEN：
+  WSL GCC generic numeric smoke 2/0、generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、
+  power contracts 2/0、generic LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang 同组
+  focused/相邻回归通过；Windows MSVC Debug 构建 focused smoke/contract/regression targets，并通过
+  generic numeric contracts 1/0、source contracts 24/0、power contracts 2/0；Unix-only generic numeric smoke
+  0 failures / 2 expected ignores，generic LOGICAL_NOT 0 failures / 8 expected ignores，generic equality
+  stack-copy 0 failures / 4 expected ignores；scoped `git diff --check` exit 0，仅既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-numeric-f64-add-local.md`。
+  备注：本切片只关闭 proven f64 scalar-local generic ADD；generic SUB/MUL/DIV、dynamic/unproven operands、
+  更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整
+  zero-frame typed bodies 仍待后续。
+
+- 2026-07-04 12:51:07 +08:00 · M1.5 / 07-S2/S4 generic numeric f64 MOD local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：将
+  `GET_CONSTANT float -> GET_CONSTANT float -> MOD -> RETURN` 的 generic numeric f64 取模纳入
+  保守本地折叠。生成 C 现在输出 `zr_aot_scalar_constant_f64_local`、
+  `zr_aot_generic_numeric_f64_mod_scalar_local`、除零检查和 `fmod(zr_aot_f0, zr_aot_f1)`，
+  不再为该已证明 f64 local 链路调用 `ZrLibrary_AotRuntime_GenericNumericMod`、输出
+  `zr_aot_generic_numeric_sync_f64_local_boundary` / `SyncFloatLocal`，也不再读取 float operand tag。
+  `backend_aot_c_lowering_generic_numeric_arithmetic.c` 新增 f64 local MOD helper，并在证明失败时保留
+  runtime boundary fallback；`backend_aot_c_scalar_locals.c` 记录 generic numeric f64 MOD 的 operand、
+  destination 与 exec-write proof；`backend_aot_c_function_body.c` / `backend_aot_c_emitter.h` 将
+  `instructionIndex` 传入 MOD lowering 以支持 written-before 判定。RED：首次 focused smoke 失败于缺少
+  f64 scalar constant/local MOD marker，生成 C 仍调用 `GenericNumericMod(state, &frame, 2, 0, 1)`；补齐
+  constant/local 声明后第二次 RED 仍落回 `GenericNumericMod` + `SyncFloatLocal`，原因是 RETURN/skip 证明看不到
+  generic MOD 的 f64 写入。GREEN：记录 generic MOD exec write 后，WSL GCC generic numeric smoke 1/0、
+  generic numeric contracts 1/0、source contracts 24/0、power smoke 1/0、power contracts 2/0、
+  generic LOGICAL_NOT 8/0、generic equality stack-copy 4/0；WSL Clang 同组 focused/相邻回归通过；
+  Windows MSVC Debug 构建 focused smoke/contract/regression targets，并通过 generic numeric contracts 1/0、
+  source contracts 24/0、power contracts 2/0；Unix-only generic numeric smoke 0 failures / 1 expected ignore，
+  generic LOGICAL_NOT 0 failures / 8 expected ignores，generic equality stack-copy 0 failures / 4 expected ignores；
+  scoped `git diff --check` exit 0，仅既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-numeric-f64-mod-local.md`。
+  备注：本切片只关闭 proven f64 scalar-local generic MOD；dynamic/unproven generic numeric operands 仍走 runtime
+  helper，更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整
+  zero-frame typed bodies 仍待后续。
+
+- 2026-07-04 12:14:51 +08:00 · M1.5 / 07-S2/S4 generic reset-null direct LOGICAL_NOT local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：将相邻
+  `RESET_STACK_NULL -> LOGICAL_NOT -> JUMP_IF_BOOL_FALSE` 形态纳入保守本地折叠。
+  `backend_aot_c_lowering_values.c` 新增 direct reset-null logical-not consumed-by-local 判定；
+  `backend_aot_c_frame_descriptor.c` 同步把 reset 源与 bool 结果链路标为 local-only；
+  `backend_aot_c_function_body.c` 对该 reset 源输出
+  `zr_aot_reset_stack_null_local_logical_not_skip`；`backend_aot_c_lowering_generic_logical.c`
+  直接输出 `zr_aot_generic_logical_not_reset_null_local` 和 `zr_aot_bD = ZR_TRUE;`。目标
+  smoke 禁止 targeted `ResetStackNull(state, &frame, 0)`、`GenericPrimitiveLogicalNot(state, &frame, 1, 0)`、
+  `SyncBoolLocal(state, &frame, 1, ...)` 与 `frame.slotBase[0].value`，同时保留 reset-null stack-copy
+  logical-not 路径覆盖。`test_aot_c_call_shared_library_smoke.c` 的 static numeric call 断言同步修正为允许
+  typed direct-call deopt fallback 的显式 sync，同时继续禁止 stack-copy 边界同步和目的槽 materialization。
+  RED：generic reset-null direct logical-not local smoke 首次 WSL GCC 运行失败于缺少
+  `zr_aot_reset_stack_null_local_logical_not_skip slot=0`。GREEN：WSL GCC generic LOGICAL_NOT 8/0、
+  call shared-library 5/0、call-result stack-copy equality guardrail 1/0、generic not-equal stack-copy JUMP_IF
+  guardrail 1/0、logical contracts 4/0、generic JUMP_IF 9/0、generic equality stack-copy 4/0；WSL Clang
+  generic LOGICAL_NOT 8/0、logical contracts 4/0、generic JUMP_IF 9/0、generic equality stack-copy 4/0；
+  Windows MSVC Debug 构建 focused targets，generic LOGICAL_NOT 0 failures / 8 expected ignores，
+  logical contracts 4/0；`git diff --check` exit 0，仅既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-reset-null-direct-logical-not-local.md`。
+  备注：本切片只关闭 direct reset-null 到 generic LOGICAL_NOT 的 local bool 分支；更广 value-copy migration、
+  GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-04 11:26:29 +08:00 · M1.5 / 07-S2/S4 generic bool/mixed stack-copy equality local value-copy ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：为
+  `GET_CONSTANT bool -> SET_STACK -> generic LOGICAL_EQUAL -> JUMP_IF_BOOL_FALSE`
+  增加 same-kind bool guardrail，并关闭 copied bool 与 numeric operand 的 mixed primitive
+  generic equality value-copy 缺口。生成 C 现在可输出
+  `zr_aot_scalar_stack_copy_bool dstSlot=5 srcSlot=0`、`zr_aot_b5 = (TZrBool)(zr_aot_b0 != 0u);`、
+  `zr_aot_generic_bool_compare_scalar_local` 或
+  `zr_aot_generic_mixed_primitive_compare_scalar_local`、`leftKind=b rightKind=s`、
+  `zr_aot_b2 = ZR_FALSE;` 与 `if (!zr_aot_b2) {`，不再为该链路调用
+  `GenericPrimitiveLogicalEqual`、`SyncBoolLocal`、`CopyStack` 或读取
+  `frame.slotBase[0/1/5].value`。`backend_aot_c_scalar_locals.c` 允许 stack-copy
+  generic equality consumer 在 copied kind 或另一个 operand 为 BOOL 时保留 copied primitive kind；
+  `backend_aot_c_function_body.c` 将后续 equality 的 scalar-read proof 从 numeric 扩展为
+  bool/i64/u64/f64 primitive kind proof，使 bool/numeric mixed equality 也能证明不需要 value-slot
+  materialization。RED/GREEN：same-kind bool stack-copy equality guardrail 在现有实现上已 GREEN；
+  bool/numeric RED 为新增 `generic_bool_numeric_stack_copy_equality_local_project` 后 WSL GCC
+  focused 失败 `Expected Non-NULL`，缺少 bool stack-copy direct assignment 与 mixed marker；GREEN
+  后目标项目禁止 targeted `GenericPrimitiveLogicalEqual`、`SyncBoolLocal`、`CopyStack` 与
+  operand/destination `frame.slotBase` value 读写，并执行返回 91。测试结果：WSL GCC 通过
+  stack-copy equality 4/0、generic equality 5/0、generic JUMP_IF 9/0、generic LOGICAL_NOT 8/0、
+  logical contracts 4/0；WSL Clang 同组 4/0、5/0、9/0、8/0、4/0；Windows MSVC Debug 使用
+  `build-msvc-aot-stack-copy` 构建 stack-copy equality、generic equality 与 logical contracts，
+  Unix-only shared-library smoke 按预期 ignored 且 0 failures，logical contracts 4/0。产出：
+  `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-bool-mixed-stack-copy-equality-local.md`。
+  备注：本切片只关闭 bool copied primitive 到 same-kind/mixed generic equality 的 value-copy
+  缺口；更广 value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和
+  完整 zero-frame typed bodies 仍待后续。
+
+- 2026-07-04 11:12:07 +08:00 · M1.5 / 07-S2/S4 generic mixed primitive stack-copy equality local value-copy ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：当 `SET_STACK`
+  复制的 primitive 目的槽被后续 mixed primitive generic `LOGICAL_EQUAL` 与 bool 分支本地消费时，
+  生成 C 直接保留 copied scalar local，输出 `zr_aot_s5 = zr_aot_s0;`、
+  `zr_aot_generic_mixed_primitive_compare_scalar_local`、`leftKind=s rightKind=u`、
+  `zr_aot_b2 = ZR_FALSE;` 和 `if (!zr_aot_b2) {`，不再为了该链路调用
+  `GenericPrimitiveLogicalEqual`、`SyncBoolLocal`、`CopyStack` 或读取
+  `frame.slotBase[0/1/5].value`。`backend_aot_c_scalar_locals.c` 将 stack-copy
+  generic equality consumer 从“同类 primitive 才可本地复制”扩展为“copied kind 与另一个 numeric
+  primitive kind 均可证明”即可保留 copied kind；`backend_aot_c_function_body.c` 新增
+  numeric scalar operand kind proof，让 mixed primitive equality 也能证明后续 compare 已完整读取
+  scalar operands，从而不强制 value-slot 写回。RED/GREEN：RED 为新增
+  `generic_mixed_stack_copy_equality_local_project` 后 WSL GCC focused 失败 `Expected Non-NULL`，
+  缺少 `zr_aot_s5 = zr_aot_s0;` 和 mixed compare marker；GREEN 后目标项目禁止 targeted
+  `GenericPrimitiveLogicalEqual`、`SyncBoolLocal`、`CopyStack` 与 operand/destination
+  `frame.slotBase` value 读写，并执行返回 91。测试结果：WSL GCC 通过 stack-copy equality 2/0、
+  generic equality 5/0、generic JUMP_IF 9/0、generic LOGICAL_NOT 8/0、logical contracts 4/0；
+  WSL Clang 同组 2/0、5/0、9/0、8/0、4/0；Windows MSVC Debug 使用
+  `build-msvc-aot-stack-copy` 构建 stack-copy equality、generic equality 与 logical contracts，
+  Unix-only shared-library smoke 按预期 ignored 且 0 failures，logical contracts 4/0。产出：
+  `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-mixed-stack-copy-equality-local.md`。
+  备注：本切片只关闭 mixed primitive stack-copy 到 generic equality 的 value-copy 缺口；更广
+  value-copy migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整
+  zero-frame typed bodies 仍待后续。
+
+- 2026-07-04 11:00:12 +08:00 · M1.5 / 07-S2/S4 generic i64 stack-copy equality local value-copy ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：当 `SET_STACK`
+  复制的 i64 目的槽只被后续 generic `LOGICAL_EQUAL` 和 bool 分支本地消费时，生成 C 直接输出
+  `zr_aot_s5 = zr_aot_s0;`、`zr_aot_b2 = (TZrBool)((zr_aot_s5 == zr_aot_s1) != 0u);`
+  和 `if (!zr_aot_b2) {`，不再为了该链路构造 `SZrTypeValue`、`CopyStack`、operand
+  value-slot 读写或 bool sync。`backend_aot_c_scalar_locals.c` 将 `slotKinds` 传入 stack-copy
+  destination consumer 扫描，并为可证明同类 primitive generic equality 反推目的槽 kind；同时避免旧的
+  generic equality consumer 宽泛落到 u64。`backend_aot_c_function_body.c` 在后续 generic equality
+  已能完全读取 scalar operands 时，不再把 stack-copy 强制写回 value slot。RED/GREEN：RED 为新增
+  `generic_i64_stack_copy_equality_local_project` 后 WSL GCC focused 失败，缺少
+  `zr_aot_s5 = zr_aot_s0;`，生成物仍写 `frame.slotBase[5].value`；GREEN 后目标项目禁止
+  `GenericPrimitiveLogicalEqual`、`SyncBoolLocal`、`CopyStack`、`frame.slotBase[0/1/5].value`
+  和 `ZrCore_Stack_GetValue(frame.slotBase + 0/1/5)`，并执行返回 17。测试结果：WSL GCC 通过
+  新增 stack-copy equality 1/0、generic equality 5/0、generic JUMP_IF 9/0、generic LOGICAL_NOT
+  8/0、logical contracts 4/0；WSL Clang 同组 1/0、5/0、9/0、8/0、4/0；Windows MSVC Debug
+  使用 `build-msvc-aot-stack-copy` 构建新增目标、generic equality 与 logical contracts，Unix-only
+  shared-library smoke 按预期 ignored 且 0 failures，logical contracts 4/0。产出：
+  `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-i64-stack-copy-equality-local.md`。
+  备注：本切片只关闭 i64 stack-copy 到同类 generic equality 的 value-copy 缺口；更广 value-copy
+  migration、GC roots/exports/frame cleanup、byte-frame narrowing、性能计数和完整 zero-frame typed
+  bodies 仍待后续。
+
+- 2026-07-04 10:22:37 +08:00 · M1.5 / 07-S2/S4 generic mixed primitive equality local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：当 generic
+  `LOGICAL_EQUAL` / `LOGICAL_NOT_EQUAL` 的两个 operand 都是已写入的基础标量 C local，
+  且当前 kind 可判定但彼此不同时，生成 C 直接折叠相等为 `ZR_FALSE`、不等为 `ZR_TRUE`。
+  `backend_aot_c_lowering_generic_logical.c` 新增
+  `backend_aot_c_generic_primitive_local_kind_written_before()` 与
+  `backend_aot_c_write_generic_mixed_primitive_compare_scalar_local()`，在同类 bool/i64/u64/f64
+  local compare 之后、runtime equality helper 之前发射
+  `zr_aot_generic_mixed_primitive_compare_scalar_local`。`backend_aot_c_scalar_locals.c`
+  将混合基础标量 equality 记录为 bool local destination，并用当前写入 kind 证明相应 operand
+  是 local consumer；同时补回同类 operand 的原有快速路径，避免复用过的 call-result slot 因多 kind
+  声明而回写 typed destination。`backend_aot_c_frame_descriptor.c` 同步把可证明的混合基础标量 equality
+  标为 local-only。RED/GREEN：新增 mixed primitive equality smoke 先因缺少 mixed marker、
+  直接 `zr_aot_b2 = ZR_FALSE;` / `zr_aot_b3 = ZR_TRUE;` 赋值和源码契约 helper 失败；
+  首轮 GREEN 后暴露 call-result equality 的 direct-call sync 回归，补同类快速路径后 mixed 与
+  call-result 用例均通过。测试结果：WSL GCC 与 WSL Clang 均通过 generic equality 5/0、
+  logical contracts 4/0、generic JUMP_IF 9/0、generic LOGICAL_NOT 8/0、logical shared-library
+  6/0、frame setup contracts 1/0、control contracts 2/0、control shared-library 2/0。
+  Windows MSVC Debug 通过 generic equality 0 failures / 5 expected ignores、generic JUMP_IF
+  0 failures / 9 expected ignores、generic LOGICAL_NOT 0 failures / 8 expected ignores、
+  logical shared-library 0 failures / 6 expected ignores、control shared-library 0 failures /
+  2 expected ignores，并通过 logical/frame/control contracts 4/0、1/0、2/0。产出：
+  `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-mixed-primitive-equality-local.md`。
+  备注：本切片只覆盖当前可证明的基础标量 kind 不同场景；value-copy migration、
+  GC roots/exports/frame cleanup、更广 byte-frame narrowing、性能计数和完整 typed 函数体零
+  `SZrValue`/frame write 仍待后续。
+
+- 2026-07-04 09:46:53 +08:00 · M1.5 / 07-S2/S4 generic dynamic object slot truthiness local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：将相邻
+  `TO_OBJECT -> JUMP_IF/LOGICAL_NOT` 形态纳入保守本地 object slot 真值折叠。
+  `backend_aot_c_lowering_generic_logical.c` 新增
+  `backend_aot_c_to_object_slot_written_immediately_before()`，仅在上一条指令为
+  `TO_OBJECT` 且写入同一槽时启用；新增 `backend_aot_c_write_object_slot_truthiness()`，
+  生成 C 从 frame object slot 读取 `SZrTypeValue`，以
+  `ZR_VALUE_IS_TYPE_NULL(...)` 判 false、`ZR_VALUE_IS_TYPE_OBJECT(...)` 判 true，
+  其他类型 fail closed。`JUMP_IF` 生成 `zr_aot_generic_jump_if_object_slot_local`
+  并跳过 `GenericPrimitiveIsTruthy`；`LOGICAL_NOT` 生成
+  `zr_aot_generic_logical_not_object_slot_local` 和直接 bool local 赋值，跳过
+  `GenericPrimitiveLogicalNot` 与 bool sync。RED/GREEN：新增 dynamic object slot
+  JUMP_IF/LOGICAL_NOT smoke 先因缺少 object slot marker、slot 读取和 object/null
+  类型真值检查失败，源码契约也缺少相邻 `TO_OBJECT` 证明 helper；实现后 WSL GCC
+  通过 generic JUMP_IF 9/0、generic LOGICAL_NOT 8/0、logical contracts 4/0、
+  logical shared-library 6/0、generic equality 4/0、frame setup contracts 1/0、
+  control contracts 2/0、control shared-library 2/0。WSL Clang 同组
+  9/0、8/0、4/0、6/0、4/0、1/0、2/0、2/0，仍报告既有 `const char *`
+  到 `TZrNativeString` qualifier warning。Windows MSVC Debug 通过 generic JUMP_IF
+  0 failures / 9 expected ignores、generic LOGICAL_NOT 0 failures / 8 expected ignores、
+  logical shared-library 0 failures / 6 expected ignores、generic equality 0 failures /
+  4 expected ignores、control shared-library 0 failures / 2 expected ignores，并通过
+  logical/frame/control contracts 4/0、1/0、2/0。`git diff --check` 本切片涉及文件
+  scoped check exit 0，仅有既有 LF/CRLF 提示。产出：
+  `tests/acceptance/2026-07-04-aot-07-s2-s4-generic-dynamic-object-slot-truthiness-local.md`。
+  备注：本切片保留 `TO_OBJECT` runtime conversion 边界，只优化相邻 object/null slot
+  truthiness；value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame
+  narrowing、性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。
+
+- 2026-07-04 09:19:31 +08:00 · M1.5 / 07-S2/S4 generic dynamic string slot truthiness local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：将相邻
+  `TO_STRING -> JUMP_IF/LOGICAL_NOT` 形态纳入保守本地 string slot 真值折叠。
+  `backend_aot_c_lowering_generic_logical.c` 新增
+  `backend_aot_c_to_string_slot_written_immediately_before()`，仅在上一条指令为
+  `TO_STRING` 且写入同一槽时启用；新增 `backend_aot_c_write_string_slot_truthiness()`，
+  生成 C 从 frame string slot 读取 `SZrTypeValue`，检查 `ZR_VALUE_IS_TYPE_STRING` 与 object
+  非空后用 `ZrCore_String_GetByteLength(...) > 0u` 得到真值。`JUMP_IF` 生成
+  `zr_aot_generic_jump_if_string_slot_local` 并跳过
+  `GenericPrimitiveIsTruthy`；`LOGICAL_NOT` 生成
+  `zr_aot_generic_logical_not_string_slot_local` 和直接 bool local 赋值，跳过
+  `GenericPrimitiveLogicalNot` 与 bool sync。RED/GREEN：新增 dynamic string slot
+  JUMP_IF/LOGICAL_NOT smoke 先因缺少 string slot marker、slot 读取和 string length 真值检查失败，
+  源码契约也缺少相邻 `TO_STRING` 证明 helper；实现后 WSL GCC 通过 generic JUMP_IF 8/0、
+  generic LOGICAL_NOT 7/0、logical contracts 4/0、logical shared-library 6/0、generic equality 4/0、
+  frame setup contracts 1/0、control contracts 2/0、control shared-library 2/0。WSL Clang 同组
+  8/0、7/0、4/0、6/0、4/0、1/0、2/0、2/0，仍报告既有 `const char *` 到
+  `TZrNativeString` qualifier warning。Windows MSVC Debug 通过 generic JUMP_IF 0 failures /
+  8 expected ignores、generic LOGICAL_NOT 0 failures / 7 expected ignores、logical shared-library
+  0 failures / 6 expected ignores、generic equality 0 failures / 4 expected ignores、control
+  shared-library 0 failures / 2 expected ignores，并通过 logical/frame/control contracts 4/0、1/0、2/0。
+  `git diff --check` 本切片涉及文件 scoped check exit 0，仅有既有 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-07-04-aot-07-s2-s4-generic-dynamic-string-slot-truthiness-local.md`。
+  备注：本切片保留 `TO_STRING` runtime conversion 边界，只优化相邻 string slot truthiness；
+  一般 object truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame
+  narrowing、性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。
+
+- 2026-07-04 08:47:05 +08:00 · M1.5 / 07-S2/S4 generic reset-null stack-copy truthiness local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：将相邻
+  `RESET_STACK_NULL -> SET_STACK/GET_STACK -> JUMP_IF/LOGICAL_NOT` 形态纳入保守本地真值折叠。
+  `backend_aot_c_lowering_values.c` 复用 reset-null immediate 归属，新增 reset-null stack-copy
+  consumed-by-local 判定；`RESET_STACK_NULL` 跳过 runtime reset，`SET_STACK`/`GET_STACK` 跳过
+  `CopyStack`，generic logical lowering 对分支生成 `zr_aot_generic_jump_if_reset_null_stack_copy_false`，
+  对取反生成 `zr_aot_generic_logical_not_reset_null_stack_copy_local` 和 `ZR_TRUE` bool 赋值。
+  frame descriptor 同步把 RESET_STACK_NULL、SET_STACK/GET_STACK、JUMP_IF、LOGICAL_NOT 这一相邻链路标为
+  local-only。RED/GREEN：RED 为新增 stack-copy reset-null `JUMP_IF`/`LOGICAL_NOT` smoke 缺少
+  `zr_aot_reset_null_stack_copy_local_*` marker，源码契约缺少 reset-null stack-copy helper；GREEN 后
+  focused 项目确认 reset-null 经栈复制后分别折叠到直接 false 分支或直接 bool 赋值，同时普通
+  `RESET_STACK_NULL -> LOGICAL_NOT` runtime fallback 仍保留 `GenericPrimitiveLogicalNot`、`SyncBoolLocal`
+  和本地 bool 分支复用覆盖。
+  测试结果：WSL GCC 与 WSL Clang 均通过 generic JUMP_IF 7/0、generic LOGICAL_NOT 6/0、logical contracts
+  4/0、logical shared-library 6/0、generic equality 4/0、frame setup contracts 1/0、control contracts 2/0、
+  control shared-library 2/0；Windows MSVC Debug 通过 generic JUMP_IF 0 failures / 7 expected ignores、
+  generic LOGICAL_NOT 0 failures / 6 expected ignores、logical shared-library 0 failures / 6 expected ignores、
+  generic equality 0 failures / 4 expected ignores、control shared-library 0 failures / 2 expected ignores，
+  并通过 logical/frame/control contracts 4/0、1/0、2/0。Clang 仍报告既有 `const char *` 到
+  `TZrNativeString` qualifier 警告；`git diff --check` exit 0，仅有既有 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-07-04-aot-07-s2-s4-generic-reset-null-stack-copy-truthiness-local.md`。
+  备注：本切片只覆盖相邻 reset-null 经栈复制后的 local truthiness；动态字符串槽、一般 object
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。
+
+- 2026-07-04 08:14:28 +08:00 · M1.5 / 07-S2/S4 generic null stack-copy truthiness local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：将相邻
+  `GET_CONSTANT null -> SET_STACK/GET_STACK -> JUMP_IF/LOGICAL_NOT` 形态纳入保守本地真值折叠。
+  `backend_aot_c_constant_consumers.c` 新增 null stack-copy consumed-by-local 判定；常量发射跳过可证明只被本地栈复制消费的
+  null constant 源写，`SET_STACK`/`GET_STACK` 跳过 `CopyStack`，generic logical lowering 对分支生成
+  `zr_aot_generic_jump_if_null_stack_copy_false`，对取反生成
+  `zr_aot_generic_logical_not_null_stack_copy_local` 和 `ZR_TRUE` bool 赋值。frame descriptor 同步把
+  GET_CONSTANT、SET_STACK/GET_STACK、JUMP_IF、LOGICAL_NOT 这一相邻链路标为 local-only。
+  RED/GREEN：RED 为新增 stack-copy null `JUMP_IF`/`LOGICAL_NOT` smoke 缺少
+  `zr_aot_null_constant_stack_copy_local_*` marker，生成物仍含 `CopyConstant`、`CopyStack`、
+  `GenericPrimitiveIsTruthy` / `GenericPrimitiveLogicalNot` / `SyncBoolLocal`。GREEN 后 focused 项目确认
+  null 经栈复制后分别折叠到直接 false 分支或直接 bool 赋值，并禁止 targeted source 写、stack copy、
+  primitive truthiness runtime helper、bool sync 和相关 value-slot 访问。
+  测试结果：WSL GCC 通过 generic JUMP_IF 7/0、generic LOGICAL_NOT 6/0、logical contracts 4/0、
+  logical shared-library 6/0、generic equality 4/0、frame setup contracts 1/0、control contracts 2/0、
+  control shared-library 2/0；Windows MSVC Debug 通过 generic JUMP_IF 0 failures / 7 expected ignores、
+  generic LOGICAL_NOT 0 failures / 6 expected ignores、logical shared-library 0 failures / 6 expected ignores、
+  generic equality 0 failures / 4 expected ignores、control shared-library 0 failures / 2 expected ignores，并通过
+  logical/frame/control contracts 4/0、1/0、2/0；`git diff --check` 退出码 0，仅报告 LF/CRLF 提示。
+  WSL Clang adjacent 重跑受当前工作区无关
+  type-inference 重复定义阻塞：清理上一次超时留下的 0-byte `build-wsl-clang/lib/libzr_vm_parser.so` 后，
+  `zr_vm_parser_shared` relink 停在
+  `type_inference_bitwise_identity_direct_range.c` 与未跟踪
+  `type_inference_bitwise_identity_bitwise_not_range.c` 的同名函数重复定义。
+  产出：`tests/acceptance/2026-07-04-aot-07-s2-s4-generic-null-stack-copy-truthiness-local.md`。
+  备注：本切片只覆盖相邻 null 常量经栈复制后的 local truthiness；reset-null stack-copy、动态字符串槽、
+  一般 object truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。
+
+- 2026-07-04 07:41:29 +08:00 · M1.5 / 07-S2/S4 generic string stack-copy truthiness local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：将相邻
+  `GET_CONSTANT string -> SET_STACK/GET_STACK -> JUMP_IF/LOGICAL_NOT` 形态纳入保守本地真值折叠。
+  新增 `backend_aot_c_constant_consumers.c`，把 null/bool/string 常量消费者证明从 values lowering
+  抽出，并新增 string stack-copy consumed-by-local 判定；常量发射跳过可证明只被本地栈复制消费的
+  string constant 源写，`SET_STACK`/`GET_STACK` 跳过 `CopyStack`，generic logical lowering 对分支生成
+  `zr_aot_generic_jump_if_string_stack_copy_false/true`，对取反生成
+  `zr_aot_generic_logical_not_string_stack_copy_local` 和直接 bool 赋值。frame descriptor 同步把
+  GET_CONSTANT、SET_STACK/GET_STACK、JUMP_IF、LOGICAL_NOT 这一相邻链路标为 local-only。
+  RED/GREEN：RED 为新增 stack-copy string `JUMP_IF`/`LOGICAL_NOT` smoke 缺少
+  `zr_aot_string_constant_stack_copy_local_*` marker，生成物仍含 `CopyConstant`、`CopyStack`、
+  `GenericPrimitiveIsTruthy` / `GenericPrimitiveLogicalNot`。GREEN 后 focused 项目确认空串/非空串经
+  栈复制后分别折叠到直接分支或 bool 赋值，并禁止 targeted source 写、stack copy 和 primitive
+  truthiness runtime helper。
+  测试结果：WSL GCC 通过 generic JUMP_IF 7/0、generic LOGICAL_NOT 6/0、logical contracts 4/0、
+  logical shared-library 6/0、generic equality 4/0、frame setup contracts 1/0、control contracts 2/0、
+  control shared-library 2/0；WSL Clang 通过同组 7/0、6/0、4/0、6/0、4/0、1/0、2/0、2/0；
+  Windows MSVC Debug 通过 generic JUMP_IF 0 failures / 7 expected ignores、generic LOGICAL_NOT
+  0 failures / 6 expected ignores、logical shared-library 0 failures / 6 expected ignores、generic equality
+  0 failures / 4 expected ignores、control shared-library 0 failures / 2 expected ignores，并通过
+  logical/frame/control contracts 4/0、1/0、2/0。
+  产出：`tests/acceptance/2026-07-04-aot-07-s2-s4-generic-string-stack-copy-truthiness-local.md`。
+  备注：本切片只覆盖相邻 string 常量经栈复制后的 local truthiness；动态字符串槽、一般对象
+  truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、
+  性能计数和完整 typed 函数体零 `SZrValue`/frame write 仍待后续。
+
+- 2026-07-04 06:49:49 +08:00 · M1.5 / 07-S2/S4 generic string-constant truthiness local fold ·
+  状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中。完成项目：为立即相邻的
+  `GET_CONSTANT string -> JUMP_IF` 与 `GET_CONSTANT string -> LOGICAL_NOT` 建立保守本地折叠边界：
+  常量发射、frame descriptor 与 generic logical lowering 共用
+  `backend_aot_c_string_constant_consumed_by_local_jump_if()` /
+  `backend_aot_c_string_constant_consumed_by_local_logical_not()`，通过
+  `backend_aot_c_string_constant_truthy()` 使用 `ZrCore_String_GetByteLength()` 计算空串 false、
+  非空串 true。生成 C 对 `JUMP_IF` 输出
+  `zr_aot_string_constant_local_jump_if_source_skip` 与
+  `zr_aot_generic_jump_if_string_constant_false/true`，对 `LOGICAL_NOT` 输出
+  `zr_aot_string_constant_local_logical_not_source_skip`、
+  `zr_aot_generic_logical_not_string_constant_local` 和直接 bool 赋值，避免源字符串常量写入
+  value slot，也避免退回 `GenericPrimitiveIsTruthy` / `GenericPrimitiveLogicalNot`。源码契约新增
+  helper、marker、function-body 分流和 frame-descriptor string local-only needles。
+  RED/GREEN：RED 为新增 string-constant `LOGICAL_NOT` smoke 失败在缺少
+  `zr_aot_string_constant_local_logical_not_source_skip slot=0`，新增 string-constant `JUMP_IF`
+  smoke 失败在缺少 `zr_aot_string_constant_local_jump_if_source_skip slot=0`；生成 C 分别仍调用
+  `ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(state, &frame, 1, 0)` /
+  `GenericPrimitiveIsTruthy(state, &frame, 0, &zr_aot_truthy)`。GREEN 后 focused 项目确认空串/非空串
+  `JUMP_IF` 与 `LOGICAL_NOT` 都只留下本地 marker、直接 `goto` 或 bool 赋值，并禁止 targeted runtime
+  helper、temporary truthy bool、`CopyConstant` 源写入和 bool sync。
+  测试结果：WSL GCC 通过 generic JUMP_IF 7/0、generic LOGICAL_NOT 6/0、logical shared-library 6/0、
+  generic equality 4/0、logical contracts 4/0、frame setup contracts 1/0、control contracts 2/0；
+  WSL Clang 通过同组 7/0、6/0、6/0、4/0、4/0、1/0、2/0；Windows MSVC Debug 通过 generic JUMP_IF
+  0 failures / 7 expected ignores、generic LOGICAL_NOT 0 failures / 6 expected ignores、
+  logical shared-library 0 failures / 6 expected ignores、generic equality 0 failures / 4 expected ignores，
+  并通过 logical/frame/control contracts 4/0、1/0、2/0；`git diff --check` 仅有既有 LF/CRLF 提示。
+  产出：`tests/acceptance/2026-07-04-aot-07-s2-s4-generic-string-constant-truthiness-local.md`。
+  备注：本切片只收口立即字符串常量真值；动态字符串槽、一般对象 truthiness、value-copy migration、
+  GC roots/exports/frame cleanup、更广 byte-frame narrowing、性能计数和完整 typed 函数体零
+  `SZrValue`/frame write 仍待后续。
+
 - 2026-07-04 06:09:04 +08:00 · M1.5 / 07-S2/S4 generic LOGICAL_NOT bool stack-copy source local branch ·
   状态：子切片完成、07-S2/S4 部分完成；07~12 总目标继续进行中，dynamic/string/object
   truthiness、value-copy migration、GC roots/exports/frame cleanup、更广 byte-frame narrowing、

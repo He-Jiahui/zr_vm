@@ -108,9 +108,29 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "backend_aot_write_c_direct_jump_if(FILE *file",
             "backend_aot_c_null_constant_consumed_by_local_logical_not(",
             "backend_aot_c_null_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_null_constant_consumed_by_local_stack_copy_logical_not(",
+            "backend_aot_c_null_constant_consumed_by_local_stack_copy_jump_if(",
+            "backend_aot_c_null_constant_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_null_constant_stack_copy_consumed_by_local_jump_if(",
             "backend_aot_c_bool_constant_consumed_by_local_logical_not(",
             "backend_aot_c_bool_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_string_constant_consumed_by_local_logical_not(",
+            "backend_aot_c_string_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_string_constant_consumed_by_local_stack_copy_logical_not(",
+            "backend_aot_c_string_constant_consumed_by_local_stack_copy_jump_if(",
+            "backend_aot_c_string_constant_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_string_constant_stack_copy_consumed_by_local_jump_if(",
             "backend_aot_c_reset_null_consumed_by_local_jump_if(",
+            "backend_aot_c_reset_null_consumed_by_local_stack_copy_logical_not(",
+            "backend_aot_c_reset_null_consumed_by_local_stack_copy_jump_if(",
+            "backend_aot_c_reset_null_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_reset_null_stack_copy_consumed_by_local_jump_if(",
+            "backend_aot_write_c_null_constant_stack_copy_local_logical_not_skip(FILE *file",
+            "backend_aot_write_c_null_constant_stack_copy_local_jump_if_skip(FILE *file",
+            "backend_aot_write_c_reset_null_stack_copy_local_logical_not_skip(FILE *file",
+            "backend_aot_write_c_reset_null_stack_copy_local_jump_if_skip(FILE *file",
+            "backend_aot_write_c_string_constant_stack_copy_local_logical_not_skip(FILE *file",
+            "backend_aot_write_c_string_constant_stack_copy_local_jump_if_skip(FILE *file",
     };
     static const char *const moduleNeedles[] = {
             "backend_aot_c_lowering_generic_logical.c",
@@ -121,9 +141,21 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "backend_aot_c_write_generic_logical_not_scalar_local(",
             "backend_aot_c_null_constant_consumed_by_local_logical_not(",
             "backend_aot_c_null_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_null_constant_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_null_constant_stack_copy_consumed_by_local_jump_if(",
             "backend_aot_c_bool_constant_consumed_by_local_logical_not(",
             "backend_aot_c_bool_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_string_constant_consumed_by_local_logical_not(",
+            "backend_aot_c_string_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_string_constant_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_string_constant_stack_copy_consumed_by_local_jump_if(",
+            "backend_aot_c_to_string_slot_written_immediately_before(",
+            "backend_aot_c_write_string_slot_truthiness(",
+            "backend_aot_c_to_object_slot_written_immediately_before(",
+            "backend_aot_c_write_object_slot_truthiness(",
             "backend_aot_c_reset_null_consumed_by_local_jump_if(",
+            "backend_aot_c_reset_null_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_reset_null_stack_copy_consumed_by_local_jump_if(",
             "backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(functionIr, destinationSlot, execInstructionIndex)",
             "backend_aot_c_scalar_locals_bool_value_written_before(functionIr, sourceSlot, execInstructionIndex)",
             "backend_aot_c_scalar_locals_i64_written_before(functionIr, sourceSlot, execInstructionIndex)",
@@ -135,11 +167,22 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "backend_aot_c_scalar_locals_f64_written_before(functionIr, conditionSlot, execInstructionIndex)",
             "zr_aot_generic_logical_not",
             "zr_aot_generic_logical_not_null_constant_local",
+            "zr_aot_generic_logical_not_null_stack_copy_local",
             "zr_aot_generic_logical_not_bool_constant_local",
+            "zr_aot_generic_logical_not_string_constant_local",
+            "zr_aot_generic_logical_not_string_stack_copy_local",
+            "zr_aot_generic_logical_not_string_slot_local",
+            "zr_aot_generic_logical_not_object_slot_local",
+            "zr_aot_generic_logical_not_reset_null_stack_copy_local",
             "zr_aot_generic_logical_not_scalar_local",
             "zr_aot_generic_logical_not_i64_scalar_local",
             "zr_aot_generic_logical_not_u64_scalar_local",
             "zr_aot_generic_logical_not_f64_scalar_local",
+            "ZR_CAST_STRING(state, zr_aot_ref_locals.o%u)",
+            "ZrCore_String_GetByteLength(zr_aot_string_slot_string) > 0u",
+            "zr_aot_b%u = (TZrBool)(!zr_aot_string_slot_truthy);",
+            "zr_aot_ref_locals.o%u != ZR_NULL",
+            "zr_aot_b%u = (TZrBool)(!zr_aot_object_slot_truthy);",
             "zr_aot_b%u = ZR_TRUE;",
             "zr_aot_b%u = (TZrBool)(!zr_aot_b%u);",
             "zr_aot_b%u = (TZrBool)(zr_aot_s%u == (TZrInt64)0);",
@@ -151,9 +194,17 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "zr_aot_generic_jump_if_u64_scalar_local",
             "zr_aot_generic_jump_if_f64_scalar_local",
             "zr_aot_generic_jump_if_null_constant_false",
+            "zr_aot_generic_jump_if_null_stack_copy_false",
             "zr_aot_generic_jump_if_bool_constant_false",
             "zr_aot_generic_jump_if_bool_constant_true",
+            "zr_aot_generic_jump_if_string_constant_false",
+            "zr_aot_generic_jump_if_string_constant_true",
+            "zr_aot_generic_jump_if_string_stack_copy_false",
+            "zr_aot_generic_jump_if_string_stack_copy_true",
+            "zr_aot_generic_jump_if_string_slot_local",
+            "zr_aot_generic_jump_if_object_slot_local",
             "zr_aot_generic_jump_if_reset_null_false",
+            "zr_aot_generic_jump_if_reset_null_stack_copy_false",
             "TZrBool zr_aot_truthy = ZR_FALSE;",
             "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot(state, &frame, %u, %u)",
             "ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(state, &frame, %u, &zr_aot_truthy)",
@@ -166,9 +217,53 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "if (zr_aot_f%u == (TZrFloat64)0.0) {",
             "if (!zr_aot_truthy) {",
     };
-    static const char *const valuesNeedles[] = {
+    static const char *const constantConsumerNeedles[] = {
+            "#include \"zr_vm_core/string.h\"",
+            "backend_aot_c_function_exports_stack_slot(",
+            "backend_aot_c_null_constant_consumed_by_local_logical_not(",
+            "backend_aot_c_null_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_null_constant_consumed_by_local_stack_copy_logical_not(",
+            "backend_aot_c_null_constant_consumed_by_local_stack_copy_jump_if(",
+            "backend_aot_c_null_constant_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_null_constant_stack_copy_consumed_by_local_jump_if(",
             "backend_aot_c_bool_constant_consumed_by_local_logical_not(",
+            "backend_aot_c_bool_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_string_constant_truthy(",
+            "ZrCore_String_GetByteLength(stringValue) > 0u",
+            "backend_aot_c_string_constant_consumed_by_local_logical_not(",
+            "backend_aot_c_string_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_string_constant_consumed_by_local_stack_copy_logical_not(",
+            "backend_aot_c_string_constant_consumed_by_local_stack_copy_jump_if(",
+            "backend_aot_c_string_constant_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_string_constant_stack_copy_consumed_by_local_jump_if(",
+    };
+    static const char *const valuesNeedles[] = {
+            "backend_aot_write_c_direct_primitive_constant(",
+            "const SZrTypeValue *zr_aot_to_string_value = ZrCore_Stack_GetValue(frame.slotBase + %u);",
+            "zr_aot_ref_locals.o%u = zr_aot_to_string_value->value.object;",
+            "const SZrTypeValue *zr_aot_to_object_value = ZrCore_Stack_GetValue(frame.slotBase + %u);",
+            "ZR_VALUE_IS_TYPE_NULL(zr_aot_to_object_value->type)",
+            "ZR_VALUE_IS_TYPE_OBJECT(zr_aot_to_object_value->type)",
+            "zr_aot_ref_locals.o%u = zr_aot_to_object_value->value.object;",
+            "backend_aot_c_reset_null_consumed_by_local_stack_copy_logical_not(",
+            "backend_aot_c_reset_null_consumed_by_local_stack_copy_jump_if(",
+            "backend_aot_c_reset_null_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_reset_null_stack_copy_consumed_by_local_jump_if(",
+            "zr_aot_null_constant_stack_copy_local_logical_not_constant_skip",
+            "zr_aot_null_constant_stack_copy_local_jump_if_constant_skip",
+            "zr_aot_null_constant_stack_copy_local_logical_not_source_skip",
+            "zr_aot_null_constant_stack_copy_local_jump_if_source_skip",
             "zr_aot_bool_constant_local_logical_not_source_skip",
+            "zr_aot_string_constant_local_logical_not_source_skip",
+            "zr_aot_string_constant_local_jump_if_source_skip",
+            "zr_aot_string_constant_stack_copy_local_logical_not_constant_skip",
+            "zr_aot_string_constant_stack_copy_local_jump_if_constant_skip",
+            "zr_aot_string_constant_stack_copy_local_logical_not_source_skip",
+            "zr_aot_string_constant_stack_copy_local_jump_if_source_skip",
+            "zr_aot_reset_null_stack_copy_local_logical_not_reset_skip",
+            "zr_aot_reset_null_stack_copy_local_jump_if_reset_skip",
+            "zr_aot_reset_null_stack_copy_local_logical_not_source_skip",
+            "zr_aot_reset_null_stack_copy_local_jump_if_source_skip",
     };
     static const char *const runtimeHeaderNeedles[] = {
             "ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(struct SZrState *state,",
@@ -184,6 +279,7 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):",
+            "backend_aot_write_c_reference_locals(file, functionIr);",
             "backend_aot_write_c_direct_logical_not(file, functionIr, destinationSlot, operandA1, instructionIndex);",
             "case ZR_INSTRUCTION_ENUM(JUMP_IF):",
             "backend_aot_write_c_direct_jump_if(file,\n"
@@ -192,6 +288,22 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "entry->flatIndex",
             "destinationSlot",
             "instructionIndex",
+            "backend_aot_c_string_constant_consumed_by_local_logical_not(",
+            "backend_aot_c_string_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_null_constant_consumed_by_local_stack_copy_logical_not(",
+            "backend_aot_c_null_constant_consumed_by_local_stack_copy_jump_if(",
+            "backend_aot_c_null_constant_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_null_constant_stack_copy_consumed_by_local_jump_if(",
+            "backend_aot_c_reset_null_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_reset_null_stack_copy_consumed_by_local_jump_if(",
+            "backend_aot_c_string_constant_consumed_by_local_stack_copy_logical_not(",
+            "backend_aot_c_string_constant_consumed_by_local_stack_copy_jump_if(",
+            "backend_aot_c_string_constant_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_string_constant_stack_copy_consumed_by_local_jump_if(",
+            "backend_aot_write_c_string_constant_stack_copy_local_logical_not_skip(",
+            "backend_aot_write_c_string_constant_stack_copy_local_jump_if_skip(",
+            "backend_aot_write_c_reset_null_stack_copy_local_logical_not_skip(",
+            "backend_aot_write_c_reset_null_stack_copy_local_jump_if_skip(",
     };
     static const char *const scalarLocalNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(JUMP_IF):\n"
@@ -232,9 +344,24 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "functionIr, destinationSlot, instructionIndex) ||",
             "backend_aot_c_null_constant_consumed_by_local_logical_not(",
             "backend_aot_c_null_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_null_constant_consumed_by_local_stack_copy_logical_not(",
+            "backend_aot_c_null_constant_consumed_by_local_stack_copy_jump_if(",
+            "backend_aot_c_null_constant_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_null_constant_stack_copy_consumed_by_local_jump_if(",
             "backend_aot_c_bool_constant_consumed_by_local_logical_not(",
             "backend_aot_c_bool_constant_consumed_by_local_jump_if(",
+            "ZR_VALUE_IS_TYPE_STRING(constantValue->type)",
+            "backend_aot_c_string_constant_consumed_by_local_logical_not(",
+            "backend_aot_c_string_constant_consumed_by_local_jump_if(",
+            "backend_aot_c_string_constant_consumed_by_local_stack_copy_logical_not(",
+            "backend_aot_c_string_constant_consumed_by_local_stack_copy_jump_if(",
+            "backend_aot_c_string_constant_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_string_constant_stack_copy_consumed_by_local_jump_if(",
             "backend_aot_c_reset_null_consumed_by_local_jump_if(",
+            "backend_aot_c_reset_null_consumed_by_local_stack_copy_logical_not(",
+            "backend_aot_c_reset_null_consumed_by_local_stack_copy_jump_if(",
+            "backend_aot_c_reset_null_stack_copy_consumed_by_local_logical_not(",
+            "backend_aot_c_reset_null_stack_copy_consumed_by_local_jump_if(",
             "functionIr, destinationSlot, instructionIndex - 1u)",
     };
     static const char *const forbiddenModuleNeedles[] = {
@@ -264,6 +391,8 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_logical.c");
     char *valuesText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
+    char *constantConsumersText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_constant_consumers.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *controlText = read_repo_text_file_owned(
@@ -279,6 +408,7 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(moduleText);
     TEST_ASSERT_NOT_NULL(valuesText);
+    TEST_ASSERT_NOT_NULL(constantConsumersText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
     TEST_ASSERT_NOT_NULL(controlText);
     TEST_ASSERT_NOT_NULL(scalarLocalsText);
@@ -288,6 +418,8 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
 
     assert_text_contains_all(headerText, headerNeedles, ARRAY_COUNT(headerNeedles));
     assert_text_contains_all(moduleText, moduleNeedles, ARRAY_COUNT(moduleNeedles));
+    assert_text_contains_all(
+            constantConsumersText, constantConsumerNeedles, ARRAY_COUNT(constantConsumerNeedles));
     assert_text_contains_all(valuesText, valuesNeedles, ARRAY_COUNT(valuesNeedles));
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
     assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
@@ -301,6 +433,7 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
     free(headerText);
     free(moduleText);
     free(valuesText);
+    free(constantConsumersText);
     free(functionBodyText);
     free(controlText);
     free(scalarLocalsText);
@@ -321,13 +454,17 @@ static void test_aot_c_source_lowers_generic_primitive_equality_to_boundary_help
             "backend_aot_write_c_direct_logical_equal(",
             "backend_aot_write_c_direct_logical_not_equal(",
             "backend_aot_c_write_generic_bool_compare_scalar_local(",
+            "backend_aot_c_generic_primitive_local_kind_written_before(",
             "backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(functionIr, destinationSlot, execInstructionIndex)",
             "backend_aot_c_scalar_locals_bool_value_written_before(functionIr, leftSlot, execInstructionIndex)",
             "backend_aot_c_scalar_locals_bool_value_written_before(functionIr, rightSlot, execInstructionIndex)",
+            "backend_aot_c_write_generic_mixed_primitive_compare_scalar_local(",
             "zr_aot_generic_logical_equal",
             "zr_aot_generic_logical_not_equal",
             "zr_aot_generic_bool_compare_scalar_local",
+            "zr_aot_generic_mixed_primitive_compare_scalar_local",
             "zr_aot_b%u = (TZrBool)((zr_aot_b%u %s zr_aot_b%u) != 0u);",
+            "zr_aot_b%u = %s;",
             "ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual(state, &frame, %u, %u, %u)",
             "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(state, &frame, %u, %u, %u)",
             "backend_aot_c_write_bool_local_sync_from_slot(file, functionIr, destinationSlot);",
@@ -361,12 +498,16 @@ static void test_aot_c_source_lowers_generic_primitive_equality_to_boundary_help
             "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):",
             "backend_aot_c_scalar_locals_bool_consumer_mentions_slot(instruction, slot)",
             "backend_aot_c_scalar_locals_bool_consumer_reads_slot(functionIr, instruction, slot)",
+            "backend_aot_c_scalar_locals_kind_is_single_primitive(",
+            "hasMixedPrimitiveOperands",
     };
     static const char *const frameDescriptorNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):",
             "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):",
-            "backend_aot_c_scalar_locals_bool_value_written_before(functionIr, operandA1, instructionIndex)",
-            "backend_aot_c_scalar_locals_bool_value_written_before(functionIr, operandB1, instructionIndex)",
+            "backend_aot_c_frame_descriptor_generic_equality_operands_can_use_local_only(",
+            "backend_aot_c_scalar_locals_i64_written_before(functionIr, slot, instructionIndex)",
+            "backend_aot_c_scalar_locals_u64_written_before(functionIr, slot, instructionIndex)",
+            "backend_aot_c_scalar_locals_f64_written_before(functionIr, slot, instructionIndex)",
     };
     static const char *const forbiddenModuleNeedles[] = {
             "backend_aot_c_write_generic_equality_unsupported",

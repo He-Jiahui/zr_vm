@@ -12,7 +12,8 @@ static void backend_aot_write_c_dynamic_value_access_deopt_bridge(FILE *file,
     safeErrorLabel = errorLabel != ZR_NULL ? errorLabel : "dynamic value access";
     fprintf(file,
             "        /* zr_aot_value_dynamic_deopt_bridge deopt=%u */\n"
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(state, &frame, %u, \"%s\"));\n",
+            "        /* zr_aot_value_dynamic_deopt_bridge_compact */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(state, &frame, %u, \"%s\") &&\n",
             (unsigned)deoptId,
             (unsigned)deoptId,
             safeErrorLabel);
@@ -88,7 +89,7 @@ void backend_aot_write_c_direct_get_member(FILE *file,
             "        /* zr_aot_value_dynamic_get_member_boundary */\n");
     backend_aot_write_c_dynamic_value_access_deopt_bridge(file, deoptId, "dynamic get member");
     fprintf(file,
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, %u, %u, %u));\n"
+            "                        ZrLibrary_AotRuntime_GetMember(state, &frame, %u, %u, %u));\n"
             "    } while (0);\n",
             (unsigned)destinationSlot,
             (unsigned)receiverSlot,
@@ -109,7 +110,7 @@ void backend_aot_write_c_direct_set_member(FILE *file,
             "        /* zr_aot_value_dynamic_set_member_boundary */\n");
     backend_aot_write_c_dynamic_value_access_deopt_bridge(file, deoptId, "dynamic set member");
     fprintf(file,
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetMember(state, &frame, %u, %u, %u));\n"
+            "                        ZrLibrary_AotRuntime_SetMember(state, &frame, %u, %u, %u));\n"
             "    } while (0);\n",
             (unsigned)sourceSlot,
             (unsigned)receiverSlot,
@@ -130,7 +131,7 @@ void backend_aot_write_c_direct_set_member_new_owner_no_write_barrier(FILE *file
             "        /* zr_aot_value_dynamic_set_member_new_owner_no_write_barrier */\n");
     backend_aot_write_c_dynamic_value_access_deopt_bridge(file, deoptId, "dynamic set member");
     fprintf(file,
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetMemberNewOwnerNoWriteBarrier(state, &frame, %u, %u, %u));\n"
+            "                        ZrLibrary_AotRuntime_SetMemberNewOwnerNoWriteBarrier(state, &frame, %u, %u, %u));\n"
             "    } while (0);\n",
             (unsigned)sourceSlot,
             (unsigned)receiverSlot,
@@ -151,7 +152,7 @@ void backend_aot_write_c_direct_get_member_slot(FILE *file,
             "        /* zr_aot_value_dynamic_get_member_slot_boundary */\n");
     backend_aot_write_c_dynamic_value_access_deopt_bridge(file, deoptId, "dynamic get member slot");
     fprintf(file,
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMemberSlot(state, &frame, %u, %u, %u));\n"
+            "                        ZrLibrary_AotRuntime_GetMemberSlot(state, &frame, %u, %u, %u));\n"
             "    } while (0);\n",
             (unsigned)destinationSlot,
             (unsigned)receiverSlot,
@@ -172,7 +173,7 @@ void backend_aot_write_c_direct_set_member_slot(FILE *file,
             "        /* zr_aot_value_dynamic_set_member_slot_boundary */\n");
     backend_aot_write_c_dynamic_value_access_deopt_bridge(file, deoptId, "dynamic set member slot");
     fprintf(file,
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetMemberSlot(state, &frame, %u, %u, %u));\n"
+            "                        ZrLibrary_AotRuntime_SetMemberSlot(state, &frame, %u, %u, %u));\n"
             "    } while (0);\n",
             (unsigned)sourceSlot,
             (unsigned)receiverSlot,
@@ -193,7 +194,7 @@ void backend_aot_write_c_direct_set_member_slot_new_owner_no_write_barrier(FILE 
             "        /* zr_aot_value_dynamic_set_member_slot_new_owner_no_write_barrier */\n");
     backend_aot_write_c_dynamic_value_access_deopt_bridge(file, deoptId, "dynamic set member slot");
     fprintf(file,
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetMemberSlotNewOwnerNoWriteBarrier(state, &frame, %u, %u, %u));\n"
+            "                        ZrLibrary_AotRuntime_SetMemberSlotNewOwnerNoWriteBarrier(state, &frame, %u, %u, %u));\n"
             "    } while (0);\n",
             (unsigned)sourceSlot,
             (unsigned)receiverSlot,
@@ -214,7 +215,7 @@ void backend_aot_write_c_direct_get_by_index(FILE *file,
             "        /* zr_aot_value_dynamic_get_by_index_boundary */\n");
     backend_aot_write_c_dynamic_value_access_deopt_bridge(file, deoptId, "dynamic get by index");
     fprintf(file,
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetByIndex(state, &frame, %u, %u, %u));\n"
+            "                        ZrLibrary_AotRuntime_GetByIndex(state, &frame, %u, %u, %u));\n"
             "    } while (0);\n",
             (unsigned)destinationSlot,
             (unsigned)receiverSlot,
@@ -235,7 +236,7 @@ void backend_aot_write_c_direct_set_by_index_new_owner_no_write_barrier(FILE *fi
             "        /* zr_aot_value_dynamic_set_by_index_new_owner_no_write_barrier */\n");
     backend_aot_write_c_dynamic_value_access_deopt_bridge(file, deoptId, "dynamic set by index");
     fprintf(file,
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetByIndexNewOwnerNoWriteBarrier(state, &frame, %u, %u, %u));\n"
+            "                        ZrLibrary_AotRuntime_SetByIndexNewOwnerNoWriteBarrier(state, &frame, %u, %u, %u));\n"
             "    } while (0);\n",
             (unsigned)sourceSlot,
             (unsigned)receiverSlot,
@@ -256,7 +257,7 @@ void backend_aot_write_c_direct_set_by_index(FILE *file,
             "        /* zr_aot_value_dynamic_set_by_index_boundary */\n");
     backend_aot_write_c_dynamic_value_access_deopt_bridge(file, deoptId, "dynamic set by index");
     fprintf(file,
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetByIndex(state, &frame, %u, %u, %u));\n"
+            "                        ZrLibrary_AotRuntime_SetByIndex(state, &frame, %u, %u, %u));\n"
             "    } while (0);\n",
             (unsigned)sourceSlot,
             (unsigned)receiverSlot,

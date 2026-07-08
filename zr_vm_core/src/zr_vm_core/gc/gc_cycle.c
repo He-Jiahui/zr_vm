@@ -1315,6 +1315,18 @@ static SZrTypeValue *garbage_collector_aot_root_frame_value(SZrState *threadStat
     return (SZrTypeValue *)rootAddress;
 }
 
+static SZrRawObject **garbage_collector_aot_root_frame_local_address_slot(const SZrAotGcRootFrame *frame,
+                                                                          const SZrAotGcRootSlot *root) {
+    if (frame == ZR_NULL ||
+        frame->frameBase == ZR_NULL ||
+        root == ZR_NULL ||
+        root->locationKind != (TZrUInt8)ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS) {
+        return ZR_NULL;
+    }
+
+    return (SZrRawObject **)((TZrByte *)frame->frameBase + root->frameByteOffset);
+}
+
 static TZrSize garbage_collector_rewrite_aot_root_frames(SZrState *threadState) {
     TZrSize work = 0;
     SZrAotGcRootFrame *frame;
@@ -1329,11 +1341,23 @@ static TZrSize garbage_collector_rewrite_aot_root_frames(SZrState *threadState) 
 
         if (rootMap != ZR_NULL && rootMap->roots != ZR_NULL) {
             for (TZrUInt32 rootIndex = 0u; rootIndex < rootMap->rootCount; rootIndex++) {
-                SZrTypeValue *value = garbage_collector_aot_root_frame_value(threadState,
-                                                                              frame,
-                                                                              &rootMap->roots[rootIndex]);
-                if (value != ZR_NULL && garbage_collector_rewrite_value_if_forwarded(value)) {
-                    work++;
+                const SZrAotGcRootSlot *root = &rootMap->roots[rootIndex];
+
+                switch (root->locationKind) {
+                    case ZR_AOT_GC_ROOT_LOCATION_FRAME_BYTE_OFFSET: {
+                        SZrTypeValue *value = garbage_collector_aot_root_frame_value(threadState, frame, root);
+                        if (value != ZR_NULL && garbage_collector_rewrite_value_if_forwarded(value)) {
+                            work++;
+                        }
+                        break;
+                    }
+                    case ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS: {
+                        SZrRawObject **slot = garbage_collector_aot_root_frame_local_address_slot(frame, root);
+                        work += garbage_collector_rewrite_raw_object_slot_counted(slot);
+                        break;
+                    }
+                    default:
+                        break;
                 }
             }
         }

@@ -36,14 +36,15 @@ static void backend_aot_write_c_static_direct_i64_deopt_fallback(FILE *file,
 
     fprintf(file,
             "        } else {\n"
+            "            /* zr_aot_static_typed_direct_call_deopt_sync_compact */\n"
             "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,\n"
             "                                                                        &frame,\n"
             "                                                                        %u,\n"
             "                                                                        %u,\n"
             "                                                                        %u,\n"
             "                                                                        %u,\n"
-            "                                                                        \"%s\"));\n"
-            "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u));\n"
+            "                                                                        \"%s\") &&\n"
+            "                            ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u));\n"
             "        }\n",
             (unsigned)destinationSlot,
             (unsigned)functionSlot,
@@ -66,14 +67,15 @@ static void backend_aot_write_c_static_direct_u64_deopt_fallback(FILE *file,
 
     fprintf(file,
             "        } else {\n"
+            "            /* zr_aot_static_typed_direct_call_deopt_sync_compact */\n"
             "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,\n"
             "                                                                        &frame,\n"
             "                                                                        %u,\n"
             "                                                                        %u,\n"
             "                                                                        %u,\n"
             "                                                                        %u,\n"
-            "                                                                        \"%s\"));\n"
-            "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u));\n"
+            "                                                                        \"%s\") &&\n"
+            "                            ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u));\n"
             "        }\n",
             (unsigned)destinationSlot,
             (unsigned)functionSlot,
@@ -96,14 +98,15 @@ static void backend_aot_write_c_static_direct_f64_deopt_fallback(FILE *file,
 
     fprintf(file,
             "        } else {\n"
+            "            /* zr_aot_static_typed_direct_call_deopt_sync_compact */\n"
             "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,\n"
             "                                                                        &frame,\n"
             "                                                                        %u,\n"
             "                                                                        %u,\n"
             "                                                                        %u,\n"
             "                                                                        %u,\n"
-            "                                                                        \"%s\"));\n"
-            "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u));\n"
+            "                                                                        \"%s\") &&\n"
+            "                            ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u));\n"
             "        }\n",
             (unsigned)destinationSlot,
             (unsigned)functionSlot,

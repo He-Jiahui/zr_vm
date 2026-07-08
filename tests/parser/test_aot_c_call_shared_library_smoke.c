@@ -182,7 +182,7 @@ static void test_aot_c_generated_shared_library_executes_quickened_dynamic_call_
             "func addFour(value: int): int {\n"
             "    return value + 4;\n"
             "}\n"
-            "func apply(fn, value: int): int {\n"
+            "func apply(fn: %func(int)->int, value: int): int {\n"
             "    return fn(value);\n"
             "}\n"
             "return apply(addFour, 3);";
@@ -334,7 +334,7 @@ static void test_aot_c_generated_shared_library_executes_quickened_dynamic_call_
 #endif
 }
 
-static void test_aot_c_generated_shared_library_executes_static_numeric_call_local_sync_path(void) {
+static void test_aot_c_generated_shared_library_executes_static_numeric_call_local_only_path(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C call shared-library smoke currently validates the Unix dlopen toolchain path");
 #else
@@ -427,6 +427,7 @@ static void test_aot_c_generated_shared_library_executes_static_numeric_call_loc
     aotOptions.embeddedModuleBlob = embeddedBlob;
     aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
     aotOptions.requireExecutableLowering = ZR_TRUE;
+    aotOptions.requireFullAot = ZR_TRUE;
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
@@ -434,18 +435,29 @@ static void test_aot_c_generated_shared_library_executes_static_numeric_call_loc
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrUInt64 zr_aot_typed_u64_fn_1(void) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrUInt64)13;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_u64_no_arg_direct_call */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_u64_no_arg_direct_call_full_aot */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_u5 = zr_aot_typed_u64_fn_1();"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrFloat64 zr_aot_typed_f64_fn_2(void);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrFloat64 zr_aot_typed_f64_fn_2(void) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrFloat64)2.5;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_f64_no_arg_direct_call */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_f64_no_arg_direct_call_full_aot */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_f6 = zr_aot_typed_f64_fn_2();"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_u64 dstSlot=4 srcSlot=5"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_u4 = zr_aot_u5;"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_f64 dstSlot=5 srcSlot=6"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_f5 = zr_aot_f6;"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, 1)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame, 2)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, 5, &zr_aot_u5)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, 6, &zr_aot_f6)"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_direct_stack_copy_sync_u64_local_boundary"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_direct_stack_copy_sync_f64_local_boundary"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_destination->type = ZR_VALUE_TYPE_UINT64;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_destination->value.nativeObject.nativeUInt64 = zr_aot_u_value;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_destination->type = ZR_VALUE_TYPE_DOUBLE;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_destination->value.nativeObject.nativeDouble = zr_aot_f_value;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_arith_exec_signed_scalar_operands */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_left_scalar = zr_aot_s7;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_right_scalar = zr_aot_s9;"));
@@ -508,14 +520,14 @@ static void test_aot_c_generated_shared_library_executes_stack_value_call_local_
     TEST_IGNORE_MESSAGE("AOT C call shared-library smoke currently validates the Unix dlopen toolchain path");
 #else
     const char *source =
-            "func addFour(value: int): int {\n"
-            "    return value + 4;\n"
+            "func maybeAdd(value: int): int {\n"
+            "    if (value > 0) {\n"
+            "        return value + 4;\n"
+            "    }\n"
+            "    return value;\n"
             "}\n"
-            "func apply(fn, value: int): int {\n"
-            "    var result = fn(value);\n"
-            "    return result;\n"
-            "}\n"
-            "return apply(addFour, 3);";
+            "var result: int = maybeAdd(3);\n"
+            "return result;";
     const char *projectJson =
             "{"
             "\"name\":\"aot-runtime-stack-value-local-call-smoke\","
@@ -596,8 +608,12 @@ static void test_aot_c_generated_shared_library_executes_stack_value_call_local_
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_function_call"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_static_function_call"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_call_result_sync_compact */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_static_function_call_sync_i64_local_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame,"));
     TEST_ASSERT_NULL(strstr(generatedCText,
                             "const SZrTypeValue *zr_aot_direct_call_result = ZrCore_Stack_GetValue(frame.slotBase +"));
     free(generatedCText);
@@ -739,10 +755,12 @@ static void test_aot_c_generated_shared_library_compiles_value_typed_call_direct
     aotOptions.embeddedModuleBlob = embeddedBlob;
     aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
     aotOptions.requireExecutableLowering = ZR_TRUE;
+    aotOptions.requireFullAot = ZR_TRUE;
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_call_typed"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_value_exec_call_typed_inline_struct_full_aot_direct */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_return_typed"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_field_load"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_field_store"));
@@ -770,6 +788,10 @@ static void test_aot_c_generated_shared_library_compiles_value_typed_call_direct
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrAotGeneratedDirectCall zr_aot_direct_call"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_FinishDirectCall"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_value_exec_call_typed_metadata_guard */"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallInlineStructDynamicDeoptBridge(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "\"typed inline struct direct call metadata drift\""));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_publish_exports_direct */"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Module_AddPubExport(state, frame.module"));
     free(generatedCText);
@@ -899,7 +921,7 @@ static void test_aot_c_generated_shared_library_compiles_meta_call_boundary(void
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_quickened_dynamic_call_direct_core_path);
-    RUN_TEST(test_aot_c_generated_shared_library_executes_static_numeric_call_local_sync_path);
+    RUN_TEST(test_aot_c_generated_shared_library_executes_static_numeric_call_local_only_path);
     RUN_TEST(test_aot_c_generated_shared_library_executes_stack_value_call_local_assignment_path);
     RUN_TEST(test_aot_c_generated_shared_library_compiles_value_typed_call_direct_core_path);
     RUN_TEST(test_aot_c_generated_shared_library_compiles_meta_call_boundary);

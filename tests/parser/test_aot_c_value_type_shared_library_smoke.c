@@ -448,8 +448,10 @@ static void test_aot_c_generated_type_layout_gc_descriptors_are_ref_exact_and_sk
     TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "ZR_AOT_GC_ROOT_LOCATION_FRAME_BYTE_OFFSET"));
     TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "    .gcRootMap = &zr_aot_gc_root_map_"));
     TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "SZrAotGcRootFrame zr_aot_gc_root_frame;"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "/* zr_aot_gc_root_frame_static_map_push */"));
     TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "ZrCore_Gc_AotRootFramePush(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "zr_aot_context.methodInfo->gcRootMap"));
+    TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "&zr_aot_gc_root_map_"));
+    TEST_ASSERT_NULL(strstr(refGeneratedCText, "zr_aot_context.methodInfo->gcRootMap"));
     TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "ZrCore_Gc_AotRootFramePop(state, &zr_aot_gc_root_frame);"));
     TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "/* aot_size.typeLayoutBytes["));
     TEST_ASSERT_NOT_NULL(strstr(refGeneratedCText, "/* aot_size.typeLayoutBytesTotal = "));
@@ -559,8 +561,13 @@ static void test_aot_c_generated_type_layout_gc_descriptors_are_ref_exact_and_sk
     TEST_ASSERT_NULL(strstr(podGeneratedCText, "static const SZrAotGcDescriptor *const zr_aot_gc_descriptors[]"));
     TEST_ASSERT_NULL(strstr(podGeneratedCText, "zr_aot_gc_root_map_"));
     TEST_ASSERT_NULL(strstr(podGeneratedCText, "zr_aot_gc_root_slots_"));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "/* zr_aot_gc_root_frame_static_map_push */"));
     TEST_ASSERT_NULL(strstr(podGeneratedCText, "ZrCore_Gc_AotRootFramePush(state,"));
     TEST_ASSERT_NULL(strstr(podGeneratedCText, "ZrCore_Gc_AotRootFramePop(state, &zr_aot_gc_root_frame);"));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "zr_aot_value_frame_drop"));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "ZrCore_TypeLayout_DropInline(state,"));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "TZrBool zr_aot_frame_started = ZR_FALSE;"));
+    TEST_ASSERT_NULL(strstr(podGeneratedCText, "TZrUInt32 zr_aot_skip_drop_slot = ZR_AOT_RUNTIME_RESUME_FALLTHROUGH;"));
     TEST_ASSERT_NOT_NULL(strstr(podGeneratedCText, "    .gcRootMap = ZR_NULL,"));
     TEST_ASSERT_NULL(strstr(podGeneratedCText, "zr_aot_gc_descriptor_offsets_failed"));
     TEST_ASSERT_NOT_NULL(strstr(podGeneratedCText, "/* aot_size.typeLayoutBytes["));

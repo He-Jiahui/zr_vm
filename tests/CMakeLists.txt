@@ -724,12 +724,169 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_add_unity_test_target(
             zr_vm_bitwise_zero_minus_shift_supported_count_range_inference_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_bitwise_zero_minus_shift_supported_count_range_inference.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_range_test_support.c
     )
     target_include_directories(zr_vm_bitwise_zero_minus_shift_supported_count_range_inference_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_bitwise_zero_minus_shift_supported_count_range_inference_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bzms_all_ones_count_range_inference_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bzms_all_ones_count_range_inference.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_range_test_support.c
+    )
+    target_include_directories(zr_vm_bzms_all_ones_count_range_inference_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    set_target_properties(
+            zr_vm_bzms_all_ones_count_range_inference_test
+            PROPERTIES OUTPUT_NAME zr_vm_bzms_all_ones_count_range_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_bzms_all_ones_count_range_inference_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bzms_unary_zm_count_range_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bzms_unary_zm_count_range.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_range_test_support.c
+    )
+    target_include_directories(zr_vm_bzms_unary_zm_count_range_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    set_target_properties(
+            zr_vm_bzms_unary_zm_count_range_test
+            PROPERTIES OUTPUT_NAME zr_vm_bzms_unary_zm_count_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_bzms_unary_zm_count_range_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bzms_not_zm_count_range_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bzms_not_zm_count_range.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_range_test_support.c
+    )
+    target_include_directories(zr_vm_bzms_not_zm_count_range_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    set_target_properties(
+            zr_vm_bzms_not_zm_count_range_test
+            PROPERTIES OUTPUT_NAME zr_vm_bzms_not_zm_count_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_bzms_not_zm_count_range_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bzms_double_zm_count_range_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bzms_double_zm_count_range.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_range_test_support.c
+    )
+    target_include_directories(zr_vm_bzms_double_zm_count_range_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    set_target_properties(
+            zr_vm_bzms_double_zm_count_range_test
+            PROPERTIES OUTPUT_NAME zr_vm_bzms_double_zm_count_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_bzms_double_zm_count_range_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bzms_neg_not_count_range_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bzms_neg_not_count_range.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_range_test_support.c
+    )
+    target_include_directories(zr_vm_bzms_neg_not_count_range_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    set_target_properties(
+            zr_vm_bzms_neg_not_count_range_test
+            PROPERTIES OUTPUT_NAME zr_vm_bzms_neg_not_count_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_bzms_neg_not_count_range_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bzms_not_unary_count_range_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bzms_not_unary_count_range.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_range_test_support.c
+    )
+    target_include_directories(zr_vm_bzms_not_unary_count_range_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    set_target_properties(
+            zr_vm_bzms_not_unary_count_range_test
+            PROPERTIES OUTPUT_NAME zr_vm_bzms_not_unary_count_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_bzms_not_unary_count_range_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bzms_zm_unary_count_range_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bzms_zm_unary_count_range.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_range_test_support.c
+    )
+    target_include_directories(zr_vm_bzms_zm_unary_count_range_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    set_target_properties(
+            zr_vm_bzms_zm_unary_count_range_test
+            PROPERTIES OUTPUT_NAME zr_vm_bzms_zm_unary_count_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_bzms_zm_unary_count_range_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bzms_double_not_count_range_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bzms_double_not_count_range.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_range_test_support.c
+    )
+    target_include_directories(zr_vm_bzms_double_not_count_range_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    set_target_properties(
+            zr_vm_bzms_double_not_count_range_test
+            PROPERTIES OUTPUT_NAME zr_vm_bzms_double_not_count_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_bzms_double_not_count_range_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bzms_double_neg_count_range_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bzms_double_neg_count_range.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_range_test_support.c
+    )
+    target_include_directories(zr_vm_bzms_double_neg_count_range_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    set_target_properties(
+            zr_vm_bzms_double_neg_count_range_test
+            PROPERTIES OUTPUT_NAME zr_vm_bzms_double_neg_count_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_bzms_double_neg_count_range_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_private_not_mask_or_leaf_cases.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_private_not_mask_or_deep_leaf_cases.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_range_test_support.c
+    )
+    target_include_directories(zr_vm_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    set_target_properties(
+            zr_vm_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference_test
+            PROPERTIES OUTPUT_NAME zr_vm_bzms_private_not_mask_range_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_bitwise_zero_minus_shift_supported_count_nested_bitwise_not_range_inference_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_bitwise_zero_minus_shift_supported_count_nested_bitwise_not_range_inference.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_range_test_support.c
+    )
+    target_include_directories(zr_vm_bitwise_zero_minus_shift_supported_count_nested_bitwise_not_range_inference_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    set_target_properties(
+            zr_vm_bitwise_zero_minus_shift_supported_count_nested_bitwise_not_range_inference_test
+            PROPERTIES OUTPUT_NAME zr_vm_bzms_nested_not_range_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_bitwise_zero_minus_shift_supported_count_nested_bitwise_not_range_inference_test)
 
     zr_vm_add_unity_test_target(
             zr_vm_numeric_branch_refinement_test
@@ -2100,6 +2257,66 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_aot_c_generic_bool_equality_local_smoke_test)
     if (UNIX AND NOT APPLE)
         target_link_libraries(zr_vm_aot_c_generic_bool_equality_local_smoke_test PRIVATE dl)
+    endif ()
+
+    zr_vm_add_unity_test_target(
+            zr_vm_aot_c_generic_equality_stack_copy_local_smoke_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_generic_equality_stack_copy_local_smoke.c
+    )
+    target_include_directories(zr_vm_aot_c_generic_equality_stack_copy_local_smoke_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    target_compile_definitions(zr_vm_aot_c_generic_equality_stack_copy_local_smoke_test PRIVATE
+            ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
+            ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
+            ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_aot_c_generic_equality_stack_copy_local_smoke_test)
+    if (UNIX AND NOT APPLE)
+        target_link_libraries(zr_vm_aot_c_generic_equality_stack_copy_local_smoke_test PRIVATE dl)
+    endif ()
+
+    zr_vm_add_unity_test_target(
+            zr_vm_aot_c_generic_not_equal_stack_copy_jump_if_local_smoke_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_generic_not_equal_stack_copy_jump_if_local_smoke.c
+    )
+    target_include_directories(zr_vm_aot_c_generic_not_equal_stack_copy_jump_if_local_smoke_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    target_compile_definitions(zr_vm_aot_c_generic_not_equal_stack_copy_jump_if_local_smoke_test PRIVATE
+            ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
+            ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
+            ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_aot_c_generic_not_equal_stack_copy_jump_if_local_smoke_test)
+    if (UNIX AND NOT APPLE)
+        target_link_libraries(zr_vm_aot_c_generic_not_equal_stack_copy_jump_if_local_smoke_test PRIVATE dl)
+    endif ()
+
+    zr_vm_add_unity_test_target(
+            zr_vm_aot_c_generic_call_result_stack_copy_equality_local_smoke_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_generic_call_result_stack_copy_equality_local_smoke.c
+    )
+    target_include_directories(zr_vm_aot_c_generic_call_result_stack_copy_equality_local_smoke_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    target_compile_definitions(zr_vm_aot_c_generic_call_result_stack_copy_equality_local_smoke_test PRIVATE
+            ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
+            ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
+            ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_aot_c_generic_call_result_stack_copy_equality_local_smoke_test)
+    if (UNIX AND NOT APPLE)
+        target_link_libraries(zr_vm_aot_c_generic_call_result_stack_copy_equality_local_smoke_test PRIVATE dl)
     endif ()
 
     zr_vm_add_unity_test_target(
@@ -3482,7 +3699,109 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
     zr_vm_add_support_target(
             zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bitwise_zero_minus_shift_supported_count_range_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.c
             ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bzms_all_ones_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bzms_all_ones_count_range_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    set_target_properties(zr_vm_lsp_bzms_all_ones_query_test PROPERTIES
+            OUTPUT_NAME zr_vm_lsp_bzms_all_ones_query_test
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bzms_unary_zm_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bzms_unary_zm_count_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    set_target_properties(zr_vm_lsp_bzms_unary_zm_query_test PROPERTIES
+            OUTPUT_NAME zr_vm_lsp_bzms_unary_zm_query_test
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bzms_not_zm_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bzms_not_zm_count_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    set_target_properties(zr_vm_lsp_bzms_not_zm_query_test PROPERTIES
+            OUTPUT_NAME zr_vm_lsp_bzms_not_zm_query_test
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bzms_double_zm_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bzms_double_zm_count_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    set_target_properties(zr_vm_lsp_bzms_double_zm_query_test PROPERTIES
+            OUTPUT_NAME zr_vm_lsp_bzms_double_zm_query_test
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bzms_neg_not_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bzms_neg_not_count_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    set_target_properties(zr_vm_lsp_bzms_neg_not_query_test PROPERTIES
+            OUTPUT_NAME zr_vm_lsp_bzms_neg_not_query_test
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bzms_not_unary_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bzms_not_unary_count_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    set_target_properties(zr_vm_lsp_bzms_not_unary_query_test PROPERTIES
+            OUTPUT_NAME zr_vm_lsp_bzms_not_unary_query_test
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bzms_zm_unary_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bzms_zm_unary_count_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    set_target_properties(zr_vm_lsp_bzms_zm_unary_query_test PROPERTIES
+            OUTPUT_NAME zr_vm_lsp_bzms_zm_unary_query_test
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bzms_double_not_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bzms_double_not_count_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    set_target_properties(zr_vm_lsp_bzms_double_not_query_test PROPERTIES
+            OUTPUT_NAME zr_vm_lsp_bzms_double_not_query_test
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bzms_double_neg_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bzms_double_neg_count_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    set_target_properties(zr_vm_lsp_bzms_double_neg_query_test PROPERTIES
+            OUTPUT_NAME zr_vm_lsp_bzms_double_neg_query_test
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bzms_supported_count_wrapped_not_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bitwise_zero_minus_shift_supported_count_wrapped_bitwise_not_range_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    set_target_properties(zr_vm_lsp_bzms_supported_count_wrapped_not_query_test PROPERTIES
+            OUTPUT_NAME zr_vm_lsp_bzms_count_wrap_not_query_test
+    )
+    zr_vm_add_support_target(
+            zr_vm_lsp_bzms_private_not_mask_query_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bzms_private_not_mask_count_query.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bzms_private_not_mask_or_counterpart_query_cases.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_bzms_private_not_mask_or_counterpart_deep_query_cases.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.c
+            ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
+    )
+    set_target_properties(zr_vm_lsp_bzms_private_not_mask_query_test PROPERTIES
+            OUTPUT_NAME zr_vm_lsp_bzms_private_not_mask_query_test
     )
     zr_vm_add_support_target(
             zr_vm_language_server_numeric_branch_semantic_query_test
@@ -3747,6 +4066,17 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             zr_vm_lsp_bitwise_zero_minus_rhs_range_query_test
             zr_vm_lsp_bitwise_zero_minus_shift_exact_zero_count_range_query_test
             zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test
+            zr_vm_lsp_bzms_all_ones_query_test
+            zr_vm_lsp_bzms_unary_zm_query_test
+            zr_vm_lsp_bzms_not_zm_query_test
+            zr_vm_lsp_bzms_double_zm_query_test
+            zr_vm_lsp_bzms_neg_not_query_test
+            zr_vm_lsp_bzms_not_unary_query_test
+            zr_vm_lsp_bzms_zm_unary_query_test
+            zr_vm_lsp_bzms_double_not_query_test
+            zr_vm_lsp_bzms_double_neg_query_test
+            zr_vm_lsp_bzms_supported_count_wrapped_not_query_test
+            zr_vm_lsp_bzms_private_not_mask_query_test
             zr_vm_language_server_numeric_branch_semantic_query_test
             zr_vm_language_server_numeric_branch_assignment_semantic_query_test
             zr_vm_language_server_numeric_loop_self_dependency_semantic_query_test
@@ -3882,6 +4212,61 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
     )
     target_include_directories(zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bzms_all_ones_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bzms_unary_zm_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bzms_not_zm_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bzms_double_zm_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bzms_neg_not_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bzms_not_unary_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bzms_zm_unary_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bzms_double_not_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bzms_double_neg_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bzms_supported_count_wrapped_not_query_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+    )
+    target_include_directories(zr_vm_lsp_bzms_private_not_mask_query_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
@@ -4842,6 +5227,28 @@ if (TARGET zr_vm_parser_test AND
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_bitwise_zero_minus_shift_supported_count_range_inference_test>")
     list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bzms_all_ones_count_range_inference_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bzms_unary_zm_count_range_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bzms_not_zm_count_range_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bzms_double_zm_count_range_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bzms_neg_not_count_range_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bzms_not_unary_count_range_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bzms_zm_unary_count_range_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bzms_double_not_count_range_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bzms_double_neg_count_range_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference_test>")
+    list(APPEND language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_bitwise_zero_minus_shift_supported_count_nested_bitwise_not_range_inference_test>")
+    list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_branch_refinement_test>")
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_branch_segment_sets_test>")
@@ -4988,6 +5395,17 @@ if (TARGET zr_vm_language_server_symbol_table_test AND
         TARGET zr_vm_lsp_bitwise_zero_minus_rhs_range_query_test AND
         TARGET zr_vm_lsp_bitwise_zero_minus_shift_exact_zero_count_range_query_test AND
         TARGET zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test AND
+        TARGET zr_vm_lsp_bzms_all_ones_query_test AND
+        TARGET zr_vm_lsp_bzms_unary_zm_query_test AND
+        TARGET zr_vm_lsp_bzms_not_zm_query_test AND
+        TARGET zr_vm_lsp_bzms_double_zm_query_test AND
+        TARGET zr_vm_lsp_bzms_neg_not_query_test AND
+        TARGET zr_vm_lsp_bzms_not_unary_query_test AND
+        TARGET zr_vm_lsp_bzms_zm_unary_query_test AND
+        TARGET zr_vm_lsp_bzms_double_not_query_test AND
+        TARGET zr_vm_lsp_bzms_double_neg_query_test AND
+        TARGET zr_vm_lsp_bzms_supported_count_wrapped_not_query_test AND
+        TARGET zr_vm_lsp_bzms_private_not_mask_query_test AND
         TARGET zr_vm_language_server_numeric_branch_semantic_query_test AND
         TARGET zr_vm_language_server_numeric_branch_assignment_semantic_query_test AND
         TARGET zr_vm_language_server_numeric_loop_self_dependency_semantic_query_test AND
@@ -5053,6 +5471,28 @@ if (TARGET zr_vm_language_server_symbol_table_test AND
             ";$<TARGET_FILE:zr_vm_lsp_bitwise_zero_minus_shift_exact_zero_count_range_query_test>")
     string(APPEND language_server_executables
             ";$<TARGET_FILE:zr_vm_lsp_bitwise_zero_minus_shift_supported_count_range_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bzms_all_ones_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bzms_unary_zm_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bzms_not_zm_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bzms_double_zm_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bzms_neg_not_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bzms_not_unary_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bzms_zm_unary_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bzms_double_not_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bzms_double_neg_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bzms_supported_count_wrapped_not_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_lsp_bzms_private_not_mask_query_test>")
     string(APPEND language_server_executables
             ";$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_five_additional_scale_query_test>")
     string(APPEND language_server_executables

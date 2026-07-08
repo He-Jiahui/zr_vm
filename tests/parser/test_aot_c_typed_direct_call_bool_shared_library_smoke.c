@@ -20,6 +20,9 @@ static void test_aot_c_generated_shared_library_executes_static_bool_no_arg_type
             "zr_aot_typed_bool_fn_1()",
             "/* zr_aot_static_bool_no_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_bool_no_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -46,6 +49,9 @@ static void test_aot_c_generated_shared_library_returns_static_bool_no_arg_resul
             "zr_aot_typed_bool_fn_1()",
             "/* zr_aot_static_bool_no_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_bool_no_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke_with_options(
@@ -75,6 +81,9 @@ static void test_aot_c_generated_shared_library_executes_static_bool_one_arg_typ
             "zr_aot_typed_bool_fn_1(zr_aot_b",
             "/* zr_aot_static_bool_one_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_bool_one_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -101,6 +110,9 @@ static void test_aot_c_generated_shared_library_executes_static_bool_one_arg_log
             "zr_aot_typed_bool_fn_1(zr_aot_b",
             "/* zr_aot_static_bool_one_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_bool_one_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -128,6 +140,9 @@ static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_log
             "zr_aot_typed_bool_fn_1(zr_aot_b",
             "/* zr_aot_static_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -156,6 +171,9 @@ static void test_aot_c_generated_shared_library_executes_static_bool_three_arg_l
             "zr_aot_typed_bool_fn_1(zr_aot_b",
             "/* zr_aot_static_bool_three_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_bool_three_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -184,6 +202,9 @@ static void test_aot_c_generated_shared_library_executes_static_bool_three_arg_l
             "zr_aot_typed_bool_fn_1(zr_aot_b",
             "/* zr_aot_static_bool_three_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_bool_three_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -211,6 +232,9 @@ static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_log
             "zr_aot_typed_bool_fn_1(zr_aot_b",
             "/* zr_aot_static_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -238,6 +262,9 @@ static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_equ
             "zr_aot_typed_bool_fn_1(zr_aot_b",
             "/* zr_aot_static_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -265,6 +292,9 @@ static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_not
             "zr_aot_typed_bool_fn_1(zr_aot_b",
             "/* zr_aot_static_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -292,6 +322,9 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_less
             "zr_aot_typed_bool_fn_1(zr_aot_s",
             "/* zr_aot_static_i64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_i64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -319,6 +352,9 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_equa
             "zr_aot_typed_bool_fn_1(zr_aot_s",
             "/* zr_aot_static_i64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_i64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -346,6 +382,9 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_not_
             "zr_aot_typed_bool_fn_1(zr_aot_s",
             "/* zr_aot_static_i64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_i64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -373,6 +412,9 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_grea
             "zr_aot_typed_bool_fn_1(zr_aot_s",
             "/* zr_aot_static_i64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_i64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -400,6 +442,9 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_less
             "zr_aot_typed_bool_fn_1(zr_aot_s",
             "/* zr_aot_static_i64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_i64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -427,6 +472,9 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_grea
             "zr_aot_typed_bool_fn_1(zr_aot_s",
             "/* zr_aot_static_i64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_i64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -454,6 +502,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_less
             "zr_aot_typed_bool_fn_1(zr_aot_u",
             "/* zr_aot_static_u64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_u64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -481,6 +532,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_equa
             "zr_aot_typed_bool_fn_1(zr_aot_u",
             "/* zr_aot_static_u64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_u64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -508,6 +562,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_not_
             "zr_aot_typed_bool_fn_1(zr_aot_u",
             "/* zr_aot_static_u64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_u64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -535,6 +592,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_grea
             "zr_aot_typed_bool_fn_1(zr_aot_u",
             "/* zr_aot_static_u64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_u64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -562,6 +622,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_less
             "zr_aot_typed_bool_fn_1(zr_aot_u",
             "/* zr_aot_static_u64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_u64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -589,6 +652,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_grea
             "zr_aot_typed_bool_fn_1(zr_aot_u",
             "/* zr_aot_static_u64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_u64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -616,6 +682,9 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_less
             "zr_aot_typed_bool_fn_1(zr_aot_f",
             "/* zr_aot_static_f64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_f64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -643,6 +712,9 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_less
             "zr_aot_typed_bool_fn_1(zr_aot_f",
             "/* zr_aot_static_f64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_f64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -670,6 +742,9 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_equa
             "zr_aot_typed_bool_fn_1(zr_aot_f",
             "/* zr_aot_static_f64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_f64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -697,6 +772,9 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_not_
             "zr_aot_typed_bool_fn_1(zr_aot_f",
             "/* zr_aot_static_f64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_f64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -724,6 +802,9 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_grea
             "zr_aot_typed_bool_fn_1(zr_aot_f",
             "/* zr_aot_static_f64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_f64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
@@ -751,6 +832,9 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_grea
             "zr_aot_typed_bool_fn_1(zr_aot_f",
             "/* zr_aot_static_f64_bool_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_f64_bool_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_bool_smoke(&testCase);

@@ -15,6 +15,9 @@ typedef struct SZrAotTypedDirectCallU64SmokeCase {
     const char *directCallNeedle;
     const char *syncMarkerNeedle;
     TZrInt64 expectedResult;
+    const char *fullAotDirectCallMarkerNeedle;
+    TZrBool requireFullAot;
+    TZrBool forbidTypedDirectCallMetadataGuard;
 } SZrAotTypedDirectCallU64SmokeCase;
 
 #if defined(ZR_PLATFORM_UNIX)
@@ -159,6 +162,7 @@ static void run_aot_c_typed_direct_call_u64_smoke_with_options(
     aotOptions.embeddedModuleBlob = embeddedBlob;
     aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
     aotOptions.requireExecutableLowering = ZR_TRUE;
+    aotOptions.requireFullAot = testCase->requireFullAot;
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
@@ -166,6 +170,9 @@ static void run_aot_c_typed_direct_call_u64_smoke_with_options(
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->definitionNeedle));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->returnNeedle));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->directCallMarkerNeedle));
+    if (testCase->fullAotDirectCallMarkerNeedle != ZR_NULL) {
+        TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->fullAotDirectCallMarkerNeedle));
+    }
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->directCallNeedle));
     if (returnBoundaryNeedle != ZR_NULL) {
         TEST_ASSERT_NOT_NULL(strstr(generatedCText, returnBoundaryNeedle));
@@ -176,6 +183,11 @@ static void run_aot_c_typed_direct_call_u64_smoke_with_options(
     TEST_ASSERT_NULL(strstr(generatedCText, testCase->syncMarkerNeedle));
     TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
+    if (testCase->forbidTypedDirectCallMetadataGuard) {
+        TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame,"));
+        TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,"));
+        TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame,"));
+    }
     if (!allowRuntimeCallFallbacks) {
         TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
         TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));

@@ -17,6 +17,78 @@ static void backend_aot_c_write_string_logical_operand(FILE *file,
             (unsigned)stackSlot);
 }
 
+static TZrBool backend_aot_c_to_string_slot_written_immediately_before(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 stringSlot,
+        TZrUInt32 execInstructionIndex) {
+    const SZrFunction *function;
+    const TZrInstruction *instruction;
+
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL || execInstructionIndex == 0u) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    if (function->exceptionHandlerCount > 0 ||
+        function->instructionsList == ZR_NULL ||
+        execInstructionIndex > function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    instruction = &function->instructionsList[execInstructionIndex - 1u];
+    return (TZrBool)(instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(TO_STRING) &&
+                     instruction->instruction.operandExtra == stringSlot);
+}
+
+static TZrBool backend_aot_c_to_object_slot_written_immediately_before(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 objectSlot,
+        TZrUInt32 execInstructionIndex) {
+    const SZrFunction *function;
+    const TZrInstruction *instruction;
+
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL || execInstructionIndex == 0u) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    if (function->exceptionHandlerCount > 0 ||
+        function->instructionsList == ZR_NULL ||
+        execInstructionIndex > function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    instruction = &function->instructionsList[execInstructionIndex - 1u];
+    return (TZrBool)(instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(TO_OBJECT) &&
+                     instruction->instruction.operandExtra == objectSlot);
+}
+
+static void backend_aot_c_write_string_slot_truthiness(FILE *file, TZrUInt32 stringSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "        if (zr_aot_ref_locals.o%u == ZR_NULL) {\n"
+            "            ZrCore_Debug_RunError(state, \"unsupported AOT string truthiness\");\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        const SZrString *zr_aot_string_slot_string = ZR_CAST_STRING(state, zr_aot_ref_locals.o%u);\n"
+            "        TZrBool zr_aot_string_slot_truthy = (TZrBool)(ZrCore_String_GetByteLength(zr_aot_string_slot_string) > 0u);\n",
+            (unsigned)stringSlot,
+            (unsigned)stringSlot);
+}
+
+static void backend_aot_c_write_object_slot_truthiness(FILE *file, TZrUInt32 objectSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "        TZrBool zr_aot_object_slot_truthy = (TZrBool)(zr_aot_ref_locals.o%u != ZR_NULL);\n",
+            (unsigned)objectSlot);
+}
+
 static void backend_aot_c_write_bool_binary_logical(FILE *file) {
     if (file == ZR_NULL) {
         return;
@@ -182,6 +254,45 @@ static TZrBool backend_aot_c_write_generic_logical_not_scalar_local(FILE *file,
         return ZR_TRUE;
     }
 
+    if (execInstructionIndex > 0u &&
+        backend_aot_c_null_constant_stack_copy_consumed_by_local_logical_not(
+                functionIr, sourceSlot, execInstructionIndex - 1u)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_logical_not */\n"
+                "        /* zr_aot_generic_logical_not_null_stack_copy_local */\n"
+                "        zr_aot_b%u = ZR_TRUE;\n"
+                "    }\n",
+                (unsigned)destinationSlot);
+        return ZR_TRUE;
+    }
+
+    if (execInstructionIndex > 0u &&
+        backend_aot_c_reset_null_consumed_by_local_logical_not(
+                functionIr, sourceSlot, execInstructionIndex - 1u)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_logical_not */\n"
+                "        /* zr_aot_generic_logical_not_reset_null_local */\n"
+                "        zr_aot_b%u = ZR_TRUE;\n"
+                "    }\n",
+                (unsigned)destinationSlot);
+        return ZR_TRUE;
+    }
+
+    if (execInstructionIndex > 0u &&
+        backend_aot_c_reset_null_stack_copy_consumed_by_local_logical_not(
+                functionIr, sourceSlot, execInstructionIndex - 1u)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_logical_not */\n"
+                "        /* zr_aot_generic_logical_not_reset_null_stack_copy_local */\n"
+                "        zr_aot_b%u = ZR_TRUE;\n"
+                "    }\n",
+                (unsigned)destinationSlot);
+        return ZR_TRUE;
+    }
+
     constantTruthy = ZR_FALSE;
     if (execInstructionIndex > 0u &&
         backend_aot_c_bool_constant_consumed_by_local_logical_not(
@@ -211,6 +322,48 @@ static TZrBool backend_aot_c_write_generic_logical_not_scalar_local(FILE *file,
                 "    }\n",
                 (unsigned)destinationSlot,
                 constantResultExpression);
+        return ZR_TRUE;
+    }
+
+    constantTruthy = ZR_FALSE;
+    if (execInstructionIndex > 0u &&
+        backend_aot_c_string_constant_stack_copy_consumed_by_local_logical_not(
+                functionIr, sourceSlot, execInstructionIndex - 1u, &constantTruthy)) {
+        constantResultExpression = constantTruthy ? "ZR_FALSE" : "ZR_TRUE";
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_logical_not */\n"
+                "        /* zr_aot_generic_logical_not_string_stack_copy_local */\n"
+                "        zr_aot_b%u = %s;\n"
+                "    }\n",
+                (unsigned)destinationSlot,
+                constantResultExpression);
+        return ZR_TRUE;
+    }
+
+    if (backend_aot_c_to_string_slot_written_immediately_before(functionIr, sourceSlot, execInstructionIndex)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_logical_not */\n"
+                "        /* zr_aot_generic_logical_not_string_slot_local */\n");
+        backend_aot_c_write_string_slot_truthiness(file, sourceSlot);
+        fprintf(file,
+                "        zr_aot_b%u = (TZrBool)(!zr_aot_string_slot_truthy);\n"
+                "    }\n",
+                (unsigned)destinationSlot);
+        return ZR_TRUE;
+    }
+
+    if (backend_aot_c_to_object_slot_written_immediately_before(functionIr, sourceSlot, execInstructionIndex)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_logical_not */\n"
+                "        /* zr_aot_generic_logical_not_object_slot_local */\n");
+        backend_aot_c_write_object_slot_truthiness(file, sourceSlot);
+        fprintf(file,
+                "        zr_aot_b%u = (TZrBool)(!zr_aot_object_slot_truthy);\n"
+                "    }\n",
+                (unsigned)destinationSlot);
         return ZR_TRUE;
     }
 
@@ -358,6 +511,91 @@ static TZrBool backend_aot_c_write_generic_primitive_compare_scalar_local(FILE *
     return ZR_TRUE;
 }
 
+static TZrBool backend_aot_c_generic_primitive_local_kind_written_before(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 slot,
+        TZrUInt32 execInstructionIndex,
+        char *outKindCode) {
+    TZrUInt32 kindCount;
+    char kindCode;
+
+    if (outKindCode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *outKindCode = '\0';
+    if (functionIr == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    kindCount = 0u;
+    kindCode = '\0';
+    if (backend_aot_c_scalar_locals_has_bool_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_bool_value_written_before(functionIr, slot, execInstructionIndex)) {
+        kindCount++;
+        kindCode = 'b';
+    }
+    if (backend_aot_c_scalar_locals_has_i64_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_i64_written_before(functionIr, slot, execInstructionIndex)) {
+        kindCount++;
+        kindCode = 's';
+    }
+    if (backend_aot_c_scalar_locals_has_u64_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_u64_written_before(functionIr, slot, execInstructionIndex)) {
+        kindCount++;
+        kindCode = 'u';
+    }
+    if (backend_aot_c_scalar_locals_has_f64_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_f64_written_before(functionIr, slot, execInstructionIndex)) {
+        kindCount++;
+        kindCode = 'f';
+    }
+    if (kindCount != 1u) {
+        return ZR_FALSE;
+    }
+
+    *outKindCode = kindCode;
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_c_write_generic_mixed_primitive_compare_scalar_local(
+        FILE *file,
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 leftSlot,
+        TZrUInt32 rightSlot,
+        TZrUInt32 execInstructionIndex,
+        const char *markerText,
+        const char *resultExpression) {
+    char leftKindCode;
+    char rightKindCode;
+
+    if (file == ZR_NULL || markerText == ZR_NULL || resultExpression == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(functionIr, destinationSlot, execInstructionIndex) ||
+        !backend_aot_c_generic_primitive_local_kind_written_before(
+                functionIr, leftSlot, execInstructionIndex, &leftKindCode) ||
+        !backend_aot_c_generic_primitive_local_kind_written_before(
+                functionIr, rightSlot, execInstructionIndex, &rightKindCode) ||
+        leftKindCode == rightKindCode) {
+        return ZR_FALSE;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* %s */\n"
+            "        /* zr_aot_generic_mixed_primitive_compare_scalar_local */\n"
+            "        /* leftKind=%c rightKind=%c */\n"
+            "        zr_aot_b%u = %s;\n"
+            "    }\n",
+            markerText,
+            leftKindCode,
+            rightKindCode,
+            (unsigned)destinationSlot,
+            resultExpression);
+    return ZR_TRUE;
+}
+
 static TZrBool backend_aot_c_write_generic_jump_if_scalar_local(FILE *file,
                                                                 const SZrAotExecIrFunction *functionIr,
                                                                 TZrUInt32 functionIndex,
@@ -447,6 +685,17 @@ void backend_aot_write_c_direct_logical_equal(FILE *file,
                 "==")) {
         return;
     }
+    if (backend_aot_c_write_generic_mixed_primitive_compare_scalar_local(
+                file,
+                functionIr,
+                destinationSlot,
+                leftSlot,
+                rightSlot,
+                execInstructionIndex,
+                "zr_aot_generic_logical_equal",
+                "ZR_FALSE")) {
+        return;
+    }
 
     fprintf(file,
             "    {\n"
@@ -488,6 +737,17 @@ void backend_aot_write_c_direct_logical_not_equal(FILE *file,
                 execInstructionIndex,
                 "zr_aot_generic_logical_not_equal",
                 "!=")) {
+        return;
+    }
+    if (backend_aot_c_write_generic_mixed_primitive_compare_scalar_local(
+                file,
+                functionIr,
+                destinationSlot,
+                leftSlot,
+                rightSlot,
+                execInstructionIndex,
+                "zr_aot_generic_logical_not_equal",
+                "ZR_TRUE")) {
         return;
     }
 
@@ -700,6 +960,40 @@ void backend_aot_write_c_direct_jump_if(FILE *file,
         return;
     }
     if (execInstructionIndex > 0u &&
+        backend_aot_c_null_constant_stack_copy_consumed_by_local_jump_if(
+                functionIr, conditionSlot, execInstructionIndex - 1u)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_jump_if */\n"
+                "        /* zr_aot_generic_jump_if_null_stack_copy_false */\n");
+        if (isBackEdge) {
+            backend_aot_write_c_gc_safepoint(file, "        ", "zr_aot_gc_safepoint_back_edge");
+        }
+        fprintf(file,
+                "        goto zr_aot_fn_%u_ins_%u;\n"
+                "    }\n",
+                (unsigned)functionIndex,
+                (unsigned)targetInstructionIndex);
+        return;
+    }
+    if (execInstructionIndex > 0u &&
+        backend_aot_c_reset_null_stack_copy_consumed_by_local_jump_if(
+                functionIr, conditionSlot, execInstructionIndex - 1u)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_jump_if */\n"
+                "        /* zr_aot_generic_jump_if_reset_null_stack_copy_false */\n");
+        if (isBackEdge) {
+            backend_aot_write_c_gc_safepoint(file, "        ", "zr_aot_gc_safepoint_back_edge");
+        }
+        fprintf(file,
+                "        goto zr_aot_fn_%u_ins_%u;\n"
+                "    }\n",
+                (unsigned)functionIndex,
+                (unsigned)targetInstructionIndex);
+        return;
+    }
+    if (execInstructionIndex > 0u &&
         backend_aot_c_reset_null_consumed_by_local_jump_if(
                 functionIr, conditionSlot, execInstructionIndex - 1u)) {
         fprintf(file,
@@ -760,6 +1054,69 @@ void backend_aot_write_c_direct_jump_if(FILE *file,
         }
         fprintf(file,
                 "        goto zr_aot_fn_%u_ins_%u;\n"
+                "    }\n",
+                (unsigned)functionIndex,
+                (unsigned)targetInstructionIndex);
+        return;
+    }
+    constantTruthy = ZR_FALSE;
+    if (execInstructionIndex > 0u &&
+        backend_aot_c_string_constant_stack_copy_consumed_by_local_jump_if(
+                functionIr, conditionSlot, execInstructionIndex - 1u, &constantTruthy)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_jump_if */\n");
+        if (constantTruthy) {
+            fprintf(file,
+                    "        /* zr_aot_generic_jump_if_string_stack_copy_true */\n"
+                    "    }\n");
+            return;
+        }
+        fprintf(file,
+                "        /* zr_aot_generic_jump_if_string_stack_copy_false */\n");
+        if (isBackEdge) {
+            backend_aot_write_c_gc_safepoint(file, "        ", "zr_aot_gc_safepoint_back_edge");
+        }
+        fprintf(file,
+                "        goto zr_aot_fn_%u_ins_%u;\n"
+                "    }\n",
+                (unsigned)functionIndex,
+                (unsigned)targetInstructionIndex);
+        return;
+    }
+    if (backend_aot_c_to_string_slot_written_immediately_before(functionIr, conditionSlot, execInstructionIndex)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_jump_if */\n"
+                "        /* zr_aot_generic_jump_if_string_slot_local */\n");
+        backend_aot_c_write_string_slot_truthiness(file, conditionSlot);
+        fprintf(file,
+                "        if (!zr_aot_string_slot_truthy) {\n");
+        if (isBackEdge) {
+            backend_aot_write_c_gc_safepoint(file, "            ", "zr_aot_gc_safepoint_back_edge");
+        }
+        fprintf(file,
+                "            goto zr_aot_fn_%u_ins_%u;\n"
+                "        }\n"
+                "    }\n",
+                (unsigned)functionIndex,
+                (unsigned)targetInstructionIndex);
+        return;
+    }
+    if (backend_aot_c_to_object_slot_written_immediately_before(functionIr, conditionSlot, execInstructionIndex)) {
+        fprintf(file,
+                "    {\n"
+                "        /* zr_aot_generic_jump_if */\n"
+                "        /* zr_aot_generic_jump_if_object_slot_local */\n");
+        backend_aot_c_write_object_slot_truthiness(file, conditionSlot);
+        fprintf(file,
+                "        if (!zr_aot_object_slot_truthy) {\n");
+        if (isBackEdge) {
+            backend_aot_write_c_gc_safepoint(file, "            ", "zr_aot_gc_safepoint_back_edge");
+        }
+        fprintf(file,
+                "            goto zr_aot_fn_%u_ins_%u;\n"
+                "        }\n"
                 "    }\n",
                 (unsigned)functionIndex,
                 (unsigned)targetInstructionIndex);

@@ -44,6 +44,15 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+static void assert_generated_i64_full_aot_direct_call(const char *generatedCText, const char *fullAotMarkerNeedle) {
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_NOT_NULL(fullAotMarkerNeedle);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, fullAotMarkerNeedle));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame,"));
+}
+
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -198,6 +207,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_no_arg_local
     aotOptions.embeddedModuleBlob = embeddedBlob;
     aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
     aotOptions.requireExecutableLowering = ZR_TRUE;
+    aotOptions.requireFullAot = ZR_TRUE;
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
@@ -205,6 +215,8 @@ static void test_aot_c_generated_shared_library_executes_static_i64_no_arg_local
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrInt64 zr_aot_typed_i64_fn_1(void) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrInt64)42;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_no_arg_direct_call */"));
+    assert_generated_i64_full_aot_direct_call(generatedCText,
+                                              "/* zr_aot_static_i64_no_arg_direct_call_full_aot */");
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1()"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_no_arg_direct_call_sync_stack_slot */"));
@@ -345,6 +357,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_type
     aotOptions.embeddedModuleBlob = embeddedBlob;
     aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
     aotOptions.requireExecutableLowering = ZR_TRUE;
+    aotOptions.requireFullAot = ZR_TRUE;
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
@@ -354,6 +367,8 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_type
                                 "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return zr_aot_arg0;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_one_arg_direct_call */"));
+    assert_generated_i64_full_aot_direct_call(generatedCText,
+                                              "/* zr_aot_static_i64_one_arg_direct_call_full_aot */");
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(zr_aot_s"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state, zr_aot_s"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_one_arg_direct_call_sync_stack_slot */"));
@@ -494,6 +509,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_add_
     aotOptions.embeddedModuleBlob = embeddedBlob;
     aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
     aotOptions.requireExecutableLowering = ZR_TRUE;
+    aotOptions.requireFullAot = ZR_TRUE;
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
@@ -503,6 +519,8 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_add_
                                 "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrInt64)(zr_aot_arg0 + (TZrInt64)1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_one_arg_direct_call */"));
+    assert_generated_i64_full_aot_direct_call(generatedCText,
+                                              "/* zr_aot_static_i64_one_arg_direct_call_full_aot */");
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(zr_aot_s"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state, zr_aot_s"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_one_arg_direct_call_sync_stack_slot */"));
@@ -644,6 +662,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_type
     aotOptions.embeddedModuleBlob = embeddedBlob;
     aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
     aotOptions.requireExecutableLowering = ZR_TRUE;
+    aotOptions.requireFullAot = ZR_TRUE;
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
@@ -655,6 +674,8 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_type
             "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrInt64)(zr_aot_arg0 + zr_aot_arg1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_two_arg_direct_call */"));
+    assert_generated_i64_full_aot_direct_call(generatedCText,
+                                              "/* zr_aot_static_i64_two_arg_direct_call_full_aot */");
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(zr_aot_s"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state, zr_aot_s"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_two_arg_direct_call_sync_stack_slot */"));
@@ -796,6 +817,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_subt
     aotOptions.embeddedModuleBlob = embeddedBlob;
     aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
     aotOptions.requireExecutableLowering = ZR_TRUE;
+    aotOptions.requireFullAot = ZR_TRUE;
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
@@ -807,6 +829,8 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_subt
             "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrInt64)(zr_aot_arg0 - zr_aot_arg1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_two_arg_direct_call */"));
+    assert_generated_i64_full_aot_direct_call(generatedCText,
+                                              "/* zr_aot_static_i64_two_arg_direct_call_full_aot */");
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(zr_aot_s"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_typed_i64_fn_1(state, zr_aot_s"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_two_arg_direct_call_sync_stack_slot */"));

@@ -72,6 +72,7 @@ related_code:
   - tests/core/test_tail_reuse_callinfo_reset.c
   - tests/core/test_object_call_known_native_fast_path.c
   - tests/core/test_native_inline_span_dispatch.c
+  - tests/core/test_aot_gc_root_frame.c
   - tests/gc/gc_tests.c
   - tests/module/test_metadata_runtime_type_layout.c
   - tests/parser/test_compiler_features.c
@@ -205,6 +206,7 @@ tests:
   - tests/acceptance/2026-06-28-aot-11-s6f-f64-typed-direct-call-deopt.md
   - tests/acceptance/2026-06-28-aot-11-s6g-bool-typed-direct-call-deopt.md
   - tests/acceptance/2026-06-28-aot-11-s6h-inline-struct-typed-call-deopt.md
+  - tests/acceptance/2026-07-06-aot-09-s2-local-address-root-runtime-support.md
   - tests/acceptance/2026-06-26-aot-12-s7l-type-layout-payload-byte-trim-delta.md
 doc_type: module-detail
 ---
@@ -344,6 +346,13 @@ This keeps array and object indexing in the same two-path model as member access
 ## Runtime Shutdown And GC Root Marking
 
 `ZrCore_GlobalState_Free` releases the garbage collector before releasing the string table. Shutdown GC can still need to mark string-table major roots, so freeing the string table first leaves shutdown collection with dangling root metadata. The string table is therefore kept alive until after `ZrCore_GarbageCollector_Free` returns.
+
+AOT root frames support two root-location encodings. `ZR_AOT_GC_ROOT_LOCATION_FRAME_BYTE_OFFSET` keeps the existing
+`SZrTypeValue` stack-slot path and validates the computed address against the VM stack bounds before mark/rewrite.
+`ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS` treats `frameBase + frameByteOffset` as a registered `SZrRawObject **`
+local-address root slot, marks the pointed raw object during root marking, and rewrites the slot through forwarding
+addresses during minor GC. This completes the runtime side of the optional local-address root ABI; generated-C
+root-map emission for that location kind remains a later AOT backend slice.
 
 In Debug builds, the short-string major-root traversal uses the string hash-set capacity as the cycle guard instead of the current element count. The linked short-string root list can contain entries whose traversal bound is not safely represented by `elementCount` during shutdown and full-collection edge cases; capacity remains the conservative bounded walk limit for detecting accidental cycles without tripping on valid retained roots.
 

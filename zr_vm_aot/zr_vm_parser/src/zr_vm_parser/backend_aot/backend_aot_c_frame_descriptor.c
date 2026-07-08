@@ -47,6 +47,10 @@ static TZrBool backend_aot_c_frame_descriptor_constant_can_use_local_only(
         return (TZrBool)(backend_aot_c_string_constant_consumed_by_local_logical_not(
                                  functionIr, destinationSlot, instructionIndex, ZR_NULL) ||
                          backend_aot_c_string_constant_consumed_by_local_jump_if(
+                                 functionIr, destinationSlot, instructionIndex, ZR_NULL) ||
+                         backend_aot_c_string_constant_consumed_by_local_stack_copy_logical_not(
+                                 functionIr, destinationSlot, instructionIndex, ZR_NULL) ||
+                         backend_aot_c_string_constant_consumed_by_local_stack_copy_jump_if(
                                  functionIr, destinationSlot, instructionIndex, ZR_NULL));
     }
 
@@ -58,6 +62,10 @@ static TZrBool backend_aot_c_frame_descriptor_constant_can_use_local_only(
         return (TZrBool)(backend_aot_c_null_constant_consumed_by_local_logical_not(
                                  functionIr, destinationSlot, instructionIndex) ||
                          backend_aot_c_null_constant_consumed_by_local_jump_if(
+                                 functionIr, destinationSlot, instructionIndex) ||
+                         backend_aot_c_null_constant_consumed_by_local_stack_copy_logical_not(
+                                 functionIr, destinationSlot, instructionIndex) ||
+                         backend_aot_c_null_constant_consumed_by_local_stack_copy_jump_if(
                                  functionIr, destinationSlot, instructionIndex));
     }
 
@@ -78,6 +86,12 @@ static TZrBool backend_aot_c_frame_descriptor_constant_can_use_local_only(
                          (backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot) &&
                           backend_aot_c_scalar_locals_u64_constant_can_skip_value_slot(
                                   functionIr, destinationSlot, instructionIndex)));
+    }
+
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(constantValue->type)) {
+        return (TZrBool)(backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot) &&
+                         backend_aot_c_scalar_locals_u64_constant_can_skip_value_slot(
+                                 functionIr, destinationSlot, instructionIndex));
     }
 
     if (ZR_VALUE_IS_TYPE_FLOAT(constantValue->type)) {
@@ -135,6 +149,268 @@ static TZrBool backend_aot_c_frame_descriptor_generic_jump_if_condition_can_use_
                               functionIr, conditionSlot, instructionIndex)));
 }
 
+typedef enum EZrAotFrameDescriptorGenericNumericScalarLocalKind {
+    ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_NONE,
+    ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_I64,
+    ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_U64,
+    ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_F64
+} EZrAotFrameDescriptorGenericNumericScalarLocalKind;
+
+static EZrAotFrameDescriptorGenericNumericScalarLocalKind
+backend_aot_c_frame_descriptor_generic_numeric_written_scalar_kind(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 slot,
+        TZrUInt32 instructionIndex) {
+    if (backend_aot_c_scalar_locals_has_f64_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_f64_written_before(functionIr, slot, instructionIndex)) {
+        return ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_F64;
+    }
+    if (backend_aot_c_scalar_locals_has_i64_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_i64_written_before(functionIr, slot, instructionIndex)) {
+        return ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_I64;
+    }
+    if (backend_aot_c_scalar_locals_has_u64_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_u64_written_before(functionIr, slot, instructionIndex)) {
+        return ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_U64;
+    }
+    return ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_NONE;
+}
+
+static TZrBool backend_aot_c_frame_descriptor_generic_numeric_scalar_kind_is_integer(
+        EZrAotFrameDescriptorGenericNumericScalarLocalKind kind) {
+    return (TZrBool)(kind == ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_I64 ||
+                     kind == ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_U64);
+}
+
+static TZrBool backend_aot_c_frame_descriptor_generic_numeric_scalar_kinds_form_mixed_i64_u64(
+        EZrAotFrameDescriptorGenericNumericScalarLocalKind leftKind,
+        EZrAotFrameDescriptorGenericNumericScalarLocalKind rightKind) {
+    return (TZrBool)((leftKind == ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_I64 &&
+                      rightKind == ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_U64) ||
+                     (leftKind == ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_U64 &&
+                      rightKind == ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_I64));
+}
+
+static TZrBool backend_aot_c_frame_descriptor_generic_numeric_binary_opcode_can_use_local_only(
+        EZrInstructionCode operationCode) {
+    switch (operationCode) {
+        case ZR_INSTRUCTION_ENUM(ADD):
+        case ZR_INSTRUCTION_ENUM(ADD_STRING):
+        case ZR_INSTRUCTION_ENUM(SUB):
+        case ZR_INSTRUCTION_ENUM(MUL):
+        case ZR_INSTRUCTION_ENUM(DIV):
+        case ZR_INSTRUCTION_ENUM(MOD):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED):
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool backend_aot_c_frame_descriptor_generic_numeric_same_i64_binary_can_use_local_only(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 leftSlot,
+        TZrUInt32 rightSlot) {
+    return (TZrBool)(backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(
+                             functionIr, destinationSlot, instructionIndex) &&
+                     backend_aot_c_scalar_locals_has_i64_slot(functionIr, leftSlot) &&
+                     backend_aot_c_scalar_locals_has_i64_slot(functionIr, rightSlot) &&
+                     backend_aot_c_scalar_locals_i64_written_before(functionIr, leftSlot, instructionIndex) &&
+                     backend_aot_c_scalar_locals_i64_written_before(functionIr, rightSlot, instructionIndex));
+}
+
+static TZrBool backend_aot_c_frame_descriptor_generic_numeric_same_u64_binary_can_use_local_only(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 leftSlot,
+        TZrUInt32 rightSlot) {
+    return (TZrBool)(backend_aot_c_scalar_locals_u64_result_can_skip_value_slot(
+                             functionIr, destinationSlot, instructionIndex) &&
+                     backend_aot_c_scalar_locals_has_u64_slot(functionIr, leftSlot) &&
+                     backend_aot_c_scalar_locals_has_u64_slot(functionIr, rightSlot) &&
+                     backend_aot_c_scalar_locals_u64_written_before(functionIr, leftSlot, instructionIndex) &&
+                     backend_aot_c_scalar_locals_u64_written_before(functionIr, rightSlot, instructionIndex));
+}
+
+static TZrBool backend_aot_c_frame_descriptor_generic_numeric_same_f64_binary_can_use_local_only(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 leftSlot,
+        TZrUInt32 rightSlot) {
+    return (TZrBool)(backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
+                             functionIr, destinationSlot, instructionIndex) &&
+                     backend_aot_c_scalar_locals_has_f64_slot(functionIr, leftSlot) &&
+                     backend_aot_c_scalar_locals_has_f64_slot(functionIr, rightSlot) &&
+                     backend_aot_c_scalar_locals_f64_written_before(functionIr, leftSlot, instructionIndex) &&
+                     backend_aot_c_scalar_locals_f64_written_before(functionIr, rightSlot, instructionIndex));
+}
+
+static TZrBool backend_aot_c_frame_descriptor_generic_numeric_mixed_i64_u64_binary_can_use_local_only(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 leftSlot,
+        TZrUInt32 rightSlot) {
+    EZrAotFrameDescriptorGenericNumericScalarLocalKind leftKind;
+    EZrAotFrameDescriptorGenericNumericScalarLocalKind rightKind;
+
+    if (!backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(
+                functionIr, destinationSlot, instructionIndex)) {
+        return ZR_FALSE;
+    }
+
+    leftKind = backend_aot_c_frame_descriptor_generic_numeric_written_scalar_kind(
+            functionIr, leftSlot, instructionIndex);
+    rightKind = backend_aot_c_frame_descriptor_generic_numeric_written_scalar_kind(
+            functionIr, rightSlot, instructionIndex);
+    return backend_aot_c_frame_descriptor_generic_numeric_scalar_kinds_form_mixed_i64_u64(
+            leftKind, rightKind);
+}
+
+static TZrBool backend_aot_c_frame_descriptor_generic_numeric_mixed_f64_binary_can_use_local_only(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 leftSlot,
+        TZrUInt32 rightSlot) {
+    EZrAotFrameDescriptorGenericNumericScalarLocalKind leftKind;
+    EZrAotFrameDescriptorGenericNumericScalarLocalKind rightKind;
+
+    if (!backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
+                functionIr, destinationSlot, instructionIndex)) {
+        return ZR_FALSE;
+    }
+
+    leftKind = backend_aot_c_frame_descriptor_generic_numeric_written_scalar_kind(
+            functionIr, leftSlot, instructionIndex);
+    rightKind = backend_aot_c_frame_descriptor_generic_numeric_written_scalar_kind(
+            functionIr, rightSlot, instructionIndex);
+    return (TZrBool)((leftKind == ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_F64 &&
+                      backend_aot_c_frame_descriptor_generic_numeric_scalar_kind_is_integer(rightKind)) ||
+                     (rightKind == ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_F64 &&
+                      backend_aot_c_frame_descriptor_generic_numeric_scalar_kind_is_integer(leftKind)));
+}
+
+static TZrBool backend_aot_c_frame_descriptor_generic_numeric_binary_can_use_local_only(
+        const SZrAotExecIrFunction *functionIr,
+        EZrInstructionCode operationCode,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 leftSlot,
+        TZrUInt32 rightSlot) {
+    if (!backend_aot_c_frame_descriptor_generic_numeric_binary_opcode_can_use_local_only(operationCode)) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(backend_aot_c_frame_descriptor_generic_numeric_same_i64_binary_can_use_local_only(
+                             functionIr, instructionIndex, destinationSlot, leftSlot, rightSlot) ||
+                     backend_aot_c_frame_descriptor_generic_numeric_same_u64_binary_can_use_local_only(
+                             functionIr, instructionIndex, destinationSlot, leftSlot, rightSlot) ||
+                     backend_aot_c_frame_descriptor_generic_numeric_mixed_i64_u64_binary_can_use_local_only(
+                             functionIr, instructionIndex, destinationSlot, leftSlot, rightSlot) ||
+                     backend_aot_c_frame_descriptor_generic_numeric_same_f64_binary_can_use_local_only(
+                             functionIr, instructionIndex, destinationSlot, leftSlot, rightSlot) ||
+                     backend_aot_c_frame_descriptor_generic_numeric_mixed_f64_binary_can_use_local_only(
+                             functionIr, instructionIndex, destinationSlot, leftSlot, rightSlot));
+}
+
+static TZrBool backend_aot_c_frame_descriptor_generic_numeric_unary_can_use_local_only(
+        const SZrAotExecIrFunction *functionIr,
+        EZrInstructionCode operationCode,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 sourceSlot) {
+    EZrAotFrameDescriptorGenericNumericScalarLocalKind sourceKind;
+
+    if (operationCode != ZR_INSTRUCTION_ENUM(NEG)) {
+        return ZR_FALSE;
+    }
+
+    sourceKind = backend_aot_c_frame_descriptor_generic_numeric_written_scalar_kind(
+            functionIr, sourceSlot, instructionIndex);
+    switch (sourceKind) {
+        case ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_I64:
+            return backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(
+                    functionIr, destinationSlot, instructionIndex);
+        case ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_U64:
+            return backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(
+                    functionIr, destinationSlot, instructionIndex);
+        case ZR_AOT_FRAME_DESCRIPTOR_GENERIC_NUMERIC_SCALAR_LOCAL_KIND_F64:
+            return backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
+                    functionIr, destinationSlot, instructionIndex);
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool backend_aot_c_frame_descriptor_primitive_slot_kind_written_before(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 slot,
+        TZrUInt32 instructionIndex,
+        char *outKindCode) {
+    TZrUInt32 kindCount;
+    char kindCode;
+
+    if (outKindCode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *outKindCode = '\0';
+    if (functionIr == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    kindCount = 0u;
+    kindCode = '\0';
+    if (backend_aot_c_scalar_locals_has_bool_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_bool_value_written_before(functionIr, slot, instructionIndex)) {
+        kindCount++;
+        kindCode = 'b';
+    }
+    if (backend_aot_c_scalar_locals_has_i64_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_i64_written_before(functionIr, slot, instructionIndex)) {
+        kindCount++;
+        kindCode = 's';
+    }
+    if (backend_aot_c_scalar_locals_has_u64_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_u64_written_before(functionIr, slot, instructionIndex)) {
+        kindCount++;
+        kindCode = 'u';
+    }
+    if (backend_aot_c_scalar_locals_has_f64_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_f64_written_before(functionIr, slot, instructionIndex)) {
+        kindCount++;
+        kindCode = 'f';
+    }
+    if (kindCount != 1u) {
+        return ZR_FALSE;
+    }
+
+    *outKindCode = kindCode;
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_c_frame_descriptor_generic_equality_operands_can_use_local_only(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 leftSlot,
+        TZrUInt32 rightSlot) {
+    char leftKindCode;
+    char rightKindCode;
+
+    return (TZrBool)(backend_aot_c_frame_descriptor_primitive_slot_kind_written_before(
+                             functionIr, leftSlot, instructionIndex, &leftKindCode) &&
+                     backend_aot_c_frame_descriptor_primitive_slot_kind_written_before(
+                             functionIr, rightSlot, instructionIndex, &rightKindCode));
+}
+
 static TZrBool backend_aot_c_frame_descriptor_bool_logical_can_use_local_only(
         const SZrAotExecIrFunction *functionIr,
         EZrInstructionCode operationCode,
@@ -149,8 +425,8 @@ static TZrBool backend_aot_c_frame_descriptor_bool_logical_can_use_local_only(
     switch (operationCode) {
         case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):
         case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
-            return (TZrBool)(backend_aot_c_scalar_locals_bool_value_written_before(functionIr, operandA1, instructionIndex) &&
-                             backend_aot_c_scalar_locals_bool_value_written_before(functionIr, operandB1, instructionIndex));
+            return backend_aot_c_frame_descriptor_generic_equality_operands_can_use_local_only(
+                    functionIr, instructionIndex, operandA1, operandB1);
 
         case ZR_INSTRUCTION_ENUM(LOGICAL_AND):
         case ZR_INSTRUCTION_ENUM(LOGICAL_OR):
@@ -165,8 +441,23 @@ static TZrBool backend_aot_c_frame_descriptor_bool_logical_can_use_local_only(
                              (instructionIndex > 0u &&
                               backend_aot_c_null_constant_consumed_by_local_logical_not(
                                       functionIr, operandA1, instructionIndex - 1u)) ||
+                            (instructionIndex > 0u &&
+                             backend_aot_c_reset_null_consumed_by_local_logical_not(
+                                     functionIr, operandA1, instructionIndex - 1u)) ||
+                            (instructionIndex > 0u &&
+                             backend_aot_c_null_constant_stack_copy_consumed_by_local_logical_not(
+                                     functionIr, operandA1, instructionIndex - 1u)) ||
+                             (instructionIndex > 0u &&
+                              backend_aot_c_reset_null_stack_copy_consumed_by_local_logical_not(
+                                      functionIr, operandA1, instructionIndex - 1u)) ||
                              (instructionIndex > 0u &&
                               backend_aot_c_bool_constant_consumed_by_local_logical_not(
+                                      functionIr, operandA1, instructionIndex - 1u, ZR_NULL)) ||
+                             (instructionIndex > 0u &&
+                              backend_aot_c_string_constant_consumed_by_local_logical_not(
+                                      functionIr, operandA1, instructionIndex - 1u, ZR_NULL)) ||
+                             (instructionIndex > 0u &&
+                              backend_aot_c_string_constant_stack_copy_consumed_by_local_logical_not(
                                       functionIr, operandA1, instructionIndex - 1u, ZR_NULL)));
 
         case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL):
@@ -306,7 +597,13 @@ static TZrBool backend_aot_c_frame_descriptor_instruction_can_use_local_only(
                     functionIr, function, destinationSlot, operandA2, instructionIndex);
 
         case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
-            return (TZrBool)(backend_aot_c_reset_null_consumed_by_local_jump_if(
+            return (TZrBool)(backend_aot_c_reset_null_consumed_by_local_logical_not(
+                                     functionIr, destinationSlot, instructionIndex) ||
+                             backend_aot_c_reset_null_consumed_by_local_stack_copy_logical_not(
+                                     functionIr, destinationSlot, instructionIndex) ||
+                             backend_aot_c_reset_null_consumed_by_local_stack_copy_jump_if(
+                                     functionIr, destinationSlot, instructionIndex) ||
+                             backend_aot_c_reset_null_consumed_by_local_jump_if(
                                      functionIr, destinationSlot, instructionIndex) ||
                              backend_aot_c_scalar_locals_reset_can_skip_value_slot(
                                      functionIr, destinationSlot, instructionIndex));
@@ -317,8 +614,20 @@ static TZrBool backend_aot_c_frame_descriptor_instruction_can_use_local_only(
 
         case ZR_INSTRUCTION_ENUM(GET_STACK):
         case ZR_INSTRUCTION_ENUM(SET_STACK):
-            return backend_aot_c_scalar_stack_copy_can_use_local_only(
-                    functionIr, destinationSlot, (TZrUInt32)operandA2, instructionIndex);
+            return (TZrBool)(backend_aot_c_reset_null_stack_copy_consumed_by_local_logical_not(
+                                     functionIr, destinationSlot, instructionIndex) ||
+                             backend_aot_c_reset_null_stack_copy_consumed_by_local_jump_if(
+                                     functionIr, destinationSlot, instructionIndex) ||
+                             backend_aot_c_null_constant_stack_copy_consumed_by_local_logical_not(
+                                     functionIr, destinationSlot, instructionIndex) ||
+                             backend_aot_c_null_constant_stack_copy_consumed_by_local_jump_if(
+                                     functionIr, destinationSlot, instructionIndex) ||
+                             backend_aot_c_string_constant_stack_copy_consumed_by_local_logical_not(
+                                     functionIr, destinationSlot, instructionIndex, ZR_NULL) ||
+                             backend_aot_c_string_constant_stack_copy_consumed_by_local_jump_if(
+                                     functionIr, destinationSlot, instructionIndex, ZR_NULL) ||
+                             backend_aot_c_scalar_stack_copy_can_use_local_only(
+                                     functionIr, destinationSlot, (TZrUInt32)operandA2, instructionIndex));
 
         case ZR_INSTRUCTION_ENUM(JUMP):
             return backend_aot_c_frame_descriptor_branch_target_is_valid(
@@ -330,10 +639,22 @@ static TZrBool backend_aot_c_frame_descriptor_instruction_can_use_local_only(
                              (backend_aot_c_frame_descriptor_generic_jump_if_condition_can_use_local_only(
                                       functionIr, destinationSlot, instructionIndex) ||
                              (instructionIndex > 0u &&
-                              backend_aot_c_null_constant_consumed_by_local_jump_if(
+                             backend_aot_c_null_constant_consumed_by_local_jump_if(
+                                     functionIr, destinationSlot, instructionIndex - 1u)) ||
+                             (instructionIndex > 0u &&
+                              backend_aot_c_null_constant_stack_copy_consumed_by_local_jump_if(
+                                      functionIr, destinationSlot, instructionIndex - 1u)) ||
+                             (instructionIndex > 0u &&
+                              backend_aot_c_reset_null_stack_copy_consumed_by_local_jump_if(
                                       functionIr, destinationSlot, instructionIndex - 1u)) ||
                              (instructionIndex > 0u &&
                               backend_aot_c_bool_constant_consumed_by_local_jump_if(
+                                      functionIr, destinationSlot, instructionIndex - 1u, ZR_NULL)) ||
+                             (instructionIndex > 0u &&
+                              backend_aot_c_string_constant_consumed_by_local_jump_if(
+                                      functionIr, destinationSlot, instructionIndex - 1u, ZR_NULL)) ||
+                             (instructionIndex > 0u &&
+                              backend_aot_c_string_constant_stack_copy_consumed_by_local_jump_if(
                                       functionIr, destinationSlot, instructionIndex - 1u, ZR_NULL)) ||
                              (instructionIndex > 0u &&
                               backend_aot_c_reset_null_consumed_by_local_jump_if(
@@ -360,6 +681,33 @@ static TZrBool backend_aot_c_frame_descriptor_instruction_can_use_local_only(
                     destinationSlot,
                     operandA1,
                     operandB1);
+
+        case ZR_INSTRUCTION_ENUM(ADD):
+        case ZR_INSTRUCTION_ENUM(ADD_STRING):
+        case ZR_INSTRUCTION_ENUM(SUB):
+        case ZR_INSTRUCTION_ENUM(MUL):
+        case ZR_INSTRUCTION_ENUM(DIV):
+        case ZR_INSTRUCTION_ENUM(MOD):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED):
+            return backend_aot_c_frame_descriptor_generic_numeric_binary_can_use_local_only(
+                    functionIr,
+                    (EZrInstructionCode)instruction->instruction.operationCode,
+                    instructionIndex,
+                    destinationSlot,
+                    operandA1,
+                    operandB1);
+
+        case ZR_INSTRUCTION_ENUM(NEG):
+            return backend_aot_c_frame_descriptor_generic_numeric_unary_can_use_local_only(
+                    functionIr,
+                    (EZrInstructionCode)instruction->instruction.operationCode,
+                    instructionIndex,
+                    destinationSlot,
+                    operandA1);
 
         case ZR_INSTRUCTION_ENUM(TO_BOOL):
         case ZR_INSTRUCTION_ENUM(TO_INT):

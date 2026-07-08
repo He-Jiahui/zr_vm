@@ -275,26 +275,19 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
             fprintf(file,
                     "    /* zr_aot_value_exec_call_typed dstSlot=%u calleeSlot=%u argCount=%u callee=%u */\n"
                     "    /* zr_aot_generic_call_typed_shared_callsite */\n"
-                    "    /* zr_aot_generic_call_typed_full_aot_no_deopt */\n",
+                    "    /* zr_aot_generic_call_typed_full_aot_no_deopt */\n"
+                    "    /* zr_aot_value_exec_call_typed_inline_struct_full_aot_direct */\n",
                     (unsigned)instruction->destinationSlot,
                     (unsigned)instruction->operand0,
                     (unsigned)argumentCount,
                     (unsigned)calleeFunctionIndex);
-            backend_aot_write_c_value_call_typed_metadata_guard(file, "    ", calleeFunctionIndex);
             backend_aot_write_c_value_call_typed_inline_struct_direct(file,
-                                                                      "        ",
+                                                                      "    ",
                                                                       instruction,
                                                                       argumentCount,
                                                                       calleeFunctionIndex,
                                                                       destinationLayout,
                                                                       calleeThunkExpression);
-            fprintf(file, "    } else {\n");
-            backend_aot_write_c_value_call_typed_inline_struct_metadata_deopt(file,
-                                                                              "        ",
-                                                                              instruction,
-                                                                              argumentCount,
-                                                                              destinationLayout);
-            fprintf(file, "    }\n");
             return ZR_TRUE;
         }
 
@@ -380,6 +373,24 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
                  sizeof(calleeThunkExpression),
                  "zr_aot_fn_%u",
                  (unsigned)calleeFunctionIndex);
+        if (requireFullAot) {
+            fprintf(file,
+                    "    /* zr_aot_value_exec_call_typed dstSlot=%u calleeSlot=%u argCount=%u callee=%u */\n"
+                    "    /* zr_aot_value_exec_call_typed_inline_struct_full_aot_direct */\n",
+                    (unsigned)instruction->destinationSlot,
+                    (unsigned)instruction->operand0,
+                    (unsigned)argumentCount,
+                    (unsigned)calleeFunctionIndex);
+            backend_aot_write_c_value_call_typed_inline_struct_direct(file,
+                                                                      "    ",
+                                                                      instruction,
+                                                                      argumentCount,
+                                                                      calleeFunctionIndex,
+                                                                      destinationLayout,
+                                                                      calleeThunkExpression);
+            return ZR_TRUE;
+        }
+
         fprintf(file,
                 "    /* zr_aot_value_exec_call_typed dstSlot=%u calleeSlot=%u argCount=%u callee=%u */\n"
                 "    {\n"

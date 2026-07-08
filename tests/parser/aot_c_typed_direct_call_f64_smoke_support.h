@@ -35,6 +35,24 @@ static void format_aot_c_typed_direct_call_f64_path(char *buffer,
 }
 #endif
 
+static const char *full_aot_f64_marker_for_direct_call_marker(const char *directCallMarkerNeedle) {
+    TEST_ASSERT_NOT_NULL(directCallMarkerNeedle);
+    if (strstr(directCallMarkerNeedle, "no_arg") != ZR_NULL) {
+        return "/* zr_aot_static_f64_no_arg_direct_call_full_aot */";
+    }
+    if (strstr(directCallMarkerNeedle, "one_arg") != ZR_NULL) {
+        return "/* zr_aot_static_f64_one_arg_direct_call_full_aot */";
+    }
+    if (strstr(directCallMarkerNeedle, "two_arg") != ZR_NULL) {
+        return "/* zr_aot_static_f64_two_arg_direct_call_full_aot */";
+    }
+    if (strstr(directCallMarkerNeedle, "three_arg") != ZR_NULL) {
+        return "/* zr_aot_static_f64_three_arg_direct_call_full_aot */";
+    }
+    TEST_FAIL_MESSAGE("unknown f64 direct-call marker");
+    return ZR_NULL;
+}
+
 static void run_aot_c_typed_direct_call_f64_smoke_with_options(
         const SZrAotTypedDirectCallF64SmokeCase *testCase,
         const char *returnBoundaryNeedle,
@@ -155,6 +173,7 @@ static void run_aot_c_typed_direct_call_f64_smoke_with_options(
     aotOptions.embeddedModuleBlob = embeddedBlob;
     aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
     aotOptions.requireExecutableLowering = ZR_TRUE;
+    aotOptions.requireFullAot = ZR_TRUE;
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
@@ -162,6 +181,8 @@ static void run_aot_c_typed_direct_call_f64_smoke_with_options(
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->definitionNeedle));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->returnNeedle));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->directCallMarkerNeedle));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                full_aot_f64_marker_for_direct_call_marker(testCase->directCallMarkerNeedle)));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->directCallNeedle));
     if (returnBoundaryNeedle != ZR_NULL) {
         TEST_ASSERT_NOT_NULL(strstr(generatedCText, returnBoundaryNeedle));
@@ -169,6 +190,9 @@ static void run_aot_c_typed_direct_call_f64_smoke_with_options(
     TEST_ASSERT_NULL(strstr(generatedCText, testCase->syncMarkerNeedle));
     TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_typed_destination"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZR_VALUE_FAST_SET(zr_aot_typed_destination,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame,"));
     if (!allowRuntimeCallFallbacks) {
         TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
         TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));

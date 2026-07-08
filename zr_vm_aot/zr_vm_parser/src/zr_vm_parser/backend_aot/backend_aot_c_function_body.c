@@ -5,6 +5,7 @@
 #include "backend_aot_c_frame_cleanup.h"
 #include "backend_aot_c_frame_setup.h"
 #include "backend_aot_c_method_metadata.h"
+#include "backend_aot_c_reference_locals.h"
 #include "backend_aot_c_scalar_locals.h"
 #include "backend_aot_c_scalar_stack_copy.h"
 #include "backend_aot_c_scalar_semir.h"
@@ -269,6 +270,90 @@ static TZrBool backend_aot_stack_copy_destination_is_next_call_callable(
     return (TZrBool)(destinationSlot == callBaseSlot);
 }
 
+static char backend_aot_primitive_scalar_operand_kind_written_before(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 slot,
+        TZrUInt32 instructionIndex) {
+    TZrUInt32 kindCount = 0u;
+    char kind = '\0';
+
+    if (backend_aot_c_scalar_locals_has_bool_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_bool_value_written_before(functionIr, slot, instructionIndex)) {
+        kindCount++;
+        kind = 'b';
+    }
+    if (backend_aot_c_scalar_locals_has_i64_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_i64_written_before(functionIr, slot, instructionIndex)) {
+        kindCount++;
+        kind = 's';
+    }
+    if (backend_aot_c_scalar_locals_has_u64_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_u64_written_before(functionIr, slot, instructionIndex)) {
+        kindCount++;
+        kind = 'u';
+    }
+    if (backend_aot_c_scalar_locals_has_f64_slot(functionIr, slot) &&
+        backend_aot_c_scalar_locals_f64_written_before(functionIr, slot, instructionIndex)) {
+        kindCount++;
+        kind = 'f';
+    }
+
+    return kindCount == 1u ? kind : '\0';
+}
+
+static TZrBool backend_aot_generic_equality_can_read_scalar_operands(
+        const SZrAotExecIrFunction *functionIr,
+        const TZrInstruction *instruction,
+        TZrUInt32 instructionIndex) {
+    TZrUInt32 leftSlot;
+    TZrUInt32 rightSlot;
+    char leftPrimitiveKind;
+    char rightPrimitiveKind;
+
+    if (instruction == ZR_NULL ||
+        !backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
+                functionIr, instruction->instruction.operandExtra, instructionIndex)) {
+        return ZR_FALSE;
+    }
+
+    leftSlot = instruction->instruction.operand.operand1[0];
+    rightSlot = instruction->instruction.operand.operand1[1];
+
+    if (backend_aot_c_scalar_locals_bool_value_written_before(functionIr, leftSlot, instructionIndex) &&
+        backend_aot_c_scalar_locals_bool_value_written_before(functionIr, rightSlot, instructionIndex)) {
+        return ZR_TRUE;
+    }
+    if (backend_aot_c_scalar_locals_has_i64_slot(functionIr, leftSlot) &&
+        backend_aot_c_scalar_locals_has_i64_slot(functionIr, rightSlot) &&
+        backend_aot_c_scalar_locals_i64_written_before(functionIr, leftSlot, instructionIndex) &&
+        backend_aot_c_scalar_locals_i64_written_before(functionIr, rightSlot, instructionIndex)) {
+        return ZR_TRUE;
+    }
+    if (backend_aot_c_scalar_locals_has_u64_slot(functionIr, leftSlot) &&
+        backend_aot_c_scalar_locals_has_u64_slot(functionIr, rightSlot) &&
+        backend_aot_c_scalar_locals_u64_written_before(functionIr, leftSlot, instructionIndex) &&
+        backend_aot_c_scalar_locals_u64_written_before(functionIr, rightSlot, instructionIndex)) {
+        return ZR_TRUE;
+    }
+    if (backend_aot_c_scalar_locals_has_f64_slot(functionIr, leftSlot) &&
+        backend_aot_c_scalar_locals_has_f64_slot(functionIr, rightSlot) &&
+        backend_aot_c_scalar_locals_f64_written_before(functionIr, leftSlot, instructionIndex) &&
+        backend_aot_c_scalar_locals_f64_written_before(functionIr, rightSlot, instructionIndex)) {
+        return ZR_TRUE;
+    }
+    leftPrimitiveKind = backend_aot_primitive_scalar_operand_kind_written_before(
+            functionIr, leftSlot, instructionIndex);
+    rightPrimitiveKind = backend_aot_primitive_scalar_operand_kind_written_before(
+            functionIr, rightSlot, instructionIndex);
+    if (leftPrimitiveKind != '\0' &&
+        rightPrimitiveKind != '\0' &&
+        leftPrimitiveKind != rightPrimitiveKind) {
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool backend_aot_instruction_reads_bool_value_operand(const SZrAotExecIrFunction *functionIr,
                                                                 const TZrInstruction *instruction,
                                                                 TZrUInt32 instructionIndex,
@@ -284,18 +369,8 @@ static TZrBool backend_aot_instruction_reads_bool_value_operand(const SZrAotExec
                 instruction->instruction.operand.operand1[1] != stackSlot) {
                 return ZR_FALSE;
             }
-            return (TZrBool)!(backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
-                                      functionIr,
-                                      instruction->instruction.operandExtra,
-                                      instructionIndex) &&
-                              backend_aot_c_scalar_locals_bool_value_written_before(
-                                      functionIr,
-                                      instruction->instruction.operand.operand1[0],
-                                      instructionIndex) &&
-                              backend_aot_c_scalar_locals_bool_value_written_before(
-                                      functionIr,
-                                      instruction->instruction.operand.operand1[1],
-                                      instructionIndex));
+            return (TZrBool)!backend_aot_generic_equality_can_read_scalar_operands(
+                    functionIr, instruction, instructionIndex);
         case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
             return (TZrBool)(instruction->instruction.operand.operand1[0] == stackSlot &&
                              !(backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
@@ -364,6 +439,7 @@ void backend_aot_write_c_function_body(FILE *file,
     TZrBool needsFrameCleanup;
     TZrBool includeFrameDescriptor;
     TZrBool needsGcRootFrame;
+    TZrBool needsReferenceLocalRootFrame;
     TZrBool needsSkipDropSlot;
     TZrUInt32 *callableSlotFunctionIndices;
     const SZrAotExecIrFunction *functionIr = ZR_NULL;
@@ -378,11 +454,11 @@ void backend_aot_write_c_function_body(FILE *file,
     if (module != ZR_NULL) {
         functionIr = backend_aot_exec_ir_find_function(module, entry->flatIndex);
     }
-    needsFrameCleanup = backend_aot_c_frame_cleanup_would_emit(
-            functionIr != ZR_NULL ? &functionIr->frameLayout : ZR_NULL);
+    needsFrameCleanup = backend_aot_c_frame_cleanup_would_emit_for_function(state, functionIr);
     includeFrameDescriptor = backend_aot_c_function_body_needs_frame_descriptor(
             module, functionIr, entry->function, publishExports, needsFrameCleanup);
     needsGcRootFrame = (TZrBool)(backend_aot_c_method_metadata_count_gc_roots(state, functionIr) > 0u);
+    needsReferenceLocalRootFrame = backend_aot_c_reference_locals_has_locals(functionIr);
     needsSkipDropSlot = needsFrameCleanup;
 
     fprintf(file, "static TZrInt64 zr_aot_fn_%u(struct SZrState *state) {\n", (unsigned)entry->flatIndex);
@@ -397,6 +473,9 @@ void backend_aot_write_c_function_body(FILE *file,
     if (needsSkipDropSlot) {
         fprintf(file, "    TZrUInt32 zr_aot_skip_drop_slot = ZR_AOT_RUNTIME_RESUME_FALLTHROUGH;\n");
     }
+    if (needsReferenceLocalRootFrame) {
+        backend_aot_write_c_reference_local_root_frame_declaration(file);
+    }
     backend_aot_write_c_frame_setup(file,
                                     functionIr != ZR_NULL ? &functionIr->frameLayout : ZR_NULL,
                                     entry->flatIndex,
@@ -408,6 +487,10 @@ void backend_aot_write_c_function_body(FILE *file,
     }
     if (functionIr != ZR_NULL) {
         backend_aot_write_c_scalar_locals(file, functionIr);
+        backend_aot_write_c_reference_locals(file, functionIr);
+        if (needsReferenceLocalRootFrame) {
+            backend_aot_write_c_reference_local_root_frame_push(file, functionIr);
+        }
         backend_aot_write_c_value_semir_for_function(file, state, module, functionIr, &functionIr->frameLayout);
     }
     backend_aot_write_c_dispatch_loop(file, entry->flatIndex, entry->function->instructionsLength);
@@ -467,9 +550,17 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                  destinationSlot,
                                                                  ZR_AOT_INVALID_FUNCTION_INDEX);
                 } else if (backend_aot_c_constant_can_emit_immediate(entry->function, operandA2) ||
+                           backend_aot_c_null_constant_consumed_by_local_stack_copy_logical_not(
+                                   functionIr, destinationSlot, instructionIndex) ||
+                           backend_aot_c_null_constant_consumed_by_local_stack_copy_jump_if(
+                                   functionIr, destinationSlot, instructionIndex) ||
                            backend_aot_c_string_constant_consumed_by_local_logical_not(
                                    functionIr, destinationSlot, instructionIndex, ZR_NULL) ||
                            backend_aot_c_string_constant_consumed_by_local_jump_if(
+                                   functionIr, destinationSlot, instructionIndex, ZR_NULL) ||
+                           backend_aot_c_string_constant_consumed_by_local_stack_copy_logical_not(
+                                   functionIr, destinationSlot, instructionIndex, ZR_NULL) ||
+                           backend_aot_c_string_constant_consumed_by_local_stack_copy_jump_if(
                                    functionIr, destinationSlot, instructionIndex, ZR_NULL)) {
                     backend_aot_write_c_direct_primitive_constant(
                             file, functionIr, destinationSlot, instructionIndex,
@@ -610,7 +701,18 @@ void backend_aot_write_c_function_body(FILE *file,
             case ZR_INSTRUCTION_ENUM(NOP):
                 break;
             case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
-                if (backend_aot_c_reset_null_consumed_by_local_jump_if(functionIr, destinationSlot, instructionIndex)) {
+                if (backend_aot_c_reset_null_consumed_by_local_logical_not(
+                            functionIr, destinationSlot, instructionIndex)) {
+                    backend_aot_write_c_reset_stack_null_local_logical_not_skip(file, destinationSlot);
+                } else if (backend_aot_c_reset_null_consumed_by_local_stack_copy_logical_not(
+                            functionIr, destinationSlot, instructionIndex)) {
+                    backend_aot_write_c_reset_null_stack_copy_local_logical_not_reset_skip(file, destinationSlot);
+                } else if (backend_aot_c_reset_null_consumed_by_local_stack_copy_jump_if(
+                                   functionIr, destinationSlot, instructionIndex)) {
+                    backend_aot_write_c_reset_null_stack_copy_local_jump_if_reset_skip(file, destinationSlot);
+                } else if (backend_aot_c_reset_null_consumed_by_local_jump_if(functionIr,
+                                                                              destinationSlot,
+                                                                              instructionIndex)) {
                     backend_aot_write_c_reset_stack_null_local_jump_if_skip(file, destinationSlot);
                 } else if (backend_aot_c_scalar_locals_reset_can_skip_value_slot(
                             functionIr, destinationSlot, instructionIndex)) {
@@ -643,6 +745,7 @@ void backend_aot_write_c_function_body(FILE *file,
             case ZR_INSTRUCTION_ENUM(SET_STACK):
             {
                 TZrBool destinationIsNextCallCallable;
+                TZrUInt32 sourceSlot;
 
                 if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
                                                                              state,
@@ -655,15 +758,76 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                               ZR_FALSE)) {
                     break;
                 }
+                sourceSlot = (TZrUInt32)operandA2;
                 destinationIsNextCallCallable = backend_aot_stack_copy_destination_is_next_call_callable(
                         entry->function,
                         instructionIndex,
                         destinationSlot);
+                if (backend_aot_c_reset_null_stack_copy_consumed_by_local_logical_not(
+                            functionIr, destinationSlot, instructionIndex)) {
+                    backend_aot_write_c_reset_null_stack_copy_local_logical_not_skip(
+                            file, destinationSlot, sourceSlot);
+                    backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                                 entry->function,
+                                                                 destinationSlot,
+                                                                 ZR_AOT_INVALID_FUNCTION_INDEX);
+                    break;
+                }
+                if (backend_aot_c_reset_null_stack_copy_consumed_by_local_jump_if(
+                            functionIr, destinationSlot, instructionIndex)) {
+                    backend_aot_write_c_reset_null_stack_copy_local_jump_if_skip(
+                            file, destinationSlot, sourceSlot);
+                    backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                                 entry->function,
+                                                                 destinationSlot,
+                                                                 ZR_AOT_INVALID_FUNCTION_INDEX);
+                    break;
+                }
+                if (backend_aot_c_null_constant_stack_copy_consumed_by_local_logical_not(
+                            functionIr, destinationSlot, instructionIndex)) {
+                    backend_aot_write_c_null_constant_stack_copy_local_logical_not_skip(
+                            file, destinationSlot, sourceSlot);
+                    backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                                 entry->function,
+                                                                 destinationSlot,
+                                                                 ZR_AOT_INVALID_FUNCTION_INDEX);
+                    break;
+                }
+                if (backend_aot_c_null_constant_stack_copy_consumed_by_local_jump_if(
+                            functionIr, destinationSlot, instructionIndex)) {
+                    backend_aot_write_c_null_constant_stack_copy_local_jump_if_skip(
+                            file, destinationSlot, sourceSlot);
+                    backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                                 entry->function,
+                                                                 destinationSlot,
+                                                                 ZR_AOT_INVALID_FUNCTION_INDEX);
+                    break;
+                }
+                if (backend_aot_c_string_constant_stack_copy_consumed_by_local_logical_not(
+                            functionIr, destinationSlot, instructionIndex, ZR_NULL)) {
+                    backend_aot_write_c_string_constant_stack_copy_local_logical_not_skip(
+                            file, destinationSlot, sourceSlot);
+                    backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                                 entry->function,
+                                                                 destinationSlot,
+                                                                 ZR_AOT_INVALID_FUNCTION_INDEX);
+                    break;
+                }
+                if (backend_aot_c_string_constant_stack_copy_consumed_by_local_jump_if(
+                            functionIr, destinationSlot, instructionIndex, ZR_NULL)) {
+                    backend_aot_write_c_string_constant_stack_copy_local_jump_if_skip(
+                            file, destinationSlot, sourceSlot);
+                    backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                                 entry->function,
+                                                                 destinationSlot,
+                                                                 ZR_AOT_INVALID_FUNCTION_INDEX);
+                    break;
+                }
                 if (!destinationIsNextCallCallable &&
                     backend_aot_try_write_c_scalar_stack_copy(file,
                                                               functionIr,
                                                               destinationSlot,
-                                                              (TZrUInt32)operandA2,
+                                                              sourceSlot,
                                                               instructionIndex,
                                                               (TZrBool)(backend_aot_stack_copy_destination_is_next_call_argument(
                                                                                 entry->function,
@@ -683,7 +847,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 backend_aot_write_c_direct_stack_copy(file,
                                                       functionIr,
                                                       destinationSlot,
-                                                      (TZrUInt32)operandA2,
+                                                      sourceSlot,
                                                       destinationIsNextCallCallable);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
@@ -691,7 +855,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              backend_aot_get_callable_slot_function_index(
                                                                      callableSlotFunctionIndices,
                                                                      entry->function,
-                                                                     (TZrUInt32)operandA2));
+                                                                     sourceSlot));
                 break;
             }
             case ZR_INSTRUCTION_ENUM(ADD_INT):
@@ -867,7 +1031,8 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(ADD):
             case ZR_INSTRUCTION_ENUM(ADD_STRING):
-                backend_aot_write_c_direct_add(file, functionIr, destinationSlot, operandA1, operandB1);
+                backend_aot_write_c_direct_add(
+                        file, functionIr, destinationSlot, operandA1, operandB1, instructionIndex);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -881,7 +1046,8 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SUB):
-                backend_aot_write_c_direct_sub(file, functionIr, destinationSlot, operandA1, operandB1);
+                backend_aot_write_c_direct_sub(
+                        file, functionIr, destinationSlot, operandA1, operandB1, instructionIndex);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -895,7 +1061,8 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(MUL):
-                backend_aot_write_c_direct_mul(file, functionIr, destinationSlot, operandA1, operandB1);
+                backend_aot_write_c_direct_mul(
+                        file, functionIr, destinationSlot, operandA1, operandB1, instructionIndex);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -977,7 +1144,8 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(DIV):
-                backend_aot_write_c_direct_div(file, functionIr, destinationSlot, operandA1, operandB1);
+                backend_aot_write_c_direct_div(
+                        file, functionIr, destinationSlot, operandA1, operandB1, instructionIndex);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -1047,7 +1215,8 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(MOD):
-                backend_aot_write_c_direct_mod(file, functionIr, destinationSlot, operandA1, operandB1);
+                backend_aot_write_c_direct_mod(
+                        file, functionIr, destinationSlot, operandA1, operandB1, instructionIndex);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -1129,7 +1298,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(NEG):
-                backend_aot_write_c_direct_neg(file, functionIr, destinationSlot, operandA1);
+                backend_aot_write_c_direct_neg(file, functionIr, destinationSlot, operandA1, instructionIndex);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -2181,10 +2350,11 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                                    functionTable,
                                                                                    functionIr,
                                                                                    destinationSlot,
-                                                                                   operandA1,
-                                                                                   operandB1,
-                                                                                   instructionIndex,
-                                                                                   calleeFunctionIndex)) {
+                                                                   operandA1,
+                                                                   operandB1,
+                                                                   instructionIndex,
+                                                                   calleeFunctionIndex,
+                                                                   requireFullAot)) {
                         backend_aot_write_c_static_direct_function_call(file,
                                                                         functionIr,
                                                                         destinationSlot,
@@ -2264,7 +2434,8 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                                           destinationSlot,
                                                                                           operandA1,
                                                                                           instructionIndex,
-                                                                                          calleeFunctionIndex)) {
+                                                                                          calleeFunctionIndex,
+                                                                                          requireFullAot)) {
                         backend_aot_write_c_static_direct_function_call(file,
                                                                         functionIr,
                                                                         destinationSlot,
@@ -2342,8 +2513,11 @@ void backend_aot_write_c_function_body(FILE *file,
     fprintf(file, "zr_aot_function_exit:\n");
     if (needsFrameCleanup) {
         fprintf(file, "    if (zr_aot_frame_started) {\n");
-        backend_aot_write_c_frame_cleanup(file, &functionIr->frameLayout);
+        backend_aot_write_c_frame_cleanup(file, state, functionIr);
         fprintf(file, "    }\n");
+    }
+    if (needsReferenceLocalRootFrame) {
+        backend_aot_write_c_reference_local_root_frame_cleanup(file);
     }
     if (needsGcRootFrame) {
         backend_aot_write_c_frame_root_cleanup(file);

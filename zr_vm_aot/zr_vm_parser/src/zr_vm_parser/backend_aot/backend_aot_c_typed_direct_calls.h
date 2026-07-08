@@ -13,7 +13,8 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
         TZrUInt32 functionSlot,
         TZrUInt32 argumentCount,
         TZrUInt32 execInstructionIndex,
-        TZrUInt32 calleeFunctionIndex);
+        TZrUInt32 calleeFunctionIndex,
+        TZrBool requireFullAot);
 TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
         FILE *file,
         const SZrAotFunctionTable *functionTable,
@@ -21,6 +22,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
         TZrUInt32 destinationSlot,
         TZrUInt32 functionSlot,
         TZrUInt32 execInstructionIndex,
-        TZrUInt32 calleeFunctionIndex);
+        TZrUInt32 calleeFunctionIndex,
+        TZrBool requireFullAot);
 
 #endif

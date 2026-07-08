@@ -177,6 +177,19 @@ static const TZrUInt32 ZrGcOffsets_<cTypeId>[] = { 16, 40 /* 引用字段字节�
 
 > 落地每个阶段或切片时在此追加：时间戳 · 切片号 · 状态 · 完成项目 · RED/GREEN · 测试结果 · 备注。
 
+- 2026-07-06 04:56:47 +08:00 · 09-S2 optional LOCAL_ADDRESS root runtime support via 07-S6 ·
+  状态：AOT root-frame 的可选 local-address 运行期扫描/重写子切片完成；09 阶段主体仍保持完成，07~12
+  总目标继续进行中。完成项目：GC mark/rewrite 现在识别
+  `ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS`，把 `frameBase + frameByteOffset` 当作 `SZrRawObject **`
+  local root slot；mark 阶段直接标记该 raw object，minor rewrite 阶段通过 forwarding address 原地改写该
+  local slot。既有 `FRAME_BYTE_OFFSET` 的 `SZrTypeValue` 栈根路径、栈边界校验和 rewrite 行为保持不变。
+  RED：WSL GCC `zr_vm_aot_gc_root_frame_test` 新增 local-address raw-object root 用例后 6 tests / 1 failure，
+  证明旧 GC 路径没有标记/搬迁该 root。GREEN：WSL GCC、WSL Clang、Windows MSVC Debug
+  `zr_vm_aot_gc_root_frame_test` 均为 6/0。产出：
+  `tests/acceptance/2026-07-06-aot-09-s2-local-address-root-runtime-support.md`。备注：本切片只完成
+  ABI 已有 `LOCAL_ADDRESS` location kind 的运行期支持；生成器的 local-address root map 发射、长时间 GC 压力测试、
+  pinned-region demotion、exports/frame cleanup/in-out writeback/performance counters 仍待后续。
+
 - 2026-06-25 19:31:46 +08:00 · 09 GC inline-frame layout lookup hardening via 11-S4G ·
   状态：09 阶段计划切片仍保持完成；本记录是 11-S4G 对 GC inline-frame mark/rewrite layout lookup 的后续
   运行期硬化。完成项目：AOT-loaded functions 通过 `ZrCore_MetadataRuntime_AttachFunction()` 绑定

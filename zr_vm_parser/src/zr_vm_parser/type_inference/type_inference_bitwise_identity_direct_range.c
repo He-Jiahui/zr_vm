@@ -225,7 +225,7 @@ static TZrBool type_inference_bitwise_identity_expression_zero_wrapped_or_unary_
             outMaxValue);
 }
 
-static TZrBool type_inference_bitwise_identity_expression_basic_zero_minus_chain_leaf_int64_range(
+TZrBool type_inference_bitwise_identity_expression_basic_zero_minus_chain_leaf_int64_range(
         SZrCompilerState *cs,
         const SZrAstNode *expression,
         TZrInt64 *outMinValue,
@@ -457,7 +457,7 @@ static TZrBool type_inference_bitwise_identity_expression_zero_wrapped_or_zero_m
             outMaxValue);
 }
 
-static TZrBool type_inference_bitwise_identity_expression_zero_wrapped_or_unary_minus_zero_wrapped_or_basic_zero_minus_direct_int64_range(
+TZrBool type_inference_bitwise_identity_expression_zero_wrapped_or_unary_minus_zero_wrapped_or_basic_zero_minus_direct_int64_range(
         SZrCompilerState *cs,
         const SZrAstNode *expression,
         TZrInt64 *outMinValue,
@@ -513,206 +513,6 @@ TZrBool type_inference_bitwise_identity_expression_unary_minus_direct_int64_rang
     return ZR_TRUE;
 }
 
-static TZrBool type_inference_bitwise_identity_expression_signed_all_ones_operand_int64_range(
-        SZrCompilerState *cs,
-        const SZrAstNode *expression,
-        TZrInt64 *outMinValue,
-        TZrInt64 *outMaxValue) {
-    if (type_inference_bitwise_identity_expression_zero_wrapped_or_unary_minus_zero_wrapped_or_basic_zero_minus_direct_int64_range(
-                cs,
-                expression,
-                outMinValue,
-                outMaxValue)) {
-        return ZR_TRUE;
-    }
-
-    return type_inference_bitwise_identity_expression_basic_zero_minus_chain_leaf_int64_range(
-            cs,
-            expression,
-            outMinValue,
-            outMaxValue);
-}
-
-static TZrBool type_inference_bitwise_identity_expression_bitwise_not_signed_all_ones_mask_range(
-        SZrCompilerState *cs,
-        const SZrAstNode *left,
-        const SZrAstNode *right,
-        TZrInt64 *outMinValue,
-        TZrInt64 *outMaxValue) {
-    TZrInt64 leftMinValue;
-    TZrInt64 leftMaxValue;
-    TZrInt64 rightMinValue;
-    TZrInt64 rightMaxValue;
-
-    if (!type_inference_bitwise_identity_expression_signed_all_ones_operand_int64_range(
-                cs,
-                left,
-                &leftMinValue,
-                &leftMaxValue) ||
-        !type_inference_bitwise_identity_expression_signed_all_ones_operand_int64_range(
-                cs,
-                right,
-                &rightMinValue,
-                &rightMaxValue)) {
-        return ZR_FALSE;
-    }
-
-    if (type_inference_bitwise_identity_range_is_exact_signed_all_ones_mask(
-                leftMinValue,
-                leftMaxValue)) {
-        if (outMinValue != ZR_NULL) {
-            *outMinValue = rightMinValue;
-        }
-        if (outMaxValue != ZR_NULL) {
-            *outMaxValue = rightMaxValue;
-        }
-        return ZR_TRUE;
-    }
-
-    if (type_inference_bitwise_identity_range_is_exact_signed_all_ones_mask(
-                rightMinValue,
-                rightMaxValue)) {
-        if (outMinValue != ZR_NULL) {
-            *outMinValue = leftMinValue;
-        }
-        if (outMaxValue != ZR_NULL) {
-            *outMaxValue = leftMaxValue;
-        }
-        return ZR_TRUE;
-    }
-
-    return ZR_FALSE;
-}
-
-static TZrBool type_inference_bitwise_identity_expression_bitwise_not_signed_all_ones_or_range(
-        SZrCompilerState *cs,
-        const SZrAstNode *left,
-        const SZrAstNode *right,
-        TZrInt64 *outMinValue,
-        TZrInt64 *outMaxValue) {
-    TZrInt64 leftMinValue;
-    TZrInt64 leftMaxValue;
-    TZrInt64 rightMinValue;
-    TZrInt64 rightMaxValue;
-
-    if (!type_inference_bitwise_identity_expression_signed_all_ones_operand_int64_range(
-                cs,
-                left,
-                &leftMinValue,
-                &leftMaxValue) ||
-        !type_inference_bitwise_identity_expression_signed_all_ones_operand_int64_range(
-                cs,
-                right,
-                &rightMinValue,
-                &rightMaxValue)) {
-        return ZR_FALSE;
-    }
-
-    if (!type_inference_bitwise_identity_range_is_exact_signed_all_ones_mask(
-                leftMinValue,
-                leftMaxValue) &&
-        !type_inference_bitwise_identity_range_is_exact_signed_all_ones_mask(
-                rightMinValue,
-                rightMaxValue)) {
-        return ZR_FALSE;
-    }
-
-    if (outMinValue != ZR_NULL) {
-        *outMinValue = -1;
-    }
-    if (outMaxValue != ZR_NULL) {
-        *outMaxValue = -1;
-    }
-    return ZR_TRUE;
-}
-
-static TZrBool type_inference_bitwise_identity_expression_bitwise_not_operand_int64_range(
-        SZrCompilerState *cs,
-        const SZrAstNode *expression,
-        TZrInt64 *outMinValue,
-        TZrInt64 *outMaxValue) {
-    const SZrBinaryExpression *binary;
-
-    if (type_inference_bitwise_identity_expression_zero_wrapped_or_unary_minus_zero_wrapped_or_basic_zero_minus_direct_int64_range(
-                cs,
-                expression,
-                outMinValue,
-                outMaxValue)) {
-        return ZR_TRUE;
-    }
-
-    expression = type_inference_bitwise_identity_skip_zero_identity_wrappers(cs, expression);
-    if (expression == ZR_NULL ||
-        expression->type != ZR_AST_BINARY_EXPRESSION) {
-        return ZR_FALSE;
-    }
-
-    binary = &expression->data.binaryExpression;
-    if ((type_inference_bitwise_identity_operator_is(binary->op.op, "&") ||
-         type_inference_bitwise_identity_operator_is(binary->op.op, "|")) &&
-        type_inference_bitwise_identity_expression_signed_same_identifier_range(
-                cs,
-                expression,
-                outMinValue,
-                outMaxValue)) {
-        return ZR_TRUE;
-    }
-
-    if (type_inference_bitwise_identity_operator_is(binary->op.op, "&")) {
-        return type_inference_bitwise_identity_expression_bitwise_not_signed_all_ones_mask_range(
-                cs,
-                binary->left,
-                binary->right,
-                outMinValue,
-                outMaxValue);
-    }
-
-    if (type_inference_bitwise_identity_operator_is(binary->op.op, "|")) {
-        return type_inference_bitwise_identity_expression_bitwise_not_signed_all_ones_or_range(
-                cs,
-                binary->left,
-                binary->right,
-                outMinValue,
-                outMaxValue);
-    }
-
-    return ZR_FALSE;
-}
-
-TZrBool type_inference_bitwise_identity_expression_bitwise_not_direct_int64_range(
-        SZrCompilerState *cs,
-        const SZrAstNode *expression,
-        TZrInt64 *outMinValue,
-        TZrInt64 *outMaxValue) {
-    const SZrUnaryExpression *unary;
-    TZrInt64 operandMinValue;
-    TZrInt64 operandMaxValue;
-
-    expression = type_inference_bitwise_identity_skip_unary_plus_identity(expression);
-    if (expression == ZR_NULL ||
-        expression->type != ZR_AST_UNARY_EXPRESSION) {
-        return ZR_FALSE;
-    }
-
-    unary = &expression->data.unaryExpression;
-    if (!type_inference_bitwise_identity_operator_is(unary->op.op, "~") ||
-        !type_inference_bitwise_identity_expression_bitwise_not_operand_int64_range(
-                cs,
-                unary->argument,
-                &operandMinValue,
-                &operandMaxValue)) {
-        return ZR_FALSE;
-    }
-
-    if (outMinValue != ZR_NULL) {
-        *outMinValue = (TZrInt64)(~((TZrUInt64)operandMaxValue));
-    }
-    if (outMaxValue != ZR_NULL) {
-        *outMaxValue = (TZrInt64)(~((TZrUInt64)operandMinValue));
-    }
-    return ZR_TRUE;
-}
-
 TZrBool type_inference_bitwise_identity_expression_zero_minus_direct_int64_range(
         SZrCompilerState *cs,
         const SZrAstNode *expression,
@@ -736,6 +536,79 @@ TZrBool type_inference_bitwise_identity_expression_zero_minus_direct_int64_range
         !type_inference_bitwise_identity_expression_zero_wrapped_or_unary_minus_zero_wrapped_or_basic_zero_minus_direct_int64_range(
                 cs,
                 binary->right,
+                &operandMinValue,
+                &operandMaxValue) ||
+        operandMinValue == ZR_TYPE_RANGE_INT64_MIN) {
+        return ZR_FALSE;
+    }
+
+    if (outMinValue != ZR_NULL) {
+        *outMinValue = -operandMaxValue;
+    }
+    if (outMaxValue != ZR_NULL) {
+        *outMaxValue = -operandMinValue;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool type_inference_bitwise_identity_expression_zero_minus_signed_same_identifier_range(
+        SZrCompilerState *cs,
+        const SZrAstNode *expression,
+        TZrInt64 *outMinValue,
+        TZrInt64 *outMaxValue) {
+    const SZrBinaryExpression *binary;
+    TZrInt64 operandMinValue;
+    TZrInt64 operandMaxValue;
+
+    expression = type_inference_bitwise_identity_skip_zero_identity_wrappers(cs, expression);
+    if (expression == ZR_NULL ||
+        expression->type != ZR_AST_BINARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    binary = &expression->data.binaryExpression;
+    if (!type_inference_bitwise_identity_operator_is(binary->op.op, "-") ||
+        !type_inference_bitwise_identity_expression_is_exact_zero_value(
+                cs,
+                binary->left) ||
+        !type_inference_bitwise_identity_expression_signed_same_identifier_range(
+                cs,
+                binary->right,
+                &operandMinValue,
+                &operandMaxValue) ||
+        operandMinValue == ZR_TYPE_RANGE_INT64_MIN) {
+        return ZR_FALSE;
+    }
+
+    if (outMinValue != ZR_NULL) {
+        *outMinValue = -operandMaxValue;
+    }
+    if (outMaxValue != ZR_NULL) {
+        *outMaxValue = -operandMinValue;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool type_inference_bitwise_identity_expression_unary_minus_zero_minus_signed_same_identifier_range(
+        SZrCompilerState *cs,
+        const SZrAstNode *expression,
+        TZrInt64 *outMinValue,
+        TZrInt64 *outMaxValue) {
+    const SZrUnaryExpression *unary;
+    TZrInt64 operandMinValue;
+    TZrInt64 operandMaxValue;
+
+    expression = type_inference_bitwise_identity_skip_zero_identity_wrappers(cs, expression);
+    if (expression == ZR_NULL ||
+        expression->type != ZR_AST_UNARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    unary = &expression->data.unaryExpression;
+    if (!type_inference_bitwise_identity_operator_is(unary->op.op, "-") ||
+        !type_inference_bitwise_identity_expression_zero_minus_signed_same_identifier_range(
+                cs,
+                unary->argument,
                 &operandMinValue,
                 &operandMaxValue) ||
         operandMinValue == ZR_TYPE_RANGE_INT64_MIN) {

@@ -29,6 +29,22 @@ static SZrAotGcRootMap make_single_slot_root_map(SZrAotGcRootSlot *slot) {
     return map;
 }
 
+static SZrAotGcRootMap make_single_local_address_root_map(SZrAotGcRootSlot *slot) {
+    SZrAotGcRootMap map;
+
+    slot->stackSlot = 0u;
+    slot->frameByteOffset = 0u;
+    slot->typeLayoutId = 7u;
+    slot->fieldByteOffset = 0u;
+    slot->locationKind = (TZrUInt8)ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS;
+    slot->reserved0 = 0u;
+    slot->reserved1 = 0u;
+
+    map.rootCount = 1u;
+    map.roots = slot;
+    return map;
+}
+
 static void test_aot_root_frame_push_pop_balances_state_stack(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrAotGcRootSlot slot;
@@ -107,6 +123,48 @@ static void test_aot_root_frame_keeps_young_value_above_stack_top_live(void) {
 
         TEST_ASSERT_TRUE(rootValue->isGarbageCollectable);
         newObject = rootValue->value.object;
+        TEST_ASSERT_TRUE(newObject == oldObject || oldObject->garbageCollectMark.forwardingAddress == newObject);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_SURVIVOR,
+                                 newObject->garbageCollectMark.regionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
+                                 newObject->garbageCollectMark.storageKind);
+
+        TEST_ASSERT_TRUE(ZrCore_Gc_AotRootFramePop(state, &rootFrame));
+    }
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_root_frame_local_address_keeps_young_raw_object_live(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrAotGcRootSlot slot;
+    SZrAotGcRootMap map = make_single_local_address_root_map(&slot);
+    SZrAotGcRootFrame rootFrame;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        SZrGarbageCollector *collector = state->global->garbageCollector;
+        SZrObject *object = ZrCore_Object_New(state, ZR_NULL);
+        SZrRawObject *oldObject = ZR_CAST_RAW_OBJECT_AS_SUPER(object);
+        SZrRawObject *localRoot = oldObject;
+        TZrStackValuePointer rootBase = (TZrStackValuePointer)(void *)&localRoot;
+        SZrRawObject *newObject;
+
+        TEST_ASSERT_NOT_NULL(object);
+        TEST_ASSERT_NOT_NULL(localRoot);
+
+        collector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        TEST_ASSERT_TRUE(ZrCore_Gc_AotRootFramePush(state, &rootFrame, rootBase, &map));
+
+        collector->gcDebtSize = 4096;
+        collector->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+
+        TEST_ASSERT_NOT_NULL(localRoot);
+        newObject = localRoot;
         TEST_ASSERT_TRUE(newObject == oldObject || oldObject->garbageCollectMark.forwardingAddress == newObject);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_SURVIVOR,
                                  newObject->garbageCollectMark.regionKind);
@@ -251,6 +309,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_root_frame_push_pop_balances_state_stack);
     RUN_TEST(test_aot_root_frame_keeps_young_value_above_stack_top_live);
+    RUN_TEST(test_aot_root_frame_local_address_keeps_young_raw_object_live);
     RUN_TEST(test_gc_safepoint_advances_pending_collection_debt);
     RUN_TEST(test_gc_write_barrier_records_old_to_young_value);
     RUN_TEST(test_gc_native_call_pin_value_marks_and_releases_temporary_pin);

@@ -8,6 +8,7 @@
 #include "backend_aot_c_generic_monomorphization.h"
 #include "backend_aot_c_generic_sharing.h"
 #include "backend_aot_c_method_metadata.h"
+#include "backend_aot_c_reference_locals.h"
 #include "backend_aot_c_reflection_invokers.h"
 #include "backend_aot_c_runtime_fallback.h"
 #include "backend_aot_c_type_layouts.h"
@@ -1198,6 +1199,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     backend_aot_write_c_generic_monomorphization_layouts(file, state, &functionTable);
     fprintf(file, "\n");
     backend_aot_write_c_function_forward_decls(file, &functionTable);
+    backend_aot_write_c_reference_local_structs(file, &functionTable);
+    backend_aot_write_c_reference_local_root_maps(file, &functionTable);
     fprintf(file, "\n");
     backend_aot_write_c_generic_monomorphization_entries(file, &functionTable, stripGeneratedSymbols);
     backend_aot_write_c_generic_sharing_entries(file, &functionTable, stripGeneratedSymbols);

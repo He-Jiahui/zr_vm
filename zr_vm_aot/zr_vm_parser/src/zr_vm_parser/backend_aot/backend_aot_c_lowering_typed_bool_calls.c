@@ -14,14 +14,15 @@ static void backend_aot_write_c_static_direct_bool_deopt_fallback(FILE *file,
 
     fprintf(file,
             "        } else {\n"
+            "            /* zr_aot_static_typed_direct_call_deopt_sync_compact */\n"
             "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_DeoptTypedDirectCall(state,\n"
             "                                                                        &frame,\n"
             "                                                                        %u,\n"
             "                                                                        %u,\n"
             "                                                                        %u,\n"
             "                                                                        %u,\n"
-            "                                                                        \"%s\"));\n"
-            "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u));\n"
+            "                                                                        \"%s\") &&\n"
+            "                            ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u));\n"
             "        }\n",
             (unsigned)destinationSlot,
             (unsigned)functionSlot,

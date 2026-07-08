@@ -48,6 +48,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_no_arg_typed
             ZR_AOT_U64_NO_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_NO_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_no_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -71,6 +74,9 @@ static void test_aot_c_generated_shared_library_returns_static_u64_no_arg_result
             ZR_AOT_U64_NO_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_NO_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_no_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke_with_options(
@@ -99,6 +105,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_type
             ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_one_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -122,6 +131,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_add_
             ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_one_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -145,6 +157,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_subt
             ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_one_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -168,6 +183,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_mult
             ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_one_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -191,6 +209,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_bitw
             ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_one_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -214,6 +235,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_bitw
             ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_one_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -237,6 +261,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_one_arg_bitw
             ZR_AOT_U64_ONE_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_ONE_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_one_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -261,6 +288,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_type
             ZR_AOT_U64_TWO_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -285,6 +315,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_mult
             ZR_AOT_U64_TWO_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -309,6 +342,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_divi
             ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             "/* zr_aot_static_u64_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_u64_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -333,6 +369,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_modu
             ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             "/* zr_aot_static_u64_two_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_u64_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -357,6 +396,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_subt
             ZR_AOT_U64_TWO_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -381,6 +423,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_bitw
             ZR_AOT_U64_TWO_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -405,6 +450,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_bitw
             ZR_AOT_U64_TWO_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -429,6 +477,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_bitw
             ZR_AOT_U64_TWO_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_TWO_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_two_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -454,6 +505,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_ad
             ZR_AOT_U64_THREE_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_three_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -479,6 +533,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_mu
             ZR_AOT_U64_THREE_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_three_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -504,6 +561,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_su
             ZR_AOT_U64_THREE_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_three_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -529,6 +589,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_di
             ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_u64_three_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -554,6 +617,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_mo
             ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             "/* zr_aot_static_u64_three_arg_direct_call_sync_stack_slot */",
             42,
+            "/* zr_aot_static_u64_three_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -579,6 +645,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_bi
             ZR_AOT_U64_THREE_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_three_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -604,6 +673,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_bi
             ZR_AOT_U64_THREE_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_three_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
@@ -629,6 +701,9 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_bi
             ZR_AOT_U64_THREE_ARG_STATE_FREE_CALL,
             ZR_AOT_U64_THREE_ARG_STATEFUL_CALL,
             42,
+            "/* zr_aot_static_u64_three_arg_direct_call_full_aot */",
+            ZR_TRUE,
+            ZR_TRUE,
     };
 
     run_aot_c_typed_direct_call_u64_smoke(&testCase);

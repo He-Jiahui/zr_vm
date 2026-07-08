@@ -550,13 +550,14 @@ static void test_aot_c_source_makes_dynamic_member_index_access_explicit_boundar
             "zr_aot_value_dynamic_set_by_index_boundary",
             "TZrUInt32 deoptId",
             "zr_aot_value_dynamic_deopt_bridge deopt=%u",
+            "zr_aot_value_dynamic_deopt_bridge_compact",
             "ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(state, &frame, %u,",
-            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMember(state, &frame, %u, %u, %u));",
-            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetMember(state, &frame, %u, %u, %u));",
-            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMemberSlot(state, &frame, %u, %u, %u));",
-            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetMemberSlot(state, &frame, %u, %u, %u));",
-            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetByIndex(state, &frame, %u, %u, %u));",
-            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetByIndex(state, &frame, %u, %u, %u));",
+            "ZrLibrary_AotRuntime_GetMember(state, &frame, %u, %u, %u));",
+            "ZrLibrary_AotRuntime_SetMember(state, &frame, %u, %u, %u));",
+            "ZrLibrary_AotRuntime_GetMemberSlot(state, &frame, %u, %u, %u));",
+            "ZrLibrary_AotRuntime_SetMemberSlot(state, &frame, %u, %u, %u));",
+            "ZrLibrary_AotRuntime_GetByIndex(state, &frame, %u, %u, %u));",
+            "ZrLibrary_AotRuntime_SetByIndex(state, &frame, %u, %u, %u));",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(GET_MEMBER):",
@@ -636,9 +637,9 @@ static void test_aot_c_source_makes_dynamic_member_index_access_explicit_boundar
 
 static void test_aot_c_member_index_heap_stores_use_public_gc_write_barrier(void) {
     static const char *const valueAccessBoundaryNeedles[] = {
-            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetMember(state, &frame, %u, %u, %u));",
-            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetMemberSlot(state, &frame, %u, %u, %u));",
-            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetByIndex(state, &frame, %u, %u, %u));",
+            "ZrLibrary_AotRuntime_SetMember(state, &frame, %u, %u, %u));",
+            "ZrLibrary_AotRuntime_SetMemberSlot(state, &frame, %u, %u, %u));",
+            "ZrLibrary_AotRuntime_SetByIndex(state, &frame, %u, %u, %u));",
     };
     static const char *const superArrayLoweringNeedles[] = {
             "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArraySetInt(state, &frame, %u, %u, %u));",
