@@ -97,3 +97,24 @@ cleanup:
             definitionPinned);
     return result;
 }
+
+SZrObject *ZrCore_Reflection_MakeGenericMethodObject(
+        SZrState *state,
+        SZrMetadataRuntime *runtime,
+        TZrMetadataToken genericMethodToken,
+        const SZrReflectionGenericTypeArgument *arguments,
+        TZrUInt32 argumentCount) {
+    SZrReflectionResolvedGenericMethodSpec resolved;
+
+    if (state == ZR_NULL || runtime == ZR_NULL ||
+        !ZrCore_Reflection_ResolveConstructedGenericMethod(
+                runtime,
+                genericMethodToken,
+                arguments,
+                argumentCount,
+                &resolved)) {
+        return ZR_NULL;
+    }
+    return ZrCore_Reflection_BuildConstructedGenericMethodObject(
+            state, runtime, &resolved);
+}

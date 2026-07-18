@@ -952,6 +952,7 @@ int main(void) {
     RUN_TEST(test_constructed_generic_method_resolves_module_metadata_method_spec);
     RUN_TEST(test_constructed_generic_method_rejects_mismatch_and_clears_output);
     RUN_TEST(test_constructed_generic_method_object_links_definition_and_arguments);
+    RUN_TEST(test_make_generic_method_object_resolves_and_materializes);
     RUN_TEST(test_generic_method_definition_object_materializes_parameters);
     RUN_TEST(test_method_spec_generic_context_materializes_metadata_arguments);
     RUN_TEST(test_method_spec_generic_call_info_context_survives_full_gc);

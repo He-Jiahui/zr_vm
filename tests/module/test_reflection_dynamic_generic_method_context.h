@@ -417,6 +417,73 @@ static void test_constructed_generic_method_object_links_definition_and_argument
     destroy_reflection_test_state(state);
 }
 
+static void test_make_generic_method_object_resolves_and_materializes(void) {
+    SMethodSpecGenericContextFixture fixture;
+    SZrMetadataRuntime *runtime = method_spec_generic_context_fixture_init(&fixture);
+    SZrState *state = create_reflection_test_state();
+    SZrReflectionGenericTypeArgument arguments[] = {
+            {
+                    .kind = ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_PRIMITIVE,
+                    .primitiveValueType = ZR_VALUE_TYPE_UINT64,
+            },
+            {
+                    .kind = ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_TYPE_TOKEN,
+                    .typeToken = TEST_METHOD_CONTEXT_TYPE_REF_TOKEN,
+            },
+    };
+    SZrObject *methodObject;
+
+    TEST_ASSERT_NOT_NULL(state);
+    methodObject = ZrCore_Reflection_MakeGenericMethodObject(
+            state,
+            runtime,
+            TEST_METHOD_CONTEXT_MEMBER_TOKEN,
+            arguments,
+            ZR_ARRAY_COUNT(arguments));
+    TEST_ASSERT_NOT_NULL(methodObject);
+    assert_object_string_field(state, methodObject, "kind", "constructedGenericMethod");
+    assert_object_string_field(state, methodObject, "name", "Map");
+    assert_object_int_field(
+            state, methodObject, "metadataToken", TEST_METHOD_CONTEXT_SPEC_TOKEN);
+    assert_object_int_field(
+            state, methodObject, "genericMethodToken", TEST_METHOD_CONTEXT_MEMBER_TOKEN);
+
+    arguments[1].typeToken = TEST_TYPE_DEF_TOKEN;
+    TEST_ASSERT_NULL(ZrCore_Reflection_MakeGenericMethodObject(
+            state,
+            runtime,
+            TEST_METHOD_CONTEXT_MEMBER_TOKEN,
+            arguments,
+            ZR_ARRAY_COUNT(arguments)));
+    arguments[1].typeToken = TEST_METHOD_CONTEXT_TYPE_REF_TOKEN;
+    TEST_ASSERT_NULL(ZrCore_Reflection_MakeGenericMethodObject(
+            state,
+            runtime,
+            TEST_METHOD_CONTEXT_SPEC_TOKEN,
+            arguments,
+            ZR_ARRAY_COUNT(arguments)));
+    TEST_ASSERT_NULL(ZrCore_Reflection_MakeGenericMethodObject(
+            ZR_NULL,
+            runtime,
+            TEST_METHOD_CONTEXT_MEMBER_TOKEN,
+            arguments,
+            ZR_ARRAY_COUNT(arguments)));
+    TEST_ASSERT_NULL(ZrCore_Reflection_MakeGenericMethodObject(
+            state,
+            ZR_NULL,
+            TEST_METHOD_CONTEXT_MEMBER_TOKEN,
+            arguments,
+            ZR_ARRAY_COUNT(arguments)));
+    TEST_ASSERT_NULL(ZrCore_Reflection_MakeGenericMethodObject(
+            state,
+            runtime,
+            TEST_METHOD_CONTEXT_MEMBER_TOKEN,
+            ZR_NULL,
+            ZR_ARRAY_COUNT(arguments)));
+
+    destroy_reflection_test_state(state);
+}
+
 static void test_generic_method_definition_object_materializes_parameters(void) {
     SMethodSpecGenericContextFixture fixture;
     SZrMetadataRuntime *runtime = method_spec_generic_context_fixture_init(&fixture);

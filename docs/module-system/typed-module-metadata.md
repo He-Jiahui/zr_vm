@@ -327,6 +327,7 @@ tests:
   - tests/acceptance/2026-07-19-aot-08-s6v-10-s4z43-11-s5a-generic-method-definition-object.md
   - tests/acceptance/2026-07-19-aot-08-s6w-10-s4z44-11-s5b-methodspec-request-resolution.md
   - tests/acceptance/2026-07-19-aot-08-s6x-10-s4z45-11-s5c-constructed-generic-method-object.md
+  - tests/acceptance/2026-07-19-aot-08-s6y-10-s4z46-11-s5d-make-generic-method-object.md
   - tests/acceptance/2026-07-02-aot-12-s7zzq-runtime-export-member-token-publication.md
   - tests/acceptance/2026-07-02-aot-11-s7z-zrp-manifest-export-declarations.md
   - tests/acceptance/2026-07-02-aot-11-s7za-export-declaration-writer-options.md
@@ -1580,3 +1581,10 @@ M6 的验证不是“编译成功”级别，而是直接断言 opcode、签名�
   temporary GC pinning helper; a focused full-GC assertion verifies the constructed object's argument and definition
   descendants. The three-compiler focused target passes 29/0, focused CTest passes 6/6, and shared regressions pass 66/0,
   31/0, and 95/0. Metadata schema and registration ABI are unchanged; script `MakeGenericMethod` remains a later consumer.
+
+- 2026-07-19 11-S5D / 08-S6Y / 10-S4Z46 adds `ZrCore_Reflection_MakeGenericMethodObject()` as the direct C make
+  boundary. It accepts an open MethodDef token plus concrete generic argument descriptors, delegates exact matching to
+  the existing MethodSpec resolver, and delegates construction plus carrier revalidation to the S5C object builder.
+  Mismatch and invalid input fail closed, and no metadata row, cache entry, or registration slot is synthesized. The
+  three-compiler dynamic generic target passes 30/0 and focused metadata/reflection CTest passes 6/6. Script argument
+  object decoding and `MakeGenericMethod` native dispatch remain separate work.
