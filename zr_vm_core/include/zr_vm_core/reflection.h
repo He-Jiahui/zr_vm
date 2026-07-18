@@ -100,6 +100,18 @@ typedef struct SZrReflectionDynamicGenericTypeInstance {
     const struct SZrTypeLayout *typeLayout;
 } SZrReflectionDynamicGenericTypeInstance;
 
+typedef struct SZrReflectionResolvedGenericMethodSpec {
+    TZrMetadataToken methodSpecToken;
+    const SZrMetadataTokenRecord *methodSpecRecord;
+    TZrMetadataToken genericMethodToken;
+    const SZrMetadataTokenRecord *genericMethodRecord;
+    TZrUInt64 genericSignatureHash;
+    TZrUInt32 genericArgumentCount;
+    TZrUInt32 genericArgumentListBlobOffset;
+    /* Borrowed from ResolveConstructedGenericMethod() input. */
+    const SZrReflectionGenericTypeArgument *requestedArguments;
+} SZrReflectionResolvedGenericMethodSpec;
+
 typedef struct SZrReflectionResolvedGenericParameter {
     TZrMetadataToken ownerToken;
     const SZrMetadataTokenRecord *ownerRecord;
@@ -390,6 +402,13 @@ ZR_CORE_API TZrBool ZrCore_Reflection_ResolveConstructedGenericType(
         const SZrReflectionGenericTypeArgument *arguments,
         TZrUInt32 argumentCount,
         SZrReflectionDynamicGenericTypeInstance *outInstance);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_ResolveConstructedGenericMethod(
+        struct SZrMetadataRuntime *runtime,
+        TZrMetadataToken genericMethodToken,
+        const SZrReflectionGenericTypeArgument *arguments,
+        TZrUInt32 argumentCount,
+        SZrReflectionResolvedGenericMethodSpec *outMethodSpec);
 
 ZR_CORE_API TZrBool ZrCore_Reflection_RevalidateDynamicGenericTypeInstance(
         struct SZrMetadataRuntime *runtime,

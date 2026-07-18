@@ -42,7 +42,7 @@ typedef struct SMethodSpecGenericContextFixture {
     SZrFunction metadataFunction;
     SZrAotCodeRegistration registration;
     SZrMetadataTokenRecord functionRecords[2];
-    SZrMetadataTokenRecord moduleRecords[2];
+    SZrMetadataTokenRecord moduleRecords[3];
     TZrByte metadataBytes[
             ZR_ZRP_METADATA_HEADER_SIZE +
             sizeof(SZrZrpMetadataTypeDefRow) +
@@ -89,6 +89,7 @@ static SZrMetadataRuntime *method_spec_generic_context_fixture_init(
             (TZrUInt32)sizeof(TEST_METHOD_CONTEXT_SPEC_SIGNATURE);
     fixture->moduleRecords[1].signatureBlobLength =
             (TZrUInt32)sizeof(TEST_METHOD_CONTEXT_TYPE_REF_SIGNATURE);
+    fixture->moduleRecords[2] = fixture->functionRecords[1];
     fixture->metadataFunction.moduleMetadataTokenRecords = fixture->moduleRecords;
     fixture->metadataFunction.moduleMetadataTokenRecordLength =
             ZR_ARRAY_COUNT(fixture->moduleRecords);
@@ -171,6 +172,149 @@ static SZrMetadataRuntime *method_spec_generic_context_fixture_init(
     TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_AttachZrpMetadata(
             runtime, fixture->metadataBytes, sizeof(fixture->metadataBytes)));
     return runtime;
+}
+
+static void assert_resolved_generic_method_spec_cleared(
+        const SZrReflectionResolvedGenericMethodSpec *resolved) {
+    TEST_ASSERT_EQUAL_UINT32(0u, resolved->methodSpecToken);
+    TEST_ASSERT_NULL(resolved->methodSpecRecord);
+    TEST_ASSERT_EQUAL_UINT32(0u, resolved->genericMethodToken);
+    TEST_ASSERT_NULL(resolved->genericMethodRecord);
+    TEST_ASSERT_EQUAL_UINT64(0u, resolved->genericSignatureHash);
+    TEST_ASSERT_EQUAL_UINT32(0u, resolved->genericArgumentCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, resolved->genericArgumentListBlobOffset);
+    TEST_ASSERT_NULL(resolved->requestedArguments);
+}
+
+static void test_constructed_generic_method_resolves_existing_method_spec(void) {
+    SMethodSpecGenericContextFixture fixture;
+    SZrMetadataRuntime *runtime = method_spec_generic_context_fixture_init(&fixture);
+    const SZrReflectionGenericTypeArgument arguments[] = {
+            {
+                    .kind = ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_PRIMITIVE,
+                    .primitiveValueType = ZR_VALUE_TYPE_UINT64,
+            },
+            {
+                    .kind = ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_TYPE_TOKEN,
+                    .typeToken = TEST_METHOD_CONTEXT_TYPE_REF_TOKEN,
+            },
+    };
+    SZrReflectionResolvedGenericMethodSpec resolved;
+
+    TEST_ASSERT_TRUE(ZrCore_Reflection_ResolveConstructedGenericMethod(
+            runtime,
+            TEST_METHOD_CONTEXT_MEMBER_TOKEN,
+            arguments,
+            ZR_ARRAY_COUNT(arguments),
+            &resolved));
+    TEST_ASSERT_EQUAL_UINT32(TEST_METHOD_CONTEXT_SPEC_TOKEN, resolved.methodSpecToken);
+    TEST_ASSERT_EQUAL_PTR(&fixture.functionRecords[1], resolved.methodSpecRecord);
+    TEST_ASSERT_EQUAL_UINT32(TEST_METHOD_CONTEXT_MEMBER_TOKEN, resolved.genericMethodToken);
+    TEST_ASSERT_EQUAL_PTR(&fixture.functionRecords[0], resolved.genericMethodRecord);
+    TEST_ASSERT_EQUAL_UINT64(0x1020304050607080ULL, resolved.genericSignatureHash);
+    TEST_ASSERT_EQUAL_UINT32(2u, resolved.genericArgumentCount);
+    TEST_ASSERT_EQUAL_UINT32(10u, resolved.genericArgumentListBlobOffset);
+    TEST_ASSERT_EQUAL_PTR(arguments, resolved.requestedArguments);
+}
+
+static void test_constructed_generic_method_resolves_module_metadata_method_spec(void) {
+    SMethodSpecGenericContextFixture fixture;
+    SZrMetadataRuntime *runtime = method_spec_generic_context_fixture_init(&fixture);
+    const SZrReflectionGenericTypeArgument arguments[] = {
+            {
+                    .kind = ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_PRIMITIVE,
+                    .primitiveValueType = ZR_VALUE_TYPE_UINT64,
+            },
+            {
+                    .kind = ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_TYPE_TOKEN,
+                    .typeToken = TEST_METHOD_CONTEXT_TYPE_REF_TOKEN,
+            },
+    };
+    SZrReflectionResolvedGenericMethodSpec resolved;
+
+    fixture.metadataFunction.metadataTokenRecordLength = 1u;
+    TEST_ASSERT_TRUE(ZrCore_Reflection_ResolveConstructedGenericMethod(
+            runtime,
+            TEST_METHOD_CONTEXT_MEMBER_TOKEN,
+            arguments,
+            ZR_ARRAY_COUNT(arguments),
+            &resolved));
+    TEST_ASSERT_EQUAL_UINT32(TEST_METHOD_CONTEXT_SPEC_TOKEN, resolved.methodSpecToken);
+    TEST_ASSERT_EQUAL_PTR(&fixture.moduleRecords[2], resolved.methodSpecRecord);
+    TEST_ASSERT_EQUAL_PTR(arguments, resolved.requestedArguments);
+}
+
+static void test_constructed_generic_method_rejects_mismatch_and_clears_output(void) {
+    SMethodSpecGenericContextFixture fixture;
+    SZrMetadataRuntime *runtime = method_spec_generic_context_fixture_init(&fixture);
+    SZrReflectionGenericTypeArgument arguments[] = {
+            {
+                    .kind = ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_PRIMITIVE,
+                    .primitiveValueType = ZR_VALUE_TYPE_UINT64,
+            },
+            {
+                    .kind = ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_TYPE_TOKEN,
+                    .typeToken = TEST_METHOD_CONTEXT_TYPE_REF_TOKEN,
+            },
+    };
+    SZrReflectionResolvedGenericMethodSpec resolved;
+
+    memset(&resolved, 0xA5, sizeof(resolved));
+    arguments[0].primitiveValueType = ZR_VALUE_TYPE_INT64;
+    TEST_ASSERT_FALSE(ZrCore_Reflection_ResolveConstructedGenericMethod(
+            runtime, TEST_METHOD_CONTEXT_MEMBER_TOKEN, arguments, 2u, &resolved));
+    assert_resolved_generic_method_spec_cleared(&resolved);
+
+    arguments[0].primitiveValueType = ZR_VALUE_TYPE_UINT64;
+    arguments[1].typeToken = TEST_TYPE_DEF_TOKEN;
+    memset(&resolved, 0xA5, sizeof(resolved));
+    TEST_ASSERT_FALSE(ZrCore_Reflection_ResolveConstructedGenericMethod(
+            runtime, TEST_METHOD_CONTEXT_MEMBER_TOKEN, arguments, 2u, &resolved));
+    assert_resolved_generic_method_spec_cleared(&resolved);
+
+    arguments[1].typeToken = TEST_METHOD_CONTEXT_TYPE_REF_TOKEN;
+    memset(&resolved, 0xA5, sizeof(resolved));
+    TEST_ASSERT_FALSE(ZrCore_Reflection_ResolveConstructedGenericMethod(
+            runtime, TEST_METHOD_CONTEXT_MEMBER_TOKEN, arguments, 1u, &resolved));
+    assert_resolved_generic_method_spec_cleared(&resolved);
+
+    memset(&resolved, 0xA5, sizeof(resolved));
+    TEST_ASSERT_FALSE(ZrCore_Reflection_ResolveConstructedGenericMethod(
+            runtime, TEST_METHOD_CONTEXT_SPEC_TOKEN, arguments, 2u, &resolved));
+    assert_resolved_generic_method_spec_cleared(&resolved);
+
+    fixture.functionRecords[1].ownerToken = 0u;
+    fixture.moduleRecords[2].ownerToken = 0u;
+    memset(&resolved, 0xA5, sizeof(resolved));
+    TEST_ASSERT_FALSE(ZrCore_Reflection_ResolveConstructedGenericMethod(
+            runtime, TEST_METHOD_CONTEXT_MEMBER_TOKEN, arguments, 2u, &resolved));
+    assert_resolved_generic_method_spec_cleared(&resolved);
+
+    arguments[0].kind = (EZrReflectionGenericTypeArgumentKind)0;
+    memset(&resolved, 0xA5, sizeof(resolved));
+    TEST_ASSERT_FALSE(ZrCore_Reflection_ResolveConstructedGenericMethod(
+            runtime, TEST_METHOD_CONTEXT_MEMBER_TOKEN, arguments, 2u, &resolved));
+    assert_resolved_generic_method_spec_cleared(&resolved);
+
+    fixture.functionRecords[1].ownerToken = TEST_METHOD_CONTEXT_MEMBER_TOKEN;
+    fixture.moduleRecords[2].ownerToken = TEST_METHOD_CONTEXT_MEMBER_TOKEN;
+    arguments[0].kind = ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_PRIMITIVE;
+    memset(&resolved, 0xA5, sizeof(resolved));
+    TEST_ASSERT_FALSE(ZrCore_Reflection_ResolveConstructedGenericMethod(
+            ZR_NULL, TEST_METHOD_CONTEXT_MEMBER_TOKEN, arguments, 2u, &resolved));
+    assert_resolved_generic_method_spec_cleared(&resolved);
+
+    memset(&resolved, 0xA5, sizeof(resolved));
+    TEST_ASSERT_FALSE(ZrCore_Reflection_ResolveConstructedGenericMethod(
+            runtime, TEST_METHOD_CONTEXT_MEMBER_TOKEN, ZR_NULL, 2u, &resolved));
+    assert_resolved_generic_method_spec_cleared(&resolved);
+
+    memset(&resolved, 0xA5, sizeof(resolved));
+    TEST_ASSERT_FALSE(ZrCore_Reflection_ResolveConstructedGenericMethod(
+            runtime, TEST_METHOD_CONTEXT_MEMBER_TOKEN, arguments, 0u, &resolved));
+    assert_resolved_generic_method_spec_cleared(&resolved);
+    TEST_ASSERT_FALSE(ZrCore_Reflection_ResolveConstructedGenericMethod(
+            runtime, TEST_METHOD_CONTEXT_MEMBER_TOKEN, arguments, 2u, ZR_NULL));
 }
 
 static void test_generic_method_definition_object_materializes_parameters(void) {

@@ -1,5 +1,6 @@
 #include "zr_vm_core/reflection.h"
 
+#include "reflection_generic_argument_internal.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/metadata_runtime.h"
@@ -132,7 +133,7 @@ TZrBool ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider(
             providerRuntime, binding->resolvedMetadataToken, outInstance);
 }
 
-static TZrBool reflection_validate_generic_type_argument(
+TZrBool ZrCore_Reflection_ValidateGenericTypeArgument(
         SZrMetadataRuntime *runtime,
         const SZrReflectionGenericTypeArgument *argument,
         TZrUInt32 depth) {
@@ -166,9 +167,9 @@ static TZrBool reflection_validate_generic_type_argument(
             return (TZrBool)(argument->primitiveValueType == 0u &&
                              argument->typeToken == 0u &&
                              argument->arrayRank > 0u &&
-                             reflection_validate_generic_type_argument(runtime,
-                                                                       argument->elementType,
-                                                                       depth + 1u));
+                             ZrCore_Reflection_ValidateGenericTypeArgument(runtime,
+                                                                          argument->elementType,
+                                                                          depth + 1u));
 
         case ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_TUPLE:
             if (argument->primitiveValueType != 0u || argument->typeToken != 0u ||
@@ -176,7 +177,7 @@ static TZrBool reflection_validate_generic_type_argument(
                 return ZR_FALSE;
             }
             for (index = 0u; index < argument->childCount; ++index) {
-                if (!reflection_validate_generic_type_argument(
+                if (!ZrCore_Reflection_ValidateGenericTypeArgument(
                             runtime, &argument->childTypes[index], depth + 1u)) {
                     return ZR_FALSE;
                 }
@@ -188,16 +189,16 @@ static TZrBool reflection_validate_generic_type_argument(
                              argument->typeToken == 0u &&
                              argument->ownershipQualifier > ZR_REFLECTION_OWNERSHIP_QUALIFIER_NONE &&
                              argument->ownershipQualifier <= ZR_REFLECTION_OWNERSHIP_QUALIFIER_LOANED &&
-                             reflection_validate_generic_type_argument(runtime,
-                                                                       argument->elementType,
-                                                                       depth + 1u));
+                             ZrCore_Reflection_ValidateGenericTypeArgument(runtime,
+                                                                          argument->elementType,
+                                                                          depth + 1u));
 
         case ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_NULLABLE:
             return (TZrBool)(argument->primitiveValueType == 0u &&
                              argument->typeToken == 0u &&
-                             reflection_validate_generic_type_argument(runtime,
-                                                                       argument->elementType,
-                                                                       depth + 1u));
+                             ZrCore_Reflection_ValidateGenericTypeArgument(runtime,
+                                                                          argument->elementType,
+                                                                          depth + 1u));
 
         case ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_UNION:
             if (argument->primitiveValueType != 0u || argument->typeToken != 0u ||
@@ -209,7 +210,7 @@ static TZrBool reflection_validate_generic_type_argument(
                 return ZR_FALSE;
             }
             for (index = 0u; index < argument->childCount; ++index) {
-                if (!reflection_validate_generic_type_argument(
+                if (!ZrCore_Reflection_ValidateGenericTypeArgument(
                             runtime, &argument->childTypes[index], depth + 1u)) {
                     return ZR_FALSE;
                 }
@@ -273,7 +274,7 @@ static TZrBool reflection_signature_node_matches_type_token(
                                                   &requestedNode);
 }
 
-static TZrBool reflection_generic_type_node_matches(
+TZrBool ZrCore_Reflection_GenericTypeArgumentMatchesSignatureNode(
         SZrMetadataRuntime *runtime,
         const SZrZrpMetadataPoolSliceView *candidateBlob,
         const SZrMetadataRuntimeSignatureTypeNodeView *candidateNode,
@@ -294,12 +295,12 @@ static TZrBool reflection_generic_type_child_list_matches(
 
     for (index = 0u; index < childCount; ++index) {
         if (!ZrCore_MetadataRuntime_ReadSignatureTypeNode(candidateBlob, childOffset, &childNode) ||
-            !reflection_generic_type_node_matches(runtime,
-                                                  candidateBlob,
-                                                  &childNode,
-                                                  0u,
-                                                  &childTypes[index],
-                                                  depth + 1u)) {
+            !ZrCore_Reflection_GenericTypeArgumentMatchesSignatureNode(runtime,
+                                                                      candidateBlob,
+                                                                      &childNode,
+                                                                      0u,
+                                                                      &childTypes[index],
+                                                                      depth + 1u)) {
             return ZR_FALSE;
         }
         childOffset = childNode.nextBlobOffset;
@@ -307,7 +308,7 @@ static TZrBool reflection_generic_type_child_list_matches(
     return ZR_TRUE;
 }
 
-static TZrBool reflection_generic_type_node_matches(
+TZrBool ZrCore_Reflection_GenericTypeArgumentMatchesSignatureNode(
         SZrMetadataRuntime *runtime,
         const SZrZrpMetadataPoolSliceView *candidateBlob,
         const SZrMetadataRuntimeSignatureTypeNodeView *candidateNode,
@@ -340,12 +341,12 @@ static TZrBool reflection_generic_type_node_matches(
                                                              &elementNode)) {
                 return ZR_FALSE;
             }
-            return reflection_generic_type_node_matches(runtime,
-                                                        candidateBlob,
-                                                        &elementNode,
-                                                        0u,
-                                                        argument->elementType,
-                                                        depth + 1u);
+            return ZrCore_Reflection_GenericTypeArgumentMatchesSignatureNode(runtime,
+                                                                            candidateBlob,
+                                                                            &elementNode,
+                                                                            0u,
+                                                                            argument->elementType,
+                                                                            depth + 1u);
 
         case ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_TUPLE:
             if (candidateNode->node != ZR_METADATA_SIGNATURE_NODE_TUPLE ||
@@ -367,12 +368,12 @@ static TZrBool reflection_generic_type_node_matches(
                                                              &elementNode)) {
                 return ZR_FALSE;
             }
-            return reflection_generic_type_node_matches(runtime,
-                                                        candidateBlob,
-                                                        &elementNode,
-                                                        0u,
-                                                        argument->elementType,
-                                                        depth + 1u);
+            return ZrCore_Reflection_GenericTypeArgumentMatchesSignatureNode(runtime,
+                                                                            candidateBlob,
+                                                                            &elementNode,
+                                                                            0u,
+                                                                            argument->elementType,
+                                                                            depth + 1u);
 
         case ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_NULLABLE:
             if (candidateNode->node != ZR_METADATA_SIGNATURE_NODE_NULLABLE ||
@@ -381,12 +382,12 @@ static TZrBool reflection_generic_type_node_matches(
                                                              &elementNode)) {
                 return ZR_FALSE;
             }
-            return reflection_generic_type_node_matches(runtime,
-                                                        candidateBlob,
-                                                        &elementNode,
-                                                        0u,
-                                                        argument->elementType,
-                                                        depth + 1u);
+            return ZrCore_Reflection_GenericTypeArgumentMatchesSignatureNode(runtime,
+                                                                            candidateBlob,
+                                                                            &elementNode,
+                                                                            0u,
+                                                                            argument->elementType,
+                                                                            depth + 1u);
 
         case ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_UNION:
             if (candidateNode->node != ZR_METADATA_SIGNATURE_NODE_UNION ||
@@ -419,12 +420,13 @@ static TZrBool reflection_generic_type_argument_matches(
         return ZR_FALSE;
     }
 
-    return reflection_generic_type_node_matches(runtime,
-                                                &view.bindingView.signatureView.blob,
-                                                &view.argumentNode,
-                                                view.argumentToken,
-                                                argument,
-                                                0u);
+    return ZrCore_Reflection_GenericTypeArgumentMatchesSignatureNode(
+            runtime,
+            &view.bindingView.signatureView.blob,
+            &view.argumentNode,
+            view.argumentToken,
+            argument,
+            0u);
 }
 
 static TZrBool reflection_type_spec_matches_request(
@@ -479,7 +481,7 @@ TZrBool ZrCore_Reflection_ResolveConstructedGenericType(
         return ZR_FALSE;
     }
     for (index = 0u; index < argumentCount; ++index) {
-        if (!reflection_validate_generic_type_argument(runtime, &arguments[index], 0u)) {
+        if (!ZrCore_Reflection_ValidateGenericTypeArgument(runtime, &arguments[index], 0u)) {
             return ZR_FALSE;
         }
     }
