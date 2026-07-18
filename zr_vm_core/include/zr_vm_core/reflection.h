@@ -410,6 +410,11 @@ ZR_CORE_API TZrBool ZrCore_Reflection_ResolveConstructedGenericMethod(
         TZrUInt32 argumentCount,
         SZrReflectionResolvedGenericMethodSpec *outMethodSpec);
 
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_BuildConstructedGenericMethodObject(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        const SZrReflectionResolvedGenericMethodSpec *methodSpec);
+
 ZR_CORE_API TZrBool ZrCore_Reflection_RevalidateDynamicGenericTypeInstance(
         struct SZrMetadataRuntime *runtime,
         const SZrReflectionDynamicGenericTypeInstance *instance,

@@ -13,6 +13,9 @@ related_code:
   - zr_vm_core/src/zr_vm_core/reflection_generic_instance.c
   - zr_vm_core/src/zr_vm_core/reflection_generic_argument_internal.h
   - zr_vm_core/src/zr_vm_core/reflection_generic_method.c
+  - zr_vm_core/src/zr_vm_core/reflection_generic_method_object.c
+  - zr_vm_core/src/zr_vm_core/reflection_object_internal.c
+  - zr_vm_core/src/zr_vm_core/reflection_object_internal.h
   - zr_vm_core/src/zr_vm_core/reflection_generic_type_object.c
   - zr_vm_core/src/zr_vm_core/reflection_interpreter_generic_instance.c
   - zr_vm_core/include/zr_vm_core/reflection.h
@@ -323,6 +326,7 @@ tests:
   - tests/acceptance/2026-07-19-aot-08-s6u-10-s4z42-11-s2e-methodspec-method-token-vm-function-resolution.md
   - tests/acceptance/2026-07-19-aot-08-s6v-10-s4z43-11-s5a-generic-method-definition-object.md
   - tests/acceptance/2026-07-19-aot-08-s6w-10-s4z44-11-s5b-methodspec-request-resolution.md
+  - tests/acceptance/2026-07-19-aot-08-s6x-10-s4z45-11-s5c-constructed-generic-method-object.md
   - tests/acceptance/2026-07-02-aot-12-s7zzq-runtime-export-member-token-publication.md
   - tests/acceptance/2026-07-02-aot-11-s7z-zrp-manifest-export-declarations.md
   - tests/acceptance/2026-07-02-aot-11-s7za-export-declaration-writer-options.md
@@ -1567,3 +1571,12 @@ M6 的验证不是“编译成功”级别，而是直接断言 opcode、签名�
   and MethodDef records, signature hash, argument coordinates, and borrowed request view; mismatch or malformed metadata
   clears the output. No zrp row, MethodSpec, cache entry, or code-registration slot is synthesized. Constructed method
   object materialization, script `MakeGenericMethod`, and cross-module method binding remain later consumers.
+
+- 2026-07-19 11-S5C / 08-S6X / 10-S4Z45 materializes that exact MethodSpec resolution as a GC-managed constructed
+  generic method reflection object. The builder re-resolves and compares the complete carrier before composing the
+  existing MethodSpec context and generic MethodDef definition objects. The result exposes the real method name,
+  MethodSpec/MethodDef tokens, recursive arguments, signature hash, runtime identity, and a definition link while keeping
+  definition/constructed flags consistent. Generic type and method object builders now share one internal field-write and
+  temporary GC pinning helper; a focused full-GC assertion verifies the constructed object's argument and definition
+  descendants. The three-compiler focused target passes 29/0, focused CTest passes 6/6, and shared regressions pass 66/0,
+  31/0, and 95/0. Metadata schema and registration ABI are unchanged; script `MakeGenericMethod` remains a later consumer.

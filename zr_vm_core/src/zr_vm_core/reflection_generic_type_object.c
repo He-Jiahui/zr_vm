@@ -4,6 +4,7 @@
 
 #include "zr_vm_core/reflection.h"
 
+#include "reflection_object_internal.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
@@ -17,86 +18,15 @@
 
 #define ZR_REFLECTION_GENERIC_TYPE_OBJECT_MAX_RECURSION_DEPTH 64u
 
-static TZrBool generic_type_object_pin_raw(SZrState *state,
-                                           SZrRawObject *object,
-                                           TZrBool *addedByCaller) {
-    return ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(state != ZR_NULL ? state->global : ZR_NULL,
-                                                            state,
-                                                            object,
-                                                            addedByCaller);
-}
-
-static void generic_type_object_unpin_raw(SZrGlobalState *global,
-                                          SZrRawObject *object,
-                                          TZrBool addedByCaller) {
-    if (addedByCaller && global != ZR_NULL && object != ZR_NULL) {
-        ZrCore_GarbageCollector_UnignoreObject(global, object);
-    }
-}
-
-static TZrBool generic_type_object_pin_value(SZrState *state,
-                                             const SZrTypeValue *value,
-                                             TZrBool *addedByCaller) {
-    if (addedByCaller != ZR_NULL) {
-        *addedByCaller = ZR_FALSE;
-    }
-    if (state == ZR_NULL || value == ZR_NULL || !ZrCore_Value_IsGarbageCollectable(value)) {
-        return ZR_TRUE;
-    }
-    return generic_type_object_pin_raw(state, ZrCore_Value_GetRawObject(value), addedByCaller);
-}
-
-static void generic_type_object_unpin_value(SZrGlobalState *global,
-                                            const SZrTypeValue *value,
-                                            TZrBool addedByCaller) {
-    if (addedByCaller && value != ZR_NULL && ZrCore_Value_IsGarbageCollectable(value)) {
-        generic_type_object_unpin_raw(global, ZrCore_Value_GetRawObject(value), ZR_TRUE);
-    }
-}
-
-static SZrString *generic_type_object_make_string(SZrState *state, const TZrChar *text) {
-    if (state == ZR_NULL || text == ZR_NULL) {
-        return ZR_NULL;
-    }
-    return ZrCore_String_Create(state, (TZrNativeString)text, strlen(text));
-}
-
-static TZrBool generic_type_object_set_field_value(SZrState *state,
-                                                   SZrObject *object,
-                                                   const TZrChar *fieldName,
-                                                   const SZrTypeValue *value) {
-    SZrString *fieldString;
-    SZrTypeValue key;
-    TZrBool objectPinned = ZR_FALSE;
-    TZrBool keyPinned = ZR_FALSE;
-    TZrBool valuePinned = ZR_FALSE;
-
-    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL ||
-        !generic_type_object_pin_raw(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &objectPinned) ||
-        !generic_type_object_pin_value(state, value, &valuePinned)) {
-        generic_type_object_unpin_value(state != ZR_NULL ? state->global : ZR_NULL, value, valuePinned);
-        generic_type_object_unpin_raw(state != ZR_NULL ? state->global : ZR_NULL,
-                                      object != ZR_NULL ? ZR_CAST_RAW_OBJECT_AS_SUPER(object) : ZR_NULL,
-                                      objectPinned);
-        return ZR_FALSE;
-    }
-
-    fieldString = generic_type_object_make_string(state, fieldName);
-    if (fieldString == ZR_NULL ||
-        !generic_type_object_pin_raw(state, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString), &keyPinned)) {
-        generic_type_object_unpin_value(state->global, value, valuePinned);
-        generic_type_object_unpin_raw(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
-        return ZR_FALSE;
-    }
-
-    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
-    key.type = ZR_VALUE_TYPE_STRING;
-    ZrCore_Object_SetValue(state, object, &key, value);
-    generic_type_object_unpin_raw(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString), keyPinned);
-    generic_type_object_unpin_value(state->global, value, valuePinned);
-    generic_type_object_unpin_raw(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
-    return ZR_TRUE;
-}
+#define generic_type_object_pin_raw ZrCore_Reflection_ObjectPinRaw
+#define generic_type_object_unpin_raw ZrCore_Reflection_ObjectUnpinRaw
+#define generic_type_object_pin_value ZrCore_Reflection_ObjectPinValue
+#define generic_type_object_unpin_value ZrCore_Reflection_ObjectUnpinValue
+#define generic_type_object_make_string ZrCore_Reflection_ObjectMakeString
+#define generic_type_object_set_field_value ZrCore_Reflection_ObjectSetFieldValue
+#define generic_type_object_set_string ZrCore_Reflection_ObjectSetString
+#define generic_type_object_set_bool ZrCore_Reflection_ObjectSetBool
+#define generic_type_object_set_object ZrCore_Reflection_ObjectSetObject
 
 static TZrBool generic_type_object_set_int(SZrState *state,
                                            SZrObject *object,
@@ -113,46 +43,6 @@ static TZrBool generic_type_object_set_uint(SZrState *state,
                                             TZrUInt64 value) {
     SZrTypeValue fieldValue;
     ZrCore_Value_InitAsUInt(state, &fieldValue, value);
-    return generic_type_object_set_field_value(state, object, fieldName, &fieldValue);
-}
-
-static TZrBool generic_type_object_set_bool(SZrState *state,
-                                            SZrObject *object,
-                                            const TZrChar *fieldName,
-                                            TZrBool value) {
-    SZrTypeValue fieldValue;
-    ZrCore_Value_InitAsBool(state, &fieldValue, value);
-    return generic_type_object_set_field_value(state, object, fieldName, &fieldValue);
-}
-
-static TZrBool generic_type_object_set_string(SZrState *state,
-                                              SZrObject *object,
-                                              const TZrChar *fieldName,
-                                              const TZrChar *value) {
-    SZrString *stringValue = generic_type_object_make_string(state, value);
-    SZrTypeValue fieldValue;
-
-    if (stringValue == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    ZrCore_Value_InitAsRawObject(state, &fieldValue, ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue));
-    fieldValue.type = ZR_VALUE_TYPE_STRING;
-    return generic_type_object_set_field_value(state, object, fieldName, &fieldValue);
-}
-
-static TZrBool generic_type_object_set_object(SZrState *state,
-                                              SZrObject *object,
-                                              const TZrChar *fieldName,
-                                              SZrObject *value,
-                                              EZrValueType valueType) {
-    SZrTypeValue fieldValue;
-
-    if (value == ZR_NULL) {
-        ZrCore_Value_ResetAsNull(&fieldValue);
-    } else {
-        ZrCore_Value_InitAsRawObject(state, &fieldValue, ZR_CAST_RAW_OBJECT_AS_SUPER(value));
-        fieldValue.type = valueType;
-    }
     return generic_type_object_set_field_value(state, object, fieldName, &fieldValue);
 }
 

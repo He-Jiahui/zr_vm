@@ -317,6 +317,106 @@ static void test_constructed_generic_method_rejects_mismatch_and_clears_output(v
             runtime, TEST_METHOD_CONTEXT_MEMBER_TOKEN, arguments, 2u, ZR_NULL));
 }
 
+static void test_constructed_generic_method_object_links_definition_and_arguments(void) {
+    SMethodSpecGenericContextFixture fixture;
+    SZrMetadataRuntime *runtime = method_spec_generic_context_fixture_init(&fixture);
+    SZrState *state = create_reflection_test_state();
+    SZrReflectionGenericTypeArgument arguments[] = {
+            {
+                    .kind = ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_PRIMITIVE,
+                    .primitiveValueType = ZR_VALUE_TYPE_UINT64,
+            },
+            {
+                    .kind = ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_TYPE_TOKEN,
+                    .typeToken = TEST_METHOD_CONTEXT_TYPE_REF_TOKEN,
+            },
+    };
+    SZrReflectionResolvedGenericMethodSpec resolved;
+    SZrObject *methodObject;
+    SZrObject *definitionObject;
+    SZrObject *argumentsArray;
+    const SZrTypeValue *signatureHashValue;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrCore_Reflection_ResolveConstructedGenericMethod(
+            runtime,
+            TEST_METHOD_CONTEXT_MEMBER_TOKEN,
+            arguments,
+            ZR_ARRAY_COUNT(arguments),
+            &resolved));
+    methodObject = ZrCore_Reflection_BuildConstructedGenericMethodObject(
+            state, runtime, &resolved);
+    TEST_ASSERT_NOT_NULL(methodObject);
+    TEST_ASSERT_TRUE(ZrCore_Reflection_IsReflectionObject(state, methodObject));
+    assert_object_string_field(state, methodObject, "kind", "constructedGenericMethod");
+    assert_object_string_field(state, methodObject, "name", "Map");
+    assert_object_bool_field(state, methodObject, "isGenericMethod", ZR_TRUE);
+    assert_object_bool_field(state, methodObject, "isGenericMethodDefinition", ZR_FALSE);
+    assert_object_bool_field(state, methodObject, "isConstructedGenericMethod", ZR_TRUE);
+    assert_object_int_field(
+            state, methodObject, "metadataToken", TEST_METHOD_CONTEXT_SPEC_TOKEN);
+    assert_object_int_field(
+            state, methodObject, "genericMethodToken", TEST_METHOD_CONTEXT_MEMBER_TOKEN);
+    assert_object_int_field(state, methodObject, "genericArgumentCount", 2);
+    assert_object_native_pointer_field(state, methodObject, "metadataRuntime", runtime);
+    signatureHashValue = get_object_field_value(state, methodObject, "genericSignatureHash");
+    TEST_ASSERT_NOT_NULL(signatureHashValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_UINT64, signatureHashValue->type);
+    TEST_ASSERT_EQUAL_UINT64(
+            fixture.functionRecords[1].signatureHash,
+            signatureHashValue->value.nativeObject.nativeUInt64);
+
+    argumentsArray = assert_object_object_field(
+            state, methodObject, "genericArguments", ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_EQUAL_UINT32(2u, (TZrUInt32)argumentsArray->nodeMap.elementCount);
+    assert_object_int_field(
+            state,
+            assert_array_object_entry(state, argumentsArray, 0u),
+            "primitiveValueType",
+            ZR_VALUE_TYPE_UINT64);
+    assert_object_int_field(
+            state,
+            assert_array_object_entry(state, argumentsArray, 1u),
+            "typeToken",
+            TEST_METHOD_CONTEXT_TYPE_REF_TOKEN);
+
+    definitionObject = assert_object_object_field(
+            state, methodObject, "genericMethodDefinition", ZR_VALUE_TYPE_OBJECT);
+    assert_object_string_field(state, definitionObject, "kind", "genericMethodDefinition");
+    assert_object_string_field(state, definitionObject, "name", "Map");
+    assert_object_int_field(
+            state, definitionObject, "metadataToken", TEST_METHOD_CONTEXT_MEMBER_TOKEN);
+
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(
+            state, ZR_CAST_RAW_OBJECT_AS_SUPER(methodObject)));
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    argumentsArray = assert_object_object_field(
+            state, methodObject, "genericArguments", ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_EQUAL_UINT32(2u, (TZrUInt32)argumentsArray->nodeMap.elementCount);
+    definitionObject = assert_object_object_field(
+            state, methodObject, "genericMethodDefinition", ZR_VALUE_TYPE_OBJECT);
+    assert_object_string_field(state, definitionObject, "name", "Map");
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_UnignoreObject(
+            state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(methodObject)));
+
+    resolved.genericSignatureHash ^= 1u;
+    TEST_ASSERT_NULL(ZrCore_Reflection_BuildConstructedGenericMethodObject(
+            state, runtime, &resolved));
+    resolved.genericSignatureHash ^= 1u;
+    arguments[0].primitiveValueType = ZR_VALUE_TYPE_INT64;
+    TEST_ASSERT_NULL(ZrCore_Reflection_BuildConstructedGenericMethodObject(
+            state, runtime, &resolved));
+    arguments[0].primitiveValueType = ZR_VALUE_TYPE_UINT64;
+    TEST_ASSERT_NULL(ZrCore_Reflection_BuildConstructedGenericMethodObject(
+            ZR_NULL, runtime, &resolved));
+    TEST_ASSERT_NULL(ZrCore_Reflection_BuildConstructedGenericMethodObject(
+            state, ZR_NULL, &resolved));
+    TEST_ASSERT_NULL(ZrCore_Reflection_BuildConstructedGenericMethodObject(
+            state, runtime, ZR_NULL));
+
+    destroy_reflection_test_state(state);
+}
+
 static void test_generic_method_definition_object_materializes_parameters(void) {
     SMethodSpecGenericContextFixture fixture;
     SZrMetadataRuntime *runtime = method_spec_generic_context_fixture_init(&fixture);
