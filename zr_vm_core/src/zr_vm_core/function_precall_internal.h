@@ -26,6 +26,8 @@ static ZR_FORCE_INLINE void function_init_vm_call_info_exact_args_steady_state_i
     callInfo->expectedReturnCount = resultCount;
     callInfo->callStatus = ZR_CALL_STATUS_NONE;
     callInfo->metadataFunction = ZR_NULL;
+    ZrCore_Value_ResetAsNullNoProfile(&callInfo->interpreterGenericContext);
+    ZrCore_Value_ResetAsNullNoProfile(&callInfo->interpreterGenericMethodContext);
     callInfo->context.context.programCounter = programCounter;
     callInfo->context.context.trap = ZR_DEBUG_SIGNAL_NONE;
     callInfo->context.context.variableArgumentCount = 0u;

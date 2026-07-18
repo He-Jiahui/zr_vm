@@ -45,12 +45,21 @@ related_code:
   - zr_vm_core/src/zr_vm_core/reflection_field_value.c # 10-S4Z15/11-S4BA FieldInfo object-level write adapter consumes FieldInfo.metadataRuntime + metadataToken
   - zr_vm_core/include/zr_vm_core/reflection.h         # 10-S4Z14/11-S4AZ FieldInfo object value read API
   - zr_vm_core/src/zr_vm_core/reflection_field_value.c # 10-S4Z14/11-S4AZ FieldInfo object-level read adapter consumes FieldInfo.metadataRuntime + metadataToken
-  - zr_vm_core/include/zr_vm_core/reflection.h         # TypeOfValue / BuildTypeLiteralObject / 成员反射; 10-S2B token-driven Method.Invoke dispatcher API; 10-S2C..10-S2H counted signature guard API; 10-S3B MethodSpec token method carrier; 10-S3C method signature identity carrier; 10-S3D/10-S3E method token public MethodInfo/function pointer/invoker carrier; 10-S4D/10-S4E generic parameter and MethodSpec generic argument public carriers; 10-S4F FieldDef token -> FieldInfo object API; 10-S4Z4/11-S4AP FieldInfo value-slot read API; 10-S4Z5/11-S4AQ FieldInfo value-slot write API; 10-S4Z6/11-S4AR FieldInfo primitive POD read/write API; 10-S4Z7/11-S4AS primitive POD representative matrix coverage; 10-S4Z8/11-S4AT primitive POD full storage-width matrix coverage; 10-S4Z9/11-S4AU primitive POD integer range guard; 10-S4Z10/11-S4AV primitive POD float32 range guard; 10-S4Z11/11-S4AW primitive POD float32 NaN guard; 10-S4Z12/11-S4AX primitive POD float32 precision guard
+  - zr_vm_core/include/zr_vm_core/reflection.h         # TypeOfValue / BuildTypeLiteralObject / 成员反射; 10-S2B token-driven Method.Invoke dispatcher API; 10-S2C..10-S2H counted signature guard API; 10-S3B MethodSpec token method carrier; 10-S3C method signature identity carrier; 10-S3D/10-S3E method token public MethodInfo/function pointer/invoker carrier; 10-S4D/10-S4E generic parameter and MethodSpec generic argument public carriers; 10-S4Z43 public generic method definition object; 10-S4F FieldDef token -> FieldInfo object API; 10-S4Z4/11-S4AP FieldInfo value-slot read API; 10-S4Z5/11-S4AQ FieldInfo value-slot write API; 10-S4Z6/11-S4AR FieldInfo primitive POD read/write API; 10-S4Z7/11-S4AS primitive POD representative matrix coverage; 10-S4Z8/11-S4AT primitive POD full storage-width matrix coverage; 10-S4Z9/11-S4AU primitive POD integer range guard; 10-S4Z10/11-S4AV primitive POD float32 range guard; 10-S4Z11/11-S4AW primitive POD float32 NaN guard; 10-S4Z12/11-S4AX primitive POD float32 precision guard
   - zr_vm_core/src/zr_vm_core/reflection.c             # 缓存 + PIN; 10-S4A / 11-S4H registry-backed type/member layout consumer; 10-S4F minimal FieldDef token FieldInfo public object materialization; 10-S4G/11-S4U FieldInfo declaring type name/object link; 10-S4H/11-S4V FieldInfo owner object link; 10-S4I/11-S4W FieldInfo moduleName carrier; 10-S4J/11-S4X FieldInfo metadataFlags carrier; 10-S4K/11-S4Y FieldInfo signature blob coordinate carrier; 10-S4L/11-S4Z FieldInfo validated field signature header carrier; 10-S4M/11-S4AA FieldInfo field signature type-node summary carrier; 10-S4N/11-S4AB FieldInfo primitive signature type carrier; 10-S4O/11-S4AC FieldInfo primitive signature type object carrier; 10-S4P/11-S4AD FieldInfo module reflection object link; 10-S4Q/11-S4AE FieldInfo direct TypeDef signature token/layout carrier; 10-S4R/11-S4AF FieldInfo direct TypeDef signature type object carrier; 10-S4S/11-S4AG FieldInfo bound TypeRef signature carrier/type object; 10-S4T/11-S4AH FieldInfo signature/layout consistency carrier; 10-S4U/11-S4AI FieldInfo signature type-node object carrier; 10-S4V/11-S4AJ FieldInfo signature base type-node object carrier; 10-S4W/11-S4AK FieldInfo signature child type-node object list carrier; 10-S4X/11-S4AL FieldInfo primitive child type-node semantic name carrier; 10-S4Y/11-S4AM FieldInfo direct TypeDef child/base type-node semantic token/layout/name carrier; 10-S4Z2/11-S4AN FieldInfo direct TypeRef child type-node semantic token/layout/name carrier; 10-S4Z3/11-S4AO FieldInfo recursive signature type-node type literal carrier; 10-S4Z13/11-S4AY FieldInfo metadata runtime native-pointer carrier
   - zr_vm_core/src/zr_vm_core/reflection_field_value.c # 10-S4Z4..10-S4Z12/11-S4AP..11-S4AX FieldInfo token inline value boundary; VALUE_SLOT copy plus primitive POD raw scalar read/write with representative/full storage-width matrix coverage plus integer, float32 range, float32 NaN, and float32 precision guards
   - zr_vm_core/src/zr_vm_core/reflection_token_resolve.c # 10-S3A public token -> type/method/field resolver carrier; 10-S2B/10-S3F token-driven Method.Invoke dispatcher; 10-S2C/10-S3G signature arity guard; 10-S2D/10-S3H signature shape guard; 10-S2E/10-S3I fixed parameter base-type guard; 10-S2F/10-S3J return base-type guard; 10-S2G/10-S3K required return-slot reset guard; 10-S2H/10-S3L void return-slot canonicalization; 10-S3B MethodSpec token -> method carrier; 10-S3C MethodDef/MethodRef/MethodSpec signature identity carrier; 10-S3D MethodDef token MethodInfo/function pointer/invoker carrier; 10-S3E MethodSpec underlying-method binding carrier; 10-S4B TypeSpec generic base/argument carrier; 10-S4C FieldDef owner/type token carrier; 10-S4D GenericParam/constraint public carrier; 10-S4E MethodSpec generic argument public carrier
-  - zr_vm_core/include/zr_vm_core/metadata_runtime.h    # 11-S2B method token count mirror; 11-S2D method token -> MethodInfo/function pointer/invoker binding view; 11-S4I FieldDef token/row/offset/layout binding view for later token-driven field reflection entity materialization; 11-S4J TypeSpec layout binding view for later type-argument reflection; 11-S4K TypeDef/TypeSpec token -> layout cache resolver for future public token reflection lookup; 11-S4S same resolver accepts attached bound TypeRef token -> TypeDef layout; 11-S4L typeLayoutId -> token reverse resolver; 11-S4M bounded multi-entry cache; 11-S4N cTypeId -> token resolver; 11-S4O code-registration typeLayout token carrier count mirror; 11-S4P/11-S4Q generated TypeDef/TypeSpec-backed token population consumer path; 11-S4R registry-backed owner-field layout table consumer path; 11-S5 GenericParam/GenericParamConstraint runtime views, MethodSpec signature record carrier, and indexed MethodSpec generic argument view
-  - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c # 11-S2D method token code-registration binding view implementation
+  - zr_vm_core/src/zr_vm_core/reflection_generic_type_object.c # 08-S6H..S6K/10-S4Z29..Z32 type objects; 08-S6P/10-S4Z37 MethodSpec context; 08-S6V/10-S4Z43 generic method definition object
+  - zr_vm_core/src/zr_vm_core/reflection_interpreter_generic_instance.c # 08-S6L..S6U/10-S4Z33..Z42 reference/value instance + type/method call context + resolved/automatic VM execution
+  - zr_vm_core/include/zr_vm_core/function.h           # 08-S6O/S6R/S6U and 10-S4Z36/Z39/Z42 type+method-context known-VM call plus flat graph lookup API
+  - zr_vm_core/src/zr_vm_core/function_graph.c         # 10-S4Z42 AOT-compatible flat VM function graph lookup
+  - zr_vm_core/src/zr_vm_core/object/object_call.c     # 08-S6O/S6R and 10-S4Z36/Z39 existing object-call pin/anchor/result path reuse
+  - zr_vm_core/include/zr_vm_core/call_info.h          # 08-S6N/S6Q and 10-S4Z35/Z38 GC-visible type/method generic call-context carriers
+  - zr_vm_core/src/zr_vm_core/gc/gc_mark.c             # 08-S6N/S6Q and 10-S4Z35/Z38 active call-context marking
+  - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c            # 08-S6N/S6Q and 10-S4Z35/Z38 compacting-GC call-context forwarding rewrite
+  - zr_vm_core/include/zr_vm_core/metadata_runtime.h    # 11-S2B method token count mirror; 11-S2D method token -> MethodInfo/function pointer/invoker binding view; 11-S4I FieldDef token/row/offset/layout binding view for later token-driven field reflection entity materialization; 11-S4J TypeSpec layout binding view for later type-argument reflection; 11-S4K TypeDef/TypeSpec token -> layout cache resolver for future public token reflection lookup; 11-S4S same resolver accepts attached bound TypeRef token -> TypeDef layout; 11-S4L typeLayoutId -> token reverse resolver; 11-S4M bounded multi-entry cache; 11-S4N cTypeId -> token resolver; 11-S4O code-registration typeLayout token carrier count mirror; 11-S4P/11-S4Q generated TypeDef/TypeSpec-backed token population consumer path; 11-S4R registry-backed owner-field layout table consumer path; 11-S5/11-S5A GenericParam/GenericParamConstraint and owner-range runtime views, MethodSpec signature record carrier, and indexed MethodSpec generic argument view
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_generic_params.c # 11-S5A GenericParam owner-range view consumed by 10-S4Z43
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c # 11-S2D AOT method binding; 10-S4Z42/11-S2E local MethodDef.functionIndex -> VM binding
   - zr_vm_core/src/zr_vm_core/metadata_runtime_layout_binding.c # 11-S4I..11-S4O FieldDef/TypeSpec row binding validates row identity, resolves layouts through the AOT registry, exposes TypeDef/TypeSpec token -> layout cache lookup, 10-S5N/11-S4S resolves attached bound TypeRef token -> target TypeDef layout, provides typeLayoutId/cTypeId -> token reverse lookup, keeps bounded multi-entry cache hits, and consumes code-registration typeLayout token tables
   - zr_vm_core/include/zr_vm_core/object.h             # SZrMemberDescriptor / prototype
   - zr_vm_core/include/zr_vm_core/metadata_token.h
@@ -100,6 +109,9 @@ related_code:
   - tests/module/test_reflection_token_resolve.c        # 10-S4Z15/11-S4BA FieldInfo object-level VALUE_SLOT write adapter coverage
   - tests/module/test_reflection_token_resolve.c        # 10-S4Z14/11-S4AZ FieldInfo object-level VALUE_SLOT read adapter coverage
   - tests/module/test_reflection_token_resolve.c        # 10-S3A public ResolveToken carrier coverage; 10-S2B token-driven Method.Invoke dispatcher coverage; 10-S2C counted signature arity guard coverage; 10-S2E arity fixture runtime argument type setup; 10-S2G invoker-written return fixture setup; 10-S3B MethodSpec ResolveToken coverage; 10-S3C method signature identity carrier coverage; 10-S3D/10-S3E method binding carrier coverage; 10-S4B TypeSpec generic argument coverage; 10-S4C FieldDef owner/type token carrier coverage; 10-S4D GenericParam/constraint carrier coverage; 10-S4E MethodSpec generic argument carrier coverage; 10-S4F..10-S4Z13 FieldDef token FieldInfo object, declaring type, owner link, moduleName, raw metadata flags, raw signature blob coordinates, validated field signature header, field signature type-node summary, primitive signature type carrier, primitive signature type object carrier, module reflection object link, direct TypeDef signature token/layout/type object carrier, bound TypeRef signature token/layout/type object, signature/layout consistency, signature type-node object, signature base type-node object, signature child type-node object list, primitive child type-node semantic name, direct TypeDef base/child type-node semantic token/layout/name, direct TypeRef child type-node semantic token/layout/name, recursive signature type-node type literal, FieldDef token metadataRuntime native-pointer carrier, FieldDef token VALUE_SLOT inline read/write, FieldDef token primitive POD int32 raw inline read/write, FieldDef token primitive POD bool/uint32/double representative raw inline read/write matrix, FieldDef token primitive POD int8/int16/int64/uint8/uint16/uint64/float32 storage-width raw inline read/write matrix, FieldDef token primitive POD integer range guard, FieldDef token primitive POD float32 range guard, FieldDef token primitive POD float32 NaN guard, and FieldDef token primitive POD float32 precision guard coverage
+  - tests/module/test_reflection_dynamic_generic_instance.c # 08-S6B..S6M/10-S4Z29..Z34 dynamic generic route/object/interpreter context coverage
+  - tests/module/test_reflection_dynamic_generic_instance_interpreter.h # 08-S6L..S6S/10-S4Z33..Z40 reference/value instance, context, substitution, copy, and execution scenarios
+  - tests/module/test_reflection_dynamic_generic_method_context.h # 08-S6P..S6U/10-S4Z37..Z42 MethodSpec context/call-info/GC/resolved+automatic VM execution scenarios
   - tests/module/test_reflection_method_invoke.c        # 10-S2D/10-S3H token-driven Method.Invoke signature shape guard coverage; 10-S2E/10-S3I fixed parameter base-type guard coverage; 10-S2F/10-S3J return base-type guard coverage; 10-S2G/10-S3K required return-slot reset coverage; 10-S2H/10-S3L void return-slot canonicalization coverage
   - tests/module/test_metadata_runtime_query.c          # 11-S2B methodTokenCount attach mirror coverage; 11-S4I FieldDef layout binding view coverage; 11-S5 GenericParam/GenericParamConstraint runtime view, MethodSpec signature record carrier, and MethodSpec generic argument view coverage
   - tests/module/test_metadata_runtime_method_binding.c # 11-S2D method token -> MethodInfo/function pointer/invoker binding view coverage
@@ -632,6 +644,51 @@ typedef void (*FZrAotReflectionInvoker)(struct SZrState *state,
   （`08`§6 deopt），动态实例反射级别为 `RUNTIME_MAPPING`。
 - 泛型参数约束（`08`§4）在 `DESCRIPTION` 级暴露。
 
+- 10-S4Z29 / 08-S6H 已把 request-resolved AOT/interpreter-deopt generic carrier 物化为 public
+  `kind == "type"` 对象；route/token/layout/same-runtime 与递归 generic argument identity 同步复制到 GC 对象图，
+  不再借用调用方 descriptor 生命周期。token-only generic object、`MakeGenericType` 和执行消费者仍开放。
+- 10-S4Z30 / 08-S6I 已提供 C 级 public `ZrCore_Reflection_MakeGenericTypeObject()`，让 open base + arguments 在
+  单一边界内完成 resolver 路由与对象物化。脚本对象方法和解释器执行消费者仍开放。
+- 10-S4Z31 / 08-S6J 已让同一 public builder 接受 token-only existing-TypeSpec carrier，并从 metadata argument
+  view 物化 primitive/direct TypeDef/TypeRef 参数；复合 metadata node 保持 fail closed，等待递归对象化。
+- 10-S4Z32 / 08-S6K / 11-S4BO 已递归对象化 token-only nested generic、array、tuple、ownership、nullable、union
+  参数；nested generic 只在完整节点跨度命中 attached runtime 的真实本地 TypeSpec record 时生成 type-token 对象。
+- 10-S4Z33 / 08-S6L 已让 public interpreter consumer 对重新校验的未收集 reference-class 请求创建普通对象；
+  对象沿用 open generic class prototype，并拥有深拷贝 generic type object 上下文。AOT route 与 struct/union
+  prototype fail closed；参数替换和方法执行不在该子切片内。
+- 10-S4Z34 / 08-S6M 已把 11-S5 GenericParam owner/index view 与实例 genericArguments context 连通；same-runtime、
+  open-base 和 arity 全部一致时，解释器按 metadata parameterIndex 取得 concrete argument type object，错误 owner
+  或越界 index fail closed。该路径不修改 metadata 格式，也尚未进入 generic method call frame。
+- 10-S4Z35 / 08-S6N 已把 generic instance context 绑定为 VM call-info 内的 GC-visible `SZrTypeValue`；
+  可从 call-info 回读 type object 并按既有 GenericParam owner/index 解析 concrete argument。所有 call-info
+  初始化/重用路径清零该 carrier，活动调用已纳入 GC mark/compact rewrite；实际 generic method 执行仍开放。
+- 10-S4Z36 / 08-S6O 已提供 deopt generic type instance 的 public resolved VM method invoke；入口校验
+  metadata runtime、open owner token 和 fixed arity，复用现有 object-call 边界，在 `PreCall` 后注入 context 再
+  `Execute`。字节码方法执行期间可从 current call-info 解析 concrete GenericParam，但 MethodSpec 自身泛型仍开放。
+- 10-S4Z37 / 08-S6P 已将既有 11-S5 MethodSpec signature/argument view 物化为 GC-managed
+  `genericMethodContext` reflection object，携带 methodSpec/method token、完整 signature hash、runtime 和递归
+  type-argument objects。该对象尚未进入 call info 或 MethodSpec execution。
+- 10-S4Z38 / 08-S6Q 已将 MethodSpec context 绑定到独立的 VM call-info `SZrTypeValue` carrier；public
+  bind/get/parameter resolver 校验 same runtime、underlying method owner、GenericParam range、context arity 与
+  parameter index，活动 frame 的 method context 已纳入 compact full-GC mark/rewrite。MethodSpec execution 仍开放。
+- 10-S4Z39 / 08-S6R 已执行 caller-resolved MethodSpec VM function：入口验证 MethodSpec/method GenericParam
+  精确 arity 与 fixed VM function，复用现有 object-call pin/anchor/argument/result 路径，在 `PreCall` 后注入 method
+  context。真实字节码函数从活动帧解析 method GenericParam 并返回显式参数；method-token/function 解析和脚本级
+  `MakeGenericMethod` 仍开放。
+- 10-S4Z40 / 08-S6S 已让 interpreter-deopt generic struct 使用既有 boxed dynamic struct 表示；实例拥有同一
+  generic type context，支持 GenericParam 替换、`ZrCore_Value_Copy` 深复制隔离与带 type context 的 resolved VM
+  方法执行。该路径不生成 typed/AOT layout，AOT route 仍 fail closed。
+- 10-S4Z41 / 08-S6T / 11-S6J 已让跨模块 constructed-generic reflection 消费既有 TypeSpec binding，并以
+  requester/provider canonical signature exact bytes 校验 provider-owned token/layout identity；该路径不引入全局 registry。
+- 10-S4Z42 / 08-S6U / 11-S2E 已让本地 MethodSpec invoke 自动解析 underlying MethodDef VM function：metadata
+  runtime 按唯一 MethodDef row 的 `functionIndex` 查询与 AOT function table 相同顺序的 root/constant/child 图，
+  去重后只接受 instruction-backed non-native VM function，再复用 Z39 的 MethodSpec context 执行边界。错误/重复
+  token、越界或超大 index、错误 arity 均 fail closed。脚本对象级 `MakeGenericMethod` 仍开放。
+- 10-S4Z43 / 08-S6V / 11-S5A 已物化 public 开放泛型方法定义对象：metadata runtime 暴露 MethodDef 的
+  GenericParam owner range，reflection builder 按声明数量验证每个 row 的 owner/物理 index/parameter index，并发布
+  method token/runtime/flags/signature/declaring type、真实 zrp 方法名、参数名、constraint range 与参数数组。
+  零参数、错误 token、超出 section 的声明数量和损坏 owner fail closed；type-argument 匹配与 MethodSpec 构造仍开放。
+
 ## 5. 反射与裁剪的注解（对标 DynamicallyAccessedMembers / DynamicDependency / RequiresUnreferencedCode）
 
 在 zr 语言层引入保留注解，驱动 `12` 的标记，使「静态裁剪 + 动态反射」共存：
@@ -657,8 +714,16 @@ typedef void (*FZrAotReflectionInvoker)(struct SZrState *state,
 | 10-S1 | 反射三级模型 + 实体级别标注（默认按可达性最小）（§0） | 🚧 2026-06-26 部分完成：10-S1A 已完成 AOT MethodInfo 级 `NONE`/`RUNTIME_MAPPING`/`DESCRIPTION` ABI carrier，默认/非裁剪生成方法保持 `RUNTIME_MAPPING`；12-S7Y 已让 opt-in code stripping 产物的 generated MethodInfo `reflectionMetadataLevel` 降为 `NONE` 并输出 `metadata_policy.reflectionLevel` marker；实体级 annotation/DESCRIPTION 提升、类型级默认最小与完整体积对比仍待 `12`/`10` 后续 |
 | 10-S2 | 按签名分桶 invoker thunk（复用 07§6）+ 注册表登记（§1） | 🚧 2026-06-30 部分完成：10-S2A 已完成 `FZrAotEntryThunk` 当前签名桶 invoker ABI carrier、生成物共享 invoker 和 MethodInfo 登记；11-S2A/11-S2B 已提供 generated-C code registration 与 method token carrier；11-S2D 已提供 runtime 内部 method token→MethodInfo/function pointer/invoker binding view；10-S3D/10-S3E 已让 public token resolver carrier 消费该 view；10-S2B/10-S3F 已提供 `ZrCore_Reflection_InvokeMethodToken(...)` token-driven dispatcher，把已解析 method binding 交给 registered invoker；10-S2C/10-S3G 已提供 `ZrCore_Reflection_InvokeMethodTokenWithArgCount(...)` counted dispatcher，在调用 invoker 前检查 MethodInfo signature 的参数数量与 varargs 边界；10-S2D/10-S3H 已拒绝缺少 `parameterTypes` 或 required `returnType` 的不完整 signature shape；10-S2E/10-S3I 已对 fixed 参数的 concrete baseType 与 `SZrTypeValue.type` 做 invoker 前等值 guard；10-S2F/10-S3J 已对 concrete return baseType 与 invoker 写出的 `outReturn->type` 做 post-dispatch guard；10-S2G/10-S3K 已在 required return dispatch 前清空 `outReturn` 以拒绝 stale 返回槽误通过；10-S2H/10-S3L 已在 void/no-return dispatch 后把最终 `outReturn` 规范为 null；10-S2I/10-S3M 已生成 int64 no-arg reflection return-boxing bucket，按 `functionIndex` 调已有 typed i64 helper 并写入 boxed `outReturn`；10-S2J/10-S3N 已生成 uint64 no-arg reflection return-boxing bucket，按 `functionIndex` 调已有 typed u64 helper 并写入 boxed `outReturn`；10-S2K/10-S3O 已生成 bool no-arg reflection return-boxing bucket，按 `functionIndex` 调已有 typed bool helper 并写入 boxed `outReturn`；10-S2L/10-S3P 已生成 f64 no-arg reflection return-boxing bucket，按 `functionIndex` 调已有 typed f64 helper 并写入 boxed `outReturn`；10-S2M/10-S3Q 已生成 int64(int64) reflection 参数解包 + 返回装箱桶，从 `args[0]` 解出 `TZrInt64` 后调用 typed i64 one-arg helper；10-S2N/10-S3R 已生成 uint64(uint64) reflection 参数解包 + 返回装箱桶，从 `args[0]` 解出 `TZrUInt64` 后调用 typed u64 one-arg helper；object/inline 返回、更多签名桶、numeric widening、实例 receiver、签名类型兼容校验和 AOT/解释器结果等价仍待后续 |
 | 10-S3 | token 驱动反射解析（衔接 11）（§2） | 🚧 2026-06-30 部分完成：10-S3A 已提供 public `ZrCore_Reflection_ResolveToken(...)` carrier，可按 token 返回 TypeDef/TypeSpec/TypeRef type entity、FieldDef field entity 和 MethodDef/MethodRef method record，并直接消费 11-S4 layout/field binding views；10-S3B 已让 `ResolveToken()` 接受 11-S5 MethodSpec `SIGNATURE` token，返回 MethodSpec signature record、underlying method token/record、signature hash 和 generic argument count；10-S3C 已让 method-like carrier 暴露 MethodDef/MethodRef paired signature record/hash，并把 MethodSpec 自身 signature record/hash 作为方法签名身份；10-S3D 已让普通 MethodDef token 的 carrier 在存在 AOT code-registration binding 时暴露 MethodInfo/function pointer/invoker；10-S3E 已让 MethodSpec carrier 复用 underlying MethodDef AOT binding；10-S3F 已提供 token-driven invoke dispatcher consumer；10-S3G 已提供 counted invoke signature arity guard consumer；10-S3H 已提供 counted invoke signature shape guard consumer；10-S3I 已提供 counted invoke fixed parameter base-type guard consumer；10-S3J 已提供 counted invoke return base-type guard consumer；10-S3K 已提供 counted invoke required return-slot reset guard consumer；10-S3L 已提供 counted invoke void return-slot canonicalization consumer；10-S3M 已提供 generated int64 no-arg invoker return-boxing consumer；10-S3N 已提供 generated uint64 no-arg invoker return-boxing consumer；10-S3O 已提供 generated bool no-arg invoker return-boxing consumer；10-S3P 已提供 generated f64 no-arg invoker return-boxing consumer；10-S3Q 已提供 generated int64 one-arg invoker argument-unbox + return-boxing consumer；10-S3R 已提供 generated uint64 one-arg invoker argument-unbox + return-boxing consumer；名表→token 重写、反射对象物化、完整 `Invoke` marshaling、MethodSpec runtime instance binding、裁剪诊断和完整 token-only 可用性仍待后续 |
-| 10-S4 | 字段 offset / 泛型参数反射（§3/§4） | 🚧 2026-07-01 部分完成：10-S4A 已让脚本类型与字段 layout/offset 反射在 attached AOT registry 下读取 11-S4H 的 registry-backed `SZrTypeLayout`；11-S4I 已提供后续 DESCRIPTION 级 FieldDef token-driven 字段实体可消费的 FieldDef row→`byteOffset/typeLayoutId`→owner/field layout binding view；11-S4J 已提供后续类型实参反射可消费的 TypeSpec row→generic base binding→registry layout binding view；11-S4K 已提供后续 public token reflection 可复用的 TypeDef/TypeSpec token→layout resolver；11-S4L 已提供 layoutId→TypeDef/TypeSpec token 反查入口；11-S4M 已将 token/layout 命中扩展为 bounded multi-entry cache；11-S4N 已提供 cTypeId→TypeDef/TypeSpec token 反查入口；11-S4O 已提供 code-registration typeLayout token carrier 和 table-first cTypeId/typeLayoutId→token 消费路径；11-S4P 已让唯一匹配本地 TypeDef 的 generated struct/union entries 写入真实 token；11-S4Q 已让唯一匹配同函数 TypeSpec 的 generated generic entries 写入真实 token；11-S4R/11-S4R-union 已让 generated struct/union owner fields 暴露 ownership offset table；10-S4B 已让 public `ResolveToken` 暴露 TypeSpec base token/signature/argument count，并新增 indexed generic argument carrier；10-S4C 已让 FieldDef public carrier 暴露 owner type record/row 与 field type token/record；10-S4D 已让 public reflection carrier 暴露 GenericParam 与 GenericParamConstraint 的 owner/name/flags/constraint type/signature 信息；10-S4E 已让 MethodSpec public carrier 暴露 method token/record、signature hash 和 indexed generic argument node/token/record；10-S4F 已提供最小 FieldDef token -> public `FieldInfo` object，填充 name/type/token/layout/offset/size；10-S4G..10-S4V/11-S4U..11-S4AJ 已逐步补齐 declaring type、owner、moduleName、metadataFlags、signature blob/header/type-node、primitive/type object、module object、direct TypeDef、bound TypeRef、layout consistency、signature node object 和 base type-node object carriers；10-S4W/11-S4AK 已让 generic/wrapper signature node object 暴露 `childNodeObjects` structural list；10-S4X/11-S4AL 已让 primitive generic argument child node 暴露 semantic `typeName`；10-S4Y/11-S4AM 已让 recursive direct TypeDef base/child signature node object 暴露 semantic token/layout/name；10-S4Z2/11-S4AN 已让 recursive direct TypeRef child signature node object 暴露 semantic token/layout/name；10-S4Z3/11-S4AO 已让 recursive signature type-node object 在有 semantic `typeName` 时物化 `type` type literal；10-S4Z4..10-S4Z12/11-S4AP..11-S4AX 已提供 FieldDef token `VALUE_SLOT` inline read/write、primitive POD int32 raw inline read/write 边界、bool/uint32/double representative primitive POD raw inline read/write matrix、int8/int16/int64/uint8/uint16/uint64/float32 storage-width primitive POD raw inline read/write matrix，以及 integer range guard、float32 range guard、float32 NaN guard 和 float32 precision guard；10-S4Z13/11-S4AY 已让 FieldInfo object 携带 `metadataRuntime` native-pointer carrier，为后续 object-level 字段方法提供 same-runtime identity；10-S4Z14..10-S4Z28/11-S4AZ..11-S4BN 已让 object-level FieldInfo adapter 覆盖 `VALUE_SLOT`/primitive POD read-write、inline aggregate borrowed view/source write、nested owned value replacement/drop、单级 nested VALUE_SLOT child read/write、第一条 multi-level nested VALUE_SLOT path read/write，以及第一条 multi-level nested primitive POD raw child path read/write，并补充 nested primitive leaf layout identity guard 和 representative bool/uint32/double path matrix coverage 和 storage-width int8/int16/int64/uint8/uint16/uint64/float32 path matrix coverage；public generic reflection object、public generic method reflection object、完整 recursive/signature-derived semantic field type binding、完整 primitive raw child matrix/signature-derived binding、完整 `FieldInfo` 行为、TypeRef 跨模块 provider signature binding、完整类型实参对象化和 `MakeGenericType` 仍待后续 |
+| 10-S4 | 字段 offset / 泛型参数反射（§3/§4） | 🚧 2026-07-18 部分完成：10-S4A 已让脚本类型与字段 layout/offset 反射在 attached AOT registry 下读取 11-S4H 的 registry-backed `SZrTypeLayout`；11-S4I 已提供后续 DESCRIPTION 级 FieldDef token-driven 字段实体可消费的 FieldDef row→`byteOffset/typeLayoutId`→owner/field layout binding view；11-S4J 已提供后续类型实参反射可消费的 TypeSpec row→generic base binding→registry layout binding view；11-S4K 已提供后续 public token reflection 可复用的 TypeDef/TypeSpec token→layout resolver；11-S4L 已提供 layoutId→TypeDef/TypeSpec token 反查入口；11-S4M 已将 token/layout 命中扩展为 bounded multi-entry cache；11-S4N 已提供 cTypeId→TypeDef/TypeSpec token 反查入口；11-S4O 已提供 code-registration typeLayout token carrier 和 table-first cTypeId/typeLayoutId→token 消费路径；11-S4P 已让唯一匹配本地 TypeDef 的 generated struct/union entries 写入真实 token；11-S4Q 已让唯一匹配同函数 TypeSpec 的 generated generic entries 写入真实 token；11-S4R/11-S4R-union 已让 generated struct/union owner fields 暴露 ownership offset table；10-S4B 已让 public `ResolveToken` 暴露 TypeSpec base token/signature/argument count，并新增 indexed generic argument carrier；10-S4C 已让 FieldDef public carrier 暴露 owner type record/row 与 field type token/record；10-S4D 已让 public reflection carrier 暴露 GenericParam 与 GenericParamConstraint 的 owner/name/flags/constraint type/signature 信息；10-S4E 已让 MethodSpec public carrier 暴露 method token/record、signature hash 和 indexed generic argument node/token/record；10-S4F 已提供最小 FieldDef token -> public `FieldInfo` object，填充 name/type/token/layout/offset/size；10-S4G..10-S4V/11-S4U..11-S4AJ 已逐步补齐 declaring type、owner、moduleName、metadataFlags、signature blob/header/type-node、primitive/type object、module object、direct TypeDef、bound TypeRef、layout consistency、signature node object 和 base type-node object carriers；10-S4W/11-S4AK 已让 generic/wrapper signature node object 暴露 `childNodeObjects` structural list；10-S4X/11-S4AL 已让 primitive generic argument child node 暴露 semantic `typeName`；10-S4Y/11-S4AM 已让 recursive direct TypeDef base/child signature node object 暴露 semantic token/layout/name；10-S4Z2/11-S4AN 已让 recursive direct TypeRef child signature node object 暴露 semantic token/layout/name；10-S4Z3/11-S4AO 已让 recursive signature type-node object 在有 semantic `typeName` 时物化 `type` type literal；10-S4Z4..10-S4Z12/11-S4AP..11-S4AX 已提供 FieldDef token `VALUE_SLOT` inline read/write、primitive POD int32 raw inline read/write 边界、bool/uint32/double representative primitive POD raw inline read/write matrix、int8/int16/int64/uint8/uint16/uint64/float32 storage-width primitive POD raw inline read/write matrix，以及 integer range guard、float32 range guard、float32 NaN guard 和 float32 precision guard；10-S4Z13/11-S4AY 已让 FieldInfo object 携带 `metadataRuntime` native-pointer carrier，为后续 object-level 字段方法提供 same-runtime identity；10-S4Z14..10-S4Z28/11-S4AZ..11-S4BN 已让 object-level FieldInfo adapter 覆盖 `VALUE_SLOT`/primitive POD read-write、inline aggregate borrowed view/source write、nested owned value replacement/drop、单级 nested VALUE_SLOT child read/write、第一条 multi-level nested VALUE_SLOT path read/write，以及第一条 multi-level nested primitive POD raw child path read/write，并补充 nested primitive leaf layout identity guard 和 representative bool/uint32/double path matrix coverage 和 storage-width int8/int16/int64/uint8/uint16/uint64/float32 path matrix coverage；08-S6H..S6K/10-S4Z29..Z32 已提供 request/token public generic type object、C 级 `MakeGenericTypeObject` 入口及完整本地 compound argument 对象化；08-S6L/10-S4Z33 已提供未收集 reference-class 的解释器普通对象上下文和回读入口；08-S6M/10-S4Z34 已让 11-S5 GenericParam owner/index 解析到实例 concrete argument type object；08-S6N/10-S4Z35 已让 VM call-info 携带 GC-safe instance generic context，支持回读与 GenericParam substitution，并覆盖重用清零和 compact rewrite；public generic method reflection object、完整 recursive/signature-derived semantic field type binding、完整 primitive raw child matrix/signature-derived binding、完整 `FieldInfo` 行为、TypeRef 跨模块 provider signature binding、脚本对象级 generic 构造和 generic method execution 仍待后续 |
 | 10-S5 | 保留注解（@reflectable/@dynamically_accessed/@dynamic_dependency/@requires_unreferenced_code）驱动 12（§5） | 🚧 2026-06-30 部分完成：10-S5A/12-S5A 已复用现有 compile-time decorator metadata 作为首个 `@reflectable` 承载面；函数 metadata 中 `reflectable: true` 会作为 reflection annotation root 注入 12 的 reachability graph，使 otherwise-unreachable function 在 opt-in code stripping 后仍保留，并输出 `code_stripping.annotationRoots`/`annotationRoot[]` 诊断；10-S5B/12-S5B 已复用 function decorator metadata 中的 `requiresUnreferencedCode: true` 作为首个 `@requires_unreferenced_code` carrier，retained caller 静态调用该 callee 时输出 `trim_warnings.annotationCount` 与逐条 `trim_warning.annotation[] reason=requires-unreferenced-code` marker；10-S5C/12-S5C 已读取同一 metadata 中的 `requiresUnreferencedCodeReason` 字符串，并在 warning marker 中追加 quoted/escaped `message="..."`；10-S5D/12-S5D 已读取 function decorator metadata 中的 `dynamicDependencyFunctionIndex`，把目标 flat function 作为 reflection annotation root 注入 12 的 reachability graph，使 otherwise-unreachable function 在 opt-in code stripping 后保留；10-S5F/12-S5E 已读取 `dynamicDependencyMethodToken` MEMBER_DEF token，并经 root module typed exported symbols 解析为当前模块 exported function flat index 后注入同一 annotation root；10-S5G/12-S5F 已读取 `dynamicDependencyMethodName` string，并经 root module typed exported symbols 的 exported function name 解析为当前模块 exported function flat index 后注入同一 annotation root；10-S5H/12-S5G 已读取可选 `dynamicDependencyMethodSignatureHash` uint64，与 `dynamicDependencyMethodName` 一起按 exported function name + signatureHash 唯一解析 root module typed exported symbols，重复同名且未提供 signature hash 的 metadata 不再静默选择第一个；10-S5I/12-S5H 已将 `dynamicDependencyMethodToken` 的当前模块解析扩展为 root module typed function symbols，不再要求 `exportKind == FUNCTION`，因此非导出 method token 也可把 callable child 注入同一 annotation root；10-S5J/12-S5I 已读取当前模块 `dynamicDependencyTypeLayoutId` uint32 metadata，把目标 generated type-layout id 加入独立 type-layout root 集合，使 owning function 被裁剪时对应 `SZrTypeLayout` descriptor 和 code-registration `typeLayouts[]` entry 仍可保留；10-S5K/12-S5J 已读取当前模块 `dynamicDependencyTypeToken` uint32 metadata，把 embedded zrp TypeDef/TypeSpec row 的 `typeLayoutId` 映射为同一 type-layout root，并让 root-only `zr_aot_type_layout_tokens[]` 回填对应 TYPE_DEF/TYPE_SPEC token；10-S5L/12-S5K 已读取当前模块 `dynamicDependencyFieldToken` uint32 metadata，把 embedded zrp FieldDef row 映射为 owner TypeDef `typeLayoutId` 与 field `typeLayoutId` 两个 type-layout roots；12-S7ZU/10-S5E 已提供 writer-level annotation warning suppression，使 `requiresUnreferencedCode` warning 可转入 suppressed count 且不输出逐条 marker；`@dynamically_accessed` 数据流、`@dynamic_dependency` 的跨模块规则、字段值读写/FieldInfo 完整行为、TypeRef/跨模块 type token、attribute/annotation-driven warning suppression/promotion、类型/成员级 DESCRIPTION 提升和未注解反射 warning 仍待后续 |
+
+> 2026-07-19 02:56:02 +08:00 状态补记：10-S4 主行末尾的 generic method execution 缺口已由
+> 10-S4Z39 与 10-S4Z42 关闭本地 C API 执行链；当前仍开放的是脚本对象级 generic 构造/`MakeGenericMethod`、
+> 跨模块 method binding 和完整 public generic method reflection surface。
+
+> 2026-07-19 03:53:01 +08:00 状态补记：10-S4Z43 已关闭 public generic method definition/parameter object
+> 的第一条完整表面；当前仍开放 constructed generic method object、type-argument -> MethodSpec 精确匹配、脚本
+> `MakeGenericMethod`、跨模块 method binding 和完整 managed method reflection 行为。
 
 ## 8. 不变量校验
 
@@ -670,6 +735,169 @@ typedef void (*FZrAotReflectionInvoker)(struct SZrState *state,
 ## 状态与产出记录
 
 > 落地每个阶段或切片时在此追加：时间戳 · 切片号 · 状态 · 完成项目 · RED/GREEN · 测试结果 · 备注。
+
+- 2026-07-19 03:53:01 +08:00 · 10-S4Z43 / 08-S6V / 11-S5A public generic method definition object ·
+  状态：10-S4 generic method reflection object 子切片完成；完整 10-S4、08-S6 与 11-S5 仍为部分完成。完成项目：
+  public `ZrCore_Reflection_BuildGenericMethodDefinitionObject()` 消费精确 GenericParam owner range，创建 GC-managed
+  `genericMethodDefinition` 和 `genericMethodParameter` objects；方法对象携带 method/declaring-type token、runtime、
+  flags、signature blob 坐标、parameter/argument count 与参数数组，参数对象携带 owner token、logical/physical index、
+  name offset、flags 与 constraint range。方法和参数 `name` 从 zrp string pool 建立，缺失池时保守回退占位名。
+  RED 为两个缺失 API unresolved symbols；首轮 GREEN 25/0 + 25/0。review RED 以真实 string pool 得到 25/1，
+  修复后动态反射 25/0。最终 GCC/Clang/MSVC 聚焦 CTest 各 6/6，GC 66/0、指令执行 31/0、指令表 95/0，
+  本切片实现源诊断为空。产出：
+  `tests/acceptance/2026-07-19-aot-08-s6v-10-s4z43-11-s5a-generic-method-definition-object.md`。
+  分层记录：`docs/plans/aot/07-12-codegen/2026-07-19-08-s6v-10-s4z43-11-s5a.md`。
+  备注：不构造 MethodSpec，不接受 type argument objects，不新增脚本方法分派；constructed method object、脚本
+  `MakeGenericMethod`、跨模块 method binding 与 full-AOT reflection closure 仍开放。
+
+- 2026-07-19 02:56:02 +08:00 · 10-S4Z42 / 08-S6U / 11-S2E local MethodSpec method-token/VM-function auto resolution ·
+  状态：10-S4 MethodSpec reflection execution 子切片完成；完整 10-S4、08-S6 与 11-S2 仍为部分完成。完成项目：
+  public `ZrCore_Reflection_InvokeInterpreterGenericMethodSpec()` 读取 MethodSpec view 的 underlying method token，
+  通过 interpreter MethodDef binding view 将 row `functionIndex` 解析为 AOT-order VM function，并复用 Z39 的
+  GenericParam arity、context materialization、pin/stack-anchor、argument staging 与 result restore。函数图 resolver
+  按 root/constant/child 深度优先顺序并按 AOT identity 去重，动态 visited 容量只随实际节点增长；越界、
+  `UINT32_MAX-1`、重复/缺失 MethodDef、native/无指令函数均拒绝。RED 为两个 MSVC unresolved symbols，GREEN
+  动态泛型反射 24/0。最终 GCC/Clang/MSVC 聚焦 CTest 各 5/5，GC 66/0、指令执行 31/0、指令表 95/0，
+  本切片源诊断为空。产出：
+  `tests/acceptance/2026-07-19-aot-08-s6u-10-s4z42-11-s2e-methodspec-method-token-vm-function-resolution.md`。
+  备注：本入口仅解析 attached runtime 的本地 MethodDef，不生成 MethodSpec code slot，不覆盖跨模块 method
+  binding 或脚本对象级 `MakeGenericMethod`。
+
+- 2026-07-19 01:39:29 +08:00 · 10-S4Z41 / 08-S6T / 11-S6J bound provider generic TypeSpec identity ·
+  状态：10-S4 cross-module generic reflection consumer 子切片完成；完整 10-S4/08-S6/11-S6 仍为部分完成。
+  完成项目：public resolver 从 requester metadata function 的现有 TypeSpec binding 定位 provider TypeSpec，校验
+  requester/ref 与 provider/resolved token、paired signature、canonical hash、module signature hash，并逐字节重验
+  两侧 TypeSpec signature view；成功对象继续由 provider runtime/layout registry 物化，未复制或猜测跨模块 layout。
+  unbound/wrong/same provider、畸形 expected identity 与绑定后同 hash 签名字节漂移清 output 后拒绝。compatibility predicate 增加窄
+  TypeSpec->TypeSpec canonical RID remap 规则，其他 token mismatch 不变。RED 为 reflection 24/1、compatibility
+  17/1，修复 remap 后转 24/0、17/0；signature drift 追加 RED 24/1，exact blob compare 后最终 24/0。
+  WSL GCC、Clang、MSVC 聚焦 CTest 各 4/4，GC 66/0、指令执行 31/0、指令表 95/0；变更文件无编译诊断。
+  产出：`tests/acceptance/2026-07-19-aot-08-s6t-10-s4z41-11-s6j-bound-provider-generic-typespec-identity.md`。
+  备注：无全局 registry、metadata 格式或 layout 合成；method-token/function 自动解析和脚本对象级
+  `MakeGenericType`/generic method surface 仍开放。
+
+- 2026-07-19 00:13:22 +08:00 · 10-S4Z40 / 08-S6S interpreter generic boxed value instance ·
+  状态：10-S4 interpreter generic reflection consumer 子切片完成；完整 10-S4 与 08-S6 仍为部分完成。
+  完成项目：interpreter-deopt + open struct prototype 创建既有 `ZR_OBJECT_INTERNAL_TYPE_STRUCT` boxed dynamic
+  value；generic context getter、instance GenericParam resolver 和 resolved method invoke 接受 class/struct 两种
+  实例。测试验证 context/TypeDef argument、`ZrCore_Value_Copy`/`ZrCore_Object_CloneStruct` 后不同对象 payload
+  17/29 隔离，以及真实 VM 方法在活动 type context 中返回 int64 117。RED 为 23/1（struct 创建返回 null），
+  GREEN 为 23/0。WSL GCC、Clang、MSVC 聚焦 CTest 各 3/3，共享 GC 各 66/0、指令执行各 31/0；变更文件无
+  编译告警。产出：
+  `tests/acceptance/2026-07-19-aot-08-s6s-10-s4z40-interpreter-generic-value-instance.md`。备注：复用既有
+  dynamic value/clone/GC 语义，不生成 typed/AOT layout；未改 metadata 格式/runtime API，故不新增 11 状态。
+
+- 2026-07-18 23:46:42 +08:00 · 10-S4Z39 / 08-S6R caller-resolved MethodSpec VM function execution ·
+  状态：10-S4 MethodSpec reflection execution 子切片完成；完整 10-S4 与 08-S6 仍为部分完成。完成项目：
+  public invoke 读取既有 MethodSpec view，验证 underlying method GenericParam 精确 arity、VM/non-vararg/fixed
+  function 与 explicit argument count；内部 function/object-call 边界可同时注入独立 type/method contexts，旧
+  type-only API 保持兼容。MethodSpec context 在 `PreCall` 后进入活动 frame，真实 VM identity function 解析
+  GenericParam[1] 为 TypeRef 并返回 int64 109；错误 token/arity 清 result。RED 为 1 个 MSVC unresolved symbol；
+  GREEN 为 22/0。WSL GCC、Clang、MSVC 聚焦 CTest 各 3/3，共享 GC 各 66/0、指令执行各 31/0。新增实现无
+  GCC/Clang 告警，`object_call.c` 仅保留 2 个既有 Clang unused-helper 告警。产出：
+  `tests/acceptance/2026-07-18-aot-08-s6r-10-s4z39-methodspec-vm-function-execution.md`。备注：当前 API
+  接受 caller-resolved function，method-token/function 解析与脚本级 `MakeGenericMethod` 仍开放；未改 metadata
+  格式/runtime API，故不新增 11 状态。
+
+- 2026-07-18 23:13:13 +08:00 · 10-S4Z38 / 08-S6Q MethodSpec call-info context + method GenericParam substitution ·
+  状态：10-S4 MethodSpec reflection consumer 子切片完成；完整 10-S4 与 08-S6 仍为部分完成。完成项目：
+  `SZrCallInfo.interpreterGenericMethodContext` 独立承载 S6P context；public bind/get/resolver 提供活动 frame
+  回读和 method-owned GenericParam 替换，并校验 metadata runtime、underlying method token、owner range、arity
+  与 index。所有 call-info 初始化/复用路径清零该 carrier，GC mark/compact rewrite 覆盖活动 frame；失败 bind
+  清除旧值。RED 为 3 个 MSVC unresolved symbols；GREEN 为 21/0。中间 21/2 是测试夹具 MethodDef owner table
+  不完整，补齐真实 TypeDef/MethodDef/generic range 后通过，生产校验未放宽。WSL GCC、Clang、MSVC 聚焦
+  CTest 各 3/3，共享 GC 各 66/0、指令执行各 31/0；本阶段文件无 GCC/Clang 告警。产出：
+  `tests/acceptance/2026-07-18-aot-08-s6q-10-s4z38-methodspec-callinfo-context.md`。备注：尚未执行
+  MethodSpec；未改 metadata 格式/runtime API，因此不新增 11 阶段状态。
+
+- 2026-07-18 22:36:52 +08:00 · 10-S4Z37 / 08-S6P MethodSpec generic method context object ·
+  状态：10-S4 MethodSpec reflection consumer 子切片完成；完整 10-S4 与 08-S6 仍为部分完成。完成项目：
+  public builder 从 11-S5 MethodSpec view 物化 `genericMethodContext` reflection object，包含 MethodSpec token、
+  underlying method token、完整 uint64 signature hash、runtime、generic flags 与 2 个 argument objects；primitive
+  与 TypeRef 复用已有 recursive metadata-node builder。非 MethodSpec token/null state fail closed。RED 为 1 个 MSVC
+  unresolved symbol；GREEN 为 20/0。中间 20/1 是测试 fixture 缺失非空 code registration，修正 fixture
+  后通过，未改生产契约。WSL GCC、Clang、MSVC 聚焦 CTest 各 3/3，对象化实现无 GCC/Clang
+  告警。产出：`tests/acceptance/2026-07-18-aot-08-s6p-10-s4z37-methodspec-generic-context-object.md`。
+  备注：call-info method context、method GenericParam substitution 和 MethodSpec execution 仍开放；未改 metadata 格式/API。
+
+- 2026-07-18 22:13:24 +08:00 · 10-S4Z36 / 08-S6O interpreter generic instance resolved VM method execution ·
+  状态：10-S4 public/interpreter generic reflection consumer 子切片完成；完整 10-S4 与 08-S6 仍为部分完成。
+  完成项目：public resolved-method invoke 校验 deopt instance 的 runtime/open-owner identity、VM function 与
+  receiver + fixed arguments arity，wrong runtime/owner/arity fail closed 并清空 result。它复用现有对象调用的
+  GC pin、stack anchor、argument staging 与 result restore，在 `PreCall` 与 `Execute` 间注入已固定 context。
+  真实 VM identity 方法从活动帧解析 GenericParam[1] 并返回 int64 参数 73。RED 为 1 个 MSVC
+  unresolved symbol；GREEN 为 19/0。WSL GCC、Clang、MSVC 最终聚焦 CTest 各 3/3，共享层 GC
+  各 66/0、指令执行各 31/0。变更实现无新 GCC/Clang 告警，`object_call.c` 仅有 2 个既有
+  Clang unused-helper 告警。产出：
+  `tests/acceptance/2026-07-18-aot-08-s6o-10-s4z36-interpreter-generic-instance-vm-method-execution.md`。
+  备注：本切片不物化/执行 MethodSpec 自身泛型方法，不改 metadata 格式/API。
+
+- 2026-07-18 20:55:12 +08:00 · 10-S4Z35 / 08-S6N interpreter generic call-info context carrier ·
+  状态：10-S4 public/interpreter generic reflection consumer 子切片完成；完整 10-S4 与 08-S6 仍为部分完成。
+  完成项目：public bind/get/call-info substitution API 把 S6L 实例上下文放入 `SZrCallInfo` 的
+  GC-visible `SZrTypeValue`，并复用 S6M 的 same-runtime/open-base/arity/owner/index 规则返回 concrete
+  argument type object。非 VM call-info 与无效实例 fail closed；调用初始化、hot path 与 tail reuse 全部
+  清零 carrier，GC mark/compact 维持对象存活与转发后地址。RED 为 3 个新入口导致 3 个 MSVC
+  unresolved symbols；GREEN 为 18/0，包含 full GC 后 call-info 参数解析。WSL GCC、Clang、MSVC
+  聚焦 CTest 各 3/3，共享层 GC 各 66/0、指令执行各 31/0，变更实现无 GCC/Clang 自身告警。
+  产出：`tests/acceptance/2026-07-18-aot-08-s6n-10-s4z35-interpreter-generic-callinfo-context.md`。
+  备注：这是 GC-safe call-frame context，不是 uncollected generic method execution 或 script-object 方法。
+
+- 2026-07-18 19:48:30 +08:00 · 10-S4Z34 / 08-S6M interpreter GenericParam substitution lookup ·
+  状态：10-S4 public/interpreter generic reflection consumer 子切片完成；完整 10-S4 与 08-S6 仍为部分完成。
+  完成项目：public lookup 复用 11-S5 GenericParam owner/index metadata view，验证 instance type context 的
+  `metadataRuntime`、`genericBaseToken`、`genericArgumentCount` 和 `genericArguments` 一致后，按 parameter index
+  返回 concrete argument reflection type object；错误 owner、越界、非实例和被篡改边界 fail closed。解释器测试
+  职责拆入 122 行专用 header，主测试降至 944 行。RED 为 1 个缺失 symbol；GREEN 为 17/0，WSL GCC、Clang、
+  MSVC 三项 CTest 各 3/3，变更模块无 GCC/Clang 自身告警。产出：
+  `tests/acceptance/2026-07-18-aot-08-s6m-10-s4z34-interpreter-generic-parameter-substitution.md`。
+  备注：这是参数 type-object lookup，不是 generic method execution、call-frame context 或 script-object 方法。
+
+- 2026-07-18 19:25:44 +08:00 · 10-S4Z33 / 08-S6L interpreter reference-class generic instance context ·
+  状态：10-S4 public/interpreter generic reflection consumer 子切片完成；完整 10-S4 与 08-S6 仍为部分完成。
+  完成项目：public revalidation 拒绝陈旧 generic carrier；解释器对象工厂仅接受重新解析仍为 deopt 的
+  reference-class 请求和 class prototype，创建普通对象并把深拷贝 type object 作为实例拥有的 generic context；
+  getter 可回读上下文，原型成员继续走既有对象查找。AOT route、struct/union prototype、prototype object 均
+  fail closed，分配期间对象按 ignore-root 约束保护。RED 为两个入口缺失导致 2 个 MSVC unresolved symbols；
+  GREEN 为 16/0，WSL GCC、Clang、MSVC 三项 CTest 各 3/3，三个实现文件无 GCC/Clang 自身告警。产出：
+  `tests/acceptance/2026-07-18-aot-08-s6l-10-s4z33-interpreter-generic-reference-instance-context.md`。
+  备注：这不是 generic substitution/execution，也未完成值类型、跨模块 identity 或脚本对象方法。
+
+- 2026-07-18 18:56:26 +08:00 · 10-S4Z32 / 08-S6K / 11-S4BO token-only compound generic type object ·
+  状态：10-S4 public generic reflection object 子切片完成；完整 10-S4/08-S6/11-S4 仍为部分完成。完成项目：
+  token-only public generic object 递归覆盖当前编码器全部 compound type nodes；nested generic 通过完整签名节点跨度
+  绑定真实本地 TypeSpec token，缺 record 时 fail closed。metadata binding 逻辑拆入独立 98 行模块，测试断言也从
+  近 1000 行主场景文件拆出。RED 为 15 tests/2 failures；GREEN 为 15/0，WSL GCC、Clang、MSVC 三项 CTest
+  各 3/3，变更模块无 GCC/Clang 自身告警。产出：
+  `tests/acceptance/2026-07-18-aot-08-s6k-10-s4z32-11-s4bo-token-only-compound-generic-type-object.md`。
+  备注：脚本对象方法、跨模块 identity 与解释器 generic substitution/execution 仍开放。
+
+- 2026-07-18 18:34:53 +08:00 · 10-S4Z31 / 08-S6J token-only direct-argument generic type object ·
+  状态：10-S4 public generic reflection object 子切片完成；完整 10-S4 与 08-S6 仍为部分完成。完成项目：
+  token-only existing-TypeSpec carrier 可经同一 builder 重新校验并生成 public type object；metadata 中的 primitive
+  与 direct TypeDef/TypeRef 参数进入 `genericArguments`，compound node 不做浅层降级。RED 为聚焦测试
+  13 tests/1 failure；GREEN 为 13/0，WSL GCC、Clang、MSVC 三项 CTest 各 3/3，新模块无 GCC/Clang 自身告警。
+  产出：`tests/acceptance/2026-07-18-aot-08-s6j-10-s4z31-token-only-direct-generic-type-object.md`。
+  备注：token-only compound 参数、脚本对象级 `MakeGenericType`、跨模块 identity 与解释器执行仍开放。
+
+- 2026-07-18 18:25:07 +08:00 · 10-S4Z30 / 08-S6I public MakeGenericType object entry ·
+  状态：10-S4 public generic reflection construction 子切片完成；完整 10-S4 与 08-S6 仍为部分完成。
+  完成项目：public C API 接受 open generic base token 和 recursive arguments，复用唯一 resolver 与 Z29 builder，
+  一次返回 AOT 或 interpreter-deopt public type object；无重复身份/路由算法。RED 为 MSVC 链接缺失入口；GREEN 为
+  聚焦目标 13/0，WSL GCC、Clang、MSVC 三项 CTest 各 3/3，模块无自身告警。产出：
+  `tests/acceptance/2026-07-18-aot-08-s6i-10-s4z30-make-generic-type-object.md`。
+  备注：脚本对象级方法、token-only 对象、解释器 generic substitution/execution 与跨模块 identity 仍开放。
+
+- 2026-07-18 18:13:41 +08:00 · 10-S4Z29 / 08-S6H public constructed-generic type object ·
+  状态：10-S4 public generic reflection object 子切片完成；完整 10-S4 与 08-S6 仍为部分完成。
+  完成项目：public builder 将 request-resolved AOT/interpreter-deopt carrier 重新校验后物化为 `kind == "type"`
+  对象，携带 route、base/TypeSpec token、layout、same-runtime pointer 与递归 `genericArguments`；对象图同步复制
+  primitive/token/array/tuple/ownership/nullable/union descriptor，不持有调用方 borrowed 指针。新实现独立为 462 行
+  `reflection_generic_type_object.c`，并用 GC ignore-root/父字段顺序保护分配中的对象。
+  RED/GREEN：RED 为 MSVC 链接缺失 builder；GREEN 为聚焦目标 13/0，WSL GCC、Clang、MSVC 三项 CTest 各 3/3，
+  新模块无自身编译告警。产出：
+  `tests/acceptance/2026-07-18-aot-08-s6h-10-s4z29-public-generic-type-object.md`。
+  备注：token-only object、`MakeGenericType` 用户入口、解释器参数替换/执行与跨模块 identity 仍待后续。
 
 - 2026-07-03 05:30:18 +08:00 · 10-S5P / 12-S7ZZZC annotation warning source attribution ·
   状态：10-S5 trim annotation warning 的 source attribution 子切片完成；完整 `@dynamically_accessed` 数据流、

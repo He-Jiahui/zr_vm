@@ -2364,12 +2364,15 @@ static ZR_FORCE_INLINE TZrBool object_can_use_known_native_fast(SZrState *state,
     return rawCallable != ZR_NULL && ZrCore_RawObject_IsPermanent(state, rawCallable);
 }
 
-TZrBool ZrCore_Object_CallValue(SZrState *state,
-                                const SZrTypeValue *callable,
-                                const SZrTypeValue *receiver,
-                                const SZrTypeValue *arguments,
-                                TZrSize argumentCount,
-                                SZrTypeValue *result) {
+static TZrBool object_call_value_with_interpreter_generic_contexts(
+        SZrState *state,
+        const SZrTypeValue *callable,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *arguments,
+        TZrSize argumentCount,
+        const SZrTypeValue *interpreterGenericContext,
+        const SZrTypeValue *interpreterGenericMethodContext,
+        SZrTypeValue *result) {
     SZrTypeValue stableCallable;
     SZrTypeValue stableReceiver;
     SZrTypeValue inlineArguments[ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY];
@@ -2616,7 +2619,19 @@ TZrBool ZrCore_Object_CallValue(SZrState *state,
                               receiverPinAdded);
     object_unpin_value_object(state->global, &stableCallable, callablePinAdded);
 
-    base = ZrCore_Function_CallWithoutYieldKnownValueAndRestore(state, base, &stableCallable, 1);
+    if (interpreterGenericContext != ZR_NULL ||
+        interpreterGenericMethodContext != ZR_NULL) {
+        base = ZrCore_Function_CallWithoutYieldKnownValueAndRestoreWithInterpreterGenericContexts(
+                state,
+                base,
+                &stableCallable,
+                1u,
+                interpreterGenericContext,
+                interpreterGenericMethodContext);
+    } else {
+        base = ZrCore_Function_CallWithoutYieldKnownValueAndRestore(
+                state, base, &stableCallable, 1u);
+    }
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
     if (savedCallInfo != ZR_NULL && hasCallInfoAnchors) {
         savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
@@ -2704,6 +2719,16 @@ TZrBool ZrCore_Object_CallValue(SZrState *state,
     return ZR_FALSE;
 }
 
+TZrBool ZrCore_Object_CallValue(SZrState *state,
+                                const SZrTypeValue *callable,
+                                const SZrTypeValue *receiver,
+                                const SZrTypeValue *arguments,
+                                TZrSize argumentCount,
+                                SZrTypeValue *result) {
+    return object_call_value_with_interpreter_generic_contexts(
+            state, callable, receiver, arguments, argumentCount, ZR_NULL, ZR_NULL, result);
+}
+
 TZrBool ZrCore_Object_CallFunctionWithReceiver(SZrState *state,
                                                SZrFunction *function,
                                                SZrTypeValue *receiver,
@@ -2751,6 +2776,68 @@ TZrBool ZrCore_Object_CallFunctionWithReceiver(SZrState *state,
     }
 
     return ZrCore_Object_CallValue(state, &callableValue, receiver, arguments, argumentCount, result);
+}
+
+TZrBool ZrCore_Object_CallFunctionWithReceiverAndInterpreterGenericContext(
+        SZrState *state,
+        SZrFunction *function,
+        SZrTypeValue *receiver,
+        const SZrTypeValue *arguments,
+        TZrSize argumentCount,
+        const SZrTypeValue *interpreterGenericContext,
+        SZrTypeValue *result) {
+    SZrTypeValue callableValue;
+
+    if (interpreterGenericContext == ZR_NULL ||
+        interpreterGenericContext->type != ZR_VALUE_TYPE_OBJECT ||
+        interpreterGenericContext->value.object == ZR_NULL ||
+        !object_make_callable_value(state, function, &callableValue) ||
+        callableValue.isNative) {
+        return ZR_FALSE;
+    }
+    return object_call_value_with_interpreter_generic_contexts(
+            state,
+            &callableValue,
+            receiver,
+            arguments,
+            argumentCount,
+            interpreterGenericContext,
+            ZR_NULL,
+            result);
+}
+
+TZrBool ZrCore_Object_CallFunctionWithReceiverAndInterpreterGenericContexts(
+        SZrState *state,
+        SZrFunction *function,
+        SZrTypeValue *receiver,
+        const SZrTypeValue *arguments,
+        TZrSize argumentCount,
+        const SZrTypeValue *interpreterGenericContext,
+        const SZrTypeValue *interpreterGenericMethodContext,
+        SZrTypeValue *result) {
+    SZrTypeValue callableValue;
+
+    if ((interpreterGenericContext == ZR_NULL &&
+         interpreterGenericMethodContext == ZR_NULL) ||
+        (interpreterGenericContext != ZR_NULL &&
+         (interpreterGenericContext->type != ZR_VALUE_TYPE_OBJECT ||
+          interpreterGenericContext->value.object == ZR_NULL)) ||
+        (interpreterGenericMethodContext != ZR_NULL &&
+         (interpreterGenericMethodContext->type != ZR_VALUE_TYPE_OBJECT ||
+          interpreterGenericMethodContext->value.object == ZR_NULL)) ||
+        !object_make_callable_value(state, function, &callableValue) ||
+        callableValue.isNative) {
+        return ZR_FALSE;
+    }
+    return object_call_value_with_interpreter_generic_contexts(
+            state,
+            &callableValue,
+            receiver,
+            arguments,
+            argumentCount,
+            interpreterGenericContext,
+            interpreterGenericMethodContext,
+            result);
 }
 
 TZrBool ZrCore_Object_CallFunctionWithReceiverOneArgumentFast(SZrState *state,

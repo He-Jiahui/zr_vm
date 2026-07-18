@@ -6,12 +6,20 @@ related_code:
   - zr_vm_core/include/zr_vm_core/metadata_token.h
   - zr_vm_core/include/zr_vm_core/zrp_metadata.h
   - zr_vm_core/include/zr_vm_core/metadata_runtime.h
+  - zr_vm_core/src/zr_vm_core/metadata_runtime.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_generic_params.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_type_node_binding.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c
+  - zr_vm_core/src/zr_vm_core/reflection_generic_instance.c
+  - zr_vm_core/src/zr_vm_core/reflection_generic_type_object.c
+  - zr_vm_core/src/zr_vm_core/reflection_interpreter_generic_instance.c
   - zr_vm_core/include/zr_vm_core/reflection.h
   - zr_vm_core/include/zr_vm_core/hash.h
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_common/include/zr_vm_common/zr_io_conf.h
   - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_core/src/zr_vm_core/function_graph.c
   - zr_vm_core/src/zr_vm_core/function_metadata_binding.c
   - zr_vm_core/src/zr_vm_core/function_metadata_query.c
   - zr_vm_core/src/zr_vm_core/reflection.c
@@ -21,6 +29,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/reflection_field_value_primitive.c
   - zr_vm_core/src/zr_vm_core/reflection_field_value_primitive.h
   - zr_vm_core/src/zr_vm_core/reflection_token_resolve.c
+  - zr_vm_core/src/zr_vm_core/reflection_generic_instance.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c
   - zr_vm_core/src/zr_vm_core/metadata_runtime_layout_binding.c
   - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c
   - zr_vm_core/src/zr_vm_core/hash.c
@@ -151,6 +161,7 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_common/include/zr_vm_common/zr_io_conf.h
   - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_core/src/zr_vm_core/function_graph.c
   - zr_vm_core/src/zr_vm_core/function_metadata_binding.c
   - zr_vm_core/src/zr_vm_core/function_metadata_query.c
   - zr_vm_core/src/zr_vm_core/reflection.c
@@ -160,6 +171,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/reflection_field_value_primitive.c
   - zr_vm_core/src/zr_vm_core/reflection_field_value_primitive.h
   - zr_vm_core/src/zr_vm_core/reflection_token_resolve.c
+  - zr_vm_core/src/zr_vm_core/reflection_interpreter_generic_instance.c
   - zr_vm_core/src/zr_vm_core/metadata_runtime_layout_binding.c
   - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c
   - zr_vm_core/src/zr_vm_core/hash.c
@@ -278,6 +290,9 @@ plan_sources:
   - docs/plans/using/07-implementation-blueprint.md
   - docs/plans/aot/11-metadata.md
   - docs/plans/aot/12-code-stripping.md
+  - docs/plans/aot/08-generic-sharing.md
+  - docs/plans/aot/10-reflection.md
+  - user: 2026-07-18 按 AOT 07~12 计划持续优化代码生成并逐阶段记录状态与产出
   - user: 2026-04-06 struct 值类型与 native wrapper 分层方案
   - user: 2026-04-06 新的 source-level wrapper decorator surface 和具体 handle_id lowering runtime完善
 tests:
@@ -299,6 +314,12 @@ tests:
   - tests/module/test_metadata_runtime_query.c
   - tests/module/test_metadata_runtime_manifest_exports.c
   - tests/module/test_metadata_runtime_binding_compatibility.c
+  - tests/module/test_reflection_dynamic_generic_instance.c
+  - tests/module/test_reflection_dynamic_generic_cross_module.h
+  - tests/module/test_reflection_dynamic_generic_method_context.h
+  - tests/acceptance/2026-07-19-aot-08-s6t-10-s4z41-11-s6j-bound-provider-generic-typespec-identity.md
+  - tests/acceptance/2026-07-19-aot-08-s6u-10-s4z42-11-s2e-methodspec-method-token-vm-function-resolution.md
+  - tests/acceptance/2026-07-19-aot-08-s6v-10-s4z43-11-s5a-generic-method-definition-object.md
   - tests/acceptance/2026-07-02-aot-12-s7zzq-runtime-export-member-token-publication.md
   - tests/acceptance/2026-07-02-aot-11-s7z-zrp-manifest-export-declarations.md
   - tests/acceptance/2026-07-02-aot-11-s7za-export-declaration-writer-options.md
@@ -1494,3 +1515,42 @@ M6 的验证不是“编译成功”级别，而是直接断言 opcode、签名�
 - 2026-07-03 11-S7ZSZ / 12-S7ZZZS rejects duplicate project manifest export `kind + target` declarations during `.zrp` load. `library_project_parse_export_declarations()` now scans parsed export declarations before storing the next entry, so a duplicate `method`/`Widget.run` declaration fails project creation instead of entering the CLI writer bridge. RED was WSL GCC project manifest normalization failing `Expected NULL`; GREEN passes project manifest normalization 29/0 on WSL GCC/clang and Windows MSVC Debug, plus downstream manifest export CTest 2/2 and source contracts 24/0. Broader metadata sweep policy and trim analyzer integration remain open.
 - 2026-07-03 11-S7ZTA / 12-S7ZZZT adds schema parity for duplicate project export declarations by marking the `.zrp` `exports` array with `uniqueItems: true`. This catches fully duplicated export declaration objects in editor/schema validation while the project parser and generated table continue to enforce full `kind + target` uniqueness. RED was the schema assertion failing `AssertionError`; GREEN passes the same assertion and `python -m json.tool` for `zrp.schema.json`. Broader metadata sweep policy and trim analyzer integration remain open.
 - 2026-07-03 11-S7ZTB / 12-S7ZZZU closes the remaining CLI writer bridge duplicate export gap for in-memory projects. `ZrCli_Compiler_ApplyProjectAotExportDeclarations()` now rejects duplicate export declaration `kind + target` keys while copying project declarations into writer options, frees the bridge scratch storage on failure, and leaves the manifest export option empty. RED was WSL GCC `test_cli_aot_writer_options_rejects_duplicate_manifest_export_declarations` failing `Expected FALSE Was TRUE`; GREEN passes CLI writer-options 19/0, project manifest normalization 29/0, manifest export/runtime view CTest 2/2, and source contracts 24/0 across WSL GCC/clang and Windows MSVC Debug. Broader metadata sweep policy and trim analyzer integration remain open.
+- 2026-07-18 11-S4BO / 08-S6K / 10-S4Z32 adds complete-span signature type-node record binding for attached
+  TypeDef/TypeRef and local TypeSpec records. `ZrCore_MetadataRuntime_ResolveSignatureTypeNodeRecord()` is now the
+  single direct-node binding source used by TypeSpec/MethodSpec argument views and by token-only constructed-generic
+  reflection objects. Nested generic, array, tuple, ownership, nullable, and union arguments materialize recursively;
+  unbound nodes fail closed. The binding logic was extracted from the 1036-line metadata runtime into a 98-line focused
+  module, leaving the orchestrator at 979 lines. The focused dynamic generic target moved from 15/2 RED to 15/0 GREEN,
+  and the three-test GCC/Clang/MSVC matrix passes 3/3. Cross-module TypeSpec canonicalization remains open.
+
+- 2026-07-19 11-S6J / 08-S6T / 10-S4Z41 closes the runtime-consumer side of cross-module TypeSpec canonicalization.
+  `ZrCore_Function_BindMatchingTypeSpecMetadata()` remains the binding producer: it matches canonical signature hash plus
+  bytes and records requester and provider token identities. Runtime compatibility now recognizes different TypeSpec RIDs
+  as a legal mapping only when both metadata tokens are TypeSpec and both paired tokens are Signature; all version,
+  module-signature, signature-hash, and layout checks remain in force. The reflection consumer then rereads requester and
+  provider TypeSpec records and signature views, requires exact nonempty canonical signature-byte equality, and delegates
+  route/layout resolution to the provider metadata runtime. This keeps provider token and layout ownership authoritative,
+  rejects malformed `expected*` requester identity and stale same-hash signature bytes, and avoids a process-global TypeSpec registry. The focused matrix passes 4/4,
+  GC 66/0, instruction execution 31/0, and instruction table 95/0 under GCC, Clang, and MSVC. Metadata/zrp formats are
+  unchanged; automatic provider loading and broader ABI drift/deopt policy remain separate work.
+
+- 2026-07-19 11-S2E / 08-S6U / 10-S4Z42 adds an interpreter MethodDef code-binding view without changing zrp or
+  code-registration ABI. The view requires one local MethodDef row and its method record, then consumes the existing
+  row `functionIndex` through `ZrCore_Function_ResolveGraphFunctionByFlatIndex()`. That resolver deliberately mirrors
+  AOT function-table order: root first, then constant-referenced functions, then child functions recursively, with the
+  same pointer/metadata-identity deduplication. Its visited set grows with actual graph nodes rather than the untrusted
+  index, so exhausted graphs, `UINT32_MAX - 1`, allocation failure, duplicate rows, and malformed function shapes all
+  fail closed. A successful view returns only an instruction-backed non-native VM function. The MethodSpec reflection
+  consumer reads the existing underlying method token and delegates execution to the prior context-aware resolved
+  function boundary. The focused matrix passes 5/5 and shared GC/instruction regressions pass 66/0, 31/0, and 95/0 on
+  GCC, Clang, and MSVC.
+
+- 2026-07-19 11-S5A / 08-S6V / 10-S4Z43 exposes the exact GenericParam owner range already encoded in TypeDef and
+  MethodDef rows. `ZrCore_MetadataRuntime_ReadGenericOwnerView()` returns the owner token/record, the matching definition
+  row, and `firstGenericParamIndex/genericParamCount`; every failure clears the view. The existing indexed GenericParam
+  reader now uses this public source. The reflection consumer requires a nonempty MethodDef range and verifies every
+  declared parameter against owner identity, contiguous physical row index, and logical parameter index before creating
+  GC-managed method-definition and parameter objects. Names are decoded from the retained zrp string pool, while raw
+  token, flags, signature coordinates, constraint range, and metadata-runtime identity remain available on the objects.
+  A malformed count, owner, row ordering, token, or missing parameter fails closed. No zrp row, section, or registration
+  ABI changes; matching concrete type arguments to a MethodSpec remains a later consumer.

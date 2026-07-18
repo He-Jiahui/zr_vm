@@ -491,66 +491,6 @@ TZrBool ZrCore_MetadataRuntime_ReadTypeSpecSignatureView(
     return ZR_TRUE;
 }
 
-static TZrBool metadata_runtime_type_node_matches_record_signature(
-        SZrMetadataRuntime *runtime,
-        const SZrMetadataTokenRecord *record,
-        const SZrMetadataRuntimeSignatureTypeNodeView *nodeView) {
-    SZrZrpMetadataPoolSliceView blob;
-    SZrMetadataRuntimeSignatureTypeNodeView recordNodeView;
-
-    if (record == ZR_NULL ||
-        nodeView == ZR_NULL ||
-        !ZrCore_MetadataRuntime_GetSignatureBlob(runtime, record->token, &blob) ||
-        !ZrCore_MetadataRuntime_ReadSignatureTypeNode(&blob, 0u, &recordNodeView)) {
-        return ZR_FALSE;
-    }
-
-    return recordNodeView.node == nodeView->node &&
-           recordNodeView.payload0 == nodeView->payload0 &&
-           recordNodeView.payload1 == nodeView->payload1 &&
-           recordNodeView.nextBlobOffset == (TZrUInt32)blob.byteLength;
-}
-
-static const SZrMetadataTokenRecord *metadata_runtime_find_type_record_by_node(
-        SZrMetadataRuntime *runtime,
-        const SZrMetadataRuntimeSignatureTypeNodeView *baseTypeNode) {
-    const SZrMetadataTokenRecord *records;
-    TZrUInt32 recordLength;
-    TZrUInt32 table;
-    TZrUInt32 index;
-
-    if (runtime == ZR_NULL || runtime->metadataFunction == ZR_NULL || baseTypeNode == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (baseTypeNode->node == ZR_METADATA_SIGNATURE_NODE_TYPE_DEF) {
-        records = runtime->metadataFunction->metadataTokenRecords;
-        recordLength = runtime->metadataFunction->metadataTokenRecordLength;
-        table = ZR_METADATA_TABLE_TYPE_DEF;
-    } else if (baseTypeNode->node == ZR_METADATA_SIGNATURE_NODE_TYPE_REF) {
-        records = runtime->metadataFunction->moduleMetadataTokenRecords;
-        recordLength = runtime->metadataFunction->moduleMetadataTokenRecordLength;
-        table = ZR_METADATA_TABLE_TYPE_REF;
-    } else {
-        return ZR_NULL;
-    }
-
-    if (records == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (index = 0u; index < recordLength; ++index) {
-        const SZrMetadataTokenRecord *record = &records[index];
-
-        if (ZR_METADATA_TOKEN_TABLE(record->token) == table &&
-            metadata_runtime_type_node_matches_record_signature(runtime, record, baseTypeNode)) {
-            return record;
-        }
-    }
-
-    return ZR_NULL;
-}
-
 TZrBool ZrCore_MetadataRuntime_ReadTypeSpecGenericBindingView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken typeSpecToken,
@@ -566,7 +506,8 @@ TZrBool ZrCore_MetadataRuntime_ReadTypeSpecGenericBindingView(
         return ZR_FALSE;
     }
 
-    baseRecord = metadata_runtime_find_type_record_by_node(runtime, &signatureView.baseTypeNode);
+    baseRecord = ZrCore_MetadataRuntime_ResolveSignatureTypeNodeRecord(
+            runtime, &signatureView.blob, &signatureView.baseTypeNode);
     if (baseRecord == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -612,7 +553,8 @@ TZrBool ZrCore_MetadataRuntime_ReadTypeSpecGenericArgumentView(
     argumentRecord = ZR_NULL;
     if (argumentNode.node == ZR_METADATA_SIGNATURE_NODE_TYPE_REF ||
         argumentNode.node == ZR_METADATA_SIGNATURE_NODE_TYPE_DEF) {
-        argumentRecord = metadata_runtime_find_type_record_by_node(runtime, &argumentNode);
+        argumentRecord = ZrCore_MetadataRuntime_ResolveSignatureTypeNodeRecord(
+                runtime, &bindingView.signatureView.blob, &argumentNode);
         if (argumentRecord == ZR_NULL) {
             return ZR_FALSE;
         }
@@ -719,7 +661,8 @@ TZrBool ZrCore_MetadataRuntime_ReadMethodSpecGenericArgumentView(
     argumentRecord = ZR_NULL;
     if (argumentNode.node == ZR_METADATA_SIGNATURE_NODE_TYPE_REF ||
         argumentNode.node == ZR_METADATA_SIGNATURE_NODE_TYPE_DEF) {
-        argumentRecord = metadata_runtime_find_type_record_by_node(runtime, &argumentNode);
+        argumentRecord = ZrCore_MetadataRuntime_ResolveSignatureTypeNodeRecord(
+                runtime, &signatureView.blob, &argumentNode);
         if (argumentRecord == ZR_NULL) {
             return ZR_FALSE;
         }

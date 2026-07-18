@@ -41,11 +41,13 @@ void ZrCore_Value_Barrier(struct SZrState *state, SZrRawObject *object, SZrTypeV
 
 void ZrCore_Value_ResetAsNull(SZrTypeValue *value) {
     ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_RESET_NULL);
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_CONSTRUCT);
     ZrCore_Value_ResetAsNullNoProfile(value);
 }
 
 void ZrCore_Value_InitAsRawObject(SZrState *state, SZrTypeValue *value, SZrRawObject *object) {
     EZrValueType type = (EZrValueType)object->type;
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_CONSTRUCT);
     value->type = type;
     value->value.object = object;
     value->isGarbageCollectable = ZR_TRUE;
@@ -60,6 +62,7 @@ void ZrCore_Value_InitAsRawObject(SZrState *state, SZrTypeValue *value, SZrRawOb
 
 void ZrCore_Value_InitAsUInt(struct SZrState *state, SZrTypeValue *value, TZrUInt64 intValue) {
     ZR_UNUSED_PARAMETER(state);
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_CONSTRUCT);
     value->type = ZR_VALUE_TYPE_UINT64;
     value->value.nativeObject.nativeUInt64 = intValue;
     value->isGarbageCollectable = ZR_FALSE;
@@ -71,6 +74,7 @@ void ZrCore_Value_InitAsUInt(struct SZrState *state, SZrTypeValue *value, TZrUIn
 
 void ZrCore_Value_InitAsInt(struct SZrState *state, SZrTypeValue *value, TZrInt64 intValue) {
     ZR_UNUSED_PARAMETER(state);
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_CONSTRUCT);
     value->type = ZR_VALUE_TYPE_INT64;
     value->value.nativeObject.nativeInt64 = intValue;
     value->isGarbageCollectable = ZR_FALSE;
@@ -82,6 +86,7 @@ void ZrCore_Value_InitAsInt(struct SZrState *state, SZrTypeValue *value, TZrInt6
 
 void ZrCore_Value_InitAsBool(struct SZrState *state, SZrTypeValue *value, TZrBool boolValue) {
     ZR_UNUSED_PARAMETER(state);
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_CONSTRUCT);
     value->type = ZR_VALUE_TYPE_BOOL;
     value->value.nativeObject.nativeBool = boolValue ? ZR_TRUE : ZR_FALSE;
     value->isGarbageCollectable = ZR_FALSE;
@@ -93,6 +98,7 @@ void ZrCore_Value_InitAsBool(struct SZrState *state, SZrTypeValue *value, TZrBoo
 
 void ZrCore_Value_InitAsFloat(struct SZrState *state, SZrTypeValue *value, TZrFloat64 floatValue) {
     ZR_UNUSED_PARAMETER(state);
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_CONSTRUCT);
     value->type = ZR_VALUE_TYPE_DOUBLE;
     value->value.nativeObject.nativeDouble = floatValue;
     value->isGarbageCollectable = ZR_FALSE;
@@ -104,6 +110,7 @@ void ZrCore_Value_InitAsFloat(struct SZrState *state, SZrTypeValue *value, TZrFl
 
 void ZrCore_Value_InitAsNativePointer(struct SZrState *state, SZrTypeValue *value, TZrPtr pointerValue) {
     ZR_UNUSED_PARAMETER(state);
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_CONSTRUCT);
     value->type = ZR_VALUE_TYPE_NATIVE_POINTER;
     value->value.nativeObject.nativePointer = pointerValue;
     value->isGarbageCollectable = ZR_FALSE;

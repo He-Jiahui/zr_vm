@@ -2,12 +2,6 @@
 
 #include "zr_vm_core/memory.h"
 
-typedef struct SZrMetadataRuntimeGenericOwnerRange {
-    const SZrMetadataTokenRecord *ownerRecord;
-    TZrUInt32 firstGenericParamIndex;
-    TZrUInt32 genericParamCount;
-} SZrMetadataRuntimeGenericOwnerRange;
-
 static const SZrZrpMetadataTypeDefRow *metadata_runtime_generic_find_type_def_row(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken typeDefToken) {
@@ -54,16 +48,16 @@ static const SZrZrpMetadataMethodDefRow *metadata_runtime_generic_find_method_de
     return ZR_NULL;
 }
 
-static TZrBool metadata_runtime_generic_owner_range(
+TZrBool ZrCore_MetadataRuntime_ReadGenericOwnerView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken ownerToken,
-        SZrMetadataRuntimeGenericOwnerRange *outRange) {
+        SZrMetadataRuntimeGenericOwnerView *outView) {
     const SZrMetadataTokenRecord *ownerRecord;
 
-    if (outRange != ZR_NULL) {
-        ZrCore_Memory_RawSet(outRange, 0, sizeof(*outRange));
+    if (outView != ZR_NULL) {
+        ZrCore_Memory_RawSet(outView, 0, sizeof(*outView));
     }
-    if (runtime == ZR_NULL || ownerToken == 0u || outRange == ZR_NULL) {
+    if (runtime == ZR_NULL || ownerToken == 0u || outView == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -75,9 +69,11 @@ static TZrBool metadata_runtime_generic_owner_range(
             if (row == ZR_NULL || ownerRecord == ZR_NULL) {
                 return ZR_FALSE;
             }
-            outRange->ownerRecord = ownerRecord;
-            outRange->firstGenericParamIndex = row->firstGenericParamIndex;
-            outRange->genericParamCount = row->genericParamCount;
+            outView->ownerToken = ownerToken;
+            outView->ownerRecord = ownerRecord;
+            outView->typeDefRow = row;
+            outView->firstGenericParamIndex = row->firstGenericParamIndex;
+            outView->genericParamCount = row->genericParamCount;
             return ZR_TRUE;
         }
 
@@ -88,9 +84,11 @@ static TZrBool metadata_runtime_generic_owner_range(
             if (row == ZR_NULL || ownerRecord == ZR_NULL) {
                 return ZR_FALSE;
             }
-            outRange->ownerRecord = ownerRecord;
-            outRange->firstGenericParamIndex = row->firstGenericParamIndex;
-            outRange->genericParamCount = row->genericParamCount;
+            outView->ownerToken = ownerToken;
+            outView->ownerRecord = ownerRecord;
+            outView->methodDefRow = row;
+            outView->firstGenericParamIndex = row->firstGenericParamIndex;
+            outView->genericParamCount = row->genericParamCount;
             return ZR_TRUE;
         }
 
@@ -100,7 +98,7 @@ static TZrBool metadata_runtime_generic_owner_range(
 }
 
 static TZrBool metadata_runtime_generic_param_index_in_owner_range(
-        const SZrMetadataRuntimeGenericOwnerRange *range,
+        const SZrMetadataRuntimeGenericOwnerView *range,
         TZrUInt32 genericParamIndex) {
     if (range == ZR_NULL) {
         return ZR_FALSE;
@@ -113,7 +111,7 @@ static const SZrZrpMetadataGenericParamRow *metadata_runtime_find_generic_param_
         SZrMetadataRuntime *runtime,
         TZrMetadataToken ownerToken,
         TZrUInt32 parameterIndex,
-        const SZrMetadataRuntimeGenericOwnerRange *ownerRange,
+        const SZrMetadataRuntimeGenericOwnerView *ownerRange,
         TZrUInt32 *outGenericParamIndex) {
     SZrZrpMetadataSectionView view;
     const SZrZrpMetadataGenericParamRow *rows;
@@ -147,7 +145,7 @@ TZrBool ZrCore_MetadataRuntime_ReadGenericParamView(
         TZrMetadataToken ownerToken,
         TZrUInt32 parameterIndex,
         SZrMetadataRuntimeGenericParamView *outView) {
-    SZrMetadataRuntimeGenericOwnerRange ownerRange;
+    SZrMetadataRuntimeGenericOwnerView ownerRange;
     const SZrZrpMetadataGenericParamRow *row;
     TZrUInt32 genericParamIndex = ~(TZrUInt32)0u;
 
@@ -155,7 +153,7 @@ TZrBool ZrCore_MetadataRuntime_ReadGenericParamView(
         ZrCore_Memory_RawSet(outView, 0, sizeof(*outView));
     }
     if (outView == ZR_NULL ||
-        !metadata_runtime_generic_owner_range(runtime, ownerToken, &ownerRange)) {
+        !ZrCore_MetadataRuntime_ReadGenericOwnerView(runtime, ownerToken, &ownerRange)) {
         return ZR_FALSE;
     }
 

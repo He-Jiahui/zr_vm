@@ -13,6 +13,10 @@
 #define TEST_MODULE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MODULE, 1u)
 #define TEST_RESOLVED_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 7u)
 #define TEST_RESOLVED_SIGNATURE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 8u)
+#define TEST_TYPE_SPEC_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_SPEC, 1u)
+#define TEST_PROVIDER_TYPE_SPEC_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_SPEC, 9u)
+#define TEST_TYPE_SPEC_SIGNATURE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 2u)
+#define TEST_PROVIDER_TYPE_SPEC_SIGNATURE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 29u)
 #define TEST_REF_SIGNATURE_HASH ((TZrUInt64)0x0102030405060708ULL)
 #define TEST_RESOLVED_SIGNATURE_HASH ((TZrUInt64)0x1112131415161718ULL)
 #define TEST_MODULE_SIGNATURE_HASH ((TZrUInt64)0x2122232425262728ULL)
@@ -155,6 +159,25 @@ static void test_binding_compatibility_accepts_assembly_ref_to_module_token_mapp
     TEST_ASSERT_EQUAL_INT(ZR_METADATA_RUNTIME_BINDING_STATUS_COMPATIBLE, report.status);
     TEST_ASSERT_EQUAL_UINT32(TEST_ASSEMBLY_REF_TOKEN, report.expectedMetadataToken);
     TEST_ASSERT_EQUAL_UINT32(TEST_MODULE_TOKEN, report.actualMetadataToken);
+}
+
+static void test_binding_compatibility_accepts_canonical_type_spec_token_mapping(void) {
+    SZrMetadataTokenBinding binding = make_matching_binding();
+    SZrMetadataRuntimeBindingCompatibilityReport report;
+
+    binding.expectedMetadataToken = TEST_TYPE_SPEC_TOKEN;
+    binding.expectedSignatureToken = TEST_TYPE_SPEC_SIGNATURE_TOKEN;
+    binding.resolvedMetadataToken = TEST_PROVIDER_TYPE_SPEC_TOKEN;
+    binding.resolvedSignatureToken = TEST_PROVIDER_TYPE_SPEC_SIGNATURE_TOKEN;
+
+    TEST_ASSERT_EQUAL_INT(
+            ZR_METADATA_RUNTIME_BINDING_STATUS_COMPATIBLE,
+            ZrCore_MetadataRuntime_CheckTokenBindingCompatibility(&binding, ZR_NULL, ZR_NULL, &report));
+    TEST_ASSERT_EQUAL_INT(ZR_METADATA_RUNTIME_BINDING_STATUS_COMPATIBLE, report.status);
+    TEST_ASSERT_EQUAL_UINT32(TEST_TYPE_SPEC_TOKEN, report.expectedMetadataToken);
+    TEST_ASSERT_EQUAL_UINT32(TEST_PROVIDER_TYPE_SPEC_TOKEN, report.actualMetadataToken);
+    TEST_ASSERT_EQUAL_UINT32(TEST_TYPE_SPEC_SIGNATURE_TOKEN, report.expectedSignatureToken);
+    TEST_ASSERT_EQUAL_UINT32(TEST_PROVIDER_TYPE_SPEC_SIGNATURE_TOKEN, report.actualSignatureToken);
 }
 
 static void test_binding_compatibility_reports_metadata_token_mismatch(void) {
@@ -359,6 +382,7 @@ int main(void) {
     RUN_TEST(test_binding_compatibility_ignores_missing_or_legacy_version_strings);
     RUN_TEST(test_binding_compatibility_reports_module_signature_before_member_signature);
     RUN_TEST(test_binding_compatibility_accepts_assembly_ref_to_module_token_mapping);
+    RUN_TEST(test_binding_compatibility_accepts_canonical_type_spec_token_mapping);
     RUN_TEST(test_binding_compatibility_reports_metadata_token_mismatch);
     RUN_TEST(test_binding_compatibility_reports_signature_token_mismatch);
     RUN_TEST(test_binding_compatibility_reports_member_signature_hash_mismatch);

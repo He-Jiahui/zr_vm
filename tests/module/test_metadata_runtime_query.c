@@ -1617,6 +1617,7 @@ static void test_metadata_runtime_reads_generic_param_and_constraint_views(void)
     SZrMetadataTokenRecord moduleRecords[1] = {0};
     SZrAotCodeRegistration registration = {0};
     SZrMetadataRuntime *runtime;
+    SZrMetadataRuntimeGenericOwnerView genericOwnerView;
     SZrMetadataRuntimeGenericParamView genericParamView;
     SZrMetadataRuntimeGenericParamConstraintView constraintView;
     SZrZrpMetadataHeader header;
@@ -1723,6 +1724,17 @@ static void test_metadata_runtime_reads_generic_param_and_constraint_views(void)
 
     runtime = ZrCore_Module_AttachMetadataRuntime(&module, &metadataFunction, &registration);
 
+    memset(&genericOwnerView, 0x7F, sizeof(genericOwnerView));
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadGenericOwnerView(
+            ZR_NULL, TEST_TYPE_DEF_TOKEN, &genericOwnerView));
+    TEST_ASSERT_EQUAL_UINT32(0u, genericOwnerView.ownerToken);
+    TEST_ASSERT_NULL(genericOwnerView.ownerRecord);
+    TEST_ASSERT_EQUAL_UINT32(0u, genericOwnerView.firstGenericParamIndex);
+    TEST_ASSERT_EQUAL_UINT32(0u, genericOwnerView.genericParamCount);
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadGenericOwnerView(
+            runtime, TEST_TYPE_DEF_TOKEN, ZR_NULL));
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadGenericOwnerView(
+            runtime, TEST_TYPE_DEF_TOKEN, &genericOwnerView));
     TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadGenericParamView(ZR_NULL,
                                                                   TEST_TYPE_DEF_TOKEN,
                                                                   0u,
@@ -1737,6 +1749,29 @@ static void test_metadata_runtime_reads_generic_param_and_constraint_views(void)
                                                                   &genericParamView));
 
     TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_AttachZrpMetadata(runtime, bytes, sizeof(bytes)));
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_ReadGenericOwnerView(
+            runtime, TEST_TYPE_DEF_TOKEN, &genericOwnerView));
+    TEST_ASSERT_EQUAL_UINT32(TEST_TYPE_DEF_TOKEN, genericOwnerView.ownerToken);
+    TEST_ASSERT_EQUAL_PTR(&functionRecords[0], genericOwnerView.ownerRecord);
+    TEST_ASSERT_EQUAL_PTR(&typeRows[0], genericOwnerView.typeDefRow);
+    TEST_ASSERT_NULL(genericOwnerView.methodDefRow);
+    TEST_ASSERT_EQUAL_UINT32(0u, genericOwnerView.firstGenericParamIndex);
+    TEST_ASSERT_EQUAL_UINT32(2u, genericOwnerView.genericParamCount);
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_ReadGenericOwnerView(
+            runtime, TEST_MEMBER_DEF_TOKEN, &genericOwnerView));
+    TEST_ASSERT_EQUAL_UINT32(TEST_MEMBER_DEF_TOKEN, genericOwnerView.ownerToken);
+    TEST_ASSERT_EQUAL_PTR(&functionRecords[1], genericOwnerView.ownerRecord);
+    TEST_ASSERT_NULL(genericOwnerView.typeDefRow);
+    TEST_ASSERT_EQUAL_PTR(&methodRows[0], genericOwnerView.methodDefRow);
+    TEST_ASSERT_EQUAL_UINT32(2u, genericOwnerView.firstGenericParamIndex);
+    TEST_ASSERT_EQUAL_UINT32(1u, genericOwnerView.genericParamCount);
+    memset(&genericOwnerView, 0x7F, sizeof(genericOwnerView));
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadGenericOwnerView(
+            runtime, TEST_MEMBER_DEF_SIGNATURE_TOKEN, &genericOwnerView));
+    TEST_ASSERT_EQUAL_UINT32(0u, genericOwnerView.ownerToken);
+    TEST_ASSERT_NULL(genericOwnerView.ownerRecord);
+    TEST_ASSERT_EQUAL_UINT32(0u, genericOwnerView.firstGenericParamIndex);
+    TEST_ASSERT_EQUAL_UINT32(0u, genericOwnerView.genericParamCount);
     TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_ReadGenericParamView(runtime,
                                                                  TEST_TYPE_DEF_TOKEN,
                                                                  0u,

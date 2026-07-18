@@ -10,6 +10,7 @@
 #include "zr_vm_core/metadata_token.h"
 
 struct SZrState;
+struct SZrCallInfo;
 struct SZrObject;
 struct SZrObjectPrototype;
 struct SZrObjectModule;
@@ -44,6 +45,60 @@ typedef struct SZrReflectionResolvedGenericArgument {
     TZrMetadataToken argumentToken;
     const SZrMetadataTokenRecord *argumentRecord;
 } SZrReflectionResolvedGenericArgument;
+
+typedef enum EZrReflectionGenericInstanceRoute {
+    ZR_REFLECTION_GENERIC_INSTANCE_ROUTE_NONE = 0,
+    ZR_REFLECTION_GENERIC_INSTANCE_ROUTE_AOT = 1,
+    ZR_REFLECTION_GENERIC_INSTANCE_ROUTE_INTERPRETER_DEOPT = 2
+} EZrReflectionGenericInstanceRoute;
+
+typedef enum EZrReflectionGenericTypeArgumentKind {
+    ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_NONE = 0,
+    ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_PRIMITIVE = 1,
+    ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_TYPE_TOKEN = 2,
+    ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_ARRAY = 3,
+    ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_TUPLE = 4,
+    ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_OWNERSHIP = 5,
+    ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_NULLABLE = 6,
+    ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_UNION = 7
+} EZrReflectionGenericTypeArgumentKind;
+
+typedef enum EZrReflectionOwnershipQualifier {
+    ZR_REFLECTION_OWNERSHIP_QUALIFIER_NONE = 0,
+    ZR_REFLECTION_OWNERSHIP_QUALIFIER_UNIQUE = 1,
+    ZR_REFLECTION_OWNERSHIP_QUALIFIER_SHARED = 2,
+    ZR_REFLECTION_OWNERSHIP_QUALIFIER_WEAK = 3,
+    ZR_REFLECTION_OWNERSHIP_QUALIFIER_BORROWED = 4,
+    ZR_REFLECTION_OWNERSHIP_QUALIFIER_LOANED = 5
+} EZrReflectionOwnershipQualifier;
+
+typedef struct SZrReflectionGenericTypeArgument {
+    EZrReflectionGenericTypeArgumentKind kind;
+    TZrUInt32 primitiveValueType;
+    TZrMetadataToken typeToken;
+    TZrUInt32 arrayRank;
+    const struct SZrReflectionGenericTypeArgument *elementType;
+    EZrReflectionOwnershipQualifier ownershipQualifier;
+    TZrUInt32 childCount;
+    const struct SZrReflectionGenericTypeArgument *childTypes;
+    TZrUInt32 unionValueType;
+    TZrUInt32 unionNameStringOffset;
+} SZrReflectionGenericTypeArgument;
+
+typedef struct SZrReflectionDynamicGenericTypeInstance {
+    EZrReflectionGenericInstanceRoute route;
+    TZrMetadataToken typeSpecToken;
+    TZrMetadataToken genericSignatureToken;
+    TZrUInt64 genericSignatureHash;
+    TZrMetadataToken genericBaseToken;
+    const SZrMetadataTokenRecord *genericBaseRecord;
+    TZrUInt32 genericArgumentCount;
+    TZrUInt32 genericArgumentListBlobOffset;
+    /* Borrowed from ResolveConstructedGenericType() input; null for token-only resolution. */
+    const SZrReflectionGenericTypeArgument *requestedArguments;
+    TZrUInt32 typeLayoutId;
+    const struct SZrTypeLayout *typeLayout;
+} SZrReflectionDynamicGenericTypeInstance;
 
 typedef struct SZrReflectionResolvedGenericParameter {
     TZrMetadataToken ownerToken;
@@ -317,6 +372,128 @@ ZR_CORE_API TZrBool ZrCore_Reflection_ResolveTypeSpecGenericArgument(
         TZrMetadataToken typeSpecToken,
         TZrUInt32 argumentIndex,
         SZrReflectionResolvedGenericArgument *outArgument);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_ResolveDynamicGenericTypeInstance(
+        struct SZrMetadataRuntime *runtime,
+        TZrMetadataToken typeSpecToken,
+        SZrReflectionDynamicGenericTypeInstance *outInstance);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider(
+        struct SZrMetadataRuntime *requesterRuntime,
+        TZrMetadataToken requesterTypeSpecToken,
+        struct SZrMetadataRuntime *providerRuntime,
+        SZrReflectionDynamicGenericTypeInstance *outInstance);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_ResolveConstructedGenericType(
+        struct SZrMetadataRuntime *runtime,
+        TZrMetadataToken genericBaseToken,
+        const SZrReflectionGenericTypeArgument *arguments,
+        TZrUInt32 argumentCount,
+        SZrReflectionDynamicGenericTypeInstance *outInstance);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_RevalidateDynamicGenericTypeInstance(
+        struct SZrMetadataRuntime *runtime,
+        const SZrReflectionDynamicGenericTypeInstance *instance,
+        SZrReflectionDynamicGenericTypeInstance *outResolved);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_BuildDynamicGenericTypeInstanceObject(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        const SZrReflectionDynamicGenericTypeInstance *instance);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_MakeGenericTypeObject(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        TZrMetadataToken genericBaseToken,
+        const SZrReflectionGenericTypeArgument *arguments,
+        TZrUInt32 argumentCount);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_BuildGenericMethodDefinitionObject(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        TZrMetadataToken genericMethodToken);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_BuildMethodSpecGenericContextObject(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        TZrMetadataToken methodSpecToken);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_BindInterpreterGenericMethodSpecCallInfo(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        struct SZrCallInfo *callInfo,
+        TZrMetadataToken methodSpecToken);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_GetInterpreterGenericMethodCallInfoContextObject(
+        struct SZrState *state,
+        struct SZrCallInfo *callInfo);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_ResolveInterpreterGenericMethodCallInfoParameterTypeObject(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        struct SZrCallInfo *callInfo,
+        TZrMetadataToken genericMethodToken,
+        TZrUInt32 parameterIndex);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_InvokeInterpreterGenericMethodSpecResolvedFunction(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        TZrMetadataToken methodSpecToken,
+        struct SZrFunction *function,
+        const struct SZrTypeValue *arguments,
+        TZrSize argumentCount,
+        struct SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_InvokeInterpreterGenericMethodSpec(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        TZrMetadataToken methodSpecToken,
+        const struct SZrTypeValue *arguments,
+        TZrSize argumentCount,
+        struct SZrTypeValue *result);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_NewInterpreterGenericInstanceObject(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        const SZrReflectionDynamicGenericTypeInstance *instance,
+        struct SZrObjectPrototype *openPrototype);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_GetInterpreterGenericInstanceTypeObject(
+        struct SZrState *state,
+        struct SZrObject *instanceObject);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_ResolveInterpreterGenericParameterTypeObject(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        struct SZrObject *instanceObject,
+        TZrMetadataToken genericOwnerToken,
+        TZrUInt32 parameterIndex);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_BindInterpreterGenericInstanceCallInfo(
+        struct SZrState *state,
+        struct SZrCallInfo *callInfo,
+        struct SZrObject *instanceObject);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_GetInterpreterGenericCallInfoTypeObject(
+        struct SZrState *state,
+        struct SZrCallInfo *callInfo);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_ResolveInterpreterGenericCallInfoParameterTypeObject(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        struct SZrCallInfo *callInfo,
+        TZrMetadataToken genericOwnerToken,
+        TZrUInt32 parameterIndex);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_InvokeInterpreterGenericInstanceResolvedMethod(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        struct SZrObject *instanceObject,
+        TZrMetadataToken genericOwnerToken,
+        struct SZrFunction *function,
+        const struct SZrTypeValue *arguments,
+        TZrSize argumentCount,
+        struct SZrTypeValue *result);
 
 ZR_CORE_API TZrBool ZrCore_Reflection_ResolveGenericParameter(
         struct SZrMetadataRuntime *runtime,

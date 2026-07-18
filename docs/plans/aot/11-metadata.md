@@ -11,6 +11,10 @@ references:
   - lua/runtime/src/coreclr/tools/aot/ILCompiler.MetadataTransform/ILCompiler/Metadata/MetadataTransform.cs
   - lua/roslyn/src/Compilers/Core/Portable/PEWriter/MetadataWriter.cs   # TypeSpec/MethodSpec
 related_code:
+  - zr_vm_core/include/zr_vm_core/metadata_runtime.h   # 11-S4BO signature type-node -> attached type record resolver API
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_type_node_binding.c # 11-S4BO direct/nested local signature-node record binding
+  - zr_vm_core/src/zr_vm_core/reflection_generic_type_object.c # 11-S4BO/10-S4Z32 metadata node binding consumer
+  - tests/module/test_reflection_dynamic_generic_instance.c # 11-S4BO/10-S4Z32 nested/compound token-only consumer coverage
   - tests/module/test_reflection_token_resolve.c       # 11-S4BN/10-S4Z28 nested primitive POD storage-width path matrix coverage
   - tests/module/test_reflection_token_resolve.c       # 11-S4BM/10-S4Z27 nested primitive POD representative path matrix coverage
   - zr_vm_core/src/zr_vm_core/reflection_field_value_nested.c # 11-S4BL/10-S4Z26 nested primitive raw child leaf layout identity guard consumer
@@ -50,16 +54,17 @@ related_code:
   - zr_vm_core/src/zr_vm_core/function_metadata_query.c # low-level token record query reused by 11-S3A
   - zr_vm_core/include/zr_vm_core/zrp_metadata.h       # 11-S1A..11-S1J zrp metadata header + definition table directory + mmap section/pool/string view + row/range/signature-blob validation + pool/table payload writer ABI; 11-S4J TypeSpec row typeLayoutId binding
   - zr_vm_core/src/zr_vm_core/zrp_metadata.c           # 11-S1A..11-S1J header read/write/validate + section/pool/string view + definition-table/range validation + pool/table payload writer + signature blob structural validator; 11-S7ZSF/12-S7ZZW unbound manifest export row validation
-  - zr_vm_core/include/zr_vm_core/function.h           # SZrFunctionMetadata / ModuleEffect; 11-S4G function-level code-registration layout registry binding for GC inline-frame consumers
+  - zr_vm_core/include/zr_vm_core/function.h           # SZrFunctionMetadata / ModuleEffect; 11-S2E flat function-graph resolver API; 11-S4G function-level code-registration layout registry binding for GC inline-frame consumers
+  - zr_vm_core/src/zr_vm_core/function_graph.c         # 11-S2E AOT-order root/constant/child flat function graph resolver
   - zr_vm_core/include/zr_vm_core/type_layout.h        # cTypeId / SZrTypeLayoutMetadata
-  - zr_vm_core/include/zr_vm_core/metadata_runtime.h   # 11-S2B method token count mirror; 11-S2C minimal metadata runtime registration carrier; 11-S2D method token -> MethodInfo/function pointer/invoker binding view; 11-S3A..11-S3M method/field/type/signature/TypeSpec record cache API + zrp metadata mmap attach/query + validated signature blob/header/type-node/generic TypeSpec signature/base-token/argument binding view + MethodSpec signature view; 11-S4A/11-S4C TypeDef token/cTypeId/layout binding view backed by code-registration layout registry; 11-S4D public typeLayoutId -> SZrTypeLayout resolver; 11-S4E generic dictionary consumer input; 11-S4F public typeLayoutId -> SZrAotGcDescriptor resolver; 11-S4G function-level layout resolver for GC inline-frame consumers; 11-S4H function+prototype -> registry-backed type layout resolver for reflection consumers; 11-S4I FieldDef token/row/offset/layout binding view; 11-S4J TypeSpec token/generic-binding/layout binding view; 11-S4K TypeDef/TypeSpec token -> layout cache resolver; 11-S4S same resolver accepts attached bound TypeRef token -> TypeDef layout; 11-S4L typeLayoutId -> TypeDef/TypeSpec token reverse resolver; 11-S4M bounded multi-entry type-layout cache; 11-S4N cTypeId -> token resolver; 11-S4O code-registration type-layout token count mirror; 11-S5 GenericParam/GenericParamConstraint runtime view API, MethodSpec signature record carrier, and indexed MethodSpec generic argument view API; 11-S6A token binding compatibility status/report API; 11-S6B function-level binding scan API; 11-S7/12-S7ZZQ member-token remap count mirror; 11-S7ZF/12-S7 manifest export table runtime mirror
+  - zr_vm_core/include/zr_vm_core/metadata_runtime.h   # 11-S2B method token count mirror; 11-S2C minimal metadata runtime registration carrier; 11-S2D method token -> MethodInfo/function pointer/invoker binding view; 11-S3A..11-S3M method/field/type/signature/TypeSpec record cache API + zrp metadata mmap attach/query + validated signature blob/header/type-node/generic TypeSpec signature/base-token/argument binding view + MethodSpec signature view; 11-S4A/11-S4C TypeDef token/cTypeId/layout binding view backed by code-registration layout registry; 11-S4D public typeLayoutId -> SZrTypeLayout resolver; 11-S4E generic dictionary consumer input; 11-S4F public typeLayoutId -> SZrAotGcDescriptor resolver; 11-S4G function-level layout resolver for GC inline-frame consumers; 11-S4H function+prototype -> registry-backed type layout resolver for reflection consumers; 11-S4I FieldDef token/row/offset/layout binding view; 11-S4J TypeSpec token/generic-binding/layout binding view; 11-S4K TypeDef/TypeSpec token -> layout cache resolver; 11-S4S same resolver accepts attached bound TypeRef token -> TypeDef layout; 11-S4L typeLayoutId -> TypeDef/TypeSpec token reverse resolver; 11-S4M bounded multi-entry type-layout cache; 11-S4N cTypeId -> token resolver; 11-S4O code-registration type-layout token count mirror; 11-S5 GenericParam/GenericParamConstraint runtime view API, MethodSpec signature record carrier, and indexed MethodSpec generic argument view API; 11-S5A exact GenericParam owner-range view; 11-S6A token binding compatibility status/report API; 11-S6B function-level binding scan API; 11-S7/12-S7ZZQ member-token remap count mirror; 11-S7ZF/12-S7 manifest export table runtime mirror
   - zr_vm_core/src/zr_vm_core/metadata_runtime.c       # 11-S3A..11-S3M ResolveMethodRecord/ResolveFieldRecord/ResolveTypeRecord/ResolveSignatureRecord lazy token record lookup/cache, local TypeSpec records, zrp section-view attach/query, signature blob validation, method/field signature header view parsing, nested type-node view parsing, generic TypeSpec signature view parsing, generic base-token binding, indexed generic argument binding, MethodSpec signature view parsing with MethodSpec record carrier, and indexed MethodSpec generic argument binding; 11-S4D public type-layout resolver; 11-S4E/11-S4F generic dictionary and GC descriptor consumers reuse the same resolver; 11-S4G/11-S4H function/prototype-context layout resolver for attached AOT code-registration functions
   - zr_vm_core/include/zr_vm_core/metadata_runtime.h   # 11-S7ZG/12-S7 manifest export runtime view API
   - zr_vm_core/src/zr_vm_core/metadata_runtime_manifest_exports.c # 11-S7ZG/12-S7 manifest export runtime view implementation
-  - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c # 11-S2D method token code-registration binding view implementation
-  - zr_vm_core/src/zr_vm_core/metadata_runtime_generic_params.c # 11-S5 GenericParam/GenericParamConstraint owner-range checked runtime view implementation
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c # 11-S2D method token code-registration binding; 11-S2E MethodDef.functionIndex interpreter VM binding
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_generic_params.c # 11-S5 GenericParam/GenericParamConstraint views; 11-S5A public exact owner-range view
   - zr_vm_core/src/zr_vm_core/metadata_runtime_layout_binding.c # 11-S4A..11-S4O split layout-binding implementation for TypeDef/TypeSpec/FieldDef row lookup, registry-backed binding views, TypeDef/TypeSpec token -> layout cache resolver, 11-S4S attached bound TypeRef token -> TypeDef layout resolver, typeLayoutId/cTypeId -> token reverse lookup, bounded multi-entry cache, and code-registration token-table consumption
-  - zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c # 11-S6A runtime ABI drift predicate for module version range + token/signature/module/layout compatibility; 11-S6B function binding scan over attached module metadata bindings; 11-S7ZH manifest export binding gate predicate
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c # 11-S6A runtime ABI drift predicate for module version range + token/signature/module/layout compatibility; 11-S6B function binding scan over attached module metadata bindings; 11-S6J canonical TypeSpec RID mapping compatibility; 11-S7ZH manifest export binding gate predicate
   - zr_vm_core/include/zr_vm_core/module.h             # 11-S2C module metadata runtime attach/query surface; 11-S4D typeLayoutCount runtime mirror
   - zr_vm_core/src/zr_vm_core/module/module.c          # 11-S2B methodTokenCount attach; 11-S2C module metadata runtime attach/query implementation; 11-S4D codeRegistration typeLayoutCount attach; 11-S4G function attach during module metadata runtime attach; 11-S4O typeLayoutTokenCount attach; 11-S7/12-S7ZZQ codeRegistration member-token remap writeback to typed exports; 11-S7ZF/12-S7 codeRegistration manifest export table attach mirror
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c             # 11-S2C module metadataRuntime.metadataFunction mark; 11-S4G mark inline-frame resolver prefers metadata runtime for attached AOT functions
@@ -136,6 +141,7 @@ related_code:
   - tests/module/test_metadata_runtime_query.c         # 11-S2B/11-S2C module metadata runtime registration query and methodTokenCount mirror check; 11-S3A..11-S3M method/field/type/signature/TypeSpec token lazy/cache query + zrp metadata mmap attach/view + signature blob/header/type-node/generic TypeSpec signature/base-token/argument binding view + MethodSpec signature record/generic argument view query; 11-S4A/11-S4C TypeDef layout binding view + code-registration registry source proof; 11-S4D attach typeLayoutCount mirror check; 11-S4I FieldDef layout binding view and no-prototype-fallback regression; 11-S5 GenericParam/GenericParamConstraint runtime views; 11-S7/12-S7ZZQ runtime export member-token remap writeback coverage
   - tests/module/test_metadata_runtime_manifest_exports.c # 11-S7ZF/12-S7 mirror + 11-S7ZG/12-S7 runtime view coverage + 11-S7ZH/12-S7 manifest export binding gate coverage
   - tests/module/test_metadata_runtime_method_binding.c # 11-S2D method token -> MethodInfo/function pointer/invoker binding view coverage
+  - tests/module/test_reflection_dynamic_generic_method_context.h # 11-S2E MethodDef interpreter binding and MethodSpec automatic execution coverage
   - tests/module/test_reflection_token_resolve.c       # 11-S4BE/10-S4Z19 inline aggregate field-copy borrowed-source write consumer coverage
   - tests/module/test_reflection_token_resolve.c       # 11-S4BD/10-S4Z18 inline aggregate borrowed-source write consumer coverage
   - tests/module/test_reflection_token_resolve.c       # 11-S4BC/10-S4Z17 inline struct signature/layout consumer coverage for FieldInfo borrowed view
@@ -301,6 +307,12 @@ typedef struct SZrAotCodeRegistration {
   metadata function、代码注册表与 function/method/invoker/GC descriptor 计数，并让 GC 标记/搬迁维护
   metadata function 引用；token→函数/layout lazy 解析、结果缓存和 token↔layout 三向表留给后续
   11-S3/11-S4。
+- 11-S2E 在同一 method-binding 模块提供解释器 MethodDef binding view：读取 attached zrp MethodDef section，
+  要求 method token 为唯一 local `MEMBER_DEF` 且同时存在 runtime method record，再将 row 的 `functionIndex`
+  交给 `ZrCore_Function_ResolveGraphFunctionByFlatIndex()`。函数图顺序与 AOT function table 一致：root、
+  constant-referenced function、child function 深度优先，并按指针或 metadata identity 去重。返回函数必须是
+  non-native、instruction-backed VM function；重复/缺失 row、越界/超大 index 或畸形函数均清 view 并失败。
+  visited storage 只随实际遍历节点增长，因此不可信 index 不会直接驱动超大分配。
 
 ## 3. 运行期元数据解析（SZrMetadataRuntime，对标 il2cpp MetadataCache / mono MonoImage 缓存）
 
@@ -424,6 +436,10 @@ typedef struct SZrAotCodeRegistration {
   `GENERIC_INST(MEMBER_REF methodToken, args...)` 的 primitive 或 direct TypeDef/TypeRef 实参节点，并在可直接绑定时
   暴露 argument token/record；`ZrCore_Reflection_ResolveMethodSpecGenericArgument()` 将同一信息复制到 public
   reflection carrier。当前仍不物化 method instantiation、generic dictionary、递归泛型实参对象或运行期 generic layout。
+- 11-S5A / 08-S6V / 10-S4Z43 将 GenericParam 读取器内部的 owner range 提升为 public read-only view：
+  `ZrCore_MetadataRuntime_ReadGenericOwnerView()` 对 TypeDef/MethodDef 返回 owner token/record、对应 definition row、
+  `firstGenericParamIndex` 与 `genericParamCount`，失败先清 output。现有 parameter reader 复用该入口，反射消费者可按
+  声明数量验证连续物理 row 与 logical parameter index，避免把损坏范围静默截短。zrp row/section ABI 不变。
 - 11-S4Z / 10-S4L 已把 11-S3H 的 field signature header view 接入 public `FieldInfo` consumer：
   `ZrCore_Reflection_BuildFieldInfoTokenObject()` 通过 `ZrCore_MetadataRuntime_ReadSignatureView()` 读取 FieldDef
   token 的 validated `FIELD_SIG` header，并暴露 `signatureRootNode`、`signatureFlags` 与 `fieldTypeBlobOffset`。
@@ -601,6 +617,11 @@ metadataToken  ⇄  cTypeId  ⇄  struct ZrLayout_<cTypeId>
   unsupported offset 路径保持 `ZR_NULL` 并输出显式 failure marker。union layout 的 active payload 判定仍由
   `SZrTypeLayoutField.activeTag` 与 tag metadata 承担，本表只暴露 owner payload byte offsets。当前仍不声明持久
   cTypeId→token 索引表、runtime generic layout construction、cross-module token table 或 public reflection entity 完成。
+- 11-S4BO 提供 `ZrCore_MetadataRuntime_ResolveSignatureTypeNodeRecord()`：direct TypeDef/TypeRef 节点和 nested
+  `GENERIC_INST` 节点按完整节点字节跨度匹配 attached metadata record；nested generic 仅返回真实本地 TypeSpec
+  record，不根据名称或浅 payload 伪造 token。旧 direct-node 匹配从 1036 行 `metadata_runtime.c` 抽到独立
+  `metadata_runtime_type_node_binding.c`，原 TypeSpec/MethodSpec binding view 复用新入口。跨模块 TypeSpec
+  canonical identity 和 provider token remap 不在本切片内。
 
 ## 5. 泛型参数标准化编码（衔接 08，对标 roslyn TypeSpec/MethodSpec）
 
@@ -642,6 +663,10 @@ moduleSignatureHash/token`，但无统一运行期校验流程。补：
 | 11-S5 | 泛型参数标准化编码（GENERIC_INST/MethodSpec/约束）（§5） | 🚧 2026-06-30 部分完成：已新增 GenericParam/GenericParamConstraint attached zrp runtime 只读 view，按 TypeDef/MethodDef owner range 校验泛型参数定义，暴露参数 name/flags/constraint range，并按 index 读取约束 type token/record 与可选 validated signature blob；10-S4D 已把这些 view 接入 public reflection carrier，可按 owner+parameter/constraint index 暴露 GenericParam 与 GenericParamConstraint 信息；11-S5/10-S4E 已提供 MethodSpec indexed generic argument runtime view 和 public reflection carrier，可从 `GENERIC_INST(MEMBER_REF methodToken, args...)` 读取 primitive 或 direct TypeDef/TypeRef 实参；10-S3B 已让 MethodSpec signature view 携带 MethodSpec record 并接入 public `ResolveToken()` method-like carrier；10-S3E 已让 MethodSpec public carrier 复用 underlying MethodDef 的 AOT binding carrier；与 08 实例化去重键的全链路统一、运行期泛型实体/layout 构建和 public generic reflection object 仍待后续 |
 | 11-S6 | 版本检查运行实现 + 不匹配 deopt/拒绝（§6） | 🚧 2026-06-28 部分完成：11-S6A 已提供 `ZrCore_MetadataRuntime_CheckTokenBindingCompatibility()`，统一检查 token binding 的版本区间、module signature hash、metadata/signature token、signature hash、layoutVersion/layoutHash，并返回可供 dynamic 拒绝或 typed deopt 消费的 status/report；11-S6B 已提供 `ZrCore_MetadataRuntime_CheckFunctionTokenBindingsCompatibility()`，可扫描 attached function 的 `moduleMetadataBindings` 并返回首个不兼容 binding/ref record/report；11-S6C 已将 function scan 接入 root AOT dynamic module loader，在 embedded/zro metadata binding 不兼容时拒绝加载并输出状态名/token/hash/layout 诊断；11-S6D 已为 i64 scalar typed direct-call 生成 runtime metadata guard，caller/callee binding 不兼容时经 `ZrLibrary_AotRuntime_DeoptTypedDirectCall()` 退回 `CallStackValue()` 并同步 i64 scalar local；11-S6E 已将同一 guard/deopt 形态扩展到 u64 scalar typed direct-call，兼容时保留 unsigned direct thunk，不兼容时同步 u64 scalar local；11-S6F 已将同一 guard/deopt 形态扩展到 f64 scalar typed direct-call，兼容时保留 float direct thunk，不兼容时同步 f64 scalar local；11-S6G 已将同一 guard/deopt 形态扩展到 bool-result typed direct-call，覆盖 bool/bool 与 i64/u64/f64 比较返回 bool，兼容时保留 bool direct thunk，不兼容时同步 bool scalar local；11-S6H 已将同一 guard/deopt 形态扩展到 value SemIR inline-struct `CALL_TYPED`，覆盖 ordinary direct call、shared generic METHOD-slot call 和 full-AOT collected shared callsite，兼容时保留 `CallInlineStruct()`，不兼容时经 `CallInlineStructDynamicDeoptBridge()` 回解释器并复制 inline return bytes；跨模块 token resolve 集成和更完整 no-crash drift 注入仍待后续 |
 | 11-S7 | 元数据策略（默认最小）+ zrp manifest + 工具（§7/§8） | 🚧 2026-06-27 部分完成：11-S7A 已完成 `.zrp` project manifest normalization 的 `manifestVersion` 门禁，以及旧 `dependencies.$alias` 与新 `references.alias` 同值去重/冲突拒绝；11-S7B 已完成 assembly `publicKeyToken` 十六进制校验与小写归一化；11-S7C 已完成 legacy top-level `name`/`version` assembly identity shape gate 与 schema parity；11-S7D 已完成 legacy `dependencies.$alias.{assembly|name}` 声明 assembly 映射、目标 manifest identity mismatch 拒绝、alias package key 保持与 AssemblyRef identity 查询暴露；11-S7E 已完成 `.zrp` manifest `preserve` 规则的 declaration-level 解析、project model 暴露与 schema parity；11-S7F 已完成 `.zrp` manifest `aotMode` declaration-level 解析、project model 暴露与 schema parity；11-S7G 已完成 project `aotMode` 到 `SZrAotWriterOptions.requireFullAot` 的 CLI/compiler helper 注入；11-S7H 已完成 CLI `--emit-aot-c` AOT C 发射入口、binary input embedded blob 和 manifest v3 `aot_c` path tracking；11-S7I 已完成 `preserve` 的 `method` target 到 entry function top-level callable flat index 的绑定，并注入 writer manifest roots；11-S7J 已支持 dotted method target 精确匹配 callable name，并把 `type` preserve 的 `members: "methods"` / `"all"` 展开为同名前缀 callable roots；11-S7K 已为 `preserve` 规则添加 `feature` + boolean `featureValue` 条件声明模型、互相依赖校验与 schema parity；11-S7L 已新增 `.zrp` top-level `features` boolean switch map，并让 CLI AOT preserve root 注入按 feature 条件匹配启停；11-S7M 已为 `generic` preserve 添加非空 `arguments` 声明模型、project model 承载和 schema parity；11-S7N 已把 generic preserve target+arguments 注入 AOT writer options 并在 generated C 清单中输出；11-S7O 已把当前模块已有 `GENERIC_INST` `TYPE_SPEC` 记录绑定回 generic preserve root 的 TypeSpec/signature token/hash；11-S7P 已让 full-AOT writer 拒绝未绑定 TypeSpec 的 manifest generic preserve root；11-S7Q 已把 TypeSpec-backed generic preserve root 物化为 generic instantiation identity 并输出 base token / instance id / share kind；11-S7R 已让 full-AOT writer 拒绝 TypeSpec-only generic preserve root，要求 generic instantiation identity 同步存在；11-S7S 已让 current-module TypeSpec-backed generic instantiation 在存在同名 `TYPE_REF` metadata 时使用 open generic base token，并保留 closed TypeSpec 回退；11-S7T 已支持 `GENERIC_INST(TYPE_DEF target, args...)` TypeSpec binding，并让 current-module TypeDef base token 进入 generic instantiation identity；11-S7U 已在 manifest generic root 缺失 TypeSpec 但存在同名 open `TYPE_DEF`/`TYPE_REF` metadata 时合成 current-function TypeSpec/signature binding并继续物化 generic instantiation identity；11-S7V 已把 manifest generic method root 绑定到现有 current-module `GENERIC_INST(MEMBER_REF methodToken, args...)` MethodSpec 形态签名并输出 MethodSpec identity；11-S7W 已提供 CLI `--dump-zrp-metadata <file>` 只读工具，可输出 zrp metadata version/headerBytes/sectionCount 以及 12 个 section 的 bytes/count/elementSize/offset summary；11-S7X 已提供 CLI `--diff-zrp-metadata <before> <after>` 只读工具，可输出 zrp metadata version/headerBytes/sectionCount before/after 与 12 个 section 的 bytes/count before/after/removed diff summary；11-S7Z 已提供 `.zrp` `exports` 的 `type`/`method`/`field` declaration input；11-S7ZA 已把 project export declarations 注入 `SZrAotWriterOptions.manifestExportDeclarations` 并在 generated C 输出 `manifest.exports` / `manifest.export[i]` 诊断；11-S7ZB/11-S7ZC/11-S7ZD 已把 current-module type/method/field export declaration 分别绑定到 `TYPE_DEF` token 或 typed exported function/variable 的 `MEMBER_DEF` token，并输出 `typeToken` / `memberToken` 诊断；12-S7Y 已接入 generated MethodInfo 默认最小策略，opt-in code stripping 下输出 `reflectionMetadataLevel = NONE` 与 `metadata_policy.reflectionLevel` marker，默认/非裁剪仍保留 `RUNTIME_MAPPING`；12-S7Z..12-S7ZN 已逐步启用 emitted zrp metadata 的 MethodDef、token-record、FieldDef、GenericParam、GenericParamConstraint、MethodSpec method-token 剪枝级联，retained signature blob pool compaction/offset remap/hash recomputation/MethodSpec signature rewrite，string-pool retained-slice sweep、row offset remap 与 duplicate retained slice interning，当前 orphan constant-pool sweep，让 pool compaction 在 MethodDef count 不变时仍可触发，并提供 exported MethodDef/FieldDef member token 的 compacted-token remap surface；持久 export manifest/table writer、compacted-token file publication、cross-module provider loading/version binding、完整 zrp metadata sweep/pruning、版本/ABI 漂移闭环和 full trim analyzer 仍待后续 |
+
+> 2026-07-19 03:53:01 +08:00 状态补记：11-S5A 已公开 GenericParam owner range，并由 10-S4Z43
+> 消费为 public generic method definition/parameter objects；11-S5 仍开放 type-argument -> MethodSpec 匹配、
+> constructed method entity、运行期 generic layout 与实例化去重键全链路统一。
 
 > 2026-07-01 14:51:47 +08:00 状态补记：12-S7ZV 已关闭上表 11-S7 当前摘要中的
 > FieldDef default-value backed constant-pool remap 缺口；仍未关闭的是跨模块 target、
@@ -764,6 +789,56 @@ moduleSignatureHash/token`，但无统一运行期校验流程。补：
 ## 状态与产出记录
 
 > 落地每个阶段或切片时在此追加：时间戳 · 切片号 · 状态 · 完成项目 · RED/GREEN · 测试结果 · 备注。
+
+- 2026-07-19 03:53:01 +08:00 · 11-S5A / 08-S6V / 10-S4Z43 GenericParam owner range and method definition object ·
+  状态：11-S5 runtime generic metadata 子切片完成；完整 11-S5、08-S6 与 10-S4 仍为部分完成。完成项目：
+  新增 `SZrMetadataRuntimeGenericOwnerView` 与 public reader，直接复用原私有 TypeDef/MethodDef range resolver，
+  暴露 owner record、definition row、first index/count 并统一失败清零；现有 GenericParam reader 改为复用该入口。
+  反射 builder 据此严格逐项读取并验证 owner/range/index 后物化方法定义对象，名称来自现有 string pool。
+  RED 为 metadata owner reader 与 reflection builder 两个 unresolved symbols；首轮 GREEN metadata query 25/0、
+  dynamic reflection 25/0。真实 string-pool name review RED 25/1 后最终 GREEN 25/0。GCC/Clang/MSVC 聚焦 CTest
+  各 6/6，GC 66/0、指令执行 31/0、指令表 95/0；本切片实现源诊断为空。产出：
+  `tests/acceptance/2026-07-19-aot-08-s6v-10-s4z43-11-s5a-generic-method-definition-object.md`。
+  分层记录：`docs/plans/aot/07-12-codegen/2026-07-19-08-s6v-10-s4z43-11-s5a.md`。
+  备注：zrp section/row 与 registration ABI 均不变，不创建/缓存 MethodSpec，不声明完整 11-S5 或脚本
+  `MakeGenericMethod` 完成。
+
+- 2026-07-19 02:56:02 +08:00 · 11-S2E / 08-S6U / 10-S4Z42 attached MethodDef interpreter VM binding ·
+  状态：11-S2 runtime binding 子切片完成；完整 11-S2、08-S6 与 10-S4 仍为部分完成。完成项目：新增
+  `SZrMetadataRuntimeInterpreterMethodBindingView` 与 public reader，扫描 attached zrp MethodDef rows 并拒绝重复
+  token，联合现有 method record 和 MethodDef `functionIndex`，通过新 function-graph resolver 返回本地 VM function。
+  resolver 与 AOT function table 使用同一 root/constant/child DFS 和 identity 去重规则，动态 visited storage 不由
+  元数据 index 决定容量。只接受 non-native、instruction-backed function；所有失败先清 output。反射层据此把
+  MethodSpec underlying method token 自动绑定并执行。RED 为两个缺失 API 的 MSVC link failure；GREEN 为动态
+  泛型反射 24/0。最终 GCC/Clang/MSVC 聚焦 CTest 各 5/5，GC 66/0、指令执行 31/0、指令表 95/0，
+  本切片源诊断为空。产出：
+  `tests/acceptance/2026-07-19-aot-08-s6u-10-s4z42-11-s2e-methodspec-method-token-vm-function-resolution.md`。
+  备注：复用现有 zrp MethodDef row 和函数图，不改 metadata/code-registration ABI，不声明跨模块 method binding、
+  MethodSpec 专用 code slot 或完整 11-S2 完成。
+
+- 2026-07-19 01:39:29 +08:00 · 11-S6J / 08-S6T / 10-S4Z41 canonical TypeSpec RID mapping compatibility ·
+  状态：11-S6 runtime binding compatibility 子切片完成；完整 11-S6/08-S6/10-S4 仍为部分完成。完成项目：
+  `ZrCore_MetadataRuntime_CheckTokenBindingCompatibility()` 现在识别 binder 已有的 canonical TypeSpec->TypeSpec
+  RID remap：仅当 expected/resolved metadata token 同为 TypeSpec、expected/resolved paired token 同为 Signature
+  时跳过 token RID equality，module version/hash、signature hash 与 layout identity 检查继续执行。cross-module
+  reflection consumer 进一步解析两侧 records/views 并做 canonical signature exact-byte equality，防止缓存 hash 未变的
+  provider blob 漂移，并要求 binding `ref*`/`expected*` 三元组都精确对应 requester。RED 为 compatibility 17/1，返回 metadata-token mismatch；GREEN 为 17/0。consumer 的
+  same-hash signature drift RED 为 24/1，exact-byte gate 后 GREEN 24/0。WSL GCC、Clang、MSVC 聚焦 CTest 各 4/4，
+  GC 66/0、指令执行 31/0、指令表 95/0；变更文件诊断扫描为空。产出：
+  `tests/acceptance/2026-07-19-aot-08-s6t-10-s4z41-11-s6j-bound-provider-generic-typespec-identity.md`。
+  备注：本切片不改变 binding/zrp/registration ABI，不为 MemberRef/MethodSpec 等其他 token mapping 放宽规则，
+  也不声明 provider 自动加载或完整 ABI drift/deopt 闭环完成。
+
+- 2026-07-18 18:56:26 +08:00 · 11-S4BO / 08-S6K / 10-S4Z32 signature type-node record binding ·
+  状态：11-S4 metadata binding 子切片完成；完整 11-S4、10-S4 与 08-S6 仍为部分完成。完成项目：新增 public
+  signature-node record resolver，按完整节点跨度解析 attached direct TypeDef/TypeRef 与本地 nested TypeSpec record；
+  TypeSpec/MethodSpec direct argument binding 复用该单一入口，token-only public generic object 消费它递归物化全部当前
+  compound nodes。模块拆分后 `metadata_runtime.c` 从 1036 行降至 979 行，新 binding module 为 98 行。
+  RED/GREEN：consumer RED 为 15 tests/2 failures，GREEN 为 15/0。WSL GCC 11.4、Clang 14.0、MSVC 19.44
+  的 `reflection_dynamic_generic_instance|metadata_runtime_typespec_layout|reflection_token_resolve` CTest 均 3/3，
+  binding/object modules 无 GCC/Clang 自身告警。产出：
+  `tests/acceptance/2026-07-18-aot-08-s6k-10-s4z32-11-s4bo-token-only-compound-generic-type-object.md`。
+  备注：本入口不做跨模块 canonical identity、provider remap 或动态 layout construction，不关闭完整 11-S4。
 
 - 2026-07-03 23:36:13 +08:00 · 11-S7ZTB / 12-S7ZZZU CLI export duplicate bridge guard ·
   状态：11-S7 CLI writer bridge 内存态 export declaration 唯一性 guard 完成；07~12 总目标继续进行中，完整 metadata

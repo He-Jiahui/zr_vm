@@ -10,6 +10,7 @@
 struct SZrFunction;
 struct SZrObjectModule;
 struct SZrObjectPrototype;
+struct SZrState;
 
 typedef struct SZrMetadataRuntimeSignatureView {
     EZrMetadataSignatureNode rootNode;
@@ -88,6 +89,14 @@ typedef struct SZrMetadataRuntimeMethodBindingView {
     FZrAotReflectionInvoker invoker;
 } SZrMetadataRuntimeMethodBindingView;
 
+typedef struct SZrMetadataRuntimeInterpreterMethodBindingView {
+    TZrMetadataToken methodToken;
+    const SZrMetadataTokenRecord *methodRecord;
+    const SZrZrpMetadataMethodDefRow *methodDefRow;
+    TZrUInt32 functionIndex;
+    struct SZrFunction *function;
+} SZrMetadataRuntimeInterpreterMethodBindingView;
+
 typedef struct SZrMetadataRuntimeManifestExportView {
     const SZrAotManifestExportEntry *entry;
     TZrUInt32 index;
@@ -96,6 +105,15 @@ typedef struct SZrMetadataRuntimeManifestExportView {
     TZrMetadataToken typeToken;
     TZrMetadataToken memberToken;
 } SZrMetadataRuntimeManifestExportView;
+
+typedef struct SZrMetadataRuntimeGenericOwnerView {
+    TZrMetadataToken ownerToken;
+    const SZrMetadataTokenRecord *ownerRecord;
+    const SZrZrpMetadataTypeDefRow *typeDefRow;
+    const SZrZrpMetadataMethodDefRow *methodDefRow;
+    TZrUInt32 firstGenericParamIndex;
+    TZrUInt32 genericParamCount;
+} SZrMetadataRuntimeGenericOwnerView;
 
 typedef struct SZrMetadataRuntimeGenericParamView {
     TZrMetadataToken ownerToken;
@@ -239,6 +257,10 @@ ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadSignatureTypeNode(
         const SZrZrpMetadataPoolSliceView *blob,
         TZrUInt32 blobOffset,
         SZrMetadataRuntimeSignatureTypeNodeView *outView);
+ZR_CORE_API const SZrMetadataTokenRecord *ZrCore_MetadataRuntime_ResolveSignatureTypeNodeRecord(
+        SZrMetadataRuntime *runtime,
+        const SZrZrpMetadataPoolSliceView *blob,
+        const SZrMetadataRuntimeSignatureTypeNodeView *nodeView);
 ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadTypeSpecSignatureView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken typeSpecToken,
@@ -265,11 +287,20 @@ ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadMethodBindingView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken methodToken,
         SZrMetadataRuntimeMethodBindingView *outView);
+ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadInterpreterMethodBindingView(
+        struct SZrState *state,
+        SZrMetadataRuntime *runtime,
+        TZrMetadataToken methodToken,
+        SZrMetadataRuntimeInterpreterMethodBindingView *outView);
 ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadManifestExportView(
         SZrMetadataRuntime *runtime,
         TZrUInt32 kind,
         const TZrChar *target,
         SZrMetadataRuntimeManifestExportView *outView);
+ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadGenericOwnerView(
+        SZrMetadataRuntime *runtime,
+        TZrMetadataToken ownerToken,
+        SZrMetadataRuntimeGenericOwnerView *outView);
 ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadGenericParamView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken ownerToken,

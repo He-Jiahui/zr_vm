@@ -71,6 +71,7 @@ ZR_CORE_API void ZrCore_Ownership_ReleaseValue(struct SZrState *state, SZrTypeVa
 
 #define ZR_VALUE_FAST_SET(VALUE, REGION, DATA, TYPE)                                                                   \
     {                                                                                                                  \
+        ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_CONSTRUCT);                                         \
         (VALUE)->type = (TYPE);                                                                                        \
         (VALUE)->value.nativeObject.REGION = (DATA);                                                                   \
         (VALUE)->isGarbageCollectable = ZR_FALSE;                                                                      \

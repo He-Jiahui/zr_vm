@@ -655,6 +655,10 @@ ZR_CORE_API TZrStackValuePointer ZrCore_Function_StackAnchorRestore(struct SZrSt
                                                                 const SZrFunctionStackAnchor *anchor);
 
 ZR_CORE_API void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunction *function);
+ZR_CORE_API SZrFunction *ZrCore_Function_ResolveGraphFunctionByFlatIndex(
+        struct SZrState *state,
+        SZrFunction *rootFunction,
+        TZrUInt32 flatIndex);
 ZR_CORE_API void ZrCore_Function_ClearChildOwnerLinks(SZrFunction *function);
 ZR_CORE_API void ZrCore_Function_DetachOwnedBuffers(SZrFunction *function);
 
@@ -850,6 +854,23 @@ ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldKnownValueAndRe
                                                                                  TZrStackValuePointer stackPointer,
                                                                                  const struct SZrTypeValue *callableValue,
                                                                                  TZrSize resultCount);
+
+ZR_CORE_API TZrStackValuePointer
+ZrCore_Function_CallWithoutYieldKnownValueAndRestoreWithInterpreterGenericContext(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        const struct SZrTypeValue *callableValue,
+        TZrSize resultCount,
+        const struct SZrTypeValue *interpreterGenericContext);
+
+ZR_CORE_API TZrStackValuePointer
+ZrCore_Function_CallWithoutYieldKnownValueAndRestoreWithInterpreterGenericContexts(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        const struct SZrTypeValue *callableValue,
+        TZrSize resultCount,
+        const struct SZrTypeValue *interpreterGenericContext,
+        const struct SZrTypeValue *interpreterGenericMethodContext);
 
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallAndRestoreAnchor(struct SZrState *state,
                                                                 const SZrFunctionStackAnchor *anchor,

@@ -1231,6 +1231,10 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                 TZrStackValuePointer youngerFrameBase = ZR_NULL;
 
                 while (callInfo != ZR_NULL) {
+                    garbage_collector_mark_value(state, &callInfo->interpreterGenericContext);
+                    work++;
+                    garbage_collector_mark_value(state, &callInfo->interpreterGenericMethodContext);
+                    work++;
                     if (callInfo->functionBase.valuePointer != ZR_NULL) {
                         TZrStackValuePointer functionBase = callInfo->functionBase.valuePointer;
                         TZrStackValuePointer frameBase = functionBase + 1;

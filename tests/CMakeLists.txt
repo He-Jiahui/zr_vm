@@ -3297,6 +3297,15 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_core(zr_vm_metadata_runtime_typespec_layout_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_reflection_dynamic_generic_instance_test
+            ${CMAKE_SOURCE_DIR}/tests/module/test_reflection_dynamic_generic_instance.c
+    )
+    target_include_directories(zr_vm_reflection_dynamic_generic_instance_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_reflection_dynamic_generic_instance_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_metadata_runtime_type_layout_test
             ${CMAKE_SOURCE_DIR}/tests/module/test_metadata_runtime_type_layout.c
     )
@@ -6033,6 +6042,20 @@ if (TARGET zr_vm_metadata_runtime_typespec_layout_test)
             "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_metadata_runtime_typespec_layout_test>"
             "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_metadata_runtime_typespec_layout_test>"
             "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_metadata_runtime_typespec_layout_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_reflection_dynamic_generic_instance_test)
+    add_test(
+            NAME reflection_dynamic_generic_instance
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=reflection_dynamic_generic_instance"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_reflection_dynamic_generic_instance_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_reflection_dynamic_generic_instance_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_reflection_dynamic_generic_instance_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_reflection_dynamic_generic_instance_test>"
             "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
             -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
     )

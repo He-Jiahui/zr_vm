@@ -71,6 +71,8 @@ struct ZR_STRUCT_ALIGN SZrCallInfo {
 
     EZrCallStatus callStatus;
     struct SZrFunction *metadataFunction;
+    SZrTypeValue interpreterGenericContext;
+    SZrTypeValue interpreterGenericMethodContext;
 
     struct SZrCallInfo *previous;
     struct SZrCallInfo *next;

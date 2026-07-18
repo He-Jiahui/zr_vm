@@ -196,17 +196,29 @@ static TZrBool metadata_runtime_binding_is_assembly_ref_to_module(const SZrMetad
                    : ZR_FALSE;
 }
 
+static TZrBool metadata_runtime_binding_is_type_spec_mapping(const SZrMetadataTokenBinding *binding) {
+    return binding != ZR_NULL &&
+           ZR_METADATA_TOKEN_TABLE(binding->expectedMetadataToken) == ZR_METADATA_TABLE_TYPE_SPEC &&
+           ZR_METADATA_TOKEN_TABLE(binding->resolvedMetadataToken) == ZR_METADATA_TABLE_TYPE_SPEC &&
+           ZR_METADATA_TOKEN_TABLE(binding->expectedSignatureToken) == ZR_METADATA_TABLE_SIGNATURE &&
+           ZR_METADATA_TOKEN_TABLE(binding->resolvedSignatureToken) == ZR_METADATA_TABLE_SIGNATURE
+                   ? ZR_TRUE
+                   : ZR_FALSE;
+}
+
 static EZrMetadataRuntimeBindingCompatibilityStatus metadata_runtime_check_binding_status(
         const SZrMetadataTokenBinding *binding,
         const SZrMetadataTokenRecord *refRecord,
         SZrString *actualModuleVersion) {
     TZrBool isAssemblyRefToModule;
+    TZrBool isTypeSpecMapping;
 
     if (binding == ZR_NULL) {
         return ZR_METADATA_RUNTIME_BINDING_STATUS_INVALID_ARGUMENT;
     }
 
     isAssemblyRefToModule = metadata_runtime_binding_is_assembly_ref_to_module(binding);
+    isTypeSpecMapping = metadata_runtime_binding_is_type_spec_mapping(binding);
     if (!metadata_runtime_version_range_matches(refRecord, actualModuleVersion)) {
         return ZR_METADATA_RUNTIME_BINDING_STATUS_MODULE_VERSION_MISMATCH;
     }
@@ -214,12 +226,12 @@ static EZrMetadataRuntimeBindingCompatibilityStatus metadata_runtime_check_bindi
         binding->expectedModuleSignatureHash != binding->resolvedModuleSignatureHash) {
         return ZR_METADATA_RUNTIME_BINDING_STATUS_MODULE_SIGNATURE_HASH_MISMATCH;
     }
-    if (!isAssemblyRefToModule &&
+    if (!isAssemblyRefToModule && !isTypeSpecMapping &&
         binding->expectedMetadataToken != 0u &&
         binding->expectedMetadataToken != binding->resolvedMetadataToken) {
         return ZR_METADATA_RUNTIME_BINDING_STATUS_METADATA_TOKEN_MISMATCH;
     }
-    if (!isAssemblyRefToModule &&
+    if (!isAssemblyRefToModule && !isTypeSpecMapping &&
         binding->expectedSignatureToken != 0u &&
         binding->expectedSignatureToken != binding->resolvedSignatureToken) {
         return ZR_METADATA_RUNTIME_BINDING_STATUS_SIGNATURE_TOKEN_MISMATCH;

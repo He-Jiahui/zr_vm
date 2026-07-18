@@ -1491,12 +1491,15 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_known_or_generic(SZrState 
     return ZrCore_Function_PreCall(state, stackPointer, resultCount, ZR_NULL);
 }
 
-static ZR_FORCE_INLINE void function_call_internal_known(struct SZrState *state,
-                                                         TZrStackValuePointer stackPointer,
-                                                         const SZrTypeValue *knownCallable,
-                                                         TZrSize resultCount,
-                                                         TZrUInt32 callIncremental,
-                                                         TZrBool isYield) {
+static ZR_FORCE_INLINE void function_call_internal_known(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        const SZrTypeValue *knownCallable,
+        TZrSize resultCount,
+        TZrUInt32 callIncremental,
+        TZrBool isYield,
+        const SZrTypeValue *interpreterGenericContext,
+        const SZrTypeValue *interpreterGenericMethodContext) {
     state->nestedNativeCalls += callIncremental;
     state->nestedNativeCallYieldFlag += isYield ? 1 : 0;
     if (ZR_UNLIKELY(state->nestedNativeCalls > ZR_VM_MAX_NATIVE_CALL_STACK)) {
@@ -1507,6 +1510,22 @@ static ZR_FORCE_INLINE void function_call_internal_known(struct SZrState *state,
     {
         SZrCallInfo *callInfo = function_pre_call_known_or_generic(state, stackPointer, knownCallable, resultCount);
         if (callInfo != ZR_NULL) {
+            if (interpreterGenericContext != ZR_NULL) {
+                ZR_ASSERT(!ZrCore_CallInfo_IsNative(callInfo));
+                ZR_ASSERT(interpreterGenericContext->type == ZR_VALUE_TYPE_OBJECT);
+                ZrCore_Value_CopyNoProfile(
+                        state,
+                        &callInfo->interpreterGenericContext,
+                        interpreterGenericContext);
+            }
+            if (interpreterGenericMethodContext != ZR_NULL) {
+                ZR_ASSERT(!ZrCore_CallInfo_IsNative(callInfo));
+                ZR_ASSERT(interpreterGenericMethodContext->type == ZR_VALUE_TYPE_OBJECT);
+                ZrCore_Value_CopyNoProfile(
+                        state,
+                        &callInfo->interpreterGenericMethodContext,
+                        interpreterGenericMethodContext);
+            }
             callInfo->callStatus = ZR_CALL_STATUS_CREATE_FRAME;
             ZrCore_Execute(state, callInfo);
         }
@@ -1683,8 +1702,62 @@ TZrStackValuePointer ZrCore_Function_CallWithoutYieldKnownValueAndRestoreAnchor(
         return ZR_NULL;
     }
 
-    function_call_internal_known(state, stackPointer, callableValue, resultCount, 1, ZR_TRUE);
+    function_call_internal_known(
+            state, stackPointer, callableValue, resultCount, 1, ZR_TRUE, ZR_NULL, ZR_NULL);
     return ZrCore_Function_StackAnchorRestore(state, anchor);
+}
+
+TZrStackValuePointer
+ZrCore_Function_CallWithoutYieldKnownValueAndRestoreWithInterpreterGenericContext(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        const SZrTypeValue *callableValue,
+        TZrSize resultCount,
+        const SZrTypeValue *interpreterGenericContext) {
+    return ZrCore_Function_CallWithoutYieldKnownValueAndRestoreWithInterpreterGenericContexts(
+            state,
+            stackPointer,
+            callableValue,
+            resultCount,
+            interpreterGenericContext,
+            ZR_NULL);
+}
+
+TZrStackValuePointer
+ZrCore_Function_CallWithoutYieldKnownValueAndRestoreWithInterpreterGenericContexts(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        const SZrTypeValue *callableValue,
+        TZrSize resultCount,
+        const SZrTypeValue *interpreterGenericContext,
+        const SZrTypeValue *interpreterGenericMethodContext) {
+    SZrFunctionStackAnchor anchor;
+
+    if (state == ZR_NULL || stackPointer == ZR_NULL || callableValue == ZR_NULL ||
+        callableValue->isNative ||
+        (interpreterGenericContext == ZR_NULL &&
+         interpreterGenericMethodContext == ZR_NULL) ||
+        (interpreterGenericContext != ZR_NULL &&
+         (interpreterGenericContext->type != ZR_VALUE_TYPE_OBJECT ||
+          interpreterGenericContext->value.object == ZR_NULL)) ||
+        (interpreterGenericMethodContext != ZR_NULL &&
+         (interpreterGenericMethodContext->type != ZR_VALUE_TYPE_OBJECT ||
+          interpreterGenericMethodContext->value.object == ZR_NULL))) {
+        return stackPointer;
+    }
+
+    ZrCore_Function_StackAnchorInit(state, stackPointer, &anchor);
+    stackPointer = ZrCore_Function_StackAnchorRestore(state, &anchor);
+    function_call_internal_known(
+            state,
+            stackPointer,
+            callableValue,
+            resultCount,
+            1u,
+            ZR_TRUE,
+            interpreterGenericContext,
+            interpreterGenericMethodContext);
+    return ZrCore_Function_StackAnchorRestore(state, &anchor);
 }
 
 static ZR_FORCE_INLINE SZrCallInfo *function_acquire_call_info(struct SZrState *state) {
@@ -1726,6 +1799,8 @@ static ZR_FORCE_INLINE void function_reinitialize_native_call_info_runtime_state
 
     callInfo->callStatus = ZR_CALL_STATUS_NATIVE_CALL;
     callInfo->metadataFunction = ZR_NULL;
+    ZrCore_Value_ResetAsNullNoProfile(&callInfo->interpreterGenericContext);
+    ZrCore_Value_ResetAsNullNoProfile(&callInfo->interpreterGenericMethodContext);
     callInfo->context = (TZrCallInfoContext) {0};
     callInfo->yieldContext = (TZrCallInfoYieldContext) {0};
     callInfo->returnDestination = returnDestination;
@@ -1746,6 +1821,8 @@ static ZR_FORCE_INLINE void function_reinitialize_vm_call_info_runtime_state(SZr
 
     callInfo->callStatus = callStatus;
     callInfo->metadataFunction = ZR_NULL;
+    ZrCore_Value_ResetAsNullNoProfile(&callInfo->interpreterGenericContext);
+    ZrCore_Value_ResetAsNullNoProfile(&callInfo->interpreterGenericMethodContext);
     callInfo->context = (TZrCallInfoContext) {0};
     callInfo->context.context.programCounter = programCounter;
     callInfo->context.context.trap = trap;

@@ -1404,6 +1404,14 @@ static TZrSize garbage_collector_rewrite_thread_frame_slots(SZrState *threadStat
 
     callInfo = threadState->callInfoList;
     while (callInfo != ZR_NULL) {
+        if (garbage_collector_rewrite_value_if_forwarded(
+                    &callInfo->interpreterGenericContext)) {
+            work++;
+        }
+        if (garbage_collector_rewrite_value_if_forwarded(
+                    &callInfo->interpreterGenericMethodContext)) {
+            work++;
+        }
         if (callInfo->functionBase.valuePointer != ZR_NULL) {
             TZrStackValuePointer functionBase = callInfo->functionBase.valuePointer;
             TZrStackValuePointer frameBase = functionBase + 1;
