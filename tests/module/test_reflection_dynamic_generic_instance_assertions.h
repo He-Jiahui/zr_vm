@@ -17,6 +17,25 @@ static const SZrTypeValue *get_object_field_value(SZrState *state,
     return ZrCore_Object_GetValue(state, object, &key);
 }
 
+static void set_object_int_field_value(SZrState *state,
+                                       SZrObject *object,
+                                       const TZrChar *fieldName,
+                                       TZrInt64 fieldValue) {
+    SZrString *fieldString;
+    SZrTypeValue key;
+    SZrTypeValue value;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(object);
+    TEST_ASSERT_NOT_NULL(fieldName);
+    fieldString = ZrCore_String_CreateFromNative(state, (TZrNativeString)fieldName);
+    TEST_ASSERT_NOT_NULL(fieldString);
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Value_InitAsInt(state, &value, fieldValue);
+    ZrCore_Object_SetValue(state, object, &key, &value);
+}
+
 static void assert_object_string_field(SZrState *state,
                                        SZrObject *object,
                                        const TZrChar *fieldName,

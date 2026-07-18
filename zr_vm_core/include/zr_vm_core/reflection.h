@@ -439,6 +439,12 @@ ZR_CORE_API struct SZrObject *ZrCore_Reflection_MakeGenericMethodObject(
         const SZrReflectionGenericTypeArgument *arguments,
         TZrUInt32 argumentCount);
 
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_MakeGenericMethodFromObjects(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime,
+        struct SZrObject *genericMethodDefinition,
+        struct SZrObject *genericArguments);
+
 ZR_CORE_API struct SZrObject *ZrCore_Reflection_BuildGenericMethodDefinitionObject(
         struct SZrState *state,
         struct SZrMetadataRuntime *runtime,

@@ -12,6 +12,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c
   - zr_vm_core/src/zr_vm_core/reflection_generic_instance.c
   - zr_vm_core/src/zr_vm_core/reflection_generic_argument_internal.h
+  - zr_vm_core/src/zr_vm_core/reflection_generic_argument_object.c
   - zr_vm_core/src/zr_vm_core/reflection_generic_method.c
   - zr_vm_core/src/zr_vm_core/reflection_generic_method_object.c
   - zr_vm_core/src/zr_vm_core/reflection_object_internal.c
@@ -322,12 +323,14 @@ tests:
   - tests/module/test_reflection_dynamic_generic_instance.c
   - tests/module/test_reflection_dynamic_generic_cross_module.h
   - tests/module/test_reflection_dynamic_generic_method_context.h
+  - tests/module/test_reflection_dynamic_generic_method_make.h
   - tests/acceptance/2026-07-19-aot-08-s6t-10-s4z41-11-s6j-bound-provider-generic-typespec-identity.md
   - tests/acceptance/2026-07-19-aot-08-s6u-10-s4z42-11-s2e-methodspec-method-token-vm-function-resolution.md
   - tests/acceptance/2026-07-19-aot-08-s6v-10-s4z43-11-s5a-generic-method-definition-object.md
   - tests/acceptance/2026-07-19-aot-08-s6w-10-s4z44-11-s5b-methodspec-request-resolution.md
   - tests/acceptance/2026-07-19-aot-08-s6x-10-s4z45-11-s5c-constructed-generic-method-object.md
   - tests/acceptance/2026-07-19-aot-08-s6y-10-s4z46-11-s5d-make-generic-method-object.md
+  - tests/acceptance/2026-07-19-aot-08-s6z-10-s4z47-11-s5e-generic-method-argument-object-decoding.md
   - tests/acceptance/2026-07-02-aot-12-s7zzq-runtime-export-member-token-publication.md
   - tests/acceptance/2026-07-02-aot-11-s7z-zrp-manifest-export-declarations.md
   - tests/acceptance/2026-07-02-aot-11-s7za-export-declaration-writer-options.md
@@ -1588,3 +1591,11 @@ M6 的验证不是“编译成功”级别，而是直接断言 opcode、签名�
   Mismatch and invalid input fail closed, and no metadata row, cache entry, or registration slot is synthesized. The
   three-compiler dynamic generic target passes 30/0 and focused metadata/reflection CTest passes 6/6. Script argument
   object decoding and `MakeGenericMethod` native dispatch remain separate work.
+
+- 2026-07-19 11-S5E / 08-S6Z / 10-S4Z47 adds bounded reflection-object decoding before that make boundary.
+  `ZrCore_Reflection_MakeGenericMethodFromObjects()` requires a trusted explicit runtime, verifies that the method
+  definition carrier agrees with it, and decodes the existing primitive/token/array/tuple/ownership/nullable/union
+  object schema into one exact temporary descriptor arena. Kind fields, flags, arity, scalar ranges, array continuity,
+  depth 64, and total-node limit 1024 fail closed; every decoded descriptor then passes the shared metadata-aware
+  validator before MethodSpec resolution. The three-compiler dynamic generic target passes 31/0, focused CTest 6/6,
+  and shared regressions 66/0, 31/0, and 95/0. Native stack dispatch and module export remain separate work.
