@@ -924,9 +924,13 @@ static TZrBool prepare_generated_source_member_refresh_fixture(const TZrChar *ar
     static const TZrChar *mainContent =
         "var numbers = %import(\"numbers\");\n"
         "var cachedAnswer = numbers.answer();\n"
+        "var cachedInferred = numbers.inferred();\n"
         "return cachedAnswer;\n";
     static const TZrChar *moduleContent =
         "pub answer(): int {\n"
+        "    return 1;\n"
+        "}\n"
+        "pub inferred() {\n"
         "    return 1;\n"
         "}\n";
     TZrChar generatedProjectPath[ZR_TESTS_PATH_MAX];
@@ -5487,9 +5491,22 @@ static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *s
     static const TZrChar *bodyUpdatedModuleContent =
         "pub answer(): int {\n"
         "    return 2;\n"
+        "}\n"
+        "pub inferred() {\n"
+        "    return 1;\n"
+        "}\n";
+    static const TZrChar *inferredBodyUpdatedModuleContent =
+        "pub answer(): int {\n"
+        "    return 2;\n"
+        "}\n"
+        "pub inferred() {\n"
+        "    return 1.5;\n"
         "}\n";
     static const TZrChar *updatedModuleContent =
         "pub answer(): float {\n"
+        "    return 1.5;\n"
+        "}\n"
+        "pub inferred() {\n"
         "    return 1.5;\n"
         "}\n";
     SZrTestTimer timer;
@@ -5509,7 +5526,11 @@ static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *s
     SZrSemanticAnalyzer *mainAnalyzerAfterRefresh;
     SZrSemanticAnalysisMetrics initialMainMetrics;
     SZrSemanticAnalysisMetrics bodyRefreshMainMetrics;
+    SZrSemanticAnalysisMetrics inferredBodyRefreshMainMetrics;
     SZrSemanticAnalysisMetrics signatureRefreshMainMetrics;
+    SZrLspProjectIndex *projectIndex;
+    TZrSize initialPreservationCount;
+    TZrSize initialReanalysisCount;
 
     TEST_START("LSP Source Module Refresh Reanalyzes Open Documents");
     TEST_INFO("Source module refresh",
@@ -5588,9 +5609,19 @@ static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *s
     }
 
     mainAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, mainUri);
+    projectIndex = ZrLanguageServer_LspProject_FindProjectForUri(context, mainUri);
+    if (mainAnalyzer == ZR_NULL || projectIndex == ZR_NULL) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Source Module Refresh Reanalyzes Open Documents",
+                  "Failed to observe the initial project dependency state");
+        return;
+    }
     ZrLanguageServer_SemanticAnalyzer_GetMetrics(mainAnalyzer, &initialMainMetrics);
-    if (mainAnalyzer == ZR_NULL ||
-        !write_text_file(fixture.modulePath,
+    initialPreservationCount = projectIndex->reverseDependencyPreservationCount;
+    initialReanalysisCount = projectIndex->reverseDependencyReanalysisCount;
+    if (!write_text_file(fixture.modulePath,
                          bodyUpdatedModuleContent,
                          strlen(bodyUpdatedModuleContent)) ||
         !ZrLanguageServer_Lsp_UpdateDocument(state,
@@ -5613,7 +5644,10 @@ static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *s
     if (moduleVersion == ZR_NULL ||
         moduleVersion->lastChangeInfo.impact != ZR_FILE_CHANGE_IMPACT_DECLARATION_BODY ||
         mainAnalyzerAfterRefresh != mainAnalyzer ||
-        bodyRefreshMainMetrics.executionCount != initialMainMetrics.executionCount) {
+        bodyRefreshMainMetrics.executionCount != initialMainMetrics.executionCount ||
+        projectIndex->reverseDependencyPreservationCount != initialPreservationCount + 1 ||
+        projectIndex->reverseDependencyReanalysisCount != initialReanalysisCount ||
+        projectIndex->lastReverseDependencyReanalysisCount != 0) {
         free(mainContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -5636,6 +5670,42 @@ static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *s
     }
 
     if (!write_text_file(fixture.modulePath,
+                         inferredBodyUpdatedModuleContent,
+                         strlen(inferredBodyUpdatedModuleContent)) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state,
+                                             context,
+                                             moduleUri,
+                                             inferredBodyUpdatedModuleContent,
+                                             strlen(inferredBodyUpdatedModuleContent),
+                                             3)) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Source Module Refresh Reanalyzes Open Documents",
+                  "Failed to apply the inferred public signature body refresh");
+        return;
+    }
+
+    moduleVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, moduleUri);
+    mainAnalyzerAfterRefresh = ZrLanguageServer_Lsp_FindAnalyzer(state, context, mainUri);
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(mainAnalyzerAfterRefresh,
+                                                 &inferredBodyRefreshMainMetrics);
+    if (moduleVersion == ZR_NULL ||
+        moduleVersion->lastChangeInfo.impact != ZR_FILE_CHANGE_IMPACT_DECLARATION_BODY ||
+        mainAnalyzerAfterRefresh != mainAnalyzer ||
+        inferredBodyRefreshMainMetrics.executionCount != initialMainMetrics.executionCount + 1 ||
+        projectIndex->reverseDependencyPreservationCount != initialPreservationCount + 1 ||
+        projectIndex->reverseDependencyReanalysisCount != initialReanalysisCount + 1 ||
+        projectIndex->lastReverseDependencyReanalysisCount != 1) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Source Module Refresh Reanalyzes Open Documents",
+                  "An unannotated public function body should conservatively reanalyze its ModuleIdentity importer");
+        return;
+    }
+
+    if (!write_text_file(fixture.modulePath,
                          updatedModuleContent,
                          strlen(updatedModuleContent)) ||
         !ZrLanguageServer_Lsp_UpdateDocument(state,
@@ -5643,7 +5713,7 @@ static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *s
                                             moduleUri,
                                             updatedModuleContent,
                                             strlen(updatedModuleContent),
-                                            3)) {
+                                            4)) {
         free(mainContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -5655,7 +5725,10 @@ static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *s
     mainAnalyzerAfterRefresh = ZrLanguageServer_Lsp_FindAnalyzer(state, context, mainUri);
     ZrLanguageServer_SemanticAnalyzer_GetMetrics(mainAnalyzerAfterRefresh, &signatureRefreshMainMetrics);
     if (mainAnalyzerAfterRefresh != mainAnalyzer ||
-        signatureRefreshMainMetrics.executionCount != initialMainMetrics.executionCount + 1) {
+        signatureRefreshMainMetrics.executionCount != initialMainMetrics.executionCount + 2 ||
+        projectIndex->reverseDependencyPreservationCount != initialPreservationCount + 1 ||
+        projectIndex->reverseDependencyReanalysisCount != initialReanalysisCount + 2 ||
+        projectIndex->lastReverseDependencyReanalysisCount != 1) {
         free(mainContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,

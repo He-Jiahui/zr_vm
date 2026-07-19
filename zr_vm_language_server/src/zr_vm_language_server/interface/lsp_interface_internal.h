@@ -144,6 +144,9 @@ typedef struct SZrLspProjectIndex {
     SZrString *sourceRootPath;
     TZrBool hasSemanticProjectLoad;
     TZrBool hasLightweightSourceGraph;
+    TZrSize reverseDependencyPreservationCount;
+    TZrSize reverseDependencyReanalysisCount;
+    TZrSize lastReverseDependencyReanalysisCount;
     SZrArray files; // SZrLspProjectFileRecord*
 } SZrLspProjectIndex;
 

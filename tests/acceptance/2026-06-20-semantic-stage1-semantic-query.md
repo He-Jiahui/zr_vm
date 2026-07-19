@@ -1947,6 +1947,44 @@
 - The isolated sources retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
 - Full repository GREEN is not claimed.
 
+## ModuleIdentity Reverse-Dependency Invalidation Acceptance
+
+### Scope
+
+- Bound the existing project `moduleName` reverse-dependency traversal with a contract-preserving declaration-body case.
+- Preserve transitive importers only for a top-level ordinary function whose old/new declaration remains a function and whose exported return type is explicit.
+- Keep unannotated functions, signature/module/fallback changes, methods, properties, lambdas, and unresolved declarations conservative.
+- Count cumulative preservation, cumulative successful importer reanalysis, and the latest refresh's reanalysis range.
+
+### Baseline And TDD
+
+- RED extended the existing source module refresh fixture and failed with `A body-only source edit should preserve importer semantic analysis` after `answer(): int` changed only its return expression.
+- GREEN preserves the importer analyzer and execution count, records preservation `+1`, leaves cumulative reanalysis unchanged, and reports latest reanalysis `0`; hover remains `int`.
+- Changing the body of unannotated `inferred()` records one conservative importer execution, cumulative reanalysis `+1`, and latest reanalysis `1`.
+- Changing `answer(): int` to `answer(): float` records a second importer execution and exposes `float` through completion and hover.
+
+### Code And Test Evidence
+
+- `lsp_project.c` centralizes the conservative contract-preservation predicate and applies it only after the changed source document has refreshed.
+- Existing transitive traversal and deduplication remain authoritative; successful importer updates are the sole increment point for reanalysis metrics.
+- `lsp_interface_internal.h` exposes project-internal counters to the focused integration fixture without adding a public LSP API.
+- `test_lsp_project_features.c` fixes the preservation, unannotated-function fallback, signature propagation, analyzer identity, execution counts, and cumulative/latest invalidation range.
+
+### Tooling And Results
+
+- Final sources are current `HEAD=070a437` plus this stage; unrelated syntax-plan, receiver-call, core-profile, and build-directory changes remain outside acceptance scope.
+- WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each run the same fifteen semantic/LSP targets with `exit_failures=0`; the focused project executable exits zero and `LSP Source Module Refresh Reanalyzes Open Documents` passes.
+- Each toolchain retains one current baseline marker in `Semantic Analyzer Generic Function Symbols Surface Signature Detail`: `%ref parameter requires the 'ref' argument marker (line 6)`. Each project suite retains four unrelated binary metadata/descriptor plugin/reference/highlight failures. These are recorded rather than treated as stage regressions.
+- MSVC's first incremental run mixed incompatible old static objects and all fifteen processes ended with Windows exceptions. CMake clean removed 761 artifacts; the complete 662-object rebuild then produced normal exits and the same cross-toolchain baseline markers.
+- GCC, Clang, and MSVC all pass `stdio_smoke.js`; the MSVC stdio cache was clean-rebuilt through 647 objects before execution.
+
+### Acceptance Decision
+
+- Accepted at `2026-07-20 02:10 +08:00` as the ModuleIdentity reverse-dependency invalidation-range submilestone for L6 robustness.
+- This accepts only explicit-return top-level function body preservation on the existing dependency graph. Module public hashes, edge migration, public type/property/layout/import/artifact invalidation and local direct-caller invalidation remain open.
+- Changed source modules still parse and analyze as whole documents; cancellation, snapshot races, stale response suppression, latency percentiles, and memory budgets remain open.
+- Full repository GREEN is not claimed.
+
 ## Stage 3 English Diagnostic Message Catalog Foundation Acceptance
 
 ### Scope
