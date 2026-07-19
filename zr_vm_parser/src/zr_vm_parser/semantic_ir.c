@@ -138,6 +138,7 @@ void ZrParser_SemanticIrFunction_Init(SZrState *state,
     ZrCore_Array_Init(state, &function->cleanupScopes, sizeof(SZrSemanticIrCleanupScope), 4U);
     ZrCore_Array_Init(state, &function->sourceMap, sizeof(SZrSemanticIrSourceMapEntry), 32U);
     ZrCore_Array_Init(state, &function->loanFacts, sizeof(SZrSemanticIrLoanFact), 8U);
+    ZrCore_Array_Init(state, &function->escapeFacts, sizeof(SZrSemanticEscapeFact), 8U);
 }
 
 void ZrParser_SemanticIrFunction_Free(SZrState *state,
@@ -156,6 +157,7 @@ void ZrParser_SemanticIrFunction_Free(SZrState *state,
     ZrCore_Array_Free(state, &function->cleanupScopes);
     ZrCore_Array_Free(state, &function->sourceMap);
     ZrCore_Array_Free(state, &function->loanFacts);
+    ZrCore_Array_Free(state, &function->escapeFacts);
     memset(function, 0, sizeof(*function));
 }
 
@@ -221,6 +223,56 @@ TZrRegionId ZrParser_SemanticIr_AddRegion(SZrSemanticIrFunction *function,
     region.sourceRange = sourceRange;
     ZrCore_Array_Push(function->state, &function->regions, &region);
     return region.id;
+}
+
+TZrUInt32 ZrParser_SemanticIr_AddEscapeFact(
+        SZrSemanticIrFunction *function,
+        EZrSemanticEscapeKind kind,
+        TZrRegionId sourceRegionId,
+        TZrPlaceId sourcePlaceId,
+        EZrSemanticEscapeState targetEscape,
+        SZrFileRange escapeRange) {
+    const SZrSemanticIrRegion *region;
+    SZrSemanticEscapeFact fact;
+
+    if (!semantic_ir_function_is_valid(function) ||
+        sourceRegionId == ZR_SEMANTIC_REGION_ID_INVALID ||
+        sourceRegionId > function->regions.length ||
+        (sourcePlaceId != ZR_PLACE_ID_INVALID &&
+         !semantic_ir_place_is_valid(function, sourcePlaceId)) ||
+        targetEscape < ZR_SEMANTIC_ESCAPE_LOCAL ||
+        targetEscape > ZR_SEMANTIC_ESCAPE_HEAP_STATIC ||
+        kind < ZR_SEMANTIC_ESCAPE_KIND_RETURN ||
+        kind > ZR_SEMANTIC_ESCAPE_KIND_NATIVE_CAPTURE) {
+        return 0U;
+    }
+    region = (const SZrSemanticIrRegion *)ZrCore_Array_Get(
+            &function->regions, (TZrSize)sourceRegionId - 1U);
+    if (region == ZR_NULL) {
+        return 0U;
+    }
+    memset(&fact, 0, sizeof(fact));
+    fact.escapeFactId = (TZrUInt32)function->escapeFacts.length + 1U;
+    fact.kind = kind;
+    fact.sourceRegionId = sourceRegionId;
+    fact.sourcePlaceId = sourcePlaceId;
+    fact.sourceEscapeBound = region->escapeBound;
+    fact.targetEscape = targetEscape;
+    fact.originRange = region->sourceRange;
+    fact.escapeRange = escapeRange;
+    ZrCore_Array_Push(function->state, &function->escapeFacts, &fact);
+    return fact.escapeFactId;
+}
+
+const SZrSemanticEscapeFact *ZrParser_SemanticIr_EscapeFactAt(
+        const SZrSemanticIrFunction *function,
+        TZrSize index) {
+    if (function == ZR_NULL || !function->escapeFacts.isValid ||
+        index >= function->escapeFacts.length) {
+        return ZR_NULL;
+    }
+    return (const SZrSemanticEscapeFact *)ZrCore_Array_Get(
+            (SZrArray *)&function->escapeFacts, index);
 }
 
 TZrCleanupScopeId ZrParser_SemanticIr_AddCleanupScope(
@@ -499,6 +551,23 @@ TZrBool ZrParser_SemanticIr_Validate(
             loan->regionId > function->regions.length ||
             (loan->createdByValueId != ZR_VALUE_ID_INVALID &&
              ZrParser_SemanticIr_Value(function, loan->createdByValueId) == ZR_NULL)) {
+            return ZR_FALSE;
+        }
+    }
+    for (index = 0; index < function->escapeFacts.length; index++) {
+        const SZrSemanticEscapeFact *fact =
+                ZrParser_SemanticIr_EscapeFactAt(function, index);
+        if (fact == ZR_NULL || fact->escapeFactId != (TZrUInt32)index + 1U ||
+            fact->kind < ZR_SEMANTIC_ESCAPE_KIND_RETURN ||
+            fact->kind > ZR_SEMANTIC_ESCAPE_KIND_NATIVE_CAPTURE ||
+            fact->sourceRegionId == ZR_SEMANTIC_REGION_ID_INVALID ||
+            fact->sourceRegionId > function->regions.length ||
+            (fact->sourcePlaceId != ZR_PLACE_ID_INVALID &&
+             !semantic_ir_place_is_valid(function, fact->sourcePlaceId)) ||
+            fact->sourceEscapeBound < ZR_SEMANTIC_ESCAPE_LOCAL ||
+            fact->sourceEscapeBound > ZR_SEMANTIC_ESCAPE_UNKNOWN ||
+            fact->targetEscape < ZR_SEMANTIC_ESCAPE_LOCAL ||
+            fact->targetEscape > ZR_SEMANTIC_ESCAPE_HEAP_STATIC) {
             return ZR_FALSE;
         }
     }

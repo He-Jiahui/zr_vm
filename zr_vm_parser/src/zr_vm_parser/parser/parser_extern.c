@@ -315,11 +315,17 @@ SZrAstNode *parse_extern_delegate_declaration(SZrParserState *ps, SZrAstNodeArra
     return node;
 }
 
-SZrAstNode *parse_extern_member_declaration(SZrParserState *ps) {
+static SZrAstNode *parse_extern_member_declaration_impl(
+        SZrParserState *ps,
+        TZrBool requireFnKeyword) {
     SZrAstNodeArray *decorators = parse_leading_decorators(ps);
     SZrAstNode *node = ZR_NULL;
 
-    if (ps->lexer->t.token == ZR_TK_STRUCT) {
+    if (ps->lexer->t.token == ZR_TK_FN) {
+        ZrParser_Lexer_Next(ps->lexer);
+        node = parse_extern_function_declaration(ps, decorators);
+        decorators = ZR_NULL;
+    } else if (ps->lexer->t.token == ZR_TK_STRUCT) {
         node = parse_struct_declaration(ps);
         if (node != ZR_NULL && node->type == ZR_AST_STRUCT_DECLARATION && decorators != ZR_NULL) {
             node->data.structDeclaration.decorators = decorators;
@@ -334,6 +340,8 @@ SZrAstNode *parse_extern_member_declaration(SZrParserState *ps) {
     } else if (current_identifier_equals(ps, "delegate")) {
         node = parse_extern_delegate_declaration(ps, decorators);
         decorators = ZR_NULL;
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && requireFnKeyword) {
+        report_error(ps, "Functions in a native extern block must start with 'fn'");
     } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
         node = parse_extern_function_declaration(ps, decorators);
         decorators = ZR_NULL;
@@ -353,12 +361,25 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
     SZrAstNode *libraryName = ZR_NULL;
     SZrAstNodeArray *declarations = ZR_NULL;
     SZrAstNode *node;
+    TZrBool nativeSyntax = ZR_FALSE;
 
-    expect_token(ps, ZR_TK_PERCENT);
-    ZrParser_Lexer_Next(ps->lexer);
-
-    if (!current_identifier_equals(ps, "extern")) {
-        report_error(ps, "Expected 'extern' after '%'");
+    if (ps->lexer->t.token == ZR_TK_PERCENT) {
+        ZrParser_Lexer_Next(ps->lexer);
+        if (!current_identifier_equals(ps, "extern")) {
+            report_error(ps, "Expected 'extern' after '%'");
+            return ZR_NULL;
+        }
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+               current_identifier_equals(ps, "native")) {
+        nativeSyntax = ZR_TRUE;
+        ZrParser_Lexer_Next(ps->lexer);
+        if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||
+            !current_identifier_equals(ps, "extern")) {
+            report_error(ps, "Expected 'extern' after 'native'");
+            return ZR_NULL;
+        }
+    } else {
+        report_error(ps, "Expected 'native extern' declaration");
         return ZR_NULL;
     }
     ZrParser_Lexer_Next(ps->lexer);
@@ -389,7 +410,8 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
         bodyOpenLoc = get_current_token_location(ps);
         consume_token(ps, ZR_TK_LBRACE);
         while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
-            SZrAstNode *declaration = parse_extern_member_declaration(ps);
+            SZrAstNode *declaration = parse_extern_member_declaration_impl(
+                    ps, nativeSyntax);
             if (declaration == ZR_NULL) {
                 break;
             }
@@ -408,7 +430,8 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
         ZrParser_AstNodeArray_Free(ps->state, declarations);
         return ZR_NULL;
     } else {
-        SZrAstNode *declaration = parse_extern_member_declaration(ps);
+        SZrAstNode *declaration = parse_extern_member_declaration_impl(
+                ps, nativeSyntax);
         if (declaration == ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, declarations);
             return ZR_NULL;
@@ -681,6 +704,10 @@ SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
     node->data.compileTimeDeclaration.declarationType = declType;
     node->data.compileTimeDeclaration.declaration = declaration;
     return node;
+}
+
+SZrAstNode *parse_extern_member_declaration(SZrParserState *ps) {
+    return parse_extern_member_declaration_impl(ps, ZR_FALSE);
 }
 
 // 存根实现：中间代码声明解析

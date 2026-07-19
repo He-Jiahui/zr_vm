@@ -328,6 +328,7 @@ SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps) {
     SZrAstNode *functionNode;
     SZrAstNode *wrappedBody;
     SZrFunctionDeclaration *declaration;
+    TZrBool legacyPercentSyntax = ZR_FALSE;
 
     if (ps == ZR_NULL) {
         return ZR_NULL;
@@ -338,14 +339,16 @@ SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps) {
         parse_access_modifier(ps);
     }
 
-    if (ps->lexer->t.token != ZR_TK_PERCENT) {
-        report_error(ps, "Expected '%' before async function declaration");
-        return ZR_NULL;
+    if (ps->lexer->t.token == ZR_TK_PERCENT) {
+        legacyPercentSyntax = ZR_TRUE;
+        ZrParser_Lexer_Next(ps->lexer);
     }
-
-    ZrParser_Lexer_Next(ps->lexer);
-    if (ps->lexer->t.token != ZR_TK_IDENTIFIER || !current_identifier_equals(ps, "async")) {
-        report_error(ps, "Expected 'async' after '%'");
+    if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||
+        !current_identifier_equals(ps, "async")) {
+        report_error(ps,
+                     legacyPercentSyntax
+                             ? "Expected 'async' after '%'"
+                             : "Expected 'async' before function declaration");
         return ZR_NULL;
     }
 
@@ -356,20 +359,23 @@ SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps) {
     }
 
     declaration = &functionNode->data.functionDeclaration;
-    wrappedBody = zr_task_wrap_async_body(ps, declaration->body);
-    if (wrappedBody == ZR_NULL) {
-        ZrParser_Ast_Free(ps->state, functionNode);
-        return ZR_NULL;
-    }
-
-    declaration->body = wrappedBody;
-    if (declaration->returnType != ZR_NULL) {
-        SZrType *declaredReturnType = declaration->returnType;
-        declaration->returnType = ZR_NULL;
-        declaration->returnType = zr_task_wrap_return_type_async(ps, declaredReturnType, functionNode->location);
-        if (declaration->returnType == ZR_NULL) {
+    if (legacyPercentSyntax) {
+        wrappedBody = zr_task_wrap_async_body(ps, declaration->body);
+        if (wrappedBody == ZR_NULL) {
             ZrParser_Ast_Free(ps->state, functionNode);
             return ZR_NULL;
+        }
+
+        declaration->body = wrappedBody;
+        if (declaration->returnType != ZR_NULL) {
+            SZrType *declaredReturnType = declaration->returnType;
+            declaration->returnType = ZR_NULL;
+            declaration->returnType = zr_task_wrap_return_type_async(
+                    ps, declaredReturnType, functionNode->location);
+            if (declaration->returnType == ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, functionNode);
+                return ZR_NULL;
+            }
         }
     }
     declaration->isAsync = ZR_TRUE;

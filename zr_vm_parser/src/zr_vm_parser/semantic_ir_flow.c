@@ -461,6 +461,60 @@ TZrBool ZrParser_SemanticFlow_HasDiagnostic(
     return ZR_FALSE;
 }
 
+const SZrSemanticFlowDiagnostic *ZrParser_SemanticFlow_EscapeDiagnostic(
+        const SZrSemanticFlowResult *result,
+        TZrUInt32 escapeFactId) {
+    TZrSize index;
+
+    if (result == ZR_NULL || escapeFactId == 0U) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < result->diagnostics.length; index++) {
+        const SZrSemanticFlowDiagnostic *diagnostic =
+                (const SZrSemanticFlowDiagnostic *)ZrCore_Array_Get(
+                        (SZrArray *)&result->diagnostics, index);
+        if (diagnostic != ZR_NULL &&
+            diagnostic->kind == ZR_SEMANTIC_FLOW_ESCAPE_VIOLATION &&
+            diagnostic->escapeFactId == escapeFactId) {
+            return diagnostic;
+        }
+    }
+    return ZR_NULL;
+}
+
+static void semantic_flow_record_escape_facts(
+        const SZrSemanticIrFunction *function,
+        SZrSemanticFlowResult *result) {
+    TZrSize index;
+
+    if (function == ZR_NULL || result == ZR_NULL) {
+        return;
+    }
+    for (index = 0U; index < function->escapeFacts.length; index++) {
+        const SZrSemanticEscapeFact *fact =
+                ZrParser_SemanticIr_EscapeFactAt(function, index);
+        SZrSemanticFlowDiagnostic diagnostic;
+
+        if (fact == ZR_NULL ||
+            (fact->sourceEscapeBound != ZR_SEMANTIC_ESCAPE_UNKNOWN &&
+             fact->sourceEscapeBound >= fact->targetEscape)) {
+            continue;
+        }
+        memset(&diagnostic, 0, sizeof(diagnostic));
+        diagnostic.kind = ZR_SEMANTIC_FLOW_ESCAPE_VIOLATION;
+        diagnostic.placeId = fact->sourcePlaceId;
+        diagnostic.relatedPlaceId = fact->sourcePlaceId;
+        diagnostic.sourceRange = fact->escapeRange;
+        diagnostic.escapeFactId = fact->escapeFactId;
+        diagnostic.escapeKind = fact->kind;
+        diagnostic.sourceEscapeBound = fact->sourceEscapeBound;
+        diagnostic.targetEscape = fact->targetEscape;
+        diagnostic.escapeOriginRange = fact->originRange;
+        diagnostic.escapeTargetRange = fact->escapeRange;
+        ZrCore_Array_Push(result->state, &result->diagnostics, &diagnostic);
+    }
+}
+
 static void semantic_flow_check_read(
         SZrSemanticFlowResult *result,
         TZrUInt32 blockId,
@@ -926,5 +980,6 @@ TZrBool ZrParser_SemanticFlow_Analyze(
         semantic_flow_result_reset(state, result);
         return ZR_FALSE;
     }
+    semantic_flow_record_escape_facts(function, result);
     return ZR_TRUE;
 }

@@ -329,6 +329,7 @@ void ZrParser_InferredType_Init(SZrState *state, SZrInferredType *type, EZrValue
     type->baseType = baseType;
     type->isNullable = ZR_FALSE;
     type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    type->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
     type->isReadonlyView = ZR_FALSE;
     type->typeName = ZR_NULL;
     type->genericArgumentKind = ZR_INFERRED_GENERIC_ARGUMENT_TYPE;
@@ -361,6 +362,7 @@ void ZrParser_InferredType_InitFull(SZrState *state, SZrInferredType *type, EZrV
     type->baseType = baseType;
     type->isNullable = isNullable;
     type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    type->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
     type->isReadonlyView = ZR_FALSE;
     type->typeName = typeName;
     type->genericArgumentKind = ZR_INFERRED_GENERIC_ARGUMENT_TYPE;
@@ -453,6 +455,7 @@ void ZrParser_InferredType_Copy(SZrState *state, SZrInferredType *dest, const SZ
     dest->baseType = src->baseType;
     dest->isNullable = src->isNullable;
     dest->ownershipQualifier = src->ownershipQualifier;
+    dest->referenceAccess = src->referenceAccess;
     dest->isReadonlyView = src->isReadonlyView;
     dest->typeName = src->typeName; // 字符串由GC管理，直接复制引用
     dest->genericArgumentKind = src->genericArgumentKind;
@@ -520,6 +523,10 @@ TZrBool ZrParser_InferredType_Equal(const SZrInferredType *type1, const SZrInfer
     }
 
     if (type1->ownershipQualifier != type2->ownershipQualifier) {
+        return ZR_FALSE;
+    }
+
+    if (type1->referenceAccess != type2->referenceAccess) {
         return ZR_FALSE;
     }
 

@@ -73,6 +73,44 @@ static TZrBool parser_function_declaration_starts_here(SZrParserState *ps) {
     return isFunction;
 }
 
+static TZrBool parser_async_function_declaration_starts_here(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    TZrBool isAsync = ZR_FALSE;
+
+    if (ps == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    save_parser_cursor(ps, &cursor);
+    if (ps->lexer->t.token == ZR_TK_PUB ||
+        ps->lexer->t.token == ZR_TK_PRI ||
+        ps->lexer->t.token == ZR_TK_PRO) {
+        parse_access_modifier(ps);
+    }
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+        current_identifier_equals(ps, "async")) {
+        ZrParser_Lexer_Next(ps->lexer);
+        isAsync = ps->lexer->t.token == ZR_TK_FN;
+    }
+    restore_parser_cursor(ps, &cursor);
+    return isAsync;
+}
+
+static TZrBool parser_native_extern_starts_here(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    TZrBool isNativeExtern = ZR_FALSE;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_IDENTIFIER ||
+        !current_identifier_equals(ps, "native")) {
+        return ZR_FALSE;
+    }
+    save_parser_cursor(ps, &cursor);
+    ZrParser_Lexer_Next(ps->lexer);
+    isNativeExtern = ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+                     current_identifier_equals(ps, "extern");
+    restore_parser_cursor(ps, &cursor);
+    return isNativeExtern;
+}
+
 static TZrBool parser_class_declaration_starts_here(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool isClass = ZR_FALSE;
@@ -1421,6 +1459,10 @@ static TZrBool parser_brace_starts_object_literal_statement(SZrParserState *ps) 
 SZrAstNode *parse_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
+    if (parser_async_function_declaration_starts_here(ps)) {
+        return parse_reserved_async_function_declaration(ps);
+    }
+
     switch (token) {
         case ZR_TK_LBRACE:
             return parser_brace_starts_object_literal_statement(ps)
@@ -1515,6 +1557,9 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
             return parse_expression_statement(ps);
 
         default:
+            if (parser_native_extern_starts_here(ps)) {
+                return parse_extern_block(ps);
+            }
             if (token == ZR_TK_FN) {
                 return parse_function_declaration(ps);
             }
@@ -1620,6 +1665,10 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
 
 SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
+
+    if (parser_async_function_declaration_starts_here(ps)) {
+        return parse_reserved_async_function_declaration(ps);
+    }
 
     // 检查是否是可见性修饰符（pub/pri/pro），后面应该跟 var/struct/class/interface/enum/union
     if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO) {
@@ -1837,6 +1886,9 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             return parse_try_catch_finally_statement(ps);
 
         default:
+            if (parser_native_extern_starts_here(ps)) {
+                return parse_extern_block(ps);
+            }
             if (token == ZR_TK_FN) {
                 return parse_function_declaration(ps);
             }

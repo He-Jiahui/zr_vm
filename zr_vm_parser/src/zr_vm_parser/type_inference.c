@@ -2952,6 +2952,7 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
                                                                &parameterPassingModes);
         ZrParser_InferredType_InitFull(cs->state, result, ZR_VALUE_TYPE_CLOSURE, ZR_FALSE, callableName);
         result->ownershipQualifier = astType->ownershipQualifier;
+        result->referenceAccess = astType->referenceAccess;
 
         free_inferred_type_array(cs->state, &paramTypes);
         if (parameterPassingModes.isValid) {
@@ -3495,6 +3496,7 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
     }
 
     namedType.ownershipQualifier = astType->ownershipQualifier;
+    namedType.referenceAccess = astType->referenceAccess;
     namedType.isReadonlyView = astType->isReadonlyView;
 
     if (astType->dimensions > 0) {
@@ -3555,6 +3557,7 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
         ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
         ZrParser_InferredType_Copy(cs->state, result, &currentType);
         result->ownershipQualifier = astType->ownershipQualifier;
+        result->referenceAccess = astType->referenceAccess;
         result->isReadonlyView = astType->isReadonlyView;
         ZrParser_InferredType_Free(cs->state, &currentType);
         return ZR_TRUE;
@@ -3563,6 +3566,7 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
     ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Copy(cs->state, result, &namedType);
     result->ownershipQualifier = astType->ownershipQualifier;
+    result->referenceAccess = astType->referenceAccess;
     result->isReadonlyView = astType->isReadonlyView;
     if (namedTypeInitialized) {
         ZrParser_InferredType_Free(cs->state, &namedType);

@@ -42,6 +42,7 @@ typedef struct SZrInferredType {
     EZrValueType baseType;           // 基础类型（对应EZrValueType枚举）
     TZrBool isNullable;                // 是否可空
     EZrOwnershipQualifier ownershipQualifier; // 特殊所有权限定
+    EZrReferenceAccess referenceAccess; // canonical ref access, independent of legacy ownership
     TZrBool isReadonlyView;          // readonly receiver/value capability
     SZrArray elementTypes;           // 泛型/数组元素类型（SZrInferredType*），可选
     SZrString *typeName;             // 用户定义类型名（struct/class等），可选

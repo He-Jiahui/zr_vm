@@ -277,6 +277,15 @@ static TZrTypeId canonical_type_apply_legacy_qualifiers(
     if (typeId != ZR_SEMANTIC_ID_INVALID && type->isReadonlyView) {
         typeId = ZrParser_CanonicalType_InternReadonlyView(context, typeId);
     }
+    if (typeId != ZR_SEMANTIC_ID_INVALID &&
+        type->referenceAccess != ZR_REFERENCE_ACCESS_NONE) {
+        typeId = ZrParser_CanonicalType_InternRef(
+                context,
+                typeId,
+                type->referenceAccess == ZR_REFERENCE_ACCESS_READONLY
+                        ? ZR_CANONICAL_REF_READONLY
+                        : ZR_CANONICAL_REF_WRITABLE);
+    }
     if (typeId != ZR_SEMANTIC_ID_INVALID && type->isNullable) {
         typeId = ZrParser_CanonicalType_InternNullable(context, typeId);
     }

@@ -42,6 +42,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
@@ -99,6 +102,9 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
@@ -129,6 +135,7 @@ tests:
   - tests/parser/test_cfg_reachability.c
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_reference_loan_nll.c
+  - tests/parser/test_reference_escape_closure_suspension.c
   - tests/parser/test_canonical_type_graph.c
   - tests/parser/test_cfg_constant_conditions.c
   - tests/parser/test_cfg_switch_constants.c
@@ -157,6 +164,7 @@ tests:
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
   - tests/acceptance/2026-07-20-syntax-02-m3-reference-loan-nll.md
   - tests/acceptance/2026-07-20-syntax-02-m4-receiver-readonly-call-boundary.md
+  - tests/acceptance/2026-07-20-syntax-02-m5-reference-escape-closure-suspension.md
 doc_type: category-index
 ---
 
@@ -197,6 +205,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - owner auto-deref capability matrix across seven dispatch kinds
   - two-phase receiver reservation, activation and call-scoped loan facts
   - resolved target SymbolId/declaration-range boundary for semantic/LSP consumers
+- `reference-escape-closure-suspension.md`
+  - local/function/caller/heap-static escape facts with conservative unknown
+  - ref return, storage, lambda/local-function capture and writable-capture NLL
+  - await/yield suspension rejection and call-scoped native ref defaults
 - `pre-semantic-ir-flow.md`
   - pre-execution semantic instructions with owned Place/CFG/Value/loan state
   - compiler ordering and the execution SemIR compatibility boundary
@@ -310,4 +322,6 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 17. 再看 `reference-loan-nll.md`，了解 LoanId 传播、NLL、reborrow 与 Place overlap 冲突。
 18. 再看 `receiver-readonly-call-boundary.md`，了解 receiver effect、owner auto-deref 与
     two-phase method call loan。
-19. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+19. 再看 `reference-escape-closure-suspension.md`，了解 ref escape lattice、closure capture
+    和 suspension 静态边界。
+20. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

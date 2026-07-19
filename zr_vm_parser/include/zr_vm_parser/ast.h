@@ -265,6 +265,12 @@ typedef enum EZrMethodReceiverModifier {
     ZR_METHOD_RECEIVER_CONST
 } EZrMethodReceiverModifier;
 
+typedef enum EZrReferenceAccess {
+    ZR_REFERENCE_ACCESS_NONE = 0,
+    ZR_REFERENCE_ACCESS_WRITABLE,
+    ZR_REFERENCE_ACCESS_READONLY
+} EZrReferenceAccess;
+
 // 赋值操作符
 typedef struct SZrAssignmentOperator {
     const TZrChar *op; // "=", "+=", "-=", "*=", "/=", "%="
@@ -292,6 +298,8 @@ typedef struct SZrType {
     struct SZrType *subType; // 子类型（可选）
     TZrInt32 dimensions; // 数组维度
     EZrOwnershipQualifier ownershipQualifier; // 特殊所有权限定
+    EZrReferenceAccess referenceAccess; // ref/ref readonly TypeRef
+    TZrBool isScopedReference; // scoped 只约束 region，不参与 TypeId identity
     TZrBool isReadonlyView; // readonly T capability view
     TZrBool isDecoratorPseudoType; // 是否来自 %type 反射伪类型注解
     TZrBool isImplicitBuiltinType; // 是否由 parser 内部糖语法生成，可绕过显式导入检查

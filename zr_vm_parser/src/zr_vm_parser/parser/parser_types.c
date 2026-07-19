@@ -99,6 +99,8 @@ static SZrType *allocate_empty_type_info(SZrParserState *ps) {
     type->name = ZR_NULL;
     type->subType = ZR_NULL;
     type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    type->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
+    type->isScopedReference = ZR_FALSE;
     type->isReadonlyView = ZR_FALSE;
     type->isDecoratorPseudoType = ZR_FALSE;
     type->isImplicitBuiltinType = ZR_FALSE;
@@ -863,6 +865,43 @@ static SZrType *parse_type_internal(SZrParserState *ps, TZrBool noGeneric) {
 
     if (ps == ZR_NULL) {
         return ZR_NULL;
+    }
+
+    if (ps->lexer->t.token == ZR_TK_REF ||
+        current_starts_scoped_ref_contract(ps)) {
+        TZrBool scoped = ZR_FALSE;
+        EZrReferenceAccess access = ZR_REFERENCE_ACCESS_WRITABLE;
+
+        if (current_identifier_is(ps, "scoped")) {
+            scoped = ZR_TRUE;
+            ZrParser_Lexer_Next(ps->lexer);
+            if (ps->lexer->t.token != ZR_TK_REF) {
+                report_error(ps, "'scoped' must modify a ref or ref readonly type");
+                return ZR_NULL;
+            }
+        }
+        ZrParser_Lexer_Next(ps->lexer);
+        if (current_identifier_is(ps, "readonly")) {
+            access = ZR_REFERENCE_ACCESS_READONLY;
+            ZrParser_Lexer_Next(ps->lexer);
+        }
+        if (ps->lexer->t.token == ZR_TK_REF || current_identifier_is(ps, "scoped")) {
+            report_error(ps, "Nested 'ref ref T' types are invalid; reborrow the expression instead");
+            return ZR_NULL;
+        }
+        type = noGeneric ? parse_type_no_generic(ps) : parse_type(ps);
+        if (type == ZR_NULL) {
+            report_error(ps, "Expected target type after 'ref'");
+            return ZR_NULL;
+        }
+        if (type->referenceAccess != ZR_REFERENCE_ACCESS_NONE) {
+            report_error(ps, "Nested reference types are invalid");
+            free_owned_type(ps->state, type);
+            return ZR_NULL;
+        }
+        type->referenceAccess = access;
+        type->isScopedReference = scoped;
+        return type;
     }
 
     if (current_identifier_is(ps, "readonly")) {

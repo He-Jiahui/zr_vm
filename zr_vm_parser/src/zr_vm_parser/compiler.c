@@ -834,6 +834,11 @@ ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(SZrStat
     cs.currentModuleKey = currentModuleKey;
     zr_parser_compile_trace("compiler compile core init ast=%p", (void *)ast);
 
+    if (!compiler_validate_reference_escapes(&cs, ast)) {
+        zr_parser_compile_trace("compiler validate reference escapes failed ast=%p", (void *)ast);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
     if (!compiler_validate_task_effects(&cs, ast)) {
         zr_parser_compile_trace("compiler validate task effects failed ast=%p", (void *)ast);
         ZrParser_CompilerState_Free(&cs);
@@ -946,6 +951,10 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
     SZrCompilerState cs;
     ZrParser_CompilerState_Init(&cs, state);
 
+    if (!compiler_validate_reference_escapes(&cs, ast)) {
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_FALSE;
+    }
     if (!compiler_validate_task_effects(&cs, ast)) {
         ZrParser_CompilerState_Free(&cs);
         return ZR_FALSE;

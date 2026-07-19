@@ -91,6 +91,25 @@ typedef enum EZrSemanticEscapeState {
     ZR_SEMANTIC_ESCAPE_UNKNOWN
 } EZrSemanticEscapeState;
 
+typedef enum EZrSemanticEscapeKind {
+    ZR_SEMANTIC_ESCAPE_KIND_RETURN = 0,
+    ZR_SEMANTIC_ESCAPE_KIND_CLOSURE_CAPTURE,
+    ZR_SEMANTIC_ESCAPE_KIND_HEAP_STORE,
+    ZR_SEMANTIC_ESCAPE_KIND_SUSPENSION,
+    ZR_SEMANTIC_ESCAPE_KIND_NATIVE_CAPTURE
+} EZrSemanticEscapeKind;
+
+typedef struct SZrSemanticEscapeFact {
+    TZrUInt32 escapeFactId;
+    EZrSemanticEscapeKind kind;
+    TZrRegionId sourceRegionId;
+    TZrPlaceId sourcePlaceId;
+    EZrSemanticEscapeState sourceEscapeBound;
+    EZrSemanticEscapeState targetEscape;
+    SZrFileRange originRange;
+    SZrFileRange escapeRange;
+} SZrSemanticEscapeFact;
+
 typedef struct SZrSemanticIrValue {
     TZrValueId id;
     TZrTypeId typeId;
@@ -189,6 +208,7 @@ typedef struct SZrSemanticIrFunction {
     SZrArray cleanupScopes; /* SZrSemanticIrCleanupScope */
     SZrArray sourceMap; /* SZrSemanticIrSourceMapEntry */
     SZrArray loanFacts; /* SZrSemanticIrLoanFact */
+    SZrArray escapeFacts; /* SZrSemanticEscapeFact */
 } SZrSemanticIrFunction;
 
 typedef enum EZrSemanticInitializationState {
@@ -246,6 +266,12 @@ typedef struct SZrSemanticFlowDiagnostic {
     SZrFileRange placeDeclarationRange;
     SZrFileRange loanOriginRange;
     SZrFileRange loanLastUseRange;
+    TZrUInt32 escapeFactId;
+    EZrSemanticEscapeKind escapeKind;
+    EZrSemanticEscapeState sourceEscapeBound;
+    EZrSemanticEscapeState targetEscape;
+    SZrFileRange escapeOriginRange;
+    SZrFileRange escapeTargetRange;
 } SZrSemanticFlowDiagnostic;
 
 typedef struct SZrSemanticInstructionLoanLiveness {
@@ -301,6 +327,16 @@ ZR_PARSER_API TZrRegionId ZrParser_SemanticIr_AddRegion(
         TZrRegionId parentId,
         EZrSemanticEscapeState escapeBound,
         SZrFileRange sourceRange);
+ZR_PARSER_API TZrUInt32 ZrParser_SemanticIr_AddEscapeFact(
+        SZrSemanticIrFunction *function,
+        EZrSemanticEscapeKind kind,
+        TZrRegionId sourceRegionId,
+        TZrPlaceId sourcePlaceId,
+        EZrSemanticEscapeState targetEscape,
+        SZrFileRange escapeRange);
+ZR_PARSER_API const SZrSemanticEscapeFact *ZrParser_SemanticIr_EscapeFactAt(
+        const SZrSemanticIrFunction *function,
+        TZrSize index);
 ZR_PARSER_API TZrCleanupScopeId ZrParser_SemanticIr_AddCleanupScope(
         SZrSemanticIrFunction *function,
         TZrCleanupScopeId parentId,
@@ -372,6 +408,9 @@ ZR_PARSER_API TZrBool ZrParser_SemanticFlow_HasDiagnostic(
         const SZrSemanticFlowResult *result,
         EZrSemanticFlowDiagnosticKind kind,
         TZrPlaceId placeId);
+ZR_PARSER_API const SZrSemanticFlowDiagnostic *ZrParser_SemanticFlow_EscapeDiagnostic(
+        const SZrSemanticFlowResult *result,
+        TZrUInt32 escapeFactId);
 ZR_PARSER_API TZrBool ZrParser_SemanticFlow_LoanIsLiveAt(
         const SZrSemanticFlowResult *result,
         TZrSemanticInstructionId instructionId,

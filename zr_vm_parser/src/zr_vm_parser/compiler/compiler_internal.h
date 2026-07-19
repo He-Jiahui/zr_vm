@@ -733,6 +733,9 @@ ZR_PARSER_API TZrBool compiler_quicken_execbc_function_shallow(SZrState *state, 
 ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node);
 
 TZrBool compiler_validate_task_effects(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API TZrBool compiler_validate_reference_escapes(
+        SZrCompilerState *cs,
+        SZrAstNode *node);
 
 SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) ;
 
