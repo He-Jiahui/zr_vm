@@ -60,7 +60,9 @@ static TZrBool parser_function_declaration_starts_here(SZrParserState *ps) {
         token = ps->lexer->t.token;
     }
 
-    if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
+    if (token == ZR_TK_FN) {
+        isFunction = ZR_TRUE;
+    } else if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
         isFunction = ZR_TRUE;
     } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
         lookahead = peek_token(ps);
@@ -1513,6 +1515,9 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
             return parse_expression_statement(ps);
 
         default:
+            if (token == ZR_TK_FN) {
+                return parse_function_declaration(ps);
+            }
             if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
                 SZrAstNode *funcDecl = try_parse_prefixed_function_declaration(ps);
                 if (funcDecl != ZR_NULL) {
@@ -1832,6 +1837,9 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             return parse_try_catch_finally_statement(ps);
 
         default:
+            if (token == ZR_TK_FN) {
+                return parse_function_declaration(ps);
+            }
             if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
                 SZrAstNode *funcDecl = try_parse_prefixed_function_declaration(ps);
                 if (funcDecl != ZR_NULL) {

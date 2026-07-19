@@ -143,6 +143,12 @@ SZrAstNode *parse_variable_declaration_for_header(SZrParserState *ps) {
 
 SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
+    SZrFileRange fnKeywordLoc;
+    SZrFileRange returnDelimiterLoc;
+    TZrBool usesFnKeyword = ZR_FALSE;
+
+    memset(&fnKeywordLoc, 0, sizeof(fnKeywordLoc));
+    memset(&returnDelimiterLoc, 0, sizeof(returnDelimiterLoc));
 
     // 解析装饰器（可选）
     SZrAstNodeArray *decorators = ZrParser_AstNodeArray_New(ps->state, 2);
@@ -159,7 +165,11 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
         parse_access_modifier(ps);
     }
 
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
+    if (ps->lexer->t.token == ZR_TK_FN) {
+        usesFnKeyword = ZR_TRUE;
+        fnKeywordLoc = get_current_token_location(ps);
+        ZrParser_Lexer_Next(ps->lexer);
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
         ZrParser_Lexer_Next(ps->lexer);
     }
 
@@ -235,8 +245,18 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
 
     // 解析返回类型（可选）
     SZrType *returnType = ZR_NULL;
-    if (consume_token(ps, ZR_TK_COLON)) {
+    if (ps->lexer->t.token == ZR_TK_COLON) {
+        returnDelimiterLoc = get_current_token_location(ps);
+        consume_token(ps, ZR_TK_COLON);
         returnType = parse_type(ps);
+    } else if (ps->lexer->t.token == ZR_TK_THIN_ARROW || ps->lexer->t.token == ZR_TK_FAT_ARROW) {
+        report_error(ps, "Function declarations use ':' before the return type");
+        free_identifier_node_from_ptr(ps->state, name);
+        free_generic_declaration(ps->state, generic);
+        free_ast_node_array_with_elements(ps->state, params);
+        free_parameter_node_from_ptr(ps->state, args);
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        return ZR_NULL;
     }
 
     if (!parse_optional_where_clauses(ps, generic)) {
@@ -286,6 +306,9 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     node->data.functionDeclaration.returnType = returnType;
     node->data.functionDeclaration.body = body;
     node->data.functionDeclaration.decorators = decorators;
+    node->data.functionDeclaration.fnKeywordLocation = fnKeywordLoc;
+    node->data.functionDeclaration.returnDelimiterLocation = returnDelimiterLoc;
+    node->data.functionDeclaration.usesFnKeyword = usesFnKeyword;
     node->data.functionDeclaration.isAsync = ZR_FALSE;
     return node;
 }

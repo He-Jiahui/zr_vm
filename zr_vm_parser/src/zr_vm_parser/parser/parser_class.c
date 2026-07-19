@@ -171,7 +171,8 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
             token == ZR_TK_PRO || token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_USING ||
             token == ZR_TK_VAR || token == ZR_TK_ABSTRACT || token == ZR_TK_VIRTUAL ||
             token == ZR_TK_OVERRIDE || token == ZR_TK_FINAL || token == ZR_TK_SHADOW || token == ZR_TK_AT ||
-            token == ZR_TK_GET || token == ZR_TK_SET || token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
+            token == ZR_TK_GET || token == ZR_TK_SET || token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST ||
+            token == ZR_TK_FN) {
             switch (classify_class_member_from_current(ps)) {
                 case ZR_AST_CLASS_FIELD:
                     member = parse_class_field(ps);
@@ -390,7 +391,9 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
         receiverQualifier = parse_optional_method_receiver_qualifier(ps);
     }
 
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
+    if (ps->lexer->t.token == ZR_TK_FN) {
+        ZrParser_Lexer_Next(ps->lexer);
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
         ZrParser_Lexer_Next(ps->lexer);
     }
 

@@ -224,6 +224,31 @@ enum EZrParameterPassingMode {
 
 typedef enum EZrParameterPassingMode EZrParameterPassingMode;
 
+enum EZrParameterSourcePassingForm {
+    ZR_PARAMETER_SOURCE_VALUE = 0,
+    ZR_PARAMETER_SOURCE_IN,
+    ZR_PARAMETER_SOURCE_REF,
+    ZR_PARAMETER_SOURCE_REF_READONLY,
+    ZR_PARAMETER_SOURCE_SCOPED_REF,
+    ZR_PARAMETER_SOURCE_SCOPED_REF_READONLY,
+    ZR_PARAMETER_SOURCE_OUT,
+};
+
+typedef enum EZrParameterSourcePassingForm EZrParameterSourcePassingForm;
+
+enum EZrCallArgumentMarker {
+    ZR_CALL_ARGUMENT_MARKER_NONE = 0,
+    ZR_CALL_ARGUMENT_MARKER_REF,
+    ZR_CALL_ARGUMENT_MARKER_OUT,
+};
+
+typedef enum EZrCallArgumentMarker EZrCallArgumentMarker;
+
+typedef struct SZrCallArgumentSyntax {
+    EZrCallArgumentMarker marker;
+    SZrFileRange markerLocation;
+} SZrCallArgumentSyntax;
+
 enum EZrDeclarationModifierFlag {
     ZR_DECLARATION_MODIFIER_NONE = 0,
     ZR_DECLARATION_MODIFIER_ABSTRACT = 1 << 0,
@@ -289,6 +314,7 @@ typedef struct SZrFunctionType {
     SZrAstNodeArray *params; // Parameter 数组
     SZrParameter *args; // 可变参数（可选）
     struct SZrType *returnType; // 必选
+    SZrFileRange arrowLocation;
 } SZrFunctionType;
 
 // 泛型声明
@@ -305,6 +331,8 @@ typedef struct SZrParameter {
     TZrBool isConst; // 是否为 const 参数
     SZrAstNodeArray *decorators; // DecoratorExpression 数组
     EZrParameterPassingMode passingMode;
+    EZrParameterSourcePassingForm sourcePassingForm;
+    SZrFileRange passingFormLocation;
     EZrGenericParameterKind genericKind;
     EZrGenericVariance variance;
     SZrAstNodeArray *genericTypeConstraints; // Type 数组
@@ -390,6 +418,10 @@ typedef struct SZrLambdaExpression {
     SZrAstNodeArray *params; // Parameter 数组
     SZrParameter *args; // 可变参数（可选）
     SZrAstNode *block;
+    SZrType *returnType;
+    SZrFileRange returnDelimiterLocation;
+    SZrFileRange bodyDelimiterLocation;
+    TZrBool isExpressionBody;
     TZrBool isAsync;
 } SZrLambdaExpression;
 
@@ -428,6 +460,7 @@ typedef struct SZrFunctionCall {
     SZrArray *argNames;                 // 参数名数组（SZrString*），可选，与args对应，ZR_NULL表示位置参数
     TZrBool hasNamedArgs;                 // 是否有命名参数
     SZrAstNodeArray *genericArguments;  // Type / const expression 数组（可选）
+    SZrArray *argumentMarkers;          // SZrCallArgumentSyntax，与 args 对齐
 } SZrFunctionCall;
 
 typedef struct SZrMemberExpression {
@@ -534,6 +567,9 @@ typedef struct SZrFunctionDeclaration {
     SZrType *returnType; // 可选
     SZrAstNode *body; // Block
     SZrAstNodeArray *decorators; // DecoratorExpression 数组
+    SZrFileRange fnKeywordLocation;
+    SZrFileRange returnDelimiterLocation;
+    TZrBool usesFnKeyword;
     TZrBool isAsync;
 } SZrFunctionDeclaration;
 

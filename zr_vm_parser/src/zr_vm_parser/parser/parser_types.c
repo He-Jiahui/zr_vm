@@ -285,12 +285,19 @@ static SZrType *wrap_type_in_task_identifier(SZrParserState *ps,
 
 static TZrBool token_can_start_type_expression(EZrToken token) {
     return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST || token == ZR_TK_LBRACKET ||
-           token == ZR_TK_LPAREN || token == ZR_TK_PERCENT;
+           token == ZR_TK_LPAREN || token == ZR_TK_PERCENT || token == ZR_TK_FN;
+}
+
+static TZrBool current_identifier_is(SZrParserState *ps, const TZrChar *value) {
+    return ps != ZR_NULL && ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+           current_identifier_equals(ps, value);
 }
 
 static SZrAstNode *parse_function_type_parameter(SZrParserState *ps, TZrBool noGeneric) {
     SZrFileRange startLoc;
     EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+    EZrParameterSourcePassingForm sourceForm = ZR_PARAMETER_SOURCE_VALUE;
+    SZrFileRange passingFormLocation;
     TZrBool isVariadic = ZR_FALSE;
     TZrBool isConst = ZR_FALSE;
     SZrAstNode *nameNode = ZR_NULL;
@@ -314,12 +321,15 @@ static SZrAstNode *parse_function_type_parameter(SZrParserState *ps, TZrBool noG
         ZrParser_Lexer_Next(ps->lexer);
         if (ps->lexer->t.token == ZR_TK_IN) {
             passingMode = ZR_PARAMETER_PASSING_MODE_IN;
+            sourceForm = ZR_PARAMETER_SOURCE_IN;
             ZrParser_Lexer_Next(ps->lexer);
         } else if (ps->lexer->t.token == ZR_TK_OUT) {
             passingMode = ZR_PARAMETER_PASSING_MODE_OUT;
+            sourceForm = ZR_PARAMETER_SOURCE_OUT;
             ZrParser_Lexer_Next(ps->lexer);
-        } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "ref")) {
+        } else if (ps->lexer->t.token == ZR_TK_REF) {
             passingMode = ZR_PARAMETER_PASSING_MODE_REF;
+            sourceForm = ZR_PARAMETER_SOURCE_REF;
             ZrParser_Lexer_Next(ps->lexer);
         } else {
             report_error(ps, "Expected 'in', 'out' or 'ref' after '%' in function type parameter");
@@ -331,6 +341,8 @@ static SZrAstNode *parse_function_type_parameter(SZrParserState *ps, TZrBool noG
         isConst = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     }
+
+    memset(&passingFormLocation, 0, sizeof(passingFormLocation));
 
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER && peek_token(ps) == ZR_TK_COLON) {
         nameNode = parse_identifier(ps);
@@ -349,6 +361,17 @@ static SZrAstNode *parse_function_type_parameter(SZrParserState *ps, TZrBool noG
                 nameNode = ZR_NULL;
             }
             restore_parser_cursor(ps, &cursor);
+        }
+    }
+
+    if (ps->lexer->t.token == ZR_TK_IN || ps->lexer->t.token == ZR_TK_OUT ||
+        ps->lexer->t.token == ZR_TK_REF || current_identifier_is(ps, "scoped")) {
+        if (!parse_parameter_source_passing_form(
+                    ps, &sourceForm, &passingMode, &passingFormLocation)) {
+            if (nameNode != ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, nameNode);
+            }
+            return ZR_NULL;
         }
     }
 
@@ -383,6 +406,8 @@ static SZrAstNode *parse_function_type_parameter(SZrParserState *ps, TZrBool noG
     node->data.parameter.isConst = isConst;
     node->data.parameter.decorators = ZR_NULL;
     node->data.parameter.passingMode = passingMode;
+    node->data.parameter.sourcePassingForm = sourceForm;
+    node->data.parameter.passingFormLocation = passingFormLocation;
     node->data.parameter.genericKind = ZR_GENERIC_PARAMETER_TYPE;
     node->data.parameter.variance = ZR_GENERIC_VARIANCE_NONE;
     node->data.parameter.genericTypeConstraints = ZR_NULL;
@@ -429,7 +454,11 @@ static SZrAstNodeArray *parse_function_type_parameter_list(SZrParserState *ps, T
     return params;
 }
 
-static SZrType *parse_function_type(SZrParserState *ps, TZrBool noGeneric, SZrFileRange startLoc) {
+static SZrType *parse_function_type(
+        SZrParserState *ps,
+        TZrBool noGeneric,
+        SZrFileRange startLoc,
+        TZrBool allowLegacyFatArrow) {
     SZrGenericDeclaration *generic = ZR_NULL;
     SZrAstNodeArray *params = ZR_NULL;
     SZrParameter *args = ZR_NULL;
@@ -438,6 +467,7 @@ static SZrType *parse_function_type(SZrParserState *ps, TZrBool noGeneric, SZrFi
     SZrAstNode *functionTypeNode = ZR_NULL;
     SZrType *type = ZR_NULL;
     SZrFileRange fullLoc;
+    SZrFileRange arrowLoc;
 
     if (ps == ZR_NULL) {
         return ZR_NULL;
@@ -502,8 +532,9 @@ static SZrType *parse_function_type(SZrParserState *ps, TZrBool noGeneric, SZrFi
         return ZR_NULL;
     }
 
-    if (ps->lexer->t.token != ZR_TK_RIGHT_ARROW) {
-        report_error(ps, "Expected '->' after %func parameter list");
+    if (ps->lexer->t.token != ZR_TK_THIN_ARROW &&
+        !(allowLegacyFatArrow && ps->lexer->t.token == ZR_TK_FAT_ARROW)) {
+        report_error(ps, "Expected '->' after function type parameter list");
         if (argsNode != ZR_NULL) {
             ZrParser_Ast_Free(ps->state, argsNode);
         }
@@ -513,6 +544,7 @@ static SZrType *parse_function_type(SZrParserState *ps, TZrBool noGeneric, SZrFi
         free_generic_declaration(ps->state, generic);
         return ZR_NULL;
     }
+    arrowLoc = get_current_token_location(ps);
     ZrParser_Lexer_Next(ps->lexer);
 
     returnType = noGeneric ? parse_type_no_generic(ps) : parse_type(ps);
@@ -545,6 +577,7 @@ static SZrType *parse_function_type(SZrParserState *ps, TZrBool noGeneric, SZrFi
     functionTypeNode->data.functionType.params = params;
     functionTypeNode->data.functionType.args = args;
     functionTypeNode->data.functionType.returnType = returnType;
+    functionTypeNode->data.functionType.arrowLocation = arrowLoc;
 
     type = allocate_empty_type_info(ps);
     if (type == ZR_NULL) {
@@ -593,7 +626,7 @@ static SZrType *parse_percent_prefixed_type(SZrParserState *ps, TZrBool noGeneri
 
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
         ZrParser_Lexer_Next(ps->lexer);
-        return parse_function_type(ps, noGeneric, location);
+        return parse_function_type(ps, noGeneric, location, ZR_TRUE);
     }
 
     if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||
@@ -823,6 +856,12 @@ static SZrType *parse_type_internal(SZrParserState *ps, TZrBool noGeneric) {
 
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
         return parse_percent_prefixed_type(ps, noGeneric);
+    }
+
+    if (ps->lexer->t.token == ZR_TK_FN) {
+        SZrFileRange startLoc = get_current_token_location(ps);
+        ZrParser_Lexer_Next(ps->lexer);
+        return parse_function_type(ps, noGeneric, startLoc, ZR_FALSE);
     }
 
     if (ps->lexer->t.token == ZR_TK_LPAREN) {
@@ -1508,6 +1547,10 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNodeArray *decorators = parse_leading_decorators(ps);
     EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+    EZrParameterSourcePassingForm sourceForm = ZR_PARAMETER_SOURCE_VALUE;
+    SZrFileRange passingFormLocation;
+
+    memset(&passingFormLocation, 0, sizeof(passingFormLocation));
 
     // 检查是否是可变参数 (...name: type)
     TZrBool isVariadic = ZR_FALSE;
@@ -1520,12 +1563,15 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
         if (ps->lexer->t.token == ZR_TK_IN) {
             passingMode = ZR_PARAMETER_PASSING_MODE_IN;
+            sourceForm = ZR_PARAMETER_SOURCE_IN;
             ZrParser_Lexer_Next(ps->lexer);
         } else if (ps->lexer->t.token == ZR_TK_OUT) {
             passingMode = ZR_PARAMETER_PASSING_MODE_OUT;
+            sourceForm = ZR_PARAMETER_SOURCE_OUT;
             ZrParser_Lexer_Next(ps->lexer);
-        } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "ref")) {
+        } else if (ps->lexer->t.token == ZR_TK_REF) {
             passingMode = ZR_PARAMETER_PASSING_MODE_REF;
+            sourceForm = ZR_PARAMETER_SOURCE_REF;
             ZrParser_Lexer_Next(ps->lexer);
         } else {
             report_error(ps, "Expected 'in', 'out' or 'ref' after '%'");
@@ -1550,6 +1596,20 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
     // 可选类型注解
     SZrType *typeInfo = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
+        if (ps->lexer->t.token == ZR_TK_IN || ps->lexer->t.token == ZR_TK_OUT ||
+            ps->lexer->t.token == ZR_TK_REF || current_identifier_is(ps, "scoped")) {
+            if (!parse_parameter_source_passing_form(
+                        ps, &sourceForm, &passingMode, &passingFormLocation)) {
+                ZrParser_Ast_Free(ps->state, nameNode);
+                free_ast_node_array_with_elements(ps->state, decorators);
+                return ZR_NULL;
+            }
+        } else if (current_identifier_is(ps, "readonly")) {
+            report_error(ps, "'readonly' must follow 'ref' in a parameter contract");
+            ZrParser_Ast_Free(ps->state, nameNode);
+            free_ast_node_array_with_elements(ps->state, decorators);
+            return ZR_NULL;
+        }
         typeInfo = parse_type(ps);
         // 如果类型解析失败，仍然创建参数节点（typeInfo 为 NULL）
         // 这样可以进行错误恢复
@@ -1579,6 +1639,8 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
     node->data.parameter.isConst = isConst;
     node->data.parameter.decorators = decorators;
     node->data.parameter.passingMode = passingMode;
+    node->data.parameter.sourcePassingForm = sourceForm;
+    node->data.parameter.passingFormLocation = passingFormLocation;
     node->data.parameter.genericKind = ZR_GENERIC_PARAMETER_TYPE;
     node->data.parameter.variance = ZR_GENERIC_VARIANCE_NONE;
     node->data.parameter.genericTypeConstraints = ZR_NULL;

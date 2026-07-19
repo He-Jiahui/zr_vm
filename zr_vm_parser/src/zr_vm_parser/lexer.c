@@ -61,6 +61,8 @@ static const SZrTokenInfo zr_token_info[] = {
     {"Infinity", ZR_TK_INFINITY},
     {"NegativeInfinity", ZR_TK_NEG_INFINITY},
     {"NaN", ZR_TK_NAN},
+    {"fn", ZR_TK_FN},
+    {"ref", ZR_TK_REF},
     // 操作符
     {"...", ZR_TK_PARAMS},
     {"?", ZR_TK_QUESTIONMARK},
@@ -98,7 +100,8 @@ static const SZrTokenInfo zr_token_info[] = {
     {"%", ZR_TK_PERCENT},
     {"&&", ZR_TK_AMPERSAND_AMPERSAND},
     {"||", ZR_TK_PIPE_PIPE},
-    {"=>", ZR_TK_RIGHT_ARROW},
+    {"->", ZR_TK_THIN_ARROW},
+    {"=>", ZR_TK_FAT_ARROW},
     {"<<", ZR_TK_LEFT_SHIFT},
     {">>", ZR_TK_RIGHT_SHIFT},
     {"|", ZR_TK_OR},
@@ -132,6 +135,8 @@ static const struct {
                    {"interface", ZR_TK_INTERFACE},
                    {"enum", ZR_TK_ENUM},
                    {"union", ZR_TK_UNION},
+                   {"fn", ZR_TK_FN},
+                   {"ref", ZR_TK_REF},
                    {"test", ZR_TK_TEST},
                    {"intermediate", ZR_TK_INTERMEDIATE},
                    {"var", ZR_TK_VAR},
@@ -733,7 +738,7 @@ static EZrToken llex(SZrLexState *ls, TZrSemInfo *seminfo) {
                 return ZR_TK_DOUBLE_EQUALS;
             } else if (ls->currentChar == '>') {
                 next_char(ls);
-                return ZR_TK_RIGHT_ARROW;
+                return ZR_TK_FAT_ARROW;
             }
             return ZR_TK_EQUALS;
 
@@ -752,7 +757,7 @@ static EZrToken llex(SZrLexState *ls, TZrSemInfo *seminfo) {
                 return ZR_TK_MINUS_EQUALS;
             } else if (ls->currentChar == '>') {
                 next_char(ls);
-                return ZR_TK_RIGHT_ARROW;
+                return ZR_TK_THIN_ARROW;
             }
             return ZR_TK_MINUS;
 

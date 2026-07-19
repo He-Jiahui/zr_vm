@@ -134,6 +134,10 @@ SZrAstNode *parse_struct_method(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
     }
 
+    if (ps->lexer->t.token == ZR_TK_FN) {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
     // 解析方法名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
@@ -463,7 +467,8 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
         } else if (token == ZR_TK_AT) {
             // 元函数
             member = parse_struct_meta_function(ps);
-        } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_SHARP || token == ZR_TK_PERCENT) {
+        } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_SHARP || token == ZR_TK_PERCENT ||
+                   token == ZR_TK_FN) {
             // 方法（可能有装饰器）
             member = parse_struct_method(ps);
         } else {

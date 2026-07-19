@@ -114,6 +114,10 @@ enum EZrToken {
     // 特殊
     ZR_TK_EOS,           // End of stream
     ZR_TK_UNION,         // union keyword (appended to avoid existing token id drift)
+    ZR_TK_FN,            // fn keyword
+    ZR_TK_REF,           // ref keyword
+    ZR_TK_THIN_ARROW,    // -> function type delimiter
+    ZR_TK_FAT_ARROW,     // => expression body delimiter
 };
 
 typedef enum EZrToken EZrToken;

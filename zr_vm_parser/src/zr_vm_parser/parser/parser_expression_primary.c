@@ -81,159 +81,6 @@ static EZrOwnershipBuiltinKind ownership_generic_builtin_kind_from_qualifier(
     }
 }
 
-SZrAstNodeArray *parse_argument_list(SZrParserState *ps, SZrArray **argNames) {
-    SZrAstNodeArray *args = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
-    if (args == ZR_NULL) {
-        if (argNames != ZR_NULL) {
-            *argNames = ZR_NULL;
-        }
-        return ZR_NULL;
-    }
-
-    // 初始化参数名数组
-    SZrArray *names = ZR_NULL;
-    if (argNames != ZR_NULL) {
-        *argNames = ZR_NULL;
-    }
-    TZrBool hasNamedArgs = ZR_FALSE;
-
-    if (ps->lexer->t.token != ZR_TK_RPAREN) {
-        // 检查第一个参数是否为命名参数（identifier: expression）
-        TZrBool isNamed = ZR_FALSE;
-        SZrString *paramName = ZR_NULL;
-
-        if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
-            // 保存标识符名称
-            paramName = ps->lexer->t.seminfo.stringValue;
-            EZrToken lookahead = peek_token(ps);
-            if (lookahead == ZR_TK_COLON) {
-                // 这是命名参数：identifier: expression
-                isNamed = ZR_TRUE;
-                ZrParser_Lexer_Next(ps->lexer); // 跳过 identifier
-                consume_token(ps, ZR_TK_COLON); // 跳过 :
-            }
-        }
-
-        if (isNamed) {
-            hasNamedArgs = ZR_TRUE;
-            // 创建参数名数组
-            if (names == ZR_NULL) {
-                names = ZrCore_Memory_RawMallocWithType(ps->state->global, sizeof(SZrArray),
-                                                        ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                if (names != ZR_NULL) {
-                    ZrCore_Array_Init(ps->state, names, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
-                }
-            }
-            if (names != ZR_NULL) {
-                ZrCore_Array_Push(ps->state, names, &paramName);
-            }
-        } else {
-            // 位置参数，参数名为 ZR_NULL
-            if (names == ZR_NULL) {
-                names = ZrCore_Memory_RawMallocWithType(ps->state->global, sizeof(SZrArray),
-                                                        ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                if (names != ZR_NULL) {
-                    ZrCore_Array_Init(ps->state, names, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
-                }
-            }
-            if (names != ZR_NULL) {
-                SZrString *nullName = ZR_NULL;
-                ZrCore_Array_Push(ps->state, names, &nullName);
-            }
-        }
-
-        // 解析参数值表达式
-        SZrAstNode *first = parse_expression(ps);
-        if (first != ZR_NULL) {
-            ZrParser_AstNodeArray_Add(ps->state, args, first);
-        } else {
-            // 表达式解析失败，清理并返回
-            if (names != ZR_NULL) {
-                ZrCore_Array_Free(ps->state, names);
-                ZrCore_Memory_RawFreeWithType(ps->state->global, names, sizeof(SZrArray), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-            }
-            if (argNames != ZR_NULL) {
-                *argNames = ZR_NULL;
-            }
-            return args; // 返回部分解析的结果
-        }
-
-        while (consume_token(ps, ZR_TK_COMMA)) {
-            if (ps->lexer->t.token == ZR_TK_RPAREN) {
-                break;
-            }
-
-            // 检查是否为命名参数
-            isNamed = ZR_FALSE;
-            paramName = ZR_NULL;
-
-            if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
-                paramName = ps->lexer->t.seminfo.stringValue;
-                EZrToken lookahead = peek_token(ps);
-                if (lookahead == ZR_TK_COLON) {
-                    isNamed = ZR_TRUE;
-                    ZrParser_Lexer_Next(ps->lexer); // 跳过 identifier
-                    consume_token(ps, ZR_TK_COLON); // 跳过 :
-                }
-            }
-
-            if (isNamed) {
-                hasNamedArgs = ZR_TRUE;
-                if (names == ZR_NULL) {
-                    names = ZrCore_Memory_RawMallocWithType(ps->state->global, sizeof(SZrArray),
-                                                            ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                    if (names != ZR_NULL) {
-                        ZrCore_Array_Init(ps->state, names, sizeof(SZrString *), args->count + 1);
-                        // 为之前的位置参数填充 ZR_NULL
-                        for (TZrSize i = 0; i < args->count; i++) {
-                            SZrString *nullName = ZR_NULL;
-                            ZrCore_Array_Push(ps->state, names, &nullName);
-                        }
-                    }
-                }
-                if (names != ZR_NULL) {
-                    ZrCore_Array_Push(ps->state, names, &paramName);
-                }
-            } else {
-                if (hasNamedArgs) {
-                    // 命名参数后不能再有位置参数
-                    report_error(ps, "Positional arguments cannot come after named arguments");
-                    break;
-                }
-                if (names == ZR_NULL) {
-                    names = ZrCore_Memory_RawMallocWithType(ps->state->global, sizeof(SZrArray),
-                                                            ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                    if (names != ZR_NULL) {
-                        ZrCore_Array_Init(ps->state, names, sizeof(SZrString *), args->count + 1);
-                        // 为之前的位置参数填充 ZR_NULL
-                        for (TZrSize i = 0; i < args->count; i++) {
-                            SZrString *nullName = ZR_NULL;
-                            ZrCore_Array_Push(ps->state, names, &nullName);
-                        }
-                    }
-                }
-                if (names != ZR_NULL) {
-                    SZrString *nullName = ZR_NULL;
-                    ZrCore_Array_Push(ps->state, names, &nullName);
-                }
-            }
-
-            SZrAstNode *arg = parse_expression(ps);
-            if (arg != ZR_NULL) {
-                ZrParser_AstNodeArray_Add(ps->state, args, arg);
-            } else {
-                break;
-            }
-        }
-    }
-
-    if (argNames != ZR_NULL) {
-        *argNames = names;
-    }
-
-    return args;
-}
-
 SZrAstNode *append_primary_member(SZrParserState *ps, SZrAstNode *base, SZrAstNode *memberNode,
                                          SZrFileRange startLoc) {
     if (ps == ZR_NULL || base == ZR_NULL || memberNode == ZR_NULL) {
@@ -297,7 +144,8 @@ TZrBool is_lambda_expression_after_lparen(SZrParserState *ps) {
      * 当前这层括号只有在“匹配的右括号之后紧跟箭头”时才是 lambda 参数列表。
      * 这样可以保留 ((lambda))(call) 这类分组/立即调用写法，避免把外层分组误判成 lambda。
      */
-    if (depth == 0 && ps->lexer->t.token == ZR_TK_RIGHT_ARROW) {
+    if (depth == 0 && (ps->lexer->t.token == ZR_TK_THIN_ARROW ||
+                       ps->lexer->t.token == ZR_TK_FAT_ARROW)) {
         isLambda = ZR_TRUE;
     }
 
@@ -740,7 +588,7 @@ SZrAstNode *parse_construct_expression(SZrParserState *ps,
     }
 
     if (consume_token(ps, ZR_TK_LPAREN)) {
-        args = parse_argument_list(ps, &argNames);
+        args = parse_argument_list(ps, &argNames, ZR_NULL);
         expect_token(ps, ZR_TK_RPAREN);
         consume_token(ps, ZR_TK_RPAREN);
         if (!reject_named_construct_arguments(ps, argNames, startLoc)) {
@@ -1381,6 +1229,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
         else if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
             SZrAstNodeArray *genericArguments = try_parse_explicit_generic_call_arguments(ps);
             SZrArray *argNames;
+            SZrArray *argumentMarkers;
             SZrAstNodeArray *args;
             SZrAstNode *callNode;
 
@@ -1394,7 +1243,8 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             callOpenLocation = get_current_token_location(ps);
             consume_token(ps, ZR_TK_LPAREN);
             argNames = ZR_NULL;
-            args = parse_argument_list(ps, &argNames);
+            argumentMarkers = ZR_NULL;
+            args = parse_argument_list(ps, &argNames, &argumentMarkers);
             if (ps->lexer->t.token != ZR_TK_RPAREN) {
                 report_missing_call_close(ps, callOpenLocation);
                 if (args != ZR_NULL) {
@@ -1405,19 +1255,30 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                     ZrCore_Memory_RawFreeWithType(ps->state->global, argNames, sizeof(SZrArray),
                                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 }
+                if (argumentMarkers != ZR_NULL) {
+                    ZrCore_Array_Free(ps->state, argumentMarkers);
+                    ZrCore_Memory_RawFreeWithType(ps->state->global, argumentMarkers, sizeof(SZrArray),
+                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                }
                 free_ast_node_array_with_elements(ps->state, genericArguments);
                 return ZR_NULL;
             }
             callCloseLocation = get_current_token_location(ps);
             consume_token(ps, ZR_TK_RPAREN);
 
-            if (try_rewrite_intrinsic_ownership_generic_call(ps,
+            if (!call_has_explicit_argument_marker(argumentMarkers) &&
+                try_rewrite_intrinsic_ownership_generic_call(ps,
                                                              base,
                                                              genericArguments,
                                                              args,
                                                              argNames,
                                                              startLoc,
                                                              &callNode)) {
+                if (argumentMarkers != ZR_NULL) {
+                    ZrCore_Array_Free(ps->state, argumentMarkers);
+                    ZrCore_Memory_RawFreeWithType(ps->state->global, argumentMarkers, sizeof(SZrArray),
+                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                }
                 if (callNode == ZR_NULL) {
                     return ZR_NULL;
                 }
@@ -1438,6 +1299,11 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                     ZrCore_Memory_RawFreeWithType(ps->state->global, argNames, sizeof(SZrArray),
                                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 }
+                if (argumentMarkers != ZR_NULL) {
+                    ZrCore_Array_Free(ps->state, argumentMarkers);
+                    ZrCore_Memory_RawFreeWithType(ps->state->global, argumentMarkers, sizeof(SZrArray),
+                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                }
                 free_ast_node_array_with_elements(ps->state, genericArguments);
                 return base;
             }
@@ -1445,6 +1311,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             callNode->data.functionCall.args = args;
             callNode->data.functionCall.argNames = argNames;
             callNode->data.functionCall.genericArguments = genericArguments;
+            callNode->data.functionCall.argumentMarkers = argumentMarkers;
             callNode->data.functionCall.hasNamedArgs = ZR_FALSE;
             if (argNames != ZR_NULL && argNames->length > 0) {
                 for (TZrSize i = 0; i < argNames->length; i++) {
@@ -1463,10 +1330,11 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             SZrFileRange callOpenLocation = get_current_token_location(ps);
             SZrFileRange callCloseLocation;
             SZrArray *argNames = ZR_NULL;
+            SZrArray *argumentMarkers = ZR_NULL;
             SZrAstNodeArray *args;
 
             consume_token(ps, ZR_TK_LPAREN);
-            args = parse_argument_list(ps, &argNames);
+            args = parse_argument_list(ps, &argNames, &argumentMarkers);
             if (ps->lexer->t.token != ZR_TK_RPAREN) {
                 report_missing_call_close(ps, callOpenLocation);
                 if (args != ZR_NULL) {
@@ -1475,6 +1343,11 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                 if (argNames != ZR_NULL) {
                     ZrCore_Array_Free(ps->state, argNames);
                     ZrCore_Memory_RawFreeWithType(ps->state->global, argNames, sizeof(SZrArray),
+                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                }
+                if (argumentMarkers != ZR_NULL) {
+                    ZrCore_Array_Free(ps->state, argumentMarkers);
+                    ZrCore_Memory_RawFreeWithType(ps->state->global, argumentMarkers, sizeof(SZrArray),
                                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 }
                 return ZR_NULL;
@@ -1491,7 +1364,19 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                     if (args != ZR_NULL) {
                         ZrParser_AstNodeArray_Free(ps->state, args);
                     }
+                    if (argumentMarkers != ZR_NULL) {
+                        ZrCore_Array_Free(ps->state, argumentMarkers);
+                        ZrCore_Memory_RawFreeWithType(ps->state->global, argumentMarkers, sizeof(SZrArray),
+                                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                    }
                     return base;
+                }
+
+                if (argumentMarkers != ZR_NULL) {
+                    ZrCore_Array_Free(ps->state, argumentMarkers);
+                    ZrCore_Memory_RawFreeWithType(ps->state->global, argumentMarkers, sizeof(SZrArray),
+                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                    argumentMarkers = ZR_NULL;
                 }
 
                 base->data.prototypeReferenceExpression.target = ZR_NULL;
@@ -1531,11 +1416,17 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                     ZrCore_Memory_RawFreeWithType(ps->state->global, argNames, sizeof(SZrArray),
                                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 }
+                if (argumentMarkers != ZR_NULL) {
+                    ZrCore_Array_Free(ps->state, argumentMarkers);
+                    ZrCore_Memory_RawFreeWithType(ps->state->global, argumentMarkers, sizeof(SZrArray),
+                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                }
                 return base;
             }
             callNode->data.functionCall.args = args;
             callNode->data.functionCall.argNames = argNames;
             callNode->data.functionCall.genericArguments = ZR_NULL;
+            callNode->data.functionCall.argumentMarkers = argumentMarkers;
             // 检查是否有命名参数
             callNode->data.functionCall.hasNamedArgs = ZR_FALSE;
             if (argNames != ZR_NULL && argNames->length > 0) {
@@ -1649,6 +1540,9 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
             }
         }
     }
+    else if (token == ZR_TK_FN) {
+        base = parse_fn_expression(ps);
+    }
     // Lambda 表达式或括号表达式
     else if (token == ZR_TK_LPAREN) {
         if (is_lambda_expression_after_lparen(ps)) {
@@ -1683,7 +1577,10 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
 
             expect_token(ps, ZR_TK_RPAREN);
             consume_token(ps, ZR_TK_RPAREN);
-            expect_token(ps, ZR_TK_RIGHT_ARROW);
+            if (ps->lexer->t.token != ZR_TK_THIN_ARROW && ps->lexer->t.token != ZR_TK_FAT_ARROW) {
+                report_error(ps, "Expected lambda body delimiter");
+                return ZR_NULL;
+            }
             ZrParser_Lexer_Next(ps->lexer);
 
             {
@@ -1696,6 +1593,8 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
                         lambdaNode->data.lambdaExpression.params = params;
                         lambdaNode->data.lambdaExpression.args = args;
                         lambdaNode->data.lambdaExpression.block = block;
+                        lambdaNode->data.lambdaExpression.returnType = ZR_NULL;
+                        lambdaNode->data.lambdaExpression.isExpressionBody = ZR_FALSE;
                         lambdaNode->data.lambdaExpression.isAsync = ZR_FALSE;
                         return parse_member_access(ps, lambdaNode);
                     }

@@ -232,7 +232,12 @@ SZrAstNode *parse_array_literal(SZrParserState *ps);
 
 SZrAstNode *parse_object_literal(SZrParserState *ps);
 
-SZrAstNodeArray *parse_argument_list(SZrParserState *ps, SZrArray **argNames);
+SZrAstNodeArray *parse_argument_list(
+        SZrParserState *ps,
+        SZrArray **argNames,
+        SZrArray **argumentMarkers);
+
+TZrBool call_has_explicit_argument_marker(const SZrArray *markers);
 
 SZrAstNode *append_primary_member(SZrParserState *ps, SZrAstNode *base, SZrAstNode *memberNode,
                                          SZrFileRange startLoc);
@@ -284,6 +289,8 @@ SZrAstNode *parse_owned_class_declaration(SZrParserState *ps);
 SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base);
 
 SZrAstNode *parse_primary_expression(SZrParserState *ps);
+
+SZrAstNode *parse_fn_expression(SZrParserState *ps);
 
 SZrAstNode *parse_unary_expression(SZrParserState *ps);
 
@@ -342,6 +349,12 @@ EZrAccessModifier parse_access_modifier(SZrParserState *ps);
 SZrAstNode *parse_parameter(SZrParserState *ps);
 
 SZrAstNodeArray *parse_parameter_list(SZrParserState *ps);
+
+TZrBool parse_parameter_source_passing_form(
+        SZrParserState *ps,
+        EZrParameterSourcePassingForm *sourceForm,
+        EZrParameterPassingMode *legacyMode,
+        SZrFileRange *location);
 
 SZrAstNode *parse_module_declaration(SZrParserState *ps);
 

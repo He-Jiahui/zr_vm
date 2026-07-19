@@ -300,6 +300,11 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
                 ZrCore_Memory_RawFreeWithType(state->global, call->argNames, sizeof(SZrArray),
                                               ZR_MEMORY_NATIVE_TYPE_ARRAY);
             }
+            if (call->argumentMarkers != ZR_NULL) {
+                ZrCore_Array_Free(state, call->argumentMarkers);
+                ZrCore_Memory_RawFreeWithType(state->global, call->argumentMarkers, sizeof(SZrArray),
+                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            }
             break;
         }
         case ZR_AST_ARRAY_LITERAL: {
@@ -409,6 +414,7 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
                 ZrParser_AstNodeArray_Free(state, lambda->params);
             }
             free_parameter_node_from_ptr(state, lambda->args);
+            free_owned_type(state, lambda->returnType);
             if (lambda->block != ZR_NULL) {
                 ZrParser_Ast_Free(state, lambda->block);
             }

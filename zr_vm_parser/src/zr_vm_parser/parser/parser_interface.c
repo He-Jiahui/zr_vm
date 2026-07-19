@@ -66,6 +66,10 @@ SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
 
+    if (ps->lexer->t.token == ZR_TK_FN) {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
     // 解析方法名
     SZrAstNode *nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
@@ -469,7 +473,7 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
         } else if (token == ZR_TK_GET || token == ZR_TK_SET) {
             // 属性签名
             member = parse_interface_property_signature(ps);
-        } else if (token == ZR_TK_IDENTIFIER) {
+        } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_FN) {
             // 方法签名
             member = parse_interface_method_signature(ps);
         } else {
