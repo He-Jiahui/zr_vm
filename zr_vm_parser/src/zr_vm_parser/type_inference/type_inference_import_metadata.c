@@ -1042,6 +1042,12 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                     memberInfo.name = function_constant_string(cs->state, function, compiledMember->nameStringIndex);
                     memberInfo.accessModifier = (EZrAccessModifier)compiledMember->accessModifier;
                     memberInfo.isStatic = compiledMember->isStatic ? ZR_TRUE : ZR_FALSE;
+                    memberInfo.receiverEffect =
+                            compiledMember->receiverEffect <=
+                                            (TZrUInt32)ZR_CANONICAL_RECEIVER_MUTABLE
+                                    ? (EZrCanonicalReceiverEffect)
+                                              compiledMember->receiverEffect
+                                    : ZR_CANONICAL_RECEIVER_NONE;
                     memberInfo.isConst = compiledMember->isConst ? ZR_TRUE : ZR_FALSE;
                     memberInfo.fieldTypeName =
                             function_constant_string(cs->state, function, compiledMember->fieldTypeNameStringIndex);

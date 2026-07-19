@@ -2459,7 +2459,24 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
                     superLookupActive = ZR_FALSE;
                 } else {
+                    if (nextIsFunctionCall && typeMember != ZR_NULL &&
+                        !compiler_validate_receiver_call(
+                                cs,
+                                i == memberStartIndex ? propertyNode : ZR_NULL,
+                                rootTypeName,
+                                rootOwnershipQualifier,
+                                typeMember,
+                                (TZrBool)(memberUsesSuperLookup ||
+                                          primary_member_chain_direct_local_slot(
+                                                  cs, propertyNode) !=
+                                                  ZR_PARSER_SLOT_NONE),
+                                members->nodes[i + 1]->location)) {
+                        return;
+                    }
+
                     if (nextIsFunctionCall && typeMember != ZR_NULL && !typeMember->isStatic &&
+                        typeMember->receiverQualifier !=
+                                ZR_OWNERSHIP_QUALIFIER_NONE &&
                         !receiver_ownership_can_call_member_local(rootOwnershipQualifier,
                                                                   typeMember->receiverQualifier)) {
                         ZrParser_Compiler_Error(cs,
@@ -2684,6 +2701,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             TZrBool hasContractReturnType = ZR_FALSE;
             TZrBool useMetaCallOpcode = ZR_FALSE;
             TZrBool syncStructConstructorReceiverToResult = ZR_FALSE;
+            TZrLoanId activeReceiverLoanId = ZR_SEMANTIC_LOAN_ID_INVALID;
 
             memset(&resolvedFunctionSignature, 0, sizeof(resolvedFunctionSignature));
             ZrParser_InferredType_Init(cs->state, &resolvedFunctionSignature.returnType, ZR_VALUE_TYPE_OBJECT);
@@ -2784,6 +2802,27 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 argBaseSlot = pendingReceiverSlot + 1;
             }
 
+            if (activeCallMemberInfo != ZR_NULL &&
+                pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
+                activeCallMemberInfo->receiverEffect !=
+                        ZR_CANONICAL_RECEIVER_NONE) {
+                activeReceiverLoanId = compiler_semantic_ir_begin_receiver_call(
+                        cs,
+                        pendingReceiverSlot,
+                        activeCallMemberInfo->receiverEffect,
+                        member->location);
+                if (activeReceiverLoanId == ZR_SEMANTIC_LOAN_ID_INVALID) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "Failed to record receiver borrow in pre-SemIR",
+                            member->location);
+                    free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                    free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                    ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                    return;
+                }
+            }
+
             if (argsToCompile != ZR_NULL) {
                 if (activeCallMemberInfo != ZR_NULL) {
                     if (argsToCompile != call->args) {
@@ -2868,6 +2907,21 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     }
                     argCount += (TZrUInt32)argsToCompile->count;
                 }
+            }
+
+            if (!compiler_semantic_ir_activate_receiver_call(
+                        cs, activeReceiverLoanId, member->location)) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Failed to activate receiver borrow in pre-SemIR",
+                        member->location);
+                if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                    ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
+                }
+                free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                return;
             }
 
             {
@@ -2979,6 +3033,20 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                           (TZrUInt16)currentSlot,
                                                           (TZrUInt16)argCount));
                 }
+            }
+            if (!compiler_semantic_ir_end_receiver_call(
+                        cs, activeReceiverLoanId, member->location)) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Failed to end receiver borrow in pre-SemIR",
+                        member->location);
+                if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                    ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
+                }
+                free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                return;
             }
             if (syncStructConstructorReceiverToResult) {
                 emit_instruction(cs,

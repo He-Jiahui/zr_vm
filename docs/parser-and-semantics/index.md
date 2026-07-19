@@ -156,6 +156,7 @@ tests:
   - tests/acceptance/2026-07-19-syntax-01-m1-canonical-type-graph.md
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
   - tests/acceptance/2026-07-20-syntax-02-m3-reference-loan-nll.md
+  - tests/acceptance/2026-07-20-syntax-02-m4-receiver-readonly-call-boundary.md
 doc_type: category-index
 ---
 
@@ -191,6 +192,11 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - ref-slot reaching values with Store kill/gen and Load propagation
   - capability-aware shared/mutable conflict and multi-parent nested reborrow
   - cycle/reachability guards and structured overlap diagnostics
+- `receiver-readonly-call-boundary.md`
+  - canonical readonly/writable receiver effects and serialized member contracts
+  - owner auto-deref capability matrix across seven dispatch kinds
+  - two-phase receiver reservation, activation and call-scoped loan facts
+  - resolved target SymbolId/declaration-range boundary for semantic/LSP consumers
 - `pre-semantic-ir-flow.md`
   - pre-execution semantic instructions with owned Place/CFG/Value/loan state
   - compiler ordering and the execution SemIR compatibility boundary
@@ -302,4 +308,6 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 15. 再看 `place-cfg-graph.md`，了解 session-local Place identity、typed CFG edge 与 cleanup routing。
 16. 再看 `pre-semantic-ir-flow.md`，了解前置 Semantic IR、compiler bridge、flow facts 与 execution sidecar 边界。
 17. 再看 `reference-loan-nll.md`，了解 LoanId 传播、NLL、reborrow 与 Place overlap 冲突。
-18. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+18. 再看 `receiver-readonly-call-boundary.md`，了解 receiver effect、owner auto-deref 与
+    two-phase method call loan。
+19. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

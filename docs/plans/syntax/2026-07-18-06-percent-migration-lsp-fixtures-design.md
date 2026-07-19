@@ -61,11 +61,11 @@
 | `%module app.main` | `module app.main;` |
 | `let math = %import("core.math")` | `let math = import("core.math");` |
 | `%import core.math` | 生成module-scope import binding候选；alias冲突时requiresReview |
-| `%async name(...)` | `async fn name(...)` |
+| `%async name(...): T` | `async fn name(...): Task<T>`；无法确定completion type时requiresReview |
 | `%await expression` | `await expression` |
 | `%extern("library") { ... }` | `native extern("library") { ... }` |
-| `%test ...` | `test ...` |
-| `%compileTime ...` | `comptime ...` |
+| `%test("display") { body }` | `#zr.testing.test# fn generatedName(): void { body }`；display只用于生成稳定identifier |
+| `%compileTime fn/let/{...}` | `comptime fn`、`const`或`comptime {...}`；不引入`comptime let` |
 | `%func(A)->R` | `fn(A) -> R` |
 | `%func(A)=>R` | `fn(A) -> R` |
 | `func name(...): R` | `fn name(...): R` |
@@ -80,6 +80,10 @@
 | `%detach(unique)` | `unique.intoGc()` |
 
 兼容 `func name(...)` 和无关键字函数声明也迁移为 `fn name(...)`，保留/补全定义返回类型前的 `:`。migration frontend 必须先区分 FunctionDefinition、AnonymousFunctionExpression 和 FunctionTypeSyntax：定义中的 `->` 改为 `:`，类型中的 `->` 保留，旧 type arrow `=>` 改为 `->`，expression body 才保留 `=>`。
+
+`%test`迁移不仅删除`%`：新TestEntry必须附着在稳定identifier且显式返回`void`的普通函数上。旧display string只参与生成identifier，不增加`name` metadata。旧body若用`return 0/1`表达harness结果，只有能证明该convention时才改写为`zr.testing` assertion，否则标记requiresReview。
+
+旧`%compileTime class/struct`、`@decorate`class convention和runtime module-init decorator不能按token改为`comptime class/struct`。migration必须绑定其target/patch能力：只产生metadata的迁为带`AttributeUsage` role的普通`readonly struct`，只做validation/generation的迁为带`DeclarationTransform` role且显式返回typed `Patch`的普通`comptime fn`；修改已有body/live prototype或依赖runtime object identity的用法标记blocked。
 
 所有machine edit同时补全目标语法要求的statement terminator。newline不能作为旧/新语法共同终止点；migration frontend根据AST declaration/statement range插入 `;`，不得按文本行末批量追加。已有braced declaration尾随分号可以保留输入range，但formatter规范化时删除。
 
@@ -326,7 +330,7 @@ let view: PoolRef<Entity>  [scoped direct ref + guard]
 - readonly/ref-like/resource capability 放入 rich hover 的 Type/Effects sections。
 - `init TypeRef(...)` signature help 展示所选 `@constructor`；hover 标记 `value construction`、result TypeId 和“inline/no GC allocation”契约。
 - 普通 `TypeName(...)` 仍按 call/`@call` 展示，不能把 constructor overload 混入 call signature list。
-- import alias hover展示canonical ModuleId、provider/source-binary-native kind和readonly ModuleNamespace object type；definition跳到module declaration，member definition继续跳到exported symbol。
+- import alias hover展示原spelling、ModuleDomain、canonical ModuleId、provider/source-binary-descriptor resolution和readonly ModuleNamespace object type；definition跳到module declaration或descriptor virtual document，member definition继续跳到exported symbol。
 - `typeof(expr)` hover显示静态可证明的最精确TypeOf子类或erased `Type`；`typeid(T)`明确标记lightweight identity/no member metadata root。
 - PoolHandle只补全validate/tryBorrow/tryRead/recycle等handle API；PoolRef才补全referent property，并显示禁止heap store/suspension。
 
@@ -366,6 +370,11 @@ deprecated
 - use-after-move/borrow escape 显示 related ranges。
 - missing simple-statement terminator在newline、`}`和EOF前统一提供插入`;`的Quick Fix；不得提供“保留换行即可”的修复。
 - `%import`迁为module-scope `let alias = import("literal");`；dynamic/local/mutable/alias-conflict case只提供requiresReview或blocked action。
+- `import("C:/...")`、POSIX/UNC裸绝对路径不自动猜成module name。目标`.zr/.zrp/.zrm`的identity可静态读取时提供requiresReview的规范`file:` URI改写；发布代码仍优先引导迁到`.zrp` dependency/alias/nativeProviders。
+- source/package/file target/custom descriptor声明`zr.*`或使用`native:zr.task`时只报告reserved-root迁移诊断，不建议改成alias绕过；native descriptor name与manifest key不一致时同时定位`.zrp`和descriptor source。
+- `%test`迁为带`#zr.testing.test#`的named普通`fn(...): void`；旧display string只用于生成稳定identifier，旧integer-return harness convention不能静默保留。
+- `%compileTime` value/check迁为`comptime`；旧compile decorator迁为带`#zr.compile.declarationTransform#`的普通`comptime fn(...): DeclarationPatch`，runtime decorator改为retained metadata或显式runtime call，不生成token/AST rewrite。
+- `{{...}}`和generator `out expr`迁为显式返回`Iterator<T>`的local/named普通`fn`+`yield`；涉及element type、capture或escape无法证明时提供requiresReview action。
 
 只有 migration frontend 标记 machineApplicable 的 fix 才能作为默认 Quick Fix；requiresReview 作为明确标注的 refactor action。
 
@@ -376,8 +385,12 @@ deprecated
 - expression-start completion 可建议 `init`；`init` 后只建议 valueConstructible TypeRef/alias，不建议 runtime value/prototype variable。
 - parameter completion 使用 `name: in/ref/out T`。
 - module scope completion插入`let alias = import("module.path");`，并根据已解析ModuleId建议无冲突alias；function/local scope不建议static import。
+- import completion按domain区分ModuleSpecifier：`zr.`只列OfficialNative inventory，`native:`只列compile descriptor catalog，`#`/`@`分别列alias/dependency；`file:`提供规范URI locator completion但不将路径混入workspace module completion。`.zrp`的`nativeProviders.library`/dependency path字段继续提供filesystem completion。
 - formatter保留所有required semicolon，删除braced declaration的冗余尾随semicolon，并可安全输出single-line minified form。
 - override/interface completion生成正确 `const fn` 和 property accessors。
+- completion复用普通声明模板：attribute schema生成带`AttributeUsage`的`readonly struct`，declaration transform生成带role的`comptime fn(...): Patch`，async生成`async fn(...): Task<T>`，iterator生成`fn(...): Iterator<T>`，test生成`#zr.testing.test# fn(...): void`。不建议`attribute`、`decorator`、`iterator`、`test`函数关键字、runtime decorator class、TaskRunner或匿名test block。
+- hover/definition消费condition decision、generated origin、async completion/Task、iterator element/Iterator和TestEntry facts；LSP不得执行decorator或扫描文本发现test。
+- `zr.*`/custom native hover显示ModuleDomain、Canonical ModuleId、provider phase和descriptor ABI/contract hash；N0-N3只对OfficialNative显示。physical library/source path单独显示为provider locator，不混入TypeId或rename。
 - inlay hints 默认不显示每个隐式 shared borrow，避免噪声；可选显示 move/owner-consume/implicit temporary。
 
 ### 6.6 增量一致性
@@ -397,6 +410,7 @@ deprecated
 - function definition、anonymous function 与 callable TypeRef grammar；明确 `:`/`->`/`=>` 的唯一职责。
 - statement terminator grammar；明确newline永不终止、braced declaration可省略一个尾随分号、compound control-flow不消费declaration分号、simple declaration/statement必须显式`;`。
 - module import grammar；静态导入固定为 `let alias = import("module.path");`，并与runtime loader分离。
+- ModuleDomain grammar；`zr.*`/`native:`/workspace/`@package`形成不同identity，`file:`只定位目标identity，alias展开后保留domain。
 - struct construction 章节：`init TypeRef(...)`、call/`@call` 分离、dynamic prototype reflection boundary。
 - reflection章节：`zr.reflection` Type/TypeOf层级、member/meta query、`typeof/typeid/resolve`和ConstructibleType。
 - property章节：显式`pri/pro/pub let|var` field、无auto/backing、getter-only ref property。
@@ -560,6 +574,7 @@ cutover gate 使用结构化 allowlist，而不是简单要求零 `%`：
 - cross-file workspace edit。
 - moved/borrowed/readonly/resource/refLike display。
 - incremental edit/revision invalidation。
+- `zr.`/`native:`/`file:`/`#alias`/`@package` completion分域，hover分开显示ModuleIdentity与provider locator。
 
 ### Docs/fixtures/artifacts
 
@@ -569,6 +584,7 @@ cutover gate 使用结构化 allowlist，而不是简单要求零 `%`：
 - `.zrs/.zri/.zro` golden/roundtrip/version rejection。
 - source and binary import contract parity。
 - import binding的ModuleId、ModuleNamespace object identity、type namespace和artifact dependency roundtrip一致。
+- RegisteredNative与Workspace同segments可同时导入；同domain duplicate provider失败；alias保留target domain；`file:` locator path不进入TypeId或可发布golden。
 
 ### Full project
 

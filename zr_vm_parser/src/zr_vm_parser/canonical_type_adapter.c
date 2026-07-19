@@ -274,6 +274,9 @@ static TZrTypeId canonical_type_apply_legacy_qualifiers(
         default:
             return ZR_SEMANTIC_ID_INVALID;
     }
+    if (typeId != ZR_SEMANTIC_ID_INVALID && type->isReadonlyView) {
+        typeId = ZrParser_CanonicalType_InternReadonlyView(context, typeId);
+    }
     if (typeId != ZR_SEMANTIC_ID_INVALID && type->isNullable) {
         typeId = ZrParser_CanonicalType_InternNullable(context, typeId);
     }

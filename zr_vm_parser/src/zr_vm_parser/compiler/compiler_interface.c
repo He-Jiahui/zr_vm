@@ -66,6 +66,7 @@ static void compiler_interface_init_member_defaults(SZrTypeMemberInfo *memberInf
     memberInfo->modifierFlags = ZR_DECLARATION_MODIFIER_ABSTRACT | ZR_DECLARATION_MODIFIER_VIRTUAL;
     memberInfo->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     memberInfo->receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    memberInfo->receiverEffect = ZR_CANONICAL_RECEIVER_NONE;
     memberInfo->metaType = ZR_META_ENUM_MAX;
     memberInfo->virtualSlotIndex = (TZrUInt32)-1;
     memberInfo->interfaceContractSlot = (TZrUInt32)-1;
@@ -197,6 +198,7 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.memberType = ZR_AST_CLASS_METHOD;
                     memberInfo.declarationNode = member;
                     memberInfo.accessModifier = method->access;
+                    memberInfo.receiverEffect = get_member_receiver_effect(member);
                     memberInfo.name = method->name != ZR_NULL ? method->name->name : ZR_NULL;
                     memberInfo.ownerTypeName = typeName;
                     memberInfo.baseDefinitionOwnerTypeName = typeName;
@@ -245,6 +247,7 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         getterInfo.baseDefinitionName = getterInfo.name;
                         getterInfo.propertyIdentity = info.nextPropertyIdentity;
                         getterInfo.accessorRole = 1;
+                        getterInfo.receiverEffect = ZR_CANONICAL_RECEIVER_READONLY;
                         getterInfo.virtualSlotIndex = info.nextVirtualSlotIndex++;
                         getterInfo.interfaceContractSlot = getterInfo.virtualSlotIndex;
                         if (property->typeInfo != ZR_NULL) {
@@ -274,6 +277,7 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         setterInfo.baseDefinitionName = setterInfo.name;
                         setterInfo.propertyIdentity = info.nextPropertyIdentity;
                         setterInfo.accessorRole = 2;
+                        setterInfo.receiverEffect = ZR_CANONICAL_RECEIVER_MUTABLE;
                         setterInfo.virtualSlotIndex = info.nextVirtualSlotIndex++;
                         setterInfo.interfaceContractSlot = setterInfo.virtualSlotIndex;
                         ZrCore_Array_Init(cs->state, &setterInfo.parameterTypes, sizeof(SZrInferredType), 1);
@@ -310,6 +314,10 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.baseDefinitionName = memberInfo.name;
                     memberInfo.metaType = compiler_resolve_meta_type_name(memberInfo.name);
                     memberInfo.isMetaMethod = memberInfo.metaType != ZR_META_ENUM_MAX;
+                    memberInfo.receiverEffect =
+                            memberInfo.metaType == ZR_META_CONSTRUCTOR
+                                    ? ZR_CANONICAL_RECEIVER_NONE
+                                    : ZR_CANONICAL_RECEIVER_MUTABLE;
                     memberInfo.virtualSlotIndex = memberInfo.metaType == ZR_META_CONSTRUCTOR
                                                           ? (TZrUInt32)-1
                                                           : info.nextVirtualSlotIndex++;

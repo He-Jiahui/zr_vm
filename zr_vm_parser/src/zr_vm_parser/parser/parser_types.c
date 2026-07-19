@@ -99,6 +99,7 @@ static SZrType *allocate_empty_type_info(SZrParserState *ps) {
     type->name = ZR_NULL;
     type->subType = ZR_NULL;
     type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    type->isReadonlyView = ZR_FALSE;
     type->isDecoratorPseudoType = ZR_FALSE;
     type->isImplicitBuiltinType = ZR_FALSE;
     type->arrayFixedSize = 0;
@@ -293,6 +294,16 @@ static TZrBool current_identifier_is(SZrParserState *ps, const TZrChar *value) {
            current_identifier_equals(ps, value);
 }
 
+static TZrBool current_starts_scoped_ref_contract(SZrParserState *ps) {
+    EZrToken nextToken;
+
+    if (!current_identifier_is(ps, "scoped")) {
+        return ZR_FALSE;
+    }
+    nextToken = peek_token(ps);
+    return nextToken == ZR_TK_REF || token_can_start_type_expression(nextToken);
+}
+
 static SZrAstNode *parse_function_type_parameter(SZrParserState *ps, TZrBool noGeneric) {
     SZrFileRange startLoc;
     EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
@@ -365,7 +376,7 @@ static SZrAstNode *parse_function_type_parameter(SZrParserState *ps, TZrBool noG
     }
 
     if (ps->lexer->t.token == ZR_TK_IN || ps->lexer->t.token == ZR_TK_OUT ||
-        ps->lexer->t.token == ZR_TK_REF || current_identifier_is(ps, "scoped")) {
+        ps->lexer->t.token == ZR_TK_REF || current_starts_scoped_ref_contract(ps)) {
         if (!parse_parameter_source_passing_form(
                     ps, &sourceForm, &passingMode, &passingFormLocation)) {
             if (nameNode != ZR_NULL) {
@@ -852,6 +863,31 @@ static SZrType *parse_type_internal(SZrParserState *ps, TZrBool noGeneric) {
 
     if (ps == ZR_NULL) {
         return ZR_NULL;
+    }
+
+    if (current_identifier_is(ps, "readonly")) {
+        if (peek_token(ps) == ZR_TK_REF) {
+            report_error(ps, "'readonly' must follow 'ref' in a parameter contract");
+            return ZR_NULL;
+        }
+        ZrParser_Lexer_Next(ps->lexer);
+        type = noGeneric ? parse_type_no_generic(ps) : parse_type(ps);
+        if (type == ZR_NULL) {
+            report_error(ps, "Expected type after 'readonly'");
+            return ZR_NULL;
+        }
+        if (type->isReadonlyView) {
+            report_error(ps, "Duplicate 'readonly' capability view");
+            free_owned_type(ps->state, type);
+            return ZR_NULL;
+        }
+        if (type->name != ZR_NULL && type->name->type == ZR_AST_FUNCTION_TYPE) {
+            report_error(ps, "'readonly' capability view requires an object or value type");
+            free_owned_type(ps->state, type);
+            return ZR_NULL;
+        }
+        type->isReadonlyView = ZR_TRUE;
+        return type;
     }
 
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
@@ -1597,18 +1633,13 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
     SZrType *typeInfo = ZR_NULL;
     if (consume_token(ps, ZR_TK_COLON)) {
         if (ps->lexer->t.token == ZR_TK_IN || ps->lexer->t.token == ZR_TK_OUT ||
-            ps->lexer->t.token == ZR_TK_REF || current_identifier_is(ps, "scoped")) {
+            ps->lexer->t.token == ZR_TK_REF || current_starts_scoped_ref_contract(ps)) {
             if (!parse_parameter_source_passing_form(
                         ps, &sourceForm, &passingMode, &passingFormLocation)) {
                 ZrParser_Ast_Free(ps->state, nameNode);
                 free_ast_node_array_with_elements(ps->state, decorators);
                 return ZR_NULL;
             }
-        } else if (current_identifier_is(ps, "readonly")) {
-            report_error(ps, "'readonly' must follow 'ref' in a parameter contract");
-            ZrParser_Ast_Free(ps->state, nameNode);
-            free_ast_node_array_with_elements(ps->state, decorators);
-            return ZR_NULL;
         }
         typeInfo = parse_type(ps);
         // 如果类型解析失败，仍然创建参数节点（typeInfo 为 NULL）

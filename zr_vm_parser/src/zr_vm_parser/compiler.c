@@ -69,31 +69,6 @@ static TZrBool compiler_refresh_borrowed_child_function_graph(SZrState *state,
     return ZR_TRUE;
 }
 
-EZrOwnershipQualifier get_member_receiver_qualifier(SZrAstNode *node) {
-    if (node == ZR_NULL) {
-        return ZR_OWNERSHIP_QUALIFIER_NONE;
-    }
-
-    switch (node->type) {
-        case ZR_AST_STRUCT_METHOD:
-            return node->data.structMethod.receiverQualifier;
-        case ZR_AST_CLASS_METHOD:
-            return node->data.classMethod.receiverQualifier;
-        default:
-            return ZR_OWNERSHIP_QUALIFIER_NONE;
-    }
-}
-
-EZrOwnershipQualifier get_implicit_this_ownership_qualifier(EZrOwnershipQualifier receiverQualifier) {
-    if (receiverQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
-        receiverQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
-        receiverQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED) {
-        return ZR_OWNERSHIP_QUALIFIER_BORROWED;
-    }
-
-    return receiverQualifier;
-}
-
 // 初始化编译器状态
 
 static void compiler_accumulate_protocol_mask_from_type_names(SZrCompilerState *cs,
@@ -394,6 +369,8 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
         compiledMember->interfaceContractSlot = memberInfo->interfaceContractSlot;
         compiledMember->propertyIdentity = memberInfo->propertyIdentity;
         compiledMember->accessorRole = memberInfo->accessorRole;
+        compiledMember->receiverEffect =
+                (TZrUInt32)memberInfo->receiverEffect;
         if (compiledMember->hasDecoratorNames &&
             !compiler_add_decorator_name_array_constant(cs,
                                                         &memberInfo->decorators,

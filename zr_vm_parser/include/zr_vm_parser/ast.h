@@ -260,6 +260,11 @@ enum EZrDeclarationModifierFlag {
 
 typedef enum EZrDeclarationModifierFlag EZrDeclarationModifierFlag;
 
+typedef enum EZrMethodReceiverModifier {
+    ZR_METHOD_RECEIVER_DEFAULT = 0,
+    ZR_METHOD_RECEIVER_CONST
+} EZrMethodReceiverModifier;
+
 // 赋值操作符
 typedef struct SZrAssignmentOperator {
     const TZrChar *op; // "=", "+=", "-=", "*=", "/=", "%="
@@ -287,6 +292,7 @@ typedef struct SZrType {
     struct SZrType *subType; // 子类型（可选）
     TZrInt32 dimensions; // 数组维度
     EZrOwnershipQualifier ownershipQualifier; // 特殊所有权限定
+    TZrBool isReadonlyView; // readonly T capability view
     TZrBool isDecoratorPseudoType; // 是否来自 %type 反射伪类型注解
     TZrBool isImplicitBuiltinType; // 是否由 parser 内部糖语法生成，可绕过显式导入检查
     
@@ -642,6 +648,7 @@ typedef struct SZrStructMethod {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
     TZrBool isStatic;
+    EZrMethodReceiverModifier receiverModifier;
     EZrOwnershipQualifier receiverQualifier;
     SZrIdentifier *name;
     SZrGenericDeclaration *generic; // 可选
@@ -729,6 +736,7 @@ typedef struct SZrClassMethod {
     EZrAccessModifier access;
     TZrBool isStatic;
     TZrUInt32 modifierFlags;
+    EZrMethodReceiverModifier receiverModifier;
     EZrOwnershipQualifier receiverQualifier;
     SZrIdentifier *name;
     SZrFileRange nameLocation;
@@ -802,6 +810,7 @@ typedef struct SZrInterfaceFieldDeclaration {
 // 接口方法签名
 typedef struct SZrInterfaceMethodSignature {
     EZrAccessModifier access;
+    EZrMethodReceiverModifier receiverModifier;
     SZrIdentifier *name;
     SZrGenericDeclaration *generic; // 可选
     SZrAstNodeArray *params; // Parameter 数组

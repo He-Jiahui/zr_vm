@@ -39,8 +39,13 @@ static EZrAstNodeType classify_class_member_from_current(SZrParserState *ps) {
         sawFieldUsingPrefix = ZR_TRUE;
     }
 
-    if (sawFieldUsingPrefix || ps->lexer->t.token == ZR_TK_VAR || ps->lexer->t.token == ZR_TK_CONST) {
+    if (sawFieldUsingPrefix || ps->lexer->t.token == ZR_TK_VAR) {
         kind = ZR_AST_CLASS_FIELD;
+    } else if (ps->lexer->t.token == ZR_TK_CONST) {
+        ZrParser_Lexer_Next(ps->lexer);
+        kind = ps->lexer->t.token == ZR_TK_FN
+                       ? ZR_AST_CLASS_METHOD
+                       : ZR_AST_CLASS_FIELD;
     } else if (ps->lexer->t.token == ZR_TK_GET || ps->lexer->t.token == ZR_TK_SET) {
         kind = ZR_AST_CLASS_PROPERTY;
     } else if (ps->lexer->t.token == ZR_TK_AT) {
@@ -359,6 +364,7 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     SZrFileRange endLoc;
     EZrOwnershipQualifier receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     TZrUInt32 modifierFlags = ZR_DECLARATION_MODIFIER_NONE;
+    EZrMethodReceiverModifier receiverModifier = ZR_METHOD_RECEIVER_DEFAULT;
 
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
         receiverQualifier = parse_optional_method_receiver_qualifier(ps);
@@ -386,6 +392,14 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     }
 
     modifierFlags = parse_declaration_modifier_flags(ps, class_member_allowed_modifier_flags());
+
+    if (ps->lexer->t.token == ZR_TK_CONST) {
+        receiverModifier = ZR_METHOD_RECEIVER_CONST;
+        ZrParser_Lexer_Next(ps->lexer);
+        if (isStatic) {
+            report_error(ps, "static const fn is invalid because static functions have no receiver");
+        }
+    }
 
     if (receiverQualifier == ZR_OWNERSHIP_QUALIFIER_NONE && ps->lexer->t.token == ZR_TK_PERCENT) {
         receiverQualifier = parse_optional_method_receiver_qualifier(ps);
@@ -496,6 +510,7 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     node->data.classMethod.access = access;
     node->data.classMethod.isStatic = isStatic;
     node->data.classMethod.modifierFlags = modifierFlags;
+    node->data.classMethod.receiverModifier = receiverModifier;
     node->data.classMethod.receiverQualifier = receiverQualifier;
     node->data.classMethod.name = name;
     node->data.classMethod.nameLocation = nameLoc;

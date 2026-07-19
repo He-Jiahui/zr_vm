@@ -108,6 +108,7 @@ SZrAstNode *parse_struct_field(SZrParserState *ps) {
 SZrAstNode *parse_struct_method(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     EZrOwnershipQualifier receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    EZrMethodReceiverModifier receiverModifier = ZR_METHOD_RECEIVER_DEFAULT;
 
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
         receiverQualifier = parse_optional_method_receiver_qualifier(ps);
@@ -132,6 +133,14 @@ SZrAstNode *parse_struct_method(SZrParserState *ps) {
     if (ps->lexer->t.token == ZR_TK_STATIC) {
         isStatic = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    if (ps->lexer->t.token == ZR_TK_CONST) {
+        receiverModifier = ZR_METHOD_RECEIVER_CONST;
+        ZrParser_Lexer_Next(ps->lexer);
+        if (isStatic) {
+            report_error(ps, "static const fn is invalid because static functions have no receiver");
+        }
     }
 
     if (ps->lexer->t.token == ZR_TK_FN) {
@@ -219,6 +228,7 @@ SZrAstNode *parse_struct_method(SZrParserState *ps) {
     node->data.structMethod.decorators = decorators;
     node->data.structMethod.access = access;
     node->data.structMethod.isStatic = isStatic;
+    node->data.structMethod.receiverModifier = receiverModifier;
     node->data.structMethod.receiverQualifier = receiverQualifier;
     node->data.structMethod.name = name;
     node->data.structMethod.generic = generic;
@@ -422,6 +432,13 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             }
             if (sawFieldUsingPrefix) {
                 nextToken = ZR_TK_USING;
+            }
+
+            if (nextToken == ZR_TK_CONST) {
+                ZrParser_Lexer_Next(ps->lexer);
+                nextToken = ps->lexer->t.token == ZR_TK_FN
+                                    ? ZR_TK_FN
+                                    : ZR_TK_CONST;
             }
 
             if (nextToken == ZR_TK_VAR || nextToken == ZR_TK_CONST || nextToken == ZR_TK_USING) {

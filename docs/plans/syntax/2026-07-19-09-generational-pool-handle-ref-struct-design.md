@@ -22,6 +22,8 @@ weak identity                scoped direct ref
 - GC 只在 TypeLayout 证明 `GcFree` 时跳过整段 slab；有 GC 字段时使用精确 map/barrier。
 - pool 是标准库/运行时 capability，不增加 `pool` 关键字，也不在 compiler 中按 `PoolHandle` 名字特判。
 
+`zr.pooling`是第10章OfficialNative domain的N2 Runtime native module。Pool/PoolHandle/PoolRef、slab policy和borrow guard contract的Canonical TypeId由其`ZrLibModuleDescriptor`唯一拥有；下面的ZR声明只作为生成的interface projection和语义说明，不是可覆盖的source标准库。compiler/GC只消费registered StableSlotSource/TypeLayout/capability id，不比较`PoolHandle`或`PoolRef`名字。
+
 ## 2. 为什么必须拆成两个类型
 
 weak handle 本身不包含语言 ref：

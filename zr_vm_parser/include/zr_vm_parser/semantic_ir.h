@@ -30,7 +30,9 @@ typedef enum EZrSemanticIrOpcode {
     ZR_SEMANTIC_IR_DROP,
     ZR_SEMANTIC_IR_BORROW_SHARED,
     ZR_SEMANTIC_IR_BORROW_MUT,
+    ZR_SEMANTIC_IR_RESERVE_BORROW_MUT,
     ZR_SEMANTIC_IR_REBORROW,
+    ZR_SEMANTIC_IR_ACTIVATE_LOAN,
     ZR_SEMANTIC_IR_END_LOAN,
     ZR_SEMANTIC_IR_DEREFERENCE,
     ZR_SEMANTIC_IR_CALL_TYPED,
@@ -66,6 +68,11 @@ typedef enum EZrSemanticLoanAccess {
     ZR_SEMANTIC_LOAN_SHARED = 0,
     ZR_SEMANTIC_LOAN_MUTABLE
 } EZrSemanticLoanAccess;
+
+typedef enum EZrSemanticLoanPhase {
+    ZR_SEMANTIC_LOAN_IMMEDIATE = 0,
+    ZR_SEMANTIC_LOAN_TWO_PHASE
+} EZrSemanticLoanPhase;
 
 typedef enum EZrSemanticOwnershipOperation {
     ZR_SEMANTIC_OWNERSHIP_NONE = 0,
@@ -117,6 +124,7 @@ typedef struct SZrSemanticIrLoanFact {
     TZrLoanId loanId;
     TZrPlaceId sourcePlaceId;
     EZrSemanticLoanAccess access;
+    EZrSemanticLoanPhase phase;
     TZrRegionId regionId;
     SZrFileRange originRange;
     SZrFileRange lastUseRange;
@@ -249,7 +257,9 @@ typedef struct SZrSemanticInstructionLoanLiveness {
 typedef struct SZrSemanticLoanRegionFact {
     TZrLoanId loanId;
     TZrLoanId parentLoanId;
+    EZrSemanticLoanPhase phase;
     TZrSemanticInstructionId firstLiveInstructionId;
+    TZrSemanticInstructionId activationInstructionId;
     TZrSemanticInstructionId lastUseInstructionId;
     SZrFileRange originRange;
     SZrFileRange lastUseRange;
@@ -297,6 +307,15 @@ ZR_PARSER_API TZrLoanId ZrParser_SemanticIr_AddLoan(
         SZrSemanticIrFunction *function,
         TZrPlaceId sourcePlaceId,
         EZrSemanticLoanAccess access,
+        TZrRegionId regionId,
+        SZrFileRange originRange,
+        SZrFileRange lastUseRange,
+        TZrValueId createdByValueId);
+ZR_PARSER_API TZrLoanId ZrParser_SemanticIr_AddLoanEx(
+        SZrSemanticIrFunction *function,
+        TZrPlaceId sourcePlaceId,
+        EZrSemanticLoanAccess access,
+        EZrSemanticLoanPhase phase,
         TZrRegionId regionId,
         SZrFileRange originRange,
         SZrFileRange lastUseRange,
@@ -352,6 +371,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticFlow_HasDiagnostic(
         EZrSemanticFlowDiagnosticKind kind,
         TZrPlaceId placeId);
 ZR_PARSER_API TZrBool ZrParser_SemanticFlow_LoanIsLiveAt(
+        const SZrSemanticFlowResult *result,
+        TZrSemanticInstructionId instructionId,
+        TZrLoanId loanId,
+        TZrBool beforeInstruction);
+ZR_PARSER_API TZrBool ZrParser_SemanticFlow_LoanIsActiveAt(
         const SZrSemanticFlowResult *result,
         TZrSemanticInstructionId instructionId,
         TZrLoanId loanId,

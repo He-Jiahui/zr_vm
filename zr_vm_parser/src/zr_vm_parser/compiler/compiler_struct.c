@@ -954,6 +954,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             memberInfo.isUsingManaged = ZR_FALSE;
             memberInfo.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
             memberInfo.receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+            memberInfo.receiverEffect = ZR_CANONICAL_RECEIVER_NONE;
             memberInfo.callsClose = ZR_FALSE;
             memberInfo.callsDestructor = ZR_FALSE;
             memberInfo.declarationOrder = (TZrUInt32)i;
@@ -1040,6 +1041,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.accessModifier = method->access;
                     memberInfo.isStatic = method->isStatic;
                     memberInfo.receiverQualifier = method->receiverQualifier;
+                    memberInfo.receiverEffect = get_member_receiver_effect(member);
                     if (method->name != ZR_NULL) {
                         memberInfo.name = method->name->name;
                     }
@@ -1104,6 +1106,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     SZrAstNode *previousFunctionNode = cs->currentFunctionNode;
                     memberInfo.accessModifier = metaFunc->access;
                     memberInfo.isStatic = metaFunc->isStatic;
+                    memberInfo.receiverEffect = get_member_receiver_effect(member);
                     if (metaFunc->meta != ZR_NULL) {
                         memberInfo.name = metaFunc->meta->name;
                         memberInfo.metaType = compiler_resolve_meta_type_name(metaFunc->meta->name);

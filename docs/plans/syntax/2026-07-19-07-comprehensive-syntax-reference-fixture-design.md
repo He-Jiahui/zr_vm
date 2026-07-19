@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 建立一个单一、多模块、可运行的ZR参考工程，用正例、负例和产物golden覆盖本目录01-06、08-10已确认的全部目标语法与语义边界。
+**Goal:** 建立一个单一、多模块、可运行的ZR参考工程，用正例、负例和产物golden覆盖本目录01-06、08-14已确认的全部目标语法与语义边界。
 
 **Architecture:** `syntax_reference_v1` 是一项完整的像素渲染任务，不是互不相干的语法片段集合。源码层覆盖声明、类型、构造、调用、借用、布局、属性、所有权和反射；同一份 bound/SemIR facts 再由 VM、AOT、artifact、LSP 和 migration fixture 共同验证。
 
@@ -12,16 +12,16 @@
 
 > 状态：设计参考第一版，等待人工修改与确认；不是当前编译器已经支持的语法声明。
 >
-> 硬依赖：[01-10子设计索引](./README.md)。任何代码块与已确认子设计冲突时，以对应细化设计为准，并同步修订本文。
+> 硬依赖：[01-14子设计索引](./README.md)。任何代码块与已确认子设计冲突时，以对应细化设计为准，并同步修订本文。
 
 ## 1. “覆盖所有语法”的范围
 
 本文中的“所有”采用可验证边界，不等于保留当前 parser 接受的每一种历史拼写：
 
-1. 覆盖01-06、08-10定义的目标语言规则，包括Canonical TypeRef、Place/CFG facts、函数与引用、struct/ref struct/Span、resource ownership、property、reflection、pooling、native/FFI、module/package、迁移、artifact和LSP。
-2. 覆盖与这些规则组合时不可缺少的稳定基础语法：`module/import`、`let/var/const`、class/interface/enum/union/generic、数组/tuple、普通调用、成员访问、`if/if let/switch/while/for`、异常、async、native extern、test、decorator 和 meta method。
+1. 覆盖01-06、08-14定义的目标语言规则，包括Canonical TypeRef、Place/CFG facts、函数与引用、struct/ref struct/Span、resource ownership、property、reflection、pooling、native/FFI、module/package、comptime/static metadata/declaration transform、async/Task/Job/Scheduler、Iterator/yield、test metadata/manifest、迁移、artifact和LSP。
+2. 覆盖与这些规则组合时不可缺少的稳定基础语法：`module/import`、`let/var/const`、class/interface/enum/union/generic、数组/tuple、普通调用、成员访问、`if/if let/switch/while/for/await for`、异常、native extern和meta method。
 3. 旧 `%xxx`、`$Type(...)` 和 `$proto(...)` 只进入 legacy input 或 compile-fail fixture，不进入 current-pass 源码。
-4. `intermediate` 裸指令块、`{{ ... }}` generator、动态 object/prototype 拼接构造不属于核心语言参考工程；它们需要单独决定是工具 IR、库能力还是删除项，不能借本 fixture 自动晋级为目标语法。
+4. `intermediate`裸指令块和动态object/prototype拼接构造不属于核心语言参考工程；旧`{{ ... }}` generator已由13确定迁移为显式返回`Iterator<T>`的普通`fn`加`yield`，三者都不能借本fixture自动晋级为current语法。
 5. `using` 只保留 Close/Dispose 作用域这一语义，但 04 尚未冻结其完整 statement grammar；在 grammar 冻结前只列入 coverage manifest 的 `surfacePending`，不在 current-pass 文件中猜测拼写。owner 生命周期由 `Unique<T>` 自动 Drop 和 `drop(value)` 覆盖。
 6. 自定义 Drop body 第一版沿用当前 `@destructor` 声明作为过渡表层，语义一律绑定为 04 的不可抛错、不可挂起 `DropContract`。若后续改名，只允许替换声明表层，不得改变 cleanup CFG 和 artifact contract。
 
@@ -42,8 +42,11 @@
 | object literal、array literal、tuple                                        | current-pass/control-flow源码及 parser golden覆盖                                                          | inherited-current     |
 | if/if let/switch/while/for/break/continue/return                            | main/ownership/algorithms覆盖                                                                              | inherited-current     |
 | try/catch/finally/throw                                                     | main与cleanup CFG golden覆盖                                                                               | inherited-current     |
-| test/comptime/async/await/native extern                                     | effects/host/native_ffi和await负例覆盖                                                                     | target-current        |
-| decorator`#...#`                                                          | 保留现有 decorator AST 与 target metadata；单独 parser/runtime case，不与`%` 迁移混合                    | inherited-current     |
+| comptime/condition/static metadata/declaration transform                    | compile_time_and_attributes与generation负例；复用readonly struct、普通comptime fn和typed Patch              | target-current        |
+| async/await/Task/Job/Scheduler                                              | effects/async_jobs和await/Send负例；async显式返回hot Task carrier                                           | target-current        |
+| Iterator/Enumerator/yield/await for                                         | iterators与yield/borrow/Drop负例；旧generator不进入current                                                  | target-current        |
+| test metadata on ordinary fn                                               | tests与TestManifest golden；不增加test function kind或宏生成main                                            | target-current        |
+| metadata application `#...#`                                               | 绑定为静态AttributeData或compiler role；无runtime module-init decoration                                    | target-current        |
 | meta method                                                                 | `@constructor/@call/@add/@destructor`在正例中覆盖，其余 meta kind由现有 meta-surface fixture继续逐项驱动 | inherited-current     |
 | property getter/setter                                                      | 统一`property` AST + 显式`pri/pro/pub let|var` field；ref property getter-only                          | target-current        |
 | value/class/resource/dynamic construction                                   | 分别使用`init/new/own/createInstance`                                                                    | target-current        |
@@ -51,7 +54,7 @@
 | cast`<Type>expr`                                                          | 现有拼写与 generic/comparison解析压力较大，本轮不冻结；保留现有测试并进入后续 expression-syntax审查        | surfacePending        |
 | fixed/ranged array`T[N]`、`T[min..max]`                                 | layout/range语义保留，声明拼写在 layout扩展计划确认后再晋级reference fixture                               | surfacePending        |
 | Close/Dispose`using`                                                      | 语义保留，statement grammar等待冻结                                                                        | surfacePending        |
-| `{{ ... }}` generator                                                     | 不进入核心reference；需要独立 generator/coroutine设计决定替代语法                                          | excluded-from-core-v1 |
+| `{{ ... }}` generator                                                     | 被`fn(...): Iterator<T>`/`yield`替代，只进入migration/negative fixture                                     | legacy-only           |
 | `intermediate` source block                                               | 移到工具/调试IR边界，不作为用户语言current-pass                                                            | excluded-from-core-v1 |
 | 旧`%xxx` 与 `$...`                                                      | 只进入migration/negative fixture                                                                           | legacy-only           |
 
@@ -78,6 +81,16 @@
 | braced declaration终止                      | `}`，可选一个尾随`;`                               | formatter默认不输出；不开放重复empty statement         |
 | compound control-flow终止                   | 完整block/branch chain                                 | 不消费declaration`;`，branch之间禁止插入`;`        |
 | static module import                        | `let alias = import("module.path");`                 | 不接受裸import、dynamic path或local/conditional import |
+| official native module                      | `import("zr.task")` / `import("zr.iteration")`      | `zr.*`只形成OfficialNative identity，不可被其他domain覆盖 |
+| logical/physical identity                   | logical name形成domain-aware ModuleId；绝对路径显式写`file:` | 裸drive/root/UNC path非法；locator不进入TypeId          |
+| custom native module                        | `import("native:engine.render")` + `.zrp nativeProviders` | RegisteredNative可与Workspace同segments并存；同domain不按注册顺序选 |
+| compile-time condition                      | `comptime if (...)`                                     | 不增加`when`同义语法；不读取env/runtime object         |
+| metadata / declaration generation           | `#AttributeUsage# readonly struct` / `#DeclarationTransform# comptime fn(...): Patch` | 不新增function kind，不接受token/source或已有body改写 |
+| conditional call                            | `#zr.compile.conditional("feature")#` on direct void fn | 不用于virtual/delegate/non-void/ref-out                |
+| async completion                            | `async fn f(...): Task<T>`                               | 不隐藏返回改写，不返回cold TaskRunner                  |
+| explicit scheduling                         | `init Job<T>(callable)` -> `Scheduler.schedule(job): Task<T>` | 不增加spawn/thread/coroutine关键字                  |
+| iterator                                    | `fn f(...): Iterator<T>` / `async fn ...: AsyncIterator<T>` + `yield` | 不增加`iterator` modifier，不保留旧generator |
+| test                                        | `#zr.testing.test# fn(...): void` / explicit `Task<void>` + TestManifest | 不增加`test`关键字、匿名block或hidden main        |
 
 四种静态构造/调用和一种动态反射边界必须在 AST、binder 与 SemIR 中保持独立：
 
@@ -126,7 +139,8 @@ ImportExpression
 
 - import binding只能位于module scope且必须使用immutable `let`。
 - ImportExpression是专用AST节点，不是名字为`import`的普通CallExpression。
-- string literal在compile时canonicalize为ModuleId；source/binary/native provider由统一resolver选择。
+- string literal先解析specifier kind和ModuleDomain，再canonicalize为ModuleId；source/binary/descriptor provider由统一resolver选择。`zr.task`、`native:engine.render`、`engine.render`和`@pkg/...`分别进入OfficialNative、RegisteredNative、Workspace和Package domain。
+- `native:`与`file:`只是ImportExpression literal中的scheme，不是关键字。`file:`读取`.zr/.zrp/.zrm`声明或内嵌identity后归入目标domain，不创建File TypeId。
 - binding既产生runtime readonly ModuleNamespace object，也产生compile-time namespace fact；`alias.Type`可进入TypeRef，`alias.member`可进入value expression。
 - module object可以作为普通readonly object读取或传递，但复制出的普通value alias不继承TypeRef namespace资格。
 - dynamic path、conditional/local import使用`loadModule/loadPlugin`及显式Result/union，不使用ImportExpression。
@@ -236,13 +250,20 @@ tests/fixtures/projects/syntax_reference_v1/
     ownership.zr
     algorithms.zr
     effects.zr
+    compile_time_and_attributes.zr
+    async_jobs.zr
+    iterators.zr
     reflection.zr
     pooling.zr
     modules.zr
     native_ffi.zr
+    engine/
+      render.zr
     nested/
       imports.zr
     main.zr
+  tests/
+    syntax_tests.zr
   packages/
     fixturedep/
       fixturedep.zrp
@@ -251,10 +272,14 @@ tests/fixtures/projects/syntax_reference_v1/
         tool.zr
   artifacts/
     fixturedep.zrm
+  generated/
+    file_locator_import.zr
+  native/
+    syntax_reference_native.c
   surface/
     lexical_and_literals.zr
     destructuring_and_literals.zr
-    decorators_and_meta.zr
+    metadata_and_transforms.zr
   negative/
     function_delimiters.zr
     reference_and_escape.zr
@@ -265,6 +290,10 @@ tests/fixtures/projects/syntax_reference_v1/
     pooling_boundaries.zr
     module_package_boundaries.zr
     native_ffi_boundaries.zr
+    compile_time_boundaries.zr
+    async_scheduler_boundaries.zr
+    iterator_boundaries.zr
+    test_boundaries.zr
     legacy_percent_surface.zr
   golden/
     coverage.json
@@ -273,6 +302,7 @@ tests/fixtures/projects/syntax_reference_v1/
     syntax.zrs
     semantic.zri
     public.zro.manifest.json
+    test.zro.manifest.json
 ```
 
 项目 manifest：
@@ -287,7 +317,8 @@ tests/fixtures/projects/syntax_reference_v1/
   "binary": "bin",
   "entry": "main",
   "aliases": {
-    "#fixture": "syntax/reference"
+    "#fixture": "syntax/reference",
+    "#nativeRender": "native:engine.render"
   },
   "package": {
     "name": "@syntaxref",
@@ -302,8 +333,22 @@ tests/fixtures/projects/syntax_reference_v1/
       "path": "packages/fixturedep/fixturedep.zrp"
     }
   },
-  "supportMultithread": true,
-  "autoCoroutine": true
+  "nativeProviders": {
+    "engine.render": {
+      "library": "bin/syntax_reference_native",
+      "entry": "ZrVm_GetSyntaxReferenceRenderModule_v1",
+      "abiVersion": 1
+    }
+  },
+  "build": {
+    "features": ["trace", "simd", "debug_assert"],
+    "profiles": {
+      "debug": { "enableFeatures": ["trace", "debug_assert"] },
+      "release": { "enableFeatures": [] }
+    }
+  },
+  "testSource": "tests",
+  "capabilities": ["thread", "native"]
 }
 ```
 
@@ -451,6 +496,7 @@ module syntax.reference.object_model;
 
 let host = import("syntax.reference.host");
 let model = import("syntax.reference.model");
+let task = import("zr.task");
 
 interface Named {
     pub property name: string {
@@ -690,18 +736,13 @@ pub comptime fn defaultAlpha(): int {
     return 255;
 }
 
-async fn ready(value: model.Pixel): model.Pixel {
+async fn ready(value: model.Pixel): task.Task<model.Pixel> {
     return value;
 }
 
-pub async fn checksumAsync(value: model.Pixel): int {
+pub async fn checksumAsync(value: model.Pixel): task.Task<int> {
     let completed: model.Pixel = await ready(value);
     return completed.checksum();
-}
-
-test("target syntax function delimiters") {
-    let mapper: fn(int) -> int = fn(value: int): int => value + 1;
-    return mapper(1) - 2;
 }
 ```
 
@@ -802,6 +843,10 @@ let packageRoot = import("@fixturedep");
 let packageToolDot = import("@fixturedep.tool");
 let packageToolSlash = import("@fixturedep/tool");
 let assemblyRoot = import("artifacts/fixturedep.zrm");
+let workspaceRender = import("engine.render");
+let nativeRender = import("native:engine.render");
+let nativeRenderSlash = import("native:engine/render");
+let nativeRenderAlias = import("#nativeRender");
 
 pub fn moduleChecksum(): int {
     let absoluteValue: modelDot.Pixel = init modelSlash.Pixel(1, 2, 3, 4);
@@ -813,7 +858,11 @@ pub fn moduleChecksum(): int {
         + packageRoot.value()
         + packageToolDot.value()
         + packageToolSlash.value()
-        + assemblyRoot.value();
+        + assemblyRoot.value()
+        + workspaceRender.value()
+        + nativeRender.value()
+        + nativeRenderSlash.value()
+        + nativeRenderAlias.value();
 }
 ```
 
@@ -877,7 +926,23 @@ pub fn value(): int {
 }
 ```
 
-这些import pair必须分别规范化为相同Canonical ModuleId；LSP hover保留原spelling但显示同一ModuleIdentity。package fixture将`@fixturedep`限制为单段包名并只export`.`与`./tool`。测试先把同一package构建为`artifacts/fixturedep.zrm`，再证明package/source与assembly entry具有相同public contract hash；二者的provider/artifact identity仍可区分。
+`src/engine/render.zr`：
+
+```zr
+module engine.render;
+
+pub fn value(): int {
+    return 17;
+}
+```
+
+测试native library通过`ZrVm_GetSyntaxReferenceRenderModule_v1`返回`moduleDomain = RegisteredNative`、`moduleName = "engine.render"`的descriptor，并公开`fn value(): int`返回`19`。descriptor C实现是host/provider fixture，不复制一份ZR source signature；签名golden来自同一descriptor projection。
+
+`src/engine/render.zr`声明Workspace模块`engine.render`并返回与native fixture不同的稳定值；`syntax_reference_native`的descriptor声明RegisteredNative模块`engine.render`。两者必须能在同一source中同时导入并产生不同TypeId/module object；`native:`的dot/slash spelling和`#nativeRender`则必须归一为同一个RegisteredNative identity并只materialize一次。
+
+测试harness还在临时目录生成`generated/file_locator_import.zr`：把实际fixture根转换为Windows/POSIX/UNC适用的规范`file:` URI，分别指向已声明identity的`.zr`、含entry的`.zrp`和`artifacts/fixturedep.zrm`。golden只保存`ModuleDomain + Canonical ModuleId + normalized locator placeholder + content hash`，不得保存机器绝对路径。裸`C:/...`、`/opt/...`和UNC spelling只进入负例。
+
+其余同domain import pair必须分别规范化为相同Canonical ModuleId；LSP hover保留原spelling但显示同一ModuleIdentity。package fixture将`@fixturedep`限制为单段包名并只export`.`与`./tool`。测试先把同一package构建为`artifacts/fixturedep.zrm`，再证明package/source与assembly entry具有相同public contract hash；二者的provider/artifact identity仍可区分。
 
 ### 5.10 `native_ffi.zr`
 
@@ -1093,14 +1158,55 @@ pub fn destructuringChecksum(): int {
 
 destructuring固定规则：RHS只求值一次；object entry别名方向是`localName: sourceField`；`let/var`统一作用于全部leaf binding。array pattern要求source至少有N项，额外项忽略，少于N项在静态长度已知时编译失败、动态长度时只执行一次前置shape check。第一版不开放default、rest或nested pattern；Copy leaf复制，move-only rvalue leaf按Place/Drop facts移动，无法安全表达的owner partial move静态拒绝。
 
-`surface/decorators_and_meta.zr`：
+`surface/metadata_and_transforms.zr`：
 
 ```zr
-module syntax.reference.surface.decorators;
+module syntax.reference.surface.metadata;
 
-#serializable#
+let declaration = import("zr.compile.declaration");
+let reflection = import("zr.reflection");
+
+#zr.reflection.attributeUsage(
+    targets: reflection.AttributeTargets.class | reflection.AttributeTargets.struct,
+    retention: reflection.AttributeRetention.runtime,
+    repeatable: false,
+    inherited: false
+)#
+pub readonly struct Serializable {
+}
+
+#zr.reflection.attributeUsage(
+    targets: reflection.AttributeTargets.field
+        | reflection.AttributeTargets.property
+        | reflection.AttributeTargets.parameter,
+    retention: reflection.AttributeRetention.runtime,
+    repeatable: false,
+    inherited: false
+)#
+pub readonly struct Range {
+    pub let min: int;
+    pub let max: int;
+}
+
+#zr.compile.declarationTransform#
+pub comptime fn deriveMarker(target: declaration.Class): declaration.Patch {
+    let marker = init declaration.GeneratedField(
+        name: "_generatedMarker",
+        type: typeid(bool),
+        visibility: declaration.Visibility.private,
+        mutability: declaration.Mutability.let,
+        initializer: init declaration.ConstantValue(boolValue: true)
+    );
+    return init declaration.Patch(
+        target: target.symbolId,
+        additions: [marker]
+    );
+}
+
+#Serializable#
+#deriveMarker#
 class DecoratedCounter {
-    #range(min: 0, max: 255)#
+    #Range(min: 0, max: 255)#
     pub var value: int;
 
     pub @constructor(value: int) {
@@ -1121,7 +1227,141 @@ class DecoratedCounter {
 }
 ```
 
-`#serializable#` 与 `#range(...)#` 必须来自测试 host 注册的标准 decorator metadata，fixture 不允许用未解析 decorator 名称蒙混 parser pass。其余 arithmetic/index/conversion meta kinds继续由 meta registry生成的 focused matrix逐项断言；本文件验证 decorator target、argument、class/field metadata和转换语法在新函数/property模型下不会漂移。
+`Serializable`和`Range`都只是带AttributeUsage role的普通readonly struct；`deriveMarker`只是带DeclarationTransform role的普通`comptime fn(...): Patch`。它只构造typed data并在compiler中执行一次，不依赖无来源fluent helper。`#Range(...)#`验证typed constant fields。fixture不允许用未解析名字蒙混parser pass，也不允许运行时module-init decorator。其余arithmetic/index/conversion meta kinds继续由meta registry生成的focused matrix逐项断言。
+
+### 5.13 `compile_time_and_attributes.zr`
+
+```zr
+module syntax.reference.compile_time;
+
+let compile = import("zr.compile");
+let console = import("zr.system.console");
+
+fn expensiveValue(): int {
+    return 9;
+}
+
+#zr.compile.conditional("trace")#
+fn trace(message: string, value: int): void {
+    console.writeLine(message, value);
+}
+
+comptime if (compile.build.feature("simd")) {
+    pub fn transform(value: int): int { return value * 4; }
+} else {
+    pub fn transform(value: int): int { return value + value + value + value; }
+}
+
+comptime {
+    compile.assert(sizeOf<int>() == 4, "reference fixture requires 32-bit int");
+}
+
+pub fn conditionalChecksum(): int {
+    trace("checksum", expensiveValue());
+    return transform(3);
+}
+```
+
+debug profile必须lower trace及argument，release profile必须在binding后删除整个call/argument SemIR；两个profile仍都type-check调用。comptime check只产生diagnostic/fact，不进入runtime init。
+
+### 5.14 `async_jobs.zr`
+
+```zr
+module syntax.reference.async_jobs;
+
+let task = import("zr.task");
+let thread = import("zr.thread");
+
+async fn ready(value: int): task.Task<int> {
+    return value;
+}
+
+pub async fn scheduledChecksum(): task.Task<int> {
+    let direct: int = await ready(7);
+    let scheduler: task.Scheduler = new thread.ThreadScheduler(workerCount: 1);
+    let work: task.Job<int> = init task.Job<int>(fn(): int => direct * 3);
+    let background: task.Task<int> = scheduler.schedule(work);
+    return await background;
+}
+```
+
+`ready`覆盖同步完成零挂起路径，thread job覆盖cold Job single-consume、Send result、producer/awaiter scheduler分离。fixture不调用`pump/start/autoCoroutine`。
+
+### 5.15 `iterators.zr`
+
+```zr
+module syntax.reference.iterators;
+
+let task = import("zr.task");
+let iteration = import("zr.iteration");
+
+struct Event {
+    pub let id: int;
+}
+
+interface EventSource {
+    fn hasNext(): task.Task<bool>;
+    fn readNext(): task.Task<Event>;
+}
+
+fn range(end: int): iteration.Iterator<int> {
+    for (var index: int = 0; index < end; index += 1) {
+        yield index;
+    }
+}
+
+pub fn iteratorChecksum(): int {
+    var result: int = 0;
+    for (let value in range(4)) {
+        result += value;
+    }
+    return result;
+}
+
+async fn events(source: EventSource): iteration.AsyncIterator<Event> {
+    while (await source.hasNext()) {
+        yield await source.readNext();
+    }
+}
+```
+
+同步range必须形成single-use Iterator并由既有Drop确定性清理；async iterator复用Task/Await ABI并使用异步close。两者的function signature都直接写真实carrier，不存在隐藏return rewrite。旧`{{...}}`与generator `out`只在legacy fixture出现。
+
+### 5.16 `tests/syntax_tests.zr`
+
+```zr
+module syntax.reference.tests;
+
+let testing = import("zr.testing");
+let task = import("zr.task");
+let asyncJobs = import("syntax.reference.async_jobs");
+let iterators = import("syntax.reference.iterators");
+
+#zr.testing.test#
+fn targetSyntaxFunctionDelimiters(): void {
+    let mapper: fn(int) -> int = fn(value: int): int => value + 1;
+    testing.equal(mapper(1), 2);
+}
+
+#zr.testing.test#
+fn iteratorChecksum(): void {
+    testing.equal(iterators.iteratorChecksum(), 6);
+}
+
+#zr.testing.test#
+#zr.testing.case(1, 2, 3)#
+#zr.testing.case(-1, 1, 0)#
+fn additionCases(lhs: int, rhs: int, expected: int): void {
+    testing.equal(lhs + rhs, expected);
+}
+
+#zr.testing.test#
+async fn asyncChecksum(): task.Task<void> {
+    testing.equal(await asyncJobs.scheduledChecksum(), 21);
+}
+```
+
+四个普通FunctionDefinition通过metadata形成TestManifest而不是hidden main；普通production artifact不携带test body。case attribute只增加descriptor并复用同一function body；timeout是runner CLI policy，不是source metadata。
 
 ## 6. Coverage manifest
 
@@ -1143,9 +1383,17 @@ class DecoratedCounter {
 | property AST/explicit field/ref                         | object/model/main             | concrete auto/ref setter                | PropertySymbol/Place/lowering |
 | PoolHandle/PoolRef/retirement                           | pooling/main                  | heap/suspend/ref setter/fake NoScan      | TypeLayout/guard/GC runtime   |
 | enum/union/generic/array/tuple                          | model/main                    | invalid generic/variant                 | TypeRef/layout/CFG            |
-| lexical/operator/object literal/destructuring/decorator | surface focused files         | invalid literal/decorator/range         | lexer/parser/meta dispatch    |
-| module/import/native extern/test/comptime/async         | all modules/effects/native_ffi| legacy`%`、invalid FFI与await escape  | project/compiler/LSP          |
+| lexical/operator/object literal/destructuring           | surface focused files         | invalid literal/range                   | lexer/parser/meta dispatch    |
+| comptime/condition/static metadata/typed transform       | compile_time/metadata         | effect/budget/target/Patch violation     | compiler/artifact/LSP         |
+| conditional call                                        | compile_time                  | non-void/virtual/delegate/ref-out        | binder/SemIR/VM/AOT           |
+| async/Task/Job/Scheduler                                 | effects/async_jobs            | ref-like/await/Send/single-consume       | CFG/borrow/runtime/thread     |
+| Iterator/Enumerator/yield/await for                      | iterators                     | borrow/reentry/Drop/async close/legacy   | CFG/layout/VM/AOT             |
+| test metadata/case/async Task test                       | tests                         | target/signature/case/isolation          | TestManifest/CLI/LSP          |
+| module/import/native extern                              | all modules/native_ffi        | legacy`%`、invalid FFI                  | project/compiler/LSP          |
 | ModuleSpecifier/#alias/@package/.zrm                    | modules/nested/package fixture| invalid root/export/path/package name   | resolver/artifact/LSP/debug   |
+| ModuleDomain/`native:`/`file:`                          | modules/generated/native fixture | invalid scheme/domain/locator identity | resolver/artifact/LSP/debug   |
+| `zr.*` native descriptor/N0-N3/unique TypeId            | task/iteration/testing imports | reserved root/phase/duplicate official provider | registry/resolver/artifact/LSP |
+| logical ModuleId vs provider/filesystem locator          | modules/generated/native fixture | raw absolute import/name mismatch      | resolver/lockfile/debug       |
 | Canonical CallableContract/FfiSignature                 | host/native_ffi               | ABI/layout/direction/marshaller冲突     | semantic/VM/AOT/artifact      |
 | explicit semicolon/no ASI                               | every current source file     | newline/`}`/EOF missing terminator    | lexer/parser/formatter/LSP    |
 | ModuleNamespace import object                           | every imported module         | standalone/dynamic/local/mutable import | resolver/artifact/runtime/LSP |
@@ -1181,6 +1429,16 @@ class DecoratedCounter {
 | import standalone                            | `import("core.math");`                     | import必须绑定module-scope immutable alias |
 | import dynamic                               | `let m = import(path);`                    | ImportExpression只接受string literal       |
 | import local/mutable                         | function内import或`var m = import(...)`    | static import只能module-scope`let`       |
+| raw physical path import                     | `import("C:/sdk/x")`、`import("/opt/x")`、裸UNC | 绝对路径必须使用规范`file:` URI          |
+| invalid file locator                         | 非URI、directory有零个/多个`.zrp`、不支持extension | 不猜index/default或按filesystem顺序选择   |
+| file identity mismatch                       | locator expected identity与目标声明/内嵌identity不同 | 报locator和声明两处range/fact       |
+| reserved `zr` source                        | source/package/file target声明`module zr.task;` | `zr.*`只属于OfficialNative inventory |
+| reserved `zr` native spelling               | `import("native:zr.task")`                 | official module只有`zr.task`一种spelling |
+| custom native name mismatch                 | nativeProviders key与descriptor.moduleName不同 | binding/load前拒绝并显示两处来源       |
+| duplicate module provider                   | 两个native声明同一RegisteredNative identity或两个source声明同一Workspace identity | 只在同domain报错，不按注册顺序选择 |
+| alias domain erasure                        | alias展开后试图把native/package/file target当Workspace | alias保留目标domain和identity       |
+| runtime-only native injection               | 无compile descriptor catalog却静态import `native:host.only` | erased runtime loader不能满足TypeRef/import |
+| forbidden phase native                      | Runtime import `zr.compile`/`zr.testing`     | 分别只允许CompileTool/Test provider phase |
 | invalid package root/segment                | `import("@@math")`、`import("@1math")`、`import("@math//matrix")` | root须为单段`@identifier`且segment非空 |
 | package export denied                       | `import("@fixturedep/internal")`          | 子模块未在package exports公开             |
 | unknown alias                               | `import("#missing/tool")`                 | 指向缺失`.zrp` alias entry              |
@@ -1195,6 +1453,21 @@ class DecoratedCounter {
 | shared/mutable conflict                      | shared view 活跃时写原 Place                 | 指向 loan origin 和冲突 write              |
 | scoped escape                                | 返回/捕获`scoped ref`                      | 指出 destination region 过宽               |
 | await escape                                 | ref/ref struct 跨`await`                   | 指出 suspension point                      |
+| unknown build feature                        | `compile.build.feature("typo")`             | feature必须在`.zrp`声明                  |
+| conditional callable misuse                  | non-void/virtual/delegate/ref-out function    | conditional只能消除direct void call         |
+| transform raw rewrite                        | token/source/replace existing body request    | 只能返回typed additions                     |
+| transform second round                       | generated declaration再次带transform role     | 第一版single expansion round                 |
+| comptime forbidden effect                    | IO/time/random/native/runtime object           | 指出sandbox capability                       |
+| comptime budget                              | infinite recursion/loop/allocation            | 报告fuel/depth/bytes上限                     |
+| async parameter/result                       | async ref/out或Task<Span/PoolRef>              | 参数/结果不能进入suspended storage           |
+| dropped task                                 | 未await、return或显式存储的Task                | must-use warning；第一版无detach             |
+| thread non-Send                              | Job capture普通GC object                      | 跨isolate只允许Send transport                |
+| reused job                                   | schedule同一non-Copy Job两次                  | 第二次为use-after-move                       |
+| yield escape                                 | ref/ref struct/Span/PoolRef跨`yield`          | 使用手写ref struct Enumerator                |
+| iterator reentry                             | 同一Iterator并发moveNext                      | single-consumer contract                     |
+| iterator cleanup                             | break/throw后未Drop或async close的provider     | cleanup CFG必须执行一次                      |
+| invalid test signature                       | metadata用于member/generic/non-void function   | test role只接受module-scope ordinary fn      |
+| invalid test case                            | arity/type/constant不匹配                     | case在编译期绑定                             |
 | out incomplete                               | normal return 前未写 out                     | 指向缺失赋值路径                           |
 | moved owner                                  | `unique.share()` 后再读 unique             | use-after-move                             |
 | Shared writable                              | 经 Shared 调 writable`fn`                  | 只能形成 readonly borrow                   |
@@ -1223,7 +1496,7 @@ class DecoratedCounter {
 | direct GC in resource                        | resource field 为`Document`                | 使用`Gc<Document>`                       |
 | direct owner in class                        | class field 为`Unique<Texture>`            | 使用`GcBox<Texture>` 或重构生命周期      |
 
-`legacy_percent_surface.zr` 至少包含 `%module/%import/%func/%async/%await/%extern/%test/%compileTime/%in/%ref/%out/%owned/%unique/%shared/%weak/%release/%detach/%type/%using` 和 `$` 两类构造。migration expected edits 必须逐 AST role 生成，不能全文字符串替换。
+`legacy_percent_surface.zr` 至少包含 `%module/%import/%func/%async/%await/%extern/%test/%compileTime/%in/%ref/%out/%owned/%unique/%shared/%weak/%release/%detach/%type/%using`、`{{...}}` generator、generator `out`和 `$` 两类构造。migration expected edits 必须逐 AST role 生成，不能全文字符串替换。
 
 ## 8. AST、SemIR 与 artifact 断言
 
@@ -1237,6 +1510,7 @@ AnonymousFunctionExpression(returnDelimiter = colon, bodyKind = expressionArrow)
 FunctionTypeSyntax(arrow = thinArrow)
 ModuleDeclaration(qualifiedName, semicolonRange)
 ModuleImportBinding(binding, ImportExpression(stringLiteral), semicolonRange)
+ModuleSpecifierSyntax(kind, domainHint?, root, segments, locator?, artifactExtension?, spellingRange)
 StructInitExpression(typeSyntax, arguments)
 GcNewExpression(typeSyntax, arguments)
 OwnConstructExpression(typeSyntax, arguments)
@@ -1245,6 +1519,14 @@ SpreadArgument(expression)
 PropertyDeclSyntax(accessors)
 RefExpression(placeExpression)
 SimpleStatement(terminatorRange)
+ComptimeIfSyntax(predicate, activeBranches)
+StructDeclarationSyntax(modifiers = [readonly], attributes = [AttributeUsage])
+AttributeApplicationSyntax(symbol, arguments)
+FunctionDefinition(modifiers = [comptime], attributes = [DeclarationTransform], returnType = Patch)
+FunctionDefinition(modifiers = [async], returnType = Task<T> | AsyncIterator<T>)
+AwaitExpressionSyntax(operand)
+YieldStatementSyntax(expression, terminatorRange)
+FunctionDefinition(attributes = [Test, Case?, Skip?], returnType = void | Task<void>)
 ```
 
 `requireConstructible(type).createInstance(...constructionArgs)` 只能形成普通嵌套`CallExpression` + `SpreadArgument`，不能形成 ConstructExpression。
@@ -1263,6 +1545,13 @@ SimpleStatement(terminatorRange)
 - PoolHandle是ordinary value；`tryBorrow(handle, out view): bool`普通resolved call初始化ref-like value + guard，`value`形成PropertyRefGet/RefValue/Place，guard通过普通Drop/cleanup释放。
 - `out` definite assignment、Unique availability 和 live loan set在 CFG join 处分别合并。
 - try/finally、owner scope exit和partial construction统一进入 cleanup CFG。
+- condition pruning只让active declaration进入binding；conditional direct call在type-check后删除call与arguments。
+- declaration transform返回GeneratedDeclaration/DeclarationPatch，随后进入普通binder/layout/CFG/borrow；不存在raw AST mutation或特殊function kind。
+- async function的declared return TypeRef就是`Task<T>`或`AsyncIterator<T>`；每个await产生AwaitPoll/Suspend/Resume edge和frame liveness，不保存第二个effective return。
+- 普通function显式返回`Iterator<T>`/`AsyncIterator<T>`；每个yield产生YieldSuspend/Resume，for通过Enumerator capability获取move/current并执行Drop，await for执行async close。
+- 带Test role的普通function形成TestEntry/TestCaseDescriptor，不改变function body return contract，也不生成hidden main。
+- `native:engine.render`与`engine.render`分别绑定RegisteredNative和Workspace ModuleIdentity；不会进入provider优先级竞争。`native:engine.render`、`native:engine/render`与`#nativeRender`绑定同一RegisteredNative module object。
+- `file:`先解析ProviderLocator，再读取目标declared/manifest/embedded identity；locator path不进入Canonical ModuleId或public TypeId。
 
 ### 8.3 `.zrs/.zri/.zro`
 
@@ -1272,7 +1561,11 @@ SimpleStatement(terminatorRange)
 - `.zro` 保存公开callable/property/constructor contract、receiver effect、layout/drop/GC scan kind/maps、StableSlotSource contract hash和schema hash；不保存`%`、`$`、`init`等源码拼写，也不保存runtime PoolId/generation/borrow count。
 - reflection-preserved constructor 进入 metadata roots；被 trim 的 constructor 不得在运行时偶然可见。
 - source import 与 binary import 必须产生相同 public contract hash。
-- `.zro` dependency table保存canonical ModuleId，不保存local alias拼写；runtime restore仍构造同一readonly ModuleNamespace object。
+- `.zro` dependency table保存包含ModuleDomain的canonical ModuleId，不保存local alias拼写；runtime restore仍按domain构造正确readonly ModuleNamespace object。
+- `.zro`/lockfile把Canonical ModuleId、package identity、selected provider kind/phase、artifact identity和contract hash分开保存；physical locator只进入local lock/debug sidecar，不写入public TypeId或可发布golden。
+- `zr.task.Task/Job/Scheduler`、`zr.thread.ThreadScheduler/Send`、`zr.iteration.Iterable/Enumerator/Iterator/AsyncIterator`分别断言唯一owner TypeDef；provider变化不产生第二套TypeId。
+- `.zri`保存condition decisions、expansion provenance、async/iterator state-source map和TestEntry facts。
+- `.zro`保存public generated declarations/AttributeData/conditional predicate、Async/Iterator effect与frame ABI；test build另存TestManifest，production `.zro`不携带test body。
 
 ## 9. LSP 参考表现
 
@@ -1281,13 +1574,18 @@ SimpleStatement(terminatorRange)
 - `init Pixel(` signature help只显示 `@constructor`；`Pixel(` 只显示 `@call`。
 - `createInstance(` signature help固定显示 `const fn createInstance(...constructionArgs: object): object`。
 - missing semicolon diagnostic在newline/`}`/EOF前提供同一个插入 `;` quick fix；formatter不会用换行替代terminator。
-- hover import alias显示canonical ModuleId、provider kind和readonly ModuleNamespace；definition跳到module declaration，member navigation继续落到exported symbol。
+- hover import alias显示原spelling、ModuleDomain、canonical ModuleId、provider resolution和readonly ModuleNamespace；definition跳到source declaration或descriptor virtual document，member navigation继续落到exported symbol。
+- native module hover把ModuleDomain、logical display name、N0-N3 policy（只对OfficialNative显示）、provider phase、descriptor ABI/hash和physical locator分栏显示；rename只作用于source alias，不重命名DLL/path或official/native identity。
+- import completion在`native:`后只列compile descriptor catalog，在`#`后保留alias target domain，在`file:`后提供URI locator而不把路径建议成Workspace module name。
 - hover `...constructionArgs` 分别标识 `variadic parameter` 和 `spread argument: object[]`。
 - property completion只显示一个 property member，可跳转到 getter/setter/init；ref-return hover显示 region和 writable/readonly ref kind。
 - PoolHandle hover显示weak generational identity并建议`tryBorrow/tryRead`；PoolRef hover显示scoped direct ref + guard且禁止heap/suspension。
 - borrow/move诊断同时高亮 origin、最后使用、冲突点或 move point。
 - `$runtimeType(...)` code action生成`object[]`加`requireConstructible(runtimeType).createInstance(...constructionArgs)`的requiresReview edit；绝不生成`init runtimeType(...)`。
 - semantic tokens把 `init`、`ref`、`in/out/scoped/readonly`、`resource class` 和 accessor context作为目标 token kind，不把普通同名标识符误标为 keyword。
+- generated declaration definition跳到read-only expansion virtual document并关联declaration transform application；inactive condition branch标灰但仍显示parse diagnostic。
+- async/iterator hover直接显示声明中的`Task<T>`、`Iterator<T>`或`AsyncIterator<T>`，不显示隐藏effective return。
+- 带Test role的普通function提供run/debug codelens与case列表，数据来自TestEntry facts而不是文本扫描。
 
 ## 10. VM/AOT 与性能验收
 
@@ -1305,6 +1603,12 @@ SimpleStatement(terminatorRange)
 12. source-size报告分别记录formatted source、semicolon-preserving minified source、`.zrs`和`.zro`大小；不能把删除source map/debug metadata产生的缩小归因于semicolon grammar。
 13. PoolHandle validate/reject、PoolRef hot field access、retire/deferred reuse分别计数；hot direct ref访问不能重复检查generation。
 14. GcFree/GcMapped/GcBarriered slab分别报告allocation count、scan bytes、barrier/card和pause成本；只有GcFree结果可以归因于NoScan。
+15. disabled conditional call不得生成argument SemIR或runtime side effect；enabled path与普通direct call成本一致。
+16. comptime clean/incremental build输出必须byte-identical；恶意loop/allocation在budget内终止并产生诊断。
+17. 同步完成Task不得分配coroutine frame；实际suspend才promotion到pooled frame，GC只扫描当前state live slots。
+18. Array/Span for不box/heap allocate；立即消费的sync iterator优先stack/scalar path，pool-backed frame在Drop后可复用。
+19. production artifact的test code/manifest大小必须为0；test runner在module/case isolation、timeout和10,000 cases下无泄漏。
+20. `native:engine.render`、slash spelling和native alias累计import 100,000次只materialize一个RegisteredNative module object；同名Workspace module另有独立object/TypeId且不冲突。official builtin/plugin provider的TypeId/contract hash一致，physical locator变化不使public identity失效。
 
 ## 11. 实施任务
 
@@ -1314,6 +1618,8 @@ SimpleStatement(terminatorRange)
 
 - Create: `tests/fixtures/projects/syntax_reference_v1/syntax_reference_v1.zrp`
 - Create: `tests/fixtures/projects/syntax_reference_v1/src/*.zr`
+- Create: `tests/fixtures/projects/syntax_reference_v1/native/syntax_reference_native.c`
+- Generate: `tests/fixtures/projects/syntax_reference_v1/generated/file_locator_import.zr`
 - Create: `tests/fixtures/projects/syntax_reference_v1/golden/coverage.json`
 - Test: `tests/parser/test_syntax_reference_v1.c`
 
@@ -1321,6 +1627,7 @@ SimpleStatement(terminatorRange)
 - [ ] **Step 2: 运行 `cmake --build build-wsl-gcc --target zr_vm_syntax_reference_v1_test -j2`，确认因 fixture/feature id 缺失失败**
 - [ ] **Step 3: 按第 4-6 节逐文件加入源码和 coverage manifest，不调整 production parser**
 - [ ] **Step 3a: 对formatted与single-line minified版本断言相同AST/semantic hash，证明newline不参与终止**
+- [ ] **Step 3b: 注册RegisteredNative `engine.render`并保留同名Workspace source；生成本机规范`file:` URI正例，golden用placeholder去路径化**
 - [ ] **Step 4: 重跑 focused target，确认 manifest 完整且 current/negative 文件没有交叉收集**
 - [ ] **Step 5: 提交 `test: add target syntax reference fixture`**
 
@@ -1406,6 +1713,26 @@ SimpleStatement(terminatorRange)
 - [ ] **Step 5: 运行完整 parser/compiler/project/artifact/LSP/migration矩阵并记录准确通过数量**
 - [ ] **Step 6: 提交 `docs(syntax): publish syntax reference v1`**
 
+### Task 7: 接入11-14编译期、异步、迭代器与测试子设计
+
+**Files:**
+
+- Create: `tests/fixtures/projects/syntax_reference_v1/src/compile_time_and_attributes.zr`
+- Create: `tests/fixtures/projects/syntax_reference_v1/src/async_jobs.zr`
+- Create: `tests/fixtures/projects/syntax_reference_v1/src/iterators.zr`
+- Create: `tests/fixtures/projects/syntax_reference_v1/src/tests.zr`
+- Create: `tests/fixtures/projects/syntax_reference_v1/negative/{compile_time,async_scheduler,iterator,test}_boundaries.zr`
+- Modify: `tests/fixtures/projects/syntax_reference_v1/golden/{coverage,diagnostics,lsp}.json`
+- Modify: `tests/parser/test_syntax_reference_v1.c`
+- Modify: `tests/compiler/test_syntax_reference_semantics.c`
+
+- [ ] **Step 1: 先加入11-14正例和coverage ids，运行focused parser/compiler target并确认因未实现contract失败**
+- [ ] **Step 2: 加入condition/transform、await/Send、yield/Drop/async close和test metadata/case全部第7节负例及精确range golden**
+- [ ] **Step 3: 断言`.zri/.zro`中的expansion、async/iterator frame和TestManifest section；production artifact断言无test code**
+- [ ] **Step 4: 在interp、binary-first、AOT C、AOT LLVM运行相同checksum/test manifest，比较结果、cleanup与allocation counters**
+- [ ] **Step 5: 运行LSP expansion/inactive/async/iterator/test discovery golden和legacy migration幂等测试**
+- [ ] **Step 6: 只有11-14各自promotion gate已通过后，才把对应coverage ids从design-pending改为current**
+
 ## 12. 晋级门
 
 本文只有在以下条件全部满足后才能从“设计参考”改为“current reference”：
@@ -1418,8 +1745,15 @@ SimpleStatement(terminatorRange)
 - `.zrs/.zri/.zro` roundtrip和source/binary import contract一致。
 - formatted/minified source在去除全部非必要newline后仍有相同AST/semantic hash；缺失任何required semicolon都会稳定失败。
 - 每个static import都采用module-scope `let alias = import("literal");`，返回ModuleNamespace object且artifact dependency可roundtrip。
+- `zr.*`只由N0-N3 official native/host descriptor提供；source/package/custom native/未验证file target伪造全部失败，tier不进入parser或runtime dispatch。
+- 裸OS绝对路径不进入ImportExpression；规范`file:` URI能读取目标identity且不污染TypeId/golden。directory无manifest、identity mismatch和nonportable publish都有稳定诊断。
+- `native:engine.render`与Workspace `engine.render`可共存；native dot/slash/alias归一为同一RegisteredNative identity。同domain duplicate provider、descriptor name mismatch、runtime-only injection和phase mismatch都有稳定诊断。
 - LSP不从源码字符串重新推断 TypeRef、constructor、property、borrow或owner状态。
 - shared foundations中没有按`Pixel`、`Span`、`Unique`、`TypeOf`、`PoolHandle`名字分支；reflection/pooling通过注册的runtime capability/service contract接入。
+- compile-time expansion不存在token/source/AST rewrite或runtime decorator；generated declaration通过普通binder/CFG/borrow/layout且single-round。
+- async函数显式返回hot `Task<T>`、Job由Scheduler显式消费；sync completion/frame promotion、awaiter affinity和Send value transport均有直接证据。
+- iterator的for resolution只使用Enumerator capability，yield是borrow可见suspension；sync exit执行Drop一次，async exit执行close一次，旧generator只在migration/negative。
+- test由TestManifest发现且compiler不生成main；production artifact无test code，sync/async/case/timeout/isolation均有CLI与LSP证据。
 - 自定义 Drop和`using`的最终表层若仍未冻结，必须明确保留为未晋级项，不能把其他覆盖通过冒充“全语法完成”。
 
 ## 13. 参考依据
@@ -1442,3 +1776,5 @@ SimpleStatement(terminatorRange)
 类型、借用、布局与所有权继续采用 01-06 已记录的 C#/.NET、Rust、CPython、QuickJS、Lua和JDK证据。ZR 的刻意差异是：静态 value/class/resource构造分别使用 `init/new/own`，运行时反射构造是显式普通 API，既不采用 CPython 的“调用 type 即构造”，也不允许 reflection绕过ref-like和ownership边界。
 
 池化另外采用CPython arena/pool/size-class、.NET managed byref/Span和Rust pin/borrow/drop的共同核心：weak identity与active direct ref分离，地址/slot复用受guard保护。ZR的差异是PoolHandle可长期存储而PoolRef保持ref-like；通过一次validate换取hot access零重复generation检查。
+
+编译期/attribute、async/scheduler、iterator/yield和test harness的参考证据与刻意差异分别记录在[11](./2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md)、[12](./2026-07-20-12-async-task-job-scheduler-design.md)、[13](./2026-07-20-13-iterator-enumerator-yield-design.md)和[14](./2026-07-20-14-test-function-harness-design.md)；本reference工程只消费其canonical contract，不在fixture中另造简化语义。

@@ -367,6 +367,14 @@ static TZrBool compiler_class_validate_member_override_semantics(SZrCompilerStat
             ZrParser_Compiler_Error(cs, "override target signature does not match the inherited base member", location);
             return ZR_FALSE;
         }
+        if (!compiler_receiver_effect_can_implement(
+                    baseMember->receiverEffect, memberInfo->receiverEffect)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "override cannot strengthen a readonly receiver contract to writable",
+                    location);
+            return ZR_FALSE;
+        }
         if (!compiler_member_supports_virtual_chain(baseMember) ||
             (!compiler_member_has_modifier(baseMember, ZR_DECLARATION_MODIFIER_VIRTUAL) &&
              !compiler_member_has_modifier(baseMember, ZR_DECLARATION_MODIFIER_ABSTRACT) &&
@@ -517,6 +525,9 @@ static TZrBool compiler_class_member_satisfies_requirement(SZrCompilerState *cs,
     }
 
     if (!compiler_member_signatures_match(requiredMember, implementation) ||
+        !compiler_receiver_effect_can_implement(
+                requiredMember->receiverEffect,
+                implementation->receiverEffect) ||
         compiler_member_has_modifier(implementation, ZR_DECLARATION_MODIFIER_ABSTRACT)) {
         return ZR_FALSE;
     }
@@ -1135,6 +1146,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             memberInfo.isUsingManaged = ZR_FALSE;
             memberInfo.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
             memberInfo.receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+            memberInfo.receiverEffect = ZR_CANONICAL_RECEIVER_NONE;
             memberInfo.callsClose = ZR_FALSE;
             memberInfo.callsDestructor = ZR_FALSE;
             memberInfo.declarationOrder = (TZrUInt32)i;
@@ -1241,6 +1253,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.isStatic = method->isStatic;
                     memberInfo.modifierFlags = method->modifierFlags;
                     memberInfo.receiverQualifier = method->receiverQualifier;
+                    memberInfo.receiverEffect = get_member_receiver_effect(member);
                     if (method->name != ZR_NULL) {
                         memberInfo.name = method->name->name;
                     }
@@ -1293,6 +1306,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.accessModifier = property->access;
                     memberInfo.isStatic = property->isStatic;
                     memberInfo.memberType = ZR_AST_CLASS_METHOD;
+                    memberInfo.receiverEffect = get_member_receiver_effect(member);
                     memberInfo.modifierFlags = property->modifierFlags;
                     memberInfo.propertyIdentity = info.nextPropertyIdentity++;
                     if (property->modifier != ZR_NULL) {
@@ -1359,6 +1373,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     SZrAstNode *previousFunctionNode = cs->currentFunctionNode;
                     memberInfo.accessModifier = metaFunc->access;
                     memberInfo.isStatic = metaFunc->isStatic;
+                    memberInfo.receiverEffect = get_member_receiver_effect(member);
                     memberInfo.modifierFlags = metaFunc->modifierFlags;
                     if (metaFunc->meta != ZR_NULL) {
                         memberInfo.name = metaFunc->meta->name;

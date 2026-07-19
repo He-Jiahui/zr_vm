@@ -387,6 +387,8 @@ temporary/block < function < caller < heap/static
 - 将普通 value/owner move 入 coroutine frame 可以合法，但 frame 必须拥有 drop glue。
 - shared GC handle 可复制进入 frame；readonly capability 不因存入 frame 提升。
 - 后续若支持 self-referential pinned frame，需要单独 unsafe/pin 设计，不能在第一版隐式放宽。
+- async的hot Task/cold Job/Scheduler、awaiter affinity和thread isolate规则以[12](./2026-07-20-12-async-task-job-scheduler-design.md)为准；本章只定义引用与region约束。
+- generator正式表层固定为显式返回`Iterator<T>`/`AsyncIterator<T>`的普通`fn`加`yield`，旧`{{...}}/out`退出核心语法；Enumerator和yield frame规则以[13](./2026-07-20-13-iterator-enumerator-yield-design.md)为准。
 
 ### 6.3 native
 

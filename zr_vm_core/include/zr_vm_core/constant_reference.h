@@ -85,6 +85,7 @@ typedef struct SZrCompiledMemberInfo {
     TZrUInt32 interfaceContractSlot;        // interface contract slot；无效时为 UINT32_MAX
     TZrUInt32 propertyIdentity;             // property identity；无效时为 UINT32_MAX
     TZrUInt32 accessorRole;                 // 0 none, 1 getter, 2 setter
+    TZrUInt32 receiverEffect;               // EZrCanonicalReceiverEffect numeric contract
 } SZrCompiledMemberInfo;
 #pragma pack(pop)
 

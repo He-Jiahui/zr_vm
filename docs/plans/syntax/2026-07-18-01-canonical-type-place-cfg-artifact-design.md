@@ -97,7 +97,7 @@ Nullable
 | 节点 | 规范内容 |
 |---|---|
 | `Primitive` | 规范 primitive id，不使用显示名作为身份 |
-| `Nominal` | assembly/module identity + TypeDef token |
+| `Nominal` | domain-aware Canonical ModuleId + TypeDef token |
 | `GenericParameter` | owner symbol + parameter ordinal |
 | `GenericInstance` | generic definition TypeId + ordered argument TypeId |
 | `Array` | element TypeId + rank + storage/layout category |
@@ -109,6 +109,8 @@ Nullable
 | `ReadonlyView` | target TypeId，表示不能通过当前 capability 修改对象 |
 | `Nullable` | target TypeId；owner 是否可空仍由语言规则限制 |
 
+这里的Canonical ModuleId不是裸字符串，而是第10章定义的`ModuleDomain + logical segments + package instance identity/version（若有）`。因此`Workspace:engine.render.Pixel`与`RegisteredNative:engine.render.Pixel`即使显示segments和TypeDef名相同，也必须是不同nominal identity；同一official native模块从builtin或descriptor plugin加载时则保持同一identity。
+
 ### 4.2 不进入 TypeId 身份的信息
 
 以下信息不得直接 intern 到结构 TypeId：
@@ -119,6 +121,9 @@ Nullable
 - `out` 的当前初始化状态。
 - source range、变量名和诊断 origin。
 - 优化器推导出的常量和 numeric range。
+- import原spelling、local alias与`.`/`/`分隔形式。
+- provider kind/phase、DLL/source/`.zrm` locator、artifact generation和本地cache path。
+- `zr.*`的N0-N3加载分级。
 
 原因是这些信息是使用点或 flow-sensitive contract，不是结构类型身份。否则同一 `ref T` 会因所在 block 不同生成无限多个 TypeId，并把局部分析泄漏到 artifact ABI。
 
@@ -413,6 +418,8 @@ semantic facts 以 ID 为主、source range 为查询索引：
 
 ```text
 Header
+ModuleIdentityTable
+DependencyTable
 StringHeap
 TypeDefTable
 TypeRefTable
@@ -428,6 +435,10 @@ DebugMap (optional)
 ```
 
 现有 metadata token/table/hash 机制继续使用，但新增语义必须成为正式 table/signature node，而不是附在某个 writer 私有字符串中。
+
+- `Header`引用当前模块的domain-aware Canonical ModuleId、artifact schema/target和公开provider phase contract；phase用于可用性校验，不进入TypeId。
+- `ModuleIdentityTable`结构化保存domain、logical segments和package instance identity/version，不能只保存display string。
+- `DependencyTable`引用ModuleIdentity row并保存required public contract hash/capability/phase。selected provider kind、physical locator和artifact generation属于lock/debug/incremental resolution record；可发布`.zro`不得把它们并入ModuleIdentity或nominal TypeId。
 
 ### 9.3 Signature node
 
@@ -459,7 +470,7 @@ DebugMap (optional)
 
 `.zrs` 保留 `StructInitExpression` 的 `init` token、TypeSyntax、argument/source ranges；`.zri` 输出解析后的 TypeId、ConstructorId、argument contracts、destination Place 和 partial-init/cleanup facts；`.zro` 不保存 `$`/`init` 表层拼写，只保存跨模块需要的 TypeDef capability、constructor signature/token、layout 与 executable construct operation。loader 不得从 prototype 名字或 source spelling 重建 constructor 语义。
 
-statement terminator与module import也遵守同一持久化边界：`.zrs`保存required/optional semicolon range、ImportExpression string literal和ModuleImportBinding source range；newline只作为trivia存在，不能被writer恢复成terminator。`.zri`保存import alias到canonical ModuleId/ModuleNamespace symbol的binding fact；`.zro`只保存dependency ModuleId、provider identity和公开contract hash，不保存local alias或分号。source import与binary restore都必须创建等价readonly ModuleNamespace object，TypeRef qualifier只由原始import binding fact授予。
+statement terminator与module import也遵守同一持久化边界：`.zrs`保存required/optional semicolon range、ImportExpression string literal和ModuleImportBinding source range；newline只作为trivia存在，不能被writer恢复成terminator。`.zri`保存import alias到domain-aware Canonical ModuleId/ModuleNamespace symbol的binding fact，并可在debug sidecar引用provider resolution。`.zro`只保存dependency ModuleIdentity、required phase/capability和公开contract hash，不保存local alias、分号、DLL/source绝对路径或provider注册顺序。source import与binary restore都必须按ModuleDomain创建等价readonly ModuleNamespace object，TypeRef qualifier只由原始import binding fact授予。
 
 ### 9.5 持久化边界
 
@@ -528,6 +539,7 @@ statement terminator与module import也遵守同一持久化边界：`.zrs`保�
 - TypeRef/TypeSpec/Signature/Layout/Contract hash mismatch 精确诊断。
 - unknown mandatory section、截断 blob、非法 token、超限 count 安全拒绝。
 - source compile 与 binary import 产生同一 TypeId/public contract。
+- OfficialNative/RegisteredNative/Workspace/Package ModuleIdentity roundtrip；同segments不同domain产生不同TypeId，同identity更换provider locator不改变TypeId。
 
 ### M5 consumers
 

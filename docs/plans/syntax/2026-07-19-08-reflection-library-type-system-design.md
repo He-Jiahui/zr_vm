@@ -6,7 +6,7 @@
 
 ## 1. 目标结果
 
-反射作为标准库 `zr.reflection` 自成一体。核心语言只提供取得类型身份和运行时类型的最小 intrinsic，字段、属性、方法、metadata、动态构造和查询策略都由库类型承载：
+反射作为第10章OfficialNative domain的N2 Runtime native模块`zr.reflection`自成一体。核心语言只提供取得类型身份和运行时类型的最小intrinsic，字段、属性、方法、metadata、动态构造和查询策略都由native descriptor中的库类型承载：
 
 - `typeid(TypeRef)` 取得轻量、不可反射的静态类型身份。
 - `typeof(expr)` 求值一次并取得值的真实运行时类型描述符。
@@ -17,6 +17,8 @@
 - source compile、binary import、native registration、VM、AOT、LSP 和 debugger 消费同一 metadata graph。
 
 反射库不得成为 compiler 按 `TypeOf` 名字特判的入口。compiler/runtime 通过 TypeDef capability、metadata token 和注册的 reflection service 接入。
+
+`zr.reflection`及其declaration/member/layout子模块都属于官方`zr.*`保留根，由单一reflection descriptor或其module links提供。下面的类型层级是descriptor生成的interface projection，不是可覆盖的ZR source实现；workspace/package/custom native provider不能声明同名ModuleId。Runtime/AOT按reflection capability id接入，不比较`zr.reflection`字符串。
 
 ## 2. 模块边界
 
@@ -329,16 +331,16 @@ ref-return property 只允许 getter。reflection 的 ref getter 返回受 regio
 
 `getMeta/getMetas` 查询：
 
-- decorator/attribute record。
+- retention为runtime的`AttributeData` record；参数按11的compile-constant schema读取。
 - 用户自定义 key/value metadata。
 - source location/documentation identity。
-- compiler-generated、deprecated、test、compile-time 等声明标记。
+- compiler-generated、deprecated等已明确retained的声明标记。test-only/compile-tool标记只在对应artifact和权限下可见。
 
 不通过 `getMeta` 返回：
 
 - layout/offset/align：使用 `layout` API。
 - ownership/drop/GC map：使用 `ownership/layout` API。
-- IR/code block：使用受权限控制的 `compileTime/debug` API。
+- declaration transform handler、DeclarationPatch、IR/code block和compile heap：它们是compiler/debug provenance，不是runtime reflection metadata。
 - `@call/@constructor` 元方法：使用 `getMethod` 且显式 `includeMetaMethods`。
 
 ## 7. Metadata graph 与 artifact
@@ -351,7 +353,7 @@ MemberDef tokens
 PropertyDef/accessor tokens
 Callable contracts
 TypeLayout/GC/ownership maps
-Decorator/Meta records
+AttributeData/Meta records
 Source/debug records
 Preservation flags
 ```
@@ -362,6 +364,7 @@ Preservation flags
 - 被裁剪 section 必须有显式 preservation state，不能在 runtime 假装“成员不存在”。
 - TypeId、member token、layout hash、contract hash 和 metadata generation 交叉验证。
 - unknown mandatory kind、超限 count、断裂 owner/member reference、伪造 category 必须拒绝加载。
+- 带DeclarationTransform role的comptime function及其Patch data不会进入runtime metadata graph；reflection只观察expansion后的最终member与retained AttributeData。AttributeData的schema统一来自带AttributeUsage role的普通`readonly struct`，不需要`attribute`关键字或runtime attribute object。
 
 native registration 必须提交同形 metadata descriptor；不能只注册 type name 后由 reflection 猜字段。
 

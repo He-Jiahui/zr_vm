@@ -485,7 +485,7 @@ drop(shared);
 
 - `Shared<T>` 使用非原子引用计数，只能在线程或 actor 隔离域内使用。
 - 跨线程共享使用后续显式类型 `AtomicShared<T>`。
-- 编译器通过 `Send/Sync` 或等价 capability 检查跨线程移动和共享。
+- 第一版编译器只用`Send` capability检查跨isolate move；跨线程共享及`Sync`留给后续AtomicShared独立设计。
 
 这样普通共享对象不默认承担原子加减成本，并且成本在类型上可见。
 
@@ -691,6 +691,8 @@ let memory = import("core.memory");
 let localMath = import(".math.vector");
 let tools = import("#lib/tool");
 let matrix = import("@math.matrix");
+let nativeRenderer = import("native:engine.render");
+let fileTool = import("file:///E:/sdk/tools.zrm");
 let vector: memory.Vector = init memory.Vector(1, 2);
 memory.flush();
 ```
@@ -700,10 +702,12 @@ memory.flush();
 - `let alias = import("...");` 第一版只允许 module scope immutable binding。binding返回只读 ModuleNamespace object，同时建立 ModuleId、artifact dependency和type namespace alias。
 - imported value/function通过 `alias.member` 访问；imported type可在TypeRef中写 `alias.Type`，但这种资格只属于原始 import binding，`let other = alias;` 不会让 `other.Type` 成为合法TypeRef。
 - 重复导入同一 canonical ModuleId返回同一environment内的module object并只初始化一次；source/binary/native provider仍经过统一resolver。
-- module literal先解析为结构化ModuleSpecifier，再解析为Canonical ModuleId/ModuleIdentity。`core.math`与`core/math`、`.math.vector`与`./math/vector`、`..math.vector`与`../math/vector`分别等价。
+- module literal先解析为结构化ModuleSpecifier，再解析为domain-aware Canonical ModuleId/ModuleIdentity。`zr.task`进入OfficialNative，`native:engine.render`进入RegisteredNative，普通`engine.render`进入Workspace；后两者logical segments相同但identity不同并可共存。`core.math`与`core/math`、`.math.vector`与`./math/vector`、`..math.vector`与`../math/vector`分别等价。
 - `.zrp` workspace alias只允许单段`#identifier`，例如`"#lib": "core/lib"`；`#lib/tool`在segment边界展开。
 - 第三方package root只允许单段`@identifier`。`@math`是root/default entry，`@math.matrix`与`@math/matrix`是同一个exported submodule；第一版不允许package name包含`.`或`/`。
 - 显式`.zrm` locator由assembly manifest解析entry；`.zrm`内部依赖仍保存Canonical ModuleId，不能把容器member path当模块身份。
+- `native:`和`file:`只属于ImportExpression literal中的ModuleSpecifier scheme，不增加语言关键字。`native:`选择RegisteredNative descriptor；`file:///E:/...`、`file:///opt/...`与`file://server/share/...`显式定位`.zr/.zrp/.zrm`，读取后仍使用目标声明或内嵌identity，物理路径不进入TypeId。
+- `zr.*`整体只属于OfficialNative；workspace/package/custom descriptor和未经官方签名/发行者/ABI验证的file target都不能声明该domain，`native:zr.task`也非法。经过验证的official `.zrm`只是一种provider部署。alias展开后保留目标domain，不能绕过保留根或重复provider检查。
 - 动态插件加载使用普通 API，例如 `loadPlugin("render.vulkan")`，返回显式结果 union。
 - runtime path、conditional/local loading使用 `loadModule/loadPlugin`；不能写 `import(path)`，也不能把 import expression藏在conditional或普通call argument中。
 - 单分支 union 解构使用 `if let`，多分支使用 `switch/match`，不再使用 `using` 充当模式守卫。
@@ -851,7 +855,7 @@ LSP 必须复用相同 semantic facts 提供 hover、类型展示、move 后不�
 - Place 投影覆盖 local、field、index、deref 和 property ref return。
 - receiver effect 进入 overload resolution 和 interface dispatch。
 - Region、move、definite assignment 和 cleanup plan 在 CFG 合流处正确合并。
-- 泛型约束可以表达 value、ref-like、owner、copy、drop、send/sync 等 capability。
+- 泛型约束可以表达 value、ref-like、owner、copy、drop、send 等已登记capability；`sync`不进入第一版公共surface。
 - struct init 在 bind 后携带 TypeId、ConstructorId、argument contracts 和 destination Place；不得保留 runtime `zr.reflection.Type` expression。
 
 ### 18.3 VM、AOT 与 artifact
@@ -970,11 +974,25 @@ LSP 必须复用相同 semantic facts 提供 hover、类型展示、move 后不�
 15. 对象池交付实体还是handle，以及GC如何跳过pool storage。
    结论：`zr.pooling.PoolHandle<T>` 是长期generational weak identity，`PoolRef<T>` 是一次验证后的scoped direct ref。recycle立即使handle失效、延迟slot复用；只有TypeLayout证明`GcFree`的slab可以NoScan。
 16. native extern、模块alias与第三方包如何表示。
-   结论：静态native声明使用`native extern("library") { ... }`并绑定为Canonical CallableContract + FfiSignature。workspace alias使用单段`#identifier`；package使用单段`@identifier`。`@math`是package root，`@math.matrix`与`@math/matrix`等价，组织作用域命名推迟到独立语法。
+    结论：静态native声明使用`native extern("library") { ... }`并绑定为Canonical CallableContract + FfiSignature。workspace alias使用单段`#identifier`；package使用单段`@identifier`。`@math`是package root，`@math.matrix`与`@math/matrix`等价，组织作用域命名推迟到独立语法。
+17. 编译期宏是否允许token/AST任意改写。
+    结论：不允许。attribute schema是带`AttributeUsage` role的普通`readonly struct`；declaration transform是带role的普通`comptime fn(...): DeclarationPatch`。它只读取immutable declaration view并返回typed data，不增加`attribute`/`decorator`关键字，不修改已有body，不运行runtime decorator，第一版single expansion round。
+18. async function调用是cold runner还是hot task。
+    结论：`async fn(...): zr.task.Task<T>`显式声明并返回hot Task；延迟/指定scheduler/跨thread work使用`init zr.task.Job<T>(callable)`和`zr.task.Scheduler.schedule(...): Task<T>`。Task/Job/Scheduler的public TypeId只属于`zr.task`；`zr.thread`只实现ThreadScheduler/Send provider，不做隐藏返回改写或第二套Task hierarchy。
+19. generator/iterator采用什么核心表层。
+    结论：使用普通`fn(...): zr.iteration.Iterator<T>`与`yield expr;`；异步形式使用`async fn(...): zr.iteration.AsyncIterator<T>`。Iterable/Enumerator/Iterator/AsyncIterator的public TypeId只属于`zr.iteration` native descriptor；返回carrier完全显式，`for`绑定registered capability，不增加`iterator` modifier。
+20. 测试是匿名block、macro还是function。
+    结论：使用带`#zr.testing.test#`metadata的module-scope普通`fn(...): void`或`async fn(...): zr.task.Task<void>`；`zr.testing`由N3 Test native host提供metadata/assertion descriptor。compiler写TestManifest但不增加`test`关键字或宏生成main，production artifact不携带test code/host executable。
+21. 新增语言实体和公共函数如何准入。
+    结论：遵守Occam gate。关键字、AST kind、公共类型、constructor、公共函数或metadata role只有在既有`fn`、TypeRef、property、struct、attribute application、Drop、Task和typed data无法表达时才允许增加；每一项都必须分别列出仓库内reference implementation与behavior/compiler tests，不能以相关函数替代类型本身的来源。所有function definition都显式声明真实返回TypeRef，禁止无来源定义和隐藏carrier改写。
+22. `zr.*`核心库是源码库还是native库，以及如何分级。
+    结论：`zr.*`是官方保留根，所有正式core module都由`ZrLibModuleDescriptor`或CompileTool/Test host等价descriptor提供；ZR source、alias、package和未授权`.zrm`不能覆盖。N0 ABI内核、N1无权限基础、N2按需能力、N3阶段宿主只决定build/link/load/phase，不进入语法或TypeId。静态链接、descriptor plugin和host provider共享Canonical ModuleId/TypeId/CallableContract，native不等于独立DLL。
+23. 官方native、自定义native、workspace源码与真实绝对路径如何避免命名冲突。
+    结论：Canonical ModuleId包含ModuleDomain。`zr.task`为OfficialNative，`native:engine.render`为RegisteredNative，`engine.render`为Workspace，`@pkg/...`为Package；相同logical segments在不同domain可并存，同domain重复provider才报错。`file:`只是读取目标identity的显式locator，绝对路径不进入TypeId；alias必须保留目标domain。该规则不增加关键字，只扩展import literal的ModuleSpecifier grammar。
 
 ## 22. 子设计文档
 
-总索引：[ZR 语法重设计子计划索引](./README.md)。十份细化设计为：
+总索引：[ZR 语法重设计子计划索引](./README.md)。十四份细化设计为：
 
 1. [Canonical TypeRef、Place IR、CFG facts 与 artifact schema](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)。
 2. [`fn/ref/in/out/scoped/readonly` 与 borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md)。
@@ -986,5 +1004,9 @@ LSP 必须复用相同 semantic facts 提供 hover、类型展示、move 后不�
 8. [`zr.reflection` 独立反射库与运行时类型系统](./2026-07-19-08-reflection-library-type-system-design.md)。
 9. [generational `PoolHandle<T>`、`PoolRef<T>` 与连续池化内存](./2026-07-19-09-generational-pool-handle-ref-struct-design.md)。
 10. [Native extern、内建库、模块与包解析](./2026-07-19-10-native-ffi-module-package-design.md)。
+11. [编译期执行、条件编译、静态元数据与类型化声明生成](./2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md)。
+12. [`async/await`、Task/Job/Scheduler与线程协程模型](./2026-07-20-12-async-task-job-scheduler-design.md)。
+13. [普通`fn`、Enumerator、`yield`与异步迭代](./2026-07-20-13-iterator-enumerator-yield-design.md)。
+14. [普通函数、测试元数据、断言与TestManifest](./2026-07-20-14-test-function-harness-design.md)。
 
 每一步都必须先验证共享语义基础，禁止通过具体类型名、表层拼写或单个测试用例特判完成。

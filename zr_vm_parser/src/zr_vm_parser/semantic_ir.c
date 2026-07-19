@@ -28,7 +28,9 @@ static TZrBool semantic_ir_opcode_requires_place(EZrSemanticIrOpcode opcode) {
         case ZR_SEMANTIC_IR_DROP:
         case ZR_SEMANTIC_IR_BORROW_SHARED:
         case ZR_SEMANTIC_IR_BORROW_MUT:
+        case ZR_SEMANTIC_IR_RESERVE_BORROW_MUT:
         case ZR_SEMANTIC_IR_REBORROW:
+        case ZR_SEMANTIC_IR_ACTIVATE_LOAN:
         case ZR_SEMANTIC_IR_END_LOAN:
         case ZR_SEMANTIC_IR_DEREFERENCE:
         case ZR_SEMANTIC_IR_PROPERTY_GET:
@@ -55,6 +57,7 @@ static TZrBool semantic_ir_opcode_requires_result(EZrSemanticIrOpcode opcode) {
         case ZR_SEMANTIC_IR_COPY:
         case ZR_SEMANTIC_IR_BORROW_SHARED:
         case ZR_SEMANTIC_IR_BORROW_MUT:
+        case ZR_SEMANTIC_IR_RESERVE_BORROW_MUT:
         case ZR_SEMANTIC_IR_REBORROW:
         case ZR_SEMANTIC_IR_DEREFERENCE:
         case ZR_SEMANTIC_IR_VALUE_CONSTRUCT:
@@ -245,11 +248,35 @@ TZrLoanId ZrParser_SemanticIr_AddLoan(SZrSemanticIrFunction *function,
                                       SZrFileRange originRange,
                                       SZrFileRange lastUseRange,
                                       TZrValueId createdByValueId) {
+    return ZrParser_SemanticIr_AddLoanEx(
+            function,
+            sourcePlaceId,
+            access,
+            ZR_SEMANTIC_LOAN_IMMEDIATE,
+            regionId,
+            originRange,
+            lastUseRange,
+            createdByValueId);
+}
+
+TZrLoanId ZrParser_SemanticIr_AddLoanEx(
+        SZrSemanticIrFunction *function,
+        TZrPlaceId sourcePlaceId,
+        EZrSemanticLoanAccess access,
+        EZrSemanticLoanPhase phase,
+        TZrRegionId regionId,
+        SZrFileRange originRange,
+        SZrFileRange lastUseRange,
+        TZrValueId createdByValueId) {
     SZrSemanticIrLoanFact loan;
 
     if (!semantic_ir_function_is_valid(function) ||
         ZrParser_PlaceGraph_Get(&function->places, sourcePlaceId) == ZR_NULL ||
         (access != ZR_SEMANTIC_LOAN_SHARED &&
+         access != ZR_SEMANTIC_LOAN_MUTABLE) ||
+        (phase != ZR_SEMANTIC_LOAN_IMMEDIATE &&
+         phase != ZR_SEMANTIC_LOAN_TWO_PHASE) ||
+        (phase == ZR_SEMANTIC_LOAN_TWO_PHASE &&
          access != ZR_SEMANTIC_LOAN_MUTABLE)) {
         return ZR_SEMANTIC_LOAN_ID_INVALID;
     }
@@ -257,12 +284,59 @@ TZrLoanId ZrParser_SemanticIr_AddLoan(SZrSemanticIrFunction *function,
     loan.loanId = (TZrLoanId)(function->loanFacts.length + 1U);
     loan.sourcePlaceId = sourcePlaceId;
     loan.access = access;
+    loan.phase = phase;
     loan.regionId = regionId;
     loan.originRange = originRange;
     loan.lastUseRange = lastUseRange;
     loan.createdByValueId = createdByValueId;
     ZrCore_Array_Push(function->state, &function->loanFacts, &loan);
     return loan.loanId;
+}
+
+static TZrBool semantic_ir_validate_loan_phases(
+        const SZrSemanticIrFunction *function) {
+    for (TZrSize loanIndex = 0U;
+         loanIndex < function->loanFacts.length;
+         loanIndex++) {
+        const SZrSemanticIrLoanFact *loan =
+                (const SZrSemanticIrLoanFact *)ZrCore_Array_Get(
+                        (SZrArray *)&function->loanFacts, loanIndex);
+        TZrSize originCount = 0U;
+        TZrSize activationCount = 0U;
+        TZrSemanticInstructionId originId = ZR_SEMANTIC_INSTRUCTION_ID_INVALID;
+        TZrSemanticInstructionId activationId = ZR_SEMANTIC_INSTRUCTION_ID_INVALID;
+
+        for (TZrSize instructionIndex = 0U;
+             instructionIndex < function->instructions.length;
+             instructionIndex++) {
+            const SZrSemanticIrInstruction *instruction =
+                    ZrParser_SemanticIr_InstructionAt(function, instructionIndex);
+            if (instruction->loanId != loan->loanId) {
+                continue;
+            }
+            if (instruction->opcode == ZR_SEMANTIC_IR_BORROW_SHARED ||
+                instruction->opcode == ZR_SEMANTIC_IR_BORROW_MUT ||
+                instruction->opcode == ZR_SEMANTIC_IR_RESERVE_BORROW_MUT ||
+                instruction->opcode == ZR_SEMANTIC_IR_REBORROW) {
+                originCount++;
+                originId = instruction->id;
+            } else if (instruction->opcode == ZR_SEMANTIC_IR_ACTIVATE_LOAN) {
+                activationCount++;
+                activationId = instruction->id;
+            }
+        }
+        if (originCount != 1U) {
+            return ZR_FALSE;
+        }
+        if (loan->phase == ZR_SEMANTIC_LOAN_TWO_PHASE) {
+            if (activationCount != 1U || activationId <= originId) {
+                return ZR_FALSE;
+            }
+        } else if (activationCount != 0U) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
 }
 
 const SZrSemanticIrValue *ZrParser_SemanticIr_Value(
@@ -421,6 +495,10 @@ TZrBool ZrParser_SemanticIr_Validate(
             !semantic_ir_place_is_valid(function, loan->sourcePlaceId) ||
             (loan->access != ZR_SEMANTIC_LOAN_SHARED &&
              loan->access != ZR_SEMANTIC_LOAN_MUTABLE) ||
+            (loan->phase != ZR_SEMANTIC_LOAN_IMMEDIATE &&
+             loan->phase != ZR_SEMANTIC_LOAN_TWO_PHASE) ||
+            (loan->phase == ZR_SEMANTIC_LOAN_TWO_PHASE &&
+             loan->access != ZR_SEMANTIC_LOAN_MUTABLE) ||
             loan->regionId == ZR_SEMANTIC_REGION_ID_INVALID ||
             loan->regionId > function->regions.length ||
             (loan->createdByValueId != ZR_VALUE_ID_INVALID &&
@@ -479,7 +557,9 @@ TZrBool ZrParser_SemanticIr_Validate(
 
         if ((instruction->opcode == ZR_SEMANTIC_IR_BORROW_SHARED ||
              instruction->opcode == ZR_SEMANTIC_IR_BORROW_MUT ||
+             instruction->opcode == ZR_SEMANTIC_IR_RESERVE_BORROW_MUT ||
              instruction->opcode == ZR_SEMANTIC_IR_REBORROW ||
+             instruction->opcode == ZR_SEMANTIC_IR_ACTIVATE_LOAN ||
              instruction->opcode == ZR_SEMANTIC_IR_END_LOAN) &&
             instruction->loanId == ZR_SEMANTIC_LOAN_ID_INVALID) {
             return ZR_FALSE;
@@ -496,7 +576,15 @@ TZrBool ZrParser_SemanticIr_Validate(
                 (instruction->opcode == ZR_SEMANTIC_IR_BORROW_SHARED &&
                  loan->access != ZR_SEMANTIC_LOAN_SHARED) ||
                 (instruction->opcode == ZR_SEMANTIC_IR_BORROW_MUT &&
-                 loan->access != ZR_SEMANTIC_LOAN_MUTABLE)) {
+                 (loan->access != ZR_SEMANTIC_LOAN_MUTABLE ||
+                  loan->phase != ZR_SEMANTIC_LOAN_IMMEDIATE)) ||
+                (instruction->opcode == ZR_SEMANTIC_IR_RESERVE_BORROW_MUT &&
+                 (loan->access != ZR_SEMANTIC_LOAN_MUTABLE ||
+                  loan->phase != ZR_SEMANTIC_LOAN_TWO_PHASE)) ||
+                (instruction->opcode == ZR_SEMANTIC_IR_ACTIVATE_LOAN &&
+                 loan->phase != ZR_SEMANTIC_LOAN_TWO_PHASE) ||
+                (instruction->opcode == ZR_SEMANTIC_IR_BORROW_SHARED &&
+                 loan->phase != ZR_SEMANTIC_LOAN_IMMEDIATE)) {
                 return ZR_FALSE;
             }
         }
@@ -511,7 +599,7 @@ TZrBool ZrParser_SemanticIr_Validate(
             }
         }
     }
-    return ZR_TRUE;
+    return semantic_ir_validate_loan_phases(function);
 }
 
 const SZrSemanticIrInstruction *ZrParser_SemanticIr_InstructionAt(

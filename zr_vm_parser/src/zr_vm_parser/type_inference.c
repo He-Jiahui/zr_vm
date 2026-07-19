@@ -3495,6 +3495,7 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
     }
 
     namedType.ownershipQualifier = astType->ownershipQualifier;
+    namedType.isReadonlyView = astType->isReadonlyView;
 
     if (astType->dimensions > 0) {
         SZrInferredType currentType;
@@ -3554,6 +3555,7 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
         ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
         ZrParser_InferredType_Copy(cs->state, result, &currentType);
         result->ownershipQualifier = astType->ownershipQualifier;
+        result->isReadonlyView = astType->isReadonlyView;
         ZrParser_InferredType_Free(cs->state, &currentType);
         return ZR_TRUE;
     }
@@ -3561,6 +3563,7 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
     ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Copy(cs->state, result, &namedType);
     result->ownershipQualifier = astType->ownershipQualifier;
+    result->isReadonlyView = astType->isReadonlyView;
     if (namedTypeInitialized) {
         ZrParser_InferredType_Free(cs->state, &namedType);
     }

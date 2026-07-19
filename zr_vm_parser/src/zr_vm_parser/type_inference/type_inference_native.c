@@ -3,6 +3,7 @@
 //
 
 #include "zr_vm_parser/type_inference.h"
+#include "zr_vm_parser/receiver_call.h"
 #include "zr_vm_parser/compiler.h"
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
@@ -965,6 +966,7 @@ static void native_module_info_add_field_member_with_identity(SZrState *state,
     memberInfo.name = memberName;
     memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
     memberInfo.isStatic = isStatic;
+    memberInfo.receiverEffect = ZR_CANONICAL_RECEIVER_NONE;
     memberInfo.fieldTypeName = fieldTypeName;
     memberInfo.ownerTypeName = info->name;
     memberInfo.baseDefinitionOwnerTypeName = info->name;
@@ -1129,6 +1131,7 @@ static void native_module_info_add_method_member_with_identity(SZrCompilerState 
                                                                SZrString *memberName,
                                                                SZrString *returnTypeName,
                                                                TZrBool isStatic,
+                                                               EZrCanonicalReceiverEffect receiverEffect,
                                                                TZrUInt32 parameterCount,
                                                                TZrUInt32 minArgumentCount,
                                                                SZrObject *parametersArray,
@@ -1142,6 +1145,7 @@ static void native_module_info_add_method_member(SZrCompilerState *cs,
                                                  SZrString *memberName,
                                                  SZrString *returnTypeName,
                                                  TZrBool isStatic,
+                                                 EZrCanonicalReceiverEffect receiverEffect,
                                                  TZrUInt32 parameterCount,
                                                  TZrUInt32 minArgumentCount,
                                                  SZrObject *parametersArray,
@@ -1153,6 +1157,7 @@ static void native_module_info_add_method_member(SZrCompilerState *cs,
                                                        memberName,
                                                        returnTypeName,
                                                        isStatic,
+                                                       receiverEffect,
                                                        parameterCount,
                                                        minArgumentCount,
                                                        parametersArray,
@@ -1167,6 +1172,7 @@ static void native_module_info_add_method_member_with_identity(SZrCompilerState 
                                                                SZrString *memberName,
                                                                SZrString *returnTypeName,
                                                                TZrBool isStatic,
+                                                               EZrCanonicalReceiverEffect receiverEffect,
                                                                TZrUInt32 parameterCount,
                                                                TZrUInt32 minArgumentCount,
                                                                SZrObject *parametersArray,
@@ -1185,6 +1191,7 @@ static void native_module_info_add_method_member_with_identity(SZrCompilerState 
     memberInfo.name = memberName;
     memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
     memberInfo.isStatic = isStatic;
+    memberInfo.receiverEffect = isStatic ? ZR_CANONICAL_RECEIVER_NONE : receiverEffect;
     memberInfo.parameterCount = parameterCount;
     memberInfo.minArgumentCount = minArgumentCount;
     memberInfo.returnTypeName = returnTypeName;
@@ -1245,6 +1252,9 @@ static void native_module_info_add_meta_method_member(SZrCompilerState *cs,
     memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
     memberInfo.metaType = metaType;
     memberInfo.isMetaMethod = ZR_TRUE;
+    memberInfo.receiverEffect = metaType == ZR_META_CONSTRUCTOR
+                                        ? ZR_CANONICAL_RECEIVER_NONE
+                                        : ZR_CANONICAL_RECEIVER_MUTABLE;
     memberInfo.parameterCount = parameterCount;
     memberInfo.minArgumentCount = minArgumentCount;
     memberInfo.returnTypeName = returnTypeName;
@@ -2150,6 +2160,72 @@ static TZrBool receiver_ownership_can_call_member(EZrOwnershipQualifier receiver
     }
 }
 
+static EZrReceiverDispatchKind receiver_dispatch_kind_for_member(
+        SZrCompilerState *cs,
+        const SZrInferredType *receiverType,
+        const SZrTypeMemberInfo *memberInfo) {
+    ZR_UNUSED_PARAMETER(cs);
+    if (memberInfo != ZR_NULL &&
+        (memberInfo->metadataToken != 0U ||
+         memberInfo->signatureToken != 0U)) {
+        return ZR_RECEIVER_DISPATCH_NATIVE;
+    }
+    if (memberInfo != ZR_NULL &&
+        (memberInfo->modifierFlags & ZR_DECLARATION_MODIFIER_OVERRIDE) != 0U) {
+        return ZR_RECEIVER_DISPATCH_OVERRIDE;
+    }
+    if ((receiverType != ZR_NULL && receiverType->elementTypes.length > 0U) ||
+        (memberInfo != ZR_NULL && memberInfo->genericParameters.length > 0U)) {
+        return ZR_RECEIVER_DISPATCH_GENERIC;
+    }
+    if (memberInfo != ZR_NULL && memberInfo->declarationNode != ZR_NULL &&
+        (memberInfo->declarationNode->type ==
+                 ZR_AST_INTERFACE_METHOD_SIGNATURE ||
+         memberInfo->declarationNode->type ==
+                 ZR_AST_INTERFACE_META_SIGNATURE ||
+         memberInfo->declarationNode->type ==
+                 ZR_AST_INTERFACE_PROPERTY_SIGNATURE)) {
+        return ZR_RECEIVER_DISPATCH_INTERFACE;
+    }
+    if (memberInfo != ZR_NULL &&
+        memberInfo->memberType == ZR_AST_STRUCT_METHOD) {
+        return ZR_RECEIVER_DISPATCH_STRUCT;
+    }
+    return ZR_RECEIVER_DISPATCH_CLASS;
+}
+
+static TZrBool validate_receiver_call_capability(
+        SZrCompilerState *cs,
+        const SZrInferredType *receiverType,
+        const SZrTypeMemberInfo *memberInfo,
+        SZrFileRange location) {
+    SZrReceiverCallDecision decision;
+
+    if (cs == ZR_NULL || receiverType == ZR_NULL || memberInfo == ZR_NULL ||
+        memberInfo->isStatic ||
+        memberInfo->receiverEffect == ZR_CANONICAL_RECEIVER_NONE) {
+        return ZR_TRUE;
+    }
+    memset(&decision, 0, sizeof(decision));
+    if (!ZrParser_ReceiverCall_AnalyzeInferred(
+                cs->semanticContext,
+                receiverType,
+                memberInfo->receiverEffect,
+                receiver_dispatch_kind_for_member(
+                        cs, receiverType, memberInfo),
+                ZR_TRUE,
+                ZR_TRUE,
+                &decision) ||
+        !decision.allowed) {
+        ZrParser_Compiler_Error(
+                cs,
+                ZrParser_ReceiverCall_DiagnosticMessage(decision.diagnostic),
+                location);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 const TZrChar *receiver_ownership_call_error(EZrOwnershipQualifier receiverQualifier) {
     switch (receiverQualifier) {
         case ZR_OWNERSHIP_QUALIFIER_WEAK:
@@ -2352,6 +2428,7 @@ translate_module_info:
                                                                name,
                                                                returnTypeName,
                                                                ZR_TRUE,
+                                                               ZR_CANONICAL_RECEIVER_NONE,
                                                                parameterCount,
                                                                minArgumentCount,
                                                                parametersArray,
@@ -2555,6 +2632,8 @@ translate_module_info:
             SZrString *methodName = native_module_info_get_string_field(cs->state, methodEntry, "name");
             SZrString *returnTypeName = native_module_info_get_string_field(cs->state, methodEntry, "returnTypeName");
             TZrBool isStatic = native_module_info_get_bool_field(cs->state, methodEntry, "isStatic", ZR_FALSE);
+            TZrBool isReadonlyReceiver = native_module_info_get_bool_field(
+                    cs->state, methodEntry, "isReadonlyReceiver", ZR_FALSE);
             TZrUInt32 parameterCount = native_module_info_exact_parameter_count(cs->state, methodEntry);
             TZrUInt32 minArgumentCount =
                     native_module_info_min_argument_count(cs->state, methodEntry, parameterCount);
@@ -2570,6 +2649,11 @@ translate_module_info:
                                                      methodName,
                                                      returnTypeName,
                                                      isStatic,
+                                                     isStatic
+                                                             ? ZR_CANONICAL_RECEIVER_NONE
+                                                             : (isReadonlyReceiver
+                                                                        ? ZR_CANONICAL_RECEIVER_READONLY
+                                                                        : ZR_CANONICAL_RECEIVER_MUTABLE),
                                                      parameterCount,
                                                      minArgumentCount,
                                                      parametersArray,
@@ -3162,7 +3246,20 @@ infer_regular_member_access:
                     ZrCore_Array_Construct(&resolvedMemberSignature.parameterPassingModes);
                     genericDiagnostic[0] = '\0';
 
+                    if (!validate_receiver_call_capability(
+                                cs,
+                                &currentType,
+                                memberInfo,
+                                members->nodes[i + 1]->location)) {
+                        ZrParser_InferredType_Free(cs->state, &currentType);
+                        ZrParser_InferredType_Free(cs->state, &nextType);
+                        free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                        return ZR_FALSE;
+                    }
+
                     if (!memberInfo->isStatic &&
+                        memberInfo->receiverQualifier !=
+                                ZR_OWNERSHIP_QUALIFIER_NONE &&
                         !receiver_ownership_can_call_member(currentType.ownershipQualifier,
                                                             memberInfo->receiverQualifier)) {
                         ZrParser_Compiler_Error(cs,
@@ -3279,7 +3376,17 @@ infer_regular_member_access:
                 ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_OBJECT);
                 genericDiagnostic[0] = '\0';
 
-                if (!receiver_ownership_can_call_member(currentType.ownershipQualifier,
+                if (!validate_receiver_call_capability(
+                            cs, &currentType, callMetaMember, memberNode->location)) {
+                    ZrParser_InferredType_Free(cs->state, &currentType);
+                    ZrParser_InferredType_Free(cs->state, &nextType);
+                    free_resolved_call_signature(cs->state, &resolvedCallSignature);
+                    return ZR_FALSE;
+                }
+
+                if (callMetaMember->receiverQualifier !=
+                            ZR_OWNERSHIP_QUALIFIER_NONE &&
+                    !receiver_ownership_can_call_member(currentType.ownershipQualifier,
                                                         callMetaMember->receiverQualifier)) {
                     ZrParser_Compiler_Error(cs,
                                             receiver_ownership_call_error(currentType.ownershipQualifier),
@@ -3489,6 +3596,10 @@ static TZrBool type_name_string_append_type(SZrState *state,
 
     ownershipPrefix = type_name_string_get_ownership_prefix(type->ownershipQualifier);
     baseName = type_name_string_get_base_or_named_type(type);
+    if (type->isReadonlyView &&
+        !type_name_string_append(buffer, bufferSize, writeIndex, "readonly ")) {
+        return ZR_FALSE;
+    }
     if (!type_name_string_append(buffer, bufferSize, writeIndex, ownershipPrefix)) {
         return ZR_FALSE;
     }

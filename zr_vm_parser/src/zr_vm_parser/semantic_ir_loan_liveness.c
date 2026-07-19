@@ -606,6 +606,7 @@ static void loan_build_instruction_uses(SSemanticLoanAnalysis *analysis) {
         } else if (instruction->loanId != ZR_SEMANTIC_LOAN_ID_INVALID &&
                    instruction->opcode != ZR_SEMANTIC_IR_BORROW_SHARED &&
                    instruction->opcode != ZR_SEMANTIC_IR_BORROW_MUT &&
+                   instruction->opcode != ZR_SEMANTIC_IR_RESERVE_BORROW_MUT &&
                    instruction->opcode != ZR_SEMANTIC_IR_REBORROW) {
             uses[(TZrSize)instruction->loanId - 1U] = ZR_TRUE;
         }
@@ -620,6 +621,7 @@ static void loan_backward_transfer(
         TZrBool *live) {
     if ((instruction->opcode == ZR_SEMANTIC_IR_BORROW_SHARED ||
          instruction->opcode == ZR_SEMANTIC_IR_BORROW_MUT ||
+         instruction->opcode == ZR_SEMANTIC_IR_RESERVE_BORROW_MUT ||
          instruction->opcode == ZR_SEMANTIC_IR_REBORROW) &&
         instruction->loanId != ZR_SEMANTIC_LOAN_ID_INVALID) {
         live[(TZrSize)instruction->loanId - 1U] = ZR_FALSE;

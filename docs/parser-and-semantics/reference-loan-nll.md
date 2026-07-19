@@ -116,5 +116,6 @@ create diagnostics or contaminate a reachable join.
 
 M3 consumes canonical loan instructions, Place overlap and owned CFG ranges. It
 does not add a second source passing-mode system. M4 connects readonly receivers,
-owner auto-deref, two-phase receiver borrowing and remaining call-boundary loan
-creation to these facts. M5 owns escape, closure and suspension rejection.
+owner auto-deref and two-phase receiver borrowing to these facts; see
+`receiver-readonly-call-boundary.md`. M5 owns escape, closure and suspension
+rejection.

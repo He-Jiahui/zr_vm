@@ -333,6 +333,7 @@ typedef struct SZrTypeMemberInfo {
     TZrBool isUsingManaged;               // legacy field-scoped `%using` 元数据位
     EZrOwnershipQualifier ownershipQualifier; // 字段所有权限定符
     EZrOwnershipQualifier receiverQualifier;  // 方法 receiver 所有权限定符
+    EZrCanonicalReceiverEffect receiverEffect; // canonical readonly/writable receiver contract
     TZrBool callsClose;                   // 生命周期结束时是否需要先调用 @close
     TZrBool callsDestructor;              // 生命周期结束时是否可能触发 @destructor
     TZrUInt32 declarationOrder;           // 在当前类型中的声明顺序

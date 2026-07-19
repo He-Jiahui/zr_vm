@@ -363,7 +363,7 @@ VM/AOT 可以对 Unique move/drop、known final Shared drop 做优化，但必�
 - Owner TypeRef kind。
 - Drop contract/function token。
 - field ownership/GC-bridge map。
-- Send/Sync/isolation capability。
+- 第一版保存Send/isolation capability；Sync只在后续AtomicShared设计批准后扩展schema。
 - callable move/borrow/escape contract。
 - GcBox/Gc handle bridge kind。
 

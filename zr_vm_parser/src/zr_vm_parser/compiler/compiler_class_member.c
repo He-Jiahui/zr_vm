@@ -487,6 +487,9 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
                     ZrParser_InferredType_Init(cs->state, &thisType, ZR_VALUE_TYPE_OBJECT);
                 }
                 thisType.ownershipQualifier = thisOwnershipQualifier;
+                thisType.isReadonlyView =
+                        get_member_receiver_effect(node) ==
+                        ZR_CANONICAL_RECEIVER_READONLY;
                 ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, thisName, &thisType);
                 ZrParser_InferredType_Free(cs->state, &thisType);
             }
@@ -498,6 +501,9 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
                 SZrInferredType superType;
                 ZrParser_InferredType_InitFull(cs->state, &superType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, superTypeName);
                 superType.ownershipQualifier = thisOwnershipQualifier;
+                superType.isReadonlyView =
+                        get_member_receiver_effect(node) ==
+                        ZR_CANONICAL_RECEIVER_READONLY;
                 ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, superName, &superType);
                 ZrParser_InferredType_Free(cs->state, &superType);
             }

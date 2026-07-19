@@ -444,6 +444,14 @@ SZrObject *native_metadata_make_method_entry(SZrState *state, const ZrLibMethodD
     native_metadata_set_int_field(state, object, "minArgumentCount", descriptor->minArgumentCount);
     native_metadata_set_int_field(state, object, "maxArgumentCount", descriptor->maxArgumentCount);
     native_metadata_set_bool_field(state, object, "isStatic", descriptor->isStatic);
+    native_metadata_set_bool_field(
+            state,
+            object,
+            "isReadonlyReceiver",
+            !descriptor->isStatic &&
+                    (descriptor->dispatchFlags &
+                     (ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER |
+                      ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT)) != 0u);
     native_metadata_set_int_field(state, object, "contractRole", (TZrInt64)descriptor->contractRole);
     if (hasParameterMetadata) {
         native_metadata_set_int_field(state, object, "parameterCount", (TZrInt64)descriptor->parameterCount);

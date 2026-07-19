@@ -52,6 +52,19 @@ TZrBool compiler_semantic_ir_lower_ownership(
         TZrUInt32 sourceSlot,
         TZrUInt32 resultSlot,
         SZrFileRange sourceRange);
+TZrLoanId compiler_semantic_ir_begin_receiver_call(
+        SZrCompilerState *cs,
+        TZrUInt32 receiverSlot,
+        EZrCanonicalReceiverEffect receiverEffect,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_activate_receiver_call(
+        SZrCompilerState *cs,
+        TZrLoanId loanId,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_end_receiver_call(
+        SZrCompilerState *cs,
+        TZrLoanId loanId,
+        SZrFileRange sourceRange);
 
 static ZR_FORCE_INLINE EZrMetaType compiler_resolve_meta_type_name(SZrString *metaName) {
     TZrNativeString metaNameText;
@@ -216,10 +229,26 @@ typedef struct SZrCompiledMemberInfo {
     TZrUInt32 interfaceContractSlot;
     TZrUInt32 propertyIdentity;
     TZrUInt32 accessorRole;
+    TZrUInt32 receiverEffect;
 } SZrCompiledMemberInfo;
 #pragma pack(pop)
 
 EZrOwnershipQualifier get_member_receiver_qualifier(SZrAstNode *node) ;
+
+EZrCanonicalReceiverEffect get_member_receiver_effect(SZrAstNode *node) ;
+
+TZrBool compiler_receiver_effect_can_implement(
+        EZrCanonicalReceiverEffect requiredEffect,
+        EZrCanonicalReceiverEffect implementationEffect) ;
+
+TZrBool compiler_validate_receiver_call(
+        SZrCompilerState *cs,
+        SZrAstNode *receiverNode,
+        SZrString *receiverTypeName,
+        EZrOwnershipQualifier receiverQualifier,
+        const SZrTypeMemberInfo *memberInfo,
+        TZrBool receiverIsAddressable,
+        SZrFileRange location) ;
 
 EZrOwnershipQualifier get_implicit_this_ownership_qualifier(EZrOwnershipQualifier receiverQualifier) ;
 

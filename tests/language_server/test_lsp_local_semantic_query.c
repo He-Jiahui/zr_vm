@@ -1632,6 +1632,7 @@ static void test_local_expression_query_returns_ownership_violation_fact(SZrStat
 }
 
 #include "test_lsp_local_semantic_scope_cases.h"
+#include "test_lsp_local_semantic_dependency_cases.h"
 
 int main(void) {
     SZrCallbackGlobal callbacks;
@@ -1699,6 +1700,16 @@ int main(void) {
     test_scoped_query_analyzer_cache_reuses_scope_and_invalidates_on_edit(state);
     TEST_DIVIDER();
     test_body_edit_preserves_unaffected_scoped_query_cache(state);
+    TEST_DIVIDER();
+    test_generic_signature_edit_invalidates_only_changed_and_direct_caller_scopes(state);
+    TEST_DIVIDER();
+    test_inferred_signature_body_edit_invalidates_direct_caller_scope(state);
+    TEST_DIVIDER();
+    test_explicit_signature_body_edit_preserves_direct_caller_scope(state);
+    TEST_DIVIDER();
+    test_unbound_function_value_dependency_invalidates_conservatively(state);
+    TEST_DIVIDER();
+    test_poisoned_scope_invalidates_conservatively_on_signature_edit(state);
     TEST_DIVIDER();
     test_completion_fallback_reuses_scoped_query_analyzer_cache(state);
     TEST_DIVIDER();

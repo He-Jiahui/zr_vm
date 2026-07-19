@@ -62,9 +62,15 @@ SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
 
 SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    EZrMethodReceiverModifier receiverModifier = ZR_METHOD_RECEIVER_DEFAULT;
 
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
+
+    if (ps->lexer->t.token == ZR_TK_CONST) {
+        receiverModifier = ZR_METHOD_RECEIVER_CONST;
+        ZrParser_Lexer_Next(ps->lexer);
+    }
 
     if (ps->lexer->t.token == ZR_TK_FN) {
         ZrParser_Lexer_Next(ps->lexer);
@@ -148,6 +154,7 @@ SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
     }
 
     node->data.interfaceMethodSignature.access = access;
+    node->data.interfaceMethodSignature.receiverModifier = receiverModifier;
     node->data.interfaceMethodSignature.name = name;
     node->data.interfaceMethodSignature.generic = generic;
     node->data.interfaceMethodSignature.params = params;
@@ -413,6 +420,12 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
             }
 
             EZrToken nextToken = ps->lexer->t.token;
+            if (nextToken == ZR_TK_CONST) {
+                ZrParser_Lexer_Next(ps->lexer);
+                nextToken = ps->lexer->t.token == ZR_TK_FN
+                                    ? ZR_TK_FN
+                                    : ZR_TK_CONST;
+            }
 
             if (nextToken == ZR_TK_VAR || nextToken == ZR_TK_CONST) {
                 // 字段声明

@@ -7,8 +7,15 @@ typedef enum ESemanticLoanInstructionAccess {
     SEMANTIC_LOAN_ACCESS_READ,
     SEMANTIC_LOAN_ACCESS_EXCLUSIVE,
     SEMANTIC_LOAN_ACCESS_BORROW_SHARED,
+    SEMANTIC_LOAN_ACCESS_RESERVE_MUTABLE,
     SEMANTIC_LOAN_ACCESS_BORROW_MUTABLE
 } ESemanticLoanInstructionAccess;
+
+typedef enum ESemanticLoanEffectiveState {
+    SEMANTIC_LOAN_STATE_SHARED = 0,
+    SEMANTIC_LOAN_STATE_RESERVED_MUTABLE,
+    SEMANTIC_LOAN_STATE_ACTIVE_MUTABLE
+} ESemanticLoanEffectiveState;
 
 static const TZrBool *loan_conflict_row(
         const TZrBool *matrix,
@@ -24,6 +31,12 @@ static ESemanticLoanInstructionAccess loan_instruction_access(
         return SEMANTIC_LOAN_ACCESS_BORROW_SHARED;
     }
     if (instruction->opcode == ZR_SEMANTIC_IR_BORROW_MUT) {
+        return SEMANTIC_LOAN_ACCESS_BORROW_MUTABLE;
+    }
+    if (instruction->opcode == ZR_SEMANTIC_IR_RESERVE_BORROW_MUT) {
+        return SEMANTIC_LOAN_ACCESS_RESERVE_MUTABLE;
+    }
+    if (instruction->opcode == ZR_SEMANTIC_IR_ACTIVATE_LOAN) {
         return SEMANTIC_LOAN_ACCESS_BORROW_MUTABLE;
     }
     if (instruction->opcode == ZR_SEMANTIC_IR_REBORROW) {
@@ -74,6 +87,7 @@ static TZrBool loan_is_ancestor_or_self(
 
 static TZrBool loan_capability_authorizes_access(
         const SSemanticLoanAnalysis *analysis,
+        const SZrSemanticIrInstruction *instruction,
         TZrLoanId loanId,
         ESemanticLoanInstructionAccess access) {
     const SZrSemanticIrLoanFact *loan = ZrParser_SemanticIr_Loan(
@@ -81,9 +95,17 @@ static TZrBool loan_capability_authorizes_access(
     if (loan == ZR_NULL) {
         return ZR_FALSE;
     }
-    return (TZrBool)(access == SEMANTIC_LOAN_ACCESS_READ ||
-                     access == SEMANTIC_LOAN_ACCESS_BORROW_SHARED ||
-                     loan->access == ZR_SEMANTIC_LOAN_MUTABLE);
+    if (access == SEMANTIC_LOAN_ACCESS_READ ||
+        access == SEMANTIC_LOAN_ACCESS_BORROW_SHARED) {
+        return ZR_TRUE;
+    }
+    return (TZrBool)(loan->access == ZR_SEMANTIC_LOAN_MUTABLE &&
+                     (loan->phase == ZR_SEMANTIC_LOAN_IMMEDIATE ||
+                      ZrParser_SemanticFlow_LoanIsActiveAt(
+                              analysis->result,
+                              instruction->id,
+                              loanId,
+                              ZR_TRUE)));
 }
 
 static TZrBool loan_instruction_authorizes_candidate(
@@ -92,8 +114,13 @@ static TZrBool loan_instruction_authorizes_candidate(
         ESemanticLoanInstructionAccess access,
         TZrLoanId candidateLoanId) {
     if (instruction->opcode == ZR_SEMANTIC_IR_BORROW_SHARED ||
-        instruction->opcode == ZR_SEMANTIC_IR_BORROW_MUT) {
+        instruction->opcode == ZR_SEMANTIC_IR_BORROW_MUT ||
+        instruction->opcode == ZR_SEMANTIC_IR_RESERVE_BORROW_MUT) {
         return ZR_FALSE;
+    }
+    if (instruction->opcode == ZR_SEMANTIC_IR_ACTIVATE_LOAN &&
+        instruction->loanId == candidateLoanId) {
+        return ZR_TRUE;
     }
     if (instruction->opcode == ZR_SEMANTIC_IR_REBORROW) {
         const TZrBool *directParents;
@@ -111,7 +138,7 @@ static TZrBool loan_instruction_authorizes_candidate(
             TZrLoanId parentLoanId = (TZrLoanId)(parentIndex + 1U);
             if (directParents[parentIndex] &&
                 loan_capability_authorizes_access(
-                        analysis, parentLoanId, access) &&
+                        analysis, instruction, parentLoanId, access) &&
                 loan_is_ancestor_or_self(
                         analysis, candidateLoanId, parentLoanId)) {
                 return ZR_TRUE;
@@ -122,21 +149,44 @@ static TZrBool loan_instruction_authorizes_candidate(
     return (TZrBool)(instruction->loanId !=
                              ZR_SEMANTIC_LOAN_ID_INVALID &&
                      instruction->loanId <= analysis->loanCount &&
-                     loan_capability_authorizes_access(
-                             analysis, instruction->loanId, access) &&
+                      loan_capability_authorizes_access(
+                              analysis,
+                              instruction,
+                              instruction->loanId,
+                              access) &&
                      loan_is_ancestor_or_self(
                              analysis,
                              candidateLoanId,
                              instruction->loanId));
 }
 
+static ESemanticLoanEffectiveState loan_effective_state(
+        const SSemanticLoanAnalysis *analysis,
+        const SZrSemanticIrInstruction *instruction,
+        const SZrSemanticIrLoanFact *loan) {
+    if (loan->access == ZR_SEMANTIC_LOAN_SHARED) {
+        return SEMANTIC_LOAN_STATE_SHARED;
+    }
+    if (loan->phase == ZR_SEMANTIC_LOAN_TWO_PHASE &&
+        !ZrParser_SemanticFlow_LoanIsActiveAt(
+                analysis->result,
+                instruction->id,
+                loan->loanId,
+                ZR_TRUE)) {
+        return SEMANTIC_LOAN_STATE_RESERVED_MUTABLE;
+    }
+    return SEMANTIC_LOAN_STATE_ACTIVE_MUTABLE;
+}
+
 static TZrBool loan_access_conflicts(
         ESemanticLoanInstructionAccess access,
-        EZrSemanticLoanAccess activeAccess) {
+        ESemanticLoanEffectiveState activeState) {
     switch (access) {
         case SEMANTIC_LOAN_ACCESS_READ:
         case SEMANTIC_LOAN_ACCESS_BORROW_SHARED:
-            return activeAccess == ZR_SEMANTIC_LOAN_MUTABLE;
+            return activeState == SEMANTIC_LOAN_STATE_ACTIVE_MUTABLE;
+        case SEMANTIC_LOAN_ACCESS_RESERVE_MUTABLE:
+            return activeState != SEMANTIC_LOAN_STATE_SHARED;
         case SEMANTIC_LOAN_ACCESS_EXCLUSIVE:
         case SEMANTIC_LOAN_ACCESS_BORROW_MUTABLE:
             return ZR_TRUE;
@@ -277,7 +327,10 @@ void semantic_loan_check_conflicts(SSemanticLoanAnalysis *analysis) {
                     instruction->placeId,
                     loan->sourcePlaceId);
             if (overlap != ZR_PARSER_PLACE_DISJOINT &&
-                loan_access_conflicts(access, loan->access)) {
+                loan_access_conflicts(
+                        access,
+                        loan_effective_state(
+                                analysis, instruction, loan))) {
                 loan_add_conflict_diagnostic(
                         analysis, instruction, loan, overlap);
                 break;

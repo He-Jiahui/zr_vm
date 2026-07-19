@@ -1357,6 +1357,24 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                             return;
                         }
 
+                        if (!rootIsTypeReference) {
+                            SZrTypeMemberInfo writeContract;
+                            memset(&writeContract, 0, sizeof(writeContract));
+                            writeContract.memberType = ZR_AST_CLASS_FIELD;
+                            writeContract.receiverEffect =
+                                    ZR_CANONICAL_RECEIVER_MUTABLE;
+                            if (!compiler_validate_receiver_call(
+                                        cs,
+                                        primary->property,
+                                        rootTypeName,
+                                        rootOwnershipQualifier,
+                                        &writeContract,
+                                        ZR_TRUE,
+                                        node->location)) {
+                                return;
+                            }
+                        }
+
                         // 处理成员访问链，获取最后一个成员访问的键
                         SZrMemberExpression *memberExpr = &lastMember->data.memberExpression;
                         if (memberExpr->property != ZR_NULL) {

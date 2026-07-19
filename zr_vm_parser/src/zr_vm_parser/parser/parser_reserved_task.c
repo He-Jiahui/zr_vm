@@ -117,6 +117,7 @@ static SZrType *zr_task_wrap_return_type_async(SZrParserState *ps, SZrType *retu
     wrappedType->subType = ZR_NULL;
     wrappedType->dimensions = 0;
     wrappedType->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    wrappedType->isReadonlyView = ZR_FALSE;
     wrappedType->isDecoratorPseudoType = ZR_FALSE;
     wrappedType->isImplicitBuiltinType = ZR_TRUE;
     wrappedType->arrayFixedSize = 0;

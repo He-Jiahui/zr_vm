@@ -329,6 +329,7 @@ void ZrParser_InferredType_Init(SZrState *state, SZrInferredType *type, EZrValue
     type->baseType = baseType;
     type->isNullable = ZR_FALSE;
     type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    type->isReadonlyView = ZR_FALSE;
     type->typeName = ZR_NULL;
     type->genericArgumentKind = ZR_INFERRED_GENERIC_ARGUMENT_TYPE;
     type->genericConstIntValue = 0;
@@ -360,6 +361,7 @@ void ZrParser_InferredType_InitFull(SZrState *state, SZrInferredType *type, EZrV
     type->baseType = baseType;
     type->isNullable = isNullable;
     type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    type->isReadonlyView = ZR_FALSE;
     type->typeName = typeName;
     type->genericArgumentKind = ZR_INFERRED_GENERIC_ARGUMENT_TYPE;
     type->genericConstIntValue = 0;
@@ -451,6 +453,7 @@ void ZrParser_InferredType_Copy(SZrState *state, SZrInferredType *dest, const SZ
     dest->baseType = src->baseType;
     dest->isNullable = src->isNullable;
     dest->ownershipQualifier = src->ownershipQualifier;
+    dest->isReadonlyView = src->isReadonlyView;
     dest->typeName = src->typeName; // 字符串由GC管理，直接复制引用
     dest->genericArgumentKind = src->genericArgumentKind;
     dest->genericConstIntValue = src->genericConstIntValue;
@@ -517,6 +520,10 @@ TZrBool ZrParser_InferredType_Equal(const SZrInferredType *type1, const SZrInfer
     }
 
     if (type1->ownershipQualifier != type2->ownershipQualifier) {
+        return ZR_FALSE;
+    }
+
+    if (type1->isReadonlyView != type2->isReadonlyView) {
         return ZR_FALSE;
     }
     
@@ -915,6 +922,10 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
         return ZR_FALSE;
     }
 
+    if (fromType->isReadonlyView && !toType->isReadonlyView) {
+        return ZR_FALSE;
+    }
+
     if (toType->baseType == ZR_VALUE_TYPE_OBJECT &&
         toType->typeName == ZR_NULL &&
         toType->elementTypes.length == 0) {
@@ -1010,6 +1021,8 @@ TZrBool ZrParser_InferredType_GetCommonType(SZrState *state, SZrInferredType *re
     if (type1->baseType == ZR_VALUE_TYPE_NULL) {
         if (type2->isNullable) {
             ZrParser_InferredType_Copy(state, result, type2);
+            result->isReadonlyView =
+                    (TZrBool)(type1->isReadonlyView || type2->isReadonlyView);
             result->ownershipQualifier = ownership_qualifier_get_common(type1->ownershipQualifier,
                                                                         type2->ownershipQualifier);
             return ZR_TRUE;
@@ -1019,6 +1032,8 @@ TZrBool ZrParser_InferredType_GetCommonType(SZrState *state, SZrInferredType *re
     if (type2->baseType == ZR_VALUE_TYPE_NULL) {
         if (type1->isNullable) {
             ZrParser_InferredType_Copy(state, result, type1);
+            result->isReadonlyView =
+                    (TZrBool)(type1->isReadonlyView || type2->isReadonlyView);
             result->ownershipQualifier = ownership_qualifier_get_common(type1->ownershipQualifier,
                                                                         type2->ownershipQualifier);
             return ZR_TRUE;
@@ -1037,6 +1052,8 @@ TZrBool ZrParser_InferredType_GetCommonType(SZrState *state, SZrInferredType *re
         }
         ZrParser_InferredType_Init(state, result, floatType);
         result->isNullable = type1->isNullable || type2->isNullable;
+        result->isReadonlyView =
+                (TZrBool)(type1->isReadonlyView || type2->isReadonlyView);
         result->ownershipQualifier = ownership_qualifier_get_common(type1->ownershipQualifier,
                                                                     type2->ownershipQualifier);
         return ZR_TRUE;
@@ -1047,6 +1064,8 @@ TZrBool ZrParser_InferredType_GetCommonType(SZrState *state, SZrInferredType *re
     if (is_integer_type(type1->baseType) && is_integer_type(type2->baseType)) {
         ZrParser_InferredType_Init(state, result, ZR_VALUE_TYPE_INT64);
         result->isNullable = type1->isNullable || type2->isNullable;
+        result->isReadonlyView =
+                (TZrBool)(type1->isReadonlyView || type2->isReadonlyView);
         result->ownershipQualifier = ownership_qualifier_get_common(type1->ownershipQualifier,
                                                                     type2->ownershipQualifier);
         return ZR_TRUE;

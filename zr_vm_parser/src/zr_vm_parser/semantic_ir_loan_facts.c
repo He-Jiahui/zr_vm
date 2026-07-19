@@ -81,6 +81,7 @@ TZrBool semantic_loan_publish_liveness(SSemanticLoanAnalysis *analysis) {
         memset(&region, 0, sizeof(region));
         region.loanId = (TZrLoanId)(loanIndex + 1U);
         region.parentLoanId = analysis->parentLoanIds[loanIndex];
+        region.phase = loan->phase;
         region.originRange = loan->originRange;
         region.lastUseRange = loan->originRange;
         for (TZrSize instructionIndex = 0U;
@@ -92,8 +93,13 @@ TZrBool semantic_loan_publish_liveness(SSemanticLoanAnalysis *analysis) {
             if (instruction->loanId == region.loanId &&
                 (instruction->opcode == ZR_SEMANTIC_IR_BORROW_SHARED ||
                  instruction->opcode == ZR_SEMANTIC_IR_BORROW_MUT ||
+                 instruction->opcode == ZR_SEMANTIC_IR_RESERVE_BORROW_MUT ||
                  instruction->opcode == ZR_SEMANTIC_IR_REBORROW)) {
                 region.firstLiveInstructionId = instruction->id;
+            }
+            if (instruction->loanId == region.loanId &&
+                instruction->opcode == ZR_SEMANTIC_IR_ACTIVATE_LOAN) {
+                region.activationInstructionId = instruction->id;
             }
             if (loan_fact_row(
                         analysis->instructionUses,
@@ -131,6 +137,30 @@ TZrBool ZrParser_SemanticFlow_LoanIsLiveAt(
             (TZrSize)instructionId - 1U);
     loanIds = beforeInstruction ? &fact->liveInLoanIds : &fact->liveOutLoanIds;
     return loan_id_array_contains(loanIds, loanId);
+}
+
+TZrBool ZrParser_SemanticFlow_LoanIsActiveAt(
+        const SZrSemanticFlowResult *result,
+        TZrSemanticInstructionId instructionId,
+        TZrLoanId loanId,
+        TZrBool beforeInstruction) {
+    const SZrSemanticLoanRegionFact *region;
+
+    if (!ZrParser_SemanticFlow_LoanIsLiveAt(
+                result, instructionId, loanId, beforeInstruction)) {
+        return ZR_FALSE;
+    }
+    region = ZrParser_SemanticFlow_LoanRegion(result, loanId);
+    if (region == ZR_NULL || region->phase == ZR_SEMANTIC_LOAN_IMMEDIATE) {
+        return region != ZR_NULL;
+    }
+    if (region->activationInstructionId ==
+        ZR_SEMANTIC_INSTRUCTION_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    return beforeInstruction
+                   ? instructionId > region->activationInstructionId
+                   : instructionId >= region->activationInstructionId;
 }
 
 const SZrSemanticLoanRegionFact *ZrParser_SemanticFlow_LoanRegion(

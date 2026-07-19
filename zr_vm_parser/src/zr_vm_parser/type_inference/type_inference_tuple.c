@@ -24,6 +24,7 @@ TZrBool ZrParser_TypeInference_ConvertTupleType(
 
     ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
     result->ownershipQualifier = astType->ownershipQualifier;
+    result->isReadonlyView = astType->isReadonlyView;
     ZrCore_Array_Init(
             cs->state,
             &result->elementTypes,
