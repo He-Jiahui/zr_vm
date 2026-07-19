@@ -199,11 +199,29 @@ static TZrBool block_has_successor(SZrParserCfgBlock *block, TZrUInt32 successor
     }
 
     for (index = 0; index < block->successorCount; index++) {
-        if (block->successors[index] == successorId) {
+        if (ZrParser_Cfg_BlockSuccessorIdAt(block, index) == successorId) {
             return ZR_TRUE;
         }
     }
 
+    return ZR_FALSE;
+}
+
+static TZrBool block_has_edge_kind_to(const SZrParserCfgBlock *block,
+                                      EZrParserCfgEdgeKind kind,
+                                      TZrUInt32 successorId) {
+    TZrSize index;
+
+    if (block == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (index = 0; index < block->successorCount; index++) {
+        const SZrParserCfgEdge *edge = ZrParser_Cfg_BlockEdgeAt(block, index);
+        if (edge != ZR_NULL && edge->kind == kind &&
+            edge->toBlockId == successorId) {
+            return ZR_TRUE;
+        }
+    }
     return ZR_FALSE;
 }
 
@@ -290,7 +308,9 @@ static TZrUInt32 statement_block_first_successor_kind_id(SZrParserCfg *cfg,
             continue;
         }
         for (index = 0; index < block->successorCount; index++) {
-            SZrParserCfgBlock *successor = block_at(cfg, block->successors[index]);
+            SZrParserCfgBlock *successor = block_at(
+                    cfg,
+                    ZrParser_Cfg_BlockSuccessorIdAt(block, index));
 
             if (successor != ZR_NULL && successor->kind == kind) {
                 return successor->id;
@@ -320,7 +340,9 @@ static TZrUInt32 statement_block_successor_kind_count(SZrParserCfg *cfg,
             continue;
         }
         for (index = 0; index < block->successorCount; index++) {
-            SZrParserCfgBlock *successor = block_at(cfg, block->successors[index]);
+            SZrParserCfgBlock *successor = block_at(
+                    cfg,
+                    ZrParser_Cfg_BlockSuccessorIdAt(block, index));
 
             if (successor != ZR_NULL && successor->kind == kind) {
                 count++;
@@ -340,6 +362,8 @@ static void test_cfg_reaches_finally_body_after_try_return(void) {
     SZrAstNode *finallyBody = block_with_statement(finallyStmt, 36, 50);
     SZrAstNode *tryNode = try_statement_with_finally(tryBody, finallyBody);
     SZrAstNode *script = script_with_statement(tryNode);
+    SZrParserCfgBlock *returnBlock;
+    SZrParserCfgBlock *finallyBlock;
 
     TEST_ASSERT_NOT_NULL(context);
     ZrParser_Cfg_Init(g_state, &cfg);
@@ -347,6 +371,18 @@ static void test_cfg_reaches_finally_body_after_try_return(void) {
     TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
     TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(context, &cfg));
     TEST_ASSERT_NULL(reachability_fact_at(context, finallyStmt));
+    returnBlock = block_for_statement(&cfg, returnStmt);
+    finallyBlock = block_for_statement(&cfg, finallyStmt);
+    TEST_ASSERT_NOT_NULL(returnBlock);
+    TEST_ASSERT_NOT_NULL(finallyBlock);
+    TEST_ASSERT_FALSE(block_has_edge_kind_to(
+            returnBlock,
+            ZR_PARSER_CFG_EDGE_RETURN,
+            cfg.exitBlockId));
+    TEST_ASSERT_TRUE(block_has_edge_kind_to(
+            finallyBlock,
+            ZR_PARSER_CFG_EDGE_RETURN,
+            cfg.exitBlockId));
 
     ZrParser_Cfg_Free(g_state, &cfg);
     ZrParser_Ast_Free(g_state, script);

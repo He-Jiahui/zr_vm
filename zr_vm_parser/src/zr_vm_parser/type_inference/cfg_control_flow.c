@@ -68,7 +68,11 @@ static TZrBool cfg_connect_abrupt_completions_to_finally(SZrParserCfg *cfg,
             if (finallyEntryBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
                 return ZR_FALSE;
             }
-            if (!cfg_add_edge(cfg, block->id, finallyEntryBlockId)) {
+            if (!cfg_add_edge_kind(cfg,
+                                   block->id,
+                                   finallyEntryBlockId,
+                                   ZR_PARSER_CFG_EDGE_CLEANUP,
+                                   block->statement)) {
                 return ZR_FALSE;
             }
         }
@@ -86,12 +90,14 @@ static TZrBool cfg_build_finally_path(SZrState *state,
                                       SZrAstNode *pendingCauseNode,
                                       const SZrParserCfgLoopTargets *loopTargets) {
     TZrUInt32 finallyLastBlockId;
+    TZrSize cleanupEdgeIndex;
 
     if (state == ZR_NULL || cfg == ZR_NULL || finallyBlock == ZR_NULL ||
         entryBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
         return ZR_FALSE;
     }
 
+    cleanupEdgeIndex = cfg_get_block(cfg, entryBlockId)->successorCount;
     if (!cfg_build_statement_body(state,
                                   cfg,
                                   finallyBlock,
@@ -102,10 +108,23 @@ static TZrBool cfg_build_finally_path(SZrState *state,
                                   &finallyLastBlockId)) {
         return ZR_FALSE;
     }
+    if (cfg_get_block(cfg, entryBlockId)->successorCount > cleanupEdgeIndex &&
+        !cfg_retag_edge_at(cfg,
+                           entryBlockId,
+                           cleanupEdgeIndex,
+                           ZR_PARSER_CFG_EDGE_CLEANUP,
+                           finallyBlock)) {
+        return ZR_FALSE;
+    }
 
     if (targetBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
         finallyLastBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
-        !cfg_connect_fallthrough(cfg, finallyLastBlockId, targetBlockId)) {
+        !cfg_get_block(cfg, finallyLastBlockId)->isTerminator &&
+        !cfg_add_edge_kind(cfg,
+                           finallyLastBlockId,
+                           targetBlockId,
+                           ZR_PARSER_CFG_EDGE_CLEANUP,
+                           finallyBlock)) {
         return ZR_FALSE;
     }
 
@@ -251,6 +270,7 @@ TZrBool cfg_build_switch_statement(SZrState *state,
     TZrUInt32 joinBlockId;
     TZrBool selectorHasConstant;
     TZrBool selectorResolvedByPreviousCase = ZR_FALSE;
+    TZrBool unionIsExhaustive;
     SZrParserCfgConstant selectorValue;
     TZrSize caseIndex;
 
@@ -280,6 +300,7 @@ TZrBool cfg_build_switch_statement(SZrState *state,
 
     selectorBlockId = switchBlockId;
     cases = statement->data.switchExpression.cases;
+    unionIsExhaustive = statement->data.switchExpression.isUnionExhaustive;
     selectorHasConstant = cfg_node_constant(statement->data.switchExpression.expr, &selectorValue);
     if (cases != ZR_NULL) {
         for (caseIndex = 0; caseIndex < cases->count; caseIndex++) {
@@ -325,7 +346,12 @@ TZrBool cfg_build_switch_statement(SZrState *state,
                 caseBlock->unreachableCause = caseCause;
                 caseBlock->unreachableCauseNode = caseCauseNode;
             }
-            if (!caseIsUnreachable && !cfg_connect_fallthrough(cfg, selectorBlockId, caseBlockId)) {
+            if (!caseIsUnreachable &&
+                !cfg_add_edge_kind(cfg,
+                                   selectorBlockId,
+                                   caseBlockId,
+                                   ZR_PARSER_CFG_EDGE_SWITCH_CASE,
+                                   caseNode)) {
                 return ZR_FALSE;
             }
 
@@ -359,35 +385,48 @@ TZrBool cfg_build_switch_statement(SZrState *state,
         statement->data.switchExpression.defaultCase->type == ZR_AST_SWITCH_DEFAULT) {
         SZrAstNode *defaultNode = statement->data.switchExpression.defaultCase;
         SZrParserCfgBlock *defaultBlock;
+        TZrBool defaultIsUnreachable;
+        EZrSemanticReachabilityCause defaultCause;
+        SZrAstNode *defaultCauseNode;
         TZrUInt32 defaultBlockId;
         TZrUInt32 defaultLastBlockId;
+
+        defaultIsUnreachable = (TZrBool)(selectorResolvedByPreviousCase || unionIsExhaustive);
+        defaultCause = pendingCause;
+        defaultCauseNode = pendingCauseNode;
+        if (defaultCause == ZR_SEMANTIC_REACHABILITY_CAUSE_UNKNOWN &&
+            selectorResolvedByPreviousCase) {
+            defaultCause = ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH;
+            defaultCauseNode = statement->data.switchExpression.expr;
+        } else if (defaultCause == ZR_SEMANTIC_REACHABILITY_CAUSE_UNKNOWN &&
+                   unionIsExhaustive) {
+            defaultCause = ZR_SEMANTIC_REACHABILITY_AFTER_EXHAUSTIVE_BRANCH;
+            defaultCauseNode = statement;
+        }
 
         defaultBlockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, defaultNode);
         defaultBlock = cfg_get_block(cfg, defaultBlockId);
         if (defaultBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID || defaultBlock == ZR_NULL) {
             return ZR_FALSE;
         }
-        if (pendingCause != ZR_SEMANTIC_REACHABILITY_CAUSE_UNKNOWN) {
-            defaultBlock->unreachableCause = pendingCause;
-            defaultBlock->unreachableCauseNode = pendingCauseNode;
-        } else if (selectorResolvedByPreviousCase) {
-            defaultBlock->unreachableCause = ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH;
-            defaultBlock->unreachableCauseNode = statement->data.switchExpression.expr;
+        if (defaultCause != ZR_SEMANTIC_REACHABILITY_CAUSE_UNKNOWN) {
+            defaultBlock->unreachableCause = defaultCause;
+            defaultBlock->unreachableCauseNode = defaultCauseNode;
         }
-        if (!selectorResolvedByPreviousCase &&
-            !cfg_connect_fallthrough(cfg, selectorBlockId, defaultBlockId)) {
+        if (!defaultIsUnreachable &&
+            !cfg_add_edge_kind(cfg,
+                               selectorBlockId,
+                               defaultBlockId,
+                               ZR_PARSER_CFG_EDGE_SWITCH_DEFAULT,
+                               defaultNode)) {
             return ZR_FALSE;
         }
         if (!cfg_build_statement_body(state,
                                       cfg,
                                       defaultNode->data.switchDefault.block,
                                       defaultBlockId,
-                                      selectorResolvedByPreviousCase
-                                          ? ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH
-                                          : pendingCause,
-                                      selectorResolvedByPreviousCase
-                                          ? statement->data.switchExpression.expr
-                                          : pendingCauseNode,
+                                      defaultCause,
+                                      defaultCauseNode,
                                       loopTargets,
                                       &defaultLastBlockId)) {
             return ZR_FALSE;
@@ -397,7 +436,11 @@ TZrBool cfg_build_switch_statement(SZrState *state,
             return ZR_FALSE;
         }
     } else if (!selectorResolvedByPreviousCase &&
-               !cfg_connect_fallthrough(cfg, selectorBlockId, joinBlockId)) {
+               !cfg_add_edge_kind(cfg,
+                                  selectorBlockId,
+                                  joinBlockId,
+                                  ZR_PARSER_CFG_EDGE_SWITCH_DEFAULT,
+                                  statement)) {
         return ZR_FALSE;
     }
 
@@ -506,7 +549,11 @@ TZrBool cfg_build_try_statement(SZrState *state,
         currentCatchDispatchBlockId =
                 cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, ZR_NULL);
         if (currentCatchDispatchBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
-            !cfg_add_edge(cfg, tryBlockId, currentCatchDispatchBlockId)) {
+            !cfg_add_edge_kind(cfg,
+                               tryBlockId,
+                               currentCatchDispatchBlockId,
+                               ZR_PARSER_CFG_EDGE_EXCEPTION,
+                               statement)) {
             return ZR_FALSE;
         }
     }
@@ -572,15 +619,29 @@ TZrBool cfg_build_try_statement(SZrState *state,
             catchPredecessorBlockId = catchCanEnter
                                               ? catchDispatchBlockId
                                               : ZR_PARSER_CFG_INVALID_BLOCK_ID;
-            if (!cfg_build_statement_body(state,
-                                          cfg,
-                                          catchNode->data.catchClause.block,
-                                          catchPredecessorBlockId,
-                                          catchCause,
-                                          catchCauseNode,
-                                          bodyLoopTargets,
-                                          &catchLastBlockId)) {
-                return ZR_FALSE;
+            {
+                TZrSize catchEdgeIndex = catchCanEnter
+                                                 ? cfg_get_block(cfg, catchDispatchBlockId)->successorCount
+                                                 : 0U;
+                if (!cfg_build_statement_body(state,
+                                              cfg,
+                                              catchNode->data.catchClause.block,
+                                              catchPredecessorBlockId,
+                                              catchCause,
+                                              catchCauseNode,
+                                              bodyLoopTargets,
+                                              &catchLastBlockId)) {
+                    return ZR_FALSE;
+                }
+                if (catchCanEnter &&
+                    cfg_get_block(cfg, catchDispatchBlockId)->successorCount > catchEdgeIndex &&
+                    !cfg_retag_edge_at(cfg,
+                                       catchDispatchBlockId,
+                                       catchEdgeIndex,
+                                       ZR_PARSER_CFG_EDGE_EXCEPTION,
+                                       catchNode)) {
+                    return ZR_FALSE;
+                }
             }
             if (catchCanEnter &&
                 catchLastBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
@@ -614,7 +675,11 @@ TZrBool cfg_build_try_statement(SZrState *state,
                 TZrUInt32 nextCatchDispatchBlockId =
                         cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, ZR_NULL);
                 if (nextCatchDispatchBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
-                    !cfg_add_edge(cfg, catchDispatchBlockId, nextCatchDispatchBlockId)) {
+                    !cfg_add_edge_kind(cfg,
+                                       catchDispatchBlockId,
+                                       nextCatchDispatchBlockId,
+                                       ZR_PARSER_CFG_EDGE_EXCEPTION,
+                                       catchNode)) {
                     return ZR_FALSE;
                 }
                 currentCatchDispatchBlockId = nextCatchDispatchBlockId;

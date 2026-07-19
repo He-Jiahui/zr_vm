@@ -65,6 +65,18 @@ TZrUInt32 cfg_add_block(SZrState *state,
                          EZrParserCfgBlockKind kind,
                          SZrAstNode *statement);
 TZrBool cfg_add_edge(SZrParserCfg *cfg, TZrUInt32 fromId, TZrUInt32 toId);
+TZrBool cfg_add_edge_kind(SZrParserCfg *cfg,
+                          TZrUInt32 fromId,
+                          TZrUInt32 toId,
+                          EZrParserCfgEdgeKind kind,
+                          SZrAstNode *sourceNode);
+TZrBool cfg_retag_edge_at(SZrParserCfg *cfg,
+                          TZrUInt32 fromId,
+                          TZrSize edgeIndex,
+                          EZrParserCfgEdgeKind kind,
+                          SZrAstNode *sourceNode);
+void cfg_clear_blocks(SZrState *state, SZrParserCfg *cfg);
+TZrBool cfg_connect_function_exits(SZrParserCfg *cfg);
 TZrBool cfg_node_bool_constant(SZrAstNode *node, TZrBool *outValue);
 TZrBool cfg_node_constant(SZrAstNode *node, SZrParserCfgConstant *outValue);
 TZrBool cfg_constants_can_compare(const SZrParserCfgConstant *left,

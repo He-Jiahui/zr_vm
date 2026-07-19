@@ -11,6 +11,7 @@ TZrBool cfg_build_while_statement(SZrState *state,
     TZrUInt32 bodyPreviousBlockId;
     TZrUInt32 bodyLastBlockId;
     TZrUInt32 joinBlockId;
+    TZrSize bodyEdgeIndex;
     TZrBool conditionValue = ZR_FALSE;
     TZrBool hasConstantCondition;
     TZrBool includeBody;
@@ -56,6 +57,7 @@ TZrBool cfg_build_while_statement(SZrState *state,
     whileLoopTargets.breakTargetBlockId = joinBlockId;
     whileLoopTargets.continueTargetBlockId = whileBlockId;
 
+    bodyEdgeIndex = cfg_get_block(cfg, whileBlockId)->successorCount;
     if (!cfg_build_statement_body(state,
                                   cfg,
                                   statement->data.whileLoop.block,
@@ -66,15 +68,38 @@ TZrBool cfg_build_while_statement(SZrState *state,
                                   &bodyLastBlockId)) {
         return ZR_FALSE;
     }
-
-    if (canExitWithoutIteration && !cfg_add_edge(cfg, whileBlockId, joinBlockId)) {
+    if (includeBody &&
+        cfg_get_block(cfg, whileBlockId)->successorCount > bodyEdgeIndex &&
+        !cfg_retag_edge_at(cfg,
+                           whileBlockId,
+                           bodyEdgeIndex,
+                           ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
+                           statement->data.whileLoop.cond)) {
         return ZR_FALSE;
     }
 
-    if (includeBody && bodyLastBlockId != whileBlockId &&
-        bodyLastBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
-        !cfg_connect_fallthrough(cfg, bodyLastBlockId, whileBlockId)) {
+    if (canExitWithoutIteration &&
+        !cfg_add_edge_kind(cfg,
+                           whileBlockId,
+                           joinBlockId,
+                           ZR_PARSER_CFG_EDGE_FALSE_BRANCH,
+                           statement->data.whileLoop.cond)) {
         return ZR_FALSE;
+    }
+
+    if (includeBody) {
+        if (bodyLastBlockId == whileBlockId) {
+            if (!cfg_add_edge_kind(cfg,
+                                   whileBlockId,
+                                   whileBlockId,
+                                   ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
+                                   statement->data.whileLoop.cond)) {
+                return ZR_FALSE;
+            }
+        } else if (bodyLastBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+                   !cfg_connect_fallthrough(cfg, bodyLastBlockId, whileBlockId)) {
+            return ZR_FALSE;
+        }
     }
 
     *inOutPreviousBlockId = joinBlockId;
@@ -96,6 +121,7 @@ TZrBool cfg_build_for_statement(SZrState *state,
     TZrUInt32 stepLastBlockId;
     TZrUInt32 stepEntryBlockId;
     TZrUInt32 joinBlockId;
+    TZrSize bodyEdgeIndex;
     TZrBool conditionValue = ZR_FALSE;
     TZrBool hasConstantCondition;
     TZrBool includeBody;
@@ -165,6 +191,7 @@ TZrBool cfg_build_for_statement(SZrState *state,
     forLoopTargets.breakTargetBlockId = joinBlockId;
     forLoopTargets.continueTargetBlockId = continueTargetBlockId;
 
+    bodyEdgeIndex = cfg_get_block(cfg, forBlockId)->successorCount;
     if (!cfg_build_statement_body(state,
                                   cfg,
                                   statement->data.forLoop.block,
@@ -175,10 +202,23 @@ TZrBool cfg_build_for_statement(SZrState *state,
                                   &bodyLastBlockId)) {
         return ZR_FALSE;
     }
+    if (includeBody &&
+        cfg_get_block(cfg, forBlockId)->successorCount > bodyEdgeIndex &&
+        !cfg_retag_edge_at(cfg,
+                           forBlockId,
+                           bodyEdgeIndex,
+                           ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
+                           statement->data.forLoop.cond)) {
+        return ZR_FALSE;
+    }
 
     if (includeBody && statement->data.forLoop.step != ZR_NULL) {
         if (bodyLastBlockId == forBlockId) {
-            if (!cfg_add_edge(cfg, forBlockId, stepEntryBlockId)) {
+            if (!cfg_add_edge_kind(cfg,
+                                   forBlockId,
+                                   stepEntryBlockId,
+                                   ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
+                                   statement->data.forLoop.cond)) {
                 return ZR_FALSE;
             }
         } else if (bodyLastBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
@@ -200,13 +240,27 @@ TZrBool cfg_build_for_statement(SZrState *state,
             !cfg_connect_fallthrough(cfg, stepLastBlockId, forBlockId)) {
             return ZR_FALSE;
         }
-    } else if (includeBody && bodyLastBlockId != forBlockId &&
-               bodyLastBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
-               !cfg_connect_fallthrough(cfg, bodyLastBlockId, forBlockId)) {
-        return ZR_FALSE;
+    } else if (includeBody) {
+        if (bodyLastBlockId == forBlockId) {
+            if (!cfg_add_edge_kind(cfg,
+                                   forBlockId,
+                                   forBlockId,
+                                   ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
+                                   statement->data.forLoop.cond)) {
+                return ZR_FALSE;
+            }
+        } else if (bodyLastBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+                   !cfg_connect_fallthrough(cfg, bodyLastBlockId, forBlockId)) {
+            return ZR_FALSE;
+        }
     }
 
-    if (canExitWithoutIteration && !cfg_add_edge(cfg, forBlockId, joinBlockId)) {
+    if (canExitWithoutIteration &&
+        !cfg_add_edge_kind(cfg,
+                           forBlockId,
+                           joinBlockId,
+                           ZR_PARSER_CFG_EDGE_FALSE_BRANCH,
+                           statement->data.forLoop.cond)) {
         return ZR_FALSE;
     }
 
@@ -224,6 +278,7 @@ TZrBool cfg_build_foreach_statement(SZrState *state,
     TZrUInt32 foreachBlockId;
     TZrUInt32 bodyLastBlockId;
     TZrUInt32 joinBlockId;
+    TZrSize bodyEdgeIndex;
     SZrParserCfgLoopTargets foreachLoopTargets;
 
     if (state == ZR_NULL || cfg == ZR_NULL || statement == ZR_NULL ||
@@ -252,6 +307,7 @@ TZrBool cfg_build_foreach_statement(SZrState *state,
     foreachLoopTargets.breakTargetBlockId = joinBlockId;
     foreachLoopTargets.continueTargetBlockId = foreachBlockId;
 
+    bodyEdgeIndex = cfg_get_block(cfg, foreachBlockId)->successorCount;
     if (!cfg_build_statement_body(state,
                                   cfg,
                                   statement->data.foreachLoop.block,
@@ -262,13 +318,32 @@ TZrBool cfg_build_foreach_statement(SZrState *state,
                                   &bodyLastBlockId)) {
         return ZR_FALSE;
     }
-
-    if (!cfg_add_edge(cfg, foreachBlockId, joinBlockId)) {
+    if (cfg_get_block(cfg, foreachBlockId)->successorCount > bodyEdgeIndex &&
+        !cfg_retag_edge_at(cfg,
+                           foreachBlockId,
+                           bodyEdgeIndex,
+                           ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
+                           statement)) {
         return ZR_FALSE;
     }
-    if (bodyLastBlockId != foreachBlockId &&
-        bodyLastBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
-        !cfg_connect_fallthrough(cfg, bodyLastBlockId, foreachBlockId)) {
+
+    if (!cfg_add_edge_kind(cfg,
+                           foreachBlockId,
+                           joinBlockId,
+                           ZR_PARSER_CFG_EDGE_FALSE_BRANCH,
+                           statement)) {
+        return ZR_FALSE;
+    }
+    if (bodyLastBlockId == foreachBlockId) {
+        if (!cfg_add_edge_kind(cfg,
+                               foreachBlockId,
+                               foreachBlockId,
+                               ZR_PARSER_CFG_EDGE_TRUE_BRANCH,
+                               statement)) {
+            return ZR_FALSE;
+        }
+    } else if (bodyLastBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID &&
+               !cfg_connect_fallthrough(cfg, bodyLastBlockId, foreachBlockId)) {
         return ZR_FALSE;
     }
 

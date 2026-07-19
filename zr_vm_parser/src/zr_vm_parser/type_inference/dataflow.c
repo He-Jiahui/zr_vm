@@ -90,7 +90,10 @@ static void dataflow_mark_entry_reachable(const SZrParserCfg *cfg,
 
     entryReachable[blockId] = ZR_TRUE;
     for (index = 0; index < block->successorCount; index++) {
-        dataflow_mark_entry_reachable(cfg, block->successors[index], entryReachable);
+        dataflow_mark_entry_reachable(
+                cfg,
+                ZrParser_Cfg_BlockSuccessorIdAt(block, index),
+                entryReachable);
     }
 }
 
@@ -291,7 +294,8 @@ static TZrBool dataflow_process_forward(SZrState *state,
         }
 
         for (successorIndex = 0; successorIndex < block->successorCount; successorIndex++) {
-            TZrUInt32 successorId = block->successors[successorIndex];
+            TZrUInt32 successorId =
+                    ZrParser_Cfg_BlockSuccessorIdAt(block, successorIndex);
             SZrParserDataflowBlockState *successorState = dataflow_result_block(result, successorId);
             TZrBool wasReachable;
             TZrBool changed;
@@ -337,7 +341,7 @@ static TZrBool dataflow_block_has_successor(const SZrParserCfgBlock *block, TZrU
         return ZR_FALSE;
     }
     for (index = 0; index < block->successorCount; index++) {
-        if (block->successors[index] == successorId) {
+        if (ZrParser_Cfg_BlockSuccessorIdAt(block, index) == successorId) {
             return ZR_TRUE;
         }
     }

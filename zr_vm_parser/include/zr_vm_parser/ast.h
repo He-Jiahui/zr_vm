@@ -405,6 +405,7 @@ typedef struct SZrSwitchExpression {
     SZrAstNodeArray *cases; // SwitchCase 数组
     SZrAstNode *defaultCase; // SwitchDefault（可选）
     TZrBool isStatement;
+    TZrBool isUnionExhaustive;
 } SZrSwitchExpression;
 
 typedef struct SZrSwitchCase {
