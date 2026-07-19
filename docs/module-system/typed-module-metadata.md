@@ -14,6 +14,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/reflection_generic_argument_internal.h
   - zr_vm_core/src/zr_vm_core/reflection_generic_argument_object.c
   - zr_vm_core/src/zr_vm_core/reflection_generic_method.c
+  - zr_vm_core/src/zr_vm_core/reflection_generic_method_native.c
   - zr_vm_core/src/zr_vm_core/reflection_generic_method_object.c
   - zr_vm_core/src/zr_vm_core/reflection_object_internal.c
   - zr_vm_core/src/zr_vm_core/reflection_object_internal.h
@@ -177,6 +178,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/reflection_field_value_primitive.c
   - zr_vm_core/src/zr_vm_core/reflection_field_value_primitive.h
   - zr_vm_core/src/zr_vm_core/reflection_token_resolve.c
+  - zr_vm_core/src/zr_vm_core/reflection_generic_method_native.c
   - zr_vm_core/src/zr_vm_core/reflection_interpreter_generic_instance.c
   - zr_vm_core/src/zr_vm_core/metadata_runtime_layout_binding.c
   - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c
@@ -331,6 +333,7 @@ tests:
   - tests/acceptance/2026-07-19-aot-08-s6x-10-s4z45-11-s5c-constructed-generic-method-object.md
   - tests/acceptance/2026-07-19-aot-08-s6y-10-s4z46-11-s5d-make-generic-method-object.md
   - tests/acceptance/2026-07-19-aot-08-s6z-10-s4z47-11-s5e-generic-method-argument-object-decoding.md
+  - tests/acceptance/2026-07-19-aot-08-s6aa-10-s4z48-11-s5f-generic-method-native-entry.md
   - tests/acceptance/2026-07-02-aot-12-s7zzq-runtime-export-member-token-publication.md
   - tests/acceptance/2026-07-02-aot-11-s7z-zrp-manifest-export-declarations.md
   - tests/acceptance/2026-07-02-aot-11-s7za-export-declaration-writer-options.md
@@ -1599,3 +1602,19 @@ M6 的验证不是“编译成功”级别，而是直接断言 opcode、签名�
   depth 64, and total-node limit 1024 fail closed; every decoded descriptor then passes the shared metadata-aware
   validator before MethodSpec resolution. The three-compiler dynamic generic target passes 31/0, focused CTest 6/6,
   and shared regressions 66/0, 31/0, and 95/0. Native stack dispatch and module export remain separate work.
+
+- 2026-07-19 11-S5F / 08-S6AA / 10-S4Z48 adds the runtime-bound native stack entry above that decoder.
+  `ZrCore_Reflection_CreateMakeGenericMethodNativeClosure()` requires a real module-owned runtime, stores the metadata
+  module object in one GC-owned closed capture owner, and leaves the direct capture pointer null, so no former stack
+  address or unowned runtime pointer survives factory return. After the capture closes successfully, the factory pins
+  the module with `NATIVE_HANDLE`, placing it in `OLD_PINNED`/`PINNED` so its embedded runtime and reflection-carrier
+  native pointers remain address-stable.
+  `ZrCore_Reflection_MakeGenericMethodNativeEntry()` accepts only a method-definition object and argument array, verifies
+  its native closure identity and owner-backed module capture, derives the current runtime from that module, then
+  delegates to the existing bounded decoder. Invalid capture/frame/object shapes fail closed to one null result with
+  normalized stack top. A generational full-GC test verifies the capture keeps the pinned module and runtime live.
+  Final dynamic generic tests pass 32/0 under GCC, Clang, and MSVC; final MSVC focused CTest passes 6/6 and shared
+  regressions pass 66/0,
+  31/0, and 95/0. WSL restarted and cleared the isolated directories before the post-lifetime-fix GCC/Clang wide rerun;
+  the same wide matrix passed there before that fix. Metadata schema and registration ABI remain unchanged;
+  `zr.reflection` module construction/export and runtime registration lifecycle remain separate work.

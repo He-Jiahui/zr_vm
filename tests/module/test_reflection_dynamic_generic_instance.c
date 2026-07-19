@@ -4,6 +4,8 @@
 #include "unity.h"
 
 #include "zr_vm_core/debug.h"
+#include "zr_vm_core/call_info.h"
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
@@ -13,6 +15,7 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_core/state.h"
+#include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_core/zrp_metadata.h"
@@ -954,6 +957,7 @@ int main(void) {
     RUN_TEST(test_constructed_generic_method_object_links_definition_and_arguments);
     RUN_TEST(test_make_generic_method_object_resolves_and_materializes);
     RUN_TEST(test_make_generic_method_from_objects_decodes_reflection_arguments);
+    RUN_TEST(test_make_generic_method_native_entry_uses_trusted_closure_runtime);
     RUN_TEST(test_generic_method_definition_object_materializes_parameters);
     RUN_TEST(test_method_spec_generic_context_materializes_metadata_arguments);
     RUN_TEST(test_method_spec_generic_call_info_context_survives_full_gc);

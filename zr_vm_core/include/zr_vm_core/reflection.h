@@ -11,6 +11,7 @@
 
 struct SZrState;
 struct SZrCallInfo;
+struct SZrClosureNative;
 struct SZrObject;
 struct SZrObjectPrototype;
 struct SZrObjectModule;
@@ -444,6 +445,12 @@ ZR_CORE_API struct SZrObject *ZrCore_Reflection_MakeGenericMethodFromObjects(
         struct SZrMetadataRuntime *runtime,
         struct SZrObject *genericMethodDefinition,
         struct SZrObject *genericArguments);
+
+ZR_CORE_API TZrInt64 ZrCore_Reflection_MakeGenericMethodNativeEntry(struct SZrState *state);
+
+ZR_CORE_API struct SZrClosureNative *ZrCore_Reflection_CreateMakeGenericMethodNativeClosure(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime);
 
 ZR_CORE_API struct SZrObject *ZrCore_Reflection_BuildGenericMethodDefinitionObject(
         struct SZrState *state,
