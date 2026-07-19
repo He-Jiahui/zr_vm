@@ -185,16 +185,30 @@ static TZrBool out_analyze_expression(
                            state,
                            ZR_TRUE);
         case ZR_AST_LOGICAL_EXPRESSION:
-            return out_analyze_expression(
-                           analysis,
-                           node->data.logicalExpression.left,
-                           state,
-                           ZR_TRUE) &&
-                   out_analyze_expression(
-                           analysis,
-                           node->data.logicalExpression.right,
-                           state,
-                           ZR_TRUE);
+        {
+            TZrBool *rightState = out_state_new(analysis->tracked);
+            TZrBool ok;
+            if (rightState == ZR_NULL ||
+                !out_analyze_expression(
+                        analysis,
+                        node->data.logicalExpression.left,
+                        state,
+                        ZR_TRUE)) {
+                free(rightState);
+                return ZR_FALSE;
+            }
+            out_state_copy(analysis->tracked, state, rightState);
+            ok = out_analyze_expression(
+                    analysis,
+                    node->data.logicalExpression.right,
+                    rightState,
+                    ZR_TRUE);
+            if (ok) {
+                out_state_intersect(analysis->tracked, state, rightState);
+            }
+            free(rightState);
+            return ok;
+        }
         case ZR_AST_UNARY_EXPRESSION:
             return out_analyze_expression(
                     analysis,
@@ -241,8 +255,9 @@ static TZrBool out_analyze_expression(
 }
 
 static TZrBool out_is_true_literal(const SZrAstNode *node) {
-    return node != ZR_NULL && node->type == ZR_AST_BOOLEAN_LITERAL &&
-           node->data.booleanLiteral.value;
+    return node == ZR_NULL ||
+           (node->type == ZR_AST_BOOLEAN_LITERAL &&
+            node->data.booleanLiteral.value);
 }
 
 TZrBool out_analyze_statement(
@@ -361,17 +376,23 @@ static TZrBool out_analyze_loop(
         SZrOutFlowAnalysis *analysis,
         SZrAstNode *condition,
         SZrAstNode *body,
+        SZrAstNode *step,
         const TZrBool *before,
         TZrBool *after,
         TZrBool *continues) {
     TZrBool *bodyState = out_state_new(analysis->tracked);
+    TZrBool *zeroIterationState = out_state_new(analysis->tracked);
     TZrBool *loopBreakState = out_state_new(analysis->tracked);
+    TZrBool *loopContinueState = out_state_new(analysis->tracked);
     TZrBool *savedBreakState = analysis->breakState;
     TZrBool savedHasBreakState = analysis->hasBreakState;
+    TZrBool *savedContinueState = analysis->continueState;
+    TZrBool savedHasContinueState = analysis->hasContinueState;
     TZrBool bodyContinues = ZR_TRUE;
     TZrBool ok = ZR_FALSE;
 
-    if (bodyState == ZR_NULL || loopBreakState == ZR_NULL) {
+    if (bodyState == ZR_NULL || zeroIterationState == ZR_NULL ||
+        loopBreakState == ZR_NULL || loopContinueState == ZR_NULL) {
         goto cleanup;
     }
     out_state_copy(analysis->tracked, before, bodyState);
@@ -379,14 +400,31 @@ static TZrBool out_analyze_loop(
                 analysis, condition, bodyState, ZR_TRUE)) {
         goto cleanup;
     }
+    out_state_copy(analysis->tracked, bodyState, zeroIterationState);
     analysis->breakState = loopBreakState;
     analysis->hasBreakState = ZR_FALSE;
+    analysis->continueState = loopContinueState;
+    analysis->hasContinueState = ZR_FALSE;
     if (!out_analyze_statement(
                 analysis,
                 body,
                 bodyState,
                 bodyState,
                 &bodyContinues)) {
+        goto cleanup;
+    }
+    if (analysis->hasContinueState) {
+        if (bodyContinues) {
+            out_state_intersect(
+                    analysis->tracked, bodyState, loopContinueState);
+        } else {
+            out_state_copy(
+                    analysis->tracked, loopContinueState, bodyState);
+            bodyContinues = ZR_TRUE;
+        }
+    }
+    if (bodyContinues &&
+        !out_analyze_expression(analysis, step, bodyState, ZR_TRUE)) {
         goto cleanup;
     }
     if (out_is_true_literal(condition)) {
@@ -398,15 +436,20 @@ static TZrBool out_analyze_loop(
             *continues = ZR_FALSE;
         }
     } else {
-        out_state_copy(analysis->tracked, before, after);
+        out_state_copy(analysis->tracked, bodyState, after);
+        out_state_intersect(analysis->tracked, after, zeroIterationState);
         *continues = ZR_TRUE;
     }
     ok = ZR_TRUE;
 cleanup:
     analysis->breakState = savedBreakState;
     analysis->hasBreakState = savedHasBreakState;
+    analysis->continueState = savedContinueState;
+    analysis->hasContinueState = savedHasContinueState;
     free(bodyState);
+    free(zeroIterationState);
     free(loopBreakState);
+    free(loopContinueState);
     return ok;
 }
 
@@ -421,15 +464,21 @@ static TZrBool out_analyze_try(
     TZrBool *joined = out_state_new(analysis->tracked);
     TZrBool *path = out_state_new(analysis->tracked);
     TZrBool *tryExceptions = out_state_new(analysis->tracked);
+    TZrBool *escapingExceptions = out_state_new(analysis->tracked);
+    TZrBool *finalExceptions = out_state_new(analysis->tracked);
     TZrBool *savedExceptionState = analysis->exceptionState;
     TZrBool savedHasExceptionState = analysis->hasExceptionState;
-    TZrBool finalHasExceptionState = savedHasExceptionState;
+    TZrBool hasCatchClauses =
+            statement->catchClauses != ZR_NULL &&
+            statement->catchClauses->count > 0u;
     TZrBool tryHasExceptions = ZR_FALSE;
+    TZrBool escapingHasExceptions = ZR_FALSE;
     TZrBool anyContinues = ZR_FALSE;
     TZrBool pathContinues = ZR_TRUE;
     TZrBool ok = ZR_FALSE;
 
-    if (joined == ZR_NULL || path == ZR_NULL || tryExceptions == ZR_NULL) {
+    if (joined == ZR_NULL || path == ZR_NULL || tryExceptions == ZR_NULL ||
+        escapingExceptions == ZR_NULL || finalExceptions == ZR_NULL) {
         goto cleanup;
     }
     analysis->exceptionState = tryExceptions;
@@ -444,13 +493,13 @@ static TZrBool out_analyze_try(
         goto cleanup;
     }
     tryHasExceptions = analysis->hasExceptionState;
-    analysis->exceptionState = savedExceptionState;
-    analysis->hasExceptionState = savedHasExceptionState;
+    analysis->exceptionState = escapingExceptions;
+    analysis->hasExceptionState = ZR_FALSE;
     if (pathContinues) {
         out_state_copy(analysis->tracked, path, joined);
         anyContinues = ZR_TRUE;
     }
-    if (statement->catchClauses != ZR_NULL && tryHasExceptions) {
+    if (hasCatchClauses && tryHasExceptions) {
         for (TZrSize index = 0u;
              index < statement->catchClauses->count;
              index++) {
@@ -478,43 +527,77 @@ static TZrBool out_analyze_try(
             }
         }
     }
-    if (statement->catchClauses == ZR_NULL && tryHasExceptions) {
-        out_record_exception(analysis, tryExceptions);
-    }
-    if (!anyContinues) {
-        if (tryHasExceptions) {
-            out_state_copy(analysis->tracked, tryExceptions, joined);
+    escapingHasExceptions = analysis->hasExceptionState;
+    if (!hasCatchClauses && tryHasExceptions) {
+        if (escapingHasExceptions) {
+            out_state_intersect(
+                    analysis->tracked, escapingExceptions, tryExceptions);
         } else {
-            out_state_copy(analysis->tracked, before, joined);
+            out_state_copy(
+                    analysis->tracked, tryExceptions, escapingExceptions);
+            escapingHasExceptions = ZR_TRUE;
         }
-    } else if (statement->catchClauses == ZR_NULL && tryHasExceptions &&
-               statement->finallyBlock != ZR_NULL) {
-        out_state_intersect(analysis->tracked, joined, tryExceptions);
     }
+
     if (statement->finallyBlock != ZR_NULL) {
-        pathContinues = anyContinues;
-        if (!out_analyze_statement(
-                    analysis,
-                    statement->finallyBlock,
-                    joined,
-                    joined,
-                    &pathContinues)) {
-            goto cleanup;
+        analysis->exceptionState = finalExceptions;
+        analysis->hasExceptionState = ZR_FALSE;
+        if (anyContinues) {
+            pathContinues = ZR_TRUE;
+            if (!out_analyze_statement(
+                        analysis,
+                        statement->finallyBlock,
+                        joined,
+                        joined,
+                        &pathContinues)) {
+                goto cleanup;
+            }
+            anyContinues = pathContinues;
         }
-        anyContinues = pathContinues;
+        if (escapingHasExceptions) {
+            out_state_copy(
+                    analysis->tracked, escapingExceptions, path);
+            pathContinues = ZR_TRUE;
+            if (!out_analyze_statement(
+                        analysis,
+                        statement->finallyBlock,
+                        path,
+                        path,
+                        &pathContinues)) {
+                goto cleanup;
+            }
+            if (pathContinues) {
+                out_record_exception(analysis, path);
+            }
+        }
+        escapingHasExceptions = analysis->hasExceptionState;
+        if (escapingHasExceptions) {
+            out_state_copy(
+                    analysis->tracked, finalExceptions, escapingExceptions);
+        }
     }
-    out_state_copy(analysis->tracked, joined, after);
+    analysis->exceptionState = savedExceptionState;
+    analysis->hasExceptionState = savedHasExceptionState;
+    if (escapingHasExceptions) {
+        out_record_exception(analysis, escapingExceptions);
+    }
+    if (anyContinues) {
+        out_state_copy(analysis->tracked, joined, after);
+    } else {
+        out_state_copy(analysis->tracked, before, after);
+    }
     *continues = anyContinues;
     ok = ZR_TRUE;
 cleanup:
-    if (analysis->exceptionState == savedExceptionState) {
-        finalHasExceptionState = analysis->hasExceptionState;
-    }
     analysis->exceptionState = savedExceptionState;
-    analysis->hasExceptionState = finalHasExceptionState;
+    if (!ok) {
+        analysis->hasExceptionState = savedHasExceptionState;
+    }
     free(joined);
     free(path);
     free(tryExceptions);
+    free(escapingExceptions);
+    free(finalExceptions);
     return ok;
 }
 
@@ -581,34 +664,33 @@ TZrBool out_analyze_statement(
                     analysis,
                     node->data.whileLoop.cond,
                     node->data.whileLoop.block,
+                    ZR_NULL,
                     before,
                     after,
                     continues);
-        case ZR_AST_FOR_LOOP:
-            if (!out_analyze_expression(
+        case ZR_AST_FOR_LOOP: {
+            TZrBool initContinues = ZR_TRUE;
+            if (!out_analyze_statement(
                         analysis,
                         node->data.forLoop.init,
+                        before,
                         after,
-                        ZR_TRUE) ||
-                !out_analyze_expression(
-                        analysis,
-                        node->data.forLoop.cond,
-                        after,
-                        ZR_TRUE) ||
-                !out_analyze_expression(
-                        analysis,
-                        node->data.forLoop.step,
-                        after,
-                        ZR_TRUE)) {
+                        &initContinues)) {
                 return ZR_FALSE;
+            }
+            if (!initContinues) {
+                *continues = ZR_FALSE;
+                return ZR_TRUE;
             }
             return out_analyze_loop(
                     analysis,
                     node->data.forLoop.cond,
                     node->data.forLoop.block,
-                    before,
+                    node->data.forLoop.step,
+                    after,
                     after,
                     continues);
+        }
         case ZR_AST_FOREACH_LOOP:
             if (!out_analyze_expression(
                         analysis,
@@ -621,7 +703,8 @@ TZrBool out_analyze_statement(
                     analysis,
                     ZR_NULL,
                     node->data.foreachLoop.block,
-                    before,
+                    ZR_NULL,
+                    after,
                     after,
                     continues);
         case ZR_AST_BREAK_CONTINUE_STATEMENT:
@@ -639,6 +722,20 @@ TZrBool out_analyze_statement(
                             before,
                             analysis->breakState);
                     analysis->hasBreakState = ZR_TRUE;
+                }
+            } else if (!node->data.breakContinueStatement.isBreak &&
+                       analysis->continueState != ZR_NULL) {
+                if (analysis->hasContinueState) {
+                    out_state_intersect(
+                            analysis->tracked,
+                            analysis->continueState,
+                            before);
+                } else {
+                    out_state_copy(
+                            analysis->tracked,
+                            before,
+                            analysis->continueState);
+                    analysis->hasContinueState = ZR_TRUE;
                 }
             }
             return ZR_TRUE;

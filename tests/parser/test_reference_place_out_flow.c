@@ -207,6 +207,12 @@ static void test_out_assignment_joins_conditional_paths(void) {
             "}\n",
             ZR_TRUE,
             ZR_NULL);
+    assert_out_validation(
+            "fn fill(value: out int, flag: bool): void {\n"
+            "  flag && initialize(out value);\n"
+            "}\n",
+            ZR_FALSE,
+            "must be assigned on every normal return path");
 }
 
 static void test_out_assignment_tracks_fields_and_cross_call_transfer(void) {
@@ -263,11 +269,50 @@ static void test_out_assignment_distinguishes_normal_exception_and_loop_edges(vo
             ZR_TRUE,
             ZR_NULL);
     assert_out_validation(
+            "fn fill(value: out int): void {\n"
+            "  try { throw 1; } finally {}\n"
+            "}\n",
+            ZR_TRUE,
+            ZR_NULL);
+    assert_out_validation(
+            "fn fill(value: out int): void {\n"
+            "  try { initialize(out value); } finally {}\n"
+            "}\n",
+            ZR_TRUE,
+            ZR_NULL);
+    assert_out_validation(
+            "fn fill(value: out int): void {\n"
+            "  try {\n"
+            "    try { mayThrow(); } finally { value = 1; }\n"
+            "  } catch (error) {}\n"
+            "}\n",
+            ZR_TRUE,
+            ZR_NULL);
+    assert_out_validation(
             "fn fill(value: out int, flag: bool): void {\n"
             "  while (flag) { value = 1; }\n"
             "}\n",
             ZR_FALSE,
             "must be assigned on every normal return path");
+    assert_out_validation(
+            "fn fill(value: out int): void {\n"
+            "  for (value = 1; false; ) {}\n"
+            "}\n",
+            ZR_TRUE,
+            ZR_NULL);
+    assert_out_validation(
+            "fn fill(value: out int): void {\n"
+            "  while (initialize(out value) && false) {}\n"
+            "}\n",
+            ZR_TRUE,
+            ZR_NULL);
+    assert_out_validation(
+            "fn fill(value: out int, flag: bool): void {\n"
+            "  for (; flag; value) {}\n"
+            "  value = 1;\n"
+            "}\n",
+            ZR_FALSE,
+            "cannot be read before it is initialized");
     assert_out_validation(
             "fn fill(value: out int): void {\n"
             "  while (true) { value = 1; break; }\n"

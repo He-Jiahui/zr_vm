@@ -34,10 +34,13 @@ union projection 使用同一 overlap 模型。
 正常控制流采用 definite-assignment 交集：
 
 - if/else 在所有继续执行的分支上取交集。
-- 条件循环保留零次迭代入口；`while (true)` 只从实际 break edge 汇合退出状态。
+- `&&`/`||` 只保留左右路径都成立的写入；条件本身的必然效果仍进入后继状态。
+- 条件循环保留条件求值后的零次迭代入口；`for` 的 init、step、break/continue edge 独立
+  传播，`while (true)`/`for (;;)` 只从实际 break edge 汇合退出状态。
 - normal return 和函数体 fallthrough 要求所有 out 字段均已初始化。
 - throw edge 不要求 out 初始化，也不向调用者承诺新值。
-- try 正常路径与 catch 正常路径取交集；catch 从调用可能抛出前的状态进入。
+- try 正常路径与 catch 正常路径取交集；catch 从调用可能抛出前的状态进入。finally 分别
+  作用于正常与外逃异常路径，不会把仍在传播的异常误当成函数 fallthrough。
 - `callee(out value)` 只在调用正常返回后把对应 Place 标为 initialized，从而转移
   definite-assignment 责任。
 

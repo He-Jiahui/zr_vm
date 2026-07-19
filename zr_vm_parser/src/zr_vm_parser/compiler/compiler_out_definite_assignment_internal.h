@@ -27,6 +27,8 @@ typedef struct SZrOutFlowAnalysis {
     const SZrOutTrackedState *tracked;
     TZrBool *breakState;
     TZrBool hasBreakState;
+    TZrBool *continueState;
+    TZrBool hasContinueState;
     TZrBool *exceptionState;
     TZrBool hasExceptionState;
 } SZrOutFlowAnalysis;
