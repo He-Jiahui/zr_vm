@@ -76,6 +76,11 @@ static SZrString *type_inference_call_signature_display(
     if (functionInfo->declarationNode != ZR_NULL &&
         functionInfo->declarationNode->type == ZR_AST_FUNCTION_DECLARATION) {
         parameters = functionInfo->declarationNode->data.functionDeclaration.params;
+    } else if (functionInfo->declarationNode != ZR_NULL &&
+               functionInfo->declarationNode->type ==
+                       ZR_AST_EXTERN_FUNCTION_DECLARATION) {
+        parameters =
+                functionInfo->declarationNode->data.externFunctionDeclaration.params;
     }
     buffer[0] = '\0';
     if (!type_inference_call_label_append(buffer, sizeof(buffer), &offset,

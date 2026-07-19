@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-07-19 21:45 +08:00
+updated_at: 2026-07-19 22:16 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -23,9 +23,10 @@ source_plans:
 | 2026-07-19 20:53 +08:00 | 已完成 | 同长度真实内容变化的token语义/坐标等价判定；注释更新推进text generation但复用AST与semantic cache；token值、坐标、fallback/lex error负边界；当前HEAD上的三工具链十四目标矩阵、incremental parser与stdio/CLI冒烟 | [Token-equivalent semantic snapshot reuse](../03-robustness/2026-07-19-token-equivalent-semantic-snapshot-reuse.md) |
 | 2026-07-19 21:12 +08:00 | 已完成 | 已打开document的严格version单调门禁；相同与stale version在text分配、change classification、parse与semantic request之前拒绝；快照与语义指标不变；三工具链十四目标矩阵、incremental parser与stdio/CLI冒烟 | [Strict document version rejection](../03-robustness/2026-07-19-strict-document-version-rejection.md) |
 | 2026-07-19 21:45 +08:00 | 已完成 | completion空结果回退的独立scoped semantic analyzer/cache；重复查询2 request/1 execution/1 hit；token等价更新保留、真实编辑在旧AST释放前失效；三工具链十四目标矩阵、local query、interface、incremental parser与stdio/CLI冒烟 | [Scoped query semantic cache](../03-robustness/2026-07-19-scoped-query-semantic-cache.md) |
+| 2026-07-19 22:16 +08:00 | 已完成 | canonical call fact保留extern参数名；canonical signature-help provider从callable contracts构建parameter information并复用argument expression/numeric/logical/ownership文档；canonical consumer 5/5、signature semantic facts 9/9、interface 87/87与stdio/CLI冒烟；最新HEAD三工具链矩阵 | [Canonical signature-help provider parity](../03-robustness/2026-07-19-canonical-signature-help-provider-parity.md) |
 
 ## 当前状态
 
-- 总体目标进行中。当前记录只表示七个子里程碑完成，不表示L1-L8整体完成。
+- 总体目标进行中。当前记录只表示八个子里程碑完成，不表示L1-L8整体完成。
 - 下一步继续按L6顺序把body分类接入owning function CFG/query cache最小失效，并为signature/import变化建立direct caller与ModuleIdentity依赖传播证据。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

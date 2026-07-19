@@ -36,6 +36,8 @@
 
 [2026-07-19 scoped query semantic cache](./03-robustness/2026-07-19-scoped-query-semantic-cache.md) 完成completion空结果回退与主document analyzer的semantic context/cache分区；重复作用域查询命中独立缓存，token等价更新保留且真实编辑在旧AST释放前失效，声明级CFG/query cache与依赖传播仍未完成。
 
+[2026-07-19 canonical signature-help provider parity](./03-robustness/2026-07-19-canonical-signature-help-provider-parity.md) 完成canonical call fact的extern参数名保留，并使canonical signature-help provider从callable contracts发布按序parameter information与argument semantic-fact文档；member/meta/constructor/imported/native provider全面对等性仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

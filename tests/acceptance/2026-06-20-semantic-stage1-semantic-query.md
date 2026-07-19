@@ -1869,6 +1869,44 @@
 - The isolated sources retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
 - Full repository GREEN is not claimed.
 
+## Canonical Signature Help Provider Parity Acceptance
+
+### Scope
+
+- Preserve source parameter names in parser-owned canonical call signatures for extern functions.
+- Build canonical signature-help parameter information from callable contracts without parsing display text or reintroducing LSP-local type inference.
+- Attach each call argument's existing expression, numeric, logical, and ownership semantic-fact documentation to the matching parameter.
+- Return to the established provider chain on incomplete canonical parameter construction instead of publishing partial help.
+
+### Baseline And TDD
+
+- Current-HEAD interface RED ran 86/87 and failed extern signature help after the canonical provider returned first.
+- The new lowest-layer canonical-consumer RED failed exactly as `Expected 'NativeAdd(lhs: i32, rhs: i32): i32' Was 'NativeAdd(i32, i32): i32'`.
+- Reading `externFunctionDeclaration.params` in the shared call-fact emitter makes canonical consumers 5/5 and restores interface 87/87.
+- The next stdio RED reported missing argument numeric-fact documentation; the lower signature/inlay semantic-fact target stabilized at 7/9 with numeric and logical parameter docs both null.
+- Structured parameter construction from canonical contracts restores the lower suite to 9/9 and stdio smoke to 1/1.
+
+### Code And Test Evidence
+
+- `type_inference_call_semantic_facts.c` is the shared source of canonical call type IDs and source-preserving signature display.
+- `lsp_canonical_signature_help.c` adapts canonical contracts into LSP parameter records and delegates argument documentation to the existing semantic-fact formatter.
+- `test_canonical_consumers.c` adds the extern source-name contract; existing inlay/signature, interface, and stdio tests provide unit, integration, and wire-level parity evidence.
+- No changes were made to provider ordering, stdio JSON formatting, or fallback provider implementations.
+
+### Tooling And Results
+
+- WSL source/builds: `/home/hejiahui/zr_vm-lsp-head-d53e21c-20260719-1930-wsl-src` and matching GCC/Clang build directories.
+- Windows source/build: `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-head-d53e21c-20260719-1930-msvc-src` and matching MSVC build directory.
+- WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each pass canonical consumers 5/5, signature/inlay semantic facts 9/9, LSP interface 87/87, and incremental parser 7/7.
+- Each toolchain passes the same fourteen-target semantic/LSP matrix plus the two provider-parity targets with zero executable or failure-marker failures and passes `language_server_stdio_smoke` 1/1 on current `HEAD=1fe46d6` plus this stage.
+
+### Acceptance Decision
+
+- Accepted at `2026-07-19 22:16 +08:00` as the canonical signature-help provider-parity submilestone.
+- This closes extern parameter-name and argument semantic-fact parity only. Member/meta/constructor/imported/native descriptor parity, declaration/dependency invalidation, cancellation, snapshot races, latency percentiles, and memory budgets remain open.
+- The isolated sources retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
+- Full repository GREEN is not claimed.
+
 ## Stage 3 English Diagnostic Message Catalog Foundation Acceptance
 
 ### Scope

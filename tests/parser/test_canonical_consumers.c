@@ -424,11 +424,54 @@ static void test_resolved_generic_call_publishes_closed_canonical_signature(void
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_resolved_extern_call_preserves_parameter_names_in_canonical_signature(void) {
+    const TZrChar *source =
+            "%extern(\"fixture\") {\n"
+            "    NativeAdd(lhs: i32, rhs: i32): i32;\n"
+            "}\n"
+            "func use(): i32 { return NativeAdd(1, 2); }\n";
+    const TZrChar *call = strstr(source, "NativeAdd(1, 2)");
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFileRange position;
+    SZrParserSemanticCallQuery query;
+    TZrChar callLabel[128];
+
+    TEST_ASSERT_NOT_NULL(call);
+    sourceName = ZrCore_String_Create(g_state, "canonical_consumers.zr", 22u);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+
+    position = consumer_range((TZrSize)(call - source + strlen("NativeAdd(")),
+                              (TZrSize)(call - source + strlen("NativeAdd(")));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext, position, ZR_NULL, &query));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+            cs.semanticContext, &query, callLabel, sizeof(callLabel)));
+    TEST_ASSERT_EQUAL_STRING("NativeAdd(lhs: i32, rhs: i32): i32", callLabel);
+
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_vm_and_aot_consume_the_same_canonical_contract_and_fail_identically);
     RUN_TEST(test_reflection_debug_and_layout_resolve_only_canonical_ids_and_tokens);
     RUN_TEST(test_semantic_query_projects_expression_and_call_types_from_canonical_facts);
     RUN_TEST(test_resolved_generic_call_publishes_closed_canonical_signature);
+    RUN_TEST(test_resolved_extern_call_preserves_parameter_names_in_canonical_signature);
     return UNITY_END();
 }

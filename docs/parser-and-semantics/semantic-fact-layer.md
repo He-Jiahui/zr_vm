@@ -633,15 +633,19 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/incremental_token_equivalence.c
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_canonical_signature_help.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_scope_cache.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_change.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c
 plan_sources:
   - user: 2026-07-19 optimize semantic inference according to docs/plans/lsp
   - docs/plans/lsp/03-lsp-robustness-and-position.md
   - docs/plans/lsp/05-implementation-blueprint.md
 tests:
+  - tests/parser/test_canonical_consumers.c
+  - tests/language_server/test_lsp_inlay_semantic_facts.c
   - tests/language_server/test_lsp_interface.c
   - tests/language_server/test_lsp_local_semantic_scope_cases.h
   - tests/language_server/test_lsp_snapshot_cache_cases.h
@@ -990,6 +994,14 @@ Runtime RED on the previous implementation reported `Rejected version mutated pa
 Lifecycle invalidation preserves the preceding incremental contracts. Byte-identical and token-equivalent updates retain the child because the AST and semantics remain current. A real edit checks `fileVersion->isDirty` and frees the child before incremental parsing can release the old AST; direct analyzer calls that switch AST identities provide a second invalidation guard. Cache disable, clear, and analyzer free propagate to the owned child. Ownership logic is isolated in the 37-line `semantic_analyzer_scope_cache.c`; the large analyzer, query, and interface files retain only initialization and orchestration changes.
 
 Compile RED failed because the owner field and exported get-or-create API did not exist. GREEN covers repeated direct scope reuse, comment-only token-equivalent reuse, real body-token invalidation with fresh `1/1/0` metrics, and repeated completion fallback. WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each pass local semantic query 23/23, semantic analyzer 46/46, interface 87/87, incremental parser 7/7, the same fourteen-target semantic/LSP matrix with zero exit or failure-marker failures, and `language_server_stdio_smoke` 1/1 on `HEAD=b6bcd4a` plus this stage. This is query-context partitioning, not cross-AST declaration-fact reuse: ordinary body edits still fully parse and analyze the main document, and declaration/dependency invalidation, cancellation, snapshot races, provider parity, and budgets remain open.
+
+## Stage 3 Canonical Signature Help Provider Parity
+
+2026-07-19 update: the canonical signature-help provider now preserves the two source-level surfaces that were lost when it became the first provider for ordinary calls. Parser call-fact emission reads parameter names from both ordinary function declarations and `ZR_AST_EXTERN_FUNCTION_DECLARATION`, so `signatureDisplay` keeps labels such as `NativeAdd(lhs: i32, rhs: i32): i32`. The LSP canonical adapter uses the callable's canonical parameter contracts to build ordered parameter information with passing forms and canonical type labels, then associates each entry with the corresponding argument AST and reuses `ZrLanguageServer_Lsp_BuildSignatureArgumentSemanticFactDocumentation` for expression, constant, numeric range, logical short-circuit, and ownership facts.
+
+The fix stays below provider precedence. `CallAt` and `FormatCall` remain the source of the complete signature; the adapter adds parameter records from structured canonical contracts rather than inferring types from display text. If contract formatting or allocation fails, it frees the partial help and returns false so the established provider chain can continue. No stdio-specific formatting path was added.
+
+Current-HEAD integration first failed interface 86/87 because the extern call label was `NativeAdd(i32, i32): i32`; the new parser canonical-consumer RED reproduced that exact value and passes 5/5 after the shared emitter fix. The next integration run failed `language_server_stdio_smoke` and the lower LSP semantic-fact suite at 7/9 because canonical parameter arrays were empty and numeric/logical docs were null. After the structured parameter adapter, WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each pass canonical consumers 5/5, signature/inlay semantic facts 9/9, interface 87/87, incremental parser 7/7, the same fourteen-target semantic/LSP matrix with zero exit or failure-marker failures, and stdio smoke 1/1 on `HEAD=1fe46d6` plus this parity stage. Broader member/meta/constructor/imported/native provider parity and all declaration/dependency invalidation and budget work remain open.
 
 ## Stage 3 English Diagnostic Message Catalog Foundation
 
