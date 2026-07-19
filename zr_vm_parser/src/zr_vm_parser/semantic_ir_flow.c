@@ -1,4 +1,5 @@
 #include "zr_vm_parser/semantic_ir.h"
+#include "semantic_ir_flow_internal.h"
 
 #include <string.h>
 
@@ -292,7 +293,23 @@ static void semantic_flow_result_reset(SZrState *state,
     if (result->diagnostics.isValid) {
         result->diagnostics.length = 0U;
     }
+    if (result->loanLiveness.isValid) {
+        for (index = 0U; index < result->loanLiveness.length; index++) {
+            SZrSemanticInstructionLoanLiveness *fact =
+                    (SZrSemanticInstructionLoanLiveness *)ZrCore_Array_Get(
+                            &result->loanLiveness, index);
+            if (fact != ZR_NULL) {
+                ZrCore_Array_Free(state, &fact->liveInLoanIds);
+                ZrCore_Array_Free(state, &fact->liveOutLoanIds);
+            }
+        }
+        result->loanLiveness.length = 0U;
+    }
+    if (result->loanRegions.isValid) {
+        result->loanRegions.length = 0U;
+    }
     result->placeCount = 0U;
+    result->loanCount = 0U;
 }
 
 void ZrParser_SemanticFlowResult_Init(SZrState *state,
@@ -312,6 +329,16 @@ void ZrParser_SemanticFlowResult_Init(SZrState *state,
             &result->diagnostics,
             sizeof(SZrSemanticFlowDiagnostic),
             8U);
+    ZrCore_Array_Init(
+            state,
+            &result->loanLiveness,
+            sizeof(SZrSemanticInstructionLoanLiveness),
+            8U);
+    ZrCore_Array_Init(
+            state,
+            &result->loanRegions,
+            sizeof(SZrSemanticLoanRegionFact),
+            8U);
 }
 
 void ZrParser_SemanticFlowResult_Free(SZrState *state,
@@ -322,6 +349,8 @@ void ZrParser_SemanticFlowResult_Free(SZrState *state,
     semantic_flow_result_reset(state, result);
     ZrCore_Array_Free(state, &result->blockFacts);
     ZrCore_Array_Free(state, &result->diagnostics);
+    ZrCore_Array_Free(state, &result->loanLiveness);
+    ZrCore_Array_Free(state, &result->loanRegions);
     memset(result, 0, sizeof(*result));
 }
 
@@ -399,6 +428,7 @@ static void semantic_flow_add_diagnostic(
                 instruction->placeId)) {
         return;
     }
+    memset(&diagnostic, 0, sizeof(diagnostic));
     diagnostic.kind = kind;
     diagnostic.blockId = blockId;
     diagnostic.instructionId = instruction->id;
@@ -458,15 +488,6 @@ static void semantic_flow_check_read(
         semantic_flow_add_diagnostic(
                 result, ZR_SEMANTIC_FLOW_USE_AFTER_DROP, blockId, instruction, 0U);
     }
-    if (placeState->borrowing.mutableLoanId !=
-        ZR_SEMANTIC_LOAN_ID_INVALID) {
-        semantic_flow_add_diagnostic(
-                result,
-                ZR_SEMANTIC_FLOW_LOAN_CONFLICT,
-                blockId,
-                instruction,
-                placeState->borrowing.mutableLoanId);
-    }
 }
 
 static void semantic_flow_check_exclusive_access(
@@ -475,25 +496,11 @@ static void semantic_flow_check_exclusive_access(
         const SZrSemanticIrInstruction *instruction,
         const SZrSemanticPlaceFlowState *placeState,
         TZrBool recordDiagnostics) {
-    TZrLoanId relatedLoanId;
-
-    if (!recordDiagnostics || result == ZR_NULL || instruction == ZR_NULL ||
-        placeState == ZR_NULL ||
-        (placeState->borrowing.sharedLoanIds.length == 0U &&
-         placeState->borrowing.mutableLoanId == ZR_SEMANTIC_LOAN_ID_INVALID)) {
-        return;
-    }
-    relatedLoanId = placeState->borrowing.mutableLoanId;
-    if (relatedLoanId == ZR_SEMANTIC_LOAN_ID_INVALID) {
-        relatedLoanId = *(const TZrLoanId *)ZrCore_Array_Get(
-                (SZrArray *)&placeState->borrowing.sharedLoanIds, 0U);
-    }
-    semantic_flow_add_diagnostic(
-            result,
-            ZR_SEMANTIC_FLOW_LOAN_CONFLICT,
-            blockId,
-            instruction,
-            relatedLoanId);
+    ZR_UNUSED_PARAMETER(result);
+    ZR_UNUSED_PARAMETER(blockId);
+    ZR_UNUSED_PARAMETER(instruction);
+    ZR_UNUSED_PARAMETER(placeState);
+    ZR_UNUSED_PARAMETER(recordDiagnostics);
 }
 
 static void semantic_flow_begin_loan(
@@ -504,22 +511,9 @@ static void semantic_flow_begin_loan(
         SZrSemanticPlaceFlowState *placeState,
         EZrSemanticLoanAccess access,
         TZrBool recordDiagnostics) {
-    TZrLoanId relatedLoanId;
-
     semantic_flow_check_read(
             result, blockId, instruction, placeState, recordDiagnostics);
     if (access == ZR_SEMANTIC_LOAN_MUTABLE) {
-        if (recordDiagnostics &&
-            placeState->borrowing.sharedLoanIds.length > 0U) {
-            relatedLoanId = *(const TZrLoanId *)ZrCore_Array_Get(
-                    &placeState->borrowing.sharedLoanIds, 0U);
-            semantic_flow_add_diagnostic(
-                    result,
-                    ZR_SEMANTIC_FLOW_LOAN_CONFLICT,
-                    blockId,
-                    instruction,
-                    relatedLoanId);
-        }
         placeState->borrowing.mutableLoanId = semantic_join_mutable_loan(
                 placeState->borrowing.mutableLoanId,
                 instruction->loanId);
@@ -925,7 +919,8 @@ TZrBool ZrParser_SemanticFlow_Analyze(
             state->global, queue, blockCount * sizeof(TZrUInt32));
     ZrCore_Memory_RawFree(
             state->global, queued, blockCount * sizeof(TZrBool));
-    if (!semantic_flow_record_diagnostics(state, function, cfg, result)) {
+    if (!semantic_flow_record_diagnostics(state, function, cfg, result) ||
+        !semantic_loan_liveness_analyze(state, function, cfg, result)) {
         semantic_flow_result_reset(state, result);
         return ZR_FALSE;
     }

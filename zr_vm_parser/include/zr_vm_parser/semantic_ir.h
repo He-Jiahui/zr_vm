@@ -232,14 +232,37 @@ typedef struct SZrSemanticFlowDiagnostic {
     TZrSemanticInstructionId instructionId;
     TZrPlaceId placeId;
     TZrLoanId relatedLoanId;
+    TZrPlaceId relatedPlaceId;
+    EZrParserPlaceOverlap overlap;
     SZrFileRange sourceRange;
+    SZrFileRange placeDeclarationRange;
+    SZrFileRange loanOriginRange;
+    SZrFileRange loanLastUseRange;
 } SZrSemanticFlowDiagnostic;
+
+typedef struct SZrSemanticInstructionLoanLiveness {
+    TZrSemanticInstructionId instructionId;
+    SZrArray liveInLoanIds; /* TZrLoanId */
+    SZrArray liveOutLoanIds; /* TZrLoanId */
+} SZrSemanticInstructionLoanLiveness;
+
+typedef struct SZrSemanticLoanRegionFact {
+    TZrLoanId loanId;
+    TZrLoanId parentLoanId;
+    TZrSemanticInstructionId firstLiveInstructionId;
+    TZrSemanticInstructionId lastUseInstructionId;
+    SZrFileRange originRange;
+    SZrFileRange lastUseRange;
+} SZrSemanticLoanRegionFact;
 
 typedef struct SZrSemanticFlowResult {
     SZrState *state;
     TZrSize placeCount;
+    TZrSize loanCount;
     SZrArray blockFacts; /* SZrSemanticBlockFlowFacts */
     SZrArray diagnostics; /* SZrSemanticFlowDiagnostic */
+    SZrArray loanLiveness; /* SZrSemanticInstructionLoanLiveness */
+    SZrArray loanRegions; /* SZrSemanticLoanRegionFact */
 } SZrSemanticFlowResult;
 
 ZR_PARSER_API void ZrParser_SemanticIrFunction_Init(
@@ -328,5 +351,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticFlow_HasDiagnostic(
         const SZrSemanticFlowResult *result,
         EZrSemanticFlowDiagnosticKind kind,
         TZrPlaceId placeId);
+ZR_PARSER_API TZrBool ZrParser_SemanticFlow_LoanIsLiveAt(
+        const SZrSemanticFlowResult *result,
+        TZrSemanticInstructionId instructionId,
+        TZrLoanId loanId,
+        TZrBool beforeInstruction);
+ZR_PARSER_API const SZrSemanticLoanRegionFact *ZrParser_SemanticFlow_LoanRegion(
+        const SZrSemanticFlowResult *result,
+        TZrLoanId loanId);
 
 #endif /* ZR_VM_PARSER_SEMANTIC_IR_H */

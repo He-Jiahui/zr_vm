@@ -423,11 +423,7 @@ static void test_flow_join_keeps_dimensions_separate_and_reports_negative_uses(v
     state = ZrParser_SemanticFlow_PlaceState(joinFacts, movePlace, ZR_TRUE);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_AVAILABILITY_MAYBE_MOVED, state->availability);
     state = ZrParser_SemanticFlow_PlaceState(joinFacts, loanPlace, ZR_TRUE);
-    TEST_ASSERT_EQUAL_UINT64(1U, state->borrowing.sharedLoanIds.length);
-    TEST_ASSERT_EQUAL_UINT32(
-            sharedLoanId,
-            *(const TZrLoanId *)ZrCore_Array_Get(
-                    (SZrArray *)&state->borrowing.sharedLoanIds, 0U));
+    TEST_ASSERT_EQUAL_UINT64(0U, state->borrowing.sharedLoanIds.length);
     state = ZrParser_SemanticFlow_PlaceState(joinFacts, escapePlace, ZR_TRUE);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_ESCAPE_CALLER, state->escape);
 
@@ -552,7 +548,7 @@ static void test_store_restores_moved_place_and_end_loan_restores_read_access(vo
     ZrParser_SemanticIrFunction_Free(g_state, &function);
 }
 
-static void test_joined_mutable_loans_remain_conservative_after_one_end(void) {
+static void test_joined_mutable_loans_end_after_conservative_path_conflict(void) {
     SZrSemanticIrFunction function;
     SZrSemanticFlowResult result;
     SZrParserPlaceBase base;
@@ -661,7 +657,7 @@ static void test_joined_mutable_loans_remain_conservative_after_one_end(void) {
     state = ZrParser_SemanticFlow_PlaceState(joinFacts, placeId, ZR_FALSE);
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_EQUAL_UINT32(
-            ZR_SEMANTIC_LOAN_ID_MULTIPLE, state->borrowing.mutableLoanId);
+            ZR_SEMANTIC_LOAN_ID_INVALID, state->borrowing.mutableLoanId);
     TEST_ASSERT_TRUE(ZrParser_SemanticFlow_HasDiagnostic(
             &result, ZR_SEMANTIC_FLOW_LOAN_CONFLICT, placeId));
 
@@ -739,7 +735,7 @@ int main(void) {
     RUN_TEST(test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar);
     RUN_TEST(test_flow_join_keeps_dimensions_separate_and_reports_negative_uses);
     RUN_TEST(test_store_restores_moved_place_and_end_loan_restores_read_access);
-    RUN_TEST(test_joined_mutable_loans_remain_conservative_after_one_end);
+    RUN_TEST(test_joined_mutable_loans_end_after_conservative_path_conflict);
     RUN_TEST(test_compiler_ownership_lowering_records_explicit_semantic_operation);
     return UNITY_END();
 }

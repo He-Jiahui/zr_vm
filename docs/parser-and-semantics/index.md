@@ -18,6 +18,10 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/semantic.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_flow.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_flow_internal.h
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_liveness.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_conflicts.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_facts.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
   - zr_vm_parser/src/zr_vm_parser/canonical_type.c
   - zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
@@ -64,6 +68,10 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/semantic.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_flow.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_flow_internal.h
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_liveness.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_conflicts.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_facts.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
   - zr_vm_parser/src/zr_vm_parser/canonical_type.c
   - zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
@@ -120,6 +128,7 @@ plan_sources:
 tests:
   - tests/parser/test_cfg_reachability.c
   - tests/parser/test_pre_semantic_ir.c
+  - tests/parser/test_reference_loan_nll.c
   - tests/parser/test_canonical_type_graph.c
   - tests/parser/test_cfg_constant_conditions.c
   - tests/parser/test_cfg_switch_constants.c
@@ -146,6 +155,7 @@ tests:
   - tests/acceptance/2026-06-20-semantic-stage1-semantic-query.md
   - tests/acceptance/2026-07-19-syntax-01-m1-canonical-type-graph.md
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
+  - tests/acceptance/2026-07-20-syntax-02-m3-reference-loan-nll.md
 doc_type: category-index
 ---
 
@@ -176,6 +186,11 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - exact ref/out call markers and Place-only arguments
   - field-sensitive out initialization across normal and exceptional flow
   - named argument contract mapping and cross-call out responsibility transfer
+- `reference-loan-nll.md`
+  - CFG backward LoanId liveness and last-use region contraction
+  - ref-slot reaching values with Store kill/gen and Load propagation
+  - capability-aware shared/mutable conflict and multi-parent nested reborrow
+  - cycle/reachability guards and structured overlap diagnostics
 - `pre-semantic-ir-flow.md`
   - pre-execution semantic instructions with owned Place/CFG/Value/loan state
   - compiler ordering and the execution SemIR compatibility boundary
@@ -286,4 +301,5 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 14. 最后看 `lsp-semantic-resolution-and-native-imports.md`，了解 language server 如何消费 parser/native import metadata 并稳定命中局部语义引用。
 15. 再看 `place-cfg-graph.md`，了解 session-local Place identity、typed CFG edge 与 cleanup routing。
 16. 再看 `pre-semantic-ir-flow.md`，了解前置 Semantic IR、compiler bridge、flow facts 与 execution sidecar 边界。
-17. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+17. 再看 `reference-loan-nll.md`，了解 LoanId 传播、NLL、reborrow 与 Place overlap 冲突。
+18. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

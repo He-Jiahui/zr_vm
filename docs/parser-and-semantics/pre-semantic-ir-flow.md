@@ -47,7 +47,7 @@ The old `SZrSemIrInstruction` table is an execution compatibility projection. `c
 
 ## Flow Facts
 
-`ZrParser_SemanticFlow_Analyze` runs a fixed-point worklist over the function CFG. Each reachable block owns separate entry and exit state for every Place:
+`ZrParser_SemanticFlow_Analyze` runs fixed-point analyses over the function CFG. Each reachable block owns separate entry and exit state for every Place:
 
 - initialization: uninitialized, initialized, or maybe initialized;
 - availability: available, moved, maybe moved, or dropped;
@@ -55,7 +55,7 @@ The old `SZrSemIrInstruction` table is an execution compatibility projection. `c
 - escape: local, function, caller, heap/static, or unknown;
 - reachability: recorded independently on the block facts.
 
-Unreachable predecessors do not participate in joins. Initialization and availability join conservatively, shared loans are unioned, incompatible mutable loans become a multiple-loan conflict state, and escape takes the widest bound. A store restores an assignable moved Place to initialized/available, reads reject an active mutable loan, and initialize/store/move/drop reject conflicting shared or mutable loans. Ending one concrete loan never clears a multiple-loan join. The diagnostic pass reports uninitialized or maybe-uninitialized use, use after move/drop, maybe-moved use, loan conflicts, and escape violations with instruction, Place, loan, block, and source-range identities.
+Unreachable predecessors do not participate in joins. Initialization and availability join conservatively, and escape takes the widest bound. A store restores an assignable moved Place to initialized/available. Shared/mutable borrowing is then replaced by the backward CFG liveness result: ref values propagate through values and Place Store/Load, Store performs kill/gen for overwritten ref slots, reborrow keeps its parent live, and each block receives the exact live loan set at its entry and exit. Place access conflicts use projection overlap and end after the final possible use instead of the lexical block. The diagnostic pass reports uninitialized or maybe-uninitialized use, use after move/drop, maybe-moved use, NLL loan conflicts, and escape violations with instruction, Place, loan, block, overlap, origin, declaration, last-use, and source-range identities. See `reference-loan-nll.md` for the loan algorithm and M3 boundary.
 
 ## Boundaries
 
@@ -63,4 +63,4 @@ This graph remains compilation-session data. M4 decides which canonical public c
 
 ## Verification
 
-`test_pre_semantic_ir.c` fixes the complete opcode-family golden, a source-level local initialize/load/store golden, explicit ownership-operation and shared-loan lowering, structural validation before execution-sidecar construction, CFG join negatives for definite assignment, move availability, loan conflicts, and caller escape, plus store-after-move and conservative mutable-loan-end regressions. The compiler integration and ownership suites protect existing ExecBC behavior while the new semantic source is introduced.
+`test_pre_semantic_ir.c` fixes the complete opcode-family golden, a source-level local initialize/load/store golden, explicit ownership-operation and shared-loan lowering, structural validation before execution-sidecar construction, CFG join negatives for definite assignment, move availability, loan conflicts, and caller escape, plus store-after-move and NLL replacement of compatibility borrow states. `test_reference_loan_nll.c` covers last-use release, shared/mutable conflicts, ref-slot overwrite, branch/loop liveness, dynamic-index unknown overlap, nested reborrow, and move/drop rejection. The compiler integration and ownership suites protect existing ExecBC behavior while the new semantic source is introduced.
