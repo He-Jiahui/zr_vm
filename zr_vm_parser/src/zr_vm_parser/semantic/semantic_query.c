@@ -1,5 +1,7 @@
 #include "zr_vm_parser/semantic_query.h"
 
+#include "semantic_query_ownership_diagnostics.h"
+
 #include <string.h>
 
 static TZrBool semantic_query_has_offset(const SZrFilePosition *position) {
@@ -566,6 +568,16 @@ static TZrBool semantic_query_append_definite_assignment_diagnostic(
         ZrParser_StructuredDiagnostic_Free(context->state, &diagnostic);
         return ZR_FALSE;
     }
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+            context->state,
+            &diagnostic,
+            "Replace with an initialized value",
+            fact->range,
+            "<value>",
+            ZR_DIAGNOSTIC_FIX_HAS_PLACEHOLDERS)) {
+        ZrParser_StructuredDiagnostic_Free(context->state, &diagnostic);
+        return ZR_FALSE;
+    }
 
     ZrCore_Array_Push(context->state, &context->queryDiagnostics, &diagnostic);
     return ZR_TRUE;
@@ -914,6 +926,19 @@ TZrBool ZrParser_SemanticQuery_Diagnostics(
                 semantic_query_scope_allows_range(scope, &fact->range) &&
                 semantic_query_reference_is_uninitialized_read_diagnostic(fact)) {
                 (void)semantic_query_append_definite_assignment_diagnostic(mutableContext, fact);
+            }
+        }
+    }
+
+    if (context->ownershipFacts.isValid) {
+        for (i = 0; i < context->ownershipFacts.length; i++) {
+            const SZrSemanticOwnershipFact *fact =
+                (const SZrSemanticOwnershipFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->ownershipFacts,
+                        i);
+            if (fact != ZR_NULL &&
+                semantic_query_scope_allows_range(scope, &fact->range)) {
+                (void)ZrParser_SemanticQueryOwnership_AppendDiagnostic(mutableContext, fact);
             }
         }
     }

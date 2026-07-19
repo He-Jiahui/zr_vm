@@ -6383,6 +6383,7 @@ static void test_type_inference_source_import_function_call_rejects_argument_mis
         SZrString *sourceName = ZrCore_String_Create(state, "source_import_signature_fail_test.zr", 36);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
+        const SZrStructuredDiagnosticFix *fix;
         SZrInferredType result;
 
         TEST_ASSERT_NOT_NULL(state);
@@ -6410,7 +6411,16 @@ static void test_type_inference_source_import_function_call_rejects_argument_mis
         TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Argument type mismatch"));
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Expected 'int' but found 'float'"));
+        TEST_ASSERT_TRUE(cs->hasStructuredError);
+        TEST_ASSERT_EQUAL_UINT32(2011, cs->structuredError.descriptorId);
+        TEST_ASSERT_TRUE(cs->structuredError.fixes.isValid);
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)cs->structuredError.fixes.length);
+        fix = (const SZrStructuredDiagnosticFix *)ZrCore_Array_Get(
+                &cs->structuredError.fixes,
+                0);
+        TEST_ASSERT_NOT_NULL(fix);
+        TEST_ASSERT_EQUAL_INT(ZR_DIAGNOSTIC_FIX_HAS_PLACEHOLDERS, fix->applicability);
 
         ZrParser_InferredType_Free(state, &result);
         ZrCore_Function_Free(state, cs->currentFunction);
@@ -6858,7 +6868,7 @@ static void test_type_inference_source_import_array_assignment_rejects_incompati
         TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Assignment type mismatch"));
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Expected 'int' but found 'float'"));
 
         ZrParser_InferredType_Free(state, &result);
         ZrCore_Function_Free(state, cs->currentFunction);
@@ -7110,7 +7120,7 @@ static void test_type_inference_binary_import_function_call_rejects_argument_mis
         TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Argument type mismatch"));
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Expected 'int' but found 'float'"));
 
         ZrParser_InferredType_Free(state, &result);
         ZrCore_Function_Free(state, cs->currentFunction);
@@ -7171,7 +7181,7 @@ static void test_type_inference_native_method_call_rejects_registered_parameter_
         TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Argument type mismatch"));
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Expected 'NativeMode' but found 'string'"));
 
         ZrParser_InferredType_Free(state, &result);
         ZrCore_Function_Free(state, cs->currentFunction);

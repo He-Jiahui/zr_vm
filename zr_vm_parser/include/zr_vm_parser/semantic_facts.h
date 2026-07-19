@@ -244,6 +244,9 @@ ZR_PARSER_API TZrBool ZrParser_SemanticFacts_ResolveLinearDefiniteAssignments(
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_ResolveControlFlowDefiniteAssignments(
         SZrSemanticContext *context,
         SZrAstNode *root);
+ZR_PARSER_API TZrBool ZrParser_SemanticFacts_ResolveControlFlowOwnership(
+        SZrSemanticContext *context,
+        SZrAstNode *root);
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendNumeric(SZrSemanticContext *context,
                                                            const SZrSemanticNumericFact *fact);
 ZR_PARSER_API const SZrNumericRangeSegment *ZrParser_SemanticNumericFact_RangeSegmentAt(

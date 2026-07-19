@@ -32,6 +32,13 @@ typedef struct SZrDiagnosticRelatedInformation {
     SZrString *message;
 } SZrDiagnosticRelatedInformation;
 
+typedef struct SZrDiagnosticFix {
+    SZrString *title;
+    SZrFileRange editRange;
+    SZrString *editText;
+    EZrDiagnosticFixApplicability applicability;
+} SZrDiagnosticFix;
+
 // 诊断信息
 typedef struct SZrDiagnostic {
     EZrDiagnosticSeverity severity;
@@ -41,6 +48,8 @@ typedef struct SZrDiagnostic {
     SZrString *cause;                  // 具体原因（可选）
     SZrString *suggestion;             // 修复建议（可选）
     SZrArray relatedInformation;       // SZrDiagnosticRelatedInformation
+    SZrArray fixes;                    // SZrDiagnosticFix
+    TZrUInt32 descriptorId;
 } SZrDiagnostic;
 
 // 代码补全项
@@ -100,6 +109,15 @@ ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *sta
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_Analyze(SZrState *state, 
                                                          SZrSemanticAnalyzer *analyzer,
                                                          SZrAstNode *ast);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
+    SZrState *state,
+    SZrSemanticAnalyzer *analyzer,
+    SZrAstNode *ast,
+    SZrAstNode *scopeRoot);
+ZR_LANGUAGE_SERVER_API SZrAstNode *
+ZrLanguageServer_SemanticAnalyzer_FindAnalysisRootAtPosition(
+    SZrAstNode *ast,
+    SZrFileRange position);
 
 // 获取诊断信息
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_GetDiagnostics(SZrState *state,
@@ -158,6 +176,10 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Diagnostic_AddRelatedInformation
     SZrDiagnostic *diagnostic,
     SZrFileRange location,
     const TZrChar *message);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Diagnostic_AddFix(
+    SZrState *state,
+    SZrDiagnostic *diagnostic,
+    const SZrStructuredDiagnosticFix *structuredFix);
 
 // 释放诊断
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Diagnostic_Free(SZrState *state, SZrDiagnostic *diagnostic);

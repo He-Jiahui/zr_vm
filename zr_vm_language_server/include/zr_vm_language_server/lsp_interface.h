@@ -36,6 +36,13 @@ typedef struct SZrLspDiagnosticRelatedInformation {
     SZrString *message;
 } SZrLspDiagnosticRelatedInformation;
 
+typedef struct SZrLspDiagnosticFix {
+    SZrString *title;
+    SZrLspRange editRange;
+    SZrString *editText;
+    EZrDiagnosticFixApplicability applicability;
+} SZrLspDiagnosticFix;
+
 // LSP 诊断
 typedef struct SZrLspDiagnostic {
     SZrLspRange range;                // 范围
@@ -43,6 +50,8 @@ typedef struct SZrLspDiagnostic {
     SZrString *code;                  // 错误代码（可选）
     SZrString *message;               // 消息
     SZrArray relatedInformation;      // SZrLspDiagnosticRelatedInformation
+    SZrArray fixes;                   // SZrLspDiagnosticFix
+    TZrUInt32 descriptorId;
 } SZrLspDiagnostic;
 
 // LSP 补全项

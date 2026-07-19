@@ -72,6 +72,9 @@
 #define ZR_LSP_FIELD_CODE ZR_LSP_JSON_RPC_FIELD_CODE
 #define ZR_LSP_FIELD_MESSAGE ZR_LSP_JSON_RPC_FIELD_MESSAGE
 #define ZR_LSP_FIELD_RELATED_INFORMATION "relatedInformation"
+#define ZR_LSP_FIELD_FIXES "fixes"
+#define ZR_LSP_FIELD_DESCRIPTOR_ID "descriptorId"
+#define ZR_LSP_FIELD_APPLICABILITY "applicability"
 #define ZR_LSP_FIELD_TYPE "type"
 #define ZR_LSP_FIELD_LABEL "label"
 #define ZR_LSP_FIELD_LABEL_DETAILS "labelDetails"

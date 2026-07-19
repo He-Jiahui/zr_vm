@@ -9,6 +9,14 @@ static SZrParserCfgBlock *dataflow_cfg_block(const SZrParserCfg *cfg, TZrUInt32 
     return (SZrParserCfgBlock *)ZrCore_Array_Get((SZrArray *)&cfg->blocks, blockId);
 }
 
+static TZrBool dataflow_block_transfers_statement(
+        const SZrParserCfgBlock *block) {
+    return block != ZR_NULL &&
+           block->statement != ZR_NULL &&
+           (block->kind == ZR_PARSER_CFG_BLOCK_STATEMENT ||
+            block->kind == ZR_PARSER_CFG_BLOCK_CLEANUP);
+}
+
 static SZrParserDataflowBlockState *dataflow_result_block(SZrParserDataflowResult *result,
                                                           TZrUInt32 blockId) {
     if (result == ZR_NULL || !result->blockStates.isValid || blockId >= result->blockStates.length) {
@@ -68,6 +76,14 @@ static void dataflow_free_queue(SZrState *state,
                                       blockCount * sizeof(TZrBool),
                                       ZR_MEMORY_NATIVE_TYPE_ARRAY);
     }
+}
+
+static TZrSize dataflow_iteration_budget(TZrSize blockCount) {
+    TZrSize budget = blockCount * ZR_PARSER_DATAFLOW_ITERATIONS_PER_BLOCK;
+
+    return budget < ZR_PARSER_DATAFLOW_MAX_ITERATION_COUNT
+               ? budget
+               : ZR_PARSER_DATAFLOW_MAX_ITERATION_COUNT;
 }
 
 static void dataflow_mark_entry_reachable(const SZrParserCfg *cfg,
@@ -238,6 +254,8 @@ static TZrBool dataflow_process_forward(SZrState *state,
     TZrSize head = 0;
     TZrSize tail = 0;
     TZrSize count = 0;
+    TZrSize iterationCount = 0;
+    TZrSize iterationBudget = dataflow_iteration_budget(blockCount);
     SZrParserDataflowBlockState *entryState;
 
     entryReachable = dataflow_compute_entry_reachability(state, cfg);
@@ -279,6 +297,12 @@ static TZrBool dataflow_process_forward(SZrState *state,
         SZrParserDataflowBlockState *blockState = dataflow_result_block(result, blockId);
         TZrUInt32 successorIndex;
 
+        if (iterationCount >= iterationBudget) {
+            dataflow_free_queue(state, queue, queued, blockCount);
+            dataflow_free_reachability(state, entryReachable, blockCount);
+            return ZR_FALSE;
+        }
+        iterationCount++;
         head = (head + 1) % blockCount;
         count--;
         queued[blockId] = ZR_FALSE;
@@ -287,8 +311,7 @@ static TZrBool dataflow_process_forward(SZrState *state,
         }
 
         ZrCore_Memory_RawCopy(blockState->outState, blockState->inState, analysis->stateSize);
-        if (block->kind == ZR_PARSER_CFG_BLOCK_STATEMENT &&
-            block->statement != ZR_NULL &&
+        if (dataflow_block_transfers_statement(block) &&
             analysis->transferStatement != ZR_NULL) {
             analysis->transferStatement(block->statement, blockState->outState, analysis->userData);
         }
@@ -359,6 +382,8 @@ static TZrBool dataflow_process_backward(SZrState *state,
     TZrSize head = 0;
     TZrSize tail = 0;
     TZrSize count = 0;
+    TZrSize iterationCount = 0;
+    TZrSize iterationBudget = dataflow_iteration_budget(blockCount);
     SZrParserDataflowBlockState *exitState;
 
     entryReachable = dataflow_compute_entry_reachability(state, cfg);
@@ -400,6 +425,12 @@ static TZrBool dataflow_process_backward(SZrState *state,
         SZrParserDataflowBlockState *blockState = dataflow_result_block(result, blockId);
         TZrSize predecessorIndex;
 
+        if (iterationCount >= iterationBudget) {
+            dataflow_free_queue(state, queue, queued, blockCount);
+            dataflow_free_reachability(state, entryReachable, blockCount);
+            return ZR_FALSE;
+        }
+        iterationCount++;
         head = (head + 1) % blockCount;
         count--;
         queued[blockId] = ZR_FALSE;
@@ -408,8 +439,7 @@ static TZrBool dataflow_process_backward(SZrState *state,
         }
 
         ZrCore_Memory_RawCopy(blockState->inState, blockState->outState, analysis->stateSize);
-        if (block->kind == ZR_PARSER_CFG_BLOCK_STATEMENT &&
-            block->statement != ZR_NULL &&
+        if (dataflow_block_transfers_statement(block) &&
             analysis->transferStatement != ZR_NULL) {
             analysis->transferStatement(block->statement, blockState->inState, analysis->userData);
         }
@@ -469,6 +499,7 @@ TZrBool ZrParser_Dataflow_Run(SZrState *state,
                               SZrParserDataflowResult *result) {
     if (state == ZR_NULL || cfg == ZR_NULL || analysis == ZR_NULL || result == ZR_NULL ||
         !cfg->blocks.isValid || cfg->blocks.length == 0 ||
+        cfg->blocks.length > ZR_PARSER_DATAFLOW_MAX_BLOCK_COUNT ||
         analysis->stateSize == 0 || analysis->initEntry == ZR_NULL ||
         analysis->join == ZR_NULL) {
         return ZR_FALSE;

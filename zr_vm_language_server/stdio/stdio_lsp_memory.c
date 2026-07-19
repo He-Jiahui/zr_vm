@@ -43,7 +43,12 @@ void free_diagnostics_array(SZrState *state, SZrArray *diagnostics) {
     for (index = 0; index < diagnostics->length; index++) {
         SZrLspDiagnostic **diagnosticPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, index);
         if (diagnosticPtr != ZR_NULL && *diagnosticPtr != ZR_NULL) {
-            ZrCore_Array_Free(state, &(*diagnosticPtr)->relatedInformation);
+            if ((*diagnosticPtr)->relatedInformation.isValid) {
+                ZrCore_Array_Free(state, &(*diagnosticPtr)->relatedInformation);
+            }
+            if ((*diagnosticPtr)->fixes.isValid) {
+                ZrCore_Array_Free(state, &(*diagnosticPtr)->fixes);
+            }
             ZrCore_Memory_RawFree(state->global, *diagnosticPtr, sizeof(SZrLspDiagnostic));
         }
     }

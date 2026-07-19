@@ -1476,7 +1476,7 @@ static void test_local_expression_query_reaches_type_query_operands(SZrState *st
         strcmp(test_string_ptr(query.referenceFact->name), "owner") != 0) {
         snprintf(reason,
                  sizeof(reason),
-                 "Expected %type(owner) operand read reference; status=%d expr=%p reference=%p kind=%d resolved=%d name=%s",
+                 "Expected %%type(owner) operand read reference; status=%d expr=%p reference=%p kind=%d resolved=%d name=%s",
                  (int)query.status,
                  (void *)query.expressionFact,
                  (void *)query.referenceFact,
@@ -1507,7 +1507,7 @@ static void test_local_expression_query_reaches_type_query_operands(SZrState *st
         query.numericFact->maxValue != 3) {
         snprintf(reason,
                  sizeof(reason),
-                 "Expected %type(1 + 2) operand binary numeric fact; status=%d expr=%p kind=%d numeric=%p numericKind=%d hasRange=%d min=%lld max=%lld",
+                 "Expected %%type(1 + 2) operand binary numeric fact; status=%d expr=%p kind=%d numeric=%p numericKind=%d hasRange=%d min=%lld max=%lld",
                  (int)query.status,
                  (void *)query.expressionFact,
                  query.expressionFact != ZR_NULL ? (int)query.expressionFact->kind : -1,
@@ -1631,6 +1631,8 @@ static void test_local_expression_query_returns_ownership_violation_fact(SZrStat
     TEST_PASS(timer, summary);
 }
 
+#include "test_lsp_local_semantic_scope_cases.h"
+
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -1691,6 +1693,10 @@ int main(void) {
     test_local_expression_query_reaches_type_query_operands(state);
     TEST_DIVIDER();
     test_local_expression_query_returns_ownership_violation_fact(state);
+    TEST_DIVIDER();
+    test_scoped_semantic_analysis_limits_body_facts_and_reuses_scope_cache(state);
+    TEST_DIVIDER();
+    test_analysis_root_resolver_rejects_non_callable_wrappers(state);
     TEST_DIVIDER();
 
     ZrCore_GlobalState_Free(global);

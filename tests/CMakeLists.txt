@@ -5611,6 +5611,12 @@ if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
                     $<TARGET_FILE:zr_vm_language_server_stdio>
     )
     add_test(
+            NAME language_server_stdio_diagnostic_fix_smoke
+            COMMAND ${ZR_VM_NODE_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_diagnostic_fix_smoke.js
+                    $<TARGET_FILE:zr_vm_language_server_stdio>
+    )
+    add_test(
             NAME language_server_stdio_position_encoding_smoke
             COMMAND ${ZR_VM_NODE_EXECUTABLE}
                     ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_position_encoding_smoke.js
@@ -6936,6 +6942,7 @@ if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
             language_server
             language_server_stdio_smoke
             language_server_stdio_inline_value_semantic_smoke
+            language_server_stdio_diagnostic_fix_smoke
             language_server_stdio_position_encoding_smoke
             language_server_stdio_type_hierarchy_smoke
             projects

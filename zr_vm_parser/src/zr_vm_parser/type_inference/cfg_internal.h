@@ -217,5 +217,13 @@ TZrBool cfg_build_foreach_statement(SZrState *state,
                                     TZrUInt32 *inOutPreviousBlockId,
                                     EZrSemanticReachabilityCause pendingCause,
                                     SZrAstNode *pendingCauseNode);
+TZrBool cfg_build_using_statement(
+        SZrState *state,
+        SZrParserCfg *cfg,
+        SZrAstNode *statement,
+        TZrUInt32 *inOutPreviousBlockId,
+        EZrSemanticReachabilityCause pendingCause,
+        SZrAstNode *pendingCauseNode,
+        const SZrParserCfgLoopTargets *loopTargets);
 
 #endif // ZR_VM_PARSER_TYPE_INFERENCE_CFG_INTERNAL_H

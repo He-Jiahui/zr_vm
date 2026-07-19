@@ -11,6 +11,11 @@
 - Before the compiler publication slice, `compile_script` could emit reachability facts during type inference, but it never queried `ZrParser_SemanticQuery_Diagnostics`; `SZrSemanticContext.queryDiagnostics` therefore stayed empty after successful compilation.
 
 ## Test Inventory
+- `tests/parser/test_dataflow_engine.c`
+  - Forward and backward work queues skip entry-unreachable blocks and propagate state through exit edges.
+  - Definite-assignment transfer/join coverage proves single-write `INIT` and one-branch-write `MAYBE_INIT` results.
+  - A cyclic CFG with an oscillating join exhausts the iteration budget, returns false, and leaves partial block states valid for cleanup.
+  - Invalid analyses and CFGs above the block limit return false without allocating result states.
 - `tests/parser/test_semantic_query.c`
   - `TypeAt` returns the narrowest matching expression type.
   - `FactsAt` aggregates expression, numeric, reachability, logical, and ownership facts at a position.
@@ -41,6 +46,12 @@
   - CFG-backed reaching-definitions constant-true loop coverage preserves the write before `break` as the final read's single reaching definition.
   - CFG-backed definite-assignment constant-true loop coverage suppresses false `uninitialized_read` / `possibly_uninitialized_read` diagnostics after `var seed; while (true) { seed = 1; break; } return seed;`.
   - Compiler-side definition query coverage verifies `compile_script` leaves enough reaching-definition payload in `SZrSemanticContext` for `ZrParser_SemanticQuery_DefinitionOf` to resolve `seed = 3; return seed;` directly to the write token.
+- `tests/parser/test_cfg_union_exhaustiveness.c`
+  - Exhaustive unit and tuple union case coverage makes a redundant `default` block unreachable with cause `ZR_SEMANTIC_REACHABILITY_AFTER_EXHAUSTIVE_BRANCH` and the switch as `causeNode`.
+  - Omitting the tuple variant keeps `default` reachable, preventing a false exhaustive-branch fact.
+- `tests/language_server/test_lsp_reachability_semantic_query.c`
+  - An exhaustive union switch exposes the default-block unreachable fact through the local semantic query and emits warning `unreachable_union_switch_default`.
+  - A non-exhaustive union switch with `default` returns a reachable fact and does not emit the exhaustive-default warning.
 - `tests/parser/test_semantic_facts.c`
   - CFG-backed reaching-definitions cloned-finally coverage clears `hasDefinitionRange` when normal and function-exit paths through the same source `finally` read see different definitions.
 - `tests/language_server/test_lsp_semantic_query_diagnostics.c`
@@ -465,6 +476,8 @@
   - Local semantic query returns the parser-owned interval comparison logical fact for `seed: u8` in `seed < 300`.
 
 ## Tooling Evidence
+- RED/GREEN: 2026-07-18 15:48 +08:00 Stage 1 semantic-foundation closure audit found the generic dataflow engine had no iteration or node budget despite the blueprint's required convergence degradation. WSL gcc RED ran 6 tests / 1 failure: a valid cyclic CFG with a join that reported 4,096 bounded changes completed and incorrectly returned true; the invalid-analysis boundary already passed. GREEN added a 1,048,576-block limit, 1,024 iterations per block, and a 16,777,216 total-iteration cap. Budget exhaustion releases temporary queue/reachability memory, returns false, and keeps partial result block states valid for caller cleanup; invalid and oversized inputs return false before result allocation. GCC, Clang 14, and MSVC 19.44.35228 each passed CFG 29/29, union CFG 2/2, dataflow 7/7, semantic query 14/14, compiler query diagnostics 16/16, LSP reachability 11/11, and LSP query diagnostics 11/11. Full repository GREEN is not claimed.
+- RED/GREEN: 2026-07-18 14:39 +08:00 exhaustive union switch default reachability started with WSL gcc parser 1/2 and LSP positive-query failure: the exhaustive default had no unreachable fact, while both non-exhaustive negative boundaries already passed. The compiler now writes `isUnionExhaustive` after existing union case validation, parser CFG removes the redundant default selector edge and publishes `AFTER_EXHAUSTIVE_BRANCH`, and LSP reuses union-pattern resolution to publish the same fact plus `unreachable_union_switch_default`. WSL gcc, WSL clang, and Windows MSVC (`cl 19.44.35228`) each passed `zr_vm_cfg_union_exhaustiveness_test` 2/2 and `zr_vm_language_server_reachability_semantic_query_test` 11/11, plus adjacent `zr_vm_union_test` 69/69, `zr_vm_cfg_reachability_test` 29/29, and `zr_vm_language_server_union_pattern_diagnostics_test` 12/12. MSVC first exposed LNK2019 for the parser DLL union declaration resolver; adding the explicit parser export resolved it and the focused matrix passed. Full repository GREEN is not claimed.
 - REFACTOR/GREEN: 2026-07-06 07:23 +08:00 behavior-preserving private bitwise-not OR counterpart deep-chain modularization split the zero-minus / unary-minus zero-minus deep counterpart helper chain out of `type_inference_bitwise_identity_bitwise_not_or_counterpart.c` into internal `type_inference_bitwise_identity_bitwise_not_or_counterpart_deep.c/.h`. The public dispatcher still checks the same basic/direct paths first, then calls `type_inference_bitwise_identity_expression_bitwise_not_or_deep_counterpart_leaf_int64_range` before the same-identifier fallback. No parser or LSP cases were added or removed: the private parser target remains 260 cases and the private-mask LSP target remains 224 queries. Focused behavior-preserving validation passed WSL gcc isolated private parser 260 tests / 0 failures plus private-mask LSP PASS, WSL clang isolated private parser 260 tests / 0 failures plus private-mask LSP PASS, and Windows MSVC (`VSCMD_VER=17.14.34`, `build-msvc-lsp-bitwise-zero`) focused build/run 260 tests / 0 failures plus LSP PASS; MSVC and WSL build logs confirm the new deep source compiled. This does not change semantic facts, public headers, ordinary supported-count targets, private mask count-side readers, wrapped supported-count readers, OR counterpart scope, arbitrary normalization, fixed point, or CFG-wide loop dataflow. Full repository GREEN is not claimed.
 - RED/GREEN: 2026-07-06 06:34 +08:00 ordinary bitwise zero-minus shift supported-nonnegative count private bitwise-not mask zero-minus and unary-minus zero-minus bitwise-not one-sided all-ones OR zero-minus unary-minus zero-minus unary-minus zero-minus unary-minus zero-minus unary-minus zero-minus unary-minus zero-minus unary-minus zero-minus unary-minus zero-minus zero-minus bitwise-not direct leaf operand expression/LSP local-query slice expanded the existing private parser target `zr_vm_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference_test` / `zr_vm_bzms_private_not_mask_range_test` from 252 to 260 cases and expanded the focused private-mask LSP target `zr_vm_lsp_bzms_private_not_mask_query_test` from 216 to 224 query cases. The 8 new parser cases continue in `bitwise_zero_minus_shift_supported_count_private_not_mask_or_deep_leaf_cases.c/.h` instead of the 1016-line OR-leaf cases file; the 8 new LSP queries extend the deep query helper to 80 deep queries, and the deep parser helper now registers 72 tests. WSL gcc RED first built the focused targets, then showed 8 new semantic parser failures out of 260 tests and old `0..0` range facts for the eight new LSP queries using `zero - (-(zero - (-(zero - (-(zero - (-(zero - (-(zero - (-(zero - (-(zero - (zero - (~negativeFour))))))))))))))))`. After adding the private `type_inference_bitwise_identity_expression_zero_minus_unary_minus_zero_minus_unary_minus_zero_minus_unary_minus_zero_minus_unary_minus_zero_minus_unary_minus_zero_minus_unary_minus_zero_minus_unary_minus_zero_minus_zero_minus_bitwise_not_direct_leaf_int64_range` branch inside `type_inference_bitwise_identity_expression_bitwise_not_or_counterpart_leaf_int64_range`, WSL gcc focused validation passed private parser 260 tests / 0 failures plus private-mask LSP PASS. WSL clang passed the same focused pair. Windows MSVC (`VSCMD_VER=17.14.34`, `build-msvc-lsp-bitwise-zero`) passed focused build/run with `buildParser=0 buildLsp=0 parser=0 lsp=0`. The new branch runs after the 06:09 unary-minus counterpart reader and before the existing same-identifier fallback; it does not broaden public headers, ordinary supported-count target files, private mask count-side readers, wrapped supported-count readers, global zero-wrapper stripping, non-exact bitwise-not operands, different-identifier structural equality, arbitrary non-all-ones operands, nonzero-left zero-minus, arbitrary subtraction, arbitrary negative operands, negative/out-of-range shift counts, nonzero-left shift, unsupported count algebra, arbitrary expression normalization, fixed point, or CFG-wide loop dataflow. The 925-line counterpart module remains one cohesive private deep counterpart chain for this slice; the next addition to that chain should first extract the deep alternating counterpart chain. Full repository GREEN is not claimed.
 - RED/GREEN: 2026-07-06 06:09 +08:00 ordinary bitwise zero-minus shift supported-nonnegative count private bitwise-not mask zero-minus and unary-minus zero-minus bitwise-not one-sided all-ones OR unary-minus zero-minus unary-minus zero-minus unary-minus zero-minus unary-minus zero-minus unary-minus zero-minus unary-minus zero-minus unary-minus zero-minus zero-minus bitwise-not direct leaf operand expression/LSP local-query slice expanded the existing private parser target `zr_vm_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference_test` / `zr_vm_bzms_private_not_mask_range_test` from 244 to 252 cases and expanded the focused private-mask LSP target `zr_vm_lsp_bzms_private_not_mask_query_test` from 208 to 216 query cases. The 8 new parser cases continue in `bitwise_zero_minus_shift_supported_count_private_not_mask_or_deep_leaf_cases.c/.h` instead of the 1016-line OR-leaf cases file; the 8 new LSP queries extend the deep query helper to 72 deep queries, and the deep parser helper now registers 64 tests. The first focused build surfaced mismatched parser RUN_TEST registration names for the new functions; after correcting those registrations, WSL gcc RED showed 8 new semantic parser failures out of 252 tests and old `0..0` range facts for the eight new LSP queries using `-(zero - (-(zero - (-(zero - (-(zero - (-(zero - (-(zero - (-(zero - (zero - (~negativeFour)))))))))))))))`. After adding the private `type_inference_bitwise_identity_expression_unary_minus_zero_minus_unary_minus_zero_minus_unary_minus_zero_minus_unary_minus_zero_minus_unary_minus_zero_minus_unary_minus_zero_minus_unary_minus_zero_minus_zero_minus_bitwise_not_direct_leaf_int64_range` branch inside `type_inference_bitwise_identity_expression_bitwise_not_or_counterpart_leaf_int64_range`, WSL gcc focused validation passed private parser 252 tests / 0 failures plus private-mask LSP PASS. WSL clang passed the same focused pair. Windows MSVC (`build-msvc-lsp-bitwise-zero`) passed focused build/run with `build=0 parser=0 lsp=0`. The new branch runs after the 05:39 zero-minus counterpart reader and before the existing same-identifier fallback; it does not broaden public headers, ordinary supported-count target files, private mask count-side readers, wrapped supported-count readers, global zero-wrapper stripping, non-exact bitwise-not operands, different-identifier structural equality, arbitrary non-all-ones operands, nonzero-left zero-minus, arbitrary subtraction, arbitrary negative operands, negative/out-of-range shift counts, nonzero-left shift, unsupported count algebra, arbitrary expression normalization, fixed point, or CFG-wide loop dataflow. Full repository GREEN is not claimed.
@@ -722,6 +735,8 @@
 - Historical WSL focused retry for the earlier query-foundation slice timed out during CMake regenerate/build with no test output; the later numeric interval slices above have fresh WSL gcc and WSL clang focused GREEN evidence.
 
 ## Results
+- 2026-07-18 15:48 +08:00: Stage 1 semantic foundation is accepted as complete for planned sections `01 §1/§2/§7`: CFG statement reachability with causes, bounded forward/backward dataflow with graceful failure, and module/node scoped semantic-query APIs consumed by compiler and LSP. Stage 2 flow analyses and later frontend/debug/REPL stages remain active.
+- 2026-07-18 14:39 +08:00: Stage 1 accepts exhaustive union switch redundant-default reachability across compiler AST transport, parser CFG facts, and LSP semantic queries/diagnostics. Complete unit/tuple case coverage marks the default block unreachable after an exhaustive branch; missing tuple coverage leaves it reachable. Constant-selector causality and compiler errors for a non-exhaustive switch without `default` remain unchanged. Stage 1 overall remains in progress.
 - 2026-07-04 12:37 +08:00: Stage 2 ordinary bitwise zero-minus shift supported-nonnegative count zero-identity leaf exact-zero all-ones mask operand fact and LSP local query accepted `~((zero - (zero - ((~(span - span)) + (unit - unit)))) & negativeUnit)`, `~(negativeUnit & (zero - (zero - ((~(unit - unit)) - (span - span)))))`, and the matching unary-minus zero-minus forms as bounded nonnegative shift counts when the leaf exact-zero identity wrapper is stripped before direct bitwise-not evaluation, the remaining zero-minus or unary-minus zero-minus bitwise-not form proves exact signed all-ones `-1..-1`, the private signed all-ones `&` mask operand reader preserves `negativeUnit=-3..-2`, and the outer bitwise-not flips it to `2..3`. Parser/LSP focused coverage now accepts those count forms as local exact-zero-left chain links under zero-minus RHS (`2..3`) and zero-minus unary-RHS (`-3..-2`). This is a restricted private all-ones operand-reader extension for leaf exact-zero identity wrappers around exact all-ones bitwise-not operands inside signed all-ones `&` masks; it is not public all-ones helper expansion, non-exact bitwise-not operands, arbitrary all-ones operand support, odd-depth zero-minus all-ones support, signed all-ones `|` ordinary count support, nonzero-left shift, broader bitwise/shift algebra/publication, or CFG-wide dataflow.
 - 2026-07-04 12:17 +08:00: Stage 2 ordinary bitwise zero-minus shift supported-nonnegative count zero-identity wrapped zero-minus bitwise-not exact-zero all-ones mask operand fact and LSP local query accepted `~(((zero - (zero - (~(span - span)))) + (unit - unit)) & negativeUnit)` and `~(negativeUnit & ((zero - (zero - (~(unit - unit)))) - (span - span)))` as bounded nonnegative shift counts when the exact-zero identity wrapper is stripped first, the remaining even-depth zero-minus bitwise-not form proves exact signed all-ones `-1..-1`, the private signed all-ones `&` mask operand reader preserves `negativeUnit=-3..-2`, and the outer bitwise-not flips it to `2..3`. Parser focused coverage is now split between the main supported-count target and the private bitwise-not mask operand target, with LSP local queries preserving the same semantic surface under zero-minus RHS (`2..3`) and zero-minus unary-RHS (`-3..-2`). This is a restricted private all-ones operand-reader extension for exact-zero identity wrappers around zero-minus exact all-ones bitwise-not operands inside signed all-ones `&` masks; it is not public all-ones helper expansion, non-exact bitwise-not operands, arbitrary all-ones operand support, odd-depth zero-minus all-ones support, signed all-ones `|` ordinary count support, nonzero-left shift, broader bitwise/shift algebra/publication, or CFG-wide dataflow.
 - 2026-07-04 11:48 +08:00: Stage 2 ordinary bitwise zero-minus shift supported-nonnegative count zero-identity wrapped unary-minus zero-minus bitwise-not exact-zero all-ones mask operand fact and LSP local query accepted `~(((-(zero - (~(span - span)))) + (unit - unit)) & negativeUnit)` and `~(negativeUnit & ((-(zero - (~(unit - unit)))) - (span - span)))` as bounded nonnegative shift counts when the exact-zero identity wrapper is stripped first, the remaining unary-minus zero-minus bitwise-not form proves exact signed all-ones `-1..-1`, the private signed all-ones `&` mask operand reader preserves `negativeUnit=-3..-2`, and the outer bitwise-not flips it to `2..3`. Parser/LSP focused coverage now accepts those count forms as local exact-zero-left chain links under zero-minus RHS (`2..3`) and zero-minus unary-RHS (`-3..-2`). This is a restricted private all-ones operand-reader extension for exact-zero identity wrappers around unary-minus zero-minus exact all-ones bitwise-not operands inside signed all-ones `&` masks; it is not public all-ones helper expansion, non-exact bitwise-not operands, arbitrary all-ones operand support, arbitrary unary-minus all-ones operand support, signed all-ones `|` ordinary count support, nonzero-left shift, broader bitwise/shift algebra/publication, or CFG-wide dataflow.
@@ -1071,6 +1086,8 @@
 - WSL was not claimed GREEN because the focused retry timed out before tests ran and the latest shared-checkout scan still showed unrelated AOT/core compile/link work.
 
 ## Acceptance Decision
+- Accepted for Stage 1 semantic-foundation closure: CFG handles return/constant/exhaustive-union reachability; generic dataflow supports bounded forward/backward fixed-point work queues and degrades on invalid, oversized, or non-converging analyses; semantic query exposes scoped type/facts/definitions/references/diagnostics through compiler and LSP consumers. This does not accept all Stage 2 analysis precision, full-repository GREEN, incremental performance, debug parity, or REPL persistence.
+- Accepted for exhaustive union `switch` redundant-default reachability facts and LSP warning publication when every declared unit/tuple variant resolves exactly once. Non-exhaustive union switches with `default`, constant-selector cause precedence, incomplete-code patterns that cannot resolve exactly, and the remaining Stage 1 CFG/dataflow plan stay outside this completed slice; full repository GREEN is not claimed.
 - Accepted for ordinary bitwise unary-minus over zero-minus direct-range expression range facts and LSP local-query facts where unary `-` wraps a `zero - direct-range` operand whose left side is proven exact zero and whose right side becomes a valid direct int64 range after existing zero-identity wrapper normalization, while the resulting double-negated range is still consumed only by existing supported zero-identity and signed all-ones helpers.
 - Accepted for ordinary bitwise zero-minus direct-range expression range facts and LSP local-query facts where binary `-` has a left side proven exact zero and a right side that becomes a valid direct int64 range after existing zero-identity wrapper normalization, while the resulting negated range is still consumed only by existing supported zero-identity and signed all-ones helpers.
 - Accepted for ordinary bitwise unary-minus zero-identity-wrapper operand expression range facts and LSP local-query facts where unary `-` wraps an operand that becomes a valid direct int64 range after existing proven exact-zero identity wrapper normalization, while the resulting range is still consumed only by existing supported zero-identity and signed all-ones helpers.
@@ -1575,3 +1592,519 @@
 - Stage 1 current clarification: the accepted ordinary bitwise signed all-ones mask zero-identity-wrapper expression/LSP local-query slice covers only binary `&` where one side becomes direct int64 exact `-1..-1` after proven exact-zero identity wrapper normalization and the other side has a valid direct int64 range after the same wrapper normalization. Parser coverage uses `allOnes=-1..-1; zero=0..0; span=-2..3` for `(allOnes + zero) & span`, `span & (allOnes - zero)`, `((zero + allOnes) & span) & (+zero)`, `(zero + zero) | ((allOnes - zero) & span)`, `(zero - zero) ^ (span & (zero + allOnes))`, `allOnes & (span + zero)`, `((span - zero) & allOnes) & (+zero)`, `(zero + zero) | (allOnes & (zero + span))`, and `(zero - zero) ^ ((span - zero) & allOnes)`; LSP mirrors the same shapes with `allOnes=0-1` and `span=seed-128` (`-128..127`). `type_inference_bitwise_identity_expression_zero_wrapped_direct_int64_range` is intentionally used only by the signed all-ones mask helper, while the ordinary direct int64 helper remains unary-plus-only. TDD evidence: WSL gcc parser first failed 8 new wrapper cases out of 46 and focused LSP reported eight old ranges; WSL gcc/clang parser 46/0 + LSP PASS and MSVC Debug parser 46/0 + LSP PASS followed, with the same 9-target adjacent matrix passing across WSL gcc, WSL clang, and MSVC Debug. Full repository GREEN is not claimed; non-`-1` negative masks, signed partial masks, different-identifier structural equality, nonzero identity wrappers, nonzero RHS subtract wrappers, unary `-`, `zero - span`, general signed bitwise algebra, arbitrary expression/offset normalization, broader self-dependent replay, fixed-point convergence, and CFG-wide loop dataflow remain open.
 - Stage 1 current clarification: the accepted ordinary bitwise signed all-ones mask identity expression/LSP local-query slice covers only binary `&` where one side is direct int64 exact `-1..-1` and the other side has a valid direct int64 range. Parser coverage uses `allOnes=-1..-1; span=-2..3` for `allOnes & span`, `(allOnes & span) & (+zero)`, `(span & allOnes) & (+zero)`, `(zero + zero) | (allOnes & span)`, `(zero - zero) ^ (allOnes & span)`, `(zero + zero) | (span & allOnes)`, and `(zero - zero) ^ (span & allOnes)`; LSP mirrors the same shapes with `allOnes=0-1` and `span=seed-128` (`-128..127`). Direct identity forms preserve the signed operand range and exact-zero consuming forms publish `0..0`. TDD evidence: WSL gcc first failed 4 left-mask parser cases out of 34 and focused LSP returned the same four old ranges; after a left-mask-only helper, right-mask outer-consumer parser coverage failed 3 cases out of 37 and focused LSP returned the same three old ranges; WSL gcc/clang parser 37/0 + LSP PASS and MSVC Debug parser 37/0 + LSP PASS followed. Regression evidence across WSL gcc, WSL clang, and Windows MSVC Debug includes numeric-range parser 10/0, bitwise-offset parser 10/0 + LSP PASS, idempotent-wrapper parser 8/0 + LSP PASS, and same-diff/modulo/xor parser 82/0 + LSP PASS. Full repository GREEN is not claimed; non-`-1` negative masks, signed partial masks, different-identifier structural equality, nonzero identity wrappers, unary `-`, `zero - span`, nonzero RHS subtract wrappers, general signed bitwise algebra, arbitrary expression/offset normalization, broader self-dependent replay, fixed-point convergence, and CFG-wide loop dataflow remain open.
 - Stage 1 remains open for local re-analysis, broader loop precision and remaining finally edge cases in definite assignment, broader CFG-backed reaching-definition loop fixed points and overload/member-aware ranking, CFG expansion, broader numeric branch refinement beyond the currently covered simple true/false branch comparisons through true-branch equality, false-branch inequality equality, true/false-branch edge complements, true-branch simple `&&`, false-branch simple `||`, representable false-branch simple `&&` same-direction union, representable true-branch simple `||` same-direction union, unary logical-not branch polarity inversion, segmented true-branch `||` / false-branch `&&` disjoint payloads, same-identifier nested logical-OR/AND segment payloads, interior true-branch `!=` hole payloads, three-segment same-identifier `||` payloads, else-if scope stacking coverage, simple if/else/terminal multi-statement/nonterminal multi-statement if-else/if-then/else-only assignment range joins, same-target sequential RHS-dependent if/else assignment range joins, multi-target if/else assignment dataflow joins, segment-preserving simple if/else assignment range joins, nested simple if/else assignment dataflow joins, unknown-condition `while` single-assignment, ordinary-expression multi-statement, multi-target, bounded nested simple if/else, first-write positive-increment self-dependent, first-write positive-decrement self-dependent, first-write positive singleton-delta self-dependent, first-write positive-range identifier-delta self-dependent, first-write positive expression-delta self-dependent, first-write zero-inclusive positive-delta self-dependent, first-write zero-inclusive negative-delta self-dependent, first-write sign-crossing-delta self-dependent, first-write same-loop-written direct/expression-delta self-dependent, first-write zero-only no-op self-dependent, zero-only-prefix positive-delta self-dependent, init-free/no-step traditional `for`, assignment-init/no-step traditional `for`, assignment-step/no-init traditional `for`, non-assignment-step traditional `for`, direct variable-declaration-init/no-step traditional `for`, literal and folded false-condition assignment-init traditional `for`, false-condition direct variable-declaration-init scope isolation, known-true/omitted no-init/no-step traditional `for` break-prefix assignment joins, known-true/omitted no-step init/header-local traditional `for` break-prefix assignment joins, known-true/omitted no-init step-before-break traditional `for` assignment joins, known-true/omitted init+step/header-local+step step-before-break traditional `for` assignment joins, known-true/omitted step nested-if break-branches traditional `for` assignment joins, known-true step known-true-if break-branch traditional `for` assignment joins, unknown-length `foreach` zero-or-more joins, and direct item-dependent `foreach` assignment joins, LSP segmented hover/inlay/completion/signature display, and exact interval-logical constant branch diagnostics. Remaining numeric work includes more general nested boolean formulas beyond the tested same-identifier subset, arbitrary symbolic range-set/hole-set reasoning beyond the current supported segment-array operations, segment growth stress/cap policy, broader branch dataflow beyond simple assignment target replay and nested simple if/else assignment replay, broader same-loop-written delta dependencies beyond preserving no-op prefixes/member-call-unsupported recurrence expressions, nested-loop/broader for variable-declaration init beyond direct identifier numeric initializer/known-true or omitted traditional `for` conditions beyond accepted break-prefix, step-before-break init/header-local, top-level if/else branch-break, and deterministic-true-if branch-break shapes/false-condition variable-declaration init side effects beyond scoped no-leak behavior/complex foreach item-dependent RHS or iterable-cardinality/fixed-point loop assignment joins, truly unknown/no-inferable-range array index policy, broader no-finite-upper-bound symbolic policy beyond known negative integer ranges if needed, broader overflow analysis beyond existing `mayOverflow` query publication, symbolic/CFG-wide constant pruning, and compiler frontend binary/external diagnostic serialization.
+
+## Stage 2 Diagnostic Fix Foundation Acceptance
+
+### Scope
+
+- Completed the first ordered `02 §1` diagnostic-structure slice: parser, language-server, LSP, and stdio transport now preserve fixes and `descriptorId`.
+- Added one concrete semantic consumer: definite-assignment read diagnostics publish a placeholder replacement over the exact read range.
+- Affected layers: parser structured diagnostics, semantic-query diagnostics, language-server diagnostic conversion, LSP position conversion, stdio JSON and memory cleanup, C/Node tests, and LSP plan records.
+
+### Baseline
+
+- Parser/LSP RED assertions did not compile because the diagnostic structs had no fix type, `fixes` array, `descriptorId`, or applicability enum.
+- After the in-memory route was implemented, the stdio protocol RED failed with `Expected descriptorId to survive Diagnostic.data serialization`; existing `Diagnostic.data` carried only URI, range, source, and code.
+- The repository contains unrelated active AOT/core/reflection/Rust changes. This acceptance uses focused targets and does not claim full-repository GREEN.
+
+### Test Inventory
+
+- `tests/parser/test_semantic_query.c`: both definite and possible uninitialized reads retain declaration related information and carry one `<value>` fix with `HAS_PLACEHOLDERS` and the read byte range.
+- `tests/language_server/test_lsp_semantic_query_diagnostics.c`: the possible-uninitialized diagnostic preserves `descriptorId=0`, related location, fix title/text/applicability, and translated UTF-16/LSP range `(5,11)..(5,15)`.
+- `tests/language_server/stdio_diagnostic_fix_smoke.js`: parses real JSON-RPC frames and verifies `Diagnostic.data.descriptorId`, one serialized fix, title, `TextEdit`, applicability, and range.
+- Adjacent regression: compiler query diagnostics, ownership diagnostics, union diagnostics, and minimal-open stdio exercise diagnostics with and without fixes and the shared cleanup path.
+- Boundary decision: `<value>` is intentionally `HAS_PLACEHOLDERS`, not `MACHINE_APPLICABLE`; `descriptorId=0` is transported but remains unregistered until diagnostic registry work.
+
+### Tooling Evidence
+
+- WSL GCC 11.4 build directory: `/tmp/zr_vm-lsp-stage2-fixes-archive-gcc`.
+- WSL Clang 14 build directory: `/tmp/zr_vm-lsp-stage2-fixes-archive-clang`.
+- Windows MSVC 19.44.35228 build directory: `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-stage1-msvc-final`, loaded through `Import-VsDevCmdEnvironment.ps1`.
+- Linux focused build target set: `cmake --build <build> -j 2 --target zr_vm_semantic_query_test zr_vm_compiler_semantic_query_diagnostics_test zr_vm_language_server_semantic_query_diagnostics_test zr_vm_language_server_ownership_diagnostics_test zr_vm_language_server_union_pattern_diagnostics_test zr_vm_language_server_stdio`.
+- Each toolchain directly ran the five C executables plus `node tests/language_server/stdio_diagnostic_fix_smoke.js <stdio-server>` and `node tests/language_server/stdio_minimal_open_smoke.js <stdio-server>`.
+- CTest registration check: `ctest --test-dir C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-stage1-msvc-final -R ^language_server_stdio_diagnostic_fix_smoke$ --output-on-failure`.
+
+### Results
+
+- TDD RED: missing in-memory fields/types caused the expected parser/LSP compile failures; missing stdio serialization caused the expected protocol assertion failure.
+- GCC, Clang, and MSVC each passed semantic query 14/14, compiler semantic-query diagnostics 16/16, LSP semantic-query diagnostics 11/11, ownership diagnostics 1/1, and union diagnostics 12/12.
+- GCC, Clang, and MSVC each passed diagnostic-fix stdio and minimal-open stdio smoke tests.
+- MSVC CTest discovered and passed `language_server_stdio_diagnostic_fix_smoke` 1/1.
+- Existing comprehensive `language_server_stdio_smoke` first failed with `ENOENT` because the focused directory had not built `zr_vm_cli.exe`; after building `zr_vm_cli_executable`, the unchanged CTest passed 1/1 and exercised the existing diagnostics/code-action workflow with the extended opaque data payload.
+- The first raw MSVC invocation lacked VSDevCmd and failed to find `stdlib.h`; rerunning in the required environment succeeded and is the only MSVC code result counted.
+- Mounted-source WSL builds were abandoned as infrastructure attempts after slow `VerifyGlobs`; the accepted Linux results came from one archived current-worktree snapshot plus checked-out submodule contents on the Linux filesystem.
+
+### Acceptance Decision
+
+- Accepted for the Stage 2 diagnostic-fix foundation and definite-assignment placeholder-fix slice at `2026-07-18 17:12 +08:00`.
+- Lifecycle is closed across parser, semantic analyzer, LSP, and stdio; diagnostics without fixes remain covered by ownership/union/minimal-open regressions.
+- Remaining Stage 2 work includes diagnostic registry assignment, type-mismatch and undefined-symbol detailed fixes, broader ownership/union fixes, machine-applicable edits, and localization.
+- Full repository GREEN is not claimed.
+
+## Scoped Semantic Analysis Foundation Acceptance
+
+### Scope
+
+- Add a public scoped semantic-analysis entry and cursor-to-declaration root resolver.
+- Keep module symbol visibility while limiting references, type checking, CFG, dataflow, and query diagnostics to the selected callable or accessor.
+- Use the scoped path as the completion semantic-fact fallback when the existing query returns no items.
+- Adapt exact-type acceptance to canonical per-expression facts and preserve cleanup-block transfer in both dataflow directions.
+
+### Baseline And TDD
+
+- Link RED proved `AnalyzeScope` and `FindAnalysisRootAtPosition` were absent; runtime RED then returned false because source ranges were incorrectly assumed to contain all structurally nested nodes.
+- Structural AST membership made the scoped path GREEN for functions, methods, meta functions, tests, lambdas, getters, and setters, including wrapper traversal and invalid-root rejection.
+- Review added a second RED because a property wrapper without an accessor was returned as a root; property and compile-time wrappers now return only an actual nested callable, preserving full-module fallback when no safe root exists.
+- Canonical TypeId removed AST ownership from structural type records, so the exact-type test now validates `SZrSemanticExpressionFact` identity and base type per node.
+- New forward/backward cleanup transfer tests first failed with `Expected 1 Was 0`; the shared dataflow predicate now accepts statement and cleanup blocks.
+- MSVC exposed private cross-DLL union lookup and root-resolver references; both are now declared through exported public query/analyzer APIs.
+
+### Test And Module Inventory
+
+- `tests/language_server/test_lsp_local_semantic_scope_cases.h` covers scoped isolation, cache identity, root discovery, completion fallback, and invalid roots.
+- `tests/language_server/test_semantic_analyzer_exact_type_cases.h` covers exact canonical expression facts without depending on type-record AST ownership.
+- `tests/parser/test_dataflow_engine.c` covers forward and backward cleanup-block transfer in the existing convergence suite.
+- Scoped orchestration and root discovery live in `semantic_analyzer_analysis.c` and `semantic_analyzer_scope.c`; the public parser union lookup is exposed by `semantic_query.h`.
+
+### Tooling And Results
+
+- Frozen Linux source: `/home/hejiahui/zr_vm-lsp-scope-head-overlay-20260719-1512`; GCC and Clang builds use the matching `zr_vm-lsp-scope-build-{gcc,clang}-20260719-1512` directories.
+- Frozen Windows source/build: `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-scope-head-overlay-msvc-src-20260719-1604` and `...-build-20260719-1604`.
+- WSL GCC 11.4, WSL Clang 14, and MSVC 19.44.35228 each passed the same fourteen-target matrix with zero exit failures and zero `Fail -` / `:FAIL:` markers.
+- Stable counted suites include semantic query 16/16, compiler query diagnostics 16/16, parser 75/75, expression facts 28/28, type inference 118/118, dataflow 9/9, and local query 21/21; the semantic analyzer, ownership, union, statement, language-feature, LSP-query, and interface executables also passed.
+- The frozen snapshot used the current core profiling helper as an external baseline overlay because current `HEAD` references its uncommitted enum value. Those unrelated core files are excluded from this acceptance scope.
+
+### Acceptance Decision
+
+- Accepted at `2026-07-19 18:42 +08:00` as the scoped-analysis foundation submilestone for L6 robustness.
+- L6 remains open: module-wide symbol collection, full document-update analysis, declaration incremental parse/invalidation, cancellation, immutable snapshots, provider parity, latency percentiles, and memory budgets are not claimed.
+- Full repository GREEN is not claimed.
+
+## Stage 3 English Diagnostic Message Catalog Foundation Acceptance
+
+### Scope
+
+- Completed the ordered localization message-table item from `02-diagnostics-and-errors.md` section 4 and section 5.
+- Added a public immutable catalog containing title and message-format entries for all 56 current descriptors: 112 unique keys, nonempty English text, and explicit null Simplified Chinese slots.
+- Added count/index/find/resolve APIs; Simplified Chinese resolution falls back to English and unknown keys return null without global locale state.
+- Routed detailed `type_mismatch` message formatting through its descriptor `messageFormatKey` while preserving exact output and a defensive literal fallback.
+
+### Baseline And TDD
+
+- RED modified only the semantic-query test and failed compilation because `zr_vm_parser/diagnostic_messages.h` did not exist.
+- GREEN enumerates every catalog entry, checks uniqueness and 56/56 descriptor coverage, validates empty Chinese slots and English fallback, rejects unknown keys, and fixes the exact type-mismatch title/message format.
+- The semantic-query target increased from 15/15 to 16/16; type inference remains 118/118 and LSP detailed type mismatch remains 14/14.
+
+### Test And Module Inventory
+
+- `diagnostic_messages.c/.h`: 274/26-line immutable English catalog, locale slots, and lookup/fallback API.
+- `diagnostic_builder_type_mismatch.c`: 91-line first production consumer of descriptor message-format lookup.
+- `test_semantic_query.c`: 954-line entry point with one catalog invariant test; it remains below the 1000-line modularization threshold.
+- Static inventory proves 56 registry codes, 56 message pairs, no missing/extra/duplicate pairs, and two generated key shapes per pair.
+
+### Tooling And Results
+
+- WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each pass semantic query 16/16, compiler query diagnostics 16/16, LSP query diagnostics 14/14, semantic analyzer 46/46, ownership 24/24, union diagnostics 12/12, statement parser diagnostics 12/12, language-feature matrix 8/8, parser 75/75, expression facts 28/28, and type inference 118/118.
+- GCC/Clang add no catalog warning. MSVC adds only the existing D9025 `/W3`-to-`/W4` option override and unrelated long-path configuration warnings.
+- The final MSVC overlay restored seventeen existing files with matching SHA-256 hashes and moved twenty-eight added files into the stage audit directory.
+
+### Acceptance Decision
+
+- Accepted for the Stage 3 English diagnostic message catalog foundation at `2026-07-19 03:35 +08:00`.
+- Actual Chinese translations, LSP/client locale selection, migration of remaining builders to catalog formats, cause/suggestion localization, severity configuration, and per-code help remain follow-up work. Full repository GREEN is not claimed.
+
+## Stage 3 Detailed Type Mismatch And Numeric Cast Fix Acceptance
+
+### Scope
+
+- Completed the ordered type-mismatch concrete-diagnostic and fix item from `02-diagnostics-and-errors.md` section 3 and section 5.
+- Added common `BuildTypeMismatchDetailed` output with expected/actual types, implicit-conversion cause, expected-type relation, repair suggestion, and numeric cast fix.
+- Registered `type_mismatch=2011`; the current descriptor table contains 56 unique IDs and codes.
+- Replaced compiler string-template routing and covered language-server variable initializer, assignment, and return expression paths.
+
+### Baseline And TDD
+
+- Initializer RED retained the existing 12 LSP cases and failed only the detailed initializer case: 12/13.
+- Compiler RED retained 117/118 type-inference cases and failed because argument mismatch still used the legacy error string with no structured state.
+- Assignment/return RED retained 13 LSP cases and failed the new combined case: 13/14. Failure-only observations showed return already precise, while assignment had one covering compiler diagnostic plus one precise diagnostic related to the left reference.
+- GREEN uses position-aware declaration lookup and replaces a covering coarse diagnostic with the precise structured result.
+
+### Test And Module Inventory
+
+- `diagnostic_builder_type_mismatch.c`: 77-line shared builder; numeric conversion hints create `<type> <expression>` placeholder edits.
+- `semantic_analyzer_type_mismatch_diagnostics.c/.h`: 139/17-line publication, declaration lookup, compiler-error cleanup, and covering-diagnostic replacement.
+- `test_lsp_type_mismatch_diagnostic_cases.h`: 263-line initializer/assignment/return exact range, relation, message, ID, and fix coverage.
+- `test_lsp_semantic_query_diagnostics.c`: 928-line entry point, now 14/14.
+- `test_type_inference.c`: 118/118, including compiler structured ID/fix and concrete source/binary/native mismatch messages.
+- Boundary: nonnumeric mismatches get no speculative cast edit; overload failures without one resolved expected signature retain their existing specialized messages.
+
+### Tooling And Results
+
+- WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each pass semantic query 15/15, compiler query diagnostics 16/16, LSP query diagnostics 14/14, semantic analyzer 46/46, ownership 24/24, union diagnostics 12/12, statement parser diagnostics 12/12, language-feature matrix 8/8, parser 75/75, expression facts 28/28, and type inference 118/118.
+- The new builder and mismatch publication modules compile without stage-specific GCC/Clang/MSVC warnings. Existing warnings remain in type inference, compiler, symbols, parser, and tests; MSVC also reports D9025 and unrelated long-path configuration warnings.
+- The final MSVC directed overlay restored seventeen existing files with matching SHA-256 hashes and moved twenty-six added files into the temporary final audit directory.
+
+### Acceptance Decision
+
+- Accepted for the Stage 3 detailed type-mismatch and numeric cast-fix slice at `2026-07-19 03:11 +08:00`.
+- Full repository GREEN is not claimed. Undefined-symbol candidate fixes, overload-signature relations, nonnumeric conversions, Chinese translations/client locale selection, remaining builder catalog consumption, and per-code help remain later Stage 3 items.
+
+## Stage 3 Duplicate Type Definition Related Information Acceptance
+
+### Scope
+
+- Completed the ordered duplicate-definition related-information item from `02-diagnostics-and-errors.md` section 2 and section 5.
+- Direct visible type duplicates now use the structured code `duplicate_type`, stable descriptor ID `2010`, explicit cause/suggestion text, and one prior-definition relation when a previous symbol is available.
+- The second class name is the primary exact token range; the first class name is the related exact token range with `Type was first declared here`.
+
+### Baseline And TDD
+
+- Baseline LSP semantic-query diagnostics passed 11/11.
+- RED retained all baseline cases while the duplicate-class case failed because the second-name range and first-definition relation were absent: 11/12.
+- The first GREEN compile attempt incorrectly assumed every type declaration identifier carried a location. Clang rejected those field accesses; the corrected implementation uses class `nameLocation` and keeps existing declaration-node ranges for AST families without that field.
+
+### Test And Module Inventory
+
+- `tests/language_server/test_lsp_duplicate_definition_diagnostic_cases.h`: 81-line focused case for code, ID, message, exact primary range, one related range, URI, and related message.
+- `tests/language_server/test_lsp_semantic_query_diagnostics.c`: 925-line entry point, now 12/12.
+- `semantic_analyzer_duplicate_diagnostics.c/.h`: 68/13-line structured construction and language-server publication path.
+- `diagnostic_registry.c/.h`: current 179/36-line, 55-entry registry with `duplicate_type=2010`; parser registry invariants remain 15/15.
+- Boundary: struct/enum/union/interface primary locations retain current declaration-node granularity, and an imported destructured type alias without a previous symbol-table entry does not fabricate related information.
+
+### Tooling And Results
+
+- WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each pass semantic query 15/15, compiler query diagnostics 16/16, LSP query diagnostics 12/12, semantic analyzer 46/46, ownership 24/24, union diagnostics 12/12, statement parser diagnostics 12/12, language-feature matrix 8/8, parser 75/75, and expression facts 28/28.
+- The existing language-feature matrix still passes the imported `Pair` collision path, preserving its diagnostic message while the direct-symbol relation is added.
+- GCC/Clang add no warning from the new duplicate module. MSVC reports only the existing D9025 option override.
+- The MSVC directed overlay restored thirteen existing files with matching SHA-256 hashes and moved twenty-two added files into the temporary audit directory.
+
+### Acceptance Decision
+
+- Accepted for the Stage 3 duplicate type definition related-information slice at `2026-07-19 02:02 +08:00`.
+- Full repository GREEN is not claimed. Type-mismatch concrete details/fixes, undefined-symbol suggestions, finer non-class type-name ranges, imported-alias provenance, localization, and per-code help remain later Stage 3 items.
+
+## Stage 3 Diagnostic Descriptor Registry Foundation Acceptance
+
+### Scope
+
+- Implemented `02 §4` and the second ordered `02 §5` item with public descriptor metadata and a static registry for all fifty-four currently emitted parser/semantic-query diagnostic codes.
+- Assigned stable category ranges: syntax `1001..1034`, semantic/type/style `2001..2009`, flow `3001..3006`, and ownership `4001..4005`.
+- Centralized descriptor assignment in `ZrParser_DiagnosticBuilder_Build`; registered diagnostics receive nonzero IDs while unknown extension codes continue with ID `0`.
+- Preserved the existing parser -> semantic analyzer -> LSP -> stdio transport and proved `possibly_uninitialized_read` ID `3003` reaches `Diagnostic.data`.
+
+### Baseline And TDD
+
+- RED: isolated Clang compilation stopped at the new `zr_vm_parser/diagnostic_registry.h` include because the registry API did not exist.
+- GREEN: semantic query expanded from 14 to 15 tests and validates registry count, unique IDs/codes, code/ID round trips, metadata, stable IDs `3003`/`4001`, and unknown-code fallback.
+- Protocol RED: the existing stdio smoke still required the historical placeholder `descriptorId === 0`; after registry assignment it failed at that stale assertion.
+- Protocol GREEN: the smoke now requires `descriptorId === 3003` and passes against the real MSVC stdio server.
+
+### Test And Module Inventory
+
+- `zr_vm_parser/include/zr_vm_parser/diagnostic_registry.h`: 36-line public descriptor/category/lookup API.
+- `zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_registry.c`: 177-line, 54-entry immutable registry with no duplicate ID or code.
+- `zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c`: one centralized ID assignment; remains 999 lines.
+- `tests/parser/test_semantic_query.c`: 15 tests, including complete registry invariants and unknown-code degradation.
+- `tests/language_server/test_lsp_semantic_query_diagnostics.c` and `stdio_diagnostic_fix_smoke.js`: nonzero in-memory/LSP transport and exact JSON ID `3003`.
+
+### Tooling And Results
+
+- WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each pass semantic query 15/15, compiler query diagnostics 16/16, LSP query diagnostics 11/11, semantic analyzer 46/46, ownership 24/24, union diagnostics 12/12, statement parser diagnostics 12/12, parser 75/75, and expression facts 28/28.
+- MSVC additionally builds `zr_vm_language_server_stdio` and passes `node tests/language_server/stdio_diagnostic_fix_smoke.js <stdio-server>`.
+- Registry/builder sources add no stage-specific GCC/Clang/MSVC warnings; MSVC reports only the existing D9025 option override. Existing unrelated Clang/native/LSP and MSVC debug/CLI warnings are not counted as registry warnings.
+- MSVC directed coverage restored twelve existing source files with matching SHA-256 hashes and moved nineteen added overlay files into the temporary audit directory.
+
+### Acceptance Decision
+
+- Accepted for the Stage 3 diagnostic descriptor registry foundation at `2026-07-19 01:16 +08:00`.
+- Full repository GREEN is not claimed. Severity overrides, localized message tables, per-code help documentation, and broader fixes remain later Stage 3 items.
+
+## Stage 2 Weak Receiver Possible-Release Ownership Flow Acceptance
+
+### Scope
+
+- Completed release-sensitive ownership flow for weak primary receivers whose member chain contains a function call, including `watcher.ping()`.
+- Receiver calls before a known release do not gain a flow diagnostic; calls after release emit or enrich `weak_value_requires_upgrade` with matching owner-region and related-release evidence.
+- Branch-rebound weak receivers reuse the owner-set lattice and retain a possible replacement owner across CFG join.
+- `%upgrade(watcher)` remains legal. General weak member reads and unconditional static receiver diagnostics are outside this slice.
+
+### Baseline And TDD
+
+- Baseline ownership diagnostics passed 22/22.
+- RED retained all baseline cases while straight-line and branch-rebound weak receiver release cases failed: 22/24.
+- GREEN passes 24/24, including a no-diagnostic pre-release receiver boundary and exact related locations for straight-line and replacement-owner releases.
+
+### Test And Module Inventory
+
+- `tests/language_server/test_ownership_diagnostics.c` runs twenty-four cases and is 843 lines.
+- `tests/language_server/test_ownership_diagnostics_weak_receiver_cases.h` is a separate 146-line group with straight-line and owner-set receiver cases.
+- Weak argument/receiver call-shape classification remains isolated in `dataflow_ownership_moves.c/.h` at 495/15 lines.
+
+### Tooling And Results
+
+- Accepted GCC source/build: `/tmp/zr_vm-lsp-stage2-regions-red-src-20260718-1` and `/tmp/zr_vm-lsp-stage2-regions-red-gcc`.
+- Clang 14 and MSVC 19.44.35228 used directed 25-file overlays. Each restored eight original files with matching SHA-256 hashes and removed or audited seventeen added files afterward.
+- GCC, Clang, and MSVC each passed ownership 24/24, semantic query 14/14, compiler semantic-query diagnostics 16/16, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, union diagnostics 12/12, and expression facts 28/28.
+- GCC/Clang reported no source warnings from this slice; MSVC reported only the existing D9025 warning.
+
+### Acceptance Decision
+
+- Accepted for the Stage 2 weak receiver possible-release ownership slice at `2026-07-19 00:15 +08:00`.
+- Remaining ownership work includes using guard/else CFG paths, abrupt cleanup edges, general weak member policy, and later diagnostic registry/fix/localization items.
+- Full repository GREEN is not claimed.
+
+## Stage 2 Block-Scoped Using Body CFG Ownership Flow Acceptance
+
+### Scope
+
+- Completed independent CFG ownership transfer for normal-fallthrough `using(resource) { body }` statements with `ZR_USING_GUARD_DROP`.
+- Body statements are built recursively before a normal-exit block anchored to the using AST; ownership release remains attached to the resource range at that exit block.
+- Body-local borrow/loan/weak rebinds and unique moves now affect later body and post-using reads.
+- Pattern/plugin guards, using `else`, and abrupt cleanup edges remain outside this slice.
+
+### Baseline And TDD
+
+- Baseline ownership diagnostics passed 20/20.
+- RED retained all baseline cases while using-body borrowed rebinding kept the pre-body owner and using-body unique move was not observed: 20/22.
+- GREEN passes 22/22. The rebind case requires the replacement owner's release location; the move case requires the preceding body call as related information.
+
+### Test And Module Inventory
+
+- `tests/language_server/test_ownership_diagnostics.c` runs twenty-two cases and is 838 lines.
+- `tests/language_server/test_ownership_diagnostics_using_body_cases.h` is a separate 133-line group; the existing region and owner-set groups remain 741/181 lines.
+- Shared CFG dispatch remains in the 902-line `cfg.c`, declarations in the 217-line `cfg_internal.h`, and using construction is isolated in the 57-line `cfg_using.c`.
+
+### Tooling And Results
+
+- Accepted GCC source/build: `/tmp/zr_vm-lsp-stage2-regions-red-src-20260718-1` and `/tmp/zr_vm-lsp-stage2-regions-red-gcc`.
+- Clang 14 and MSVC 19.44.35228 used directed 24-file overlays. Each restored eight original files with matching SHA-256 hashes and removed or audited sixteen added files afterward.
+- GCC, Clang, and MSVC each passed ownership 22/22; CFG reachability 29/29, union exhaustiveness 2/2, dataflow 7/7, constant conditions 22/22, finally abrupt 7/7, try/catch edges 11/11, and switch constants 4/4; semantic query 14/14, compiler semantic-query diagnostics 16/16, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, union diagnostics 12/12, and expression facts 28/28.
+- GCC/Clang reported no source warnings from this slice; MSVC reported only the existing D9025 warning. Existing CMake long-path warnings reference unrelated targets.
+
+### Acceptance Decision
+
+- Accepted for the Stage 2 block-scoped using-body CFG ownership slice at `2026-07-18 23:50 +08:00`.
+- Remaining ownership work includes guard/else CFG paths, abrupt cleanup edges, weak receiver flow, and later diagnostic registry/fix/localization items.
+- Full repository GREEN is not claimed.
+
+## Stage 2 Branch-Joined Borrow/Loan/Weak Owner-Set Lattice Acceptance
+
+### Scope
+
+- Completed different-owner CFG joins for borrowed, loaned, and weak aliases under the Stage 2 `BORROWED(n)` model.
+- Ownership-flow slots carry immutable owner-set pool IDs. Direct recognized rebinds install singleton sets; CFG joins intern sorted unions; empty and unknown are distinct lattice elements.
+- Reads diagnose release of any known possible owner. Multiple releases select the earliest source location and retain the matching owner index for ERROR fact region metadata.
+- Releases outside the joined owner set do not create diagnostics.
+
+### Baseline And TDD
+
+- Baseline ownership diagnostics passed 16/16.
+- RED passed the sixteen baseline cases plus the unrelated-release boundary, while borrow, loan, and weak branch-owner joins failed: 17/20.
+- GREEN passes 20/20. The borrow case releases both possible owners and requires the earlier release; loan and weak cases require the branch-local replacement owner to survive the join.
+
+### Test And Module Inventory
+
+- `tests/language_server/test_ownership_diagnostics.c` runs twenty cases and is 833 lines.
+- `tests/language_server/test_ownership_diagnostics_region_cases.h` remains 741 lines; `test_ownership_diagnostics_owner_set_cases.h` is a separate 181-line group with four owner-set cases.
+- `dataflow_ownership.c` is 759 lines, immutable owner-set interning/union is isolated in `dataflow_ownership_owner_sets.c/.h` at 303/41 lines, and observation publication remains 292/26 lines.
+
+### Tooling And Results
+
+- Accepted GCC source/build: `/tmp/zr_vm-lsp-stage2-regions-red-src-20260718-1` and `/tmp/zr_vm-lsp-stage2-regions-red-gcc`.
+- Clang 14 and MSVC 19.44.35228 reused the isolated move snapshots through directed 20-file overlays. Each restored six original files with matching SHA-256 hashes and removed or audited fourteen added files afterward.
+- GCC, Clang, and MSVC each passed ownership diagnostics 20/20, semantic query 14/14, compiler semantic-query diagnostics 16/16, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, union diagnostics 12/12, and expression fact emission 28/28.
+- GCC/Clang reported no source warnings from this slice; MSVC reported only the existing D9025 warning. Existing CMake long-path warnings are unrelated to the built focused targets.
+
+### Acceptance Decision
+
+- Accepted for the Stage 2 branch-joined borrow/loan/weak owner-set lattice slice at `2026-07-18 23:20 +08:00`.
+- Remaining ownership work includes independent using-body CFG flow, weak receiver flow, and later diagnostic registry/fix/localization items.
+- Full repository GREEN is not claimed.
+
+## Stage 2 Straight-Line Borrow/Loan/Weak Assignment Rebinding Acceptance
+
+### Scope
+
+- Completed straight-line assignment rebinding for borrowed, loaned, and weak aliases under the Stage 2 `BORROWED(n)` ownership-flow model.
+- Owner identity is now carried in each dataflow slot. Recognized `%borrow/%loan/%weak` assignments replace it; unrecognized ownership writes and different-owner joins yield unknown.
+- Assignment construct facts keep the alias symbol/region and publish the replacement owner region. Violation facts retain the owner active at the read.
+- Different-owner branch joins require an owner-set lattice and are explicitly outside this slice.
+
+### Baseline And TDD
+
+- Baseline ownership diagnostics passed 13/13.
+- RED retained all baseline cases while borrow, loan, and weak assignment-rebind cases failed because the alias remained tied to its declaration owner and assignment construct facts had no alias/owner region binding.
+- GREEN passes 16/16: releasing owner A after rebinding is ignored; releasing owner B produces the diagnostic and release related location.
+
+### Test Inventory
+
+- `tests/language_server/test_ownership_diagnostics.c` runs sixteen cases and is 824 lines.
+- `tests/language_server/test_ownership_diagnostics_region_cases.h` is 741 lines and owns nine region/release/using/weak/rebind cases.
+- `dataflow_ownership.c` is 647 lines after observed-fact publication and observation-array lifetime moved into `dataflow_ownership_observations.c/.h` at 292/26 lines; region recognition remains 201/25 lines.
+- Borrow and loan cases assert no diagnostic after the old owner release, one diagnostic after the replacement owner release, stable alias symbol/region, distinct owner regions, and the replacement release location.
+- The weak case asserts exactly two static weak diagnostics, no related item before replacement-owner release, one related item afterward, replacement-owner fact metadata, and legal upgrade behavior.
+
+### Tooling And Results
+
+- Accepted GCC source/build: `/tmp/zr_vm-lsp-stage2-regions-red-src-20260718-1` and `/tmp/zr_vm-lsp-stage2-regions-red-gcc`.
+- Clang 14 and MSVC 19.44.35228 reused the isolated move snapshots through directed overlays. Each restored six original files with matching SHA-256 hashes and removed or audited eleven added files afterward.
+- GCC, Clang, and MSVC each passed ownership diagnostics 16/16, semantic query 14/14, compiler semantic-query diagnostics 16/16, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, union diagnostics 12/12, and expression fact emission 28/28.
+- GCC/Clang reported no source warnings from this slice; MSVC reported only the existing D9025 warning.
+
+### Acceptance Decision
+
+- Accepted for the Stage 2 straight-line borrow/loan/weak assignment-rebinding slice at `2026-07-18 22:30 +08:00`.
+- Remaining ownership work includes different-owner branch owner sets, independent using-body flow, weak receiver flow, and later diagnostic registry/fix/localization items.
+- Full repository GREEN is not claimed.
+
+## Stage 2 Using Scope-Exit And Weak Alias Ownership Flow Acceptance
+
+### Scope
+
+- Completed the bounded `using` scope-exit and weak-alias items from `01 §4.2`, `02 §2/§3`, and blueprint Stage 2.
+- A block-scoped using releases tracked unique/shared/borrowed/loaned resources after the whole statement while excluding body reads from the exit transfer. It publishes a stable RELEASE fact; weak resources are not released.
+- `%weak(owner)` declarations carry alias and owner regions. After a possible owner release, only a direct weak argument matched to a resolved `%borrowed` parameter receives flow release evidence; `%upgrade(weak)` and null checks remain legal.
+- The existing `weak_value_requires_upgrade` analyzer diagnostic is retained and receives one `Owner was released here` related item through semantic-query/LSP duplicate merging.
+- This slice does not claim independent ownership transitions inside the using body CFG, general borrow/loan/weak rebinding, or weak receiver flow.
+
+### Baseline And TDD
+
+- Baseline ownership diagnostics passed 10/10 before the new tests were added.
+- RED kept those ten cases green while using-owner, using-borrowed-alias, and possible-release weak cases failed at RELEASE state/fact and release-evidence assertions.
+- GREEN debugging exposed two semantic boundaries: analyzer passes emitted multiple symbol IDs for one identifier, and call facts could anchor on the callee property rather than the enclosing primary expression. Stable minimum-symbol binding and exact primary/property call anchors fixed those boundaries without range-level nested-call matching.
+- The final weak case asserts one diagnostic only, both region IDs, stable symbol identity, the release node, and legal upgrade/null-check behavior.
+
+### Test Inventory
+
+- `tests/language_server/test_ownership_diagnostics.c` runs thirteen cases and remains 818 lines.
+- `tests/language_server/test_ownership_diagnostics_region_cases.h` is 471 lines and owns six region/release/using/weak cases.
+- Using-owner coverage asserts no body diagnostic, a post-using borrow diagnostic, one release related location, and a shared RELEASE fact with symbol/region metadata.
+- Using-borrowed coverage asserts the alias remains readable in the body and becomes invalid after scope exit with a borrowed RELEASE fact.
+- Weak coverage asserts branch-join release evidence is merged into the existing diagnostic and that upgrade/null checks do not add weak diagnostics.
+
+### Tooling And Results
+
+- Accepted GCC source/build: `/tmp/zr_vm-lsp-stage2-regions-red-src-20260718-1` and `/tmp/zr_vm-lsp-stage2-regions-red-gcc`.
+- Accepted Clang validation reused `/tmp/zr_vm-lsp-stage2-move-clang` with a temporary source overlay. Six original files were restored with SHA-256 `OK`; nine added files were removed from the source.
+- Accepted MSVC validation reused `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-stage2-move-msvc`. Six original files were restored with matching SHA-256 hashes; nine added files were moved to the restore audit directory.
+- WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each passed ownership diagnostics 13/13, semantic query 14/14, compiler semantic-query diagnostics 16/16, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, union diagnostics 12/12, and expression fact emission 28/28.
+- The 1,112-line `semantic_query.c` was split after GREEN; final sizes are 976 lines plus 131/10 lines for the ownership diagnostics module. All three compilers rebuilt and passed after the split.
+- GCC/Clang reported no source warnings from this slice. MSVC reported only the existing command-line `/W3` to `/W4` override warning; unrelated CMake object-path warnings did not affect focused targets.
+
+### Acceptance Decision
+
+- Accepted for the Stage 2 using scope-exit and weak-alias ownership-flow slice at `2026-07-18 22:05 +08:00`.
+- Remaining ownership work includes independent using-body flow, general borrow/loan/weak rebinding, weak receiver flow, and later diagnostic registry/fix/localization items.
+- Full repository GREEN is not claimed.
+
+## Stage 2 Borrow/Loan Region Facts And Explicit-Release Ownership Flow Acceptance
+
+### Scope
+
+- Completed the bounded `BORROWED` / `RELEASED` transition path from `01 §4.2` and blueprint Stage 2.
+- Ownership-qualified symbols now publish stable declaration regions. Direct local `%borrow` / `%loan` initializers bind an alias region to the resolved owner region; unbound constructs still receive a temporary region.
+- Direct `%release(owner)` transitions the owner to `RELEASED`. A later borrowed/loaned alias read reports `borrow_escape` / `loan_escape`, with both region IDs on the ERROR fact and `Owner was released here` related information.
+- CFG joins preserve a possible branch-local release. This slice does not claim `using` scope-exit release, weak alias flow, or general borrow/loan reassignment.
+
+### Baseline And TDD
+
+- RED retained all seven existing escape/move cases. The new borrow/loan region assertion failed because construct facts had invalid symbol/region IDs; straight-line and branch-release cases failed because no `RELEASED` state reached the later alias read.
+- The first GREEN run passed both release diagnostics and left only the region query test failing. Diagnosis showed the test queried the `%` prefix, then the ownership qualifier occurrence, while ordinary construct fact ranges covered the target; querying the actual target token verified the populated facts.
+- The control-flow implementation uses state union at joins and carries the deterministic earliest release reference, matching the existing move-path behavior.
+
+### Test Inventory
+
+- `tests/language_server/test_ownership_diagnostics.c` now runs ten cases and returns nonzero on failure.
+- The final test split keeps that entry at 812 lines and places the three region/release cases in the 227-line `test_ownership_diagnostics_region_cases.h` include module.
+- Region coverage asserts BORROW/MOVE fact kind, borrowed/loaned qualifier, nonzero distinct alias symbols, nonzero alias and owner regions, and distinct alias/owner regions.
+- Straight-line coverage asserts `borrow_escape`, error severity, one release related location, borrowed ERROR fact, both region IDs, stable symbol identity, violation state, and a non-null release `relatedNode`.
+- LSP branch coverage asserts the post-join read range and zero-based branch-local release related range.
+- Adjacent matrices include expression-fact emission because ownership declaration facts and construct-region updates share that fact layer.
+
+### Tooling And Results
+
+- Accepted GCC source/build: `/tmp/zr_vm-lsp-stage2-regions-red-src-20260718-1` and `/tmp/zr_vm-lsp-stage2-regions-red-gcc`.
+- Accepted Clang validation reused `/tmp/zr_vm-lsp-stage2-move-clang` after a temporary directed source overlay. The original three move-snapshot files were restored with all SHA-256 checks `OK`, and the six temporary new modules were removed from that source.
+- Accepted MSVC validation reused `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-stage2-move-msvc`. The source snapshot's three original files were restored with matching SHA-256 hashes; the six temporary new modules were moved to the restore audit directory and no longer remain in the source.
+- WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each passed ownership diagnostics 10/10, semantic query 14/14, compiler semantic-query diagnostics 16/16, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, union diagnostics 12/12, and expression fact emission 28/28.
+- New production modules compiled without source warnings under GCC/Clang; MSVC emitted only the existing command-line `/W3` to `/W4` override warning.
+- After the behavior-preserving test split, GCC, Clang, and MSVC each rebuilt and reran the final ownership target at 10/10.
+- A fresh Clang build was stopped as infrastructure-only evidence after repeated 240-second tool limits under concurrent WSL AOT disk load; the completed accepted Clang matrix above came from the prebuilt isolated dependency graph.
+
+### Acceptance Decision
+
+- Accepted for the Stage 2 borrow/loan region facts and explicit-release ownership-flow slice at `2026-07-18 20:55 +08:00`.
+- Remaining ownership work includes `using` cleanup-region exit, weak alias flow, general borrow/loan rebinding, and later diagnostic registry/fix/localization items.
+- Full repository GREEN is not claimed.
+
+## Stage 2 Unique Move And Use-After-Move Ownership Flow Acceptance
+
+### Scope
+
+- Completed the `%unique` `OWNED -> MOVED` and later-read diagnostic item from `01 §4`, `02 §2/§3`, and blueprint Stage 2.
+- Direct assignment to another variable and direct arguments to resolved `VALUE` parameters consume a unique symbol. `%ref`, `%in`, and `%out` arguments do not.
+- CFG branch joins preserve a possible moved path and its deterministic earliest move point.
+- MOVE and ERROR ownership facts feed one shared compiler/LSP semantic-query diagnostic with cause, suggestion, and `Value was moved here` related information.
+
+### Baseline And TDD
+
+- RED kept the existing three borrow/loan cases GREEN while the new straight-line by-value call, branch-join, and assignment-move checks failed for missing `use_after_move`; the `%ref` non-move boundary passed.
+- The first GREEN run made assignment flow pass but left call flow RED. Diagnosis showed that the enclosing parser call range did not cover the argument reference; direct AST argument identity is now accepted as statement membership.
+- Analyzer reference duplication was also bounded during transfer and fact publication so one lexical move does not become a synthetic second read or duplicate query diagnostic.
+
+### Test Inventory
+
+- `tests/language_server/test_ownership_diagnostics.c` now runs seven cases and returns nonzero on any failure.
+- Straight-line call assertions cover `use_after_move`, error severity, cause, one related location, exact move-token range, MOVE/ERROR kinds, unique qualifier, stable nonzero symbol identity, violation state, and `relatedNode == moveFact.node`.
+- Branch coverage checks possible-path join behavior and zero-based LSP ranges `(4,24)..(4,32)` for the branch-local move and `(5,4)` for the later read.
+- Assignment coverage checks another-variable initialization as a move. The `%ref` negative boundary checks that neither a MOVE fact nor later diagnostic is produced.
+- Adjacent targets cover parser query, compiler query publication, general semantic analysis, LSP query publication, and union diagnostics.
+
+### Tooling And Results
+
+- Accepted Linux source snapshot: `/tmp/zr_vm-lsp-stage2-move-src-20260718-1`; GCC build: `/tmp/zr_vm-lsp-stage2-move-gcc`; Clang build: `/tmp/zr_vm-lsp-stage2-move-clang`.
+- Accepted Windows source/build snapshots: `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-stage2-move-msvc-src2` and `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-stage2-move-msvc`.
+- WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each passed ownership diagnostics 7/7, semantic query 14/14, compiler semantic-query diagnostics 16/16, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, and union diagnostics 12/12.
+- Forced GCC/Clang recompilation of `dataflow_ownership.c`, `dataflow_ownership_moves.c`, and `diagnostic_builder_ownership.c` emitted no warnings from those files.
+- The current worktree's bulk MSVC adjacent build was separately blocked by an unrelated core reflection unresolved symbol; rebuilding the identical accepted source snapshot under MSVC passed the full focused matrix.
+
+### Acceptance Decision
+
+- Accepted for the Stage 2 unique move and use-after-move ownership-flow slice at `2026-07-18 19:18 +08:00`.
+- Remaining ownership work includes `BORROWED`/`RELEASED` region transitions, weak/release flow, and later diagnostic registry/fix/localization items.
+- Full repository GREEN is not claimed.
+
+## Stage 2 Borrow And Loan Escape Related-Information Acceptance
+
+### Scope
+
+- Completed the `01 §4` and `02 §2/§3` borrow/loan escape related-information item.
+- `borrow_escape` and `loan_escape` now publish the ownership source token plus the source lifetime end while retaining the escaping return expression as the primary location.
+- Ownership facts now link the violation construct to its actual source through `relatedNode`.
+
+### Baseline And TDD
+
+- RED: the focused MSVC target compiled, then all three new checks failed because analyzer and LSP diagnostics had empty `relatedInformation` arrays.
+- GREEN implementation resolves the construct target symbol at the use position, uses its scope end as a zero-width lifetime marker, and falls back to the enclosing callable body/end when scope metadata is unavailable.
+- The first GREEN link attempt used a stale generated glob and failed with an unresolved new helper symbol; explicit CMake reconfigure added the new source, after which the unchanged implementation linked and passed.
+
+### Test Inventory
+
+- `tests/language_server/test_ownership_diagnostics.c` now exits nonzero on failure and contains three focused cases: loan escape analyzer, borrow escape analyzer, and loan escape LSP translation.
+- Analyzer assertions cover diagnostic code/severity/cause/suggestion, two related messages, exact target-token range, zero-width lifetime-end range, ownership qualifier, violation state, and a distinct source `relatedNode`.
+- LSP assertions cover exact zero-based source range `(3,17)..(3,25)` and a zero-width lifetime marker on line 4.
+- Adjacent regression targets cover general semantic analyzer return/type checking, semantic-query diagnostics, and union diagnostics.
+
+### Tooling And Results
+
+- Accepted Linux source snapshot: `/tmp/zr_vm-lsp-stage2-ownership-src-20260718-1`, based on the previously accepted Stage 2 snapshot with the four ownership-delta files overlaid.
+- GCC 11.4 build: `/tmp/zr_vm-lsp-stage2-ownership-gcc`; Clang 14 build: `/tmp/zr_vm-lsp-stage2-ownership-clang`.
+- MSVC 19.44.35228 build: `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-stage1-msvc-final`, configured and built through the Visual Studio environment wrapper.
+- GCC, Clang, and MSVC each passed ownership diagnostics 3/3, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, and union diagnostics 12/12.
+- Existing stdio JSON-RPC coverage already asserts serialized `Diagnostic.relatedInformation`; this slice adds ownership-specific analyzer/LSP content and range coverage rather than duplicating the serializer test.
+
+### Acceptance Decision
+
+- Accepted for the Stage 2 borrow and loan escape related-information chain at `2026-07-18 18:05 +08:00`.
+- Remaining ownership-flow work includes use-after-move state/facts and move-point related information, plus later diagnostic registry/fix/localization items.
+- Full repository GREEN is not claimed.

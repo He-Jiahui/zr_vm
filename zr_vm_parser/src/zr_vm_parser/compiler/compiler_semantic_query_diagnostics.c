@@ -25,6 +25,10 @@ TZrBool ZrParser_Compiler_PublishSemanticQueryDiagnostics(SZrCompilerState *cs) 
         !ZrParser_SemanticFacts_ResolveControlFlowReachingDefinitions(cs->semanticContext, cs->scriptAst)) {
         return ZR_FALSE;
     }
+    if (cs->scriptAst != ZR_NULL &&
+        !ZrParser_SemanticFacts_ResolveControlFlowOwnership(cs->semanticContext, cs->scriptAst)) {
+        return ZR_FALSE;
+    }
 
     ZrParser_SemanticQueryScope_Module(&scope);
     return ZrParser_SemanticQuery_Diagnostics(cs->semanticContext, &scope, &diagnostics);

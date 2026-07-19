@@ -117,25 +117,6 @@ static const SZrSemanticOverloadSetRecord *find_overload_set_record(SZrSemanticC
     return ZR_NULL;
 }
 
-static const SZrSemanticTypeRecord *find_type_record_for_ast_node(SZrSemanticContext *context,
-                                                                  SZrAstNode *node) {
-    TZrSize i;
-
-    if (context == ZR_NULL || node == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (i = 0; i < context->types.length; i++) {
-        SZrSemanticTypeRecord *record =
-            (SZrSemanticTypeRecord *)ZrCore_Array_Get(&context->types, i);
-        if (record != ZR_NULL && record->astNode == node) {
-            return record;
-        }
-    }
-
-    return ZR_NULL;
-}
-
 static TZrBool cleanup_plan_targets_symbol(const SZrSemanticContext *context,
                                           TZrSymbolId symbolId) {
     TZrSize i;
@@ -767,113 +748,7 @@ static void test_semantic_analyzer_avoids_false_numeric_initializer_type_mismatc
     TEST_PASS(timer, "Semantic Analyzer Avoids False Numeric Initializer Type Mismatch Diagnostics");
 }
 
-static void test_semantic_analyzer_expression_metadata_records_exact_types(SZrState *state) {
-    SZrTestTimer timer;
-    TEST_START("Semantic Analyzer Expression Metadata Records Exact Types");
-
-    TEST_INFO("Expression exact type metadata",
-              "Intermediate numeric expressions should be recorded in semantic metadata with exact inferred types instead of falling back to a weak object");
-
-    {
-        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
-        const TZrChar *testCode =
-            "compute(left: int, right: int) {\n"
-            "    var sum: int = left + right;\n"
-            "    var widened: float = left + 0.0;\n"
-            "    return widened;\n"
-            "}\n";
-        SZrString *sourceName =
-            ZrCore_String_Create(state, "expression_hover_exact_type_test.zr", 35);
-        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        SZrAstNode *computeNode;
-        SZrAstNode *sumExpr;
-        SZrAstNode *widenedExpr;
-        const SZrSemanticTypeRecord *sumTypeRecord;
-        const SZrSemanticTypeRecord *widenedTypeRecord;
-
-        if (analyzer == ZR_NULL) {
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Expression Metadata Records Exact Types",
-                      "Failed to create semantic analyzer");
-            return;
-        }
-
-        if (ast == ZR_NULL) {
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Expression Metadata Records Exact Types",
-                      "Failed to parse test code");
-            return;
-        }
-
-        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Expression Metadata Records Exact Types",
-                      "Failed to analyze AST");
-            return;
-        }
-
-        computeNode = ast != ZR_NULL &&
-                              ast->type == ZR_AST_SCRIPT &&
-                              ast->data.script.statements != ZR_NULL &&
-                              ast->data.script.statements->count > 0
-                          ? ast->data.script.statements->nodes[0]
-                          : ZR_NULL;
-        sumExpr = computeNode != ZR_NULL &&
-                          computeNode->type == ZR_AST_FUNCTION_DECLARATION &&
-                          computeNode->data.functionDeclaration.body != ZR_NULL &&
-                          computeNode->data.functionDeclaration.body->type == ZR_AST_BLOCK &&
-                          computeNode->data.functionDeclaration.body->data.block.body != ZR_NULL &&
-                          computeNode->data.functionDeclaration.body->data.block.body->count > 0 &&
-                          computeNode->data.functionDeclaration.body->data.block.body->nodes[0] != ZR_NULL &&
-                          computeNode->data.functionDeclaration.body->data.block.body->nodes[0]->type ==
-                              ZR_AST_VARIABLE_DECLARATION
-                      ? computeNode->data.functionDeclaration.body->data.block.body->nodes[0]
-                            ->data.variableDeclaration.value
-                      : ZR_NULL;
-        widenedExpr = computeNode != ZR_NULL &&
-                              computeNode->type == ZR_AST_FUNCTION_DECLARATION &&
-                              computeNode->data.functionDeclaration.body != ZR_NULL &&
-                              computeNode->data.functionDeclaration.body->type == ZR_AST_BLOCK &&
-                              computeNode->data.functionDeclaration.body->data.block.body != ZR_NULL &&
-                              computeNode->data.functionDeclaration.body->data.block.body->count > 1 &&
-                              computeNode->data.functionDeclaration.body->data.block.body->nodes[1] != ZR_NULL &&
-                              computeNode->data.functionDeclaration.body->data.block.body->nodes[1]->type ==
-                                  ZR_AST_VARIABLE_DECLARATION
-                          ? computeNode->data.functionDeclaration.body->data.block.body->nodes[1]
-                                ->data.variableDeclaration.value
-                          : ZR_NULL;
-        sumTypeRecord = find_type_record_for_ast_node(analyzer->semanticContext, sumExpr);
-        widenedTypeRecord = find_type_record_for_ast_node(analyzer->semanticContext, widenedExpr);
-
-        if (sumTypeRecord == ZR_NULL ||
-            !ZR_VALUE_IS_TYPE_INT(sumTypeRecord->inferredType.baseType)) {
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Expression Metadata Records Exact Types",
-                      "Expected semantic metadata to record an exact int type for left + right");
-            return;
-        }
-
-        if (widenedTypeRecord == ZR_NULL ||
-            !ZR_VALUE_IS_TYPE_FLOAT(widenedTypeRecord->inferredType.baseType)) {
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Expression Metadata Records Exact Types",
-                      "Expected semantic metadata to record an exact float type for left + 0.0");
-            return;
-        }
-
-        ZrParser_Ast_Free(state, ast);
-        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-    }
-
-    TEST_PASS(timer, "Semantic Analyzer Expression Metadata Records Exact Types");
-}
+#include "test_semantic_analyzer_exact_type_cases.h"
 
 static void test_semantic_analyzer_unannotated_function_records_exact_return_type(SZrState *state) {
     SZrTestTimer timer;

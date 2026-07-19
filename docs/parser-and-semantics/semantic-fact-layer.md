@@ -1,15 +1,39 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder_fixes.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder_type_mismatch.c
+  - zr_vm_language_server/include/zr_vm_language_server/lsp_interface.h
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_diagnostic_fixes.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_diagnostic_fixes.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_diagnostic_fixes.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_duplicate_diagnostics.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_duplicate_diagnostics.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_type_mismatch_diagnostics.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_type_mismatch_diagnostics.h
+  - zr_vm_language_server/stdio/stdio_diagnostic_json.c
+  - zr_vm_language_server/stdio/stdio_lsp_memory.c
+  - tests/language_server/stdio_diagnostic_fix_smoke.js
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_query.h
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
+  - zr_vm_parser/include/zr_vm_parser/diagnostic_messages.h
+  - zr_vm_parser/include/zr_vm_parser/diagnostic_registry.h
   - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/include/zr_vm_parser/type_inference.h
   - zr_vm_parser/include/zr_vm_parser/parser.h
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/src/zr_vm_parser/parser.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_union.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_union_switch_validation.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_union_switch_validation.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/cfg_control_flow.c
+  - tests/parser/test_cfg_union_exhaustiveness.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_binding_metadata.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_executor.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c
@@ -29,9 +53,32 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/semantic.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_ownership_diagnostics.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_ownership_diagnostics.h
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_messages.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_registry.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder_ownership.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/cfg.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/cfg_internal.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/cfg_using.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_moves.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_moves.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_observations.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_observations.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_owner_sets.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_owner_sets.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_regions.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_regions.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_statements.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_statements.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_symbols.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_symbols.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_bitwise_identity.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_bitwise_identity_supported_count.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_bitwise_identity_supported_count_all_ones_side.c
@@ -110,6 +157,7 @@ related_code:
   - zr_vm_language_server/stdio/stdio_inline_value_scan.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_hover_text.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_hover_text.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_expression_text.h
@@ -117,7 +165,9 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_numeric_range_text.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_numeric_range_text.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_internal.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_scope.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_constant_condition.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_reachability.c
@@ -126,6 +176,10 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_ownership_diagnostics.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_ownership_diagnostics.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.h
   - zr_vm_language_server/CMakeLists.txt
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/value.c
@@ -147,6 +201,7 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_expression_walk.c
   - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_expression_walk.h
   - tests/parser/test_semantic_facts.c
+  - tests/parser/test_dataflow_engine.c
   - tests/parser/test_semantic_query.c
   - tests/parser/test_compiler_semantic_query_diagnostics.c
   - tests/parser/test_expression_fact_emission.c
@@ -195,7 +250,12 @@ related_code:
   - tests/parser/test_parser.c
   - tests/parser/test_type_inference.c
   - tests/language_server/test_semantic_analyzer.c
+  - tests/language_server/test_semantic_analyzer_exact_type_cases.h
   - tests/language_server/test_ownership_diagnostics.c
+  - tests/language_server/test_ownership_diagnostics_region_cases.h
+  - tests/language_server/test_ownership_diagnostics_owner_set_cases.h
+  - tests/language_server/test_ownership_diagnostics_using_body_cases.h
+  - tests/language_server/test_ownership_diagnostics_weak_receiver_cases.h
   - tests/language_server/test_lsp_inlay_semantic_facts.c
   - tests/language_server/test_lsp_logical_semantic_query.c
   - tests/language_server/test_lsp_numeric_semantic_query.c
@@ -231,6 +291,7 @@ related_code:
   - tests/language_server/test_lsp_numeric_nested_loop_assignment_semantic_query.c
   - tests/language_server/test_lsp_numeric_foreach_cardinality_semantic_query.c
   - tests/language_server/test_lsp_local_semantic_query.c
+  - tests/language_server/test_lsp_local_semantic_scope_cases.h
   - tests/language_server/test_lsp_local_semantic_hover.c
   - tests/language_server/test_lsp_computed_member_hover.c
   - tests/language_server/test_lsp_expression_fact_hover.c
@@ -254,6 +315,14 @@ related_code:
   - tests/cli/repl_type_logical_comparison_smoke.js
   - tests/CMakeLists.txt
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder_fixes.c
+  - zr_vm_language_server/include/zr_vm_language_server/lsp_interface.h
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_diagnostic_fixes.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_diagnostic_fixes.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_diagnostic_fixes.c
+  - zr_vm_language_server/stdio/stdio_diagnostic_json.c
+  - zr_vm_language_server/stdio/stdio_lsp_memory.c
+  - tests/language_server/stdio_diagnostic_fix_smoke.js
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
@@ -264,6 +333,14 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_union.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_union_switch_validation.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_union_switch_validation.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/cfg_control_flow.c
+  - tests/parser/test_cfg_union_exhaustiveness.c
+  - tests/language_server/test_lsp_reachability_semantic_query.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_binding_metadata.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_executor.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c
@@ -283,9 +360,30 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/semantic.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_ownership_diagnostics.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_ownership_diagnostics.h
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder_ownership.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/cfg.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/cfg_internal.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/cfg_using.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_moves.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_moves.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_observations.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_observations.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_owner_sets.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_owner_sets.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_regions.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_regions.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_statements.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_statements.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_symbols.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_symbols.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_bitwise_identity.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_bitwise_identity_supported_count.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_bitwise_identity_bitwise_not_range.c
@@ -349,6 +447,7 @@ implementation_files:
   - zr_vm_language_server/stdio/stdio_inline_value_scan.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_hover_text.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_hover_text.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_expression_text.h
@@ -356,7 +455,9 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_numeric_range_text.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_numeric_range_text.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_internal.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_scope.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_constant_condition.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_reachability.c
@@ -365,6 +466,10 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_ownership_diagnostics.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_ownership_diagnostics.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.h
   - zr_vm_language_server/CMakeLists.txt
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/value.c
@@ -396,6 +501,10 @@ implementation_files:
   - tests/cli/repl_expression_array_display_smoke.js
   - tests/cli/repl_expression_object_smoke.js
   - tests/language_server/test_ownership_diagnostics.c
+  - tests/language_server/test_ownership_diagnostics_region_cases.h
+  - tests/language_server/test_ownership_diagnostics_owner_set_cases.h
+  - tests/language_server/test_ownership_diagnostics_using_body_cases.h
+  - tests/language_server/test_ownership_diagnostics_weak_receiver_cases.h
   - tests/language_server/test_lsp_inlay_semantic_facts.c
   - tests/language_server/test_lsp_logical_semantic_query.c
   - tests/language_server/test_lsp_local_semantic_query.c
@@ -413,6 +522,10 @@ implementation_files:
   - tests/language_server/test_lsp_call_member_semantic_query.c
   - tests/CMakeLists.txt
 plan_sources:
+  - user: 2026-07-18 按 docs/plans/lsp 分阶段优化语义推断并回写状态与产出记录
+  - docs/plans/lsp/01-semantic-inference-core.md
+  - docs/plans/lsp/02-diagnostics-and-errors.md
+  - docs/plans/lsp/05-implementation-blueprint.md
   - user: 2026-06-03 语义推断、诊断、LSP、Debug、REPL 能力增强目标
   - docs/superpowers/specs/2026-06-03-zr-vm-semantic-inference-design.md
   - docs/superpowers/plans/2026-06-03-zr-vm-semantic-inference-fact-layer.md
@@ -420,8 +533,11 @@ plan_sources:
   - .codex/plans/Rust-First using  Ownership 语义收敛计划.md
   - docs/plans/using/01-ownership-as-generics.md
 tests:
+  - tests/language_server/stdio_diagnostic_fix_smoke.js
+  - tests/acceptance/2026-06-20-semantic-stage1-semantic-query.md
   - tests/parser/test_parser.c
   - tests/parser/test_semantic_facts.c
+  - tests/parser/test_dataflow_engine.c
   - tests/parser/test_semantic_query.c
   - tests/parser/test_compiler_semantic_query_diagnostics.c
   - tests/parser/test_expression_fact_emission.c
@@ -452,7 +568,12 @@ tests:
   - tests/parser/test_object_literal_key_lowering.c
   - tests/parser/test_type_inference.c
   - tests/language_server/test_semantic_analyzer.c
+  - tests/language_server/test_semantic_analyzer_exact_type_cases.h
   - tests/language_server/test_ownership_diagnostics.c
+  - tests/language_server/test_ownership_diagnostics_region_cases.h
+  - tests/language_server/test_ownership_diagnostics_owner_set_cases.h
+  - tests/language_server/test_ownership_diagnostics_using_body_cases.h
+  - tests/language_server/test_ownership_diagnostics_weak_receiver_cases.h
   - tests/language_server/test_lsp_inlay_semantic_facts.c
   - tests/language_server/test_lsp_logical_semantic_query.c
   - tests/language_server/test_lsp_numeric_semantic_query.c
@@ -477,6 +598,7 @@ tests:
   - tests/language_server/test_lsp_numeric_nested_loop_assignment_semantic_query.c
   - tests/language_server/test_lsp_numeric_foreach_cardinality_semantic_query.c
   - tests/language_server/test_lsp_local_semantic_query.c
+  - tests/language_server/test_lsp_local_semantic_scope_cases.h
   - tests/language_server/test_lsp_local_semantic_hover.c
   - tests/language_server/test_lsp_computed_member_hover.c
   - tests/language_server/test_lsp_expression_fact_hover.c
@@ -788,6 +910,142 @@ doc_type: module-detail
 - Pre-sequence direct target-reader subtract zero-minus sign-crossing exact-zero product offset replay is now covered as a discovery/GREEN Stage 2 fact. When the safe prefix starts with `zero=0..0; span=-1..1; zeroFactor=0..0; other = (+narrowed) - (zero - (span * zeroFactor))` or the commuted `(+narrowed) - (zero - (zeroFactor * span))` before `mirror = other`, existing exact-zero validation treats the product as exact `[0,0]` because one side recursively proves exact zero and the other side is a direct int64 binding with a bounded sign-crossing range. The supported bounded offset binary `-` identity path maps the inner `zero - [0,0]` to `[0,0]`, and the outer direct binary `-` reader consumes that wrapper as a zero-offset no-op, so no production code changed in this slice. Parser facts and the focused LSP zero-inclusive-product query report positive-delta target `5..INT64_MAX`, `other=0..INT64_MAX`, and `mirror=0..INT64_MAX`; matching negative-delta cases report target/other/mirror `INT64_MIN..5`. Discovery/GREEN evidence: the new parser/LSP sign-crossing zero-minus exact-zero-product positive/negative-delta cases passed immediately; WSL gcc focused parser zero-inclusive-product passed 24 tests / 0 failures with focused LSP PASS, and WSL clang focused parser passed 24 tests / 0 failures with focused LSP PASS. Matrix evidence: WSL gcc and WSL clang current self-dependency target matrices each report RUN=55, BUILD_FAILURES=0, EXIT_FAILURES=0, MISSING=0; Windows MSVC Visual Studio Debug focused validation reports `MSVC_SIGN_CROSSING_ZERO_PRODUCT_ZERO_MINUS_FOCUSED parser=0 lsp=0 VSCMD_VER=17.14.34`, and the MSVC self-dependency project build plus executable matrix reports RUN=55, BUILD_FAILURES=0, EXIT_FAILURES=0, MISSING=0. Full repository GREEN is not claimed. Remaining work still means nonzero product offsets, sign-crossing nonzero products, non-binding sign-crossing expressions, two-negative/general zero-product algebra, broader exact-zero normalization, general multiplication/subtraction/additive algebra, arbitrary offset normalization beyond the accepted exact-zero product identities and zero-minus wrappers, non-identity complex prefix-reader RHS, prefix writes to delta dependencies, replay-resolved delta plus target-reader combinations, arbitrary interleavings, nested or unsupported assignments, fixed-point convergence, and general CFG-wide loop dataflow.
 
 - Pre-sequence direct target-reader sign-crossing exact-zero product subtract identity replay is now covered as a discovery/GREEN Stage 2 fact. When the safe prefix starts with `span=-1..1; zeroFactor=0..0; other = (+narrowed) - (span * zeroFactor)` or the commuted `(+narrowed) - (zeroFactor * span)` before `mirror = other`, existing exact-zero validation treats the product as exact `[0,0]` because one side recursively proves exact zero and the other side is a direct int64 binding with a bounded sign-crossing range. The direct binary `-` reader consumes that RHS through the supported bounded offset/no-op path, so no production code changed in this slice. Parser facts and the focused LSP negative-product query report positive-delta target `5..INT64_MAX`, `other=0..INT64_MAX`, and `mirror=0..INT64_MAX`; matching negative-delta cases report target/other/mirror `INT64_MIN..5`. Discovery/GREEN evidence: the new parser/LSP sign-crossing direct subtract exact-zero-product positive/negative-delta cases passed immediately; WSL gcc focused parser negative-product passed 27 tests / 0 failures with focused LSP PASS, and WSL clang focused parser passed 27 tests / 0 failures with focused LSP PASS. Matrix evidence: WSL gcc and WSL clang current self-dependency target matrices each report RUN=55, BUILD_FAILURES=0, EXIT_FAILURES=0, MISSING=0; Windows MSVC Visual Studio Debug focused validation reports `MSVC_SIGN_CROSSING_ZERO_PRODUCT_SUBTRACT_FOCUSED parser=0 lsp=0 VSCMD_VER=17.14.34`, and the MSVC self-dependency project build plus executable matrix reports RUN=55, BUILD_FAILURES=0, EXIT_FAILURES=0, MISSING=0. Full repository GREEN is not claimed. Remaining work still means nonzero product offsets, sign-crossing nonzero products, non-binding sign-crossing expressions, two-negative/general zero-product algebra, broader exact-zero normalization, general multiplication/subtraction/additive algebra, arbitrary offset normalization beyond the accepted exact-zero product identities, non-identity complex prefix-reader RHS, prefix writes to delta dependencies, replay-resolved delta plus target-reader combinations, arbitrary interleavings, nested or unsupported assignments, fixed-point convergence, and general CFG-wide loop dataflow.
+
+## Stage 2 Diagnostic Fix Foundation
+
+2026-07-18 update: the first ordered diagnostic-structure item from `02-diagnostics-and-errors.md` section 1 is now implemented across parser, semantic analyzer, LSP materialization, and stdio JSON. `SZrStructuredDiagnostic`, `SZrDiagnostic`, and `SZrLspDiagnostic` carry `fixes` plus `descriptorId`; each fix carries a title, source/edit range, replacement text, and one of `UNKNOWN`, `MACHINE_APPLICABLE`, `HAS_PLACEHOLDERS`, or `MAYBE_INCORRECT`. Construction, copying, range conversion, and freeing are explicit at each ownership boundary. Parser fix construction, semantic-analyzer copying, and LSP copying live in focused modules so the already-large orchestration files do not gain another responsibility; `diagnostic_builder.c` is 997 physical lines after extraction.
+
+Definite-assignment read diagnostics are the first consumer. Both `uninitialized_read` and `possibly_uninitialized_read` retain their declaration `relatedInformation` and now add `Replace with an initialized value`, replacing the read range with `<value>`. The applicability is `HAS_PLACEHOLDERS`, so the edit is an IDE-visible template and must not be silently batch-applied. LSP conversion translates the parser byte range through the document position codec. Stdio publication keeps standard `Diagnostic` fields unchanged and stores `descriptorId` plus fix title, standard-shaped `TextEdit` (`range`/`newText`), and applicability in opaque `Diagnostic.data`. The descriptor value remains `0` until the planned diagnostic registry is implemented; this slice establishes transport and lifecycle, not registry assignment.
+
+TDD covered all boundaries. Parser/LSP assertions first failed to compile because fix/descriptor types and fields did not exist. After the in-memory path was GREEN, a new stdio black-box test failed because `Diagnostic.data.descriptorId` was absent, then passed after JSON serialization and fixes-array cleanup were added. WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each passed semantic query 14/14, compiler semantic-query diagnostics 16/16, LSP semantic-query diagnostics 11/11, ownership diagnostics 1/1, union diagnostics 12/12, diagnostic-fix stdio smoke, and minimal-open stdio smoke. MSVC CTest also discovered and passed `language_server_stdio_diagnostic_fix_smoke` 1/1. Full repository GREEN is not claimed; diagnostic registry IDs, broader machine-applicable fixes, type-mismatch details, ownership related chains, and localization remain later plan items.
+
+## Stage 3 Scoped Semantic Analysis Foundation And Completion Fallback
+
+2026-07-19 update: `ZrLanguageServer_SemanticAnalyzer_AnalyzeScope` now accepts a module AST plus a structurally validated declaration root. Symbol collection remains module-wide so names outside the selected callable stay resolvable, while reference collection, type checking, CFG construction, dataflow, and query diagnostics are limited to that root. The cache identity combines the full-AST hash, scoped-root hash, and scoped range. `FindAnalysisRootAtPosition` recognizes functions, methods, meta functions, tests, lambdas, and property accessors through class/struct/property and compile-time wrappers; its public export also keeps direct query tests valid across the Windows parser/LSP DLL boundary. Full analysis delegates to the same orchestration with the module root.
+
+The completion semantic-fact path now invokes scoped analysis only when its existing query produces no items. It selects the declaration at the cursor and falls back to full-module analysis when no safe root exists. Property and compile-time wrappers return a root only when they actually contain an accessor or callable, so a non-callable wrapper cannot suppress that full-module fallback. This is an L6 robustness foundation, not L6 completion: document updates and most hover/query paths still run full analysis, symbol collection is still module-wide, and declaration-level parse, cache invalidation, cancellation, snapshot races, provider parity, and latency/memory budgets remain open. The main analyzer remains 2809 lines, but new orchestration and root resolution are isolated in 158-line and 171-line modules; focused test cases are isolated in a 254-line include module.
+
+TDD first failed at link time because the scoped API and root resolver did not exist, then reached runtime RED with `AnalyzeScope=0`; structural AST membership replaced an invalid source-range containment assumption. Review added a second RED where an empty property wrapper was incorrectly returned as an analysis root; restricting wrapper traversal to actual nested accessors/callables made the local-query suite 21/21 on all three toolchains. The concurrent canonical TypeId work required exact-type assertions to query per-expression facts instead of removed AST ownership in canonical type records. The cleanup-block CFG contract also exposed forward/backward dataflow RED at `Expected 1 Was 0`; both directions now transfer statement and cleanup blocks through one predicate. A parser-internal union lookup was replaced by the exported semantic-query API after MSVC exposed the private cross-DLL reference. Final frozen-snapshot matrices on WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each ran fourteen targets with zero exit or failure-marker failures: semantic query 16, compiler query diagnostics 16, parser 75, expression facts 28, type inference 118, dataflow 9, local query 21, plus semantic analyzer, ownership, union, statement, language-feature, LSP-query, and interface suites. The frozen snapshot required the current uncommitted core profiling helper only as an external baseline overlay; those unrelated files are not part of this LSP milestone.
+
+## Stage 3 English Diagnostic Message Catalog Foundation
+
+2026-07-19 update: the final ordered item in `02-diagnostics-and-errors.md` section 5 now has a public, immutable diagnostic message catalog. `diagnostic_messages.h` defines English and Simplified Chinese locale identifiers plus a message entry with `key`, `english`, and `chineseSimplified` slots. Count/index access, exact-key lookup, and locale resolution expose the table without global mutable locale state. The catalog contains two entries for every current descriptor: all fifty-six `titleKey` and fifty-six `messageFormatKey` values resolve to nonempty English text, for 112 unique keys total. Simplified Chinese slots are deliberately null in this English-first stage; resolving them falls back to the corresponding English text, while unknown keys return null.
+
+The detailed type-mismatch builder is the first production consumer. It finds the stable `type_mismatch` descriptor, resolves its `messageFormatKey` in the English catalog, and preserves the existing `Expected '%s' but found '%s'` output. A local literal fallback keeps diagnostic construction available if registry/catalog linkage is incomplete. Other builders still emit their already-formatted English strings; migrating those consumers, adding real Chinese translations, and selecting a locale from LSP/client configuration are separate follow-up work rather than hidden global behavior in this foundation.
+
+TDD RED failed the GCC semantic-query build at the new `diagnostic_messages.h` include before any production file existed. GREEN adds a sixteenth semantic-query test that enumerates all 112 entries, proves unique keys and count/index/find consistency, proves 56/56 descriptor coverage, checks nonempty English and explicit null Chinese slots, verifies Chinese-to-English fallback and unknown-key behavior, and fixes the exact type-mismatch title/format contract. GCC 11.4, Clang 14, and MSVC 19.44.35228 each pass semantic query 16/16, compiler query diagnostics 16/16, LSP query diagnostics 14/14, semantic analyzer 46/46, ownership 24/24, union diagnostics 12/12, statement parser diagnostics 12/12, language-feature matrix 8/8, parser 75/75, expression facts 28/28, and type inference 118/118. The catalog source/header are 274/26 lines, the type-mismatch builder is 91 lines, and the semantic-query test remains below the modularization threshold at 954 lines. MSVC restored seventeen existing files with matching SHA-256 hashes and moved twenty-eight added files into the stage audit directory; the new modules add no stage-specific warning beyond the existing D9025 option override. Full repository GREEN is not claimed.
+
+## Stage 3 Detailed Type Mismatch And Numeric Cast Fix
+
+2026-07-19 update: the ordered `02-diagnostics-and-errors.md` section 3 and section 5 type-mismatch item now has a common `ZrParser_DiagnosticBuilder_BuildTypeMismatchDetailed` path. It emits `Expected '<expected>' but found '<actual>'`, an explicit implicit-conversion cause, an optional expected-type declaration relation, and a repair suggestion. Numeric-to-numeric mismatches also receive `Cast value to '<type>'`, replacing the expression with `<type> <expression>` at `HAS_PLACEHOLDERS`; nonnumeric mismatches do not claim an unproven conversion. `type_mismatch` is registered as type-category descriptor `2011`, extending the current registry to fifty-six entries.
+
+`ZrParser_TypeError_Report` now stores this structured diagnostic in compiler state, so function arguments, assignments, and other type-inference failures preserve expected/actual values, descriptor metadata, cause, suggestion, and any numeric cast fix. `compiler_diagnostics.c` no longer uses either `strstr("Type mismatch")` template; structured compiler output renders the diagnostic's own cause and suggestion. Language-server variable initializers, assignments, and returns publish exact expression ranges and attach the explicit type annotation or callable return type as `Expected type is declared here`. Assignment lookup uses the use position to recover the local declaration after symbol-collection scopes have closed, and the precise diagnostic replaces an earlier covering compiler diagnostic instead of publishing a duplicate.
+
+TDD first retained twelve LSP cases while the initializer detail case failed at 12/13. A compiler-state contract then retained 117 type-inference cases while the upgraded argument mismatch failed at 117/118. After initializer/compiler GREEN, assignment and return formed a third RED at 13/14; observed output exposed one covering assignment diagnostic and a fallback left-reference relation, leading to position-aware declaration lookup and covering-diagnostic replacement. Final GCC 11.4, Clang 14, and MSVC 19.44.35228 matrices each pass semantic query 15/15, compiler query diagnostics 16/16, LSP query diagnostics 14/14, semantic analyzer 46/46, ownership 24/24, union diagnostics 12/12, statement parser diagnostics 12/12, language-feature matrix 8/8, parser 75/75, expression facts 28/28, and type inference 118/118. The builder and language-server mismatch modules are 77 and 139/17 lines; the focused test group is 263 lines and its entry remains 928 lines. MSVC restored seventeen original files with matching SHA-256 hashes and moved twenty-six added files into the final audit directory. Overload-selection diagnostics that cannot identify one expected signature, nonnumeric conversion fixes, undefined-symbol suggestions, Chinese translations/client locale selection, remaining builder catalog consumption, and per-code help remain later work; full repository GREEN is not claimed.
+
+## Stage 3 Duplicate Type Definition Related Information
+
+2026-07-19 update: the ordered duplicate-definition item from `02-diagnostics-and-errors.md` section 2 now publishes a structured `duplicate_type` diagnostic. The second visible type declaration remains the primary diagnostic, while a previously registered type symbol contributes exactly one `relatedInformation` entry with `Type was first declared here`. The diagnostic keeps the existing name-bearing message, adds explicit cause and rename/remove guidance, and flows through the central structured-diagnostic builder and language-server conversion instead of constructing an unregistered analyzer diagnostic directly.
+
+Class declarations use `nameLocation` for the exact second-name range and the previous symbol's `selectionRange` for the first-name range. The current struct, enum, union, and interface ASTs do not expose an equivalent name-only field, so those primary ranges remain declaration-node ranges; imported destructured type aliases can still report `duplicate_type`, but do not invent related information when the prior binding is not represented by a symbol-table entry. The focused construction and ownership logic is isolated in `semantic_analyzer_duplicate_diagnostics.c/.h` at 68/13 lines. This slice raised the registry to fifty-five descriptors and assigned `duplicate_type` the stable semantic ID `2010`; the detailed type-mismatch slice above subsequently extends the current registry to fifty-six.
+
+TDD retained the eleven existing LSP semantic-query diagnostic cases while the new duplicate-class case failed, producing RED at 11/12 because the duplicate token range and prior-definition relation were absent. The first implementation compile exposed that only class declarations currently have `nameLocation`; the corrected implementation uses that precise class range without widening the AST ABI. GCC 11.4, Clang 14, and MSVC 19.44.35228 each pass semantic query 15/15, compiler query diagnostics 16/16, LSP query diagnostics 12/12, semantic analyzer 46/46, ownership 24/24, union diagnostics 12/12, statement parser diagnostics 12/12, language-feature matrix 8/8, parser 75/75, and expression facts 28/28. The MSVC overlay restored thirteen original files with matching SHA-256 hashes and moved twenty-two added files into its audit directory. Full repository GREEN is not claimed; type-mismatch fixes, undefined-symbol suggestions, finer non-class declaration name ranges, imported-alias provenance, Chinese translations/client locale selection, remaining builder catalog consumption, and per-code help remain later Stage 3 work.
+
+## Stage 3 Diagnostic Descriptor Registry Foundation
+
+2026-07-19 update: the ordered `02-diagnostics-and-errors.md` section 4 registry foundation is now implemented. Public `diagnostic_registry.h` exposes `SZrDiagnosticDescriptor`, `EZrLintCategory`, registry count/index access, code lookup, ID lookup, and a code-to-ID fallback helper. The foundation initially covered all fifty-four diagnostic codes emitted at acceptance time; duplicate-definition and detailed type-mismatch slices extend the current table to fifty-six. Stable numeric ranges separate syntax (`1001..1034`), semantic/type/style (currently `2001..2011`), flow (`3001..3006`), and ownership (`4001..4005`). Every descriptor carries localization-ready title/message keys, default severity, help URI, and category.
+
+`ZrParser_DiagnosticBuilder_Build` is the single assignment point. Registered codes receive their stable ID before message allocation; unknown extension codes still build successfully with `descriptorId=0`, preserving graceful degradation. Existing parser, semantic-analyzer, LSP, and stdio copy/serialization paths require no parallel registry logic. The definite-assignment warning `possibly_uninitialized_read` now carries ID `3003` through parser query results, LSP diagnostics, and `Diagnostic.data` JSON. The earlier Diagnostic Fix Foundation statement that IDs remained zero is therefore a historical boundary superseded by this stage.
+
+TDD RED failed in the isolated Clang build because the new registry header/API did not exist. GREEN added a fifteenth semantic-query test for the original fifty-four-entry inventory; that invariant test now checks the current fifty-six descriptors, unique nonzero IDs and codes, code/ID round trips, stable IDs `3003`, `4001`, `2010`, and `2011`, descriptor metadata, and unknown-code fallback. The stdio smoke then exposed its old `descriptorId === 0` assertion and was updated to require `3003`. GCC 11.4, Clang 14, and MSVC 19.44.35228 each passed the registry-foundation matrix recorded at acceptance time. Windows MSVC also passed the real JSON-RPC diagnostic-fix smoke. Current registry source/header are 181/36 lines and the central builder remains below the modularization threshold at 999 lines. Full repository GREEN is not claimed; severity configuration, Chinese translations/client locale selection, remaining builder catalog consumption, per-code help documents, and broader machine-applicable fixes remain later Stage 3 work.
+
+## Stage 2 Weak Receiver Possible-Release Ownership Flow
+
+2026-07-19 update: ownership call-shape classification now recognizes a weak reference used as the primary property of a chain containing a function-call member, such as `watcher.ping()`. This receiver shape joins the existing direct weak-to-borrowed argument path in `StatementWeakReadRequiresUpgrade`. Nested call arguments still recurse through the same classifier, while `%upgrade(watcher)` does not match the receiver shape and remains legal.
+
+The classification is release-sensitive. A weak receiver call before any known owner release does not create a flow diagnostic. After an owner in the alias's current owner set becomes RELEASED, the observation emits or enriches `weak_value_requires_upgrade`, retaining the matching owner region and `Owner was released here` related location. Conditional weak rebinding reuses the owner-set lattice, so a branch-local replacement owner remains visible at the receiver call.
+
+TDD retained all twenty-two previous ownership cases while both receiver cases failed, producing RED at 22/24. GREEN passes 24/24: the straight-line case proves the pre-release receiver has no flow diagnostic and the post-release receiver points to the release; the branch case points to the replacement owner release after CFG join. The final GCC 11.4, Clang 14, and MSVC 19.44.35228 matrices each pass ownership 24/24, semantic query 14/14, compiler semantic-query diagnostics 16/16, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, union diagnostics 12/12, and expression facts 28/28.
+
+The ownership move/call classifier is 495/15 lines and the ownership test entry/weak-receiver group are 843/146 lines. Clang/MSVC used directed 25-file overlays, restored eight original files with matching SHA-256 hashes, and removed or audited seventeen added files. General weak member reads, an unconditional static receiver-upgrade policy, using guard/else CFG paths, and abrupt cleanup edges remain outside this slice; full repository GREEN is not claimed.
+
+## Stage 2 Block-Scoped Using Body CFG Ownership Flow
+
+2026-07-18 update: ordinary block-scoped drop-guard `using(resource) { body }` now expands into CFG body statements followed by a normal-exit block anchored to the original using AST. The body reuses the existing recursive CFG builder, including nested branches and loops. The exit block remains the ownership release point, so body reads and writes execute while the resource is live and the existing stable RELEASE fact still points to the using resource range.
+
+This ordering lets ownership transfer observe body-local operations. A `%borrow` assignment inside the body replaces the alias owner before scope-exit cleanup, and a by-value unique call invalidates a following body read. The implementation is isolated in `cfg_using.c`; `cfg.c` only dispatches block-scoped statements whose guard kind is `ZR_USING_GUARD_DROP` and whose body exists. Pattern/plugin guards, using `else`, and cleanup edges for abrupt return/throw/break/continue remain outside this slice.
+
+TDD retained all twenty previous ownership cases while the two new using-body cases failed, producing RED at 20/22. GREEN passes 22/22: the borrowed-rebind case relates the post-using diagnostic to the replacement owner's explicit release instead of the pre-body owner, and the unique-move case relates `use_after_move` to the preceding body call. The final GCC 11.4, Clang 14, and MSVC 19.44.35228 matrices each pass ownership 22/22; CFG reachability 29/29, union exhaustiveness 2/2, dataflow 7/7, constant conditions 22/22, finally abrupt 7/7, try/catch edges 11/11, and switch constants 4/4; semantic query 14/14, compiler semantic-query diagnostics 16/16, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, union diagnostics 12/12, and expression facts 28/28.
+
+The shared CFG orchestrator is 902 lines, its internal header is 217 lines, the using builder is 57 lines, and the ownership test entry/using-body group are 838/133 lines. Clang/MSVC used directed 24-file overlays, restored eight original files with matching SHA-256 hashes, and removed or audited sixteen added files. GCC/Clang emitted no warnings from this slice; MSVC emitted only the existing D9025 warning, while CMake long-path warnings referenced unrelated targets. Full repository GREEN is not claimed.
+
+## Stage 2 Branch-Joined Borrow/Loan/Weak Owner-Set Lattice
+
+2026-07-18 update: ownership-flow slots now hold an immutable owner-set pool ID instead of one owner symbol index. Pool entries are sorted by ownership symbol index and interned for reuse. Direct `%borrow`, `%loan`, and `%weak` assignments kill the previous relation and install a singleton set, declarations seed their known owner, ownerless values use the empty set, and unresolved ownership writes degrade to the explicit unknown top element. The generic dataflow engine can continue copying states as raw bytes because slots contain only IDs; owner-set storage has analysis lifetime and is released after fact publication.
+
+CFG join now computes deterministic set union. A conditional rebind therefore preserves both the incoming declaration owner and the branch-local replacement owner, and repeated joins converge over the finite set of ownership symbols. Borrowed, loaned, and weak reads inspect every known possible owner. If multiple possible owners are released, the observation retains the earliest source release and its matching owner index, so the emitted ERROR fact's owner region and the semantic-query/LSP related location describe the same path. Releases outside the alias owner set remain ignored.
+
+TDD retained all sixteen previous ownership cases. The three new borrow/loan/weak branch-join cases failed while the unrelated-release boundary passed, producing RED at 17/20; the immutable owner-set union and release selection made the target GREEN at 20/20. The borrow case releases both possible owners and asserts deterministic selection of the earlier source release. The final GCC 11.4, Clang 14, and MSVC 19.44.35228 matrices each pass ownership 20/20, semantic query 14/14, compiler semantic-query diagnostics 16/16, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, union diagnostics 12/12, and expression facts 28/28.
+
+The ownership orchestrator is 759 lines, the owner-set pool is 303/41 lines, observed-fact publication remains 292/26 lines, and the ownership test entry/region/owner-set files are 833/741/181 lines. Clang/MSVC overlays restored all six original files with matching SHA-256 hashes and removed or audited all fourteen added files. Independent using-body CFG flow, weak receiver flow, diagnostic registry IDs, broader fixes, and localization remain later work; full repository GREEN is not claimed.
+
+## Stage 2 Straight-Line Borrow/Loan/Weak Assignment Rebinding
+
+2026-07-18 update: the `BORROWED(n)` owner relation is now part of each CFG ownership-flow slot instead of being read only from the global symbol entry. A declaration seeds the slot from its `%borrow`, `%loan`, or `%weak` initializer. A direct assignment whose right-hand side is one of those ownership constructs replaces the left alias slot's owner during the WRITE transfer. Any other tracked ownership WRITE clears the flow owner to unknown, and joining paths with different owners also yields unknown; this preserves sound boundaries instead of selecting one arbitrary owner. Precise multi-owner branch joins require a later owner-set lattice and are not claimed here.
+
+Region recognition now accepts both variable declarations and direct `=` expression statements. Assignment construct facts retain the alias symbol and lifetime region while replacing `ownerLifetimeRegionId` with the new owner's region; declaration facts continue to describe the initial binding. Violation observations store the owner index present at the exact read, so a later ERROR fact and its release related location do not fall back to the alias's original static owner after rebinding. This applies uniformly to borrowed, loaned, and weak aliases.
+
+The three focused tests rebind an alias from owner A to owner B, release A, prove the next read is not attributed to A, then release B and require the existing borrow/loan/weak diagnostic at the later read. They also assert stable alias symbol/region identity, different initial/replacement owner regions, and the B release location. For weak aliases, two static `weak_value_requires_upgrade` diagnostics remain, but only the post-B-release diagnostic receives related evidence; `%upgrade` remains legal. TDD retained 13/13 baseline cases while all three new cases failed, then passed 16/16 after slot-owner transfer was added.
+
+The final GCC 11.4, Clang 14, and MSVC 19.44.35228 matrices each pass ownership 16/16, semantic query 14/14, compiler semantic-query diagnostics 16/16, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, union diagnostics 12/12, and expression facts 28/28. The ownership orchestrator is 647 lines, observed-fact publication is isolated in a 292/26-line implementation/header pair, region recognition is 201/25 lines, and the ownership test entry/header are 824/741 lines. Clang/MSVC overlays restored all six original files with matching SHA-256 hashes and moved or removed all eleven added files. Different-owner branch joins, owner-set convergence, independent using-body flow, weak receiver flow, registry IDs, broader fixes, and localization remain later work; full repository GREEN is not claimed.
+
+## Stage 2 Using Scope-Exit And Weak Alias Ownership Flow
+
+2026-07-18 update: block-scoped `using(resource)` now contributes a bounded scope-exit transition to CFG-backed ownership flow. Statement membership for a using node is restricted to its resource expression, so reads in the using body remain pre-exit reads even though the current CFG represents the whole construct as one statement. A tracked `%unique`, `%shared`, `%borrowed`, or `%loaned` resource changes to `RELEASED` after that statement and publishes a RELEASE fact with stable symbol and region metadata; `%weak` is intentionally excluded because runtime cleanup does not release weak handles. Reading a borrowed/loaned alias after its own using exit, or after a using exit releases its bound owner, publishes the existing region-linked escape ERROR. The current model does not claim independent ownership transfer inside the using body CFG.
+
+Direct `%weak(owner)` local declarations now use the same alias-owner region binding as borrow/loan declarations and update their COPY construct fact. A weak read is flow-sensitive only for the precise static misuse already supported by the analyzer: a direct argument matched to a resolved `%borrowed` parameter. If the owner is `RELEASED` on any incoming path, ownership flow enriches the existing `weak_value_requires_upgrade` ERROR fact with weak symbol, alias region, owner region, and release node. The semantic query ownership module rebuilds the same diagnostic through `BuildWeakUpgrade` and adds `Owner was released here`; the LSP query bridge now merges missing related information into an existing same-code/same-range diagnostic instead of discarding the query result. `%upgrade(watcher)` after release and a later null check remain legal and do not create another weak diagnostic.
+
+Analyzer passes can emit multiple resolved references for one AST identifier with different symbol IDs. Region binding now chooses the stable minimum symbol ID among exact node/range candidates, while weak static-fact enrichment is deliberately limited to WEAK errors so duplicate unique reads cannot overwrite the first exact-node use-after-move fact. Call resolution accepts either the primary expression or its exact callee property as the call-reference anchor, preserving nested-call isolation. The ownership orchestrator is 855 lines; move, region, statement, and symbol modules are 488, 182, 124, and 236 lines. Ownership diagnostic query construction was extracted from the 1,112-line shared query file into `semantic_query_ownership_diagnostics.c/.h` (131/10), leaving `semantic_query.c` at 976 lines. The focused ownership entry/header are 818/471 lines.
+
+TDD started from ownership 10/10 GREEN; using-owner, using-borrowed-alias, and possible-release weak cases then failed as expected. Final GCC 11.4, Clang 14, and MSVC 19.44.35228 matrices each pass ownership 13/13, semantic query 14/14, compiler semantic-query diagnostics 16/16, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, union diagnostics 12/12, and expression facts 28/28. Clang/MSVC source overlays restored all six original files with matching SHA-256 hashes and removed or audited all nine added files. GCC/Clang emitted no warnings from this slice; MSVC emitted only the existing `/W3` to `/W4` override warning. General borrow/loan/weak rebinding, weak receiver flow, independent using-body ownership CFG, registry IDs, broader fixes, and localization remain later Stage 2 work; full repository GREEN is not claimed.
+
+## Stage 2 Borrow/Loan Region Facts And Explicit-Release Ownership Flow
+
+2026-07-18 update: the ownership symbol map now tracks every resolved ownership-qualified declaration/read/write instead of only `%unique`. Each tracked symbol receives a stable `TZrLifetimeRegionId`, published through a `ZR_SEMANTIC_OWNERSHIP_FACT_DECLARATION`; repeated resolver calls reuse an existing declaration fact region. A direct local declaration initialized by `%borrow(owner)` or `%loan(owner)` binds the alias symbol to the owner symbol, updates the construct fact with alias `symbolId`, alias `lifetimeRegionId`, owner `ownerLifetimeRegionId`, and the target reference as `relatedNode`. Borrow/loan constructs without a local alias still receive a temporary region and the resolved owner region.
+
+The forward slot domain now executes the reserved `BORROWED` and `RELEASED` states for this bounded path. Borrowed/loaned declarations initialize as `BORROWED`. A direct `%release(owner)` target changes the owner slot to `RELEASED` and stores the release reference; union joins preserve a possible released path and the deterministic earliest release node. Reading a bound borrowed/loaned alias while its owner has `RELEASED` on any incoming path publishes an `ERROR` ownership fact carrying both regions and the release node. `semantic_query.c` maps that fact through the existing `BuildBorrowEscape` or `BuildLoanEscape` builder and adds one `Owner was released here` related location, so compiler and LSP consumers share the same result.
+
+The implementation is split by responsibility: `dataflow_ownership.c` remains the 715-line CFG/dataflow orchestrator; focused region-recognition, statement-membership, and symbol-region module pairs own the three supporting responsibilities. The ownership regression entry is 812 lines and includes a 227-line focused region-cases header rather than crossing the 1,000-line threshold. TDD kept the previous seven ownership cases green while region metadata, straight-line release, and branch-release join cases failed. Final GCC 11.4, Clang 14, and MSVC 19.44.35228 matrices each pass ownership 10/10, semantic query 14/14, compiler query diagnostics 16/16, semantic analyzer 46/46, LSP query diagnostics 11/11, union diagnostics 12/12, and expression facts 28/28; all three compilers reran ownership 10/10 after the test split. This slice does not claim `using` scope-exit release, weak alias tracking, or general borrow/loan reassignment; full repository GREEN is not claimed.
+
+## Stage 2 Unique Move And Use-After-Move Ownership Flow
+
+2026-07-18 update: `ZrParser_SemanticFacts_ResolveControlFlowOwnership` adds the first CFG-backed ownership transition layer promised by `01-semantic-inference-core.md` section 4. It builds a compact symbol map only from resolved reference facts whose semantic type record is `%unique`, initializes each slot as `OWNED`, and runs the shared forward dataflow engine over script, function, test, class-method, struct-method, meta-function, property, and block roots. The slot bit domain reserves `OWNED`, `MOVED`, `BORROWED`, and `RELEASED`; this slice implements the `OWNED -> MOVED` transition and uses bitwise-union joins so a branch-local move remains visible as a possible moved path after control-flow convergence. Each moved slot also carries the deterministic earliest move node for downstream explanation.
+
+Move classification is isolated in `dataflow_ownership_moves.c/.h`. A direct `%unique` source on another variable's initializer or assignment is a move. A direct call argument is a move only when the semantic call reference resolves to a callable AST parameter whose passing mode is `VALUE`; `%ref`, `%in`, and `%out` arguments remain aliases and do not consume the value. Direct AST identity is accepted as statement membership for call arguments because the parser's enclosing call range does not always cover argument tokens. Repeated analyzer reference facts are processed once per node/symbol transfer, and published ownership facts are deduplicated by node/kind.
+
+Successful transfers publish `ZR_SEMANTIC_OWNERSHIP_FACT_MOVE`. A later read on any incoming `MOVED` path publishes an `ERROR` fact with the same semantic symbol and the move node as `relatedNode`. `semantic_query.c` recognizes only unique, resolved, violating ownership errors and delegates to `ZrParser_DiagnosticBuilder_BuildUseAfterMove` in the focused `diagnostic_builder_ownership.c` module. The resulting `use_after_move` diagnostic includes cause and suggestion text plus one `Value was moved here` related location. Compiler semantic-query publication and language-server semantic analysis call the same resolver and query path.
+
+TDD RED retained the three borrow/loan cases while straight-line by-value call, branch-join, and assignment-move cases failed; the `%ref` non-move boundary already passed. GREEN ownership coverage is 7/7. The same isolated source snapshot passed under WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228: semantic query 14/14, compiler semantic-query diagnostics 16/16, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, and union diagnostics 12/12. Forced GCC/Clang recompilation of the three new production sources produced no warnings from those files. `BORROWED`/`RELEASED` region transitions, release/weak flow, diagnostic registry IDs, broader fixes, and localization remain later Stage 2 work; full repository GREEN is not claimed.
+
+## Stage 2 Borrow And Loan Escape Related Information
+
+2026-07-18 update: `borrow_escape` and `loan_escape` now implement the two-location chain required by the ownership and diagnostics plans. The primary diagnostic remains on the escaping return expression. Related item 0 points at the exact source target token inside `%borrow(...)` or `%loan(...)`; related item 1 is a zero-width range at the source symbol scope end. If symbol scope metadata is unavailable, the implementation falls back to the enclosing function or method body end and then the callable end. Return checking now retains the enclosing callable symbol instead of discarding it after extracting the return type.
+
+The ownership violation fact keeps the escaping construct as its primary node/range and stores the source target as `relatedNode`, so semantic queries can distinguish the violation site from the value whose lifetime is involved. Source resolution and structured-diagnostic attachment live in `semantic_analyzer_ownership_diagnostics.c/.h` (98/14 physical lines), leaving `semantic_analyzer_typecheck.c` as orchestration. TDD RED had three failures for empty related arrays. WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 now each pass ownership diagnostics 3/3, semantic analyzer 46/46, LSP semantic-query diagnostics 11/11, and union diagnostics 12/12. Assertions cover complete source-token ranges, zero-width lifetime-end ranges, zero-based LSP translation, and ownership-fact `relatedNode`. Full repository GREEN is not claimed; use-after-move flow, diagnostic registry assignment, broader ownership fixes, and localization remain later Stage 2 work.
+
+## Stage 1 Semantic Foundation Closure
+
+2026-07-18 update: the implementation now satisfies the Stage 1 semantic-foundation scope from `01-semantic-inference-core.md` sections 1, 2, and 7. CFG reachability covers statements after terminating flow, constant branches, and exhaustive union switch defaults with explicit cause nodes. The generic dataflow engine runs forward or backward work queues over CFG block states, applies caller-provided init/join/transfer operations, and is consumed by definite-assignment and reaching-definition analyses. The parser semantic-query facade exposes module/node scoped type, fact, definition, reference, and diagnostic queries; compiler and LSP paths consume those query results instead of inventing separate fact models.
+
+The Stage 1 closure audit added the missing convergence guard promised by the implementation blueprint. `ZrParser_Dataflow_Run` now rejects CFGs above 1,048,576 blocks and limits processing to 1,024 dequeues per block, capped at 16,777,216 total iterations. Budget exhaustion returns `ZR_FALSE` after releasing temporary reachability/queue storage while leaving the result's partial block states valid for caller-controlled degradation and cleanup. Invalid analyses and oversized CFGs return `ZR_FALSE` before allocating result states. The RED fixture used a legal cyclic CFG and a bounded oscillating join: before the guard, the engine consumed all 4,096 changes and incorrectly returned success; after the guard, the dataflow target passes 7/7, including partial-result, invalid-analysis, and oversized-CFG boundaries.
+
+Stage 1 closure verification passed the same matrix under WSL GCC, WSL Clang 14, and Windows MSVC 19.44.35228: CFG reachability 29/29, union CFG 2/2, dataflow 7/7, semantic query 14/14, compiler semantic-query diagnostics 16/16, LSP reachability queries 11/11, and LSP semantic-query diagnostics 11/11. Existing compiler warnings and unrelated concurrent AOT/core/Rust work remain outside this closure; full repository GREEN is not claimed. Stage 2 flow-analysis expansion remains active.
+
+## Stage 1 Exhaustive Union Switch Default Reachability
+
+2026-07-18 update: exhaustive union `switch` statements now carry one shared reachability decision from compiler validation into parser CFG and the LSP semantic-query surface. The compiler resolves each case with the existing union-pattern resolver, rejects duplicate or missing-case forms as before, and stores `isUnionExhaustive` on the switch AST node. `cfg_control_flow.c` consumes that bit: when a `default` follows complete unit/tuple variant coverage, it omits the selector edge and records the default block as `ZR_SEMANTIC_REACHABILITY_UNREACHABLE` with cause `ZR_SEMANTIC_REACHABILITY_AFTER_EXHAUSTIVE_BRANCH` and the switch as `causeNode`. A non-exhaustive union with `default` retains its selector edge, and constant-selector reachability keeps its existing `ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH` cause.
+
+The language server independently reuses its existing exact subject-type and union-pattern resolution helpers to recognize the same complete variant set during incomplete-code analysis. It records the unreachable fact over the default block range and emits warning `unreachable_union_switch_default`; using the block range is intentional because the parser's default-label node location begins after `parse_block`. Parser CFG and LSP tests cover both the exhaustive positive case and the missing tuple-variant negative boundary. Union switch validation was extracted from `compile_statement_flow.c` into `compile_statement_union_switch_validation.c/.h`, reducing the orchestration file from 1608 to 1450 lines, and the parser DLL union declaration resolver now has an explicit export for the LSP shared-library boundary. Focused GCC, Clang, and MSVC validation passed; full repository GREEN is not claimed, and Stage 1 remains open beyond this accepted slice.
 
 ## Stage 1 Reaching-Definition Payload
 
@@ -1310,7 +1568,7 @@ Debug safe evaluate 的数值语义错误也开始走 richer diagnostic 文本�
 - `borrow_escape`: `return %borrow(...)` 这类临时借用逃逸当前 owner 的 return path。
 - `loan_escape`: 与 `borrow_escape` 同类的 `%loan(...)` return escape 入口，当前 builder、发射路径和专门回归测试已就绪。
 
-每个成功发射的所有权结构化诊断都会同步写入 `ownershipFacts`。事实的 `range` 对准真正有问题的表达式或参数 token，例如变量初始化右侧、函数实参、方法实参或 `%borrow(...)` 所在行；诊断行仍保持在用户能看到的语句位置。事实保存 `ZR_SEMANTIC_OWNERSHIP_FACT_ERROR`、实际所有权 qualifier、`isViolation=true` 和诊断 message 的深拷贝，后续局部查询可以在光标停留于表达式时直接解释所有权问题。
+每个成功发射的所有权结构化诊断都会同步写入 `ownershipFacts`。事实的 `range` 对准真正有问题的表达式或参数 token，例如变量初始化右侧、函数实参、方法实参或 `%borrow(...)` 所在行；诊断行仍保持在用户能看到的语句位置。事实保存 `ZR_SEMANTIC_OWNERSHIP_FACT_ERROR`、实际所有权 qualifier、`isViolation=true` 和诊断 message 的深拷贝，后续局部查询可以在光标停留于表达式时直接解释所有权问题。对于 `borrow_escape` / `loan_escape`，`relatedNode` 指向 construct target，而不是重复指向逃逸 construct；诊断同时携带来源 token 和来源生命周期结束点两条 `relatedInformation`，LSP 转换保留这两条范围。
 
 ## Syntax Diagnostics Through LSP
 

@@ -25,26 +25,48 @@
 #include <limits.h>
 
 void ZrParser_TypeError_Report(SZrCompilerState *cs, const TZrChar *message, const SZrInferredType *expectedType, const SZrInferredType *actualType, SZrFileRange location) {
+    TZrChar actualTypeStr[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
+    const TZrChar *actualName = "unknown";
+    const TZrChar *conversionHint = ZR_NULL;
+    SZrStructuredDiagnostic diagnostic;
+    TZrChar errorMsg[ZR_PARSER_TEXT_BUFFER_LENGTH];
+    TZrChar expectedTypeStr[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
+    const TZrChar *expectedName = "unknown";
+
     if (cs == ZR_NULL || message == ZR_NULL) {
         return;
     }
-    static TZrChar errorMsg[ZR_PARSER_TEXT_BUFFER_LENGTH];
-    static TZrChar expectedTypeStr[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
-    static TZrChar actualTypeStr[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
-    const TZrChar *expectedName = "unknown";
-    const TZrChar *actualName = "unknown";
     if (expectedType != ZR_NULL) {
         expectedName = ZrParser_TypeNameString_Get(cs->state, expectedType, expectedTypeStr, sizeof(expectedTypeStr));
     }
     if (actualType != ZR_NULL) {
         actualName = ZrParser_TypeNameString_Get(cs->state, actualType, actualTypeStr, sizeof(actualTypeStr));
     }
-    // 构建详细的错误消息，包含类型信息
-    snprintf(errorMsg, sizeof(errorMsg),             "Type Error: %s (expected: %s, actual: %s). "
-             "Check variable types, function signatures, and type annotations. "
-             "Ensure the actual type is compatible with the expected type. "
-             "Consider adding explicit type conversions if needed.",
-             message, expectedName, actualName);
+    if (expectedType != ZR_NULL &&
+        actualType != ZR_NULL &&
+        ZR_VALUE_IS_TYPE_NUMBER(expectedType->baseType) &&
+        ZR_VALUE_IS_TYPE_NUMBER(actualType->baseType) &&
+        expectedType->baseType != actualType->baseType) {
+        conversionHint = expectedName;
+    }
+    if (ZrParser_DiagnosticBuilder_BuildTypeMismatchDetailed(
+                cs->state,
+                &diagnostic,
+                location,
+                expectedName != ZR_NULL ? expectedName : "unknown",
+                actualName != ZR_NULL ? actualName : "unknown",
+                ZR_NULL,
+                conversionHint)) {
+        ZrParser_Compiler_StructuredError(cs, &diagnostic);
+        return;
+    }
+
+    snprintf(errorMsg,
+             sizeof(errorMsg),
+             "%s (expected: %s, actual: %s)",
+             message,
+             expectedName != ZR_NULL ? expectedName : "unknown",
+             actualName != ZR_NULL ? actualName : "unknown");
     ZrParser_Compiler_Error(cs, errorMsg, location);
 }
 
@@ -1824,7 +1846,7 @@ static TZrBool infer_type_literal_expression_type(SZrCompilerState *cs,
                                                   SZrAstNode *node,
                                                   SZrInferredType *result) {
     SZrString *typeName;
-    static const TZrChar *kBuiltinTypeInfoName = "zr.builtin.TypeInfo";
+    static TZrChar kBuiltinTypeInfoName[] = "zr.builtin.TypeInfo";
 
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL ||
         node->type != ZR_AST_TYPE_LITERAL_EXPRESSION ||

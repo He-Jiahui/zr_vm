@@ -29,6 +29,9 @@ typedef struct SZrParserSemanticQueryDiagnostics {
     TZrSize count;
 } SZrParserSemanticQueryDiagnostics;
 
+struct SZrCompilerState;
+typedef struct SZrCompilerState SZrCompilerState;
+
 ZR_PARSER_API void ZrParser_SemanticQueryScope_Module(SZrParserSemanticQueryScope *scope);
 ZR_PARSER_API void ZrParser_SemanticQueryScope_Node(SZrParserSemanticQueryScope *scope,
                                                     const SZrAstNode *root);
@@ -60,5 +63,8 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_Diagnostics(
         const SZrSemanticContext *context,
         const SZrParserSemanticQueryScope *scope,
         SZrParserSemanticQueryDiagnostics *outDiagnostics);
+ZR_PARSER_API SZrAstNode *ZrParser_SemanticQuery_FindUnionDeclarationByTypeName(
+        SZrCompilerState *compilerState,
+        SZrString *typeName);
 
 #endif // ZR_VM_PARSER_SEMANTIC_QUERY_H

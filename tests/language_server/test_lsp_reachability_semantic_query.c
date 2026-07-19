@@ -72,6 +72,28 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+static const TZrChar *lsp_test_string_text(SZrString *value) {
+    if (value == ZR_NULL) {
+        return ZR_NULL;
+    }
+    return value->shortStringLength < ZR_VM_LONG_STRING_FLAG
+               ? ZrCore_String_GetNativeStringShort(value)
+               : ZrCore_String_GetNativeString(value);
+}
+
+static TZrBool lsp_diagnostics_contain_code(SZrArray *diagnostics, const TZrChar *expectedCode) {
+    for (TZrSize index = 0; diagnostics != ZR_NULL && index < diagnostics->length; index++) {
+        SZrLspDiagnostic **diagnosticPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, index);
+        const TZrChar *code = diagnosticPtr != ZR_NULL && *diagnosticPtr != ZR_NULL
+                                  ? lsp_test_string_text((*diagnosticPtr)->code)
+                                  : ZR_NULL;
+        if (code != ZR_NULL && strcmp(code, expectedCode) == 0) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool lsp_find_position_for_substring(const TZrChar *content,
                                                const TZrChar *needle,
                                                TZrSize occurrence,
@@ -308,6 +330,150 @@ static void test_local_query_returns_exhaustive_switch_reachability_fact(SZrStat
                  query.reachabilityFact != ZR_NULL && query.reachabilityFact->causeNode != ZR_NULL
                      ? (int)query.reachabilityFact->causeNode->type
                      : -1);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_local_query_marks_exhaustive_union_switch_default_unreachable(SZrState *state) {
+    const TZrChar *summary = "LSP Local Query Marks Exhaustive Union Switch Default Unreachable";
+    const TZrChar *uriText = "file:///local_exhaustive_union_switch_default_reachability.zr";
+    const TZrChar *content =
+        "union Choice {\n"
+        "    Empty;\n"
+        "    Num(value: int);\n"
+        "}\n"
+        "func inspect(value: Choice): int {\n"
+        "    switch (value) {\n"
+        "        (Empty) { return 0; }\n"
+        "        (Num(payload)) { return payload; }\n"
+        "        () {\n"
+        "            var redundantDefault = -1;\n"
+        "            return redundantDefault;\n"
+        "        }\n"
+        "    }\n"
+        "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition position;
+    SZrLspLocalSemanticQueryResult query;
+    SZrArray diagnostics;
+    TZrChar reason[512];
+
+    TEST_START(summary);
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "redundantDefault", 0, &position)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare exhaustive union switch fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics) ||
+        !lsp_diagnostics_contain_code(&diagnostics, "unreachable_union_switch_default")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Expected exhaustive union default warning diagnostic");
+        return;
+    }
+    ZrCore_Array_Free(state, &diagnostics);
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, position, &query)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "ExpressionAt returned false");
+        return;
+    }
+
+    if (query.status != ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT ||
+        query.reachabilityFact == ZR_NULL ||
+        query.reachabilityFact->state != ZR_SEMANTIC_REACHABILITY_UNREACHABLE ||
+        query.reachabilityFact->cause != ZR_SEMANTIC_REACHABILITY_AFTER_EXHAUSTIVE_BRANCH ||
+        query.reachabilityFact->causeNode == ZR_NULL ||
+        query.reachabilityFact->causeNode->type != ZR_AST_SWITCH_EXPRESSION) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected redundant union default to be unreachable; status=%d fact=%p cause=%d causeNodeType=%d",
+                 (int)query.status,
+                 (void *)query.reachabilityFact,
+                 query.reachabilityFact != ZR_NULL ? (int)query.reachabilityFact->cause : -1,
+                 query.reachabilityFact != ZR_NULL && query.reachabilityFact->causeNode != ZR_NULL
+                     ? (int)query.reachabilityFact->causeNode->type
+                     : -1);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_local_query_keeps_non_exhaustive_union_switch_default_reachable(SZrState *state) {
+    const TZrChar *summary = "LSP Local Query Keeps Non-Exhaustive Union Switch Default Reachable";
+    const TZrChar *uriText = "file:///local_non_exhaustive_union_switch_default_reachability.zr";
+    const TZrChar *content =
+        "union Choice {\n"
+        "    Empty;\n"
+        "    Num(value: int);\n"
+        "}\n"
+        "func inspect(value: Choice): int {\n"
+        "    switch (value) {\n"
+        "        (Empty) { return 0; }\n"
+        "        () {\n"
+        "            var reachableDefault = -1;\n"
+        "            return reachableDefault;\n"
+        "        }\n"
+        "    }\n"
+        "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition position;
+    SZrLspLocalSemanticQueryResult query;
+    TZrChar reason[384];
+
+    TEST_START(summary);
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "reachableDefault", 0, &position)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare non-exhaustive union switch fixture");
+        return;
+    }
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, position, &query)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "ExpressionAt returned false");
+        return;
+    }
+
+    if (query.reachabilityFact != ZR_NULL) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected non-exhaustive union default to stay reachable; status=%d fact=%p cause=%d",
+                 (int)query.status,
+                 (void *)query.reachabilityFact,
+                 (int)query.reachabilityFact->cause);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, summary, reason);
         return;
@@ -736,6 +902,8 @@ int main(void) {
     test_local_query_returns_exhaustive_branch_reachability_fact(state);
     test_local_query_returns_constant_conditional_branch_reachability_fact(state);
     test_local_query_returns_exhaustive_switch_reachability_fact(state);
+    test_local_query_marks_exhaustive_union_switch_default_unreachable(state);
+    test_local_query_keeps_non_exhaustive_union_switch_default_reachable(state);
     test_local_query_returns_constant_true_loop_exit_reachability_fact(state);
     test_local_query_returns_infinite_for_loop_exit_reachability_fact(state);
     test_local_query_keeps_constant_true_loop_with_break_reachable(state);

@@ -29,8 +29,41 @@ static cJSON *serialize_diagnostic_related_information(
     return json;
 }
 
+static cJSON *serialize_diagnostic_fix(const SZrLspDiagnosticFix *fix) {
+    cJSON *json;
+    cJSON *edit;
+    char *titleText;
+    char *editText;
+
+    if (fix == NULL) {
+        return cJSON_CreateNull();
+    }
+
+    json = cJSON_CreateObject();
+    edit = cJSON_CreateObject();
+    if (json == NULL || edit == NULL) {
+        cJSON_Delete(json);
+        cJSON_Delete(edit);
+        return NULL;
+    }
+
+    titleText = zr_string_to_c_string(fix->title);
+    cJSON_AddStringToObject(json, ZR_LSP_FIELD_TITLE, titleText != NULL ? titleText : "");
+    free(titleText);
+
+    editText = zr_string_to_c_string(fix->editText);
+    cJSON_AddItemToObject(edit, ZR_LSP_FIELD_RANGE, serialize_range(fix->editRange));
+    cJSON_AddStringToObject(edit, ZR_LSP_FIELD_NEW_TEXT, editText != NULL ? editText : "");
+    free(editText);
+
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_EDIT, edit);
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_APPLICABILITY, fix->applicability);
+    return json;
+}
+
 static cJSON *serialize_diagnostic_data(const SZrLspDiagnostic *diagnostic, const char *uriText) {
     cJSON *data;
+    cJSON *fixes;
     char *codeText;
 
     if (diagnostic == NULL || uriText == NULL) {
@@ -45,11 +78,26 @@ static cJSON *serialize_diagnostic_data(const SZrLspDiagnostic *diagnostic, cons
     cJSON_AddStringToObject(data, ZR_LSP_FIELD_URI, uriText);
     cJSON_AddItemToObject(data, ZR_LSP_FIELD_RANGE, serialize_range(diagnostic->range));
     cJSON_AddStringToObject(data, ZR_LSP_FIELD_SOURCE, ZR_LSP_DIAGNOSTIC_SOURCE_NAME);
+    cJSON_AddNumberToObject(data, ZR_LSP_FIELD_DESCRIPTOR_ID, diagnostic->descriptorId);
     if (diagnostic->code != ZR_NULL) {
         codeText = zr_string_to_c_string(diagnostic->code);
         if (codeText != NULL) {
             cJSON_AddStringToObject(data, ZR_LSP_FIELD_CODE, codeText);
             free(codeText);
+        }
+    }
+
+    if (diagnostic->fixes.isValid && diagnostic->fixes.length > 0) {
+        fixes = cJSON_CreateArray();
+        if (fixes != NULL) {
+            for (TZrSize index = 0; index < diagnostic->fixes.length; index++) {
+                const SZrLspDiagnosticFix *fix =
+                    (const SZrLspDiagnosticFix *)ZrCore_Array_Get((SZrArray *)&diagnostic->fixes, index);
+                if (fix != NULL) {
+                    cJSON_AddItemToArray(fixes, serialize_diagnostic_fix(fix));
+                }
+            }
+            cJSON_AddItemToObject(data, ZR_LSP_FIELD_FIXES, fixes);
         }
     }
     return data;

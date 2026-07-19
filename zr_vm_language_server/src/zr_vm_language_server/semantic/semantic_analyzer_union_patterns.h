@@ -32,6 +32,12 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveSwitchUnionPattern(
         const SZrInferredType *subjectType,
         SZrSemanticUnionPatternResolution *resolution);
 
+void ZrLanguageServer_SemanticAnalyzer_AnalyzeSwitchUnionExhaustiveness(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *switchNode,
+        const SZrInferredType *subjectType);
+
 void ZrLanguageServer_SemanticAnalyzer_RegisterUnionPatternBindings(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,

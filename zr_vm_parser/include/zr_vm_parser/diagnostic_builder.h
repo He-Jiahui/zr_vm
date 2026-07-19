@@ -19,6 +19,20 @@ typedef struct SZrStructuredDiagnosticRelatedInformation {
     SZrString *message;
 } SZrStructuredDiagnosticRelatedInformation;
 
+typedef enum EZrDiagnosticFixApplicability {
+    ZR_DIAGNOSTIC_FIX_APPLICABILITY_UNKNOWN = 0,
+    ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE,
+    ZR_DIAGNOSTIC_FIX_HAS_PLACEHOLDERS,
+    ZR_DIAGNOSTIC_FIX_MAYBE_INCORRECT
+} EZrDiagnosticFixApplicability;
+
+typedef struct SZrStructuredDiagnosticFix {
+    SZrString *title;
+    SZrFileRange editRange;
+    SZrString *editText;
+    EZrDiagnosticFixApplicability applicability;
+} SZrStructuredDiagnosticFix;
+
 typedef struct SZrStructuredDiagnostic {
     EZrStructuredDiagnosticSeverity severity;
     SZrFileRange location;
@@ -27,6 +41,8 @@ typedef struct SZrStructuredDiagnostic {
     SZrString *cause;
     SZrString *suggestion;
     SZrArray relatedInformation;
+    SZrArray fixes;
+    TZrUInt32 descriptorId;
 } SZrStructuredDiagnostic;
 
 ZR_PARSER_API void ZrParser_StructuredDiagnostic_Init(SZrStructuredDiagnostic *diagnostic);
@@ -35,6 +51,13 @@ ZR_PARSER_API TZrBool ZrParser_StructuredDiagnostic_AddRelatedInformation(SZrSta
                                                                           SZrStructuredDiagnostic *diagnostic,
                                                                           SZrFileRange location,
                                                                           const TZrChar *message);
+ZR_PARSER_API TZrBool ZrParser_StructuredDiagnostic_AddFix(
+        SZrState *state,
+        SZrStructuredDiagnostic *diagnostic,
+        const TZrChar *title,
+        SZrFileRange editRange,
+        const TZrChar *editText,
+        EZrDiagnosticFixApplicability applicability);
 
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_Build(SZrState *state,
                                                        SZrStructuredDiagnostic *out,
@@ -44,6 +67,14 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_Build(SZrState *state,
                                                        const TZrChar *message,
                                                        const TZrChar *cause,
                                                        const TZrChar *suggestion);
+ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildTypeMismatchDetailed(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location,
+        const TZrChar *expectedType,
+        const TZrChar *actualType,
+        const SZrFileRange *expectedTypeLocation,
+        const TZrChar *conversionHint);
 
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingExpressionAfterAssignment(
     SZrState *state,
@@ -233,6 +264,9 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildLegacyOwnershipTypeSyntaxW
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildWeakUpgrade(SZrState *state,
                                                                   SZrStructuredDiagnostic *out,
                                                                   SZrFileRange location);
+ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildUseAfterMove(SZrState *state,
+                                                                   SZrStructuredDiagnostic *out,
+                                                                   SZrFileRange location);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildBorrowEscape(SZrState *state,
                                                                    SZrStructuredDiagnostic *out,
                                                                    SZrFileRange location);

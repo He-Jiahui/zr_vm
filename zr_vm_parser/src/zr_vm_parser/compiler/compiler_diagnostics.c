@@ -246,16 +246,6 @@ static void compiler_append_error_suggestion(TZrChar *buffer,
                                 "              2. A declaration type was mistakenly used as an expression\n"
                                 "              3. Missing implementation for this node type in ZrParser_Expression_Compile\n"
                                 "              Check the AST structure and ensure the node is in the correct context.\n");
-    } else if (strstr(msg, "Type mismatch") != ZR_NULL ||
-               strstr(msg, "Incompatible types") != ZR_NULL) {
-        compiler_buffer_appendf(buffer,
-                                bufferSize,
-                                offset,
-                                "  Suggestion: Type mismatch detected. Check:\n"
-                                "              1. Variable types match their assignments\n"
-                                "              2. Function argument types match the function signature\n"
-                                "              3. Return types match the function declaration\n"
-                                "              4. Type annotations are correct\n");
     } else if (strstr(msg, "not found") != ZR_NULL) {
         compiler_buffer_appendf(buffer,
                                 bufferSize,
@@ -321,14 +311,6 @@ static void compiler_append_error_analysis(TZrChar *buffer,
                                 "    - Root Cause: The compiler encountered a node type that cannot be compiled\n"
                                 "                  as an expression. This may indicate a parsing error or missing\n"
                                 "                  implementation for this node type.\n");
-    } else if (strstr(msg, "Type mismatch") != ZR_NULL ||
-               strstr(msg, "Incompatible types") != ZR_NULL) {
-        compiler_buffer_appendf(buffer,
-                                bufferSize,
-                                offset,
-                                "    - Problem: Type compatibility check failed\n"
-                                "    - Root Cause: The types of operands, variables, or function arguments are\n"
-                                "                  not compatible with the operation or assignment being performed\n");
     } else if (strstr(msg, "not found") != ZR_NULL) {
         compiler_buffer_appendf(buffer,
                                 bufferSize,
@@ -414,6 +396,9 @@ static void compiler_report_error(SZrCompilerState *cs,
                                   const TZrChar *msg,
                                   SZrFileRange location,
                                   TZrBool clearStructuredError) {
+    const TZrChar *structuredCause = ZR_NULL;
+    const TZrChar *structuredSuggestion = ZR_NULL;
+
     if (cs == ZR_NULL) {
         return;
     }
@@ -457,9 +442,37 @@ static void compiler_report_error(SZrCompilerState *cs,
                             location.start.column,
                             location.end.line,
                             location.end.column);
-    compiler_append_error_analysis(messageBuffer, sizeof(messageBuffer), &offset, msg);
+    if (!clearStructuredError && cs->hasStructuredError) {
+        if (cs->structuredError.cause != ZR_NULL) {
+            structuredCause = cs->structuredError.cause->shortStringLength < ZR_VM_LONG_STRING_FLAG
+                                      ? ZrCore_String_GetNativeStringShort(cs->structuredError.cause)
+                                      : ZrCore_String_GetNativeString(cs->structuredError.cause);
+        }
+        if (cs->structuredError.suggestion != ZR_NULL) {
+            structuredSuggestion = cs->structuredError.suggestion->shortStringLength < ZR_VM_LONG_STRING_FLAG
+                                           ? ZrCore_String_GetNativeStringShort(cs->structuredError.suggestion)
+                                           : ZrCore_String_GetNativeString(cs->structuredError.suggestion);
+        }
+    }
+    if (structuredCause != ZR_NULL) {
+        compiler_buffer_appendf(messageBuffer,
+                                sizeof(messageBuffer),
+                                &offset,
+                                "\n  Error Analysis:\n    - Root Cause: %s\n",
+                                structuredCause);
+    } else {
+        compiler_append_error_analysis(messageBuffer, sizeof(messageBuffer), &offset, msg);
+    }
     compiler_buffer_appendf(messageBuffer, sizeof(messageBuffer), &offset, "\n  How to Fix:\n");
-    compiler_append_error_suggestion(messageBuffer, sizeof(messageBuffer), &offset, msg);
+    if (structuredSuggestion != ZR_NULL) {
+        compiler_buffer_appendf(messageBuffer,
+                                sizeof(messageBuffer),
+                                &offset,
+                                "  Suggestion: %s\n",
+                                structuredSuggestion);
+    } else {
+        compiler_append_error_suggestion(messageBuffer, sizeof(messageBuffer), &offset, msg);
+    }
     compiler_buffer_appendf(messageBuffer,
                             sizeof(messageBuffer),
                             &offset,

@@ -3,6 +3,7 @@
 //
 
 #include "semantic/semantic_analyzer_internal.h"
+#include "semantic/semantic_analyzer_duplicate_diagnostics.h"
 #include "semantic/semantic_analyzer_union_patterns.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
@@ -1065,29 +1066,32 @@ static SZrTypeMemberInfo *find_type_member_info_by_name(SZrTypePrototypeInfo *pr
 }
 
 static void report_duplicate_type_name_diagnostic(SZrState *state,
-                                                  SZrSemanticAnalyzer *analyzer,
-                                                  SZrString *name,
-                                                  SZrFileRange location) {
-    TZrChar message[ZR_LSP_TEXT_BUFFER_LENGTH];
-    const TZrChar *nameText;
+                                                   SZrSemanticAnalyzer *analyzer,
+                                                   SZrString *name,
+                                                   SZrFileRange location) {
+    SZrSymbol *previousSymbol;
+    const SZrFileRange *previousLocation = ZR_NULL;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || name == ZR_NULL) {
         return;
     }
 
-    nameText = semantic_string_native(name);
-    if (nameText != ZR_NULL) {
-        snprintf(message, sizeof(message), "Type name '%s' is already declared in this context", nameText);
-    } else {
-        snprintf(message, sizeof(message), "Type name is already declared in this context");
+    previousSymbol = analyzer->symbolTable != ZR_NULL
+                             ? ZrLanguageServer_SymbolTable_Lookup(
+                                       analyzer->symbolTable,
+                                       name,
+                                       ZR_NULL)
+                             : ZR_NULL;
+    if (previousSymbol != ZR_NULL) {
+        previousLocation = &previousSymbol->selectionRange;
     }
 
-    ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
-                                                    analyzer,
-                                                    ZR_DIAGNOSTIC_ERROR,
-                                                    location,
-                                                    message,
-                                                    "duplicate_type");
+    (void)ZrLanguageServer_SemanticAnalyzer_ReportDuplicateType(
+            state,
+            analyzer,
+            name,
+            location,
+            previousLocation);
 }
 
 static TZrBool register_type_name_binding_in_env(SZrState *state,
@@ -2248,7 +2252,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrString *name = classDecl->name != ZR_NULL ? classDecl->name->name : ZR_NULL;
             TZrLifetimeRegionId ownerRegionId = 0;
             if (name != ZR_NULL) {
-                if (!register_type_name_binding_in_env(state, analyzer, name, node->location)) {
+                if (!register_type_name_binding_in_env(
+                            state, analyzer, name, classDecl->nameLocation)) {
                     return;
                 }
                 ZrLanguageServer_SymbolTable_AddSymbolEx(state, analyzer->symbolTable,

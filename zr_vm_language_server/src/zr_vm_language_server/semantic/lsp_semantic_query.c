@@ -1,6 +1,7 @@
 #include "semantic/lsp_semantic_query.h"
 #include "semantic/lsp_semantic_definition_query.h"
 #include "semantic/lsp_semantic_import_chain.h"
+#include "semantic/semantic_analyzer_internal.h"
 #include "project/lsp_project_internal.h"
 
 #include "zr_vm_library/file.h"
@@ -2998,9 +2999,22 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
         fileVersion != ZR_NULL &&
         hasSnapshot &&
         fileVersion->ast != ZR_NULL) {
+        SZrAstNode *analysisRoot =
+            ZrLanguageServer_SemanticAnalyzer_FindAnalysisRootAtPosition(
+                fileVersion->ast,
+                fileRange);
         fallbackAnalyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         if (fallbackAnalyzer != ZR_NULL &&
-            ZrLanguageServer_SemanticAnalyzer_Analyze(state, fallbackAnalyzer, fileVersion->ast)) {
+            (analysisRoot != ZR_NULL
+                 ? ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
+                       state,
+                       fallbackAnalyzer,
+                       fileVersion->ast,
+                       analysisRoot)
+                 : ZrLanguageServer_SemanticAnalyzer_Analyze(
+                       state,
+                       fallbackAnalyzer,
+                       fileVersion->ast))) {
             metadataAnalyzer = fallbackAnalyzer;
             hasStructuredCompletions = ZrLanguageServer_Lsp_TryCollectReceiverCompletions(state,
                                                                                           context,

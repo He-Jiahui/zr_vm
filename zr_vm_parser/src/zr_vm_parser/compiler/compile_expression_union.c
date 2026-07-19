@@ -1,5 +1,6 @@
 #include "compile_expression_internal.h"
 #include "type_inference_internal.h"
+#include "zr_vm_parser/semantic_query.h"
 
 static SZrString *union_constructor_lookup_name(SZrCompilerState *cs, SZrString *typeName) {
     const TZrChar *typeText;
@@ -72,6 +73,12 @@ static SZrAstNode *find_union_declaration_for_constructor_type(SZrCompilerState 
 
 SZrAstNode *try_find_union_declaration_for_type_name(SZrCompilerState *cs, SZrString *typeName) {
     return find_union_declaration_for_constructor_type(cs, typeName);
+}
+
+ZR_PARSER_API SZrAstNode *ZrParser_SemanticQuery_FindUnionDeclarationByTypeName(
+        SZrCompilerState *compilerState,
+        SZrString *typeName) {
+    return find_union_declaration_for_constructor_type(compilerState, typeName);
 }
 
 static SZrString *union_variant_member_name(SZrAstNode *memberNode) {

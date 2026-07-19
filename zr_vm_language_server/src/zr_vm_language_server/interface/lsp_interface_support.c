@@ -3,6 +3,7 @@
 //
 
 #include "interface/lsp_interface_internal.h"
+#include "interface/lsp_diagnostic_fixes.h"
 #include "metadata/lsp_metadata_provider.h"
 #include "module/lsp_module_metadata.h"
 #include "project/lsp_project_internal.h"
@@ -1106,6 +1107,7 @@ static void lsp_append_diagnostic_internal(SZrState *state,
         lspRelated.message = related->message;
         ZrCore_Array_Push(state, &lspDiag->relatedInformation, &lspRelated);
     }
+    ZrLanguageServer_Lsp_CopyDiagnosticFixes(state, context, uri, diag, lspDiag);
     ZrCore_Array_Push(state, result, &lspDiag);
 }
 

@@ -160,6 +160,7 @@ static void test_lsp_diagnostics_publish_definite_assignment_related_information
         "}\n";
     const SZrLspDiagnostic *diagnostic;
     const SZrLspDiagnosticRelatedInformation *related;
+    const SZrLspDiagnosticFix *fix;
     const TZrChar *relatedMessage;
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -203,8 +204,11 @@ static void test_lsp_diagnostics_publish_definite_assignment_related_information
     diagnostic = diagnostic_array_find_code(&diagnostics, "possibly_uninitialized_read");
     if (diagnostic == ZR_NULL ||
         diagnostic->severity != 2 ||
+        diagnostic->descriptorId == 0 ||
         !diagnostic->relatedInformation.isValid ||
-        diagnostic->relatedInformation.length != 1) {
+        diagnostic->relatedInformation.length != 1 ||
+        !diagnostic->fixes.isValid ||
+        diagnostic->fixes.length != 1) {
         ZrCore_Array_Free(state, &diagnostics);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, summary, "Expected one related location for the declaration");
@@ -214,6 +218,7 @@ static void test_lsp_diagnostics_publish_definite_assignment_related_information
     related = (const SZrLspDiagnosticRelatedInformation *)ZrCore_Array_Get(
             (SZrArray *)&diagnostic->relatedInformation,
             0);
+    fix = (const SZrLspDiagnosticFix *)ZrCore_Array_Get((SZrArray *)&diagnostic->fixes, 0);
     relatedMessage = related != ZR_NULL ? test_string_text(related->message) : ZR_NULL;
     if (related == ZR_NULL ||
         relatedMessage == ZR_NULL ||
@@ -223,6 +228,22 @@ static void test_lsp_diagnostics_publish_definite_assignment_related_information
         ZrCore_Array_Free(state, &diagnostics);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, summary, "Expected related information to point at the seed declaration");
+        return;
+    }
+
+    if (fix == ZR_NULL ||
+        test_string_text(fix->title) == ZR_NULL ||
+        strcmp(test_string_text(fix->title), "Replace with an initialized value") != 0 ||
+        test_string_text(fix->editText) == ZR_NULL ||
+        strcmp(test_string_text(fix->editText), "<value>") != 0 ||
+        fix->applicability != ZR_DIAGNOSTIC_FIX_HAS_PLACEHOLDERS ||
+        fix->editRange.start.line != 5 ||
+        fix->editRange.start.character != 11 ||
+        fix->editRange.end.line != 5 ||
+        fix->editRange.end.character != 15) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Expected placeholder fix to replace the uninitialized read");
         return;
     }
 
@@ -857,6 +878,9 @@ static void test_lsp_diagnostics_publish_non_integer_array_index(SZrState *state
     TEST_PASS(timer, summary);
 }
 
+#include "test_lsp_duplicate_definition_diagnostic_cases.h"
+#include "test_lsp_type_mismatch_diagnostic_cases.h"
+
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -891,6 +915,9 @@ int main(void) {
     test_lsp_diagnostics_publish_array_min_max_bounds(state);
     test_lsp_diagnostics_publish_min_only_array_negative_interval(state);
     test_lsp_diagnostics_publish_non_integer_array_index(state);
+    test_lsp_diagnostics_publish_duplicate_type_related_information(state);
+    test_lsp_diagnostics_publish_detailed_initializer_type_mismatch(state);
+    test_lsp_diagnostics_publish_detailed_assignment_and_return_type_mismatch(state);
 
     ZrCore_GlobalState_Free(global);
 

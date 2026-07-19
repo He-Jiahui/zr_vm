@@ -6,6 +6,9 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_parser/diagnostic_builder.h"
+#include "zr_vm_parser/diagnostic_messages.h"
+#include "zr_vm_parser/diagnostic_registry.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
@@ -616,14 +619,27 @@ static void test_semantic_query_diagnostics_maps_definite_assignment_read_facts_
     assert_zr_string_equals("Variable may be read before assignment", diagnostics.items[0].message);
     TEST_ASSERT_TRUE(diagnostics.items[0].relatedInformation.isValid);
     TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)diagnostics.items[0].relatedInformation.length);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0, diagnostics.items[0].descriptorId);
+    TEST_ASSERT_TRUE(diagnostics.items[0].fixes.isValid);
+    TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)diagnostics.items[0].fixes.length);
     {
         const SZrStructuredDiagnosticRelatedInformation *related =
                 (const SZrStructuredDiagnosticRelatedInformation *)ZrCore_Array_Get(
                         (SZrArray *)&diagnostics.items[0].relatedInformation,
                         0);
+        const SZrStructuredDiagnosticFix *fix =
+                (const SZrStructuredDiagnosticFix *)ZrCore_Array_Get(
+                        (SZrArray *)&diagnostics.items[0].fixes,
+                        0);
         TEST_ASSERT_NOT_NULL(related);
         TEST_ASSERT_EQUAL_UINT32(2, (TZrUInt32)related->location.start.offset);
         assert_zr_string_equals("Variable declaration is here", related->message);
+        TEST_ASSERT_NOT_NULL(fix);
+        assert_zr_string_equals("Replace with an initialized value", fix->title);
+        assert_zr_string_equals("<value>", fix->editText);
+        TEST_ASSERT_EQUAL_INT(ZR_DIAGNOSTIC_FIX_HAS_PLACEHOLDERS, fix->applicability);
+        TEST_ASSERT_EQUAL_UINT32(8, (TZrUInt32)fix->editRange.start.offset);
+        TEST_ASSERT_EQUAL_UINT32(12, (TZrUInt32)fix->editRange.end.offset);
     }
     TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_ERROR, diagnostics.items[1].severity);
     TEST_ASSERT_EQUAL_UINT32(16, (TZrUInt32)diagnostics.items[1].location.start.offset);
@@ -631,6 +647,8 @@ static void test_semantic_query_diagnostics_maps_definite_assignment_read_facts_
     assert_zr_string_equals("Variable is read before assignment", diagnostics.items[1].message);
     TEST_ASSERT_TRUE(diagnostics.items[1].relatedInformation.isValid);
     TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)diagnostics.items[1].relatedInformation.length);
+    TEST_ASSERT_TRUE(diagnostics.items[1].fixes.isValid);
+    TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)diagnostics.items[1].fixes.length);
 
     ZrParser_SemanticContext_Free(context);
 }
@@ -757,6 +775,163 @@ static void test_semantic_query_diagnostics_consumes_linear_definite_assignment_
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_diagnostic_registry_assigns_stable_descriptors(void) {
+    const SZrDiagnosticDescriptor *possibleUninitialized;
+    const SZrDiagnosticDescriptor *typeMismatch;
+    const SZrDiagnosticDescriptor *useAfterMove;
+    SZrStructuredDiagnostic diagnostic;
+    TZrSize descriptorCount;
+    TZrSize index;
+
+    descriptorCount = ZrParser_DiagnosticRegistry_Count();
+    TEST_ASSERT_EQUAL_UINT32(56, (TZrUInt32)descriptorCount);
+
+    possibleUninitialized =
+            ZrParser_DiagnosticRegistry_FindByCode("possibly_uninitialized_read");
+    TEST_ASSERT_NOT_NULL(possibleUninitialized);
+    TEST_ASSERT_EQUAL_UINT32(3003, possibleUninitialized->id);
+    TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_WARNING,
+                          possibleUninitialized->defaultSeverity);
+    TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_FLOW,
+                          possibleUninitialized->category);
+    TEST_ASSERT_NOT_NULL(possibleUninitialized->titleKey);
+    TEST_ASSERT_NOT_NULL(possibleUninitialized->messageFormatKey);
+    TEST_ASSERT_NOT_NULL(possibleUninitialized->helpUri);
+    TEST_ASSERT_EQUAL_PTR(
+            possibleUninitialized,
+            ZrParser_DiagnosticRegistry_FindById(possibleUninitialized->id));
+
+    useAfterMove = ZrParser_DiagnosticRegistry_FindByCode("use_after_move");
+    TEST_ASSERT_NOT_NULL(useAfterMove);
+    TEST_ASSERT_EQUAL_UINT32(4001, useAfterMove->id);
+    TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_OWNERSHIP,
+                          useAfterMove->category);
+
+    typeMismatch = ZrParser_DiagnosticRegistry_FindByCode("type_mismatch");
+    TEST_ASSERT_NOT_NULL(typeMismatch);
+    TEST_ASSERT_EQUAL_UINT32(2011, typeMismatch->id);
+    TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_TYPE, typeMismatch->category);
+
+    for (index = 0; index < descriptorCount; index++) {
+        const SZrDiagnosticDescriptor *descriptor =
+                ZrParser_DiagnosticRegistry_DescriptorAt(index);
+        TZrSize previousIndex;
+
+        TEST_ASSERT_NOT_NULL(descriptor);
+        TEST_ASSERT_NOT_EQUAL_UINT32(0, descriptor->id);
+        TEST_ASSERT_NOT_NULL(descriptor->code);
+        TEST_ASSERT_EQUAL_PTR(
+                descriptor,
+                ZrParser_DiagnosticRegistry_FindByCode(descriptor->code));
+        TEST_ASSERT_EQUAL_PTR(
+                descriptor,
+                ZrParser_DiagnosticRegistry_FindById(descriptor->id));
+        for (previousIndex = 0; previousIndex < index; previousIndex++) {
+            const SZrDiagnosticDescriptor *previous =
+                    ZrParser_DiagnosticRegistry_DescriptorAt(previousIndex);
+            TEST_ASSERT_NOT_NULL(previous);
+            TEST_ASSERT_NOT_EQUAL_UINT32(previous->id, descriptor->id);
+            TEST_ASSERT_NOT_EQUAL(0, strcmp(previous->code, descriptor->code));
+        }
+    }
+
+    TEST_ASSERT_NULL(ZrParser_DiagnosticRegistry_FindByCode("not_registered"));
+    TEST_ASSERT_NULL(ZrParser_DiagnosticRegistry_FindById(0));
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_Build(
+            g_state,
+            &diagnostic,
+            ZR_STRUCTURED_DIAGNOSTIC_INFO,
+            test_range(0, 1),
+            "not_registered",
+            "Unknown diagnostic",
+            ZR_NULL,
+            ZR_NULL));
+    TEST_ASSERT_EQUAL_UINT32(0, diagnostic.descriptorId);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+}
+
+static void test_diagnostic_message_table_covers_registry_and_falls_back_to_english(void) {
+    TZrSize descriptorCount = ZrParser_DiagnosticRegistry_Count();
+    TZrSize messageCount = ZrParser_DiagnosticMessages_Count();
+    TZrSize index;
+
+    TEST_ASSERT_EQUAL_UINT32(
+            (TZrUInt32)(descriptorCount * 2),
+            (TZrUInt32)messageCount);
+
+    for (index = 0; index < messageCount; index++) {
+        const SZrDiagnosticMessage *message =
+                ZrParser_DiagnosticMessages_MessageAt(index);
+        TZrSize previousIndex;
+
+        TEST_ASSERT_NOT_NULL(message);
+        TEST_ASSERT_NOT_NULL(message->key);
+        TEST_ASSERT_EQUAL_PTR(message, ZrParser_DiagnosticMessages_Find(message->key));
+        for (previousIndex = 0; previousIndex < index; previousIndex++) {
+            const SZrDiagnosticMessage *previous =
+                    ZrParser_DiagnosticMessages_MessageAt(previousIndex);
+            TEST_ASSERT_NOT_NULL(previous);
+            TEST_ASSERT_NOT_EQUAL(0, strcmp(previous->key, message->key));
+        }
+    }
+    TEST_ASSERT_NULL(ZrParser_DiagnosticMessages_MessageAt(messageCount));
+
+    for (index = 0; index < descriptorCount; index++) {
+        const SZrDiagnosticDescriptor *descriptor =
+                ZrParser_DiagnosticRegistry_DescriptorAt(index);
+        const SZrDiagnosticMessage *title;
+        const SZrDiagnosticMessage *messageFormat;
+        const TZrChar *englishTitle;
+        const TZrChar *englishMessageFormat;
+
+        TEST_ASSERT_NOT_NULL(descriptor);
+        title = ZrParser_DiagnosticMessages_Find(descriptor->titleKey);
+        messageFormat = ZrParser_DiagnosticMessages_Find(descriptor->messageFormatKey);
+        TEST_ASSERT_NOT_NULL(title);
+        TEST_ASSERT_NOT_NULL(messageFormat);
+        TEST_ASSERT_NOT_NULL(title->english);
+        TEST_ASSERT_NOT_NULL(messageFormat->english);
+        TEST_ASSERT_TRUE(title->english[0] != '\0');
+        TEST_ASSERT_TRUE(messageFormat->english[0] != '\0');
+        TEST_ASSERT_NULL(title->chineseSimplified);
+        TEST_ASSERT_NULL(messageFormat->chineseSimplified);
+
+        englishTitle = ZrParser_DiagnosticMessages_Resolve(
+                ZR_DIAGNOSTIC_LOCALE_ENGLISH,
+                descriptor->titleKey);
+        englishMessageFormat = ZrParser_DiagnosticMessages_Resolve(
+                ZR_DIAGNOSTIC_LOCALE_ENGLISH,
+                descriptor->messageFormatKey);
+        TEST_ASSERT_EQUAL_STRING(title->english, englishTitle);
+        TEST_ASSERT_EQUAL_STRING(messageFormat->english, englishMessageFormat);
+        TEST_ASSERT_EQUAL_STRING(
+                englishTitle,
+                ZrParser_DiagnosticMessages_Resolve(
+                        ZR_DIAGNOSTIC_LOCALE_CHINESE_SIMPLIFIED,
+                        descriptor->titleKey));
+        TEST_ASSERT_EQUAL_STRING(
+                englishMessageFormat,
+                ZrParser_DiagnosticMessages_Resolve(
+                        ZR_DIAGNOSTIC_LOCALE_CHINESE_SIMPLIFIED,
+                        descriptor->messageFormatKey));
+    }
+
+    TEST_ASSERT_EQUAL_STRING(
+            "Type mismatch",
+            ZrParser_DiagnosticMessages_Resolve(
+                    ZR_DIAGNOSTIC_LOCALE_ENGLISH,
+                    "diagnostic.type_mismatch.title"));
+    TEST_ASSERT_EQUAL_STRING(
+            "Expected '%s' but found '%s'",
+            ZrParser_DiagnosticMessages_Resolve(
+                    ZR_DIAGNOSTIC_LOCALE_ENGLISH,
+                    "diagnostic.type_mismatch.message"));
+    TEST_ASSERT_NULL(ZrParser_DiagnosticMessages_Find("diagnostic.not_registered.title"));
+    TEST_ASSERT_NULL(ZrParser_DiagnosticMessages_Resolve(
+            ZR_DIAGNOSTIC_LOCALE_ENGLISH,
+            "diagnostic.not_registered.title"));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_semantic_query_type_at_copies_narrowest_expression_type);
@@ -773,5 +948,7 @@ int main(void) {
     RUN_TEST(test_semantic_query_diagnostics_maps_numeric_overflow_facts_in_scope);
     RUN_TEST(test_semantic_query_diagnostics_maps_array_bounds_facts_in_scope);
     RUN_TEST(test_semantic_query_diagnostics_consumes_linear_definite_assignment_resolution);
+    RUN_TEST(test_diagnostic_registry_assigns_stable_descriptors);
+    RUN_TEST(test_diagnostic_message_table_covers_registry_and_falls_back_to_english);
     return UNITY_END();
 }

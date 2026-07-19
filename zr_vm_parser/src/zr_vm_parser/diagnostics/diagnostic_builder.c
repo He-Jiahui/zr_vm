@@ -1,4 +1,5 @@
 #include "zr_vm_parser/diagnostic_builder.h"
+#include "zr_vm_parser/diagnostic_registry.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -19,6 +20,7 @@ void ZrParser_StructuredDiagnostic_Init(SZrStructuredDiagnostic *diagnostic) {
     memset(diagnostic, 0, sizeof(*diagnostic));
     diagnostic->severity = ZR_STRUCTURED_DIAGNOSTIC_ERROR;
     ZrCore_Array_Construct(&diagnostic->relatedInformation);
+    ZrCore_Array_Construct(&diagnostic->fixes);
 }
 
 void ZrParser_StructuredDiagnostic_Free(SZrState *state, SZrStructuredDiagnostic *diagnostic) {
@@ -28,6 +30,9 @@ void ZrParser_StructuredDiagnostic_Free(SZrState *state, SZrStructuredDiagnostic
 
     if (state != ZR_NULL && diagnostic->relatedInformation.isValid) {
         ZrCore_Array_Free(state, &diagnostic->relatedInformation);
+    }
+    if (state != ZR_NULL && diagnostic->fixes.isValid) {
+        ZrCore_Array_Free(state, &diagnostic->fixes);
     }
     diagnostic->code = ZR_NULL;
     diagnostic->message = ZR_NULL;
@@ -78,6 +83,7 @@ TZrBool ZrParser_DiagnosticBuilder_Build(SZrState *state,
     ZrParser_StructuredDiagnostic_Init(out);
     out->severity = severity;
     out->location = location;
+    out->descriptorId = ZrParser_DiagnosticRegistry_DescriptorIdForCode(code);
     out->code = structured_diagnostic_create_string(state, code);
     out->message = structured_diagnostic_create_string(state, message);
     out->cause = cause != ZR_NULL ? structured_diagnostic_create_string(state, cause) : ZR_NULL;

@@ -679,6 +679,22 @@ static TZrBool cfg_build_statement_list(SZrState *state,
             }
             continue;
         }
+        if (statement != ZR_NULL &&
+            statement->type == ZR_AST_USING_STATEMENT &&
+            statement->data.usingStatement.isBlockScoped &&
+            statement->data.usingStatement.guardKind == ZR_USING_GUARD_DROP &&
+            statement->data.usingStatement.body != ZR_NULL) {
+            if (!cfg_build_using_statement(state,
+                                           cfg,
+                                           statement,
+                                           inOutPreviousBlockId,
+                                           pendingCause,
+                                           pendingCauseNode,
+                                           loopTargets)) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
 
         blockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_STATEMENT, statement);
         block = cfg_get_block(cfg, blockId);

@@ -23,6 +23,11 @@ typedef struct SDefiniteAssignmentHarness {
     TZrSize symbolIndex;
 } SDefiniteAssignmentHarness;
 
+typedef struct SDataflowOscillationHarness {
+    TZrSize joinCalls;
+    TZrSize changeLimit;
+} SDataflowOscillationHarness;
+
 static SZrState *g_state;
 
 void setUp(void) {
@@ -114,6 +119,50 @@ static TZrBool dataflow_join_or(void *dst, const void *src, void *userData) {
     ZR_UNUSED_PARAMETER(userData);
     *dstValue |= srcValue;
     return *dstValue != previous;
+}
+
+static TZrBool dataflow_join_bounded_oscillation(void *dst, const void *src, void *userData) {
+    SDataflowOscillationHarness *harness = (SDataflowOscillationHarness *)userData;
+
+    ZR_UNUSED_PARAMETER(src);
+    if (harness->joinCalls >= harness->changeLimit) {
+        return ZR_FALSE;
+    }
+
+    harness->joinCalls++;
+    *((TZrUInt32 *)dst) ^= 1U;
+    return ZR_TRUE;
+}
+
+static void dataflow_build_cyclic_cfg(SZrParserCfg *cfg) {
+    SZrParserCfgBlock block;
+
+    ZrParser_Cfg_Init(g_state, cfg);
+
+    memset(&block, 0, sizeof(block));
+    block.id = 0;
+    block.kind = ZR_PARSER_CFG_BLOCK_ENTRY;
+    block.successors[0] = 1;
+    block.successorCount = 1;
+    ZrCore_Array_Push(g_state, &cfg->blocks, &block);
+
+    memset(&block, 0, sizeof(block));
+    block.id = 1;
+    block.kind = ZR_PARSER_CFG_BLOCK_STATEMENT;
+    block.successors[0] = 1;
+    block.successors[1] = 2;
+    block.successorCount = 2;
+    block.predecessorCount = 2;
+    ZrCore_Array_Push(g_state, &cfg->blocks, &block);
+
+    memset(&block, 0, sizeof(block));
+    block.id = 2;
+    block.kind = ZR_PARSER_CFG_BLOCK_EXIT;
+    block.predecessorCount = 1;
+    ZrCore_Array_Push(g_state, &cfg->blocks, &block);
+
+    cfg->entryBlockId = 0;
+    cfg->exitBlockId = 2;
 }
 
 static void dataflow_record_statement(SZrAstNode *statement, void *state, void *userData) {
@@ -310,11 +359,155 @@ static void test_definite_assignment_join_marks_one_branch_assignment_as_maybe_i
     ZrParser_Ast_Free(g_state, script);
 }
 
+static void assert_dataflow_transfers_cleanup_block(
+        EZrParserDataflowDirection direction) {
+    SZrParserCfg cfg;
+    SZrParserDataflowResult result;
+    SZrParserDataflowAnalysis analysis;
+    SDataflowVisitLog log;
+    SZrAstNode *cleanupStatement =
+            test_node(ZR_AST_USING_STATEMENT, 4, 20);
+    TZrUInt32 cleanupBlockId;
+
+    memset(&log, 0, sizeof(log));
+    ZrParser_Cfg_Init(g_state, &cfg);
+    ZrParser_DataflowResult_Init(&result);
+
+    cfg.entryBlockId = ZrParser_Cfg_AppendBlock(
+            g_state,
+            &cfg,
+            ZR_PARSER_CFG_BLOCK_ENTRY,
+            ZR_NULL);
+    cleanupBlockId = ZrParser_Cfg_AppendBlock(
+            g_state,
+            &cfg,
+            ZR_PARSER_CFG_BLOCK_CLEANUP,
+            cleanupStatement);
+    cfg.exitBlockId = ZrParser_Cfg_AppendBlock(
+            g_state,
+            &cfg,
+            ZR_PARSER_CFG_BLOCK_EXIT,
+            ZR_NULL);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_PARSER_CFG_INVALID_BLOCK_ID, cfg.entryBlockId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_PARSER_CFG_INVALID_BLOCK_ID, cleanupBlockId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_PARSER_CFG_INVALID_BLOCK_ID, cfg.exitBlockId);
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            &cfg,
+            cfg.entryBlockId,
+            cleanupBlockId,
+            ZR_PARSER_CFG_EDGE_CLEANUP,
+            cleanupStatement));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            &cfg,
+            cleanupBlockId,
+            cfg.exitBlockId,
+            ZR_PARSER_CFG_EDGE_NORMAL,
+            cleanupStatement));
+
+    analysis.direction = direction;
+    analysis.stateSize = sizeof(TZrUInt32);
+    analysis.initEntry = dataflow_init_zero;
+    analysis.join = dataflow_join_or;
+    analysis.transferStatement = dataflow_record_statement;
+    analysis.userData = &log;
+
+    TEST_ASSERT_TRUE(ZrParser_Dataflow_Run(g_state, &cfg, &analysis, &result));
+    TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)log.count);
+    TEST_ASSERT_EQUAL_PTR(cleanupStatement, log.nodes[0]);
+
+    ZrParser_DataflowResult_Free(g_state, &result);
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, cleanupStatement);
+}
+
+static void test_forward_dataflow_transfers_cleanup_block_statement(void) {
+    assert_dataflow_transfers_cleanup_block(ZR_PARSER_DATAFLOW_FORWARD);
+}
+
+static void test_backward_dataflow_transfers_cleanup_block_statement(void) {
+    assert_dataflow_transfers_cleanup_block(ZR_PARSER_DATAFLOW_BACKWARD);
+}
+
+static void test_dataflow_iteration_budget_degrades_with_partial_result(void) {
+    SZrParserCfg cfg;
+    SZrParserDataflowResult result;
+    SZrParserDataflowAnalysis analysis;
+    SDataflowOscillationHarness harness;
+
+    memset(&harness, 0, sizeof(harness));
+    harness.changeLimit = 4096;
+    dataflow_build_cyclic_cfg(&cfg);
+    ZrParser_DataflowResult_Init(&result);
+
+    analysis.direction = ZR_PARSER_DATAFLOW_FORWARD;
+    analysis.stateSize = sizeof(TZrUInt32);
+    analysis.initEntry = dataflow_init_zero;
+    analysis.join = dataflow_join_bounded_oscillation;
+    analysis.transferStatement = ZR_NULL;
+    analysis.userData = &harness;
+
+    TEST_ASSERT_FALSE(ZrParser_Dataflow_Run(g_state, &cfg, &analysis, &result));
+    TEST_ASSERT_TRUE(harness.joinCalls > 0);
+    TEST_ASSERT_TRUE(harness.joinCalls < harness.changeLimit);
+    TEST_ASSERT_NOT_NULL(ZrParser_Dataflow_GetBlockState(&result, cfg.entryBlockId));
+
+    ZrParser_DataflowResult_Free(g_state, &result);
+    ZrParser_Cfg_Free(g_state, &cfg);
+}
+
+static void test_dataflow_invalid_analysis_degrades_without_allocating_result(void) {
+    SZrParserCfg cfg;
+    SZrParserDataflowResult result;
+    SZrParserDataflowAnalysis analysis;
+
+    dataflow_build_cyclic_cfg(&cfg);
+    ZrParser_DataflowResult_Init(&result);
+    memset(&analysis, 0, sizeof(analysis));
+    analysis.direction = ZR_PARSER_DATAFLOW_FORWARD;
+    analysis.stateSize = sizeof(TZrUInt32);
+    analysis.initEntry = dataflow_init_zero;
+
+    TEST_ASSERT_FALSE(ZrParser_Dataflow_Run(g_state, &cfg, &analysis, &result));
+    TEST_ASSERT_FALSE(result.blockStates.isValid);
+
+    ZrParser_DataflowResult_Free(g_state, &result);
+    ZrParser_Cfg_Free(g_state, &cfg);
+}
+
+static void test_dataflow_oversized_cfg_degrades_without_allocating_result(void) {
+    SZrParserCfg cfg;
+    SZrParserDataflowResult result;
+    SZrParserDataflowAnalysis analysis;
+
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.blocks.isValid = ZR_TRUE;
+    cfg.blocks.length = ZR_PARSER_DATAFLOW_MAX_BLOCK_COUNT + 1U;
+    cfg.entryBlockId = 0;
+    ZrParser_DataflowResult_Init(&result);
+
+    analysis.direction = ZR_PARSER_DATAFLOW_FORWARD;
+    analysis.stateSize = sizeof(TZrUInt32);
+    analysis.initEntry = dataflow_init_zero;
+    analysis.join = dataflow_join_or;
+    analysis.transferStatement = ZR_NULL;
+    analysis.userData = ZR_NULL;
+
+    TEST_ASSERT_FALSE(ZrParser_Dataflow_Run(g_state, &cfg, &analysis, &result));
+    TEST_ASSERT_FALSE(result.blockStates.isValid);
+
+    ZrParser_DataflowResult_Free(g_state, &result);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_forward_dataflow_skips_unreachable_statement_after_return);
     RUN_TEST(test_backward_dataflow_reaches_return_through_exit_edge);
     RUN_TEST(test_definite_assignment_single_assignment_reaches_exit_as_init);
     RUN_TEST(test_definite_assignment_join_marks_one_branch_assignment_as_maybe_init);
+    RUN_TEST(test_forward_dataflow_transfers_cleanup_block_statement);
+    RUN_TEST(test_backward_dataflow_transfers_cleanup_block_statement);
+    RUN_TEST(test_dataflow_iteration_budget_degrades_with_partial_result);
+    RUN_TEST(test_dataflow_invalid_analysis_degrades_without_allocating_result);
+    RUN_TEST(test_dataflow_oversized_cfg_degrades_without_allocating_result);
     return UNITY_END();
 }

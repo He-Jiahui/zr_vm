@@ -1,4 +1,5 @@
 #include "semantic/semantic_analyzer_union_patterns.h"
+#include "zr_vm_parser/semantic_query.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 TZrBool try_resolve_union_variant_pattern_expression(SZrCompilerState *cs,
@@ -501,6 +502,119 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveSwitchUnionPattern(
     }
 
     return resolution->variant != ZR_NULL;
+}
+
+static TZrBool union_lsp_switch_is_exhaustive(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrSwitchExpression *switchExpression,
+        const SZrInferredType *subjectType) {
+    SZrAstNode *unionDeclaration;
+    SZrAstNodeArray *variants;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
+        switchExpression == ZR_NULL || subjectType == ZR_NULL || subjectType->typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    unionDeclaration = ZrParser_SemanticQuery_FindUnionDeclarationByTypeName(
+            analyzer->compilerState,
+            subjectType->typeName);
+    if (unionDeclaration == ZR_NULL || unionDeclaration->type != ZR_AST_UNION_DECLARATION) {
+        return ZR_FALSE;
+    }
+
+    variants = unionDeclaration->data.unionDeclaration.variants;
+    if (variants == ZR_NULL || variants->nodes == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize variantIndex = 0; variantIndex < variants->count; variantIndex++) {
+        SZrAstNode *variant = variants->nodes[variantIndex];
+        TZrBool covered = ZR_FALSE;
+
+        if (variant == ZR_NULL || variant->type != ZR_AST_UNION_VARIANT) {
+            continue;
+        }
+
+        if (switchExpression->cases != ZR_NULL && switchExpression->cases->nodes != ZR_NULL) {
+            for (TZrSize caseIndex = 0; caseIndex < switchExpression->cases->count; caseIndex++) {
+                SZrAstNode *caseNode = switchExpression->cases->nodes[caseIndex];
+                SZrSemanticUnionPatternResolution resolution;
+
+                if (caseNode == ZR_NULL || caseNode->type != ZR_AST_SWITCH_CASE) {
+                    continue;
+                }
+
+                ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionInit(state, &resolution);
+                covered = ZrLanguageServer_SemanticAnalyzer_ResolveSwitchUnionPattern(
+                                  state,
+                                  analyzer,
+                                  caseNode->data.switchCase.value,
+                                  subjectType,
+                                  &resolution) &&
+                          resolution.variant == variant;
+                ZrLanguageServer_SemanticAnalyzer_UnionPatternResolutionFree(state, &resolution);
+                if (covered) {
+                    break;
+                }
+            }
+        }
+
+        if (!covered) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+void ZrLanguageServer_SemanticAnalyzer_AnalyzeSwitchUnionExhaustiveness(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *switchNode,
+        const SZrInferredType *subjectType) {
+    SZrSwitchExpression *switchExpression;
+    SZrAstNode *defaultCase;
+    SZrAstNode *defaultBlock;
+    SZrFileRange defaultRange;
+    SZrSemanticReachabilityFact fact;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || switchNode == ZR_NULL ||
+        switchNode->type != ZR_AST_SWITCH_EXPRESSION) {
+        return;
+    }
+
+    switchExpression = &switchNode->data.switchExpression;
+    switchExpression->isUnionExhaustive =
+        union_lsp_switch_is_exhaustive(state, analyzer, switchExpression, subjectType);
+    defaultCase = switchExpression->defaultCase;
+    if (!switchExpression->isUnionExhaustive || defaultCase == ZR_NULL ||
+        defaultCase->type != ZR_AST_SWITCH_DEFAULT) {
+        return;
+    }
+
+    defaultBlock = defaultCase->data.switchDefault.block;
+    defaultRange = defaultBlock != ZR_NULL ? defaultBlock->location : defaultCase->location;
+    ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(
+            state,
+            analyzer,
+            ZR_DIAGNOSTIC_WARNING,
+            defaultRange,
+            "Default switch arm is unreachable because all union variants are covered",
+            "unreachable_union_switch_default");
+
+    if (analyzer->semanticContext == ZR_NULL) {
+        return;
+    }
+
+    memset(&fact, 0, sizeof(fact));
+    fact.node = defaultCase;
+    fact.range = defaultRange;
+    fact.state = ZR_SEMANTIC_REACHABILITY_UNREACHABLE;
+    fact.cause = ZR_SEMANTIC_REACHABILITY_AFTER_EXHAUSTIVE_BRANCH;
+    fact.causeNode = switchNode;
+    ZrParser_SemanticFacts_AppendReachability(analyzer->semanticContext, &fact);
 }
 
 void ZrLanguageServer_SemanticAnalyzer_RegisterUnionPatternBindings(
