@@ -3,6 +3,7 @@
 //
 
 #include "zr_vm_language_server/incremental_parser.h"
+#include "incremental_change.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/object.h"
@@ -202,6 +203,7 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
         ZrParser_FilePosition_Create(0, 0, 0),
         uri
     );
+    ZrLanguageServer_IncrementalChange_Reset(uri, &fileVersion->lastChangeInfo);
     fileVersion->lastContentHash = ZR_NULL;
     fileVersion->lastContentHashLength = 0;
     fileVersion->hasIncrementalInfo = ZR_FALSE;
@@ -278,11 +280,12 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
                                  const TZrChar *content,
                                  TZrSize contentLength,
                                  TZrSize version,
-                                 SZrFileRange changeRange) {
+                                 const SZrFileChangeInfo *changeInfo) {
     SZrFileVersionContentBlock *newBlock;
     TZrSize contentGeneration;
 
-    if (state == ZR_NULL || fileVersion == ZR_NULL || content == ZR_NULL) {
+    if (state == ZR_NULL || fileVersion == ZR_NULL || content == ZR_NULL ||
+        changeInfo == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -298,7 +301,8 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
     fileVersion->textBlock = newBlock;
     fileVersion->version = version;
     fileVersion->isDirty = ZR_TRUE;
-    fileVersion->lastChangeRange = changeRange;
+    fileVersion->lastChangeInfo = *changeInfo;
+    fileVersion->lastChangeRange = changeInfo->newRange;
     fileVersion->hasIncrementalInfo = ZR_TRUE; /* 标记有增量信息 */
 
     clear_parser_diagnostics(state, fileVersion);
@@ -390,15 +394,27 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
             if (version > fileVersion->version) {
                 fileVersion->version = version;
             }
+            ZrLanguageServer_IncrementalChange_Reset(uri, &fileVersion->lastChangeInfo);
+            fileVersion->lastChangeRange = fileVersion->lastChangeInfo.newRange;
+            fileVersion->hasIncrementalInfo = ZR_FALSE;
             return ZR_TRUE;
         }
         // 更新现有文件
-        SZrFileRange changeRange = ZrParser_FileRange_Create(
-            ZrParser_FilePosition_Create(0, 0, 0),
-            ZrParser_FilePosition_Create(contentLength, 0, 0),
-            uri
-        );
-        return ZrLanguageServer_FileVersion_UpdateContent(state, fileVersion, content, contentLength, version, changeRange);
+        SZrFileChangeInfo changeInfo;
+        ZrLanguageServer_IncrementalChange_Compute(
+                uri,
+                fileVersion->textBlock->content,
+                fileVersion->textBlock->contentLength,
+                content,
+                contentLength,
+                &changeInfo);
+        return ZrLanguageServer_FileVersion_UpdateContent(
+                state,
+                fileVersion,
+                content,
+                contentLength,
+                version,
+                &changeInfo);
     } else {
         // 创建新文件
         fileVersion = ZrLanguageServer_FileVersion_New(state, uri, content, contentLength, version);

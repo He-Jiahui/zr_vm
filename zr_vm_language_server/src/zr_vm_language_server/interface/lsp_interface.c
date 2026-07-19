@@ -1183,6 +1183,18 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
     if (!ZrLanguageServer_IncrementalParser_UpdateFile(state, context->parser, uri, content, contentLength, version)) {
         return ZR_FALSE;
     }
+
+    {
+        SZrFileVersion *fileVersion =
+                ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+        if (fileVersion != ZR_NULL &&
+            fileVersion->hasIncrementalInfo &&
+            !fileVersion->usesFallbackAst) {
+            ZrLanguageServer_SemanticAnalyzer_ClassifyFileChange(
+                    fileVersion->ast,
+                    &fileVersion->lastChangeInfo);
+        }
+    }
     
     // 重新解析
     if (!ZrLanguageServer_IncrementalParser_Parse(state, context->parser, uri)) {

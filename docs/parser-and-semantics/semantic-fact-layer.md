@@ -625,10 +625,15 @@ tests:
   - tests/acceptance/2026-06-03-semantic-inference-fact-layer.md
   - tests/acceptance/2026-06-17-ownership-generics-p1.md
 implementation_files:
+  - zr_vm_language_server/include/zr_vm_language_server/incremental_parser.h
   - zr_vm_language_server/include/zr_vm_language_server/semantic_analyzer.h
+  - zr_vm_language_server/src/zr_vm_language_server/incremental_change.h
+  - zr_vm_language_server/src/zr_vm_language_server/incremental_change.c
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_change.c
 plan_sources:
   - user: 2026-07-19 optimize semantic inference according to docs/plans/lsp
   - docs/plans/lsp/03-lsp-robustness-and-position.md
@@ -949,6 +954,14 @@ TDD first failed at link time because the scoped API and root resolver did not e
 `SZrSemanticAnalysisMetrics` exposes valid analysis request, actual successful execution, and cache-hit counts plus the last execution range. The interface test uses those counters together with snapshot identities: identical content must add one request and one hit with no execution, while changed content must add one request and one execution with no hit. The new cases live in the 212-line `test_lsp_snapshot_cache_cases.h` include module instead of extending the already 7,000-line interface test body. This slice does not claim declaration-level parsing or invalidation; any real content edit still rebuilds the file AST and invalidates the semantic cache.
 
 TDD first failed to compile because the metrics type/API did not exist, then runtime RED showed a v1-to-v2 identical update replacing the text block, increasing generation from 1 to 2, replacing the AST, executing semantic analysis twice, and recording no cache hit. The minimal no-op content path made the interface suite 79/79 on WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228. MSVC also rejected a test-only reference to private `UpdateDocumentCore` with `LNK2019`; the final test uses the exported public update API without widening production visibility. Each toolchain then passed the same fourteen-target semantic matrix with no exit or failure-marker failures and passed the registered stdio/CLI JSON-RPC smoke 1/1. Existing GCC/Clang CLI const warnings and MSVC D9025/debug warnings are outside the changed files. L6 remains open for true edit ranges, declaration/dependency invalidation, stale-version rejection, cancellation, immutable snapshot races, provider parity, and latency/memory budgets.
+
+## Stage 3 Minimal Change Range And Declaration Classification
+
+2026-07-19 update: a real content update now measures its exact old and new byte ranges from the longest common prefix and the longest non-overlapping common suffix. `SZrFileChangeInfo` stores both ranges plus a conservative impact class. The LSP update path classifies the change while the old AST is still valid, then persists only the owning declaration type and range before parsing replaces the AST. Function, method, meta-function, test, lambda, and property-accessor body edits become `DECLARATION_BODY`; declaration edits outside the body become `DECLARATION_SIGNATURE`; unresolved or top-level edits remain `MODULE`.
+
+Zero-length insertions at a declaration boundary stay module-level, and insertions at a body boundary stay signature-level. These rules deliberately prefer excess invalidation over an unsafe local classification. Reclassification clears previous declaration metadata before resolving a new owner, so a module fallback cannot retain a stale type or source range. An AST marked `usesFallbackAst` belongs to an earlier last-good text snapshot and is therefore never used to classify the immediate old-text range. `lastChangeRange` remains the compatibility view of the new-content range, while `lastChangeInfo` carries the complete old/new and ownership facts. This slice measures and classifies work only: real edits still rebuild the whole file AST and run the existing semantic path.
+
+TDD first failed compilation because the change-info structure, impact enum, and classifier API did not exist. Runtime coverage then fixed the precise body range, exposed that `int -> float` has the smaller byte diff `in -> floa` due to the shared trailing `t`, and proved a top-level declaration insertion remains module-level. Review added RED cases for stale declaration metadata and for a recovery edit incorrectly classified through a fallback AST; explicit reset and snapshot matching made the interface suite 83/83 on WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228. The final code on each toolchain passed the same fourteen-target matrix with `run=14 failures=0`, no failure markers, and the stdio/CLI JSON-RPC smoke 1/1. L6 remains open for partial reparse, owning-function CFG/query cache invalidation, direct-caller and ModuleIdentity propagation, cancellation, immutable snapshot races, provider parity, and latency/memory budgets.
 
 ## Stage 3 English Diagnostic Message Catalog Foundation
 

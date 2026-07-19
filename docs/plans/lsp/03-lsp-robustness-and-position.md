@@ -28,6 +28,8 @@
 
 [2026-07-19 identical-content snapshot and semantic cache reuse](./03-robustness/2026-07-19-identical-content-snapshot-cache-reuse.md) 完成相同内容version更新的text/AST/semantic cache复用和显式计数证据；真实内容变化仍按整文件重建，声明级失效、依赖传播和snapshot race仍未完成。
 
+[2026-07-19 minimal change range and declaration classification](./03-robustness/2026-07-19-minimal-change-range-and-declaration-classification.md) 完成真实内容变化的old/new最小byte range测量，并在旧AST释放前区分module、declaration signature和declaration body影响；partial reparse、按声明失效和依赖传播仍未完成。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

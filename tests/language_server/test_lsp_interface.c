@@ -7270,6 +7270,18 @@ int main(void) {
 
     test_lsp_changed_content_invalidates_snapshot_and_semantic_cache(state);
     TEST_DIVIDER();
+
+    test_lsp_body_edit_records_minimal_change_and_declaration_scope(state);
+    TEST_DIVIDER();
+
+    test_lsp_signature_edit_records_minimal_change_and_declaration_scope(state);
+    TEST_DIVIDER();
+
+    test_lsp_top_level_insertion_records_module_change(state);
+    TEST_DIVIDER();
+
+    test_lsp_fallback_ast_change_remains_module_scoped(state);
+    TEST_DIVIDER();
     
     test_lsp_get_diagnostics(state);
     TEST_DIVIDER();

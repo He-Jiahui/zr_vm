@@ -17,6 +17,8 @@
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/string.h"
 
+typedef struct SZrFileChangeInfo SZrFileChangeInfo;
+
 // 诊断严重程度
 enum EZrDiagnosticSeverity {
     ZR_DIAGNOSTIC_ERROR,
@@ -129,6 +131,9 @@ ZR_LANGUAGE_SERVER_API SZrAstNode *
 ZrLanguageServer_SemanticAnalyzer_FindAnalysisRootAtPosition(
     SZrAstNode *ast,
     SZrFileRange position);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SemanticAnalyzer_ClassifyFileChange(
+    SZrAstNode *ast,
+    SZrFileChangeInfo *changeInfo);
 
 // 获取诊断信息
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_GetDiagnostics(SZrState *state,

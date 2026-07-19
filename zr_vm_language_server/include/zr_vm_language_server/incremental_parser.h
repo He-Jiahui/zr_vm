@@ -22,6 +22,24 @@ typedef struct SZrFileVersionContentBlock {
     TZrSize refCount;
 } SZrFileVersionContentBlock;
 
+enum EZrFileChangeImpact {
+    ZR_FILE_CHANGE_IMPACT_NONE,
+    ZR_FILE_CHANGE_IMPACT_MODULE,
+    ZR_FILE_CHANGE_IMPACT_DECLARATION_SIGNATURE,
+    ZR_FILE_CHANGE_IMPACT_DECLARATION_BODY,
+};
+
+typedef enum EZrFileChangeImpact EZrFileChangeImpact;
+
+typedef struct SZrFileChangeInfo {
+    SZrFileRange oldRange;
+    SZrFileRange newRange;
+    EZrFileChangeImpact impact;
+    EZrAstNodeType declarationType;
+    SZrFileRange declarationRange;
+    TZrBool hasDeclaration;
+} SZrFileChangeInfo;
+
 // 文件版本
 typedef struct SZrFileVersion {
     SZrString *uri;                   // 文件 URI
@@ -31,6 +49,7 @@ typedef struct SZrFileVersion {
     TZrBool usesFallbackAst;            // 当前 AST 是否是旧版本保留下来的 last-good 快照
     TZrBool isDirty;                    // 是否需要重新解析
     SZrFileRange lastChangeRange;     // 最后变更的范围（用于增量解析）
+    SZrFileChangeInfo lastChangeInfo; // 最后变更的旧/新范围与声明级影响
     TZrChar *lastContentHash;           // 内容哈希（用于快速比较，可选）
     TZrSize lastContentHashLength;    // 哈希长度
     TZrBool hasIncrementalInfo;         // 是否有增量信息
@@ -109,7 +128,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrSta
                                                          const TZrChar *content,
                                                          TZrSize contentLength,
                                                          TZrSize version,
-                                                         SZrFileRange changeRange);
+                                                         const SZrFileChangeInfo *changeInfo);
 
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_FileVersionContentSnapshot_Acquire(
     SZrState *state,

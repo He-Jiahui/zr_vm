@@ -209,4 +209,380 @@ static void test_lsp_changed_content_invalidates_snapshot_and_semantic_cache(
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_body_edit_records_minimal_change_and_declaration_scope(
+        SZrState *state) {
+    const TZrChar *summary = "LSP Body Edit Records Minimal Change And Declaration Scope";
+    const TZrChar *initialContent =
+            "alpha(): int {\n"
+            "    return 1 + 2;\n"
+            "}\n"
+            "beta(): int {\n"
+            "    return 3;\n"
+            "}\n";
+    const TZrChar *updatedContent =
+            "alpha(): int {\n"
+            "    return 10 + 20;\n"
+            "}\n"
+            "beta(): int {\n"
+            "    return 3;\n"
+            "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrAstNode *root;
+    SZrFileRange rootRange;
+    SZrFileRange position;
+    const TZrChar *oldExpression;
+    const TZrChar *newExpression;
+    TZrSize expectedStart;
+    TZrChar reason[512];
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///minimal_body_change.zr",
+            strlen("file:///minimal_body_change.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, initialContent, strlen(initialContent), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare the body-edit snapshot");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    oldExpression = strstr(initialContent, "1 + 2");
+    newExpression = strstr(updatedContent, "10 + 20");
+    if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL ||
+        oldExpression == ZR_NULL || newExpression == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Initial body-edit state is incomplete");
+        return;
+    }
+
+    position = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(
+                    (TZrSize)(oldExpression - initialContent), 0, 0),
+            ZrParser_FilePosition_Create(
+                    (TZrSize)(oldExpression - initialContent), 0, 0),
+            uri);
+    root = ZrLanguageServer_SemanticAnalyzer_FindAnalysisRootAtPosition(
+            fileVersion->ast, position);
+    if (root == ZR_NULL || root->type != ZR_AST_FUNCTION_DECLARATION) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to resolve the old owning function");
+        return;
+    }
+    rootRange = root->location;
+    expectedStart = (TZrSize)(oldExpression - initialContent) + 1;
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, updatedContent, strlen(updatedContent), 2)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Body edit update failed");
+        return;
+    }
+
+    if (fileVersion->lastChangeInfo.impact != ZR_FILE_CHANGE_IMPACT_DECLARATION_BODY ||
+        !fileVersion->lastChangeInfo.hasDeclaration ||
+        fileVersion->lastChangeInfo.declarationType != ZR_AST_FUNCTION_DECLARATION ||
+        fileVersion->lastChangeInfo.declarationRange.start.offset != rootRange.start.offset ||
+        fileVersion->lastChangeInfo.declarationRange.end.offset != rootRange.end.offset ||
+        fileVersion->lastChangeInfo.oldRange.start.offset != expectedStart ||
+        fileVersion->lastChangeInfo.oldRange.end.offset !=
+                (TZrSize)(oldExpression - initialContent) + strlen("1 + 2") ||
+        fileVersion->lastChangeInfo.newRange.start.offset != expectedStart ||
+        fileVersion->lastChangeInfo.newRange.end.offset !=
+                (TZrSize)(newExpression - updatedContent) + strlen("10 + 20") ||
+        fileVersion->lastChangeRange.start.offset !=
+                fileVersion->lastChangeInfo.newRange.start.offset ||
+        fileVersion->lastChangeRange.end.offset !=
+                fileVersion->lastChangeInfo.newRange.end.offset) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected body range old=%zu..%zu new=%zu..%zu impact=%d declaration=%d/%d root=%zu..%zu actualRoot=%zu..%zu",
+                 (size_t)expectedStart,
+                 (size_t)((oldExpression - initialContent) + strlen("1 + 2")),
+                 (size_t)expectedStart,
+                 (size_t)((newExpression - updatedContent) + strlen("10 + 20")),
+                 (int)fileVersion->lastChangeInfo.impact,
+                 fileVersion->lastChangeInfo.hasDeclaration,
+                 (int)fileVersion->lastChangeInfo.declarationType,
+                 (size_t)rootRange.start.offset,
+                 (size_t)rootRange.end.offset,
+                 (size_t)fileVersion->lastChangeInfo.declarationRange.start.offset,
+                 (size_t)fileVersion->lastChangeInfo.declarationRange.end.offset);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_lsp_signature_edit_records_minimal_change_and_declaration_scope(
+        SZrState *state) {
+    const TZrChar *summary = "LSP Signature Edit Records Minimal Change And Declaration Scope";
+    const TZrChar *initialContent =
+            "compute(value: int): int {\n"
+            "    return value;\n"
+            "}\n";
+    const TZrChar *updatedContent =
+            "compute(value: float): int {\n"
+            "    return value;\n"
+            "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrAstNode *root;
+    SZrFileRange rootRange;
+    SZrFileRange position;
+    const TZrChar *oldType;
+    const TZrChar *newType;
+    TZrSize oldStart;
+    TZrSize newStart;
+    TZrChar reason[512];
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///minimal_signature_change.zr",
+            strlen("file:///minimal_signature_change.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, initialContent, strlen(initialContent), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare the signature-edit snapshot");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    oldType = strstr(initialContent, "int): int");
+    newType = strstr(updatedContent, "float): int");
+    if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL ||
+        oldType == ZR_NULL || newType == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Initial signature-edit state is incomplete");
+        return;
+    }
+    oldStart = (TZrSize)(oldType - initialContent);
+    newStart = (TZrSize)(newType - updatedContent);
+    position = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(oldStart, 0, 0),
+            ZrParser_FilePosition_Create(oldStart, 0, 0),
+            uri);
+    root = ZrLanguageServer_SemanticAnalyzer_FindAnalysisRootAtPosition(
+            fileVersion->ast, position);
+    if (root == ZR_NULL || root->type != ZR_AST_FUNCTION_DECLARATION) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to resolve the old signature owner");
+        return;
+    }
+    rootRange = root->location;
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, updatedContent, strlen(updatedContent), 2)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Signature edit update failed");
+        return;
+    }
+
+    if (fileVersion->lastChangeInfo.impact != ZR_FILE_CHANGE_IMPACT_DECLARATION_SIGNATURE ||
+        !fileVersion->lastChangeInfo.hasDeclaration ||
+        fileVersion->lastChangeInfo.declarationType != ZR_AST_FUNCTION_DECLARATION ||
+        fileVersion->lastChangeInfo.declarationRange.start.offset != rootRange.start.offset ||
+        fileVersion->lastChangeInfo.declarationRange.end.offset != rootRange.end.offset ||
+        fileVersion->lastChangeInfo.oldRange.start.offset != oldStart ||
+        fileVersion->lastChangeInfo.oldRange.end.offset != oldStart + strlen("in") ||
+        fileVersion->lastChangeInfo.newRange.start.offset != newStart ||
+        fileVersion->lastChangeInfo.newRange.end.offset != newStart + strlen("floa")) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected signature range old=%zu..%zu new=%zu..%zu impact=%d declaration=%d/%d root=%zu..%zu actualRoot=%zu..%zu",
+                 (size_t)oldStart,
+                 (size_t)(oldStart + strlen("in")),
+                 (size_t)newStart,
+                 (size_t)(newStart + strlen("floa")),
+                 (int)fileVersion->lastChangeInfo.impact,
+                 fileVersion->lastChangeInfo.hasDeclaration,
+                 (int)fileVersion->lastChangeInfo.declarationType,
+                 (size_t)rootRange.start.offset,
+                 (size_t)rootRange.end.offset,
+                 (size_t)fileVersion->lastChangeInfo.declarationRange.start.offset,
+                 (size_t)fileVersion->lastChangeInfo.declarationRange.end.offset);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_lsp_top_level_insertion_records_module_change(
+        SZrState *state) {
+    const TZrChar *summary = "LSP Top Level Insertion Records Module Change";
+    const TZrChar *initialContent =
+            "compute(): int {\n"
+            "    return 1;\n"
+            "}\n";
+    const TZrChar *insertedDeclaration =
+            "added(): int {\n"
+            "    return 0;\n"
+            "}\n";
+    const TZrChar *updatedContent =
+            "added(): int {\n"
+            "    return 0;\n"
+            "}\n"
+            "compute(): int {\n"
+            "    return 1;\n"
+            "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    TZrChar reason[384];
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///minimal_module_change.zr",
+            strlen("file:///minimal_module_change.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, initialContent, strlen(initialContent), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare the module-edit snapshot");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, updatedContent, strlen(updatedContent), 2)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Top-level insertion update failed");
+        return;
+    }
+
+    if (fileVersion->lastChangeInfo.impact != ZR_FILE_CHANGE_IMPACT_MODULE ||
+        fileVersion->lastChangeInfo.hasDeclaration ||
+        fileVersion->lastChangeInfo.oldRange.start.offset != 0 ||
+        fileVersion->lastChangeInfo.oldRange.end.offset != 0 ||
+        fileVersion->lastChangeInfo.newRange.start.offset != 0 ||
+        fileVersion->lastChangeInfo.newRange.end.offset != strlen(insertedDeclaration)) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected module insertion old=%zu..%zu new=%zu..%zu impact=%d declaration=%d",
+                 (size_t)fileVersion->lastChangeInfo.oldRange.start.offset,
+                 (size_t)fileVersion->lastChangeInfo.oldRange.end.offset,
+                 (size_t)fileVersion->lastChangeInfo.newRange.start.offset,
+                 (size_t)fileVersion->lastChangeInfo.newRange.end.offset,
+                 (int)fileVersion->lastChangeInfo.impact,
+                 fileVersion->lastChangeInfo.hasDeclaration);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    fileVersion->lastChangeInfo.hasDeclaration = ZR_TRUE;
+    fileVersion->lastChangeInfo.declarationType = ZR_AST_FUNCTION_DECLARATION;
+    fileVersion->lastChangeInfo.declarationRange = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(10, 0, 0),
+            ZrParser_FilePosition_Create(20, 0, 0),
+            uri);
+    ZrLanguageServer_SemanticAnalyzer_ClassifyFileChange(
+            ZR_NULL,
+            &fileVersion->lastChangeInfo);
+    if (fileVersion->lastChangeInfo.hasDeclaration ||
+        fileVersion->lastChangeInfo.declarationType != (EZrAstNodeType)0 ||
+        fileVersion->lastChangeInfo.declarationRange.start.offset != 0 ||
+        fileVersion->lastChangeInfo.declarationRange.end.offset != 0 ||
+        fileVersion->lastChangeInfo.declarationRange.source != uri) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Module reclassification retained stale declaration metadata");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_lsp_fallback_ast_change_remains_module_scoped(
+        SZrState *state) {
+    const TZrChar *summary = "LSP Fallback AST Change Remains Module Scoped";
+    const TZrChar *initialContent =
+            "compute(): int {\n"
+            "    return 1;\n"
+            "}\n";
+    const TZrChar *invalidContent =
+            "compute(): int {\n"
+            "    return 1 +;\n"
+            "}\n";
+    const TZrChar *recoveredContent =
+            "compute(): int {\n"
+            "    return 1 + 2;\n"
+            "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///fallback_ast_change.zr",
+            strlen("file:///fallback_ast_change.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, initialContent, strlen(initialContent), 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, invalidContent, strlen(invalidContent), 2)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare a last-good fallback AST");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (fileVersion == ZR_NULL || !fileVersion->usesFallbackAst ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                recoveredContent,
+                strlen(recoveredContent),
+                3)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Fallback AST state or recovery update was unavailable");
+        return;
+    }
+
+    if (fileVersion->lastChangeInfo.impact != ZR_FILE_CHANGE_IMPACT_MODULE ||
+        fileVersion->lastChangeInfo.hasDeclaration) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "A stale fallback AST classified an immediate-text declaration change");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 #endif // ZR_VM_TEST_LSP_SNAPSHOT_CACHE_CASES_H

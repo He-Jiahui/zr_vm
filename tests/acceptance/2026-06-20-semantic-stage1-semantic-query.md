@@ -1718,6 +1718,45 @@
 - The frozen snapshots retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
 - Full repository GREEN is not claimed.
 
+## Minimal Change Range And Declaration Classification Acceptance
+
+### Scope
+
+- Measure exact old-content and new-content byte ranges for every real document change by removing the common prefix and non-overlapping common suffix.
+- Classify the measured old range against the still-valid old AST as module, declaration signature, or declaration body impact.
+- Persist only the declaration node type and old source range, never an AST pointer that would become invalid after reparsing.
+- Keep unresolved edits, fallback ASTs, and zero-length declaration-boundary insertions conservative; clear declaration metadata whenever classification falls back to module scope.
+
+### Baseline And TDD
+
+- Compile RED failed because `SZrFileChangeInfo`, `lastChangeInfo`, the impact enum, and `ZrLanguageServer_SemanticAnalyzer_ClassifyFileChange` did not exist.
+- Body-edit GREEN measured only the changed bytes in `1 + 2 -> 10 + 20` and identified the owning function body.
+- Signature-edit RED showed that the exact byte diff for `int -> float` is `in -> floa`, because the trailing `t` belongs to the common suffix; the test was corrected to the byte-range contract without widening production behavior.
+- A top-level function insertion proved module fallback. Review then added a repeated-classification RED where stale declaration type/range survived a module fallback; explicit reset restored GREEN.
+- A recovery edit after a syntax-error snapshot produced a second review RED: the immediate old-text range was incorrectly mapped through an earlier last-good AST. The final LSP path skips declaration classification while `usesFallbackAst` is set.
+
+### Test And Module Inventory
+
+- `incremental_change.c/.h` owns reset and common-prefix/common-suffix byte-range measurement.
+- `incremental_parser.h/.c` stores the complete last-change fact and preserves `lastChangeRange` as the new-range compatibility view.
+- `semantic_analyzer_change.c` owns old-AST declaration/body classification and conservative boundary handling.
+- `lsp_interface.c` invokes classification after content replacement has been recorded but before parsing releases the old AST.
+- `test_lsp_snapshot_cache_cases.h` covers exact body/signature ranges, top-level insertion, owner facts, compatibility range, stale-metadata reset, and fallback-AST isolation; `test_lsp_interface.c` registers 83 total cases.
+
+### Tooling And Results
+
+- Frozen WSL source: `/home/hejiahui/zr_vm-lsp-head-d53e21c-20260719-1930-wsl-src`; GCC and Clang builds use the matching `-wsl-gcc` and `-wsl-clang` directories.
+- Frozen Windows source/build: `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-head-d53e21c-20260719-1930-msvc-src` and matching `-msvc-build` directory.
+- WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each passed the final fourteen-target matrix with `run=14 failures=0` and no `Fail -` / `:FAIL:` markers.
+- Each toolchain passed `language_server_stdio_smoke` 1/1. Counted suites include semantic query 16/16, compiler query diagnostics 16/16, parser 75/75, expression facts 28/28, type inference 118/118, dataflow 9/9, and interface 83/83.
+
+### Acceptance Decision
+
+- Accepted at `2026-07-19 20:12 +08:00` as the minimal change-range and declaration-classification submilestone for L6 robustness.
+- L6 remains open: all real edits still rebuild the full AST; partial reparse, owning-function CFG/query cache invalidation, direct-caller and ModuleIdentity propagation, stale-version rejection, cancellation, immutable snapshot races, provider parity, latency percentiles, and memory budgets are not claimed.
+- The frozen snapshots retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
+- Full repository GREEN is not claimed.
+
 ## Stage 3 English Diagnostic Message Catalog Foundation Acceptance
 
 ### Scope
