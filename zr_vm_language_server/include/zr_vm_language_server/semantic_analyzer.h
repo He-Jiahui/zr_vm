@@ -77,6 +77,13 @@ typedef struct SZrAnalysisCache {
     TZrSize astHash;                   // AST 哈希（用于验证缓存有效性）
 } SZrAnalysisCache;
 
+typedef struct SZrSemanticAnalysisMetrics {
+    TZrSize requestCount;
+    TZrSize executionCount;
+    TZrSize cacheHitCount;
+    SZrFileRange lastExecutionRange;
+} SZrSemanticAnalysisMetrics;
+
 // 语义分析器
 typedef struct SZrSemanticAnalyzer {
     SZrState *state;
@@ -89,6 +96,7 @@ typedef struct SZrSemanticAnalyzer {
     SZrCompilerState *compilerState;   // 编译器状态（用于类型推断）
     SZrSemanticContext *semanticContext; // 当前分析共享的语义上下文（借用）
     SZrHirModule *hirModule;           // 当前分析共享的 HIR 模块（借用）
+    SZrSemanticAnalysisMetrics metrics;
 } SZrSemanticAnalyzer;
 
 // 语义分析器管理函数
@@ -101,6 +109,9 @@ ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SemanticAnalyzer_SetCacheEnabled(SZ
 
 // 清除缓存
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SemanticAnalyzer_ClearCache(SZrState *state, SZrSemanticAnalyzer *analyzer);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SemanticAnalyzer_GetMetrics(
+    const SZrSemanticAnalyzer *analyzer,
+    SZrSemanticAnalysisMetrics *outMetrics);
 
 // 释放语义分析器
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer *analyzer);

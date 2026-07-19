@@ -2101,6 +2101,7 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     analyzer->compilerState = ZR_NULL; // 延迟创建
     analyzer->semanticContext = ZR_NULL;
     analyzer->hirModule = ZR_NULL;
+    memset(&analyzer->metrics, 0, sizeof(analyzer->metrics));
     
     if (analyzer->symbolTable == ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, analyzer, sizeof(SZrSemanticAnalyzer));

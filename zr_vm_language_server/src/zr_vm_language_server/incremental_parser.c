@@ -159,6 +159,19 @@ static void content_block_release(SZrState *state, SZrFileVersionContentBlock *b
     ZrCore_Memory_RawFree(state->global, block, sizeof(SZrFileVersionContentBlock));
 }
 
+static TZrBool file_version_content_equals(
+        const SZrFileVersion *fileVersion,
+        const TZrChar *content,
+        TZrSize contentLength) {
+    if (fileVersion == ZR_NULL || fileVersion->textBlock == ZR_NULL ||
+        fileVersion->textBlock->content == ZR_NULL || content == ZR_NULL ||
+        fileVersion->textBlock->contentLength != contentLength) {
+        return ZR_FALSE;
+    }
+    return contentLength == 0 ||
+           memcmp(fileVersion->textBlock->content, content, contentLength) == 0;
+}
+
 // 创建文件版本
 SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
                                   SZrString *uri,
@@ -373,6 +386,12 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
     // 查找是否已存在
     SZrFileVersion *fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
     if (fileVersion != ZR_NULL) {
+        if (file_version_content_equals(fileVersion, content, contentLength)) {
+            if (version > fileVersion->version) {
+                fileVersion->version = version;
+            }
+            return ZR_TRUE;
+        }
         // 更新现有文件
         SZrFileRange changeRange = ZrParser_FileRange_Create(
             ZrParser_FilePosition_Create(0, 0, 0),

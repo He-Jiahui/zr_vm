@@ -1,5 +1,7 @@
 #include "semantic/semantic_analyzer_internal.h"
 
+#include <string.h>
+
 static TZrBool semantic_analysis_ranges_equal(const SZrFileRange *left,
                                                const SZrFileRange *right) {
     return left != ZR_NULL && right != ZR_NULL &&
@@ -93,6 +95,19 @@ void ZrLanguageServer_SemanticAnalyzer_ReleaseDiagnostics(
     analyzer->diagnostics.length = 0;
 }
 
+void ZrLanguageServer_SemanticAnalyzer_GetMetrics(
+        const SZrSemanticAnalyzer *analyzer,
+        SZrSemanticAnalysisMetrics *outMetrics) {
+    if (outMetrics == ZR_NULL) {
+        return;
+    }
+    if (analyzer == ZR_NULL) {
+        memset(outMetrics, 0, sizeof(*outMetrics));
+        return;
+    }
+    *outMetrics = analyzer->metrics;
+}
+
 TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -106,6 +121,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
         return ZR_FALSE;
     }
 
+    analyzer->metrics.requestCount++;
+
     previousAst = analyzer->ast;
     analyzer->ast = ast;
     if (analyzer->enableCache && analyzer->cache != ZR_NULL) {
@@ -113,8 +130,9 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
         if (previousAst == ast && analyzer->cache->isValid &&
             analyzer->cache->astHash == analysisHash &&
             semantic_analysis_ranges_equal(
-                    &analyzer->cache->cacheRange,
-                    &scopeRoot->location)) {
+                &analyzer->cache->cacheRange,
+                &scopeRoot->location)) {
+            analyzer->metrics.cacheHitCount++;
             return ZR_TRUE;
         }
         analyzer->cache->isValid = ZR_FALSE;
@@ -144,6 +162,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
         analyzer->cache->isValid = ZR_TRUE;
         analyzer->cache->cachedDiagnostics.length = 0;
     }
+    analyzer->metrics.executionCount++;
+    analyzer->metrics.lastExecutionRange = scopeRoot->location;
     return ZR_TRUE;
 }
 

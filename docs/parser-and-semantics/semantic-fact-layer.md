@@ -302,6 +302,7 @@ related_code:
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
   - tests/language_server/test_lsp_call_member_semantic_query.c
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_snapshot_cache_cases.h
   - tests/language_server/stdio_smoke.js
   - tests/language_server/stdio_inline_value_semantic_smoke.js
   - tests/debug/test_debug_expression_diagnostics.c
@@ -623,6 +624,20 @@ tests:
   - tests/cli/repl_type_reachability_smoke.js
   - tests/acceptance/2026-06-03-semantic-inference-fact-layer.md
   - tests/acceptance/2026-06-17-ownership-generics-p1.md
+implementation_files:
+  - zr_vm_language_server/include/zr_vm_language_server/semantic_analyzer.h
+  - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c
+plan_sources:
+  - user: 2026-07-19 optimize semantic inference according to docs/plans/lsp
+  - docs/plans/lsp/03-lsp-robustness-and-position.md
+  - docs/plans/lsp/05-implementation-blueprint.md
+tests:
+  - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_snapshot_cache_cases.h
+  - tests/language_server/stdio_smoke.js
+  - tests/acceptance/2026-06-20-semantic-stage1-semantic-query.md
 doc_type: module-detail
 ---
 
@@ -926,6 +941,14 @@ TDD covered all boundaries. Parser/LSP assertions first failed to compile becaus
 The completion semantic-fact path now invokes scoped analysis only when its existing query produces no items. It selects the declaration at the cursor and falls back to full-module analysis when no safe root exists. Property and compile-time wrappers return a root only when they actually contain an accessor or callable, so a non-callable wrapper cannot suppress that full-module fallback. This is an L6 robustness foundation, not L6 completion: document updates and most hover/query paths still run full analysis, symbol collection is still module-wide, and declaration-level parse, cache invalidation, cancellation, snapshot races, provider parity, and latency/memory budgets remain open. The main analyzer remains 2809 lines, but new orchestration and root resolution are isolated in 158-line and 171-line modules; focused test cases are isolated in a 254-line include module.
 
 TDD first failed at link time because the scoped API and root resolver did not exist, then reached runtime RED with `AnalyzeScope=0`; structural AST membership replaced an invalid source-range containment assumption. Review added a second RED where an empty property wrapper was incorrectly returned as an analysis root; restricting wrapper traversal to actual nested accessors/callables made the local-query suite 21/21 on all three toolchains. The concurrent canonical TypeId work required exact-type assertions to query per-expression facts instead of removed AST ownership in canonical type records. The cleanup-block CFG contract also exposed forward/backward dataflow RED at `Expected 1 Was 0`; both directions now transfer statement and cleanup blocks through one predicate. A parser-internal union lookup was replaced by the exported semantic-query API after MSVC exposed the private cross-DLL reference. Final frozen-snapshot matrices on WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each ran fourteen targets with zero exit or failure-marker failures: semantic query 16, compiler query diagnostics 16, parser 75, expression facts 28, type inference 118, dataflow 9, local query 21, plus semantic analyzer, ownership, union, statement, language-feature, LSP-query, and interface suites. The frozen snapshot required the current uncommitted core profiling helper only as an external baseline overlay; those unrelated files are not part of this LSP milestone.
+
+## Stage 3 Identical-Content Snapshot And Semantic Cache Reuse
+
+2026-07-19 update: `ZrLanguageServer_IncrementalParser_UpdateFile` now compares an existing document's current byte length and content before allocating a replacement text block. An identical-content update advances only a newer document version, preserving the content generation, dirty state, AST, semantic analyzer, and semantic context. The public LSP update path still invokes parse and semantic analysis, so reuse is exercised through the normal lifecycle: parse observes the unchanged snapshot and semantic analysis hits the existing full-module cache. A changed-content control proves that the original allocation, generation increment, AST rebuild, and semantic execution path remains active.
+
+`SZrSemanticAnalysisMetrics` exposes valid analysis request, actual successful execution, and cache-hit counts plus the last execution range. The interface test uses those counters together with snapshot identities: identical content must add one request and one hit with no execution, while changed content must add one request and one execution with no hit. The new cases live in the 212-line `test_lsp_snapshot_cache_cases.h` include module instead of extending the already 7,000-line interface test body. This slice does not claim declaration-level parsing or invalidation; any real content edit still rebuilds the file AST and invalidates the semantic cache.
+
+TDD first failed to compile because the metrics type/API did not exist, then runtime RED showed a v1-to-v2 identical update replacing the text block, increasing generation from 1 to 2, replacing the AST, executing semantic analysis twice, and recording no cache hit. The minimal no-op content path made the interface suite 79/79 on WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228. MSVC also rejected a test-only reference to private `UpdateDocumentCore` with `LNK2019`; the final test uses the exported public update API without widening production visibility. Each toolchain then passed the same fourteen-target semantic matrix with no exit or failure-marker failures and passed the registered stdio/CLI JSON-RPC smoke 1/1. Existing GCC/Clang CLI const warnings and MSVC D9025/debug warnings are outside the changed files. L6 remains open for true edit ranges, declaration/dependency invalidation, stale-version rejection, cancellation, immutable snapshot races, provider parity, and latency/memory budgets.
 
 ## Stage 3 English Diagnostic Message Catalog Foundation
 

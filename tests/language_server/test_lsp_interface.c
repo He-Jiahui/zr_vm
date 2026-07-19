@@ -7231,6 +7231,8 @@ static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZ
     TEST_PASS(timer, "LSP Container Matrix Project Infers Bucket And Foreach Types");
 }
 
+#include "test_lsp_snapshot_cache_cases.h"
+
 // 主测试函数
 int main(void) {
     printf("==========\n");
@@ -7261,6 +7263,12 @@ int main(void) {
     TEST_DIVIDER();
     
     test_lsp_update_document(state);
+    TEST_DIVIDER();
+
+    test_lsp_identical_content_update_reuses_snapshot_and_semantic_cache(state);
+    TEST_DIVIDER();
+
+    test_lsp_changed_content_invalidates_snapshot_and_semantic_cache(state);
     TEST_DIVIDER();
     
     test_lsp_get_diagnostics(state);

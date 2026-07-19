@@ -1680,6 +1680,44 @@
 - L6 remains open: module-wide symbol collection, full document-update analysis, declaration incremental parse/invalidation, cancellation, immutable snapshots, provider parity, latency percentiles, and memory budgets are not claimed.
 - Full repository GREEN is not claimed.
 
+## Identical-Content Snapshot And Semantic Cache Reuse Acceptance
+
+### Scope
+
+- Reuse the current text block, content generation, AST, semantic analyzer, semantic context, and full-module semantic cache when a newer document version carries byte-identical content.
+- Add explicit analysis request, execution, and cache-hit metrics so tests measure incremental work instead of inferring it only from returned results.
+- Preserve the changed-content path as a control: allocate a new snapshot, increment generation, rebuild the AST, and execute semantic analysis.
+- Keep tests on the exported `ZrLanguageServer_Lsp_UpdateDocument` lifecycle; do not export private `UpdateDocumentCore` for test linkage.
+
+### Baseline And TDD
+
+- Compile RED failed because `SZrSemanticAnalysisMetrics` and `ZrLanguageServer_SemanticAnalyzer_GetMetrics` did not exist.
+- Metrics-only runtime RED reported `blockSame=0`, generation `2/1`, `astSame=0`, executions `2/1`, and hits `0/0` for an identical v1-to-v2 update; the changed-content control passed after removing an invalid semantic-context pointer-allocation assumption.
+- The no-op content comparison made the identical update add one request and one cache hit without an execution, while the changed update adds one request and one execution without a hit.
+- MSVC produced `LNK2019` when the first test draft referenced private `UpdateDocumentCore`; using the public API made all three toolchains GREEN without changing DLL exports.
+
+### Test And Module Inventory
+
+- `tests/language_server/test_lsp_snapshot_cache_cases.h` is a 212-line include module containing the identical-content reuse and changed-content invalidation controls.
+- `tests/language_server/test_lsp_interface.c` registers both cases and now runs 79/79 in each focused toolchain build.
+- `semantic_analyzer.h` owns the public metric snapshot type; `semantic_analyzer_analysis.c` owns metric retrieval and request/execution/hit accounting.
+- `incremental_parser.c` owns byte-exact content comparison and the no-allocation version-only update path.
+
+### Tooling And Results
+
+- Frozen Linux source/builds: `/home/hejiahui/zr_vm-lsp-scope-head-overlay-20260719-1512` and matching GCC/Clang build directories.
+- Frozen Windows source/build: `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-scope-head-overlay-msvc-src-20260719-1604` and matching build directory.
+- WSL GCC 11.4, WSL Clang 14, and MSVC 19.44.35228 each passed the same fourteen-target matrix with `run=14 failures=0` and no `Fail -` / `:FAIL:` markers.
+- Each toolchain passed `language_server_stdio_smoke` 1/1 with the language-server and CLI executables, covering the adjacent JSON-RPC document lifecycle.
+- Counted suites remained semantic query 16/16, compiler query diagnostics 16/16, parser 75/75, expression facts 28/28, type inference 118/118, dataflow 9/9, and interface 79/79; all remaining matrix executables passed.
+
+### Acceptance Decision
+
+- Accepted at `2026-07-19 19:17 +08:00` as the identical-content snapshot/cache reuse submilestone for L6 robustness.
+- L6 remains open: real edits still rebuild the full file AST and invalidate the semantic cache; declaration-level ranges, dependency propagation, stale-version rejection, cancellation, immutable snapshot races, provider parity, latency percentiles, and memory budgets are not claimed.
+- The frozen snapshots retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
+- Full repository GREEN is not claimed.
+
 ## Stage 3 English Diagnostic Message Catalog Foundation Acceptance
 
 ### Scope

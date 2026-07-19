@@ -26,6 +26,8 @@
 
 [2026-07-19 scoped semantic analysis foundation](./03-robustness/2026-07-19-scoped-semantic-analysis-foundation.md) 完成声明级分析入口、作用域根解析和completion空结果回退；这只是L6前置基础，不代表增量失效、snapshot race或性能预算完成。
 
+[2026-07-19 identical-content snapshot and semantic cache reuse](./03-robustness/2026-07-19-identical-content-snapshot-cache-reuse.md) 完成相同内容version更新的text/AST/semantic cache复用和显式计数证据；真实内容变化仍按整文件重建，声明级失效、依赖传播和snapshot race仍未完成。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。
