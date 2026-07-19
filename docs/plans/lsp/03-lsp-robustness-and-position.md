@@ -42,6 +42,8 @@
 
 [2026-07-20 ModuleIdentity reverse-dependency invalidation](./03-robustness/2026-07-20-module-identity-reverse-dependency-invalidation.md) 完成首个可计数的module importer失效范围：显式返回类型顶层函数body edit保留transitive importers，无注解函数body与公开signature变化继续保守传播；module public hash、edge migration、direct-caller和更广公开类型/import场景仍待后续。
 
+[2026-07-20 local signature and generic direct-dependency invalidation](./03-robustness/2026-07-20-local-signature-generic-direct-dependency-invalidation.md) 完成顶层普通函数signature/generic和推断返回body变化的canonical declaration-range direct-caller失效，并区分direct与conservative计数；receiver/method在resolved target `SymbolId`与declaration range发布前继续保守失效，禁止按member name推断。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

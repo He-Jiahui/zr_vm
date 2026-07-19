@@ -85,6 +85,8 @@ typedef struct SZrSemanticAnalysisMetrics {
     TZrSize executionCount;
     TZrSize cacheHitCount;
     TZrSize scopedCacheInvalidationCount;
+    TZrSize scopedCacheDirectDependencyInvalidationCount;
+    TZrSize scopedCacheConservativeInvalidationCount;
     TZrSize scopedCachePreservationCount;
     SZrFileRange lastExecutionRange;
 } SZrSemanticAnalysisMetrics;

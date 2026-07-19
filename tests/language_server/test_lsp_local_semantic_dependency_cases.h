@@ -37,7 +37,7 @@ static TZrBool local_dependency_has_resolved_call(
     return ZR_FALSE;
 }
 
-static TZrBool local_dependency_has_unbound_closure_identifier(
+static TZrBool local_dependency_has_closure_identifier(
         const SZrSemanticContext *semanticContext) {
     TZrSize index;
 
@@ -53,6 +53,30 @@ static TZrBool local_dependency_has_unbound_closure_identifier(
         if (fact != ZR_NULL && fact->node != ZR_NULL &&
             fact->node->type == ZR_AST_IDENTIFIER_LITERAL &&
             fact->inferredType.baseType == ZR_VALUE_TYPE_CLOSURE) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool local_dependency_has_resolved_reference(
+        const SZrSemanticContext *semanticContext,
+        const SZrFileRange *declarationRange) {
+    TZrSize index;
+
+    if (semanticContext == ZR_NULL || declarationRange == ZR_NULL ||
+        !semanticContext->referenceFacts.isValid) {
+        return ZR_FALSE;
+    }
+    for (index = 0; index < semanticContext->referenceFacts.length; index++) {
+        const SZrSemanticReferenceFact *fact =
+                (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        (SZrArray *)&semanticContext->referenceFacts,
+                        index);
+        if (fact != ZR_NULL && fact->isResolved &&
+            local_dependency_ranges_equal(
+                    &fact->declarationRange,
+                    declarationRange)) {
             return ZR_TRUE;
         }
     }
@@ -240,7 +264,9 @@ static void test_generic_signature_edit_invalidates_only_changed_and_direct_call
                 ZR_FILE_CHANGE_IMPACT_DECLARATION_SIGNATURE ||
         owner->scopedQueryAnalyzer != ZR_NULL ||
         ownerMetrics.scopedCachePreservationCount != 1 ||
-        ownerMetrics.scopedCacheInvalidationCount != 1) {
+        ownerMetrics.scopedCacheInvalidationCount != 1 ||
+        ownerMetrics.scopedCacheDirectDependencyInvalidationCount != 1 ||
+        ownerMetrics.scopedCacheConservativeInvalidationCount != 0) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, summary, "Generic signature edit did not invalidate its direct caller cache");
         return;
@@ -424,7 +450,9 @@ static void test_inferred_signature_body_edit_invalidates_direct_caller_scope(
                 ZR_FILE_CHANGE_IMPACT_DECLARATION_BODY ||
         owner->scopedQueryAnalyzer != ZR_NULL ||
         ownerMetrics.scopedCacheInvalidationCount != 1 ||
-        ownerMetrics.scopedCachePreservationCount != 0) {
+        ownerMetrics.scopedCachePreservationCount != 0 ||
+        ownerMetrics.scopedCacheDirectDependencyInvalidationCount != 1 ||
+        ownerMetrics.scopedCacheConservativeInvalidationCount != 0) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, summary, "Inferred return-type edit preserved a stale direct caller cache");
         return;
@@ -616,11 +644,11 @@ static void test_explicit_signature_body_edit_preserves_direct_caller_scope(
     TEST_PASS(timer, summary);
 }
 
-static void test_unbound_function_value_dependency_invalidates_conservatively(
+static void test_resolved_function_value_dependency_invalidates_directly(
         SZrState *state) {
     const TZrChar *summary =
-            "Unbound Function Value Dependency Invalidates Conservatively";
-    const TZrChar *uriText = "file:///unbound_function_value_dependency_cache.zr";
+            "Resolved Function Value Dependency Invalidates Directly";
+    const TZrChar *uriText = "file:///resolved_function_value_dependency_cache.zr";
     const TZrChar *initialContent =
             "identity<T>(value: T): T {\n"
             "    return value;\n"
@@ -642,7 +670,9 @@ static void test_unbound_function_value_dependency_invalidates_conservatively(
     SZrSemanticAnalyzer *owner;
     SZrSemanticAnalyzer *scopedAnalyzer;
     SZrSemanticAnalysisMetrics ownerMetrics;
+    SZrAstNode *identityFunction;
     SZrAstNode *holderFunction;
+    TZrChar metricDetail[192];
 
     TEST_START(summary);
     context = ZrLanguageServer_LspContext_New(state);
@@ -664,13 +694,17 @@ static void test_unbound_function_value_dependency_invalidates_conservatively(
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     owner = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    identityFunction = fileVersion != ZR_NULL
+                               ? local_scope_test_function_at(fileVersion->ast, 0)
+                               : ZR_NULL;
     holderFunction = fileVersion != ZR_NULL
                              ? local_scope_test_function_at(fileVersion->ast, 1)
                              : ZR_NULL;
     scopedAnalyzer = ZrLanguageServer_SemanticAnalyzer_GetOrCreateScopedQueryAnalyzer(
             state,
             owner);
-    if (owner == ZR_NULL || holderFunction == ZR_NULL || scopedAnalyzer == ZR_NULL ||
+    if (owner == ZR_NULL || identityFunction == ZR_NULL ||
+        holderFunction == ZR_NULL || scopedAnalyzer == ZR_NULL ||
         !ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
                 state,
                 scopedAnalyzer,
@@ -681,10 +715,13 @@ static void test_unbound_function_value_dependency_invalidates_conservatively(
                 scopedAnalyzer,
                 fileVersion->ast,
                 holderFunction) ||
-        !local_dependency_has_unbound_closure_identifier(
-                scopedAnalyzer->semanticContext)) {
+        !local_dependency_has_closure_identifier(
+                scopedAnalyzer->semanticContext) ||
+        !local_dependency_has_resolved_reference(
+                scopedAnalyzer->semanticContext,
+                &identityFunction->data.functionDeclaration.nameLocation)) {
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, summary, "Fixture did not expose an unbound closure identifier fact");
+        TEST_FAIL(timer, summary, "Fixture did not expose a resolved function-value edge");
         return;
     }
 
@@ -707,9 +744,18 @@ static void test_unbound_function_value_dependency_invalidates_conservatively(
                 ZR_FILE_CHANGE_IMPACT_DECLARATION_SIGNATURE ||
         owner->scopedQueryAnalyzer != ZR_NULL ||
         ownerMetrics.scopedCacheInvalidationCount != 1 ||
-        ownerMetrics.scopedCachePreservationCount != 0) {
+        ownerMetrics.scopedCachePreservationCount != 0 ||
+        ownerMetrics.scopedCacheDirectDependencyInvalidationCount != 1 ||
+        ownerMetrics.scopedCacheConservativeInvalidationCount != 0) {
+        snprintf(metricDetail,
+                 sizeof(metricDetail),
+                 "Resolved function-value counters total=%zu preserve=%zu direct=%zu conservative=%zu",
+                 (size_t)ownerMetrics.scopedCacheInvalidationCount,
+                 (size_t)ownerMetrics.scopedCachePreservationCount,
+                 (size_t)ownerMetrics.scopedCacheDirectDependencyInvalidationCount,
+                 (size_t)ownerMetrics.scopedCacheConservativeInvalidationCount);
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, summary, "Function-value dependency reused an incomplete edge set");
+        TEST_FAIL(timer, summary, metricDetail);
         return;
     }
 
@@ -817,7 +863,9 @@ static void test_poisoned_scope_invalidates_conservatively_on_signature_edit(
                 ZR_FILE_CHANGE_IMPACT_DECLARATION_SIGNATURE ||
         owner->scopedQueryAnalyzer != ZR_NULL ||
         ownerMetrics.scopedCacheInvalidationCount != 1 ||
-        ownerMetrics.scopedCachePreservationCount != 0) {
+        ownerMetrics.scopedCachePreservationCount != 0 ||
+        ownerMetrics.scopedCacheDirectDependencyInvalidationCount != 0 ||
+        ownerMetrics.scopedCacheConservativeInvalidationCount != 1) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, summary, "Poisoned dependency scope was reused without a proven edge set");
         return;

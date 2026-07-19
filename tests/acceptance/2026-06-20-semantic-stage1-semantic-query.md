@@ -1985,6 +1985,42 @@
 - Changed source modules still parse and analyze as whole documents; cancellation, snapshot races, stale response suppression, latency percentiles, and memory budgets remain open.
 - Full repository GREEN is not claimed.
 
+## Local Signature And Generic Direct-Dependency Invalidation Acceptance
+
+### Scope
+
+- Bound same-length top-level ordinary function signature and generic edits by canonical resolved declaration-range dependencies in the single scoped-query cache.
+- Apply the same dependency rule to unannotated function bodies whose inferred return contract may change; preserve stable direct callers for explicit-return body-only edits.
+- Separate total, resolved direct-dependency, and conservative fallback invalidation counters.
+- Keep poisoned or unavailable facts, unsupported method bodies, and receiver signatures without a resolved receiver-call target conservative.
+
+### Baseline And TDD
+
+- The first RED extended the existing local-query suite: a generic signature edit discarded an unrelated scope, while an inferred-return body edit retained a stale direct caller.
+- After resolved declaration-range matching, a poisoned-scope RED failed with `Poisoned dependency scope was reused without a proven edge set`; tri-state dependency availability closed that boundary.
+- The classified-counter RED failed at compile time because direct and conservative metrics did not exist. Four-state change decisions made direct calls, inferred callers, and resolved function values count as direct; diagnostics, unknown facts, receiver signatures, and unsupported inferred method bodies count as conservative.
+- A same-length `const fn` to `fn` receiver edit proves declaration-signature classification without coordinate drift. A same-length inferred method return edit proves unsupported body declarations cannot be mistaken for stable ordinary functions.
+
+### Code And Test Evidence
+
+- `semantic_analyzer_scope_cache.c` compares resolved reference declaration ranges against the changed ordinary function's old name range. It does not inspect member names, display strings, or source spelling.
+- Missing fact arrays, query/analyzer diagnostics, unresolved calls, and closure identifiers without resolved same-range references produce unknown. Post-parse full-range and scope-hash validation remains mandatory for every preservation candidate.
+- `semantic_analyzer.h` publishes direct-dependency and conservative invalidation counts beside the existing total and preservation metrics.
+- `test_lsp_local_semantic_dependency_cases.h` covers generic unrelated/direct/owner scopes, inferred and explicit-return bodies, resolved function values, and poisoned facts. `test_lsp_local_semantic_receiver_dependency_cases.h` covers receiver signature and inferred method-body fallback.
+
+### Tooling And Results
+
+- Focused local semantic query passes 31/31 with no `Fail -` marker and exit 0 under GCC 11.4, Clang 14, and MSVC 19.44.35228.
+- On stable `HEAD=62eefc2` plus this stage, GCC, Clang, and clean-rebuilt MSVC each build and run the same sixteen-target semantic/LSP matrix with 16/16 process exits at zero. All three preserve the same unrelated baseline: one `%ref` semantic-analyzer marker and four binary/plugin project-suite markers, so full repository GREEN is not claimed.
+- GCC and Clang each rebuild their 507-step shared stdio/CLI graph, while the MSVC stdio cache is cleaned and rebuilt through 650 steps under `VSCMD_VER=17.14.36`; all three pass `stdio_smoke.js` with exit 0.
+- No p50/p95/p99 latency or peak-memory result is claimed by this correctness/invalidation-range slice.
+
+### Acceptance Decision
+
+- Accepted at `2026-07-20 05:56 +08:00` for top-level ordinary-function signature/generic and inferred-return direct-dependency invalidation, classified metrics, and conservative receiver/method fallback.
+- Precise receiver direct-caller invalidation remains open until canonical receiver calls publish resolved target `SymbolId` and declaration range. Name-based inference is prohibited.
+- Main-document parse/analysis remains whole-file, only one scoped cache is retained, and cancellation, races, stale responses, provider parity, latency percentiles, and memory budgets remain open.
+
 ## Stage 3 English Diagnostic Message Catalog Foundation Acceptance
 
 ### Scope

@@ -57,6 +57,13 @@ typedef enum EZrScopedCacheDependency {
     ZR_SCOPED_CACHE_DEPENDENCY_DIRECT
 } EZrScopedCacheDependency;
 
+typedef enum EZrScopedCacheChangeDecision {
+    ZR_SCOPED_CACHE_CHANGE_INVALIDATE_LOCAL = 0,
+    ZR_SCOPED_CACHE_CHANGE_PRESERVE,
+    ZR_SCOPED_CACHE_CHANGE_INVALIDATE_DIRECT_DEPENDENCY,
+    ZR_SCOPED_CACHE_CHANGE_INVALIDATE_CONSERVATIVE
+} EZrScopedCacheChangeDecision;
+
 static EZrScopedCacheDependency scoped_cache_dependency_to_function(
         const SZrSemanticAnalyzer *scopedAnalyzer,
         const SZrAstNode *changedFunction) {
@@ -147,15 +154,23 @@ static EZrScopedCacheDependency scoped_cache_dependency_to_function(
     return ZR_SCOPED_CACHE_DEPENDENCY_NONE;
 }
 
-static TZrBool scoped_cache_change_can_preserve(
+static EZrScopedCacheChangeDecision scoped_cache_dependency_decision(
+        EZrScopedCacheDependency dependency) {
+    if (dependency == ZR_SCOPED_CACHE_DEPENDENCY_NONE) {
+        return ZR_SCOPED_CACHE_CHANGE_PRESERVE;
+    }
+    return dependency == ZR_SCOPED_CACHE_DEPENDENCY_DIRECT
+                   ? ZR_SCOPED_CACHE_CHANGE_INVALIDATE_DIRECT_DEPENDENCY
+                   : ZR_SCOPED_CACHE_CHANGE_INVALIDATE_CONSERVATIVE;
+}
+
+static EZrScopedCacheChangeDecision scoped_cache_change_decision(
         const SZrSemanticAnalyzer *scopedAnalyzer,
         SZrAstNode *currentAst,
         const SZrFileChangeInfo *changeInfo) {
     SZrAstNode *changedFunction;
-    TZrBool signatureMayChange;
 
     if (scopedAnalyzer == ZR_NULL || changeInfo == ZR_NULL ||
-        !changeInfo->hasDeclaration || currentAst == ZR_NULL ||
         !scopedAnalyzer->enableCache || scopedAnalyzer->cache == ZR_NULL ||
         !scopedAnalyzer->cache->isValid ||
         scoped_cache_range_length(&changeInfo->oldRange) !=
@@ -163,28 +178,37 @@ static TZrBool scoped_cache_change_can_preserve(
         scoped_cache_ranges_overlap(
                 &scopedAnalyzer->cache->cacheRange,
                 &changeInfo->declarationRange)) {
-        return ZR_FALSE;
+        return ZR_SCOPED_CACHE_CHANGE_INVALIDATE_LOCAL;
+    }
+    if (!changeInfo->hasDeclaration || currentAst == ZR_NULL) {
+        return ZR_SCOPED_CACHE_CHANGE_INVALIDATE_CONSERVATIVE;
     }
 
     if (changeInfo->impact == ZR_FILE_CHANGE_IMPACT_DECLARATION_BODY) {
         changedFunction = scoped_cache_changed_function(currentAst, changeInfo);
-        signatureMayChange =
-                changedFunction != ZR_NULL &&
-                changedFunction->data.functionDeclaration.returnType == ZR_NULL;
-        return !signatureMayChange ||
-               scoped_cache_dependency_to_function(
-                       scopedAnalyzer,
-                       changedFunction) == ZR_SCOPED_CACHE_DEPENDENCY_NONE;
+        if (changedFunction == ZR_NULL) {
+            return ZR_SCOPED_CACHE_CHANGE_INVALIDATE_CONSERVATIVE;
+        }
+        if (changedFunction->data.functionDeclaration.returnType != ZR_NULL) {
+            return ZR_SCOPED_CACHE_CHANGE_PRESERVE;
+        }
+        return scoped_cache_dependency_decision(
+                scoped_cache_dependency_to_function(
+                        scopedAnalyzer,
+                        changedFunction));
     }
 
     if (changeInfo->impact != ZR_FILE_CHANGE_IMPACT_DECLARATION_SIGNATURE) {
-        return ZR_FALSE;
+        return ZR_SCOPED_CACHE_CHANGE_INVALIDATE_CONSERVATIVE;
     }
     changedFunction = scoped_cache_changed_function(currentAst, changeInfo);
-    return changedFunction != ZR_NULL &&
-           scoped_cache_dependency_to_function(
-                   scopedAnalyzer,
-                   changedFunction) == ZR_SCOPED_CACHE_DEPENDENCY_NONE;
+    if (changedFunction == ZR_NULL) {
+        return ZR_SCOPED_CACHE_CHANGE_INVALIDATE_CONSERVATIVE;
+    }
+    return scoped_cache_dependency_decision(
+            scoped_cache_dependency_to_function(
+                    scopedAnalyzer,
+                    changedFunction));
 }
 
 SZrSemanticAnalyzer *
@@ -233,6 +257,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareScopedQueryCacheForChange(
         const SZrFileChangeInfo *changeInfo,
         TZrBool *retainCurrentAst) {
     SZrSemanticAnalyzer *scopedAnalyzer;
+    EZrScopedCacheChangeDecision decision;
     TZrBool canPreserve;
 
     if (retainCurrentAst != ZR_NULL) {
@@ -244,12 +269,20 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareScopedQueryCacheForChange(
     }
 
     scopedAnalyzer = analyzer->scopedQueryAnalyzer;
-    canPreserve = scoped_cache_change_can_preserve(
+    decision = scoped_cache_change_decision(
             scopedAnalyzer,
             currentAst,
             changeInfo);
+    canPreserve = decision == ZR_SCOPED_CACHE_CHANGE_PRESERVE;
     if (!canPreserve) {
         analyzer->metrics.scopedCacheInvalidationCount++;
+        if (decision ==
+            ZR_SCOPED_CACHE_CHANGE_INVALIDATE_DIRECT_DEPENDENCY) {
+            analyzer->metrics.scopedCacheDirectDependencyInvalidationCount++;
+        } else if (decision ==
+                   ZR_SCOPED_CACHE_CHANGE_INVALIDATE_CONSERVATIVE) {
+            analyzer->metrics.scopedCacheConservativeInvalidationCount++;
+        }
         ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(
                 state,
                 analyzer);
@@ -314,6 +347,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_CommitScopedQueryCachePreservation(
         TZrBool cacheOwnsRetainedAst = scopedAnalyzer->ownedAst == retainedAst;
 
         analyzer->metrics.scopedCacheInvalidationCount++;
+        analyzer->metrics.scopedCacheConservativeInvalidationCount++;
         ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(
                 state,
                 analyzer);
