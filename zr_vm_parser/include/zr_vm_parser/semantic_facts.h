@@ -140,6 +140,7 @@ typedef struct SZrSemanticExpressionFact {
     EZrSemanticExpressionFactKind kind;
     EZrSemanticFactExactness exactness;
     SZrInferredType inferredType;
+    TZrTypeId typeId;
     EZrSemanticValueKind valueKind;
     TZrBool hasConstant;
     SZrSemanticConstantValue constantValue;
@@ -169,6 +170,7 @@ typedef struct SZrSemanticReferenceFact {
     TZrSymbolId symbolId;
     TZrTypeId typeId;
     SZrString *name;
+    SZrString *signatureDisplay;
     EZrSemanticDefiniteAssignmentState definiteAssignmentState;
     TZrBool hasDefiniteAssignmentState;
     TZrBool isResolved;

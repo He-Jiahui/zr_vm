@@ -4,6 +4,7 @@
 
 #ifndef ZR_VM_CORE_MODULE_H
 #define ZR_VM_CORE_MODULE_H
+#include "zr_vm_core/canonical_consumer.h"
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/io.h"
@@ -100,6 +101,12 @@ ZR_CORE_API SZrMetadataRuntime *ZrCore_Module_AttachMetadataRuntime(struct SZrOb
                                                                     struct SZrFunction *metadataFunction,
                                                                     const SZrAotCodeRegistration *codeRegistration);
 ZR_CORE_API SZrMetadataRuntime *ZrCore_Module_GetMetadataRuntime(struct SZrObjectModule *module);
+ZR_CORE_API EZrArtifactStatus ZrCore_Module_OpenCanonicalArtifact(
+        const TZrByte *buffer,
+        TZrSize bufferLength,
+        const SZrArtifactPublicIdentity *expectedIdentity,
+        SZrCanonicalConsumerProjection *outProjection,
+        SZrArtifactDiagnostic *diagnostic);
 
 // 内部模块导入 helper
 ZR_CORE_API struct SZrObjectModule *ZrCore_Module_ImportByPath(struct SZrState *state, struct SZrString *path);

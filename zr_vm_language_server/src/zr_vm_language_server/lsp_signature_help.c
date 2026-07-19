@@ -1,4 +1,6 @@
 #include "interface/lsp_interface_internal.h"
+#include "lsp_canonical_signature_help.h"
+#include "lsp_signature_help_internal.h"
 #include "semantic/semantic_analyzer_internal.h"
 
 #include "type_inference_internal.h"
@@ -8,6 +10,7 @@
 #include <string.h>
 
 #define ZR_LSP_SIGNATURE_BINDING_INDEX_NONE ((TZrInt32)-1)
+#define signature_populate_help_from_label ZrLanguageServer_LspSignatureHelp_PopulateFromLabel
 
 typedef enum EZrLspCallContextKind {
     ZR_LSP_CALL_CONTEXT_NONE = 0,
@@ -3110,7 +3113,7 @@ static TZrBool signature_resolve_member_call_signature_locally(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrBool signature_populate_help_from_label(SZrState *state,
+TZrBool signature_populate_help_from_label(SZrState *state,
                                                   SZrSemanticAnalyzer *analyzer,
                                                   const TZrChar *labelText,
                                                   SZrAstNodeArray *params,
@@ -3862,6 +3865,20 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
     signature_find_call_context_in_node(analyzer->ast, fileRange, &callContext);
     if (callContext.kind == ZR_LSP_CALL_CONTEXT_NONE) {
         return ZR_FALSE;
+    }
+
+    if (callContext.kind == ZR_LSP_CALL_CONTEXT_FUNCTION_CALL &&
+        callContext.callNode != ZR_NULL &&
+        callContext.callNode->type == ZR_AST_FUNCTION_CALL &&
+        ZrLanguageServer_LspCanonicalSignatureHelp_Resolve(
+                state,
+                analyzer,
+                fileRange,
+                callContext.argumentNodes,
+                signature_active_parameter_index(
+                        &callContext.callNode->data.functionCall, filePosition),
+                result)) {
+        return *result != ZR_NULL;
     }
 
     if (callContext.kind == ZR_LSP_CALL_CONTEXT_SUPER_CONSTRUCTOR_CALL) {

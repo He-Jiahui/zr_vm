@@ -202,7 +202,8 @@ void type_inference_record_expression_and_numeric_facts(SZrCompilerState *cs,
 void type_inference_record_primary_call_reference_fact(SZrCompilerState *cs,
                                                        SZrAstNode *node,
                                                        SZrAstNode *callNode,
-                                                       const SZrFunctionTypeInfo *funcTypeInfo);
+                                                       const SZrFunctionTypeInfo *funcTypeInfo,
+                                                       const SZrResolvedCallSignature *resolvedSignature);
 void type_inference_record_identifier_write_reference_fact(SZrCompilerState *cs,
                                                            SZrAstNode *node,
                                                            const SZrTypeBinding *binding);

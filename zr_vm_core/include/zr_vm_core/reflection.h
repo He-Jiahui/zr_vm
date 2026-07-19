@@ -6,6 +6,7 @@
 #define ZR_VM_CORE_REFLECTION_H
 
 #include "zr_vm_common/zr_aot_abi.h"
+#include "zr_vm_core/canonical_consumer.h"
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/metadata_token.h"
 
@@ -366,6 +367,11 @@ ZR_CORE_API TZrBool ZrCore_Reflection_WriteFieldInfoTokenNestedValue(
 ZR_CORE_API TZrBool ZrCore_Reflection_ResolveToken(struct SZrMetadataRuntime *runtime,
                                                    TZrMetadataToken token,
                                                    SZrReflectionResolvedToken *outResolved);
+ZR_CORE_API EZrArtifactStatus ZrCore_Reflection_ResolveArtifactType(
+        const SZrCanonicalConsumerProjection *projection,
+        TZrMetadataToken typeToken,
+        SZrCanonicalTypeProjection *outType,
+        SZrArtifactDiagnostic *diagnostic);
 
 ZR_CORE_API TZrBool ZrCore_Reflection_InvokeMethodToken(struct SZrState *state,
                                                         struct SZrMetadataRuntime *runtime,

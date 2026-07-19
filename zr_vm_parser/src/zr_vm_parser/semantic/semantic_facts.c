@@ -372,6 +372,9 @@ TZrBool ZrParser_SemanticFacts_AppendExpression(SZrSemanticContext *context,
 
     copy = *fact;
     ZrParser_InferredType_Copy(context->state, &copy.inferredType, &fact->inferredType);
+    if (copy.typeId == ZR_SEMANTIC_ID_INVALID) {
+        copy.typeId = ZrParser_CanonicalType_FromInferred(context, &copy.inferredType);
+    }
     copy.callTargetName = semantic_facts_clone_string(context, fact->callTargetName);
     copy.memberName = semantic_facts_clone_string(context, fact->memberName);
     copy.diagnosticMessage = semantic_facts_clone_string(context, fact->diagnosticMessage);
@@ -389,6 +392,7 @@ TZrBool ZrParser_SemanticFacts_AppendReference(SZrSemanticContext *context,
     }
 
     copy = *fact;
+    copy.signatureDisplay = semantic_facts_clone_string(context, fact->signatureDisplay);
     if (!semantic_facts_reference_copy_definition_ranges(context, &copy, fact)) {
         return ZR_FALSE;
     }

@@ -5,6 +5,8 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+typedef struct SZrResolvedCallSignature SZrResolvedCallSignature;
+
 void type_inference_record_expression_fact(SZrCompilerState *cs,
                                            SZrAstNode *node,
                                            const SZrInferredType *type);
@@ -30,7 +32,8 @@ TZrBool type_inference_logical_fact_known_bool_value(SZrCompilerState *cs,
 void type_inference_record_primary_call_reference_fact(SZrCompilerState *cs,
                                                        SZrAstNode *node,
                                                        SZrAstNode *callNode,
-                                                       const SZrFunctionTypeInfo *funcTypeInfo);
+                                                       const SZrFunctionTypeInfo *funcTypeInfo,
+                                                       const SZrResolvedCallSignature *resolvedSignature);
 
 void type_inference_record_identifier_write_reference_fact(SZrCompilerState *cs,
                                                            SZrAstNode *node,

@@ -2307,7 +2307,8 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                         free_resolved_call_signature(cs->state, &resolvedSignature);
                         return ZR_FALSE;
                     }
-                    type_inference_record_primary_call_reference_fact(cs, node, firstMember, funcTypeInfo);
+                    type_inference_record_primary_call_reference_fact(
+                            cs, node, firstMember, funcTypeInfo, &resolvedSignature);
                     if (primary->members->count > 1) {
                         TZrBool success =
                                 infer_primary_member_chain_type(cs, &baseType, primary->members, 1, ZR_FALSE, result);
@@ -2355,7 +2356,8 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                         free_resolved_call_signature(cs->state, &resolvedSignature);
                         return ZR_FALSE;
                     }
-                    type_inference_record_primary_call_reference_fact(cs, node, firstMember, funcTypeInfo);
+                    type_inference_record_primary_call_reference_fact(
+                            cs, node, firstMember, funcTypeInfo, &resolvedSignature);
                     if (primary->members->count > 1) {
                         TZrBool success =
                                 infer_primary_member_chain_type(cs, &baseType, primary->members, 1, ZR_FALSE, result);

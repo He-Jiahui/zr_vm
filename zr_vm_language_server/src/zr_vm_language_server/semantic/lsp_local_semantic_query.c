@@ -5,6 +5,7 @@
 #include "semantic/semantic_analyzer_internal.h"
 
 #include "zr_vm_language_server/incremental_parser.h"
+#include "zr_vm_parser/semantic_query.h"
 #include "zr_vm_parser/type_inference.h"
 
 #include <stdarg.h>
@@ -619,26 +620,21 @@ static TZrBool local_query_build_hover_with_document(
 
     markdown[0] = '\0';
     if (query->expressionFact != ZR_NULL) {
-        if (context != ZR_NULL &&
-            uri != ZR_NULL &&
-            query->referenceFact != ZR_NULL &&
-            query->referenceFact->typeId != ZR_SEMANTIC_ID_INVALID) {
+        if (context != ZR_NULL && uri != ZR_NULL) {
             SZrSemanticAnalyzer *analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+            SZrParserSemanticTypeQuery typeQuery;
 
             if (analyzer != ZR_NULL &&
-                ZrLanguageServer_SemanticAnalyzer_FormatTypeId(
-                        analyzer->semanticContext,
-                        query->referenceFact->typeId,
-                        typeBuffer,
-                        sizeof(typeBuffer))) {
+                ZrParser_SemanticQuery_CanonicalTypeAt(analyzer->semanticContext,
+                                                       query->queryRange,
+                                                       ZR_NULL,
+                                                       &typeQuery) &&
+                ZrParser_CanonicalType_Format(analyzer->semanticContext,
+                                              typeQuery.typeId,
+                                              typeBuffer,
+                                              sizeof(typeBuffer))) {
                 typeText = typeBuffer;
             }
-        }
-        if (typeText == ZR_NULL) {
-            typeText = ZrParser_TypeNameString_Get(state,
-                                                   &query->expressionFact->inferredType,
-                                                   typeBuffer,
-                                                   sizeof(typeBuffer));
         }
         if (typeText == ZR_NULL || typeText[0] == '\0') {
             typeText = "unknown";

@@ -5,6 +5,7 @@
 #ifndef ZR_VM_CORE_DEBUG_H
 #define ZR_VM_CORE_DEBUG_H
 
+#include "zr_vm_core/canonical_consumer.h"
 #include "zr_vm_core/conf.h"
 struct SZrState;
 struct SZrCallInfo;
@@ -206,5 +207,10 @@ ZR_CORE_API void ZrCore_Debug_PrintObject(struct SZrState *state, struct SZrObje
 // 输出类似zri中间表示的格式，用于调试编译后的.zri文件
 ZR_CORE_API void ZrCore_Debug_PrintPrototypesFromData(struct SZrState *state, struct SZrFunction *entryFunction,
                                                 FILE *output);
+ZR_CORE_API EZrArtifactStatus ZrCore_Debug_ResolveArtifactType(
+        const SZrCanonicalConsumerProjection *projection,
+        TZrUInt32 canonicalTypeId,
+        SZrCanonicalTypeProjection *outType,
+        SZrArtifactDiagnostic *diagnostic);
 
 #endif // ZR_VM_CORE_DEBUG_H

@@ -1389,6 +1389,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             }
 
             SZrFileRange callOpenLocation;
+            SZrFileRange callCloseLocation;
 
             callOpenLocation = get_current_token_location(ps);
             consume_token(ps, ZR_TK_LPAREN);
@@ -1407,6 +1408,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                 free_ast_node_array_with_elements(ps->state, genericArguments);
                 return ZR_NULL;
             }
+            callCloseLocation = get_current_token_location(ps);
             consume_token(ps, ZR_TK_RPAREN);
 
             if (try_rewrite_intrinsic_ownership_generic_call(ps,
@@ -1423,7 +1425,10 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                 continue;
             }
 
-            callNode = create_ast_node(ps, ZR_AST_FUNCTION_CALL, startLoc);
+            callNode = create_ast_node(
+                    ps,
+                    ZR_AST_FUNCTION_CALL,
+                    ZrParser_FileRange_Merge(callOpenLocation, callCloseLocation));
             if (callNode == ZR_NULL) {
                 if (args != ZR_NULL) {
                     ZrParser_AstNodeArray_Free(ps->state, args);
@@ -1456,6 +1461,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
         // 函数调用
         else if (ps->lexer->t.token == ZR_TK_LPAREN) {
             SZrFileRange callOpenLocation = get_current_token_location(ps);
+            SZrFileRange callCloseLocation;
             SZrArray *argNames = ZR_NULL;
             SZrAstNodeArray *args;
 
@@ -1473,6 +1479,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                 }
                 return ZR_NULL;
             }
+            callCloseLocation = get_current_token_location(ps);
             consume_token(ps, ZR_TK_RPAREN);
 
             if (base->type == ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION) {
@@ -1511,7 +1518,10 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                 continue;
             }
 
-            SZrAstNode *callNode = create_ast_node(ps, ZR_AST_FUNCTION_CALL, startLoc);
+            SZrAstNode *callNode = create_ast_node(
+                    ps,
+                    ZR_AST_FUNCTION_CALL,
+                    ZrParser_FileRange_Merge(callOpenLocation, callCloseLocation));
             if (callNode == ZR_NULL) {
                 if (args != ZR_NULL) {
                     ZrParser_AstNodeArray_Free(ps->state, args);

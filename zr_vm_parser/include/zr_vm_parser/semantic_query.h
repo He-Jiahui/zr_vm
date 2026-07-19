@@ -29,6 +29,18 @@ typedef struct SZrParserSemanticQueryDiagnostics {
     TZrSize count;
 } SZrParserSemanticQueryDiagnostics;
 
+typedef struct SZrParserSemanticTypeQuery {
+    TZrTypeId typeId;
+    const SZrSemanticExpressionFact *expression;
+    const SZrSemanticReferenceFact *reference;
+} SZrParserSemanticTypeQuery;
+
+typedef struct SZrParserSemanticCallQuery {
+    TZrTypeId callableTypeId;
+    const SZrSemanticExpressionFact *expression;
+    const SZrSemanticReferenceFact *reference;
+} SZrParserSemanticCallQuery;
+
 struct SZrCompilerState;
 typedef struct SZrCompilerState SZrCompilerState;
 
@@ -40,6 +52,21 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_TypeAt(const SZrSemanticContext *co
                                                     SZrFileRange position,
                                                     const SZrParserSemanticQueryScope *scope,
                                                     SZrInferredType *outType);
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_CanonicalTypeAt(
+        const SZrSemanticContext *context,
+        SZrFileRange position,
+        const SZrParserSemanticQueryScope *scope,
+        SZrParserSemanticTypeQuery *outQuery);
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_CallAt(
+        const SZrSemanticContext *context,
+        SZrFileRange position,
+        const SZrParserSemanticQueryScope *scope,
+        SZrParserSemanticCallQuery *outQuery);
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_FormatCall(
+        const SZrSemanticContext *context,
+        const SZrParserSemanticCallQuery *query,
+        TZrChar *buffer,
+        TZrSize bufferSize);
 ZR_PARSER_API const SZrSemanticReferenceFact *ZrParser_SemanticQuery_DefinitionOf(
         const SZrSemanticContext *context,
         SZrFileRange position,

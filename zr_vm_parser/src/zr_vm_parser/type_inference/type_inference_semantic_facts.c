@@ -237,6 +237,22 @@ static void type_inference_record_primary_call_info(SZrCompilerState *cs,
     fact->argumentCount = call->args != ZR_NULL ? call->args->count : 0;
     fact->hasNamedArguments = call->hasNamedArgs;
     fact->isMemberCall = isMemberCall;
+    if (callNode->location.end.offset > fact->range.end.offset) {
+        fact->range.end = callNode->location.end;
+    }
+    if (call->args != ZR_NULL && call->args->count > 0u) {
+        SZrAstNode *lastArgument = call->args->nodes[call->args->count - 1u];
+        if (lastArgument != ZR_NULL && lastArgument->location.end.offset > fact->range.end.offset) {
+            fact->range.end = lastArgument->location.end;
+        }
+    } else if (call->genericArguments != ZR_NULL && call->genericArguments->count > 0u) {
+        SZrAstNode *lastGenericArgument =
+                call->genericArguments->nodes[call->genericArguments->count - 1u];
+        if (lastGenericArgument != ZR_NULL &&
+            lastGenericArgument->location.end.offset > fact->range.end.offset) {
+            fact->range.end = lastGenericArgument->location.end;
+        }
+    }
 }
 
 static void type_inference_record_primary_member_info(const SZrPrimaryExpression *primary,
@@ -306,38 +322,6 @@ void type_inference_record_expression_fact(SZrCompilerState *cs,
     type_inference_record_expression_payload(cs, node, &fact);
     ZrParser_SemanticFacts_AppendExpression(cs->semanticContext, &fact);
     ZrParser_InferredType_Free(cs->state, &fact.inferredType);
-}
-
-void type_inference_record_primary_call_reference_fact(SZrCompilerState *cs,
-                                                       SZrAstNode *node,
-                                                       SZrAstNode *callNode,
-                                                       const SZrFunctionTypeInfo *funcTypeInfo) {
-    SZrSemanticReferenceFact fact;
-    SZrAstNode *target;
-
-    if (cs == ZR_NULL ||
-        cs->semanticContext == ZR_NULL ||
-        node == ZR_NULL ||
-        node->type != ZR_AST_PRIMARY_EXPRESSION ||
-        callNode == ZR_NULL ||
-        callNode->type != ZR_AST_FUNCTION_CALL ||
-        funcTypeInfo == ZR_NULL ||
-        funcTypeInfo->name == ZR_NULL) {
-        return;
-    }
-
-    target = type_inference_primary_call_target(&node->data.primaryExpression, callNode, ZR_NULL);
-
-    memset(&fact, 0, sizeof(fact));
-    fact.node = node;
-    fact.range = target != ZR_NULL ? target->location : callNode->location;
-    fact.declarationRange = funcTypeInfo->hasDeclarationRange ? funcTypeInfo->declarationRange : fact.range;
-    fact.kind = ZR_SEMANTIC_REFERENCE_CALL;
-    fact.symbolId = funcTypeInfo->symbolId;
-    fact.typeId = funcTypeInfo->typeId;
-    fact.name = funcTypeInfo->name;
-    fact.isResolved = ZR_TRUE;
-    ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
 
 void type_inference_record_identifier_write_reference_fact(SZrCompilerState *cs,
