@@ -4,6 +4,7 @@
 
 #include "module/module_internal.h"
 #include "module/module_import_signature.h"
+#include "module/module_reflection_import.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/reflection.h"
@@ -848,7 +849,15 @@ static TZrInt64 module_loader_import_native_entry(SZrState *state, TZrBool allow
 
     path = ZR_CAST_STRING(state, pathValue->value.object);
     callerFunction = module_loader_find_import_caller_function(state);
-    module = ZrCore_Module_ImportByPath(state, path);
+    if (!zr_module_reflection_import_try_resolve(
+                state, path, callerFunction, &module)) {
+        module = ZrCore_Module_ImportByPath(state, path);
+    }
+    functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
+    argBase = functionBase + 1;
+    pathValue = ZrCore_Stack_GetValue(argBase);
+    path = ZR_CAST_STRING(state, pathValue->value.object);
+    callerFunction = module_loader_find_import_caller_function(state);
     ZrCore_Memory_RawSet(&signatureMismatch, 0, sizeof(signatureMismatch));
     if (module == ZR_NULL && !allowSignatureMismatchFallback && state->threadStatus == ZR_THREAD_STATUS_FINE) {
         functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);

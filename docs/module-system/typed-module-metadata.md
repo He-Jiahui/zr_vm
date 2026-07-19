@@ -50,6 +50,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/module/module_internal.h
   - zr_vm_core/src/zr_vm_core/module/module.c
   - zr_vm_core/src/zr_vm_core/module/module_loader.c
+  - zr_vm_core/src/zr_vm_core/module/module_reflection_import.c
+  - zr_vm_core/src/zr_vm_core/module/module_reflection_import.h
   - zr_vm_core/src/zr_vm_core/module/module_import_signature.c
   - zr_vm_core/src/zr_vm_core/module/module_import_signature.h
   - zr_vm_core/src/zr_vm_core/module/module_import_signature_binding.c
@@ -196,6 +198,8 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/module/module_internal.h
   - zr_vm_core/src/zr_vm_core/module/module.c
   - zr_vm_core/src/zr_vm_core/module/module_loader.c
+  - zr_vm_core/src/zr_vm_core/module/module_reflection_import.c
+  - zr_vm_core/src/zr_vm_core/module/module_reflection_import.h
   - zr_vm_core/src/zr_vm_core/module/module_import_signature.c
   - zr_vm_core/src/zr_vm_core/module/module_import_signature.h
   - zr_vm_core/src/zr_vm_core/module/module_import_signature_binding.c
@@ -331,6 +335,8 @@ tests:
   - tests/module/test_metadata_runtime_manifest_exports.c
   - tests/module/test_metadata_runtime_binding_compatibility.c
   - tests/module/test_reflection_dynamic_generic_instance.c
+  - tests/module/test_reflection_runtime_module_import.h
+  - tests/module/test_reflection_runtime_module_import_allocator.h
   - tests/module/test_reflection_dynamic_generic_cross_module.h
   - tests/module/test_reflection_dynamic_generic_method_context.h
   - tests/module/test_reflection_dynamic_generic_method_make.h
@@ -344,6 +350,7 @@ tests:
   - tests/acceptance/2026-07-19-aot-08-s6aa-10-s4z48-11-s5f-generic-method-native-entry.md
   - tests/acceptance/2026-07-19-aot-08-s6ab-10-s4z49-11-s5g-runtime-bound-reflection-module.md
   - tests/acceptance/2026-07-19-aot-08-s6ac-10-s4z50-11-s5h-target-owned-reflection-module-cache.md
+  - tests/acceptance/2026-07-19-aot-08-s6ad-10-s4z51-11-s5i-reflection-caller-import-bridge.md
   - tests/acceptance/2026-07-02-aot-12-s7zzq-runtime-export-member-token-publication.md
   - tests/acceptance/2026-07-02-aot-11-s7z-zrp-manifest-export-declarations.md
   - tests/acceptance/2026-07-02-aot-11-s7za-export-declaration-writer-options.md
@@ -1650,3 +1657,13 @@ M6 的验证不是“编译成功”级别，而是直接断言 opcode、签名�
   post-capture installation failure verifies stack and ignore ownership cleanup. Dynamic generic tests pass 34/0 under
   GCC, Clang, and MSVC; final MSVC focused CTest passes 6/6 and shared regressions pass 66/0, 31/0, and 95/0. Ordinary
   import bridging, global registration, replacement/unload, and module generation remain separate work.
+
+- 2026-07-19 08-S6AD / 10-S4Z51 / 11-S5I connects exact ordinary and guard imports of `zr.reflection` to the
+  target-owned service selected from the actual caller's loaded metadata runtime. Matching normalizes a forwarding-aware
+  owner root, permits duplicate aliases only for one module identity, and rejects malformed registry entries, traversal
+  inconsistencies, distinct-module ambiguity, and owner cycles. The service remains absent from the process-global path
+  cache. After service construction the loader reacquires path/caller from GC-updated roots before applying the existing
+  import signature verifier. OOM full-GC and mutation tests prove that refresh and key-shape checks are required.
+  Dynamic generic tests pass 35/0 under GCC, Clang, and MSVC; final MSVC focused CTest passes 6/6 and shared regressions
+  pass 66/0, 31/0, and 95/0. Final independent review reports no Critical/Important. Global registration,
+  replacement/unload, module generation, declaration reflection, and full reflection invocation remain separate work.

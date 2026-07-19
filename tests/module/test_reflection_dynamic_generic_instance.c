@@ -122,6 +122,8 @@ typedef struct SReflectionDynamicGenericFixture {
 void setUp(void) {}
 void tearDown(void) {}
 
+#include "test_reflection_runtime_module_import_allocator.h"
+
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -138,6 +140,9 @@ static TZrPtr test_allocator(TZrPtr userData,
         return ZR_NULL;
     }
     if (pointer == ZR_NULL) {
+        if (reflection_import_allocator_before_allocate()) {
+            return ZR_NULL;
+        }
         return malloc(newSize);
     }
     if ((TZrPtr)pointer >= (TZrPtr)0x1000) {
@@ -148,7 +153,10 @@ static TZrPtr test_allocator(TZrPtr userData,
 
 static SZrState *create_reflection_test_state(void) {
     SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345u, &callbacks);
+    SZrGlobalState *global;
+
+    reflection_import_allocator_reset();
+    global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345u, &callbacks);
 
     if (global == ZR_NULL) {
         return ZR_NULL;
@@ -928,6 +936,7 @@ static void test_dynamic_generic_type_object_materializes_interpreter_deopt_rout
 #include "test_reflection_dynamic_generic_method_context.h"
 #include "test_reflection_dynamic_generic_instance_interpreter.h"
 #include "test_reflection_dynamic_generic_cross_module.h"
+#include "test_reflection_runtime_module_import.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -960,6 +969,7 @@ int main(void) {
     RUN_TEST(test_make_generic_method_native_entry_uses_trusted_closure_runtime);
     RUN_TEST(test_reflection_runtime_module_exports_bound_make_generic_method);
     RUN_TEST(test_reflection_runtime_module_cache_is_owned_by_target_module);
+    RUN_TEST(test_reflection_module_import_uses_loaded_caller_runtime);
     RUN_TEST(test_generic_method_definition_object_materializes_parameters);
     RUN_TEST(test_method_spec_generic_context_materializes_metadata_arguments);
     RUN_TEST(test_method_spec_generic_call_info_context_survives_full_gc);

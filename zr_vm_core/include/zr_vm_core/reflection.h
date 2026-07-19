@@ -9,6 +9,8 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/metadata_token.h"
 
+#define ZR_REFLECTION_MODULE_NAME "zr.reflection"
+
 struct SZrState;
 struct SZrCallInfo;
 struct SZrClosureNative;
