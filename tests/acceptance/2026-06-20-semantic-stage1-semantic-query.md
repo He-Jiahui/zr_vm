@@ -1831,6 +1831,44 @@
 - The isolated sources retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
 - Full repository GREEN is not claimed.
 
+## Scoped Query Semantic Cache Acceptance
+
+### Scope
+
+- Give each main document analyzer one lazily created, independently owned scoped-query analyzer and semantic context.
+- Reuse the existing AST/root/range cache for repeated completion fallback queries without replacing the main full-document analyzer state.
+- Retain the scoped cache across byte-identical and token-equivalent updates, but destroy it before a real edit can release the old AST.
+- Propagate cache enable/disable, cache clear, AST identity changes, and owner destruction through the scoped analyzer lifecycle.
+
+### Baseline And TDD
+
+- Compile RED failed because `SZrSemanticAnalyzer.scopedQueryAnalyzer` and `ZrLanguageServer_SemanticAnalyzer_GetOrCreateScopedQueryAnalyzer` did not exist.
+- Direct scope GREEN records two requests, one execution, and one hit on the same AST/root.
+- A comment-only token-equivalent update keeps the AST and scoped analyzer and advances the metrics to `3/1/2`.
+- A body-token edit invalidates the old scoped analyzer before parse; the replacement starts at `1/1/0` on the new AST.
+- The completion integration case isolates an empty primary symbol provider and proves two public completion requests use the owned fallback cache at `2/1/1`.
+
+### Code And Test Evidence
+
+- `semantic_analyzer_scope_cache.c` contains the 37-line child ownership and invalidation implementation.
+- `semantic_analyzer.h` exposes the owner pointer and get-or-create/invalidate APIs across the language-server DLL boundary.
+- `lsp_semantic_query.c` reuses the owner cache for completion fallback; `lsp_interface.c` invalidates dirty updates before parse; `semantic_analyzer_analysis.c` guards direct AST replacement.
+- `test_lsp_local_semantic_scope_cases.h` remains a focused 533-line module; the large analyzer/query/interface files receive only lifecycle orchestration changes.
+
+### Tooling And Results
+
+- WSL source/builds: `/home/hejiahui/zr_vm-lsp-head-d53e21c-20260719-1930-wsl-src` and matching GCC/Clang build directories.
+- Windows source/build: `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-head-d53e21c-20260719-1930-msvc-src` and matching MSVC build directory.
+- WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each pass local semantic query 23/23, semantic analyzer 46/46, LSP interface 87/87, and incremental parser 7/7.
+- Each toolchain passes the same fourteen-target semantic/LSP matrix with zero executable or `Fail -` failures and passes `language_server_stdio_smoke` 1/1 on current `HEAD=b6bcd4a` plus this stage.
+
+### Acceptance Decision
+
+- Accepted at `2026-07-19 21:45 +08:00` as the scoped-query semantic-cache submilestone for L6 robustness.
+- L6 remains open: real body edits still perform full parse/main analysis; owning-function CFG/query cache invalidation, direct-caller and ModuleIdentity propagation, cancellation, immutable snapshot races, provider parity, latency percentiles, and memory budgets are not claimed.
+- The isolated sources retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
+- Full repository GREEN is not claimed.
+
 ## Stage 3 English Diagnostic Message Catalog Foundation Acceptance
 
 ### Scope

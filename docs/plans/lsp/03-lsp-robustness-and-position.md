@@ -34,6 +34,8 @@
 
 [2026-07-19 strict document version rejection](./03-robustness/2026-07-19-strict-document-version-rejection.md) 完成已存在document的严格version单调门禁；相同或stale version在快照分配、变更分类、parse和semantic work之前拒绝，cancellation、snapshot race和声明/依赖失效仍未完成。
 
+[2026-07-19 scoped query semantic cache](./03-robustness/2026-07-19-scoped-query-semantic-cache.md) 完成completion空结果回退与主document analyzer的semantic context/cache分区；重复作用域查询命中独立缓存，token等价更新保留且真实编辑在旧AST释放前失效，声明级CFG/query cache与依赖传播仍未完成。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

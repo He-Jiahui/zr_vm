@@ -124,6 +124,11 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
     analyzer->metrics.requestCount++;
 
     previousAst = analyzer->ast;
+    if (previousAst != ZR_NULL && previousAst != ast) {
+        ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(
+                state,
+                analyzer);
+    }
     analyzer->ast = ast;
     if (analyzer->enableCache && analyzer->cache != ZR_NULL) {
         analysisHash = semantic_analysis_cache_hash(ast, scopeRoot);

@@ -3003,7 +3003,10 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
             ZrLanguageServer_SemanticAnalyzer_FindAnalysisRootAtPosition(
                 fileVersion->ast,
                 fileRange);
-        fallbackAnalyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        fallbackAnalyzer =
+            ZrLanguageServer_SemanticAnalyzer_GetOrCreateScopedQueryAnalyzer(
+                state,
+                analyzer);
         if (fallbackAnalyzer != ZR_NULL &&
             (analysisRoot != ZR_NULL
                  ? ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
@@ -3054,9 +3057,6 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
     }
 
     ZrCore_Array_Free(state, &completions);
-    if (fallbackAnalyzer != ZR_NULL) {
-        ZrLanguageServer_SemanticAnalyzer_Free(state, fallbackAnalyzer);
-    }
     if (hasSnapshot) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     }

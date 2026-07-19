@@ -2101,6 +2101,7 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     analyzer->compilerState = ZR_NULL; // 延迟创建
     analyzer->semanticContext = ZR_NULL;
     analyzer->hirModule = ZR_NULL;
+    analyzer->scopedQueryAnalyzer = ZR_NULL;
     memset(&analyzer->metrics, 0, sizeof(analyzer->metrics));
     
     if (analyzer->symbolTable == ZR_NULL) {
@@ -2145,6 +2146,7 @@ void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer
         return;
     }
 
+    ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(state, analyzer);
     ZrLanguageServer_SemanticAnalyzer_ReleaseDiagnostics(state, analyzer, ZR_FALSE);
     ZrCore_Array_Free(state, &analyzer->diagnostics);
     
@@ -2790,11 +2792,21 @@ void ZrLanguageServer_SemanticAnalyzer_SetCacheEnabled(SZrSemanticAnalyzer *anal
         return;
     }
     analyzer->enableCache = enabled;
+    if (analyzer->scopedQueryAnalyzer != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_SetCacheEnabled(
+                analyzer->scopedQueryAnalyzer,
+                enabled);
+    }
 }
 
 // 清除缓存
 void ZrLanguageServer_SemanticAnalyzer_ClearCache(SZrState *state, SZrSemanticAnalyzer *analyzer) {
-    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->cache == ZR_NULL) {
+    if (state == ZR_NULL || analyzer == ZR_NULL) {
+        return;
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(state, analyzer);
+    if (analyzer->cache == ZR_NULL) {
         return;
     }
     

@@ -1187,6 +1187,14 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
     {
         SZrFileVersion *fileVersion =
                 ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+        existingAnalyzer =
+                ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+        if (fileVersion != ZR_NULL && fileVersion->isDirty &&
+            existingAnalyzer != ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(
+                    state,
+                    existingAnalyzer);
+        }
         if (fileVersion != ZR_NULL &&
             fileVersion->hasIncrementalInfo &&
             !fileVersion->usesFallbackAst) {
@@ -1211,7 +1219,6 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
             return ZR_FALSE;
         }
 
-        existingAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
         if (fileVersion->parserDiagnostics.length > 0 && fileVersion->usesFallbackAst && existingAnalyzer != ZR_NULL) {
             return ZR_TRUE;
         }

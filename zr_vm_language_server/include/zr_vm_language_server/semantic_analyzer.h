@@ -98,6 +98,7 @@ typedef struct SZrSemanticAnalyzer {
     SZrCompilerState *compilerState;   // 编译器状态（用于类型推断）
     SZrSemanticContext *semanticContext; // 当前分析共享的语义上下文（借用）
     SZrHirModule *hirModule;           // 当前分析共享的 HIR 模块（借用）
+    struct SZrSemanticAnalyzer *scopedQueryAnalyzer; // 独立的单作用域查询缓存（所有）
     SZrSemanticAnalysisMetrics metrics;
 } SZrSemanticAnalyzer;
 
@@ -114,6 +115,14 @@ ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SemanticAnalyzer_ClearCache(SZrStat
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SemanticAnalyzer_GetMetrics(
     const SZrSemanticAnalyzer *analyzer,
     SZrSemanticAnalysisMetrics *outMetrics);
+ZR_LANGUAGE_SERVER_API SZrSemanticAnalyzer *
+ZrLanguageServer_SemanticAnalyzer_GetOrCreateScopedQueryAnalyzer(
+    SZrState *state,
+    SZrSemanticAnalyzer *analyzer);
+ZR_LANGUAGE_SERVER_API void
+ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(
+    SZrState *state,
+    SZrSemanticAnalyzer *analyzer);
 
 // 释放语义分析器
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer *analyzer);

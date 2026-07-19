@@ -635,6 +635,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_scope_cache.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_change.c
 plan_sources:
   - user: 2026-07-19 optimize semantic inference according to docs/plans/lsp
@@ -642,6 +643,7 @@ plan_sources:
   - docs/plans/lsp/05-implementation-blueprint.md
 tests:
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_local_semantic_scope_cases.h
   - tests/language_server/test_lsp_snapshot_cache_cases.h
   - tests/language_server/stdio_smoke.js
   - tests/acceptance/2026-06-20-semantic-stage1-semantic-query.md
@@ -980,6 +982,14 @@ TDD first failed compilation because `SZrFileChangeInfo.isTokenEquivalent` did n
 The incremental-parser test fixes a version-5 text block, content generation, AST, and clean state, then proves that an equal-version identical update and a stale changed update are both rejected without mutation. The public LSP lifecycle test additionally fixes semantic analyzer request, execution, and cache-hit counters and proves neither rejected update reaches semantic work. This closes only the non-monotonic input gate required by the LSP robustness plan; owning-function invalidation, dependency propagation, cancellation, immutable snapshot races, stale response suppression, provider parity, and performance/memory budgets remain open.
 
 Runtime RED on the previous implementation reported `Rejected version mutated parser state` and `Rejected version reached snapshot or semantic work`. The early gate makes WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 pass incremental parser 7/7 and interface 87/87. On current `HEAD=894af85` plus this stage, each toolchain also passes the same fourteen-target semantic/LSP matrix with zero exit-code or `Fail -` failures and `language_server_stdio_smoke` 1/1. The isolated builds retain the unrelated core profiling helper only as an external baseline overlay; full repository GREEN is not claimed.
+
+## Stage 3 Scoped Query Semantic Cache
+
+2026-07-19 update: completion fallback analysis now uses a scoped-query analyzer owned by the document's main analyzer instead of allocating and freeing a temporary analyzer for every empty-provider request. The child analyzer owns its own symbol/reference/compiler/semantic context and one-entry AST/root/range cache, so scoped work cannot replace the main analyzer's full-document context. Repeating the same scope records two requests, one execution, and one cache hit; the completion integration test fixes the existing empty-primary-provider fallback and observes the same `2/1/1` metrics through the public LSP request path.
+
+Lifecycle invalidation preserves the preceding incremental contracts. Byte-identical and token-equivalent updates retain the child because the AST and semantics remain current. A real edit checks `fileVersion->isDirty` and frees the child before incremental parsing can release the old AST; direct analyzer calls that switch AST identities provide a second invalidation guard. Cache disable, clear, and analyzer free propagate to the owned child. Ownership logic is isolated in the 37-line `semantic_analyzer_scope_cache.c`; the large analyzer, query, and interface files retain only initialization and orchestration changes.
+
+Compile RED failed because the owner field and exported get-or-create API did not exist. GREEN covers repeated direct scope reuse, comment-only token-equivalent reuse, real body-token invalidation with fresh `1/1/0` metrics, and repeated completion fallback. WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each pass local semantic query 23/23, semantic analyzer 46/46, interface 87/87, incremental parser 7/7, the same fourteen-target semantic/LSP matrix with zero exit or failure-marker failures, and `language_server_stdio_smoke` 1/1 on `HEAD=b6bcd4a` plus this stage. This is query-context partitioning, not cross-AST declaration-fact reuse: ordinary body edits still fully parse and analyze the main document, and declaration/dependency invalidation, cancellation, snapshot races, provider parity, and budgets remain open.
 
 ## Stage 3 English Diagnostic Message Catalog Foundation
 

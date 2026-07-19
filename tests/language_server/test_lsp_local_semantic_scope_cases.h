@@ -251,4 +251,283 @@ static void test_scoped_semantic_analysis_limits_body_facts_and_reuses_scope_cac
     TEST_PASS(timer, summary);
 }
 
+static void test_scoped_query_analyzer_cache_reuses_scope_and_invalidates_on_edit(
+        SZrState *state) {
+    const TZrChar *summary =
+            "Scoped Query Analyzer Cache Reuses Scope And Invalidates On Edit";
+    const TZrChar *uriText = "file:///scoped_query_analyzer_cache.zr";
+    const TZrChar *initialContent =
+            "first(): int {\n"
+            "    return 1 + 2;\n"
+            "}\n"
+            "// old note\n"
+            "second(): int {\n"
+            "    return 10 + 20;\n"
+            "}\n";
+    const TZrChar *tokenEquivalentContent =
+            "first(): int {\n"
+            "    return 1 + 2;\n"
+            "}\n"
+            "// new note\n"
+            "second(): int {\n"
+            "    return 10 + 20;\n"
+            "}\n";
+    const TZrChar *updatedContent =
+            "first(): int {\n"
+            "    return 1 + 3;\n"
+            "}\n"
+            "// new note\n"
+            "second(): int {\n"
+            "    return 10 + 20;\n"
+            "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrSemanticAnalyzer *owner;
+    SZrSemanticAnalyzer *scopedAnalyzer;
+    SZrSemanticAnalyzer *ownerAfterEdit;
+    SZrAstNode *initialAst;
+    SZrAstNode *analysisRoot;
+    SZrSemanticAnalysisMetrics metrics;
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                initialContent,
+                strlen(initialContent),
+                1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare scoped query cache fixture");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    owner = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    analysisRoot = fileVersion != ZR_NULL
+                           ? local_scope_test_function_at(fileVersion->ast, 0)
+                           : ZR_NULL;
+    initialAst = fileVersion != ZR_NULL ? fileVersion->ast : ZR_NULL;
+    scopedAnalyzer = ZrLanguageServer_SemanticAnalyzer_GetOrCreateScopedQueryAnalyzer(
+            state,
+            owner);
+    if (owner == ZR_NULL || analysisRoot == ZR_NULL || scopedAnalyzer == ZR_NULL ||
+        owner->scopedQueryAnalyzer != scopedAnalyzer ||
+        !ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
+                state,
+                scopedAnalyzer,
+                fileVersion->ast,
+                analysisRoot) ||
+        !ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
+                state,
+                scopedAnalyzer,
+                fileVersion->ast,
+                analysisRoot)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to prepare and repeat scoped query analysis");
+        return;
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(scopedAnalyzer, &metrics);
+    if (metrics.requestCount != 2 || metrics.executionCount != 1 ||
+        metrics.cacheHitCount != 1) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Repeated scoped query did not hit its isolated cache");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                tokenEquivalentContent,
+                strlen(tokenEquivalentContent),
+                2)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to apply token-equivalent cache update");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    ownerAfterEdit = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    analysisRoot = fileVersion != ZR_NULL
+                           ? local_scope_test_function_at(fileVersion->ast, 0)
+                           : ZR_NULL;
+    if (ownerAfterEdit != owner || owner->scopedQueryAnalyzer != scopedAnalyzer ||
+        fileVersion == ZR_NULL || fileVersion->ast != initialAst ||
+        analysisRoot == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
+                state,
+                scopedAnalyzer,
+                fileVersion->ast,
+                analysisRoot)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Token-equivalent update discarded the scoped query cache");
+        return;
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(scopedAnalyzer, &metrics);
+    if (metrics.requestCount != 3 || metrics.executionCount != 1 ||
+        metrics.cacheHitCount != 2) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Token-equivalent update did not reuse scoped query work");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                updatedContent,
+                strlen(updatedContent),
+                3)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to apply scoped query invalidation edit");
+        return;
+    }
+
+    ownerAfterEdit = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    analysisRoot = fileVersion != ZR_NULL
+                           ? local_scope_test_function_at(fileVersion->ast, 0)
+                           : ZR_NULL;
+    if (ownerAfterEdit != owner || owner->scopedQueryAnalyzer != ZR_NULL ||
+        fileVersion == ZR_NULL || analysisRoot == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Real edit did not invalidate the prior scoped query analyzer");
+        return;
+    }
+
+    scopedAnalyzer = ZrLanguageServer_SemanticAnalyzer_GetOrCreateScopedQueryAnalyzer(
+            state,
+            owner);
+    if (scopedAnalyzer == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
+                state,
+                scopedAnalyzer,
+                fileVersion->ast,
+                analysisRoot)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to analyze the edited scoped query snapshot");
+        return;
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(scopedAnalyzer, &metrics);
+    if (metrics.requestCount != 1 || metrics.executionCount != 1 ||
+        metrics.cacheHitCount != 0) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Edited snapshot reused stale scoped query metrics");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_completion_fallback_reuses_scoped_query_analyzer_cache(
+        SZrState *state) {
+    const TZrChar *summary =
+            "Completion Fallback Reuses Scoped Query Analyzer Cache";
+    const TZrChar *uriText = "file:///completion_scope_cache.zr";
+    const TZrChar *content = "\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri;
+    SZrSemanticAnalyzer *owner;
+    SZrSemanticAnalyzer *scopedAnalyzer;
+    SZrSymbolTable *originalSymbolTable;
+    SZrSymbolTable *emptySymbolTable;
+    SZrSemanticAnalysisMetrics metrics;
+    SZrLspPosition position;
+    SZrArray completions;
+    TZrSize requestIndex;
+    TZrChar reason[256];
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                content,
+                strlen(content),
+                1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare empty completion fixture");
+        return;
+    }
+
+    position.line = 0;
+    position.character = 0;
+    owner = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    emptySymbolTable = ZrLanguageServer_SymbolTable_New(state);
+    if (owner == ZR_NULL || emptySymbolTable == ZR_NULL) {
+        if (emptySymbolTable != ZR_NULL) {
+            ZrLanguageServer_SymbolTable_Free(state, emptySymbolTable);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to isolate the primary completion provider");
+        return;
+    }
+    originalSymbolTable = owner->symbolTable;
+    owner->symbolTable = emptySymbolTable;
+
+    for (requestIndex = 0; requestIndex < 2; requestIndex++) {
+        ZrCore_Array_Init(
+                state,
+                &completions,
+                sizeof(SZrLspCompletionItem *),
+                ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+        if (!ZrLanguageServer_Lsp_GetCompletion(
+                    state,
+                    context,
+                    uri,
+                    position,
+                    &completions)) {
+            ZrCore_Array_Free(state, &completions);
+            owner->symbolTable = originalSymbolTable;
+            ZrLanguageServer_SymbolTable_Free(state, emptySymbolTable);
+            ZrLanguageServer_LspContext_Free(state, context);
+            TEST_FAIL(timer, summary, "Completion fallback request failed");
+            return;
+        }
+        ZrCore_Array_Free(state, &completions);
+    }
+
+    scopedAnalyzer = owner->scopedQueryAnalyzer;
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(scopedAnalyzer, &metrics);
+    if (scopedAnalyzer == ZR_NULL || metrics.requestCount != 2 ||
+        metrics.executionCount != 1 || metrics.cacheHitCount != 1) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Repeated fallback cache mismatch: owner=%p scoped=%p requests=%zu executions=%zu hits=%zu",
+                 (void *)owner,
+                 (void *)scopedAnalyzer,
+                 (size_t)metrics.requestCount,
+                 (size_t)metrics.executionCount,
+                 (size_t)metrics.cacheHitCount);
+        owner->symbolTable = originalSymbolTable;
+        ZrLanguageServer_SymbolTable_Free(state, emptySymbolTable);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    owner->symbolTable = originalSymbolTable;
+    ZrLanguageServer_SymbolTable_Free(state, emptySymbolTable);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 #endif // ZR_VM_TEST_LSP_LOCAL_SEMANTIC_SCOPE_CASES_H
