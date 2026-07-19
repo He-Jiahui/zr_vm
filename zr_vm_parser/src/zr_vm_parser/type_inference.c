@@ -2872,9 +2872,32 @@ static TZrBool ast_type_report_missing_explicit_binding(SZrCompilerState *cs,
     return ZR_FALSE;
 }
 
+static TZrBool inferred_type_contains_open_const_parameter(
+        const SZrInferredType *type,
+        TZrSize depth) {
+    TZrSize index;
+
+    if (type == ZR_NULL || depth > 256U) {
+        return ZR_FALSE;
+    }
+    if (type->genericArgumentKind == ZR_INFERRED_GENERIC_ARGUMENT_CONST_PARAMETER) {
+        return ZR_TRUE;
+    }
+    for (index = 0; index < type->elementTypes.length; index++) {
+        const SZrInferredType *element =
+                (const SZrInferredType *)ZrCore_Array_Get(
+                        (SZrArray *)&type->elementTypes,
+                        index);
+        if (inferred_type_contains_open_const_parameter(element, depth + 1U)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
-                                                          const SZrType *astType,
-                                                          SZrInferredType *result) {
+                                                           const SZrType *astType,
+                                                           SZrInferredType *result) {
     if (cs == ZR_NULL || astType == ZR_NULL || result == ZR_NULL || astType->name == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -2974,6 +2997,7 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
     if (astType->name->type == ZR_AST_GENERIC_TYPE) {
         SZrGenericType *genericType = &astType->name->data.genericType;
         SZrString *canonicalName;
+        TZrTypeId registeredTypeId;
         EZrOwnershipQualifier ownershipGenericQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
         const SZrType *ownershipGenericInnerType = ZR_NULL;
 
@@ -3029,12 +3053,39 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
 
                 ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
                 if (paramNode != ZR_NULL && paramNode->type == ZR_AST_TYPE) {
-                    if (!ZrParser_AstTypeToInferredType_Convert(cs, &paramNode->data.type, &paramType)) {
+                    SZrType *argumentType = &paramNode->data.type;
+                    SZrString *constParameterName =
+                            argumentType->name != ZR_NULL &&
+                                    argumentType->name->type == ZR_AST_IDENTIFIER_LITERAL
+                                    ? argumentType->name->data.identifier.name
+                                    : ZR_NULL;
+
+                    if (constParameterName != ZR_NULL &&
+                        type_inference_is_const_generic_parameter_reference(cs, constParameterName)) {
+                        ZrParser_InferredType_Free(cs->state, &paramType);
+                        ZrParser_InferredType_InitConstParameterGenericArgument(
+                                cs->state,
+                                &paramType,
+                                constParameterName);
+                    } else if (!ZrParser_AstTypeToInferredType_Convert(cs, argumentType, &paramType)) {
                         ZrParser_InferredType_Free(cs->state, &paramType);
                         ZrParser_InferredType_Free(cs->state, result);
                         return ZR_FALSE;
                     }
                 } else {
+                    TZrInt64 constIntValue;
+
+                    if (!ZrParser_TypeInference_EvaluateConstIntArgument(
+                                cs,
+                                paramNode,
+                                &constIntValue)) {
+                        ZrParser_InferredType_Free(cs->state, &paramType);
+                        ZrParser_InferredType_Free(cs->state, result);
+                        ZrParser_Compiler_Error(cs,
+                                                "Generic const argument must evaluate to a signed 64-bit integer",
+                                                astType->name->location);
+                        return ZR_FALSE;
+                    }
                     argumentName = extract_generic_argument_name_string(cs, paramNode);
                     if (argumentName == ZR_NULL) {
                         ZrParser_InferredType_Free(cs->state, &paramType);
@@ -3045,11 +3096,11 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
                         return ZR_FALSE;
                     }
                     ZrParser_InferredType_Free(cs->state, &paramType);
-                    ZrParser_InferredType_InitFull(cs->state,
-                                                   &paramType,
-                                                   ZR_VALUE_TYPE_OBJECT,
-                                                   ZR_FALSE,
-                                                   argumentName);
+                    ZrParser_InferredType_InitConstIntGenericArgument(
+                            cs->state,
+                            &paramType,
+                            constIntValue,
+                            argumentName);
                 }
 
                 ZrCore_Array_Push(cs->state, &result->elementTypes, &paramType);
@@ -3064,23 +3115,39 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
         }
 
         result->ownershipQualifier = astType->ownershipQualifier;
-        if (cs->semanticContext != ZR_NULL) {
-            ZrParser_Semantic_RegisterNamedType(cs->semanticContext,
-                                                genericType->name->name,
-                                                ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
-                                                astType->name);
-            ZrParser_Semantic_RegisterInferredType(cs->semanticContext,
-                                                   result,
-                                                   ZR_SEMANTIC_TYPE_KIND_GENERIC_INSTANCE,
-                                                   result->typeName,
-                                                   astType->name);
+        if (!ensure_generic_instance_type_prototype_from_inferred(cs, result) && cs->hasError) {
+            ZrParser_InferredType_Free(cs->state, result);
+            return ZR_FALSE;
+        }
+        if (cs->semanticContext != ZR_NULL &&
+            !inferred_type_contains_open_const_parameter(result, 0U)) {
+            registeredTypeId = ZrParser_Semantic_RegisterNamedType(
+                    cs->semanticContext,
+                    genericType->name->name,
+                    ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
+                    astType->name);
+            if (registeredTypeId != ZR_SEMANTIC_ID_INVALID) {
+                registeredTypeId = ZrParser_Semantic_RegisterInferredType(
+                        cs->semanticContext,
+                        result,
+                        ZR_SEMANTIC_TYPE_KIND_GENERIC_INSTANCE,
+                        result->typeName,
+                        astType->name);
+            }
+            if (registeredTypeId == ZR_SEMANTIC_ID_INVALID) {
+                ZrParser_InferredType_Free(cs->state, result);
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Generic type arguments do not match the registered definition",
+                        astType->name->location);
+                return ZR_FALSE;
+            }
         }
         return ZR_TRUE;
     }
 
     if (astType->name->type == ZR_AST_TUPLE_TYPE) {
-        ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
-        return ZR_TRUE;
+        return ZrParser_TypeInference_ConvertTupleType(cs, astType, result);
     }
 
     ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);

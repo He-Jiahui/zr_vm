@@ -3528,6 +3528,11 @@ const TZrChar *ZrParser_TypeNameString_Get(SZrState *state,
         return "unknown";
     }
 
+    if (type->genericArgumentKind == ZR_INFERRED_GENERIC_ARGUMENT_CONST_INT) {
+        snprintf(buffer, bufferSize, "%lld", (long long)type->genericConstIntValue);
+        return buffer;
+    }
+
     buffer[0] = '\0';
     if (type_name_string_append_type(state, type, buffer, bufferSize, &writeIndex)) {
         return buffer;

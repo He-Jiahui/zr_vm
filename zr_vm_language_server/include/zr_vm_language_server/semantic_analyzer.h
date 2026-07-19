@@ -116,6 +116,12 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPo
     SZrFileRange position,
     SZrInferredType *outType);
 
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_FormatTypeId(
+    const SZrSemanticContext *semanticContext,
+    TZrTypeId typeId,
+    TZrChar *buffer,
+    TZrSize bufferSize);
+
 // 获取悬停信息
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
                                                              SZrSemanticAnalyzer *analyzer,

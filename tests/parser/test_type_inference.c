@@ -4818,6 +4818,10 @@ static void test_type_inference_source_const_generic_boxed_new_returns_closed_re
         TEST_ASSERT_NOT_NULL(constArgument);
         TEST_ASSERT_NOT_NULL(constArgument->typeName);
         TEST_ASSERT_EQUAL_STRING("4", ZrCore_String_GetNativeString(constArgument->typeName));
+        TEST_ASSERT_EQUAL_INT(
+                ZR_INFERRED_GENERIC_ARGUMENT_CONST_INT,
+                constArgument->genericArgumentKind);
+        TEST_ASSERT_EQUAL_INT64(4, constArgument->genericConstIntValue);
 
         closedPrototype = find_test_type_prototype(cs, "Matrix<int, 4>");
         TEST_ASSERT_NOT_NULL(closedPrototype);
@@ -5359,9 +5363,35 @@ static void test_type_inference_source_const_generic_method_supports_explicit_ar
                                  ZrCore_String_GetNativeString(((SZrInferredType *)ZrCore_Array_Get(
                                          &resolvedSignature.parameterTypes,
                                          0))->typeName));
+        {
+            SZrInferredType *resolvedParameter =
+                    (SZrInferredType *)ZrCore_Array_Get(&resolvedSignature.parameterTypes, 0);
+            SZrInferredType *resolvedConstArgument =
+                    resolvedParameter != ZR_NULL
+                            ? (SZrInferredType *)ZrCore_Array_Get(
+                                      &resolvedParameter->elementTypes,
+                                      1U)
+                            : ZR_NULL;
+            TEST_ASSERT_NOT_NULL(resolvedConstArgument);
+            TEST_ASSERT_EQUAL_INT(
+                    ZR_INFERRED_GENERIC_ARGUMENT_CONST_INT,
+                    resolvedConstArgument->genericArgumentKind);
+            TEST_ASSERT_EQUAL_INT64(4, resolvedConstArgument->genericConstIntValue);
+        }
         TEST_ASSERT_NOT_NULL(resolvedSignature.returnType.typeName);
         TEST_ASSERT_EQUAL_STRING("Matrix<int, 4>",
                                  ZrCore_String_GetNativeString(resolvedSignature.returnType.typeName));
+        {
+            SZrInferredType *resolvedReturnConstArgument =
+                    (SZrInferredType *)ZrCore_Array_Get(
+                            &resolvedSignature.returnType.elementTypes,
+                            1U);
+            TEST_ASSERT_NOT_NULL(resolvedReturnConstArgument);
+            TEST_ASSERT_EQUAL_INT(
+                    ZR_INFERRED_GENERIC_ARGUMENT_CONST_INT,
+                    resolvedReturnConstArgument->genericArgumentKind);
+            TEST_ASSERT_EQUAL_INT64(4, resolvedReturnConstArgument->genericConstIntValue);
+        }
         free_resolved_call_signature(state, &resolvedSignature);
 
         ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);

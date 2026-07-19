@@ -330,6 +330,8 @@ void ZrParser_InferredType_Init(SZrState *state, SZrInferredType *type, EZrValue
     type->isNullable = ZR_FALSE;
     type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     type->typeName = ZR_NULL;
+    type->genericArgumentKind = ZR_INFERRED_GENERIC_ARGUMENT_TYPE;
+    type->genericConstIntValue = 0;
     ZrCore_Array_Construct(&type->elementTypes);
     
     // 初始化范围约束
@@ -359,6 +361,8 @@ void ZrParser_InferredType_InitFull(SZrState *state, SZrInferredType *type, EZrV
     type->isNullable = isNullable;
     type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     type->typeName = typeName;
+    type->genericArgumentKind = ZR_INFERRED_GENERIC_ARGUMENT_TYPE;
+    type->genericConstIntValue = 0;
     ZrCore_Array_Construct(&type->elementTypes);
     
     // 初始化范围约束
@@ -376,6 +380,40 @@ void ZrParser_InferredType_InitFull(SZrState *state, SZrInferredType *type, EZrV
     type->arrayMinSize = 0;
     type->arrayMaxSize = 0;
     type->hasArraySizeConstraint = ZR_FALSE;
+}
+
+void ZrParser_InferredType_InitConstIntGenericArgument(
+        SZrState *state,
+        SZrInferredType *type,
+        TZrInt64 value,
+        SZrString *displayName) {
+    ZrParser_InferredType_InitFull(
+            state,
+            type,
+            ZR_VALUE_TYPE_OBJECT,
+            ZR_FALSE,
+            displayName);
+    if (state == ZR_NULL || type == ZR_NULL) {
+        return;
+    }
+    type->genericArgumentKind = ZR_INFERRED_GENERIC_ARGUMENT_CONST_INT;
+    type->genericConstIntValue = value;
+}
+
+void ZrParser_InferredType_InitConstParameterGenericArgument(
+        SZrState *state,
+        SZrInferredType *type,
+        SZrString *name) {
+    ZrParser_InferredType_InitFull(
+            state,
+            type,
+            ZR_VALUE_TYPE_OBJECT,
+            ZR_FALSE,
+            name);
+    if (state == ZR_NULL || type == ZR_NULL) {
+        return;
+    }
+    type->genericArgumentKind = ZR_INFERRED_GENERIC_ARGUMENT_CONST_PARAMETER;
 }
 
 // 释放类型（递归释放嵌套的类型，避免循环引用导致的内存泄漏）
@@ -414,6 +452,8 @@ void ZrParser_InferredType_Copy(SZrState *state, SZrInferredType *dest, const SZ
     dest->isNullable = src->isNullable;
     dest->ownershipQualifier = src->ownershipQualifier;
     dest->typeName = src->typeName; // 字符串由GC管理，直接复制引用
+    dest->genericArgumentKind = src->genericArgumentKind;
+    dest->genericConstIntValue = src->genericConstIntValue;
     
     // Deep-copy nested inline element types.
     if (src->elementTypes.isValid && src->elementTypes.capacity > 0) {
@@ -452,6 +492,20 @@ void ZrParser_InferredType_Copy(SZrState *state, SZrInferredType *dest, const SZ
 TZrBool ZrParser_InferredType_Equal(const SZrInferredType *type1, const SZrInferredType *type2) {
     if (type1 == ZR_NULL || type2 == ZR_NULL) {
         return type1 == type2;
+    }
+
+    if (type1->genericArgumentKind != type2->genericArgumentKind ||
+        type1->genericArgumentKind < ZR_INFERRED_GENERIC_ARGUMENT_TYPE ||
+        type1->genericArgumentKind > ZR_INFERRED_GENERIC_ARGUMENT_CONST_PARAMETER) {
+        return ZR_FALSE;
+    }
+    if (type1->genericArgumentKind == ZR_INFERRED_GENERIC_ARGUMENT_CONST_INT) {
+        return type1->genericConstIntValue == type2->genericConstIntValue;
+    }
+    if (type1->genericArgumentKind == ZR_INFERRED_GENERIC_ARGUMENT_CONST_PARAMETER) {
+        return type1->typeName != ZR_NULL &&
+               type2->typeName != ZR_NULL &&
+               ZrCore_String_Equal(type1->typeName, type2->typeName);
     }
     
     if (type1->baseType != type2->baseType) {
@@ -844,6 +898,11 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
         return ZR_TRUE;
     }
 
+    if (fromType->genericArgumentKind != ZR_INFERRED_GENERIC_ARGUMENT_TYPE ||
+        toType->genericArgumentKind != ZR_INFERRED_GENERIC_ARGUMENT_TYPE) {
+        return ZR_FALSE;
+    }
+
     // null 可以转换为显式可空类型，以及现有运行时允许置空的引用类型。
     if (fromType->baseType == ZR_VALUE_TYPE_NULL) {
         if (toType->isNullable || inferred_type_is_reference_like(toType->baseType)) {
@@ -1149,14 +1208,37 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
     if (hasDeclarationRange) {
         location = declarationRange;
     }
+
+    typeId = ZR_SEMANTIC_ID_INVALID;
+    symbolId = ZR_SEMANTIC_ID_INVALID;
+    if (env->semanticContext != ZR_NULL) {
+        typeId = ZrParser_Semantic_RegisterInferredType(
+                env->semanticContext,
+                type,
+                ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
+                type->typeName,
+                declarationNode);
+        if (typeId == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_FALSE;
+        }
+    }
     
     // 检查是否已存在
     for (TZrSize i = 0; i < env->variableTypes.length; i++) {
         SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&env->variableTypes, i);
         if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, name)) {
+            if (env->semanticContext != ZR_NULL &&
+                binding->symbolId != ZR_SEMANTIC_ID_INVALID &&
+                !ZrParser_Semantic_RebindSymbolType(
+                        env->semanticContext,
+                        binding->symbolId,
+                        typeId)) {
+                return ZR_FALSE;
+            }
             // 已存在，更新类型
             ZrParser_InferredType_Free(state, &binding->type);
             ZrParser_InferredType_Copy(state, &binding->type, type);
+            binding->typeId = typeId;
             if (hasDeclarationRange) {
                 binding->declarationRange = declarationRange;
                 binding->hasDeclarationRange = ZR_TRUE;
@@ -1175,11 +1257,6 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
     ZrParser_InferredType_Copy(state, &binding.type, type);
 
     if (env->semanticContext != ZR_NULL) {
-        typeId = ZrParser_Semantic_RegisterInferredType(env->semanticContext,
-                                                type,
-                                                ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
-                                                type->typeName,
-                                                declarationNode);
         symbolId = ZrParser_Semantic_RegisterSymbol(env->semanticContext,
                                             name,
                                             ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
@@ -1187,6 +1264,10 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
                                             ZR_SEMANTIC_ID_INVALID,
                                             declarationNode,
                                             location);
+        if (symbolId == ZR_SEMANTIC_ID_INVALID) {
+            ZrParser_InferredType_Free(state, &binding.type);
+            return ZR_FALSE;
+        }
         binding.typeId = typeId;
         binding.symbolId = symbolId;
 
@@ -1289,9 +1370,9 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *state,
                                                     SZrArray *genericParameters,
                                                     SZrArray *parameterPassingModes,
                                                     SZrAstNode *declarationNode) {
-    TZrTypeId typeId;
-    TZrSymbolId symbolId;
-    TZrOverloadSetId overloadSetId;
+    TZrTypeId typeId = ZR_SEMANTIC_ID_INVALID;
+    TZrSymbolId symbolId = ZR_SEMANTIC_ID_INVALID;
+    TZrOverloadSetId overloadSetId = ZR_SEMANTIC_ID_INVALID;
     SZrFileRange location = {0};
     SZrFileRange declarationRange = {0};
     TZrBool hasDeclarationRange = ZR_FALSE;
@@ -1363,22 +1444,109 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *state,
         return ZR_FALSE;
     }
     
-    ZrCore_Array_Push(state, &env->functionReturnTypes, &funcInfo);
-
     if (env->semanticContext != ZR_NULL) {
-        typeId = ZrParser_Semantic_RegisterInferredType(env->semanticContext,
-                                                returnType,
-                                                ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
-                                                returnType->typeName,
-                                                declarationNode);
+        SZrArray genericBindings;
+        TZrUInt32 effectFlags = ZR_CANONICAL_CALLABLE_EFFECT_NONE;
+        TZrSize genericIndex;
+
+        ZrCore_Array_Construct(&genericBindings);
+        symbolId = ZrParser_Semantic_ReserveSymbolId(env->semanticContext);
+        if (symbolId == ZR_SEMANTIC_ID_INVALID) {
+            free_function_type_info_payload(state, funcInfo);
+            ZrCore_Memory_RawFreeWithType(
+                    state->global,
+                    funcInfo,
+                    sizeof(SZrFunctionTypeInfo),
+                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            return ZR_FALSE;
+        }
+        if (genericParameters != ZR_NULL && genericParameters->length > 0U) {
+            ZrCore_Array_Init(
+                    state,
+                    &genericBindings,
+                    sizeof(SZrCanonicalGenericBinding),
+                    genericParameters->length);
+            for (genericIndex = 0; genericIndex < genericParameters->length; genericIndex++) {
+                const SZrTypeGenericParameterInfo *genericParameter =
+                        (const SZrTypeGenericParameterInfo *)ZrCore_Array_Get(
+                                genericParameters,
+                                genericIndex);
+                SZrCanonicalGenericBinding binding;
+
+                if (genericParameter == ZR_NULL || genericParameter->name == ZR_NULL) {
+                    continue;
+                }
+                binding.name = genericParameter->name;
+                binding.kind = genericParameter->genericKind == ZR_GENERIC_PARAMETER_TYPE
+                                       ? ZR_CANONICAL_GENERIC_ARGUMENT_TYPE
+                                       : ZR_CANONICAL_GENERIC_ARGUMENT_CONST_PARAMETER;
+                binding.ownerSymbolId = symbolId;
+                binding.ordinal = (TZrUInt32)genericIndex;
+                binding.typeId = ZR_SEMANTIC_ID_INVALID;
+                if (genericParameter->genericKind == ZR_GENERIC_PARAMETER_TYPE) {
+                    binding.typeId = ZrParser_CanonicalType_InternGenericParameter(
+                            env->semanticContext,
+                            symbolId,
+                            (TZrUInt32)genericIndex);
+                    if (binding.typeId == ZR_SEMANTIC_ID_INVALID) {
+                        ZrCore_Array_Free(state, &genericBindings);
+                        free_function_type_info_payload(state, funcInfo);
+                        ZrCore_Memory_RawFreeWithType(
+                                state->global,
+                                funcInfo,
+                                sizeof(SZrFunctionTypeInfo),
+                                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+                        return ZR_FALSE;
+                    }
+                }
+                ZrCore_Array_Push(state, &genericBindings, &binding);
+            }
+        }
+
+        if (declarationNode != ZR_NULL &&
+            declarationNode->type == ZR_AST_FUNCTION_DECLARATION &&
+            declarationNode->data.functionDeclaration.isAsync) {
+            effectFlags |= ZR_CANONICAL_CALLABLE_EFFECT_ASYNC;
+        }
+        typeId = ZrParser_CanonicalType_FromFunctionSignatureWithGenericBindings(
+                env->semanticContext,
+                paramTypes,
+                parameterPassingModes,
+                returnType,
+                ZR_CANONICAL_RECEIVER_NONE,
+                effectFlags,
+                (const SZrCanonicalGenericBinding *)genericBindings.head,
+                genericBindings.length);
+        if (genericBindings.isValid) {
+            ZrCore_Array_Free(state, &genericBindings);
+        }
+        if (typeId == ZR_SEMANTIC_ID_INVALID) {
+            free_function_type_info_payload(state, funcInfo);
+            ZrCore_Memory_RawFreeWithType(
+                    state->global,
+                    funcInfo,
+                    sizeof(SZrFunctionTypeInfo),
+                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            return ZR_FALSE;
+        }
         overloadSetId = ZrParser_Semantic_GetOrCreateOverloadSet(env->semanticContext, name);
-        symbolId = ZrParser_Semantic_RegisterSymbol(env->semanticContext,
+        symbolId = ZrParser_Semantic_RegisterSymbolWithId(env->semanticContext,
+                                            symbolId,
                                             name,
                                             ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
                                             typeId,
                                             overloadSetId,
                                             declarationNode,
                                             location);
+        if (symbolId == ZR_SEMANTIC_ID_INVALID) {
+            free_function_type_info_payload(state, funcInfo);
+            ZrCore_Memory_RawFreeWithType(
+                    state->global,
+                    funcInfo,
+                    sizeof(SZrFunctionTypeInfo),
+                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            return ZR_FALSE;
+        }
         funcInfo->typeId = typeId;
         funcInfo->symbolId = symbolId;
         ZrParser_Semantic_AddOverloadMember(env->semanticContext, overloadSetId, symbolId);
@@ -1400,6 +1568,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *state,
             ZrParser_SemanticFacts_AppendReference(env->semanticContext, &declarationFact);
         }
     }
+    ZrCore_Array_Push(state, &env->functionReturnTypes, &funcInfo);
     return ZR_TRUE;
 }
 

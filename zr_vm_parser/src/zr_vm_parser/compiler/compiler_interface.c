@@ -204,8 +204,10 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.virtualSlotIndex = info.nextVirtualSlotIndex++;
                     memberInfo.interfaceContractSlot = memberInfo.virtualSlotIndex;
                     cs->currentFunctionNode = member;
-                    memberInfo.returnTypeName =
-                            method->returnType != ZR_NULL ? extract_type_name_string(cs, method->returnType) : ZR_NULL;
+                    compiler_type_member_capture_structured_return_type(
+                            cs,
+                            &memberInfo,
+                            method->returnType);
                     ZrCore_Array_Init(cs->state,
                                       &memberInfo.genericParameters,
                                       sizeof(SZrTypeGenericParameterInfo),
@@ -245,9 +247,15 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         getterInfo.accessorRole = 1;
                         getterInfo.virtualSlotIndex = info.nextVirtualSlotIndex++;
                         getterInfo.interfaceContractSlot = getterInfo.virtualSlotIndex;
-                        getterInfo.returnTypeName =
-                                property->typeInfo != ZR_NULL ? extract_type_name_string(cs, property->typeInfo)
-                                                              : ZrCore_String_CreateFromNative(cs->state, "object");
+                        if (property->typeInfo != ZR_NULL) {
+                            compiler_type_member_capture_structured_return_type(
+                                    cs,
+                                    &getterInfo,
+                                    property->typeInfo);
+                        } else {
+                            getterInfo.returnTypeName =
+                                    ZrCore_String_CreateFromNative(cs->state, "object");
+                        }
                         if (getterInfo.name != ZR_NULL) {
                             ZrCore_Array_Push(cs->state, &info.members, &getterInfo);
                         }
@@ -306,9 +314,10 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                                           ? (TZrUInt32)-1
                                                           : info.nextVirtualSlotIndex++;
                     memberInfo.interfaceContractSlot = memberInfo.virtualSlotIndex;
-                    memberInfo.returnTypeName = metaSignature->returnType != ZR_NULL
-                                                        ? extract_type_name_string(cs, metaSignature->returnType)
-                                                        : ZR_NULL;
+                    compiler_type_member_capture_structured_return_type(
+                            cs,
+                            &memberInfo,
+                            metaSignature->returnType);
                     compiler_interface_collect_parameter_types(cs, &memberInfo.parameterTypes, metaSignature->params, member);
                     compiler_collect_parameter_passing_modes(cs->state,
                                                              &memberInfo.parameterPassingModes,

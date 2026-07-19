@@ -1,4 +1,5 @@
 #include "compiler_internal.h"
+#include "compiler_union_canonical.h"
 
 typedef struct SZrUnionPayloadFieldLayout {
     TZrUInt32 byteOffset;
@@ -50,6 +51,84 @@ static void compiler_union_init_member_defaults(SZrTypeMemberInfo *memberInfo) {
     ZrCore_Array_Construct(&memberInfo->decorators);
     memberInfo->hasDecoratorMetadata = ZR_FALSE;
     ZrCore_Value_ResetAsNull(&memberInfo->decoratorMetadataValue);
+}
+
+static void compiler_union_free_unpublished_prototype(
+        SZrCompilerState *cs,
+        SZrTypePrototypeInfo *info) {
+    TZrSize index;
+
+    if (cs == ZR_NULL || info == ZR_NULL) {
+        return;
+    }
+    if (info->genericParameters.isValid) {
+        for (index = 0; index < info->genericParameters.length; index++) {
+            SZrTypeGenericParameterInfo *genericInfo =
+                    (SZrTypeGenericParameterInfo *)ZrCore_Array_Get(
+                            &info->genericParameters,
+                            index);
+            if (genericInfo != ZR_NULL && genericInfo->constraintTypeNames.isValid) {
+                ZrCore_Array_Free(cs->state, &genericInfo->constraintTypeNames);
+            }
+        }
+        ZrCore_Array_Free(cs->state, &info->genericParameters);
+    }
+    if (info->members.isValid) {
+        for (index = 0; index < info->members.length; index++) {
+            SZrTypeMemberInfo *member =
+                    (SZrTypeMemberInfo *)ZrCore_Array_Get(&info->members, index);
+            TZrSize parameterIndex;
+            if (member == ZR_NULL) {
+                continue;
+            }
+            if (member->hasStructuredReturnType) {
+                ZrParser_InferredType_Free(cs->state, &member->structuredReturnType);
+                member->hasStructuredReturnType = ZR_FALSE;
+            }
+            if (member->parameterTypes.isValid) {
+                for (parameterIndex = 0;
+                     parameterIndex < member->parameterTypes.length;
+                     parameterIndex++) {
+                    SZrInferredType *parameterType =
+                            (SZrInferredType *)ZrCore_Array_Get(
+                                    &member->parameterTypes,
+                                    parameterIndex);
+                    if (parameterType != ZR_NULL) {
+                        ZrParser_InferredType_Free(cs->state, parameterType);
+                    }
+                }
+                ZrCore_Array_Free(cs->state, &member->parameterTypes);
+            }
+            if (member->parameterNames.isValid) {
+                ZrCore_Array_Free(cs->state, &member->parameterNames);
+            }
+            if (member->parameterHasDefaultValues.isValid) {
+                ZrCore_Array_Free(cs->state, &member->parameterHasDefaultValues);
+            }
+            if (member->parameterDefaultValues.isValid) {
+                ZrCore_Array_Free(cs->state, &member->parameterDefaultValues);
+            }
+            if (member->genericParameters.isValid) {
+                ZrCore_Array_Free(cs->state, &member->genericParameters);
+            }
+            if (member->parameterPassingModes.isValid) {
+                ZrCore_Array_Free(cs->state, &member->parameterPassingModes);
+            }
+            if (member->decorators.isValid) {
+                ZrCore_Array_Free(cs->state, &member->decorators);
+            }
+        }
+        ZrCore_Array_Free(cs->state, &info->members);
+    }
+    if (info->inherits.isValid) {
+        ZrCore_Array_Free(cs->state, &info->inherits);
+    }
+    if (info->implements.isValid) {
+        ZrCore_Array_Free(cs->state, &info->implements);
+    }
+    if (info->decorators.isValid) {
+        ZrCore_Array_Free(cs->state, &info->decorators);
+    }
 }
 
 static void compiler_union_append_payload_type(SZrCompilerState *cs,
@@ -608,6 +687,26 @@ void compile_union_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     typeName = unionDecl->name->name;
+    if (cs->typeEnv == ZR_NULL ||
+        ZrParser_TypeEnvironment_LookupType(cs->typeEnv, typeName)) {
+        ZrParser_Compiler_Error(cs, "Union type is already defined", node->location);
+        return;
+    }
+    if (unionDecl->generic != ZR_NULL && unionDecl->generic->params != ZR_NULL) {
+        for (TZrSize index = 0; index < unionDecl->generic->params->count; index++) {
+            SZrAstNode *parameterNode = unionDecl->generic->params->nodes[index];
+            if (parameterNode == ZR_NULL ||
+                parameterNode->type != ZR_AST_PARAMETER ||
+                (parameterNode->data.parameter.genericKind != ZR_GENERIC_PARAMETER_TYPE &&
+                 parameterNode->data.parameter.genericKind != ZR_GENERIC_PARAMETER_CONST_INT)) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Union generic parameter kind is not supported",
+                        node->location);
+                return;
+            }
+        }
+    }
     oldTypeName = cs->currentTypeName;
     oldTypePrototypeInfo = cs->currentTypePrototypeInfo;
     oldTypeNode = cs->currentTypeNode;
@@ -692,13 +791,22 @@ void compile_union_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentTypeName = oldTypeName;
         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
         cs->currentTypeNode = oldTypeNode;
+        compiler_union_free_unpublished_prototype(cs, &info);
         return;
     }
 
-    ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
-    if (cs->typeEnv != ZR_NULL) {
-        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, typeName);
+    if (!compiler_union_register_canonical_type(cs, node, &info)) {
+        ZrParser_Compiler_Error(cs, "failed to register canonical union type", node->location);
+        if (layoutInfoInitialized) {
+            compiler_union_layout_info_free(cs, &layoutInfo);
+        }
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        compiler_union_free_unpublished_prototype(cs, &info);
+        return;
     }
+    ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
 
     if (layoutInfoInitialized) {
         compiler_union_layout_info_free(cs, &layoutInfo);
@@ -707,4 +815,8 @@ void compile_union_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->currentTypeName = oldTypeName;
     cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
     cs->currentTypeNode = oldTypeNode;
+}
+
+void ZrParser_Compiler_CompileUnionDeclaration(SZrCompilerState *cs, SZrAstNode *node) {
+    compile_union_declaration(cs, node);
 }

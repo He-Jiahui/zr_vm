@@ -1045,11 +1045,10 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     }
                     cs->currentFunctionNode = member;
                     // 处理返回类型信息
-                    if (method->returnType != ZR_NULL) {
-                        memberInfo.returnTypeName = extract_type_name_string(cs, method->returnType);
-                    } else {
-                        memberInfo.returnTypeName = ZR_NULL; // 无返回类型（void）
-                    }
+                    compiler_type_member_capture_structured_return_type(
+                            cs,
+                            &memberInfo,
+                            method->returnType);
                     ZrCore_Array_Init(cs->state,
                                       &memberInfo.genericParameters,
                                       sizeof(SZrTypeGenericParameterInfo),
@@ -1112,11 +1111,10 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     }
                     cs->currentFunctionNode = member;
                     // 处理返回类型信息
-                    if (metaFunc->returnType != ZR_NULL) {
-                        memberInfo.returnTypeName = extract_type_name_string(cs, metaFunc->returnType);
-                    } else {
-                        memberInfo.returnTypeName = ZR_NULL; // 无返回类型（void）
-                    }
+                    compiler_type_member_capture_structured_return_type(
+                            cs,
+                            &memberInfo,
+                            metaFunc->returnType);
                     // 元方法的函数引用索引将在编译后设置
                     // TODO: 需要将元方法编译为函数并存储函数引用索引
                     if (metaFunc->params != ZR_NULL) {

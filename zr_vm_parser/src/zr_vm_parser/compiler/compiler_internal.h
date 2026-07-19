@@ -615,6 +615,10 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
 void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
 
 void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
+TZrBool compiler_type_member_capture_structured_return_type(
+        SZrCompilerState *cs,
+        SZrTypeMemberInfo *memberInfo,
+        SZrType *returnType);
 
 TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototypeInfo *info, 
                                                  TZrByte **outData, TZrSize *outSize) ;

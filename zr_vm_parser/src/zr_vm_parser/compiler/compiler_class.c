@@ -1246,11 +1246,10 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     }
                     cs->currentFunctionNode = member;
                     // 处理返回类型信息
-                    if (method->returnType != ZR_NULL) {
-                        memberInfo.returnTypeName = extract_type_name_string(cs, method->returnType);
-                    } else {
-                        memberInfo.returnTypeName = ZR_NULL; // 无返回类型（void）
-                    }
+                    compiler_type_member_capture_structured_return_type(
+                            cs,
+                            &memberInfo,
+                            method->returnType);
                     ZrCore_Array_Init(cs->state,
                                       &memberInfo.genericParameters,
                                       sizeof(SZrTypeGenericParameterInfo),
@@ -1307,7 +1306,10 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                         compiler_create_hidden_property_accessor_name(cs, getter->name->name, ZR_FALSE);
                             }
                             if (getter->targetType != ZR_NULL) {
-                                memberInfo.returnTypeName = extract_type_name_string(cs, getter->targetType);
+                                compiler_type_member_capture_structured_return_type(
+                                        cs,
+                                        &memberInfo,
+                                        getter->targetType);
                             }
                         } else if (property->modifier->type == ZR_AST_PROPERTY_SET) {
                             SZrPropertySet *setter = &property->modifier->data.propertySet;
@@ -1365,11 +1367,10 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     }
                     cs->currentFunctionNode = member;
                     // 处理返回类型信息
-                    if (metaFunc->returnType != ZR_NULL) {
-                        memberInfo.returnTypeName = extract_type_name_string(cs, metaFunc->returnType);
-                    } else {
-                        memberInfo.returnTypeName = ZR_NULL; // 无返回类型（void）
-                    }
+                    compiler_type_member_capture_structured_return_type(
+                            cs,
+                            &memberInfo,
+                            metaFunc->returnType);
                     compiler_class_collect_parameter_types(cs, &memberInfo.parameterTypes, metaFunc->params, member);
                     compiler_collect_parameter_passing_modes(cs->state,
                                                              &memberInfo.parameterPassingModes,

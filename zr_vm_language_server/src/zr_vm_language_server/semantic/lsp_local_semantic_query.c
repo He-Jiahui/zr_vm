@@ -619,10 +619,27 @@ static TZrBool local_query_build_hover_with_document(
 
     markdown[0] = '\0';
     if (query->expressionFact != ZR_NULL) {
-        typeText = ZrParser_TypeNameString_Get(state,
-                                               &query->expressionFact->inferredType,
-                                               typeBuffer,
-                                               sizeof(typeBuffer));
+        if (context != ZR_NULL &&
+            uri != ZR_NULL &&
+            query->referenceFact != ZR_NULL &&
+            query->referenceFact->typeId != ZR_SEMANTIC_ID_INVALID) {
+            SZrSemanticAnalyzer *analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+
+            if (analyzer != ZR_NULL &&
+                ZrLanguageServer_SemanticAnalyzer_FormatTypeId(
+                        analyzer->semanticContext,
+                        query->referenceFact->typeId,
+                        typeBuffer,
+                        sizeof(typeBuffer))) {
+                typeText = typeBuffer;
+            }
+        }
+        if (typeText == ZR_NULL) {
+            typeText = ZrParser_TypeNameString_Get(state,
+                                                   &query->expressionFact->inferredType,
+                                                   typeBuffer,
+                                                   sizeof(typeBuffer));
+        }
         if (typeText == ZR_NULL || typeText[0] == '\0') {
             typeText = "unknown";
         }

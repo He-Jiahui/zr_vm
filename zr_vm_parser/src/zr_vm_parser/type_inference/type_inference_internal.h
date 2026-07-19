@@ -22,6 +22,10 @@ typedef enum EZrGenericCallResolveStatus {
 } EZrGenericCallResolveStatus;
 
 const TZrChar *get_base_type_name(EZrValueType baseType);
+TZrBool ZrParser_TypeInference_ConvertTupleType(
+        SZrCompilerState *cs,
+        const SZrType *astType,
+        SZrInferredType *result);
 void ZrParser_TypeError_Report(SZrCompilerState *cs,
                                const TZrChar *message,
                                const SZrInferredType *expectedType,
@@ -49,7 +53,10 @@ ZR_PARSER_API TZrBool infer_member_call_contract_return_type(SZrCompilerState *c
                                                              SZrFunctionCall *call,
                                                              SZrInferredType *result);
 ZR_PARSER_API TZrBool type_name_is_explicitly_available_in_context_inference(SZrCompilerState *cs,
-                                                                              SZrString *typeName);
+                                                                               SZrString *typeName);
+TZrBool type_inference_is_const_generic_parameter_reference(
+        SZrCompilerState *cs,
+        SZrString *name);
 TZrBool inferred_type_try_map_primitive_name(const TZrNativeString nameStr,
                                              TZrSize nameLen,
                                              EZrValueType *outBaseType);
@@ -58,6 +65,9 @@ ZR_PARSER_API TZrBool try_parse_generic_instance_type_name(SZrState *state,
                                                            SZrString **outBaseName,
                                                            SZrArray *outArgumentTypeNames);
 ZR_PARSER_API TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *typeName);
+TZrBool ensure_generic_instance_type_prototype_from_inferred(
+        SZrCompilerState *cs,
+        const SZrInferredType *type);
 ZR_PARSER_API SZrString *build_generic_instance_name(SZrState *state,
                                                      SZrString *baseName,
                                                      const SZrArray *typeArguments);
@@ -174,6 +184,10 @@ TZrBool ffi_function_call_argument_is_native_boundary_compatible(SZrCompilerStat
 TZrBool resolve_compile_time_array_size(SZrCompilerState *cs,
                                         const SZrType *astType,
                                         TZrSize *resolvedSize);
+TZrBool ZrParser_TypeInference_EvaluateConstIntArgument(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        TZrInt64 *outValue);
 void type_inference_record_expression_fact(SZrCompilerState *cs,
                                            SZrAstNode *node,
                                            const SZrInferredType *type);

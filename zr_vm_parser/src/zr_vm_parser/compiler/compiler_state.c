@@ -366,7 +366,11 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
                     info->members.capacity > 0 && info->members.elementSize > 0) {
                     for (TZrSize memberIndex = 0; memberIndex < info->members.length; memberIndex++) {
                         SZrTypeMemberInfo *memberInfo =
-                                (SZrTypeMemberInfo *)ZrCore_Array_Get(&info->members, memberIndex);
+                                 (SZrTypeMemberInfo *)ZrCore_Array_Get(&info->members, memberIndex);
+                        if (memberInfo != ZR_NULL && memberInfo->hasStructuredReturnType) {
+                            ZrParser_InferredType_Free(state, &memberInfo->structuredReturnType);
+                            memberInfo->hasStructuredReturnType = ZR_FALSE;
+                        }
                         if (memberInfo != ZR_NULL &&
                             memberInfo->parameterTypes.isValid &&
                             memberInfo->parameterTypes.head != ZR_NULL &&

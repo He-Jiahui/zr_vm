@@ -357,6 +357,8 @@ typedef struct SZrTypeMemberInfo {
     EZrMetaType metaType;               // 元方法类型（如果是元方法，如CONSTRUCTOR）
     TZrBool isMetaMethod;                 // 是否为元方法
     SZrString *returnTypeName;          // 返回类型名称（字符串表示，用于运行时类型查找）
+    TZrBool hasStructuredReturnType;
+    SZrInferredType structuredReturnType;
     EZrModuleExportKind moduleExportKind; // module prototype member 对应的导出种类
     EZrModuleExportReadiness moduleExportReadiness; // module prototype member 对应的导出就绪阶段
     TZrMetadataToken metadataToken;       // module export/member def token, if available
@@ -435,6 +437,7 @@ ZR_PARSER_API SZrAstNodeArray *ZrParser_Compiler_MatchNamedArguments(SZrCompiler
 ZR_PARSER_API void ZrParser_Compiler_CompileStructDeclaration(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Compiler_CompileClassDeclaration(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Compiler_CompileInterfaceDeclaration(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API void ZrParser_Compiler_CompileUnionDeclaration(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Compiler_PredeclareExternBindings(SZrCompilerState *cs, SZrAstNodeArray *statements);
 ZR_PARSER_API void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZrAstNode *node);
 

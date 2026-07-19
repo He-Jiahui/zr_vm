@@ -29,12 +29,15 @@ typedef TZrUInt32 TZrLifetimeRegionId;
 #endif
 
 #include "zr_vm_parser/semantic_facts.h"
+#include "zr_vm_parser/canonical_type.h"
 
 enum EZrSemanticTypeKind {
     ZR_SEMANTIC_TYPE_KIND_UNKNOWN = 0,
     ZR_SEMANTIC_TYPE_KIND_VALUE,
     ZR_SEMANTIC_TYPE_KIND_REFERENCE,
     ZR_SEMANTIC_TYPE_KIND_GENERIC_INSTANCE,
+    ZR_SEMANTIC_TYPE_KIND_GENERIC_PARAMETER,
+    ZR_SEMANTIC_TYPE_KIND_UNION,
 };
 
 typedef enum EZrSemanticTypeKind EZrSemanticTypeKind;
@@ -108,6 +111,10 @@ typedef struct SZrSemanticContext {
     TZrSymbolId nextSymbolId;
     TZrOverloadSetId nextOverloadSetId;
     TZrLifetimeRegionId nextLifetimeRegionId;
+    SZrArray canonicalTypes;    // SZrCanonicalTypeNode
+    SZrArray canonicalTypeHashBuckets; // internal TZrUInt32 bucket heads
+    SZrArray canonicalTypeHashNext; // internal TZrUInt32 collision links
+    SZrArray canonicalTypeDefinitions; // internal canonical TypeDef records
     SZrArray types;             // SZrSemanticTypeRecord
     SZrArray symbols;           // SZrSemanticSymbolRecord
     SZrArray overloadSets;      // SZrSemanticOverloadSetRecord
@@ -145,6 +152,11 @@ ZR_PARSER_API TZrTypeId ZrParser_Semantic_RegisterNamedType(SZrSemanticContext *
                                                     SZrString *name,
                                                     EZrSemanticTypeKind kind,
                                                     SZrAstNode *astNode);
+ZR_PARSER_API TZrBool ZrParser_Semantic_RegisterCanonicalType(SZrSemanticContext *context,
+                                                       TZrTypeId typeId,
+                                                       EZrSemanticTypeKind kind,
+                                                       SZrString *name,
+                                                       SZrAstNode *astNode);
 ZR_PARSER_API TZrSymbolId ZrParser_Semantic_RegisterSymbol(SZrSemanticContext *context,
                                                    SZrString *name,
                                                    EZrSemanticSymbolKind kind,
@@ -152,6 +164,30 @@ ZR_PARSER_API TZrSymbolId ZrParser_Semantic_RegisterSymbol(SZrSemanticContext *c
                                                    TZrOverloadSetId overloadSetId,
                                                    SZrAstNode *astNode,
                                                    SZrFileRange location);
+ZR_PARSER_API TZrSymbolId ZrParser_Semantic_RegisterSymbolWithId(SZrSemanticContext *context,
+                                                         TZrSymbolId symbolId,
+                                                         SZrString *name,
+                                                         EZrSemanticSymbolKind kind,
+                                                         TZrTypeId typeId,
+                                                         TZrOverloadSetId overloadSetId,
+                                                         SZrAstNode *astNode,
+                                                         SZrFileRange location);
+ZR_PARSER_API const SZrSemanticSymbolRecord *ZrParser_Semantic_FindSymbolByNameAndKind(
+        const SZrSemanticContext *context,
+        SZrString *name,
+        EZrSemanticSymbolKind kind);
+ZR_PARSER_API TZrBool ZrParser_Semantic_RebindSymbolType(
+        SZrSemanticContext *context,
+        TZrSymbolId symbolId,
+        TZrTypeId typeId);
+ZR_PARSER_API TZrBool ZrParser_Semantic_PublishCanonicalTypeSymbol(
+        SZrSemanticContext *context,
+        TZrTypeId typeId,
+        EZrSemanticTypeKind typeKind,
+        SZrString *name,
+        SZrAstNode *astNode,
+        TZrSymbolId symbolId,
+        SZrFileRange location);
 ZR_PARSER_API TZrOverloadSetId ZrParser_Semantic_GetOrCreateOverloadSet(SZrSemanticContext *context,
                                                                 SZrString *name);
 ZR_PARSER_API TZrBool ZrParser_Semantic_AddOverloadMember(SZrSemanticContext *context,

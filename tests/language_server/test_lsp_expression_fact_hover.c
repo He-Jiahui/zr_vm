@@ -14,6 +14,11 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+extern SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *uri);
+
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -580,6 +585,78 @@ static TZrBool test_lsp_hover_escapes_string_constant_payload(SZrState *state) {
     return passed;
 }
 
+static TZrBool test_lsp_hover_formats_reference_type_from_type_id(SZrState *state) {
+    const TZrChar *uriText = "file:///canonical_type_hover.zr";
+    const TZrChar *content =
+        "func inspect(items: [int, bool]): int {\n"
+        "    items;\n"
+        "    return 0;\n"
+        "}\n";
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition itemsPosition;
+    SZrLspLocalSemanticQueryResult query;
+    SZrLspHover *hover = ZR_NULL;
+    SZrSemanticAnalyzer *analyzer;
+    TZrChar canonicalTypeText[128];
+    TZrBool passed;
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !find_position_for_substring(content, "items", 1, &itemsPosition)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        printf("FAIL: unable to prepare canonical TypeId hover fixture\n");
+        return ZR_FALSE;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    passed = ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(
+                         state,
+                         context,
+                         uri,
+                         itemsPosition,
+                         &query) &&
+             query.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT &&
+             query.referenceFact != ZR_NULL &&
+             query.referenceFact->typeId != ZR_SEMANTIC_ID_INVALID &&
+             analyzer != ZR_NULL &&
+             analyzer->semanticContext != ZR_NULL &&
+             ZrLanguageServer_SemanticAnalyzer_FormatTypeId(
+                     analyzer->semanticContext,
+                     query.referenceFact->typeId,
+                     canonicalTypeText,
+                     sizeof(canonicalTypeText)) &&
+             strcmp(canonicalTypeText, "(int, bool)") == 0 &&
+             ZrLanguageServer_LspLocalSemanticQuery_BuildHoverForDocument(
+                     state,
+                     context,
+                     uri,
+                     &query,
+                     &hover) &&
+             hover != ZR_NULL &&
+             hover_contains_text(hover, "Type: (int, bool)");
+
+    if (!passed) {
+        const TZrChar *hoverText = hover_first_text(hover);
+        printf("FAIL: expected canonical TypeId hover text; status=%d reference=%p typeId=%u hover=%s\n",
+               (int)query.status,
+               (void *)query.referenceFact,
+               query.referenceFact != ZR_NULL ? (unsigned int)query.referenceFact->typeId : 0U,
+               hoverText != ZR_NULL ? hoverText : "<null>");
+    }
+
+    hover_free(state, hover);
+    ZrLanguageServer_LspLocalSemanticQuery_Clear(&query);
+    ZrLanguageServer_LspContext_Free(state, context);
+    return passed;
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -589,6 +666,7 @@ int main(void) {
     TZrBool segmentedNumericRangeHoverPassed;
     TZrBool compactSegmentedNumericRangeHoverPassed;
     TZrBool stringHoverPassed;
+    TZrBool canonicalTypeHoverPassed;
 
     memset(&callbacks, 0, sizeof(callbacks));
     global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
@@ -618,13 +696,17 @@ int main(void) {
     stringHoverPassed = test_lsp_hover_escapes_string_constant_payload(state);
     printf("%s: LSP Hover Escapes String Constant Payload\n",
            stringHoverPassed ? "PASS" : "FAIL");
+    canonicalTypeHoverPassed = test_lsp_hover_formats_reference_type_from_type_id(state);
+    printf("%s: LSP Hover Formats Reference Type From TypeId\n",
+           canonicalTypeHoverPassed ? "PASS" : "FAIL");
 
     ZrCore_GlobalState_Free(global);
     return expressionHoverPassed &&
                    utf16HoverRangePassed &&
                    segmentedNumericRangeHoverPassed &&
                    compactSegmentedNumericRangeHoverPassed &&
-                   stringHoverPassed
+                   stringHoverPassed &&
+                   canonicalTypeHoverPassed
                ? 0
                : 1;
 }

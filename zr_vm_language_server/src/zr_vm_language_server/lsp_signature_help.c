@@ -1552,6 +1552,10 @@ static void signature_free_temporary_member_info(SZrState *state, SZrTypeMemberI
     }
 
     free_inferred_type_array(state, &memberInfo->parameterTypes);
+    if (memberInfo->hasStructuredReturnType) {
+        ZrParser_InferredType_Free(state, &memberInfo->structuredReturnType);
+        memberInfo->hasStructuredReturnType = ZR_FALSE;
+    }
     if (memberInfo->genericParameters.isValid &&
         memberInfo->genericParameters.head != ZR_NULL &&
         memberInfo->genericParameters.capacity > 0 &&
@@ -1611,6 +1615,8 @@ static TZrBool signature_substitute_receiver_generic_type(SZrState *state,
     result->isNullable = sourceType->isNullable;
     result->ownershipQualifier = sourceType->ownershipQualifier;
     result->typeName = sourceType->typeName;
+    result->genericArgumentKind = sourceType->genericArgumentKind;
+    result->genericConstIntValue = sourceType->genericConstIntValue;
     result->minValue = sourceType->minValue;
     result->maxValue = sourceType->maxValue;
     result->hasRangeConstraint = sourceType->hasRangeConstraint;
@@ -1998,6 +2004,11 @@ static TZrBool signature_prepare_specialized_receiver_member(SZrState *state,
 
     memset(temporaryMemberInfo, 0, sizeof(*temporaryMemberInfo));
     *temporaryMemberInfo = *memberInfo;
+    temporaryMemberInfo->hasStructuredReturnType = ZR_FALSE;
+    memset(
+            &temporaryMemberInfo->structuredReturnType,
+            0,
+            sizeof(temporaryMemberInfo->structuredReturnType));
     ZrCore_Array_Construct(&temporaryMemberInfo->parameterTypes);
     ZrCore_Array_Construct(&temporaryMemberInfo->genericParameters);
     ZrCore_Array_Construct(&temporaryMemberInfo->parameterPassingModes);
@@ -2039,7 +2050,24 @@ static TZrBool signature_prepare_specialized_receiver_member(SZrState *state,
         }
     }
 
-    if (memberInfo->returnTypeName != ZR_NULL) {
+    if (memberInfo->hasStructuredReturnType) {
+        ZrParser_InferredType_Init(
+                state,
+                &temporaryMemberInfo->structuredReturnType,
+                ZR_VALUE_TYPE_OBJECT);
+        if (!signature_substitute_receiver_generic_type(
+                    state,
+                    &openPrototype->genericParameters,
+                    &bindingTypes,
+                    &memberInfo->structuredReturnType,
+                    &temporaryMemberInfo->structuredReturnType)) {
+            ZrParser_InferredType_Free(state, &temporaryMemberInfo->structuredReturnType);
+            goto cleanup;
+        }
+        temporaryMemberInfo->hasStructuredReturnType = ZR_TRUE;
+        temporaryMemberInfo->returnTypeName =
+                temporaryMemberInfo->structuredReturnType.typeName;
+    } else if (memberInfo->returnTypeName != ZR_NULL) {
         SZrType *returnTypeNode = signature_method_return_type_node(memberInfo->declarationNode);
         SZrSignatureTypeResolutionContext resolutionContext;
 

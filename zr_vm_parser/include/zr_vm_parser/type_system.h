@@ -31,6 +31,12 @@ typedef struct SZrNumericRangeSegment {
     TZrInt64 maxValue;
 } SZrNumericRangeSegment;
 
+typedef enum EZrInferredGenericArgumentKind {
+    ZR_INFERRED_GENERIC_ARGUMENT_TYPE = 0,
+    ZR_INFERRED_GENERIC_ARGUMENT_CONST_INT = 1,
+    ZR_INFERRED_GENERIC_ARGUMENT_CONST_PARAMETER = 2
+} EZrInferredGenericArgumentKind;
+
 // 推断的类型结构体
 typedef struct SZrInferredType {
     EZrValueType baseType;           // 基础类型（对应EZrValueType枚举）
@@ -38,6 +44,8 @@ typedef struct SZrInferredType {
     EZrOwnershipQualifier ownershipQualifier; // 特殊所有权限定
     SZrArray elementTypes;           // 泛型/数组元素类型（SZrInferredType*），可选
     SZrString *typeName;             // 用户定义类型名（struct/class等），可选
+    EZrInferredGenericArgumentKind genericArgumentKind;
+    TZrInt64 genericConstIntValue;
     
     // 范围约束（用于整数类型和数组长度）
     TZrInt64 minValue;                 // 最小值
@@ -157,6 +165,17 @@ ZR_PARSER_API void ZrParser_InferredType_Init(SZrState *state, SZrInferredType *
 
 // 初始化类型（完整版本）
 ZR_PARSER_API void ZrParser_InferredType_InitFull(SZrState *state, SZrInferredType *type, EZrValueType baseType, TZrBool isNullable, SZrString *typeName);
+
+ZR_PARSER_API void ZrParser_InferredType_InitConstIntGenericArgument(
+        SZrState *state,
+        SZrInferredType *type,
+        TZrInt64 value,
+        SZrString *displayName);
+
+ZR_PARSER_API void ZrParser_InferredType_InitConstParameterGenericArgument(
+        SZrState *state,
+        SZrInferredType *type,
+        SZrString *name);
 
 // 释放类型
 ZR_PARSER_API void ZrParser_InferredType_Free(SZrState *state, SZrInferredType *type);
