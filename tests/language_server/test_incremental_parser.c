@@ -367,6 +367,80 @@ static void test_file_version_content_snapshot_survives_parser_free(SZrState *st
     TEST_PASS(timer, "File Version Content Snapshot Survives Parser Free");
 }
 
+static void test_incremental_parser_rejects_non_monotonic_versions(SZrState *state) {
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrFileVersionContentBlock *textBlock;
+    SZrAstNode *ast;
+    const TZrChar *initialContent = "var stable = 1;";
+    const TZrChar *staleContent = "var stale = 2;";
+    TZrSize generation;
+    TZrBool sameVersionAccepted;
+    TZrBool staleVersionAccepted;
+
+    TEST_START("Incremental Parser Rejects Non-Monotonic Versions");
+    TEST_INFO("Version Gate", "Same and stale versions must be rejected before snapshot mutation");
+
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(state, "file:///version-gate.zr", 23);
+    if (parser == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state,
+                parser,
+                uri,
+                initialContent,
+                strlen(initialContent),
+                5) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, "Incremental Parser Rejects Non-Monotonic Versions", "Failed to prepare versioned file");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    if (fileVersion == ZR_NULL || fileVersion->textBlock == ZR_NULL || fileVersion->ast == ZR_NULL) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, "Incremental Parser Rejects Non-Monotonic Versions", "Initial versioned state is incomplete");
+        return;
+    }
+    textBlock = fileVersion->textBlock;
+    generation = textBlock->contentGeneration;
+    ast = fileVersion->ast;
+
+    sameVersionAccepted = ZrLanguageServer_IncrementalParser_UpdateFile(
+            state,
+            parser,
+            uri,
+            initialContent,
+            strlen(initialContent),
+            5);
+    staleVersionAccepted = ZrLanguageServer_IncrementalParser_UpdateFile(
+            state,
+            parser,
+            uri,
+            staleContent,
+            strlen(staleContent),
+            4);
+
+    if (sameVersionAccepted || staleVersionAccepted ||
+        fileVersion->version != 5 ||
+        fileVersion->textBlock != textBlock ||
+        fileVersion->textBlock->contentGeneration != generation ||
+        fileVersion->ast != ast ||
+        fileVersion->isDirty) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, "Incremental Parser Rejects Non-Monotonic Versions", "Rejected version mutated parser state");
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, "Incremental Parser Rejects Non-Monotonic Versions");
+}
+
 // 主测试函数
 int main(void) {
     printf("==========\n");
@@ -409,6 +483,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_file_version_content_snapshot_survives_parser_free(state);
+    TEST_DIVIDER();
+
+    test_incremental_parser_rejects_non_monotonic_versions(state);
     TEST_DIVIDER();
     
     // 清理

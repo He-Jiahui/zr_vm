@@ -1794,6 +1794,43 @@
 - The frozen snapshots retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
 - Full repository GREEN is not claimed.
 
+## Strict Document Version Rejection Acceptance
+
+### Scope
+
+- Require `newVersion > currentVersion` for every update to an existing document.
+- Reject equal and stale versions before content comparison, change-range classification, token-equivalence lexing, text allocation, parsing, or semantic analysis.
+- Preserve the version, text-block identity, content generation, AST, dirty state, and semantic analyzer metrics after rejection.
+- Preserve first-open version 0 for a document without an existing in-memory version.
+
+### Baseline And TDD
+
+- Runtime RED on the previous implementation accepted both the equal-version identical update and the stale changed update.
+- The incremental-parser case failed with `Rejected version mutated parser state`.
+- The exported LSP lifecycle case failed with `Rejected version reached snapshot or semantic work`, proving that rejected input reached parser/snapshot work and semantic request accounting.
+- GREEN adds one early existing-document guard and leaves the new-document construction path unchanged.
+
+### Code And Test Evidence
+
+- `incremental_parser.c` owns the strict monotonicity check before every existing update path.
+- `test_incremental_parser.c` fixes the parser snapshot identity and clean-state contract; the suite increases to 7/7.
+- `test_lsp_snapshot_cache_cases.h` fixes text, AST, and semantic metric identities through the public update API; `test_lsp_interface.c` registers 87 total cases.
+- The focused snapshot/cache include remains below the 1,000-line modularization threshold.
+
+### Tooling And Results
+
+- WSL source/builds: `/home/hejiahui/zr_vm-lsp-head-d53e21c-20260719-1930-wsl-src` and matching GCC/Clang build directories.
+- Windows source/build: `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-head-d53e21c-20260719-1930-msvc-src` and matching MSVC build directory.
+- WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each pass incremental parser 7/7 and LSP interface 87/87 with no `Fail -` markers.
+- Each toolchain passes the same fourteen-target semantic/LSP matrix with zero executable or failure-marker failures and passes `language_server_stdio_smoke` 1/1 on current `HEAD=894af85` plus this stage.
+
+### Acceptance Decision
+
+- Accepted at `2026-07-19 21:12 +08:00` as the strict document-version rejection submilestone for LSP robustness.
+- L6 remains open: declaration CFG/query cache invalidation, direct-caller and ModuleIdentity propagation, cancellation, immutable snapshot races, stale response suppression, provider parity, latency percentiles, and memory budgets are not claimed.
+- The isolated sources retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
+- Full repository GREEN is not claimed.
+
 ## Stage 3 English Diagnostic Message Catalog Foundation Acceptance
 
 ### Scope

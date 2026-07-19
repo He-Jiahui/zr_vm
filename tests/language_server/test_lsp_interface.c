@@ -7291,6 +7291,9 @@ int main(void) {
 
     test_lsp_fallback_ast_change_remains_module_scoped(state);
     TEST_DIVIDER();
+
+    test_lsp_non_monotonic_versions_are_rejected_before_semantic_work(state);
+    TEST_DIVIDER();
     
     test_lsp_get_diagnostics(state);
     TEST_DIVIDER();

@@ -393,10 +393,11 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
     // 查找是否已存在
     SZrFileVersion *fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
     if (fileVersion != ZR_NULL) {
+        if (version <= fileVersion->version) {
+            return ZR_FALSE;
+        }
         if (file_version_content_equals(fileVersion, content, contentLength)) {
-            if (version > fileVersion->version) {
-                fileVersion->version = version;
-            }
+            fileVersion->version = version;
             ZrLanguageServer_IncrementalChange_Reset(uri, &fileVersion->lastChangeInfo);
             fileVersion->lastChangeRange = fileVersion->lastChangeInfo.newRange;
             fileVersion->hasIncrementalInfo = ZR_FALSE;

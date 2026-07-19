@@ -814,4 +814,80 @@ static void test_lsp_fallback_ast_change_remains_module_scoped(
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_non_monotonic_versions_are_rejected_before_semantic_work(
+        SZrState *state) {
+    const TZrChar *summary = "LSP Non-Monotonic Versions Are Rejected Before Semantic Work";
+    const TZrChar *initialContent =
+            "compute(): int {\n"
+            "    return 1;\n"
+            "}\n";
+    const TZrChar *staleContent =
+            "compute(): int {\n"
+            "    return 2;\n"
+            "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrFileVersionContentBlock *textBlock;
+    SZrAstNode *ast;
+    SZrSemanticAnalyzer *analyzer;
+    SZrSemanticAnalysisMetrics beforeMetrics;
+    SZrSemanticAnalysisMetrics afterMetrics;
+    TZrSize generation;
+    TZrBool sameVersionAccepted;
+    TZrBool staleVersionAccepted;
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///non_monotonic_version.zr",
+            strlen("file:///non_monotonic_version.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, initialContent, strlen(initialContent), 5)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare versioned semantic state");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    analyzer = find_test_analyzer(state, context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->textBlock == ZR_NULL ||
+        fileVersion->ast == ZR_NULL || analyzer == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Initial versioned semantic state is incomplete");
+        return;
+    }
+    textBlock = fileVersion->textBlock;
+    generation = textBlock->contentGeneration;
+    ast = fileVersion->ast;
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(analyzer, &beforeMetrics);
+
+    sameVersionAccepted = ZrLanguageServer_Lsp_UpdateDocument(
+            state, context, uri, initialContent, strlen(initialContent), 5);
+    staleVersionAccepted = ZrLanguageServer_Lsp_UpdateDocument(
+            state, context, uri, staleContent, strlen(staleContent), 4);
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(analyzer, &afterMetrics);
+
+    if (sameVersionAccepted || staleVersionAccepted ||
+        fileVersion->version != 5 ||
+        fileVersion->textBlock != textBlock ||
+        fileVersion->textBlock->contentGeneration != generation ||
+        fileVersion->ast != ast ||
+        afterMetrics.requestCount != beforeMetrics.requestCount ||
+        afterMetrics.executionCount != beforeMetrics.executionCount ||
+        afterMetrics.cacheHitCount != beforeMetrics.cacheHitCount) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Rejected version reached snapshot or semantic work");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 #endif // ZR_VM_TEST_LSP_SNAPSHOT_CACHE_CASES_H

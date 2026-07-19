@@ -32,6 +32,8 @@
 
 [2026-07-19 token-equivalent semantic snapshot reuse](./03-robustness/2026-07-19-token-equivalent-semantic-snapshot-reuse.md) 完成同长度、无lex error且token语义值与全部坐标一致的真实内容更新复用；token值/坐标变化继续整文件重算，声明级CFG/query cache与依赖传播仍未完成。
 
+[2026-07-19 strict document version rejection](./03-robustness/2026-07-19-strict-document-version-rejection.md) 完成已存在document的严格version单调门禁；相同或stale version在快照分配、变更分类、parse和semantic work之前拒绝，cancellation、snapshot race和声明/依赖失效仍未完成。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。
