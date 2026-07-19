@@ -252,6 +252,8 @@ typedef struct SZrSemanticInstructionLoanLiveness {
     TZrSemanticInstructionId instructionId;
     SZrArray liveInLoanIds; /* TZrLoanId */
     SZrArray liveOutLoanIds; /* TZrLoanId */
+    SZrArray activeInLoanIds; /* definitely active TZrLoanId */
+    SZrArray activeOutLoanIds; /* definitely active TZrLoanId */
 } SZrSemanticInstructionLoanLiveness;
 
 typedef struct SZrSemanticLoanRegionFact {

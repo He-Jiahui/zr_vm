@@ -303,8 +303,6 @@ static TZrBool semantic_ir_validate_loan_phases(
                         (SZrArray *)&function->loanFacts, loanIndex);
         TZrSize originCount = 0U;
         TZrSize activationCount = 0U;
-        TZrSemanticInstructionId originId = ZR_SEMANTIC_INSTRUCTION_ID_INVALID;
-        TZrSemanticInstructionId activationId = ZR_SEMANTIC_INSTRUCTION_ID_INVALID;
 
         for (TZrSize instructionIndex = 0U;
              instructionIndex < function->instructions.length;
@@ -319,17 +317,15 @@ static TZrBool semantic_ir_validate_loan_phases(
                 instruction->opcode == ZR_SEMANTIC_IR_RESERVE_BORROW_MUT ||
                 instruction->opcode == ZR_SEMANTIC_IR_REBORROW) {
                 originCount++;
-                originId = instruction->id;
             } else if (instruction->opcode == ZR_SEMANTIC_IR_ACTIVATE_LOAN) {
                 activationCount++;
-                activationId = instruction->id;
             }
         }
         if (originCount != 1U) {
             return ZR_FALSE;
         }
         if (loan->phase == ZR_SEMANTIC_LOAN_TWO_PHASE) {
-            if (activationCount != 1U || activationId <= originId) {
+            if (activationCount != 1U) {
                 return ZR_FALSE;
             }
         } else if (activationCount != 0U) {

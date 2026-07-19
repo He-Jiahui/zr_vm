@@ -213,8 +213,17 @@ static const ZrLibMethodDescriptor g_udp_socket_methods[] = {
                                       "Return whether the UDP socket has been closed.", ZR_FALSE, ZR_NULL, 0),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("host", 0, 0, zr_network_udp_host, "string",
                                       "Return the bound socket host.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("port", 0, 0, zr_network_udp_port, "int",
-                                      "Return the bound socket port.", ZR_FALSE, ZR_NULL, 0),
+        {
+                .name = "port",
+                .minArgumentCount = 0,
+                .maxArgumentCount = 0,
+                .callback = zr_network_udp_port,
+                .returnTypeName = "int",
+                .documentation = "Return the bound socket port.",
+                .isStatic = ZR_FALSE,
+                .dispatchFlags =
+                        ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER,
+        },
 };
 
 static const ZrLibFieldDescriptor g_udp_packet_fields[] = {

@@ -4092,7 +4092,9 @@ static const ZrLibFieldDescriptor kArrayLikeFields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("length", "int", ZR_NULL),
 };
 static const ZrLibMetaMethodDescriptor kArrayLikeMetaMethods[] = {
-        {ZR_META_GET_ITEM, 1, 1, ZR_NULL, "T", ZR_NULL, kArrayIndexParameter, ZR_ARRAY_COUNT(kArrayIndexParameter)},
+        {ZR_META_GET_ITEM, 1, 1, ZR_NULL, "T", ZR_NULL, kArrayIndexParameter,
+         ZR_ARRAY_COUNT(kArrayIndexParameter), ZR_NULL, 0,
+         ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER},
         {ZR_META_SET_ITEM, 2, 2, ZR_NULL, "T", ZR_NULL, kArrayInsertParameters, ZR_ARRAY_COUNT(kArrayInsertParameters)},
 };
 static const ZrLibMethodDescriptor kEquatableMethods[] = {
@@ -4128,7 +4130,9 @@ static const ZrLibMethodDescriptor kArrayMethods[] = {
 };
 static const ZrLibMetaMethodDescriptor kArrayMetaMethods[] = {
         {ZR_META_CONSTRUCTOR, 0, 1, zr_container_array_constructor, "Array<T>", ZR_NULL, kArrayIndexParameter, 1},
-        {ZR_META_GET_ITEM, 1, 1, zr_container_array_get_item, "T", ZR_NULL, kArrayIndexParameter, ZR_ARRAY_COUNT(kArrayIndexParameter)},
+        {ZR_META_GET_ITEM, 1, 1, zr_container_array_get_item, "T", ZR_NULL,
+         kArrayIndexParameter, ZR_ARRAY_COUNT(kArrayIndexParameter), ZR_NULL, 0,
+         ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER},
         {ZR_META_SET_ITEM, 2, 2, zr_container_array_set_item, "T", ZR_NULL, kArrayInsertParameters, ZR_ARRAY_COUNT(kArrayInsertParameters)},
 };
 
@@ -4158,7 +4162,8 @@ static const ZrLibMetaMethodDescriptor kMapMetaMethods[] = {
                           ZR_LIB_NATIVE_DISPATCH_FLAG_NO_SELF_REBIND |
                           ZR_LIB_NATIVE_DISPATCH_FLAG_INLINE_VALUE_CONTEXT |
                           ZR_LIB_NATIVE_DISPATCH_FLAG_RESULT_ALWAYS_WRITTEN |
-                          ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT,
+                          ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT |
+                          ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER,
          .readonlyInlineGetFastCallback = zr_container_map_get_item_readonly_inline_fast},
         {.metaType = ZR_META_SET_ITEM,
          .minArgumentCount = 2,

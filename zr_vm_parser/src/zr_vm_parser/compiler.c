@@ -346,7 +346,12 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
         compiledMember->memberType = (TZrUInt32)memberInfo->memberType;
         compiledMember->accessModifier = (TZrUInt32)memberInfo->accessModifier;
         compiledMember->isStatic = memberInfo->isStatic ? ZR_TRUE : ZR_FALSE;
-        compiledMember->isConst = memberInfo->isConst ? ZR_TRUE : ZR_FALSE;
+        compiledMember->isConst =
+                memberInfo->isConst ||
+                        memberInfo->receiverEffect ==
+                                ZR_CANONICAL_RECEIVER_READONLY
+                        ? ZR_TRUE
+                        : ZR_FALSE;
         compiledMember->isUsingManaged = memberInfo->isUsingManaged ? ZR_TRUE : ZR_FALSE;
         compiledMember->ownershipQualifier = (TZrUInt32)memberInfo->ownershipQualifier;
         compiledMember->callsClose = memberInfo->callsClose ? ZR_TRUE : ZR_FALSE;
@@ -369,8 +374,6 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
         compiledMember->interfaceContractSlot = memberInfo->interfaceContractSlot;
         compiledMember->propertyIdentity = memberInfo->propertyIdentity;
         compiledMember->accessorRole = memberInfo->accessorRole;
-        compiledMember->receiverEffect =
-                (TZrUInt32)memberInfo->receiverEffect;
         if (compiledMember->hasDecoratorNames &&
             !compiler_add_decorator_name_array_constant(cs,
                                                         &memberInfo->decorators,
@@ -803,8 +806,15 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentFunction->prototypeCount = 0;
     }
     
-    if (!cs->hasError && !ZrParser_Compiler_ValidatePreSemanticIr(cs)) {
-        ZrParser_Compiler_Error(cs, "Pre-execution Semantic IR validation failed", node->location);
+    if (!cs->hasError) {
+        TZrBool preSemanticIrIsValid =
+                ZrParser_Compiler_ValidatePreSemanticIr(cs);
+        if (!preSemanticIrIsValid && !cs->hasError) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Pre-execution Semantic IR validation failed",
+                    node->location);
+        }
     }
 
     // 重置脚本级别标志

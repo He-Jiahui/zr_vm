@@ -1027,6 +1027,7 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                 for (TZrUInt32 memberIndex = 0; memberIndex < membersCount; memberIndex++) {
                     const SZrCompiledMemberInfo *compiledMember = &memberInfos[memberIndex];
                     SZrTypeMemberInfo memberInfo;
+                    TZrBool memberHasReceiver;
 
                     ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
                     memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
@@ -1042,12 +1043,6 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                     memberInfo.name = function_constant_string(cs->state, function, compiledMember->nameStringIndex);
                     memberInfo.accessModifier = (EZrAccessModifier)compiledMember->accessModifier;
                     memberInfo.isStatic = compiledMember->isStatic ? ZR_TRUE : ZR_FALSE;
-                    memberInfo.receiverEffect =
-                            compiledMember->receiverEffect <=
-                                            (TZrUInt32)ZR_CANONICAL_RECEIVER_MUTABLE
-                                    ? (EZrCanonicalReceiverEffect)
-                                              compiledMember->receiverEffect
-                                    : ZR_CANONICAL_RECEIVER_NONE;
                     memberInfo.isConst = compiledMember->isConst ? ZR_TRUE : ZR_FALSE;
                     memberInfo.fieldTypeName =
                             function_constant_string(cs->state, function, compiledMember->fieldTypeNameStringIndex);
@@ -1055,6 +1050,20 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                     memberInfo.fieldSize = compiledMember->fieldSize;
                     memberInfo.isMetaMethod = compiledMember->isMetaMethod ? ZR_TRUE : ZR_FALSE;
                     memberInfo.metaType = (EZrMetaType)compiledMember->metaType;
+                    memberHasReceiver =
+                            (TZrBool)(memberInfo.isMetaMethod ||
+                                     memberInfo.memberType == ZR_AST_CLASS_METHOD ||
+                                     memberInfo.memberType == ZR_AST_STRUCT_METHOD ||
+                                     memberInfo.memberType ==
+                                             ZR_AST_INTERFACE_METHOD_SIGNATURE);
+                    memberInfo.receiverEffect =
+                            !memberHasReceiver || memberInfo.isStatic ||
+                                    (memberInfo.isMetaMethod &&
+                                     memberInfo.metaType == ZR_META_CONSTRUCTOR)
+                                    ? ZR_CANONICAL_RECEIVER_NONE
+                                    : (memberInfo.isConst
+                                               ? ZR_CANONICAL_RECEIVER_READONLY
+                                               : ZR_CANONICAL_RECEIVER_MUTABLE);
                     memberInfo.functionConstantIndex = compiledMember->functionConstantIndex;
                     memberInfo.parameterCount = compiledMember->parameterCount;
                     memberInfo.returnTypeName = function_constant_string(cs->state,

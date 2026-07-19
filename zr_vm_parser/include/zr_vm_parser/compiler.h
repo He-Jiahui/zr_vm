@@ -35,6 +35,7 @@ typedef struct SZrCompilerState {
     SZrHirModule *hirModule;            // 当前脚本的 HIR 模块句柄
     SZrSemanticIrFunction preSemanticIr; // ExecBC lowering 前的语义函数
     SZrArray preSemanticIrSlots;         // 栈槽到 PlaceId/ValueId 的编译期桥接
+    SZrArray preSemanticIrReceiverLoanIds; // compiler-generated receiver loans
     TZrBool preSemanticIrInitialized;
     TZrBool preSemanticIrValidated;
     

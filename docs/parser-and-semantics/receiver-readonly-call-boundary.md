@@ -11,9 +11,12 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/receiver_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_receiver_effect.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_activation.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_conflicts.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_facts.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_liveness.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md
 tests:
@@ -45,16 +48,23 @@ contract:
 - ordinary instance methods and setters use `ZR_CANONICAL_RECEIVER_MUTABLE`;
 - `const fn` and getters use `ZR_CANONICAL_RECEIVER_READONLY`.
 
-`SZrCompiledMemberInfo.receiverEffect` serializes the same value for imported
-modules and interface dispatch. A readonly requirement cannot be implemented or
-overridden by a writable receiver, while a writable requirement may use a
-readonly implementation because it has fewer effects. Dispatch still exposes
-the requirement declared by the selected base/interface contract.
+The packed v34 `SZrCompiledMemberInfo` layout remains exactly 31 `TZrUInt32`
+words and has a compile-time size assertion. Callable receiver effect projects
+through its existing `isConst` bit; import reconstruction applies that bit only
+to instance methods and non-constructor meta methods. Fields and other member
+kinds never acquire a receiver effect from field constness. A readonly
+requirement cannot be implemented or overridden by a writable receiver, while a
+writable requirement may use a readonly implementation because it has fewer
+effects. Dispatch still exposes the requirement declared by the selected
+base/interface contract.
 
 Native instance methods publish the boolean `isReadonlyReceiver` metadata field.
 `ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER` is the explicit descriptor flag;
-the existing `READONLY_INLINE_VALUE_CONTEXT` flag also implies readonly for
-compatibility. Static native methods always normalize to receiver-none.
+runtime-only flags such as `READONLY_INLINE_VALUE_CONTEXT` do not imply a
+semantic receiver contract. Static native methods and constructors always
+normalize to receiver-none. The builtin `IArrayLike` and container Array/Map
+get-item descriptors explicitly carry the readonly receiver flag; corresponding
+set-item descriptors remain mutable.
 
 ## Receiver capability analysis
 
@@ -91,11 +101,37 @@ An explicit mutable ref uses an immediate loan and never enters this path. A
 reserved receiver allows shared reads but rejects another reservation, direct
 write, move and drop. Once active, it has the ordinary mutable-loan conflict
 matrix. Each two-phase region fact records its phase and unique activation
-instruction; malformed missing, duplicate or pre-origin activation is rejected.
+instruction. Structural validation rejects missing or duplicate activation;
+forward CFG dataflow rejects activation whose reservation is not available on
+every incoming path.
 
 `ZrParser_SemanticFlow_LoanIsActiveAt()` distinguishes a live reservation from
-an active mutable loan. Runtime bytecode does not maintain a borrow table; these
-checks remain pre-execution semantic facts.
+an active mutable loan using definite-active instruction facts rather than
+comparing globally assigned instruction IDs. Must-active facts answer public
+queries, may-active facts conservatively drive conflict checks at joins and loop
+headers, and available-reservation facts validate activation origins. Runtime
+bytecode does not maintain a borrow table; these checks remain pre-execution
+semantic facts.
+
+## Compiler integration and Place identity
+
+The source compiler runs structural validation and semantic-flow analysis over
+its pre-Semantic-IR before publishing executable output. M4 builds an
+execution-order entry/exit CFG for the call-scoped sidecar; later milestones may
+replace it with full statement CFG lowering without changing the loan APIs.
+Compiler state records every generated receiver LoanId, so the publication gate
+promotes conflicts involving either immediate shared or two-phase mutable
+receiver loans without promoting unrelated legacy sidecar diagnostics.
+
+Receiver loan identity is independent of ABI staging slots. Direct local roots
+use canonical local Places, and each bound field in a member chain emits a field
+projection keyed by the resolved member identity. Thus
+`holder.buffer.push(holder.buffer.mutate())` aliases the same projected Place and
+is rejected, while executable argument/receiver staging remains unchanged. The
+legal `buffer.push(buffer.read())` path is compiled and executed in acceptance
+tests. A readonly outer call such as `buffer.observe(buffer.mutate())` is also
+rejected because its shared receiver loan remains live during argument
+evaluation.
 
 ## Semantic identity boundary
 
@@ -107,10 +143,11 @@ target from the member name.
 
 M4 preserves `receiverEffect` on source and imported members and keeps the
 existing `SZrSemanticReferenceFact` identity contract (`symbolId`,
-`declarationRange`, resolved state) as the required publication shape. Publishing
-the resolved receiver-call target into that fact/query surface is a later
-consumer-integration boundary; until it is present, LSP must report unknown or
-fall back conservatively rather than guessing by name.
+`declarationRange`, resolved state) as the required publication shape.
+Publishing the resolved receiver-call target into that canonical fact/query
+surface is a later M6 consumer-integration boundary. Until it is present, LSP
+must report unknown or fall back conservatively rather than guessing by member
+name.
 
 ## Milestone boundary
 

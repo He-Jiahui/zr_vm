@@ -57,6 +57,20 @@ TZrLoanId compiler_semantic_ir_begin_receiver_call(
         TZrUInt32 receiverSlot,
         EZrCanonicalReceiverEffect receiverEffect,
         SZrFileRange sourceRange);
+TZrPlaceId compiler_semantic_ir_place_for_slot(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        SZrFileRange sourceRange);
+TZrPlaceId compiler_semantic_ir_project_field(
+        SZrCompilerState *cs,
+        TZrPlaceId parentPlaceId,
+        TZrSymbolId fieldIdentity,
+        SZrFileRange sourceRange);
+TZrLoanId compiler_semantic_ir_begin_receiver_call_place(
+        SZrCompilerState *cs,
+        TZrPlaceId receiverPlaceId,
+        EZrCanonicalReceiverEffect receiverEffect,
+        SZrFileRange sourceRange);
 TZrBool compiler_semantic_ir_activate_receiver_call(
         SZrCompilerState *cs,
         TZrLoanId loanId,
@@ -229,9 +243,11 @@ typedef struct SZrCompiledMemberInfo {
     TZrUInt32 interfaceContractSlot;
     TZrUInt32 propertyIdentity;
     TZrUInt32 accessorRole;
-    TZrUInt32 receiverEffect;
 } SZrCompiledMemberInfo;
 #pragma pack(pop)
+
+typedef char ZrCompilerCompiledMemberInfoV34LayoutMustRemainStable[
+        sizeof(SZrCompiledMemberInfo) == 31U * sizeof(TZrUInt32) ? 1 : -1];
 
 EZrOwnershipQualifier get_member_receiver_qualifier(SZrAstNode *node) ;
 

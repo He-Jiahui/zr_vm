@@ -79,7 +79,6 @@ typedef struct SZrCompiledMemberInfoView {
     TZrUInt32 interfaceContractSlot;
     TZrUInt32 propertyIdentity;
     TZrUInt32 accessorRole;
-    TZrUInt32 receiverEffect;
 } SZrCompiledMemberInfoView;
 #pragma pack(pop)
 

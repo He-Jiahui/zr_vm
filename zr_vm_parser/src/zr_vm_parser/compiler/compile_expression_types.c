@@ -2269,6 +2269,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
     TZrUInt32 pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
     TZrUInt32 pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
     TZrUInt32 pendingReceiverSourceSlot = ZR_PARSER_SLOT_NONE;
+    TZrPlaceId currentSemanticPlace = ZR_PLACE_ID_INVALID;
+    TZrPlaceId pendingReceiverSemanticPlace = ZR_PLACE_ID_INVALID;
     TZrUInt32 pendingDirectMemberCallMemberEntryIndex = ZR_PARSER_MEMBER_ID_NONE;
     TZrUInt32 pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
     SZrString *pendingCallResultTypeName = ZR_NULL;
@@ -2286,6 +2288,14 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
     }
 
     currentSlot = *ioCurrentSlot;
+    {
+        TZrUInt32 rootLocalSlot =
+                primary_member_chain_direct_local_slot(cs, propertyNode);
+        if (rootLocalSlot != ZR_PARSER_SLOT_NONE) {
+            currentSemanticPlace = compiler_semantic_ir_place_for_slot(
+                    cs, rootLocalSlot, propertyNode->location);
+        }
+    }
     for (TZrSize i = memberStartIndex; i < members->count; i++) {
         SZrAstNode *member = members->nodes[i];
         if (member == ZR_NULL) {
@@ -2311,6 +2321,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             pendingDirectMemberCallMemberEntryIndex = ZR_PARSER_MEMBER_ID_NONE;
             pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
             pendingReceiverSourceSlot = ZR_PARSER_SLOT_NONE;
+            pendingReceiverSemanticPlace = ZR_PLACE_ID_INVALID;
             pendingReceiverRequiresBinding = ZR_FALSE;
             pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
 
@@ -2452,6 +2463,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     }
                     pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
                     pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
+                    currentSemanticPlace = ZR_PLACE_ID_INVALID;
                     rootTypeName = getterAccessor->returnTypeName;
                     rootIsTypeReference = getterAccessor->isStatic &&
                                           rootTypeName != ZR_NULL &&
@@ -2487,18 +2499,31 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
 
                     if (nextIsFunctionCall && bindReceiverForCall) {
                         pendingReceiverSourceSlot = currentSlot;
+                        pendingReceiverSemanticPlace = currentSemanticPlace;
                         pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
 
                         pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
                         if (memberUsesSuperLookup) {
                             pendingReceiverSourceSlot = superReceiverSlot;
+                            pendingReceiverSemanticPlace =
+                                    compiler_semantic_ir_place_for_slot(
+                                            cs,
+                                            superReceiverSlot,
+                                            member->location);
                         } else if (typeMember != ZR_NULL &&
-                            typeMember->memberType == ZR_AST_STRUCT_METHOD &&
-                            i == memberStartIndex) {
+                                   i == memberStartIndex) {
                             TZrUInt32 directLocalSlot = primary_member_chain_direct_local_slot(cs, propertyNode);
                             if (directLocalSlot != ZR_PARSER_SLOT_NONE) {
-                                pendingReceiverSourceSlot = directLocalSlot;
-                                pendingReceiverWritebackSlot = directLocalSlot;
+                                pendingReceiverSemanticPlace =
+                                        compiler_semantic_ir_place_for_slot(
+                                                cs,
+                                                directLocalSlot,
+                                                member->location);
+                                if (typeMember->memberType ==
+                                    ZR_AST_STRUCT_METHOD) {
+                                    pendingReceiverSourceSlot = directLocalSlot;
+                                    pendingReceiverWritebackSlot = directLocalSlot;
+                                }
                             }
                         }
                         pendingReceiverRequiresBinding = pendingReceiverSourceSlot != ZR_PARSER_SLOT_NONE;
@@ -2506,6 +2531,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
                         pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
                         pendingReceiverSourceSlot = ZR_PARSER_SLOT_NONE;
+                        pendingReceiverSemanticPlace = ZR_PLACE_ID_INVALID;
                         pendingReceiverRequiresBinding = ZR_FALSE;
                     }
 
@@ -2549,6 +2575,15 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                         "Failed to register member access symbol",
                                                         member->location);
                                 return;
+                            }
+                            if (canEmitMemberSlot && !isStaticMember &&
+                                currentSemanticPlace != ZR_PLACE_ID_INVALID) {
+                                currentSemanticPlace =
+                                        compiler_semantic_ir_project_field(
+                                                cs,
+                                                currentSemanticPlace,
+                                                (TZrSymbolId)memberId + 1U,
+                                                member->location);
                             }
 
                             memberEntryBoundAtCompileTime =
@@ -2806,11 +2841,18 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
                 activeCallMemberInfo->receiverEffect !=
                         ZR_CANONICAL_RECEIVER_NONE) {
-                activeReceiverLoanId = compiler_semantic_ir_begin_receiver_call(
-                        cs,
-                        pendingReceiverSlot,
-                        activeCallMemberInfo->receiverEffect,
-                        member->location);
+                activeReceiverLoanId =
+                        pendingReceiverSemanticPlace != ZR_PLACE_ID_INVALID
+                                ? compiler_semantic_ir_begin_receiver_call_place(
+                                          cs,
+                                          pendingReceiverSemanticPlace,
+                                          activeCallMemberInfo->receiverEffect,
+                                          member->location)
+                                : compiler_semantic_ir_begin_receiver_call(
+                                          cs,
+                                          pendingReceiverSlot,
+                                          activeCallMemberInfo->receiverEffect,
+                                          member->location);
                 if (activeReceiverLoanId == ZR_SEMANTIC_LOAN_ID_INVALID) {
                     ZrParser_Compiler_Error(
                             cs,
@@ -3093,6 +3135,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
             pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
             pendingReceiverSourceSlot = ZR_PARSER_SLOT_NONE;
+            pendingReceiverSemanticPlace = ZR_PLACE_ID_INVALID;
+            currentSemanticPlace = ZR_PLACE_ID_INVALID;
             pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
             pendingReceiverRequiresBinding = ZR_FALSE;
             pendingDirectMemberCallIsStructConstructor = ZR_FALSE;

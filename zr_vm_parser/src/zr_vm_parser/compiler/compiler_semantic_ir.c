@@ -27,6 +27,26 @@ static SZrCompilerSemanticIrSlot *compiler_semantic_ir_find_slot(
     return ZR_NULL;
 }
 
+static TZrBool compiler_semantic_ir_is_receiver_loan(
+        const SZrCompilerState *cs,
+        TZrLoanId loanId) {
+    if (cs == ZR_NULL || loanId == ZR_SEMANTIC_LOAN_ID_INVALID ||
+        !cs->preSemanticIrReceiverLoanIds.isValid) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0U;
+         index < cs->preSemanticIrReceiverLoanIds.length;
+         index++) {
+        const TZrLoanId *receiverLoanId =
+                (const TZrLoanId *)ZrCore_Array_Get(
+                        (SZrArray *)&cs->preSemanticIrReceiverLoanIds, index);
+        if (receiverLoanId != ZR_NULL && *receiverLoanId == loanId) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool compiler_semantic_ir_emit(
         SZrCompilerState *cs,
         const SZrSemanticIrInstructionSpec *spec) {
@@ -166,25 +186,25 @@ static SZrCompilerSemanticIrSlot *compiler_semantic_ir_materialize_slot(
             cs, stackSlot, sourceRange);
 }
 
-TZrLoanId compiler_semantic_ir_begin_receiver_call(
+static TZrLoanId compiler_semantic_ir_begin_receiver_call_internal(
         SZrCompilerState *cs,
-        TZrUInt32 receiverSlot,
+        TZrPlaceId receiverPlaceId,
         EZrCanonicalReceiverEffect receiverEffect,
         SZrFileRange sourceRange) {
-    SZrCompilerSemanticIrSlot *slot;
+    const SZrParserPlace *receiverPlace;
     SZrSemanticIrInstructionSpec spec;
     EZrSemanticLoanAccess access;
     EZrSemanticLoanPhase phase;
     TZrValueId borrowValueId;
     TZrLoanId loanId;
 
-    if (cs == ZR_NULL || receiverSlot == ZR_PARSER_SLOT_NONE ||
+    if (cs == ZR_NULL || receiverPlaceId == ZR_PLACE_ID_INVALID ||
         receiverEffect == ZR_CANONICAL_RECEIVER_NONE) {
         return ZR_SEMANTIC_LOAN_ID_INVALID;
     }
-    slot = compiler_semantic_ir_materialize_slot(
-            cs, receiverSlot, sourceRange);
-    if (slot == ZR_NULL) {
+    receiverPlace = ZrParser_PlaceGraph_Get(
+            &cs->preSemanticIr.places, receiverPlaceId);
+    if (receiverPlace == ZR_NULL) {
         return ZR_SEMANTIC_LOAN_ID_INVALID;
     }
     access = receiverEffect == ZR_CANONICAL_RECEIVER_READONLY
@@ -194,13 +214,13 @@ TZrLoanId compiler_semantic_ir_begin_receiver_call(
                     ? ZR_SEMANTIC_LOAN_TWO_PHASE
                     : ZR_SEMANTIC_LOAN_IMMEDIATE;
     borrowValueId = ZrParser_SemanticIr_AddValue(
-            &cs->preSemanticIr, slot->typeId, sourceRange);
+            &cs->preSemanticIr, receiverPlace->typeId, sourceRange);
     if (borrowValueId == ZR_VALUE_ID_INVALID) {
         return ZR_SEMANTIC_LOAN_ID_INVALID;
     }
     loanId = ZrParser_SemanticIr_AddLoanEx(
             &cs->preSemanticIr,
-            slot->placeId,
+            receiverPlaceId,
             access,
             phase,
             1U,
@@ -214,8 +234,8 @@ TZrLoanId compiler_semantic_ir_begin_receiver_call(
     spec.opcode = phase == ZR_SEMANTIC_LOAN_TWO_PHASE
                           ? ZR_SEMANTIC_IR_RESERVE_BORROW_MUT
                           : ZR_SEMANTIC_IR_BORROW_SHARED;
-    spec.typeId = slot->typeId;
-    spec.placeId = slot->placeId;
+    spec.typeId = receiverPlace->typeId;
+    spec.placeId = receiverPlaceId;
     spec.resultValueId = borrowValueId;
     spec.loanId = loanId;
     spec.regionId = 1U;
@@ -224,7 +244,79 @@ TZrLoanId compiler_semantic_ir_begin_receiver_call(
     if (!compiler_semantic_ir_emit(cs, &spec)) {
         return ZR_SEMANTIC_LOAN_ID_INVALID;
     }
+    ZrCore_Array_Push(
+            cs->state, &cs->preSemanticIrReceiverLoanIds, &loanId);
     return loanId;
+}
+
+TZrPlaceId compiler_semantic_ir_place_for_slot(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        SZrFileRange sourceRange) {
+    SZrCompilerSemanticIrSlot *slot;
+
+    if (cs == ZR_NULL || stackSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_PLACE_ID_INVALID;
+    }
+    slot = compiler_semantic_ir_materialize_slot(cs, stackSlot, sourceRange);
+    return slot != ZR_NULL ? slot->placeId : ZR_PLACE_ID_INVALID;
+}
+
+TZrPlaceId compiler_semantic_ir_project_field(
+        SZrCompilerState *cs,
+        TZrPlaceId parentPlaceId,
+        TZrSymbolId fieldIdentity,
+        SZrFileRange sourceRange) {
+    SZrParserPlaceProjection projection;
+    SZrSemanticIrInstructionSpec spec;
+    TZrPlaceId placeId;
+
+    if (cs == ZR_NULL || parentPlaceId == ZR_PLACE_ID_INVALID ||
+        fieldIdentity == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_PLACE_ID_INVALID;
+    }
+    memset(&projection, 0, sizeof(projection));
+    projection.kind = ZR_PARSER_PLACE_PROJECTION_FIELD;
+    projection.data.symbolId = fieldIdentity;
+    placeId = ZrParser_PlaceGraph_Project(
+            &cs->preSemanticIr.places,
+            parentPlaceId,
+            &projection,
+            ZR_SEMANTIC_ID_INVALID,
+            sourceRange);
+    if (placeId == ZR_PLACE_ID_INVALID) {
+        return placeId;
+    }
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_PLACE_PROJECT;
+    spec.placeId = placeId;
+    spec.symbolId = fieldIdentity;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    if (!compiler_semantic_ir_emit(cs, &spec)) {
+        return ZR_PLACE_ID_INVALID;
+    }
+    return placeId;
+}
+
+TZrLoanId compiler_semantic_ir_begin_receiver_call_place(
+        SZrCompilerState *cs,
+        TZrPlaceId receiverPlaceId,
+        EZrCanonicalReceiverEffect receiverEffect,
+        SZrFileRange sourceRange) {
+    return compiler_semantic_ir_begin_receiver_call_internal(
+            cs, receiverPlaceId, receiverEffect, sourceRange);
+}
+
+TZrLoanId compiler_semantic_ir_begin_receiver_call(
+        SZrCompilerState *cs,
+        TZrUInt32 receiverSlot,
+        EZrCanonicalReceiverEffect receiverEffect,
+        SZrFileRange sourceRange) {
+    TZrPlaceId receiverPlaceId = compiler_semantic_ir_place_for_slot(
+            cs, receiverSlot, sourceRange);
+    return compiler_semantic_ir_begin_receiver_call_internal(
+            cs, receiverPlaceId, receiverEffect, sourceRange);
 }
 
 TZrBool compiler_semantic_ir_activate_receiver_call(
@@ -292,6 +384,11 @@ void compiler_semantic_ir_init(SZrCompilerState *cs) {
             &cs->preSemanticIrSlots,
             sizeof(SZrCompilerSemanticIrSlot),
             ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(
+            cs->state,
+            &cs->preSemanticIrReceiverLoanIds,
+            sizeof(TZrLoanId),
+            ZR_PARSER_INITIAL_CAPACITY_SMALL);
     cs->preSemanticIrInitialized = ZR_TRUE;
     cs->preSemanticIrValidated = ZR_FALSE;
     (void)ZrParser_SemanticIr_AddRegion(
@@ -316,6 +413,7 @@ void compiler_semantic_ir_free(SZrCompilerState *cs) {
     }
     ZrParser_SemanticIrFunction_Free(cs->state, &cs->preSemanticIr);
     ZrCore_Array_Free(cs->state, &cs->preSemanticIrSlots);
+    ZrCore_Array_Free(cs->state, &cs->preSemanticIrReceiverLoanIds);
     cs->preSemanticIrInitialized = ZR_FALSE;
     cs->preSemanticIrValidated = ZR_FALSE;
 }
@@ -335,11 +433,104 @@ TZrBool ZrParser_Compiler_PreSemanticIrIsValidated(
 }
 
 TZrBool ZrParser_Compiler_ValidatePreSemanticIr(SZrCompilerState *cs) {
+    SZrSemanticFlowResult flowResult;
+    TZrUInt32 entryBlock;
+    TZrUInt32 exitBlock;
+    TZrBool analyzed;
+    TZrBool hasReceiverLoanConflict = ZR_FALSE;
+
     if (cs == ZR_NULL || !cs->preSemanticIrInitialized) {
         return ZR_FALSE;
     }
+    cs->preSemanticIrValidated = ZR_FALSE;
+    if (!ZrParser_SemanticIr_Validate(&cs->preSemanticIr)) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_Cfg_Free(cs->state, &cs->preSemanticIr.cfg);
+    ZrParser_Cfg_Init(cs->state, &cs->preSemanticIr.cfg);
+    entryBlock = ZrParser_Cfg_AppendBlock(
+            cs->state,
+            &cs->preSemanticIr.cfg,
+            ZR_PARSER_CFG_BLOCK_ENTRY,
+            ZR_NULL);
+    exitBlock = ZrParser_Cfg_AppendBlock(
+            cs->state,
+            &cs->preSemanticIr.cfg,
+            ZR_PARSER_CFG_BLOCK_EXIT,
+            ZR_NULL);
+    if (entryBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        exitBlock == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+        return ZR_FALSE;
+    }
+    cs->preSemanticIr.cfg.entryBlockId = entryBlock;
+    cs->preSemanticIr.cfg.exitBlockId = exitBlock;
+    if (!ZrParser_Cfg_Connect(
+                &cs->preSemanticIr.cfg,
+                entryBlock,
+                exitBlock,
+                ZR_PARSER_CFG_EDGE_RETURN,
+                ZR_NULL) ||
+        !ZrParser_SemanticIr_BindBlockRange(
+                &cs->preSemanticIr,
+                &cs->preSemanticIr.cfg,
+                entryBlock,
+                0U,
+                (TZrUInt32)cs->preSemanticIr.instructions.length,
+                ZR_PARSER_CFG_TERMINATOR_RETURN) ||
+        !ZrParser_SemanticIr_BindBlockRange(
+                &cs->preSemanticIr,
+                &cs->preSemanticIr.cfg,
+                exitBlock,
+                (TZrUInt32)cs->preSemanticIr.instructions.length,
+                0U,
+                ZR_PARSER_CFG_TERMINATOR_EXIT)) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_SemanticFlowResult_Init(cs->state, &flowResult);
+    analyzed = ZrParser_SemanticFlow_Analyze(
+            cs->state,
+            &cs->preSemanticIr,
+            &cs->preSemanticIr.cfg,
+            &flowResult);
+    if (analyzed) {
+        for (TZrSize index = 0U;
+             index < flowResult.diagnostics.length;
+             index++) {
+            const SZrSemanticFlowDiagnostic *diagnostic =
+                    (const SZrSemanticFlowDiagnostic *)ZrCore_Array_Get(
+                            &flowResult.diagnostics, index);
+            const SZrSemanticIrInstruction *instruction;
+
+            if (diagnostic == ZR_NULL ||
+                diagnostic->kind != ZR_SEMANTIC_FLOW_LOAN_CONFLICT) {
+                continue;
+            }
+            instruction = diagnostic->instructionId ==
+                                  ZR_SEMANTIC_INSTRUCTION_ID_INVALID
+                                  ? ZR_NULL
+                                  : ZrParser_SemanticIr_InstructionAt(
+                                            &cs->preSemanticIr,
+                                            (TZrSize)diagnostic->instructionId - 1U);
+            if (!compiler_semantic_ir_is_receiver_loan(
+                        cs, diagnostic->relatedLoanId) &&
+                (instruction == ZR_NULL ||
+                 !compiler_semantic_ir_is_receiver_loan(
+                         cs, instruction->loanId))) {
+                continue;
+            }
+            hasReceiverLoanConflict = ZR_TRUE;
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Receiver borrow conflicts during argument evaluation",
+                    diagnostic->sourceRange);
+            break;
+        }
+    }
     cs->preSemanticIrValidated =
-            ZrParser_SemanticIr_Validate(&cs->preSemanticIr);
+            (TZrBool)(analyzed && !hasReceiverLoanConflict);
+    ZrParser_SemanticFlowResult_Free(cs->state, &flowResult);
     return cs->preSemanticIrValidated;
 }
 

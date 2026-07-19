@@ -1,6 +1,7 @@
 #include "reference_loan_nll_test_support.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser.h"
@@ -9,24 +10,14 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_core/constant_reference.h"
 #include "zr_vm_library/native_binding.h"
+#include "zr_vm_library/native_registry.h"
 
-SZrObject *native_metadata_make_method_entry(
+typedef struct ZrLibRegisteredModuleRecord ZrLibRegisteredModuleRecord;
+
+ZR_LIBRARY_API SZrObject *native_metadata_make_module_info(
         SZrState *state,
-        const ZrLibMethodDescriptor *descriptor);
-
-TZrLoanId compiler_semantic_ir_begin_receiver_call(
-        SZrCompilerState *cs,
-        TZrUInt32 receiverSlot,
-        EZrCanonicalReceiverEffect receiverEffect,
-        SZrFileRange sourceRange);
-TZrBool compiler_semantic_ir_activate_receiver_call(
-        SZrCompilerState *cs,
-        TZrLoanId loanId,
-        SZrFileRange sourceRange);
-TZrBool compiler_semantic_ir_end_receiver_call(
-        SZrCompilerState *cs,
-        TZrLoanId loanId,
-        SZrFileRange sourceRange);
+        const ZrLibModuleDescriptor *descriptor,
+        const ZrLibRegisteredModuleRecord *record);
 
 typedef struct SParserErrorCapture {
     TZrUInt32 count;
@@ -248,40 +239,193 @@ static void test_receiver_capability_matrix_and_owner_auto_deref(void) {
 }
 
 static void test_native_readonly_receiver_contract_is_serialized(void) {
-    const ZrLibMethodDescriptor readonlyMethod = {
-            .name = "read",
-            .minArgumentCount = 0,
-            .maxArgumentCount = 0,
-            .returnTypeName = "int",
-            .isStatic = ZR_FALSE,
-            .dispatchFlags = ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER,
+    const ZrLibMethodDescriptor methods[] = {
+            {
+                    .name = "read",
+                    .minArgumentCount = 0,
+                    .maxArgumentCount = 0,
+                    .returnTypeName = "int",
+                    .isStatic = ZR_FALSE,
+                    .dispatchFlags =
+                            ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER,
+            },
+            {
+                    .name = "write",
+                    .minArgumentCount = 0,
+                    .maxArgumentCount = 0,
+                    .returnTypeName = "void",
+                    .isStatic = ZR_FALSE,
+            },
+            {
+                    .name = "inlineRead",
+                    .minArgumentCount = 0,
+                    .maxArgumentCount = 0,
+                    .returnTypeName = "int",
+                    .isStatic = ZR_FALSE,
+                    .dispatchFlags =
+                            ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT,
+            },
     };
-    const ZrLibMethodDescriptor writableMethod = {
-            .name = "write",
-            .minArgumentCount = 0,
-            .maxArgumentCount = 0,
-            .returnTypeName = "void",
-            .isStatic = ZR_FALSE,
+    const ZrLibMetaMethodDescriptor metaMethods[] = {
+            {
+                    .metaType = ZR_META_GET_ITEM,
+                    .minArgumentCount = 1,
+                    .maxArgumentCount = 1,
+                    .returnTypeName = "int",
+                    .dispatchFlags =
+                            ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER,
+            },
+            {
+                    .metaType = ZR_META_SET_ITEM,
+                    .minArgumentCount = 2,
+                    .maxArgumentCount = 2,
+                    .returnTypeName = "void",
+                    .dispatchFlags =
+                            ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT,
+            },
     };
-    SZrObject *readonlyEntry =
-            native_metadata_make_method_entry(g_state, &readonlyMethod);
-    SZrObject *writableEntry =
-            native_metadata_make_method_entry(g_state, &writableMethod);
+    const ZrLibTypeDescriptor typeDescriptor = {
+            .name = "NativeReceiverProbe",
+            .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+            .methods = methods,
+            .methodCount = sizeof(methods) / sizeof(methods[0]),
+            .metaMethods = metaMethods,
+            .metaMethodCount = sizeof(metaMethods) / sizeof(metaMethods[0]),
+    };
+    const ZrLibModuleDescriptor moduleDescriptor = {
+            .moduleName = "test.receiver",
+            .types = &typeDescriptor,
+            .typeCount = 1U,
+    };
+    SZrObject *moduleInfo = native_metadata_make_module_info(
+            g_state, &moduleDescriptor, ZR_NULL);
+    const SZrTypeValue *typesValue;
+    const SZrTypeValue *typeValue;
+    const SZrTypeValue *methodsValue;
+    const SZrTypeValue *readonlyEntryValue;
+    const SZrTypeValue *writableEntryValue;
+    const SZrTypeValue *inlineEntryValue;
+    const SZrTypeValue *metaMethodsValue;
+    const SZrTypeValue *metaReadonlyEntryValue;
+    const SZrTypeValue *metaWritableEntryValue;
+    SZrObject *typesArray;
+    SZrObject *typeEntry;
+    SZrObject *methodsArray;
+    SZrObject *readonlyEntry;
+    SZrObject *writableEntry;
+    SZrObject *inlineEntry;
+    SZrObject *metaMethodsArray;
+    SZrObject *metaReadonlyEntry;
+    SZrObject *metaWritableEntry;
     const SZrTypeValue *readonlyEffect;
     const SZrTypeValue *writableEffect;
+    const SZrTypeValue *inlineEffect;
+    const SZrTypeValue *metaReadonlyEffect;
+    const SZrTypeValue *metaWritableEffect;
 
+    TEST_ASSERT_NOT_NULL(moduleInfo);
+    typesValue = ZrLib_Object_GetFieldCString(g_state, moduleInfo, "types");
+    TEST_ASSERT_NOT_NULL(typesValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, typesValue->type);
+    typesArray = ZR_CAST_OBJECT(g_state, typesValue->value.object);
+    TEST_ASSERT_NOT_NULL(typesArray);
+    typeValue = ZrLib_Array_Get(g_state, typesArray, 0U);
+    TEST_ASSERT_NOT_NULL(typeValue);
+    typeEntry = ZR_CAST_OBJECT(g_state, typeValue->value.object);
+    TEST_ASSERT_NOT_NULL(typeEntry);
+    methodsValue = ZrLib_Object_GetFieldCString(g_state, typeEntry, "methods");
+    TEST_ASSERT_NOT_NULL(methodsValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, methodsValue->type);
+    methodsArray = ZR_CAST_OBJECT(g_state, methodsValue->value.object);
+    TEST_ASSERT_NOT_NULL(methodsArray);
+    readonlyEntryValue = ZrLib_Array_Get(g_state, methodsArray, 0U);
+    writableEntryValue = ZrLib_Array_Get(g_state, methodsArray, 1U);
+    inlineEntryValue = ZrLib_Array_Get(g_state, methodsArray, 2U);
+    TEST_ASSERT_NOT_NULL(readonlyEntryValue);
+    TEST_ASSERT_NOT_NULL(writableEntryValue);
+    TEST_ASSERT_NOT_NULL(inlineEntryValue);
+    readonlyEntry = ZR_CAST_OBJECT(g_state, readonlyEntryValue->value.object);
+    writableEntry = ZR_CAST_OBJECT(g_state, writableEntryValue->value.object);
+    inlineEntry = ZR_CAST_OBJECT(g_state, inlineEntryValue->value.object);
     TEST_ASSERT_NOT_NULL(readonlyEntry);
     TEST_ASSERT_NOT_NULL(writableEntry);
+    TEST_ASSERT_NOT_NULL(inlineEntry);
     readonlyEffect = ZrLib_Object_GetFieldCString(
             g_state, readonlyEntry, "isReadonlyReceiver");
     writableEffect = ZrLib_Object_GetFieldCString(
             g_state, writableEntry, "isReadonlyReceiver");
+    inlineEffect = ZrLib_Object_GetFieldCString(
+            g_state, inlineEntry, "isReadonlyReceiver");
     TEST_ASSERT_NOT_NULL(readonlyEffect);
     TEST_ASSERT_NOT_NULL(writableEffect);
+    TEST_ASSERT_NOT_NULL(inlineEffect);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, readonlyEffect->type);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, writableEffect->type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, inlineEffect->type);
     TEST_ASSERT_TRUE(readonlyEffect->value.nativeObject.nativeBool);
     TEST_ASSERT_FALSE(writableEffect->value.nativeObject.nativeBool);
+    TEST_ASSERT_FALSE(inlineEffect->value.nativeObject.nativeBool);
+
+    metaMethodsValue = ZrLib_Object_GetFieldCString(
+            g_state, typeEntry, "metaMethods");
+    TEST_ASSERT_NOT_NULL(metaMethodsValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, metaMethodsValue->type);
+    metaMethodsArray = ZR_CAST_OBJECT(g_state, metaMethodsValue->value.object);
+    TEST_ASSERT_NOT_NULL(metaMethodsArray);
+    metaReadonlyEntryValue = ZrLib_Array_Get(g_state, metaMethodsArray, 0U);
+    metaWritableEntryValue = ZrLib_Array_Get(g_state, metaMethodsArray, 1U);
+    TEST_ASSERT_NOT_NULL(metaReadonlyEntryValue);
+    TEST_ASSERT_NOT_NULL(metaWritableEntryValue);
+    metaReadonlyEntry = ZR_CAST_OBJECT(
+            g_state, metaReadonlyEntryValue->value.object);
+    metaWritableEntry = ZR_CAST_OBJECT(
+            g_state, metaWritableEntryValue->value.object);
+    TEST_ASSERT_NOT_NULL(metaReadonlyEntry);
+    TEST_ASSERT_NOT_NULL(metaWritableEntry);
+    metaReadonlyEffect = ZrLib_Object_GetFieldCString(
+            g_state, metaReadonlyEntry, "isReadonlyReceiver");
+    metaWritableEffect = ZrLib_Object_GetFieldCString(
+            g_state, metaWritableEntry, "isReadonlyReceiver");
+    TEST_ASSERT_NOT_NULL(metaReadonlyEffect);
+    TEST_ASSERT_NOT_NULL(metaWritableEffect);
+    TEST_ASSERT_TRUE(metaReadonlyEffect->value.nativeObject.nativeBool);
+    TEST_ASSERT_FALSE(metaWritableEffect->value.nativeObject.nativeBool);
+}
+
+static void test_builtin_array_like_descriptor_has_receiver_effect_boundary(void) {
+    const ZrLibModuleDescriptor *module;
+    const ZrLibTypeDescriptor *arrayLike = ZR_NULL;
+    const ZrLibMetaMethodDescriptor *getItem = ZR_NULL;
+    const ZrLibMetaMethodDescriptor *setItem = ZR_NULL;
+
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_Attach(g_state->global));
+    module = ZrLibrary_NativeRegistry_FindModule(g_state->global, "zr.builtin");
+    TEST_ASSERT_NOT_NULL(module);
+    for (TZrSize typeIndex = 0; typeIndex < module->typeCount; typeIndex++) {
+        if (strcmp(module->types[typeIndex].name, "IArrayLike") == 0) {
+            arrayLike = &module->types[typeIndex];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(arrayLike);
+    for (TZrSize metaIndex = 0; metaIndex < arrayLike->metaMethodCount;
+         metaIndex++) {
+        const ZrLibMetaMethodDescriptor *metaMethod =
+                &arrayLike->metaMethods[metaIndex];
+        if (metaMethod->metaType == ZR_META_GET_ITEM) {
+            getItem = metaMethod;
+        } else if (metaMethod->metaType == ZR_META_SET_ITEM) {
+            setItem = metaMethod;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(getItem);
+    TEST_ASSERT_NOT_NULL(setItem);
+    TEST_ASSERT_BITS_HIGH(
+            ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER,
+            getItem->dispatchFlags);
+    TEST_ASSERT_BITS_LOW(
+            ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER,
+            setItem->dispatchFlags);
 }
 
 static TZrLoanId add_two_phase_loan(
@@ -385,6 +529,136 @@ static void test_reserved_receiver_rejects_direct_write_and_second_reserve(void)
     fixture_free(&fixture);
 }
 
+static void test_branch_activation_does_not_dominate_join(void) {
+    SLoanFixture fixture;
+    TZrPlaceId placeId;
+    TZrValueId receiverValue;
+    TZrLoanId receiverLoan;
+    TZrSemanticInstructionId joinRead;
+    TZrUInt32 entry;
+    TZrUInt32 header;
+    TZrUInt32 trueBlock;
+    TZrUInt32 falseBlock;
+    TZrUInt32 join;
+    TZrUInt32 exit;
+
+    fixture_init(&fixture);
+    placeId = add_place(&fixture, ZR_PARSER_PLACE_BASE_PARAMETER, 70U);
+    receiverValue = add_value(&fixture, 1);
+    receiverLoan = add_two_phase_loan(
+            &fixture, placeId, receiverValue, 1);
+    emit_instruction(
+            &fixture, ZR_SEMANTIC_IR_RESERVE_BORROW_MUT, placeId, 0U,
+            receiverValue, receiverLoan, 1);
+    emit_instruction(
+            &fixture, ZR_SEMANTIC_IR_ACTIVATE_LOAN, placeId, 0U,
+            0U, receiverLoan, 2);
+    joinRead = emit_instruction(
+            &fixture, ZR_SEMANTIC_IR_LOAD, placeId, 0U,
+            add_value(&fixture, 3), ZR_SEMANTIC_LOAN_ID_INVALID, 3);
+    emit_instruction(
+            &fixture, ZR_SEMANTIC_IR_END_LOAN, placeId, 0U,
+            0U, receiverLoan, 4);
+
+    entry = append_block(&fixture, ZR_PARSER_CFG_BLOCK_ENTRY);
+    header = append_block(&fixture, ZR_PARSER_CFG_BLOCK_STATEMENT);
+    trueBlock = append_block(&fixture, ZR_PARSER_CFG_BLOCK_STATEMENT);
+    falseBlock = append_block(&fixture, ZR_PARSER_CFG_BLOCK_STATEMENT);
+    join = append_block(&fixture, ZR_PARSER_CFG_BLOCK_JOIN);
+    exit = append_block(&fixture, ZR_PARSER_CFG_BLOCK_EXIT);
+    fixture.function.cfg.entryBlockId = entry;
+    fixture.function.cfg.exitBlockId = exit;
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            &fixture.function.cfg, entry, header,
+            ZR_PARSER_CFG_EDGE_NORMAL, ZR_NULL));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            &fixture.function.cfg, header, trueBlock,
+            ZR_PARSER_CFG_EDGE_TRUE_BRANCH, ZR_NULL));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            &fixture.function.cfg, header, falseBlock,
+            ZR_PARSER_CFG_EDGE_FALSE_BRANCH, ZR_NULL));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            &fixture.function.cfg, trueBlock, join,
+            ZR_PARSER_CFG_EDGE_NORMAL, ZR_NULL));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            &fixture.function.cfg, falseBlock, join,
+            ZR_PARSER_CFG_EDGE_NORMAL, ZR_NULL));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            &fixture.function.cfg, join, exit,
+            ZR_PARSER_CFG_EDGE_NORMAL, ZR_NULL));
+    bind_block(&fixture, entry, 0U, 1U, ZR_PARSER_CFG_TERMINATOR_NONE);
+    bind_block(&fixture, header, 1U, 0U, ZR_PARSER_CFG_TERMINATOR_BRANCH);
+    bind_block(&fixture, trueBlock, 1U, 1U, ZR_PARSER_CFG_TERMINATOR_NONE);
+    bind_block(&fixture, falseBlock, 2U, 0U, ZR_PARSER_CFG_TERMINATOR_NONE);
+    bind_block(&fixture, join, 2U, 2U, ZR_PARSER_CFG_TERMINATOR_NONE);
+    bind_block(&fixture, exit, 4U, 0U, ZR_PARSER_CFG_TERMINATOR_EXIT);
+    analyze(&fixture);
+
+    TEST_ASSERT_FALSE(ZrParser_SemanticFlow_LoanIsActiveAt(
+            &fixture.result, joinRead, receiverLoan, ZR_TRUE));
+    TEST_ASSERT_NOT_NULL(diagnostic_at_instruction(&fixture, joinRead));
+    fixture_free(&fixture);
+}
+
+static void test_loop_backedge_preserves_maybe_active_conflict(void) {
+    SLoanFixture fixture;
+    TZrPlaceId placeId;
+    TZrValueId receiverValue;
+    TZrLoanId receiverLoan;
+    TZrSemanticInstructionId headerRead;
+    TZrUInt32 entry;
+    TZrUInt32 header;
+    TZrUInt32 body;
+    TZrUInt32 exit;
+
+    fixture_init(&fixture);
+    placeId = add_place(&fixture, ZR_PARSER_PLACE_BASE_PARAMETER, 80U);
+    receiverValue = add_value(&fixture, 1);
+    receiverLoan = add_two_phase_loan(
+            &fixture, placeId, receiverValue, 1);
+    emit_instruction(
+            &fixture, ZR_SEMANTIC_IR_RESERVE_BORROW_MUT, placeId, 0U,
+            receiverValue, receiverLoan, 1);
+    headerRead = emit_instruction(
+            &fixture, ZR_SEMANTIC_IR_LOAD, placeId, 0U,
+            add_value(&fixture, 2), ZR_SEMANTIC_LOAN_ID_INVALID, 2);
+    emit_instruction(
+            &fixture, ZR_SEMANTIC_IR_ACTIVATE_LOAN, placeId, 0U,
+            0U, receiverLoan, 3);
+    emit_instruction(
+            &fixture, ZR_SEMANTIC_IR_END_LOAN, placeId, 0U,
+            0U, receiverLoan, 4);
+
+    entry = append_block(&fixture, ZR_PARSER_CFG_BLOCK_ENTRY);
+    header = append_block(&fixture, ZR_PARSER_CFG_BLOCK_STATEMENT);
+    body = append_block(&fixture, ZR_PARSER_CFG_BLOCK_STATEMENT);
+    exit = append_block(&fixture, ZR_PARSER_CFG_BLOCK_EXIT);
+    fixture.function.cfg.entryBlockId = entry;
+    fixture.function.cfg.exitBlockId = exit;
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            &fixture.function.cfg, entry, header,
+            ZR_PARSER_CFG_EDGE_NORMAL, ZR_NULL));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            &fixture.function.cfg, header, body,
+            ZR_PARSER_CFG_EDGE_TRUE_BRANCH, ZR_NULL));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            &fixture.function.cfg, header, exit,
+            ZR_PARSER_CFG_EDGE_FALSE_BRANCH, ZR_NULL));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            &fixture.function.cfg, body, header,
+            ZR_PARSER_CFG_EDGE_NORMAL, ZR_NULL));
+    bind_block(&fixture, entry, 0U, 1U, ZR_PARSER_CFG_TERMINATOR_NONE);
+    bind_block(&fixture, header, 1U, 1U, ZR_PARSER_CFG_TERMINATOR_BRANCH);
+    bind_block(&fixture, body, 2U, 1U, ZR_PARSER_CFG_TERMINATOR_NONE);
+    bind_block(&fixture, exit, 3U, 1U, ZR_PARSER_CFG_TERMINATOR_EXIT);
+    analyze(&fixture);
+
+    TEST_ASSERT_FALSE(ZrParser_SemanticFlow_LoanIsActiveAt(
+            &fixture.result, headerRead, receiverLoan, ZR_TRUE));
+    TEST_ASSERT_NOT_NULL(diagnostic_at_instruction(&fixture, headerRead));
+    fixture_free(&fixture);
+}
+
 static SZrFunction *compile_source(const TZrChar *source, const TZrChar *name) {
     SZrString *sourceName = ZrCore_String_CreateFromNative(
             g_state, (TZrNativeString)name);
@@ -411,6 +685,8 @@ static void test_readonly_view_calls_const_fn_in_source_pipeline(void) {
 
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_NOT_NULL(function->prototypeData);
+    TEST_ASSERT_EQUAL_UINT64(
+            31U * sizeof(TZrUInt32), sizeof(SZrCompiledMemberInfo));
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32(
             1U, *(const TZrUInt32 *)function->prototypeData);
     prototype = (const SZrCompiledPrototypeInfo *)(
@@ -420,12 +696,9 @@ static void test_readonly_view_calls_const_fn_in_source_pipeline(void) {
             prototype->inheritsCount * sizeof(TZrUInt32) +
             prototype->decoratorsCount * sizeof(TZrUInt32));
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32(3U, prototype->membersCount);
-    TEST_ASSERT_EQUAL_UINT32(
-            ZR_CANONICAL_RECEIVER_NONE, members[0].receiverEffect);
-    TEST_ASSERT_EQUAL_UINT32(
-            ZR_CANONICAL_RECEIVER_MUTABLE, members[1].receiverEffect);
-    TEST_ASSERT_EQUAL_UINT32(
-            ZR_CANONICAL_RECEIVER_READONLY, members[2].receiverEffect);
+    TEST_ASSERT_FALSE(members[0].isConst);
+    TEST_ASSERT_FALSE(members[1].isConst);
+    TEST_ASSERT_TRUE(members[2].isConst);
     ZrCore_Function_Free(g_state, function);
 }
 
@@ -481,38 +754,73 @@ static void test_readonly_interface_contract_rejects_writable_implementation(voi
     TEST_ASSERT_NULL(function);
 }
 
-static void test_compiler_receiver_call_records_pre_semir_phase_order(void) {
-    SZrCompilerState compiler;
-    TZrLoanId loanId;
-    const SZrSemanticIrFunction *function;
-    TZrSize count;
+static void test_compiler_two_phase_receiver_allows_readonly_argument_call(void) {
+    const TZrChar *source =
+            "class Buffer {\n"
+            "  pub var value: int;\n"
+            "  pub const fn read(): int { return this.value; }\n"
+            "  pub fn push(next: int): void { this.value = next; }\n"
+            "}\n"
+            "var buffer = new Buffer();\n"
+            "buffer.value = 1;\n"
+            "buffer.push(buffer.read());\n"
+            "return buffer.value;\n";
+    SZrFunction *function = compile_source(
+            source, "receiver_two_phase_argument_read.zr");
+    TZrInt64 result = 0;
 
-    ZrParser_CompilerState_Init(&compiler, g_state);
-    loanId = compiler_semantic_ir_begin_receiver_call(
-            &compiler,
-            7U,
-            ZR_CANONICAL_RECEIVER_MUTABLE,
-            test_range(1));
-    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_LOAN_ID_INVALID, loanId);
-    TEST_ASSERT_TRUE(compiler_semantic_ir_activate_receiver_call(
-            &compiler, loanId, test_range(2)));
-    TEST_ASSERT_TRUE(compiler_semantic_ir_end_receiver_call(
-            &compiler, loanId, test_range(3)));
-
-    function = ZrParser_Compiler_PreSemanticIr(&compiler);
     TEST_ASSERT_NOT_NULL(function);
-    count = function->instructions.length;
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(5U, (TZrUInt32)count);
-    TEST_ASSERT_EQUAL_INT(
-            ZR_SEMANTIC_IR_RESERVE_BORROW_MUT,
-            ZrParser_SemanticIr_InstructionAt(function, count - 3U)->opcode);
-    TEST_ASSERT_EQUAL_INT(
-            ZR_SEMANTIC_IR_ACTIVATE_LOAN,
-            ZrParser_SemanticIr_InstructionAt(function, count - 2U)->opcode);
-    TEST_ASSERT_EQUAL_INT(
-            ZR_SEMANTIC_IR_END_LOAN,
-            ZrParser_SemanticIr_InstructionAt(function, count - 1U)->opcode);
-    ZrParser_CompilerState_Free(&compiler);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_compiler_two_phase_receiver_rejects_writable_argument_call(void) {
+    const TZrChar *source =
+            "class Buffer {\n"
+            "  pub var value: int;\n"
+            "  pub fn mutate(): int { this.value = this.value + 1; return this.value; }\n"
+            "  pub fn push(next: int): void { this.value = next; }\n"
+            "}\n"
+            "var buffer = new Buffer();\n"
+            "buffer.push(buffer.mutate());\n";
+    SZrFunction *function = compile_source(
+            source, "receiver_two_phase_argument_write.zr");
+
+    TEST_ASSERT_NULL(function);
+}
+
+static void test_compiler_two_phase_receiver_rejects_projected_writable_argument(void) {
+    const TZrChar *source =
+            "class Buffer {\n"
+            "  pub var value: int;\n"
+            "  pub fn mutate(): int { this.value = this.value + 1; return this.value; }\n"
+            "  pub fn push(next: int): void { this.value = next; }\n"
+            "}\n"
+            "class Holder { pub var buffer: Buffer; }\n"
+            "var holder = new Holder();\n"
+            "holder.buffer = new Buffer();\n"
+            "holder.buffer.push(holder.buffer.mutate());\n";
+    SZrFunction *function = compile_source(
+            source, "receiver_two_phase_projected_argument_write.zr");
+
+    TEST_ASSERT_NULL(function);
+}
+
+static void test_compiler_readonly_receiver_rejects_writable_argument_call(void) {
+    const TZrChar *source =
+            "class Buffer {\n"
+            "  pub var value: int;\n"
+            "  pub fn mutate(): int { this.value = this.value + 1; return this.value; }\n"
+            "  pub const fn observe(next: int): int { return this.value + next; }\n"
+            "}\n"
+            "var buffer = new Buffer();\n"
+            "return buffer.observe(buffer.mutate());\n";
+    SZrFunction *function = compile_source(
+            source, "receiver_readonly_argument_write.zr");
+
+    TEST_ASSERT_NULL(function);
 }
 
 int main(void) {
@@ -522,13 +830,19 @@ int main(void) {
     RUN_TEST(test_top_level_const_fn_is_rejected);
     RUN_TEST(test_receiver_capability_matrix_and_owner_auto_deref);
     RUN_TEST(test_native_readonly_receiver_contract_is_serialized);
+    RUN_TEST(test_builtin_array_like_descriptor_has_receiver_effect_boundary);
     RUN_TEST(test_two_phase_receiver_reserve_read_activate);
     RUN_TEST(test_reserved_receiver_rejects_direct_write_and_second_reserve);
+    RUN_TEST(test_branch_activation_does_not_dominate_join);
+    RUN_TEST(test_loop_backedge_preserves_maybe_active_conflict);
     RUN_TEST(test_readonly_view_calls_const_fn_in_source_pipeline);
     RUN_TEST(test_const_fn_cannot_write_receiver_in_source_pipeline);
     RUN_TEST(test_readonly_view_cannot_call_writable_member);
     RUN_TEST(test_readonly_override_cannot_be_strengthened_to_writable);
     RUN_TEST(test_readonly_interface_contract_rejects_writable_implementation);
-    RUN_TEST(test_compiler_receiver_call_records_pre_semir_phase_order);
+    RUN_TEST(test_compiler_two_phase_receiver_allows_readonly_argument_call);
+    RUN_TEST(test_compiler_two_phase_receiver_rejects_writable_argument_call);
+    RUN_TEST(test_compiler_two_phase_receiver_rejects_projected_writable_argument);
+    RUN_TEST(test_compiler_readonly_receiver_rejects_writable_argument_call);
     return UNITY_END();
 }

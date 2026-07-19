@@ -164,16 +164,18 @@ static ESemanticLoanEffectiveState loan_effective_state(
         const SSemanticLoanAnalysis *analysis,
         const SZrSemanticIrInstruction *instruction,
         const SZrSemanticIrLoanFact *loan) {
+    const TZrBool *mayActive;
     if (loan->access == ZR_SEMANTIC_LOAN_SHARED) {
         return SEMANTIC_LOAN_STATE_SHARED;
     }
-    if (loan->phase == ZR_SEMANTIC_LOAN_TWO_PHASE &&
-        !ZrParser_SemanticFlow_LoanIsActiveAt(
-                analysis->result,
-                instruction->id,
-                loan->loanId,
-                ZR_TRUE)) {
-        return SEMANTIC_LOAN_STATE_RESERVED_MUTABLE;
+    if (loan->phase == ZR_SEMANTIC_LOAN_TWO_PHASE) {
+        mayActive = loan_conflict_row(
+                analysis->instructionMayActiveIn,
+                (TZrSize)instruction->id - 1U,
+                analysis->loanCount);
+        if (!mayActive[(TZrSize)loan->loanId - 1U]) {
+            return SEMANTIC_LOAN_STATE_RESERVED_MUTABLE;
+        }
     }
     return SEMANTIC_LOAN_STATE_ACTIVE_MUTABLE;
 }

@@ -283,7 +283,8 @@ static const ZrLibMethodDescriptor g_enumerator_methods[] = {
 
 static const ZrLibMetaMethodDescriptor g_array_like_meta_methods[] = {
         {ZR_META_GET_ITEM, 1, 1, ZR_NULL, "T", "Read an indexed element.",
-         g_array_like_get_item_parameters, ZR_ARRAY_COUNT(g_array_like_get_item_parameters), ZR_NULL, 0},
+         g_array_like_get_item_parameters, ZR_ARRAY_COUNT(g_array_like_get_item_parameters), ZR_NULL, 0,
+         ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER},
         {ZR_META_SET_ITEM, 2, 2, ZR_NULL, "T", "Write an indexed element.",
          g_array_like_set_item_parameters, ZR_ARRAY_COUNT(g_array_like_set_item_parameters), ZR_NULL, 0},
 };

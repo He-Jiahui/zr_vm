@@ -52,6 +52,16 @@ TZrBool semantic_loan_publish_liveness(SSemanticLoanAnalysis *analysis) {
                 &fact.liveOutLoanIds,
                 sizeof(TZrLoanId),
                 analysis->loanCount > 0U ? analysis->loanCount : 1U);
+        ZrCore_Array_Init(
+                analysis->state,
+                &fact.activeInLoanIds,
+                sizeof(TZrLoanId),
+                analysis->loanCount > 0U ? analysis->loanCount : 1U);
+        ZrCore_Array_Init(
+                analysis->state,
+                &fact.activeOutLoanIds,
+                sizeof(TZrLoanId),
+                analysis->loanCount > 0U ? analysis->loanCount : 1U);
         loan_append_ids(
                 analysis->state,
                 &fact.liveInLoanIds,
@@ -65,6 +75,22 @@ TZrBool semantic_loan_publish_liveness(SSemanticLoanAnalysis *analysis) {
                 &fact.liveOutLoanIds,
                 loan_fact_row(
                         analysis->instructionLiveOut,
+                        index,
+                        analysis->loanCount),
+                analysis->loanCount);
+        loan_append_ids(
+                analysis->state,
+                &fact.activeInLoanIds,
+                loan_fact_row(
+                        analysis->instructionActiveIn,
+                        index,
+                        analysis->loanCount),
+                analysis->loanCount);
+        loan_append_ids(
+                analysis->state,
+                &fact.activeOutLoanIds,
+                loan_fact_row(
+                        analysis->instructionActiveOut,
                         index,
                         analysis->loanCount),
                 analysis->loanCount);
@@ -145,6 +171,8 @@ TZrBool ZrParser_SemanticFlow_LoanIsActiveAt(
         TZrLoanId loanId,
         TZrBool beforeInstruction) {
     const SZrSemanticLoanRegionFact *region;
+    const SZrSemanticInstructionLoanLiveness *fact;
+    const SZrArray *loanIds;
 
     if (!ZrParser_SemanticFlow_LoanIsLiveAt(
                 result, instructionId, loanId, beforeInstruction)) {
@@ -154,13 +182,19 @@ TZrBool ZrParser_SemanticFlow_LoanIsActiveAt(
     if (region == ZR_NULL || region->phase == ZR_SEMANTIC_LOAN_IMMEDIATE) {
         return region != ZR_NULL;
     }
-    if (region->activationInstructionId ==
-        ZR_SEMANTIC_INSTRUCTION_ID_INVALID) {
+    if (instructionId > result->loanLiveness.length) {
         return ZR_FALSE;
     }
-    return beforeInstruction
-                   ? instructionId > region->activationInstructionId
-                   : instructionId >= region->activationInstructionId;
+    fact = (const SZrSemanticInstructionLoanLiveness *)ZrCore_Array_Get(
+            (SZrArray *)&result->loanLiveness,
+            (TZrSize)instructionId - 1U);
+    if (fact == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    loanIds = beforeInstruction
+                      ? &fact->activeInLoanIds
+                      : &fact->activeOutLoanIds;
+    return loan_id_array_contains(loanIds, loanId);
 }
 
 const SZrSemanticLoanRegionFact *ZrParser_SemanticFlow_LoanRegion(

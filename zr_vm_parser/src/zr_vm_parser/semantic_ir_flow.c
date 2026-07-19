@@ -301,6 +301,8 @@ static void semantic_flow_result_reset(SZrState *state,
             if (fact != ZR_NULL) {
                 ZrCore_Array_Free(state, &fact->liveInLoanIds);
                 ZrCore_Array_Free(state, &fact->liveOutLoanIds);
+                ZrCore_Array_Free(state, &fact->activeInLoanIds);
+                ZrCore_Array_Free(state, &fact->activeOutLoanIds);
             }
         }
         result->loanLiveness.length = 0U;

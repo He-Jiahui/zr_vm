@@ -22,6 +22,10 @@ typedef struct SSemanticLoanAnalysis {
     TZrBool *instructionUses;
     TZrBool *instructionLiveIn;
     TZrBool *instructionLiveOut;
+    TZrBool *instructionActiveIn;
+    TZrBool *instructionActiveOut;
+    TZrBool *instructionMayActiveIn;
+    TZrBool *instructionMayActiveOut;
     TZrBool *blockLiveIn;
     TZrBool *blockLiveOut;
     TZrBool *directParentLoans;
@@ -31,6 +35,7 @@ typedef struct SSemanticLoanAnalysis {
 } SSemanticLoanAnalysis;
 
 TZrBool semantic_loan_publish_liveness(SSemanticLoanAnalysis *analysis);
+TZrBool semantic_loan_activation_analyze(SSemanticLoanAnalysis *analysis);
 void semantic_loan_check_conflicts(SSemanticLoanAnalysis *analysis);
 
 TZrBool semantic_loan_liveness_analyze(

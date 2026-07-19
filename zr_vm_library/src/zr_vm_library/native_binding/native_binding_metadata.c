@@ -450,8 +450,7 @@ SZrObject *native_metadata_make_method_entry(SZrState *state, const ZrLibMethodD
             "isReadonlyReceiver",
             !descriptor->isStatic &&
                     (descriptor->dispatchFlags &
-                     (ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER |
-                      ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT)) != 0u);
+                     ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER) != 0u);
     native_metadata_set_int_field(state, object, "contractRole", (TZrInt64)descriptor->contractRole);
     if (hasParameterMetadata) {
         native_metadata_set_int_field(state, object, "parameterCount", (TZrInt64)descriptor->parameterCount);
@@ -509,6 +508,13 @@ SZrObject *native_metadata_make_meta_method_entry(SZrState *state,
     native_metadata_set_string_field(state, object, "returnTypeName", descriptor->returnTypeName);
     native_metadata_set_int_field(state, object, "minArgumentCount", descriptor->minArgumentCount);
     native_metadata_set_int_field(state, object, "maxArgumentCount", descriptor->maxArgumentCount);
+    native_metadata_set_bool_field(
+            state,
+            object,
+            "isReadonlyReceiver",
+            descriptor->metaType != ZR_META_CONSTRUCTOR &&
+                    (descriptor->dispatchFlags &
+                     ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER) != 0u);
     if (hasParameterMetadata) {
         native_metadata_set_int_field(state, object, "parameterCount", (TZrInt64)descriptor->parameterCount);
         ZrLib_Value_SetObject(state, &parametersValue, parametersArray, ZR_VALUE_TYPE_ARRAY);

@@ -864,6 +864,10 @@ static void loan_analysis_free(SSemanticLoanAnalysis *analysis) {
     free(analysis->instructionUses);
     free(analysis->instructionLiveIn);
     free(analysis->instructionLiveOut);
+    free(analysis->instructionActiveIn);
+    free(analysis->instructionActiveOut);
+    free(analysis->instructionMayActiveIn);
+    free(analysis->instructionMayActiveOut);
     free(analysis->blockLiveIn);
     free(analysis->blockLiveOut);
     free(analysis->directParentLoans);
@@ -887,6 +891,14 @@ static TZrBool loan_analysis_allocate(SSemanticLoanAnalysis *analysis) {
             (TZrBool *)calloc(instructionCells, sizeof(TZrBool));
     analysis->instructionLiveOut =
             (TZrBool *)calloc(instructionCells, sizeof(TZrBool));
+    analysis->instructionActiveIn =
+            (TZrBool *)calloc(instructionCells, sizeof(TZrBool));
+    analysis->instructionActiveOut =
+            (TZrBool *)calloc(instructionCells, sizeof(TZrBool));
+    analysis->instructionMayActiveIn =
+            (TZrBool *)calloc(instructionCells, sizeof(TZrBool));
+    analysis->instructionMayActiveOut =
+            (TZrBool *)calloc(instructionCells, sizeof(TZrBool));
     analysis->blockLiveIn =
             (TZrBool *)calloc(blockCells, sizeof(TZrBool));
     analysis->blockLiveOut =
@@ -904,6 +916,10 @@ static TZrBool loan_analysis_allocate(SSemanticLoanAnalysis *analysis) {
                      analysis->instructionUses != ZR_NULL &&
                      analysis->instructionLiveIn != ZR_NULL &&
                      analysis->instructionLiveOut != ZR_NULL &&
+                     analysis->instructionActiveIn != ZR_NULL &&
+                     analysis->instructionActiveOut != ZR_NULL &&
+                     analysis->instructionMayActiveIn != ZR_NULL &&
+                     analysis->instructionMayActiveOut != ZR_NULL &&
                      analysis->blockLiveIn != ZR_NULL &&
                      analysis->blockLiveOut != ZR_NULL &&
                      analysis->directParentLoans != ZR_NULL &&
@@ -947,6 +963,7 @@ TZrBool semantic_loan_liveness_analyze(
     }
     loan_build_instruction_uses(&analysis);
     if (!loan_compute_liveness(&analysis) ||
+        !semantic_loan_activation_analyze(&analysis) ||
         !semantic_loan_publish_liveness(&analysis)) {
         loan_analysis_free(&analysis);
         return ZR_FALSE;

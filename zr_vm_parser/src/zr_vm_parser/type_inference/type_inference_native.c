@@ -1220,6 +1220,7 @@ static void native_module_info_add_method_member_with_identity(SZrCompilerState 
 static void native_module_info_add_meta_method_member(SZrCompilerState *cs,
                                                       SZrTypePrototypeInfo *info,
                                                       EZrMetaType metaType,
+                                                      EZrCanonicalReceiverEffect receiverEffect,
                                                       SZrString *returnTypeName,
                                                       TZrUInt32 parameterCount,
                                                       TZrUInt32 minArgumentCount,
@@ -1254,7 +1255,7 @@ static void native_module_info_add_meta_method_member(SZrCompilerState *cs,
     memberInfo.isMetaMethod = ZR_TRUE;
     memberInfo.receiverEffect = metaType == ZR_META_CONSTRUCTOR
                                         ? ZR_CANONICAL_RECEIVER_NONE
-                                        : ZR_CANONICAL_RECEIVER_MUTABLE;
+                                        : receiverEffect;
     memberInfo.parameterCount = parameterCount;
     memberInfo.minArgumentCount = minArgumentCount;
     memberInfo.returnTypeName = returnTypeName;
@@ -2666,6 +2667,8 @@ translate_module_info:
             SZrObject *metaEntry = native_module_info_array_get_object(cs->state, metaMethodsArray, metaIndex);
             TZrInt64 metaTypeValue =
                     native_module_info_get_int_field(cs->state, metaEntry, "metaType", ZR_META_ENUM_MAX);
+            TZrBool isReadonlyReceiver = native_module_info_get_bool_field(
+                    cs->state, metaEntry, "isReadonlyReceiver", ZR_FALSE);
             SZrString *returnTypeName = native_module_info_get_string_field(cs->state, metaEntry, "returnTypeName");
             TZrUInt32 parameterCount = native_module_info_exact_parameter_count(cs->state, metaEntry);
             TZrUInt32 minArgumentCount =
@@ -2681,6 +2684,9 @@ translate_module_info:
             native_module_info_add_meta_method_member(cs,
                                                       &typePrototype,
                                                       (EZrMetaType)metaTypeValue,
+                                                      isReadonlyReceiver
+                                                              ? ZR_CANONICAL_RECEIVER_READONLY
+                                                              : ZR_CANONICAL_RECEIVER_MUTABLE,
                                                       returnTypeName,
                                                       parameterCount,
                                                       minArgumentCount,
