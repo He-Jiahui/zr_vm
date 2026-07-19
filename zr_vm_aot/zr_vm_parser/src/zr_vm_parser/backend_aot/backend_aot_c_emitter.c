@@ -578,7 +578,8 @@ static void backend_aot_release_annotation_roots(SZrState *state,
                                   ZR_MEMORY_NATIVE_TYPE_FUNCTION);
 }
 
-static TZrBool backend_aot_apply_code_stripping(SZrState *state,
+static TZrBool backend_aot_apply_code_stripping(FILE *file,
+                                                SZrState *state,
                                                 SZrAotFunctionTable *functionTable,
                                                 const SZrAotWriterOptions *options,
                                                 const TZrUInt32 *annotationRoots,
@@ -596,7 +597,7 @@ static TZrBool backend_aot_apply_code_stripping(SZrState *state,
     TZrUInt32 edgeCount = 0u;
     TZrBool success = ZR_FALSE;
 
-    if (state == ZR_NULL || state->global == ZR_NULL || functionTable == ZR_NULL) {
+    if (file == ZR_NULL || state == ZR_NULL || state->global == ZR_NULL || functionTable == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -659,7 +660,8 @@ static TZrBool backend_aot_apply_code_stripping(SZrState *state,
                                                          indexSpace,
                                                          &markedCount,
                                                          &edgeCount) &&
-        markedCount > 0u) {
+        markedCount > 0u &&
+        backend_aot_reachability_write_function_manifest(file, marks, indexSpace)) {
         success = backend_aot_filter_function_table_by_reachability(functionTable, marks, indexSpace);
     }
 
@@ -865,7 +867,12 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     }
     backend_aot_collect_zrp_metadata_size_stats(options, &zrpMetadataSizeBeforeStripping);
     if (enableCodeStripping &&
-        !backend_aot_apply_code_stripping(state, &functionTable, options, annotationRoots, annotationRootCount)) {
+        !backend_aot_apply_code_stripping(file,
+                                          state,
+                                          &functionTable,
+                                          options,
+                                          annotationRoots,
+                                          annotationRootCount)) {
         fclose(file);
         remove(filename);
         backend_aot_release_annotation_roots(state,

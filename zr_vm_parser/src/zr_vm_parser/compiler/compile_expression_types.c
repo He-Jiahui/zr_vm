@@ -1623,13 +1623,40 @@ static void compiler_ensure_stack_slot_available(SZrCompilerState *cs, TZrUInt32
     }
 }
 
+static SZrAstNodeArray *function_call_parameter_list(
+        const SZrFunctionTypeInfo *functionType) {
+    SZrAstNode *declaration =
+            functionType != ZR_NULL ? functionType->declarationNode : ZR_NULL;
+    if (declaration == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (declaration->type == ZR_AST_FUNCTION_DECLARATION) {
+        return declaration->data.functionDeclaration.params;
+    }
+    if (declaration->type == ZR_AST_EXTERN_FUNCTION_DECLARATION) {
+        return declaration->data.externFunctionDeclaration.params;
+    }
+    return ZR_NULL;
+}
+
 static TZrBool compile_arguments_against_parameter_types(SZrCompilerState *cs,
+                                                         const SZrFunctionCall *call,
+                                                         const SZrAstNodeArray *parameterList,
+                                                         const SZrArray *parameterNames,
                                                          SZrAstNodeArray *argsToCompile,
                                                          const SZrArray *parameterTypes,
                                                          const SZrArray *parameterPassingModes,
                                                          TZrUInt32 firstArgSlot) {
     if (cs == ZR_NULL || argsToCompile == ZR_NULL) {
         return ZR_TRUE;
+    }
+    if (!compiler_validate_call_argument_passing_contract(
+                cs,
+                parameterPassingModes,
+                parameterList,
+                parameterNames,
+                call)) {
+        return ZR_FALSE;
     }
 
     for (TZrSize index = 0; index < argsToCompile->count; index++) {
@@ -1827,6 +1854,14 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
 
     requireTaskHandleArgument = memberInfo->contractRole == ZR_MEMBER_CONTRACT_ROLE_TASK_AWAIT;
     minArgumentCount = member_call_min_argument_count(memberInfo);
+    if (!compiler_validate_call_argument_passing_contract(
+                cs,
+                parameterPassingModes,
+                member_call_parameter_list(memberInfo),
+                &memberInfo->parameterNames,
+                call)) {
+        return ZR_FALSE;
+    }
 
     if (memberInfo->parameterCount != ZR_MEMBER_PARAMETER_COUNT_UNKNOWN) {
         slotCount = memberInfo->parameterCount;
@@ -2064,10 +2099,14 @@ cleanup:
 }
 
 static TZrBool compile_arguments_against_function_signature(SZrCompilerState *cs,
+                                                            const SZrFunctionCall *call,
                                                             SZrAstNodeArray *argsToCompile,
                                                             const SZrFunctionTypeInfo *funcType,
                                                             TZrUInt32 firstArgSlot) {
     return compile_arguments_against_parameter_types(cs,
+                                                     call,
+                                                     function_call_parameter_list(funcType),
+                                                     ZR_NULL,
                                                      argsToCompile,
                                                      funcType != ZR_NULL ? &funcType->paramTypes : ZR_NULL,
                                                      funcType != ZR_NULL ? &funcType->parameterPassingModes : ZR_NULL,
@@ -2075,10 +2114,14 @@ static TZrBool compile_arguments_against_function_signature(SZrCompilerState *cs
 }
 
 static TZrBool compile_arguments_against_member_signature(SZrCompilerState *cs,
+                                                          const SZrFunctionCall *call,
                                                           SZrAstNodeArray *argsToCompile,
                                                           const SZrTypeMemberInfo *memberInfo,
                                                           TZrUInt32 firstArgSlot) {
     return compile_arguments_against_parameter_types(cs,
+                                                     call,
+                                                     member_call_parameter_list(memberInfo),
+                                                     memberInfo != ZR_NULL ? &memberInfo->parameterNames : ZR_NULL,
                                                      argsToCompile,
                                                      memberInfo != ZR_NULL ? &memberInfo->parameterTypes : ZR_NULL,
                                                      memberInfo != ZR_NULL ? &memberInfo->parameterPassingModes : ZR_NULL,
@@ -2086,10 +2129,15 @@ static TZrBool compile_arguments_against_member_signature(SZrCompilerState *cs,
 }
 
 static TZrBool compile_arguments_against_member_resolved_signature(SZrCompilerState *cs,
+                                                                   const SZrFunctionCall *call,
                                                                    SZrAstNodeArray *argsToCompile,
+                                                                   const SZrTypeMemberInfo *memberInfo,
                                                                    const SZrResolvedCallSignature *resolvedSignature,
                                                                    TZrUInt32 firstArgSlot) {
     return compile_arguments_against_parameter_types(cs,
+                                                     call,
+                                                     member_call_parameter_list(memberInfo),
+                                                     memberInfo != ZR_NULL ? &memberInfo->parameterNames : ZR_NULL,
                                                      argsToCompile,
                                                      resolvedSignature != ZR_NULL ? &resolvedSignature->parameterTypes
                                                                                   : ZR_NULL,
@@ -2130,6 +2178,7 @@ static TZrBool resolved_function_call_skips_native_boundary_conversion(SZrCompil
 }
 
 static TZrBool compile_arguments_against_function_resolved_signature(SZrCompilerState *cs,
+                                                                     const SZrFunctionCall *call,
                                                                      SZrAstNodeArray *argsToCompile,
                                                                      const SZrFunctionTypeInfo *resolvedFunctionType,
                                                                      const SZrResolvedCallSignature *resolvedSignature,
@@ -2141,6 +2190,14 @@ static TZrBool compile_arguments_against_function_resolved_signature(SZrCompiler
 
     if (cs == ZR_NULL || argsToCompile == ZR_NULL) {
         return ZR_TRUE;
+    }
+    if (!compiler_validate_call_argument_passing_contract(
+                cs,
+                parameterPassingModes,
+                function_call_parameter_list(resolvedFunctionType),
+                ZR_NULL,
+                call)) {
+        return ZR_FALSE;
     }
 
     for (TZrSize index = 0; index < argsToCompile->count; index++) {
@@ -2733,10 +2790,13 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         compiledMemberArgCount = (TZrUInt32)argsToCompile->count;
                         if (!(hasResolvedMemberSignature
                                       ? compile_arguments_against_member_resolved_signature(cs,
+                                                                                            call,
                                                                                             argsToCompile,
+                                                                                            activeCallMemberInfo,
                                                                                             &resolvedMemberSignature,
                                                                                             argBaseSlot)
                                       : compile_arguments_against_member_signature(cs,
+                                                                                   call,
                                                                                    argsToCompile,
                                                                                    activeCallMemberInfo,
                                                                                    argBaseSlot))) {
@@ -2769,11 +2829,13 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 } else if (resolvedFunctionType != ZR_NULL) {
                     if (!(hasResolvedFunctionSignature
                                   ? compile_arguments_against_function_resolved_signature(cs,
+                                                                                          call,
                                                                                           argsToCompile,
                                                                                           resolvedFunctionType,
                                                                                           &resolvedFunctionSignature,
                                                                                           argBaseSlot)
                                   : compile_arguments_against_function_signature(cs,
+                                                                                 call,
                                                                                  argsToCompile,
                                                                                  resolvedFunctionType,
                                                                                  argBaseSlot))) {

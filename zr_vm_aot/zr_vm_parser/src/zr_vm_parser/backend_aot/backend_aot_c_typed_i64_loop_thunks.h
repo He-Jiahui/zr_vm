@@ -1,0 +1,9 @@
+#ifndef ZR_VM_PARSER_BACKEND_AOT_C_TYPED_I64_LOOP_THUNKS_H
+#define ZR_VM_PARSER_BACKEND_AOT_C_TYPED_I64_LOOP_THUNKS_H
+
+#include "backend_aot_internal.h"
+
+TZrBool backend_aot_c_can_emit_typed_i64_counting_sum_loop_thunk(const SZrFunction *function);
+void backend_aot_c_write_typed_i64_counting_sum_loop_thunk(FILE *file, TZrUInt32 flatIndex);
+
+#endif

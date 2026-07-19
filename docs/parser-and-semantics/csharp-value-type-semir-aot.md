@@ -3,6 +3,8 @@ related_code:
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
   - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h
   - zr_vm_core/include/zr_vm_core/execution.h
+  - zr_vm_core/include/zr_vm_core/profile.h
+  - zr_vm_core/include/zr_vm_core/value.h
   - zr_vm_core/include/zr_vm_core/closure.h
   - zr_vm_core/include/zr_vm_core/debug.h
   - zr_vm_core/include/zr_vm_core/exception.h
@@ -14,13 +16,25 @@ related_code:
   - zr_vm_core/include/zr_vm_core/type_layout.h
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/include/zr_vm_core/metadata_runtime.h
+  - zr_vm_core/include/zr_vm_core/reflection.h
+  - zr_vm_core/src/zr_vm_core/function_graph.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c
+  - zr_vm_core/src/zr_vm_core/reflection_interpreter_generic_instance.c
+  - zr_vm_core/src/zr_vm_core/reflection_generic_type_object.c
+  - zr_vm_core/src/zr_vm_core/reflection_generic_instance.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c
   - zr_vm_core/src/zr_vm_core/module/module_import_signature.c
   - zr_vm_core/src/zr_vm_core/module/module_import_signature_manifest_export.c
   - zr_vm_core/src/zr_vm_core/module/module_import_signature_manifest_export.h
   - zr_vm_core/src/zr_vm_core/metadata_runtime_generic_params.c
+  - zr_vm_core/include/zr_vm_core/reflection.h
+  - zr_vm_core/src/zr_vm_core/reflection_generic_instance.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c
   - zr_vm_core/include/zr_vm_core/zrp_metadata.h
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_core/src/zr_vm_core/profile.c
+  - zr_vm_core/src/zr_vm_core/value.c
   - zr_vm_core/src/zr_vm_core/zrp_metadata.c
   - zr_vm_cli/src/zr_vm_cli/command/command.h
   - zr_vm_cli/src/zr_vm_cli/command/command.c
@@ -69,6 +83,14 @@ related_code:
   - tests/acceptance/2026-06-25-aot-11-s7t-12-s3d-generic-instantiation-typedef-base-token.md
   - tests/acceptance/2026-06-25-aot-11-s7u-12-s3e-manifest-generic-synthesized-typespec.md
   - tests/acceptance/2026-06-25-aot-11-s7v-12-s3f-manifest-generic-methodspec-binding.md
+  - tests/acceptance/2026-07-18-aot-08-s6b-reflection-dynamic-generic-typespec-route.md
+  - tests/acceptance/2026-07-18-aot-08-s6c-constructed-generic-request-resolution.md
+  - tests/acceptance/2026-07-18-aot-08-s6d-nested-typespec-argument-identity.md
+  - tests/acceptance/2026-07-18-aot-08-s6e-array-generic-argument-identity.md
+  - tests/acceptance/2026-07-18-aot-08-s6f-tuple-ownership-nullable-generic-argument-identity.md
+  - tests/acceptance/2026-07-18-aot-08-s6g-union-generic-argument-identity.md
+  - tests/acceptance/2026-07-18-aot-08-s6h-10-s4z29-public-generic-type-object.md
+  - tests/acceptance/2026-07-18-aot-08-s6i-10-s4z30-make-generic-type-object.md
   - zr_vm_parser/include/zr_vm_parser/writer.h
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
   - zr_vm_library/include/zr_vm_library/project.h
@@ -109,6 +131,9 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_internal.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_i64_thunks.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_i64_loop_thunks.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_i64_loop_thunks.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.h
@@ -207,13 +232,18 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/exception.h
   - zr_vm_core/include/zr_vm_core/object.h
   - zr_vm_core/include/zr_vm_core/state.h
+  - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/include/zr_vm_core/metadata_runtime.h
+  - zr_vm_core/include/zr_vm_core/reflection.h
   - zr_vm_core/src/zr_vm_core/module/module_import_signature.c
   - zr_vm_core/src/zr_vm_core/module/module_import_signature_manifest_export.c
   - zr_vm_core/src/zr_vm_core/module/module_import_signature_manifest_export.h
   - zr_vm_core/src/zr_vm_core/metadata_runtime_generic_params.c
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_core/src/zr_vm_core/function_graph.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c
+  - zr_vm_core/src/zr_vm_core/reflection_interpreter_generic_instance.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
@@ -340,6 +370,10 @@ plan_sources:
   - user: 2026-06-03 C#-style struct value-type stack layout and IL2CPP-style lowering goal
   - .codex/plans/Struct 变长栈与按布局传参计划.md
   - .codex/plans/CSharp 值类型与 IL2CPP 风格 SemIR lowering 计划.md
+  - docs/plans/aot/08-generic-sharing.md
+  - docs/plans/aot/10-reflection.md
+  - docs/plans/aot/11-metadata.md
+  - user: 2026-07-18 按 AOT 07~12 计划持续优化代码生成并逐阶段记录状态与产出
 tests:
   - tests/parser/test_semir_pipeline.c
   - tests/parser/test_aot_c_source_contracts.c
@@ -347,6 +381,12 @@ tests:
   - tests/module/test_metadata_type_ref_binding.c
   - tests/module/test_metadata_runtime_manifest_exports.c
   - tests/module/test_metadata_runtime_binding_compatibility.c
+  - tests/module/test_reflection_dynamic_generic_instance.c
+  - tests/module/test_reflection_dynamic_generic_cross_module.h
+  - tests/acceptance/2026-07-19-aot-08-s6t-10-s4z41-11-s6j-bound-provider-generic-typespec-identity.md
+  - tests/module/test_reflection_dynamic_generic_method_context.h
+  - tests/acceptance/2026-07-19-aot-08-s6u-10-s4z42-11-s2e-methodspec-method-token-vm-function-resolution.md
+  - tests/acceptance/2026-07-19-aot-08-s6v-10-s4z43-11-s5a-generic-method-definition-object.md
   - tests/library/test_project_import_resolver.c
   - tests/parser/test_aot_c_descriptor_diagnostics.c
   - tests/parser/test_aot_c_code_stripping.c
@@ -508,6 +548,8 @@ tests:
   - tests/parser/test_aot_c_typed_scalar.c
   - tests/parser/test_typed_numeric_conversion.c
   - tests/parser/test_value_type_runtime.c
+  - tests/core/test_value_construction_profile.c
+  - tests/parser/test_aot_c_value_construction_guardrail.c
   - tests/acceptance/2026-06-04-typed-numeric-conversion.md
   - tests/acceptance/2026-06-05-aot-value-semir-unsupported-fields.md
   - tests/acceptance/2026-06-05-aot-value-semir-value-slot-fields.md
@@ -526,6 +568,8 @@ tests:
   - tests/acceptance/2026-07-06-aot-07-s6-reference-local-address-root-frame.md
   - tests/acceptance/2026-07-06-aot-07-s6-reference-local-safepoint-gc-pressure.md
   - tests/acceptance/2026-07-06-aot-07-s6-gc-reference-register-stage-acceptance.md
+  - tests/acceptance/2026-07-18-aot-07-s7-value-construction-counter-scalar-performance-guardrail.md
+  - tests/acceptance/2026-07-18-aot-07-s7-typed-loop-performance-stage-acceptance.md
   - tests/acceptance/2026-06-05-aot-generic-primitive-equality-direct-writes.md
   - tests/acceptance/2026-06-05-aot-bool-logical-direct-writes.md
   - tests/acceptance/2026-06-05-aot-string-equality-direct-writes.md
@@ -802,6 +846,18 @@ The initial opcode family is:
 
 The AOT ExecIR name table recognizes the new opcodes. These value-place opcodes currently add no runtime contract bits because they are intended to lower into direct frame/field/copy expressions once AotExecIR consumes layout metadata.
 
+The 07-S7 instrumentation boundary appends `ZR_PROFILE_HELPER_VALUE_CONSTRUCT` after the existing helper ids and records
+public `ZrCore_Value_InitAs*`, public null reset, and `ZR_VALUE_FAST_SET` materializations. The focused generated-C
+guard invokes state-free typed `i64` scalar and canonical counting-sum loop thunks directly and requires construction,
+copy, and reset counts to remain zero. `backend_aot_c_typed_i64_loop_thunks.*` accepts only the observed ten-instruction
+shape for `index = 0`, `accumulator = 0`, `index < limit`, accumulation, increment, back edge, and return; all other
+loops remain on the general generated path. Scalar-local analysis classifies one-argument typed return kinds, primitive
+constant call arguments, and statically resolvable function/known-VM tail-call results, so the canonical source entry
+emits `zr_aot_s2 = zr_aot_typed_i64_fn_1(zr_aot_s3)` instead of a runtime `CallStaticDirect` shim. The final GCC run
+measured the typed loop at 1753.53x interpreter and 44.51x current general environment AOT, while Clang measured
+1608292.95x and 31362.66x after optimizing the canonical sum loop to a near-closed form. This completes the 07-S7
+representative scalar/loop gate without claiming general typed CFG lowering.
+
 The archived AotExecIR frame layout now mirrors inline frame byte metadata:
 
 - `SZrAotExecIrFrameLayout.frameByteSize`
@@ -1011,9 +1067,94 @@ Reset-stack fallback opcodes now use explicit AOT runtime boundaries. `RESET_STA
 
 This slice deliberately leaves generic/dynamic arithmetic outside the supported primitive subsets, string concatenation, bool-as-numeric helper compatibility for generic numeric arithmetic, full generic power meta-call execution, source-level `**` parsing, dynamic/meta shift behavior outside the integer-primitive generic shift subset, bool/string/object conversions, object/meta/dynamic equality, generic equality outside the primitive subset, string/object/meta/dynamic truthiness, and logical `&&`/`||` on explicit unsupported or existing helper paths. The interpreter's historical float-fallback behavior for `ADD_INT` / `SUB_INT` is also not treated as an AOT helper escape hatch; generated C now covers the integer subset directly and fails explicitly outside that subset. The remaining dynamic paths still carry VM semantics that need separate metadata or constant-materialization contracts before they can be converted to direct C expressions without silently changing behavior.
 
-AOT reflection token resolution now has a public runtime carrier. `ZrCore_Reflection_ResolveToken()` accepts an attached `SZrMetadataRuntime` and returns `SZrReflectionResolvedToken`, covering TypeDef/TypeSpec/TypeRef type records, FieldDef owner/field layout and byte offsets, and method records. The type and field paths consume the existing registry-backed metadata binding views, so offsets and layouts still come from the single metadata/layout source of truth. FieldDef resolution also carries the owner type record/row plus the field type token/record resolved from the field type layout id through the metadata runtime type-layout token resolver. TypeSpec resolution carries the generic base token, signature token/hash, and argument count, and `ZrCore_Reflection_ResolveTypeSpecGenericArgument()` exposes indexed primitive or direct TypeDef/TypeRef generic arguments. This remains a narrow bridge: it does not yet build public reflection objects, rewrite name lookup through tokens, execute `Invoke` through the invoker registry, construct runtime generic instances, or perform field value marshaling.
+AOT reflection token resolution now has a public runtime carrier. `ZrCore_Reflection_ResolveToken()` accepts an attached `SZrMetadataRuntime` and returns `SZrReflectionResolvedToken`, covering TypeDef/TypeSpec/TypeRef type records, FieldDef owner/field layout and byte offsets, and method records. The type and field paths consume the existing registry-backed metadata binding views, so offsets and layouts still come from the single metadata/layout source of truth. FieldDef resolution also carries the owner type record/row plus the field type token/record resolved from the field type layout id through the metadata runtime type-layout token resolver. TypeSpec resolution carries the generic base token, signature token/hash, and argument count, and `ZrCore_Reflection_ResolveTypeSpecGenericArgument()` exposes indexed primitive or direct TypeDef/TypeRef generic arguments. The 08-S6B route carrier adds `ZrCore_Reflection_ResolveDynamicGenericTypeInstance()`: an existing, metadata-valid generic TypeSpec with a registered layout is marked `AOT`, while the same identity without a static layout is returned as `INTERPRETER_DEOPT` with its signature, open base, argument count, and argument-list offset preserved. The 08-S6C request resolver adds primitive and direct TypeDef/TypeRef argument identities. `ZrCore_Reflection_ResolveConstructedGenericType()` matches open base, arity, and every supported argument against current-module TypeSpecs; a match reuses the S6B route, while an uncollected combination for a proven generic base returns an interpreter-deopt carrier with a caller-owned borrowed argument view and no fabricated metadata token or layout. The 08-S6D extension accepts a metadata-valid local TypeSpec as a nested closed-generic argument and compares the complete parsed `GENERIC_INST` node byte span, after bounds checks, against candidate argument structure. The 08-S6E extension adds recursive `ARRAY(rank, element)` descriptors and uses the same structured matcher with a 64-level fail-closed depth limit; top-level direct token equality remains strict, while token signature comparison is only used where a compound child has no standalone resolved token. The 08-S6F extension adds recursive `TUPLE`, `OWNERSHIP`, and `NULLABLE` descriptors; tuple child count and order, ownership qualifier, and nullable base identity all participate in exact matching under the same depth gate. The 08-S6G extension adds named `UNION` identity from value type, current-runtime string-heap name offset, arity, and ordered recursive children, with tuple and union sharing one metadata child-list walker. The local matcher now covers all compound nodes emitted by the current typed type-signature writer. The 08-S6H/10-S4Z29 builder revalidates a request-resolved carrier and materializes it as a public `kind == "type"` object with route, token, layout, same-runtime, and recursively copied generic-argument objects; the object graph no longer borrows the request descriptor lifetime. The 08-S6I/10-S4Z30 public C entry accepts open base + arguments and composes the same resolver and builder into one MakeGenericType-style boundary. Token-only generic objects, script-object MakeGenericType methods, interpreter-side generic parameter substitution/execution, cross-module identity canonicalization, and full-AOT reflection reachability remain open.
 
 Remaining dynamic and meta SemIR opcodes keep explicit runtime or unsupported-boundary behavior until their static metadata contracts are proven. Value-type SemIR is therefore a typed-layout contract first; the interpreter is being moved onto the same layout facts in incremental source-level slices.
+
+The 08-S6J/10-S4Z31 extension also accepts an existing TypeSpec's token-only carrier at the public generic type-object
+builder. Primitive and direct TypeDef/TypeRef metadata arguments are copied into `genericArguments` after the carrier is
+revalidated against the current runtime. Token-only compound argument recursion remains fail-closed rather than
+fabricating child tokens; script-level methods, interpreter substitution/execution, cross-module identity, and full-AOT
+reflection reachability are still open.
+
+The 08-S6K/10-S4Z32/11-S4BO extension recursively materializes token-only nested generic, array, tuple, ownership,
+nullable, and union metadata arguments under the same 64-level limit. Direct and nested generic nodes become type-token
+objects only when their complete signature-node spans bind to real attached TypeDef/TypeRef/local TypeSpec records.
+Cross-module canonical identity, script-level methods, interpreter substitution/execution, and full-AOT reflection
+reachability remain open.
+
+The 08-S6L/10-S4Z33 interpreter consumer revalidates an uncollected reference-class carrier before creating an ordinary
+object with the open generic class prototype. The instance owns a deep-copied public generic type object through an
+internal context field, and existing prototype lookup consumes open-prototype members without a second object model.
+AOT carriers and struct/union prototypes fail closed. This is object/context materialization only: generic parameter
+substitution, method execution, dynamic value-type instances, cross-module identity, and script-level construction remain
+open.
+
+The 08-S6M/10-S4Z34 substitution lookup connects that instance context to the existing 11-S5 GenericParam owner/index
+view. It accepts a parameter only when metadata resolves it for the same open generic owner and the instance type object
+still reports the same metadata runtime, base token, argument count, and argument array. The metadata parameter index then
+selects the already-materialized concrete argument type object. This introduces no parallel parameter table or name-based
+matching. Generic method call-frame context and execution, dynamic value-type instances, and cross-module identity remain
+open.
+
+The 08-S6N/10-S4Z35 call-context carrier stores that validated instance type object as a GC-visible `SZrTypeValue` on a
+VM `SZrCallInfo`. Public bind/get/parameter-resolution entry points use the existing instance and GenericParam rules;
+native call infos and non-instance objects fail closed. Ordinary, native, VM, exact-args hot, and tail-call reuse paths
+reset the carrier so context cannot bleed between calls. Active call infos participate in GC marking, and compacting GC
+rewrites a moved context object's forwarding address. This closes call-frame context ownership and GC lifetime only;
+executing an uncollected generic method, dynamic value-type instances, and cross-module identity remain open.
+
+The 08-S6O/10-S4Z36 invocation boundary executes a resolved VM instance method for an interpreter-deoptimized generic
+reference type. It validates the metadata runtime, open generic owner token, VM function shape, and exact fixed arity,
+then reuses the ordinary object-call pinning, stack-anchor, argument staging, and result restoration path. The only
+specialized function-layer action copies the pinned S6N context after `PreCall` and before `Execute`. A real VM identity
+method resolves GenericParam[1] from its active call info and returns an explicit int64 argument. Wrong runtime, owner,
+or arity fails closed and clears the result. MethodSpec-owned generic parameters and methods, dynamic value-type
+instances, and cross-module identity remain open.
+
+The 08-S6P/10-S4Z37 MethodSpec context builder consumes the existing 11-S5 MethodSpec signature and indexed argument
+views. It materializes a GC-managed reflection object containing the MethodSpec token, underlying method token, complete
+uint64 signature hash, metadata runtime, generic-method flags, and a structural argument array. Primitive, direct token,
+and compound arguments reuse the same recursive metadata-node object builder as token-only TypeSpec objects. No parallel
+MethodSpec table or metadata format is introduced.
+
+The 08-S6Q/10-S4Z38 call boundary binds that MethodSpec object to a second, independent GC-visible `SZrCallInfo` carrier.
+The public bind/get/resolver path validates the same metadata runtime, underlying generic method owner, GenericParam
+range, context arity, and parameter index before returning a concrete method argument type object. Ordinary/native/VM,
+hot exact-argument, and tail-reuse initialization clear both type and method carriers; active frames mark and rewrite both
+during compacting full GC.
+
+The 08-S6R/10-S4Z39 execution boundary accepts a caller-resolved fixed VM function, validates the MethodSpec's exact
+method GenericParam arity, and executes it with explicit arguments and a result through the existing object-call pinning
+and stack-anchor path. The known-function boundary now accepts independent optional type and method contexts, copying
+them only after `PreCall` has created the VM call info and before `Execute`. The existing type-only entry remains a
+compatibility wrapper. Method-token-to-function resolution and script-level `MakeGenericMethod` remain open.
+
+The 08-S6S/10-S4Z40 value-instance consumer keeps uncollected generic structs on the existing dynamic side of the value
+model. An interpreter-deopt request plus an open struct prototype creates an `SZrObject` whose internal type is
+`STRUCT`, with the same GC-managed generic type context used by reference instances. Dynamic value assignment therefore
+continues through `ZrCore_Value_Copy` and `ZrCore_Object_CloneStruct`, preserving field isolation and the hidden generic
+context; resolved VM methods use the existing struct-receiver synchronization path. No typed/AOT layout is synthesized
+or inferred for an uncollected instance.
+
+The 08-S6U/10-S4Z42/11-S2E automatic MethodSpec boundary removes the caller-supplied function pointer for local
+interpreter methods. It reads the existing MethodSpec signature's underlying MethodDef token, requires a unique attached
+MethodDef row/record, and resolves the row `functionIndex` with the same root/constant/child depth-first order and
+identity deduplication as the AOT function table. The resolver allocates by actual visited-node count, so a corrupt near-
+maximum index cannot request a correspondingly large buffer. Only fixed instruction-backed non-native VM functions
+reach the existing S6R context-aware invocation path. Wrong token, arity, duplicate row, missing function, out-of-range
+index, and `UINT32_MAX - 1` all clear the result and fail closed. This completes local C-level method discovery and
+execution; script object-level `MakeGenericMethod`, cross-module method binding, and full-AOT reflection closure remain
+separate work.
+
+The 08-S6V/10-S4Z43/11-S5A reflection surface now represents an open generic MethodDef as a GC-managed definition
+object. Its metadata identity, declaring type, flags, signature coordinates, exact GenericParam count, metadata runtime,
+and parameter-object array all come from attached zrp metadata. Each parameter object preserves logical and physical
+indices, flags, name offset, and constraint range; method and parameter names are decoded from the same zrp string pool.
+Construction validates the complete declared owner range rather than reading until the first missing row, so malformed
+counts, holes, reordered indices, or owner drift cannot silently become a shorter generic method. This is the definition
+surface needed before script construction, but it does not yet match type argument objects to MethodSpec signatures or
+publish a constructed generic method object.
 
 ## Interpreter Boundary
 
@@ -2584,3 +2725,5 @@ Focused 2026-07-06 07-S6 reference-local LOCAL_ADDRESS root frame emits GC-visib
 Focused 2026-07-06 07-S6 reference-local safepoint GC pressure adds a controlled collection window immediately after conversion writeback to the local-address root frame. `backend_aot_write_c_direct_to_string()` and `backend_aot_write_c_direct_to_object()` now emit `/* zr_aot_gc_safepoint_reference_local */` and `ZrCore_Gc_SafePoint(state)` after `zr_aot_ref_locals.oN` is assigned, before immediate string/object truthiness consumes the raw object. Dynamic string/object logical-not and jump-if smoke tests assert that ordering in generated C, then execute with pending generational GC debt and require `gcLastStepWork > 0`. RED was WSL GCC logical-not 8/2 and source contracts 24/1 after requiring the marker/helper call; GREEN passes WSL GCC focused direct runs at 8/0, 9/0, 24/0, 4/0, and 1/0, WSL Clang build/direct runs at the same counts, and MSVC Debug build plus contracts with Unix-only smoke bodies expected ignored and zero failures. Longer GC stress, exports/frame cleanup, in/out writeback, performance counters, and complete 07-S6/07~12 acceptance remain open.
 
 Focused 2026-07-06 07-S6 stage acceptance closes the planned GC reference-register gate for the generated conversion-reference-local path. The generated C path now keeps conversion results as `SZrRawObject *` fields in `SZrAotReferenceLocals_<flatIndex>`, registers them through a separate `LOCAL_ADDRESS` root map/root frame, and places a safepoint after writeback so pending GC debt can observe and update those roots before truthiness consumes them. WSL GCC and Clang generated-C smoke/contracts pass at logical-not 8/0, jump-if 9/0, source contracts 24/0, logical contracts 4/0, and frame setup contracts 1/0; MSVC Debug builds the same targets and passes source/logical/frame setup contracts at 24/0, 4/0, and 1/0 with Unix-only smoke bodies expected ignored. The core AOT GC root-frame runtime matrix passes 6/0 on WSL GCC, WSL Clang, and MSVC Debug, covering frame-byte roots, local-address raw-object roots, safepoint debt, write barrier, and native pin. 07-S7 anti-regression CI, SZrValue counting, performance gates, and later 08~12 stages remain open.
+
+Focused 2026-07-19 08-S6T / 10-S4Z41 / 11-S6J makes cross-module constructed-generic reflection consume the existing metadata binding model instead of searching by local RID or introducing a global registry. `ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider()` requires distinct requester/provider modules, validates the requester's TypeSpec binding `ref*` and `expected*` identities plus the provider module signature/token/signature records, and compares both canonical TypeSpec signature blobs exactly before asking the provider runtime to resolve the instance route and registered layout. Runtime binding compatibility admits only well-shaped TypeSpec-to-TypeSpec RID remaps with paired Signature tokens; existing module version/hash, signature hash, and layout gates remain active. Unbound, malformed-expected, wrong-provider, same-module, and same-hash byte-drift cases clear output and fail closed. RED covered the prior token-mismatch rejection, malformed expected RID acceptance, and a post-binding int64-to-uint64 signature mutation; GREEN passes reflection generic 24/0, compatibility 17/0, focused CTest 4/4, GC 66/0, instruction execution 31/0, and instruction table 95/0 on GCC, Clang, and MSVC. Method-token-to-function discovery, script-level generic reflection, and full-AOT reflection closure remain open.

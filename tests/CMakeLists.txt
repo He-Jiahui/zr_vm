@@ -248,6 +248,10 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/tests/core/test_aot_gc_root_frame.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_value_construction_profile_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_value_construction_profile.c
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_execution_add_stack_relocation_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_execution_add_stack_relocation.c
     )
@@ -329,6 +333,11 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_aot_gc_root_frame_test)
+    target_include_directories(zr_vm_value_construction_profile_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_value_construction_profile_test)
     target_include_directories(zr_vm_execution_add_stack_relocation_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
@@ -528,6 +537,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_reference_syntax_contract_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_reference_place_out_flow_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_reference_place_out_flow.c
+    )
+    target_include_directories(zr_vm_reference_place_out_flow_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_reference_place_out_flow_test)
 
     zr_vm_add_unity_test_target(
             zr_vm_generic_instantiation_test
@@ -2147,6 +2166,26 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_aot_c_typed_direct_call_shared_library_smoke_test)
     if (UNIX AND NOT APPLE)
         target_link_libraries(zr_vm_aot_c_typed_direct_call_shared_library_smoke_test PRIVATE dl)
+    endif ()
+
+    zr_vm_add_unity_test_target(
+            zr_vm_aot_c_value_construction_guardrail_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_value_construction_guardrail.c
+    )
+    target_include_directories(zr_vm_aot_c_value_construction_guardrail_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    target_compile_definitions(zr_vm_aot_c_value_construction_guardrail_test PRIVATE
+            ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
+            ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
+            ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_aot_c_value_construction_guardrail_test)
+    if (UNIX AND NOT APPLE)
+        target_link_libraries(zr_vm_aot_c_value_construction_guardrail_test PRIVATE dl)
     endif ()
 
     zr_vm_add_unity_test_target(
@@ -6421,6 +6460,20 @@ if (TARGET zr_vm_aot_gc_root_frame_test)
     )
 endif ()
 
+if (TARGET zr_vm_value_construction_profile_test)
+    add_test(
+            NAME value_construction_profile
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=value_construction_profile"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_value_construction_profile_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_value_construction_profile_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_value_construction_profile_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_value_construction_profile_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
 if (TARGET zr_vm_semir_static_c_types_test)
     add_test(
             NAME semir_static_c_types
@@ -6556,6 +6609,20 @@ if (TARGET zr_vm_aot_c_guardrail_contracts_test)
             "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_aot_c_guardrail_contracts_test>"
             "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_aot_c_guardrail_contracts_test>"
             "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_aot_c_guardrail_contracts_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_aot_c_value_construction_guardrail_test)
+    add_test(
+            NAME aot_c_value_construction_guardrail
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=aot_c_value_construction_guardrail"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_aot_c_value_construction_guardrail_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_aot_c_value_construction_guardrail_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_aot_c_value_construction_guardrail_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_aot_c_value_construction_guardrail_test>"
             "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
             -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
     )

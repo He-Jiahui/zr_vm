@@ -1,6 +1,8 @@
 #ifndef ZR_VM_PARSER_BACKEND_AOT_REACHABILITY_H
 #define ZR_VM_PARSER_BACKEND_AOT_REACHABILITY_H
 
+#include <stdio.h>
+
 #include "zr_vm_parser/conf.h"
 
 #define ZR_AOT_REACHABILITY_NO_NODE ((TZrUInt32)0xFFFFFFFFu)
@@ -46,5 +48,9 @@ TZrBool backend_aot_reachability_compute(SZrAotReachabilityMark *marks,
                                           TZrUInt32 *queue,
                                           TZrUInt32 queueCapacity,
                                           TZrUInt32 *outMarkedCount);
+
+TZrBool backend_aot_reachability_write_function_manifest(FILE *file,
+                                                          const SZrAotReachabilityMark *marks,
+                                                          TZrUInt32 markCount);
 
 #endif

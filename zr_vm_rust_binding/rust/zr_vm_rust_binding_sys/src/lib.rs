@@ -105,6 +105,14 @@ pub struct ZrRustBindingRunOptions {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ZrRustBindingGcStepResult {
+    pub pauseMicros: TZrUInt64,
+    pub rootCount: TZrUInt64,
+    pub crossBoundaryReferenceCount: TZrUInt64,
+}
+
+#[repr(C)]
 pub struct ZrRustBindingRuntime {
     _private: [u8; 0],
 }
@@ -295,6 +303,11 @@ extern "C" {
         arguments: *const *mut ZrRustBindingValue,
         argumentCount: TZrSize,
         outResult: *mut *mut ZrRustBindingValue,
+    ) -> ZrRustBindingStatus;
+    pub fn ZrRustBinding_ProjectSession_GcStep(
+        session: *mut ZrRustBindingProjectSession,
+        maxPauseMicros: TZrUInt64,
+        outResult: *mut ZrRustBindingGcStepResult,
     ) -> ZrRustBindingStatus;
     pub fn ZrRustBinding_ProjectSession_Free(
         session: *mut ZrRustBindingProjectSession,

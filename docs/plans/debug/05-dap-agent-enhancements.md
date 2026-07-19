@@ -1,93 +1,40 @@
----
-doc_type: plan-phase
-phase: 5
-title: DAP 调试代理增强与修复
-related_code:
-  - zr_vm_lib_debug/src/debug.c
-  - zr_vm_lib_debug/src/debug_protocol.c
-  - zr_vm_lib_debug/src/debug_snapshot.c
-  - zr_vm_lib_debug/include/zr_vm_lib_debug/debug.h
-  - zr_vm_language_server_extension/src/debug/dapSession.ts
-  - zr_vm_language_server_extension/src/debug/zrdbgClient.ts
----
+# Debug 05：DAP Adapter
 
-# Phase 5 — DAP 调试代理增强与修复
+## Adapter职责
 
-在内核自省 API（P1/P2）与 traceback（P3）就绪后，提升 DAP 代理的健壮性与覆盖面。
+DAP层只做协议/session映射：initialize/capabilities、launch/attach、breakpoint、continue/step、stackTrace/scopes/variables、evaluate、modules、loadedSources、exceptionInfo、disassemble/memory（按capability）。执行语义由core debug service提供。
 
-## 5.1 复用内核 API（去重）
+## Identity映射
 
-把 `debug_snapshot.c` 的栈/局部/upvalue 遍历替换为 Phase 2 的内核 API（详见 02 文档 §2.4）。
-这是本阶段的「正确性基线」改动，应最先做。
+- DAP threadId/frameId/variablesReference是session-scoped opaque id，映射到带generation的core handle。
+- source使用URI/path + checksum + ModuleIdentity；`.zrm`/package/native metadata可提供virtual source。
+- breakpoint response区分verified、pending module load、source mismatch与invalid location。
+- module event显示Canonical ModuleId、package/version、provider、artifact generation和symbol availability。
 
-## 5.2 修 step 语义边界
+## Evaluate
 
-现有 step in/out/over 基于帧深度。需核查并加固以下边界：
-- **尾调用**：尾调用复用栈帧（`callStatus & ZR_CALL_STATUS_TAIL_CALL`），step over 不应把被
-  尾调用的函数误判为「同帧继续」。以 callInfo 身份而非纯深度判定目标帧。
-- **native 帧穿越**：step in 进入 native 函数时无行信息，应表现为 step over（Lua 同此）。
-- **异常 unwind 期间 step**：step out 的目标帧若被异常提前弹出，需有「目标帧消失→回退为
-  下一个停靠点或 continue」的兜底，避免永久挂起。
-- **递归同行**：同一行递归调用时 step over 必须真正越过整个子调用（用「目标帧深度 + 行变化」
-  双条件）。
+watch/hover/clipboard/REPL context传给共享DebugEvaluationContext。默认hover不产生side effect；用户显式REPL可以按policy执行。编译/运行错误映射为structured response，不把target exception当adapter崩溃。
 
-每条边界配独立用例（见 §5.7）。
+## 稳定性
 
-## 5.3 缓冲区截断治理
+覆盖multi-session、disconnect/terminate、process exit、late events、request cancellation、large variable paging、resume后stale handle、module reload和network partial frame。adapter不得在锁内等待target回调造成死锁。
 
-`ZR_DEBUG_TEXT_CAPACITY=256` / `ZR_DEBUG_NAME_CAPACITY=128`（`debug.h`）静默截断。方案：
-- 对超长值/路径：截断时追加省略标记（`…` 或 `...[+N]`），让客户端能识别「被截断」。
-- 对 `evaluate`/变量值这类可能很长的文本：协议层改为**按需分页/惰性展开**（DAP 已支持
-  `supportsVariablePaging`，扩大到长字符串值的分段拉取）。
-- 路径与符号名优先保留尾部（文件名/末段更有信息量）。
+## 完成记录
 
-> 不盲目放大固定数组（会撑大每帧快照内存）。优先「标记截断 + 惰性拉全」。
+[2026-06-22 DAP agent baseline](./05-dap/2026-06-22-dap-agent-baseline.md) 证明已有协议路径；ModuleIdentity、typed values和四backend parity仍需扩充。
 
-## 5.4 task / 协程多执行体调试
+## Request/State 验收矩阵
 
-现状只暴露 thread id=1。zr 有 task/thread 库。目标：
-- DAP `threads` 请求枚举所有活跃 zr 执行体（每个 `SZrState`），稳定映射 state→threadId。
-- stackTrace/scopes/variables 带 threadId 路由到对应 state。
-- 停止事件标注是哪个 thread 命中断点。
-- **MVP 边界**：先支持「枚举 + 各自栈检查」，跨 task 同步单步（如 step 切换执行体）列为后续。
+| 请求组 | Core输入 | 必测状态 |
+|---|---|---|
+| initialize/launch/attach | capabilities、target/provider policy | unsupported feature、launch failure、attach race |
+| setBreakpoints/configurationDone | source checksum、DebugMap binding | pending module、reload、invalid line |
+| continue/next/stepIn/stepOut/pause | pause/resume generation与step plan | late event、thread exit、exception edge |
+| stackTrace/scopes/variables | Frame/Value descriptors、paging | stale reference、large children、optimized out |
+| evaluate/setVariable | DebugEvaluationContext/effect policy | readonly/owner/ref/native capability denial |
+| modules/loadedSources | ModuleIdentity/provider/artifact generation | package/`.zrm`/native/trimmed source |
+| exceptionInfo/disassemble/memory | Traceback/instruction map/memory capability | invalid range、hidden address、artifact mismatch |
 
-## 5.5 data breakpoint / watchpoint（新增）
+验证入口：`tests/debug/test_debug_agent.c`、`test_debug_agent_protocol.c`、`test_debug_data_breakpoint.c`、`test_debug_truncation.c`和debug phase5 acceptance。协议测试必须断言request/response/event顺序、cancel、disconnect/terminate、target crash、partial transport frame和multi-session隔离。
 
-借助 Phase 2 的 `GetUpvalueId` 与变量地址：
-- DAP `dataBreakpointInfo` + `setDataBreakpoints`：对某个变量/字段设「值变化即停」。
-- 实现：在 LINE/COUNT hook 路径上比对被 watch 槽的当前值与上次快照，变化则触发 stop。
-  （软件 watchpoint，成本随 watch 数线性增长，文档标注。）
-- 初版限定**局部变量与 upvalue**；对象字段 watch 留后续。
-
-## 5.6 远程调试鉴权（可选）
-
-`auth_token`（`debug.h:45 ZrDebugAgentConfig`）已留字段但未启用。若放开非 loopback：
-- 握手阶段校验 token（常数时间比较）。
-- 文档明确「默认仍 loopback；远程需显式配置 + token」。
-- `zrdbgClient.ts` 的 loopback 强制改为「非 loopback 时要求 token」。
-- **范围控制**：本项为可选增强，无需求可不做，但字段与握手位先预留。
-
-## 5.7 验收
-
-- `tests/debug/test_debug_step_edges.c`：尾调用、native 穿越、异常 unwind、递归同行 四类用例。
-- `tests/debug/test_debug_truncation.c`：超长值被标记截断且可分页拉全。
-- `tests/debug/test_debug_threads.c`：多 task 场景 `threads` 枚举与按 thread 栈检查。
-- `tests/debug/test_debug_data_breakpoint.c`：局部变量 watch 命中。
-- 回归：`test_cli_debug_e2e.c`、`dapSession.ts` 现有行为不破坏。
-
-## 5.8 风险
-
-- §5.1 的内核 API 替换可能改变某些边角值的渲染（如 inline struct）；需对照旧快照做差异审查。
-- 软件 watchpoint 在 hook 路径增加 per-instruction 比对，务必仅在存在 data breakpoint 时启用，
-  避免拖慢无 watch 的会话。
-
-## 5.9 状态与产出记录
-
-| 时间 | 子阶段 | 状态 | 完成项目 | 验证/后续 |
-|------|--------|------|----------|-----------|
-| 2026-06-22 00:11:45 +08:00 | 5.1 复用内核 API | 完成；5.2 未开始 | `debug_snapshot.c` 的帧查找与 stackTrace 改走 `ZrCore_Debug_GetStack`/`ZrCore_Debug_GetInfo`；locals/arguments 快照改走 `ZrCore_Debug_GetLocal`，closure 变量预览改走 `ZrCore_Debug_GetUpvalue`；evaluate 的局部变量解析同样复用 activation/local API；保留 DAP 专属 inline union preview/materialization 和 value handle 行为 | 新增 `tests/debug/test_debug_snapshot_contracts.c`。RED 阶段 2/2 FAIL，缺 core debug include 与 activation/local API 使用；完成后 WSL/GCC 与 WSL/Clang focused gate 8/8 PASS，Windows/MSVC CLI `hello_world.zrp` smoke 输出 `hello world`。`debug_snapshot.c` 仍是超大文件，后续若继续扩变量/step 逻辑，应优先拆出 stack-frame snapshot 与 value-preview/handle 边界；`zr_debug_closure_capture_value` 仍保留引用 identity/pointer 辅助逻辑，后续 data breakpoint 若需要可再分离 snapshot 与 identity 语义 |
-| 2026-06-22 00:50:51 +08:00 | 5.2 修 step 语义边界 | 完成；5.3 未开始 | 新增 `tests/debug/test_debug_step_edges.c` 四类 DAP 行为用例；step-over 不再只看帧深度，会记录 step 起点 callInfo 并把同深度不同逻辑帧视为 tail-call callee；step-over 期间推迟更深子调用/同深度 tail callee 内的断点，避免递归同行被原断点抢停；step-out 在异常 unwind 且尚未到 CATCH/父帧可见位置时继续执行；native step-in 保持 step-over 语义 | RED 阶段 3/4 FAIL：tail-call 停进 `leaf`、exception unwind 断言过窄、recursive same-line 被 breakpoint reason 抢先；修复后 WSL/GCC 与 WSL/Clang `debug_step_edges|debug_snapshot_contracts|debug_agent|debug_agent_protocol|debug_variable_child_shape|debug_metadata|debug_trace|debug_traceback|debug_library` 9/9 PASS，Windows/MSVC `zr_vm_debug_step_edges_test` 4/4 PASS。下一步 Phase 5.3：截断可识别标记与长值/路径显示策略 |
-| 2026-06-22 01:42:22 +08:00 | 5.3 缓冲区截断治理 | 完成；5.4 未开始 | `zr_debug_copy_text` 改为对超长文本输出 `...[+N]`，路径截断改为 marker + tail；长字符串预览在达到 `ZR_DEBUG_TEXT_CAPACITY` 时不放大固定数组，而是创建 `STRING_CHUNKS` handle，并通过 `variables(start,count)` 返回 64-byte 分块；`evaluate("zr")` 与变量 preview 使用同一长字符串惰性展开路径；`tests/debug/test_debug_truncation.c` 覆盖文本标记、路径尾部、NUL 终止、长字符串预览标记和分块读取 | RED 阶段 3/4 FAIL：纯文本/路径/长字符串预览缺省略标记；新增分页断言后发现 debug evaluate 安全子集本身限制超长字符串字面量，按阶段目标改为从 runtime 长字符串值验证。修复后 WSL/GCC 与 WSL/Clang focused gate 10/10 PASS，Windows/MSVC `zr_vm_debug_truncation_test.exe` 5/5 PASS，`debug_step_edges|debug_truncation` CTest 2/2 PASS。下一步 Phase 5.4：task / 协程多执行体调试 |
-| 2026-06-22 02:36:30 +08:00 | 5.4 task / 协程多执行体调试 | 完成；5.5 未开始 | 新增 `tests/debug/test_debug_threads.c` 覆盖 `supportsThreads`、`threads` 请求、`stopped` 事件 `threadId=1`、以及 `stackTrace/scopes/variables` 带 `threadId` 路由；agent 内部新增 thread registry，稳定保存 `SZrState -> threadId`、原 debug hook signal、thread name，并在 `AgentStop` 恢复每个注册 state；协议层读取线程请求时临时切换 `agent->state` 到目标 thread state 后恢复；frame/scope/result 层输出 `threadId`，variables 顶层输出 `threadId`，单个变量项不重复输出以避免全局对象展开响应过大 | RED 阶段 1/1 FAIL：`initialize` capability 缺 `supportsThreads`；完成后 WSL/GCC 和 WSL/Clang focused gate 11/11 PASS，Windows/MSVC `debug_threads|debug_step_edges|debug_truncation` 3/3 PASS。修复过程中发现把 `threadId` 写入每个变量项会放大全局 `zr` 展开响应并导致旧协议测试等不到 id=7 响应，已改为只在 variables result 顶层携带。当前 task runtime 仍复用主 `SZrState`，没有可枚举的额外活跃 state 列表；本阶段按 MVP 先完成枚举主执行体与按 thread 栈检查路由，跨 task 同步 step 仍留后续 |
-| 2026-06-22 03:32:22 +08:00 | 5.5 data breakpoint / watchpoint | 完成；5.6 未开始 | 新增 `tests/debug/test_debug_data_breakpoint.c` 覆盖 `supportsDataBreakpoints`、Locals scope `dataBreakpointInfo`、`setDataBreakpoints`、局部变量值变化 stop、upvalue 值变化 stop，以及 stopped event 的 `reason=dataBreakpoint`、`dataId`、`description`、`threadId`；agent 新增 data breakpoint/watchpoint 表，支持 `local:<thread>:<frame>:<scope>:<slot>:<name>` 与 `upvalue:<thread>:<frame>:<index>:<name>` dataId；LINE/COUNT hook 路径仅在存在 watch 时线性比对当前值与上一快照，变化后更新快照并触发 data breakpoint stop；协议层新增 `dataBreakpointInfo`、`setDataBreakpoints`，`initialize` 报告 `supportsDataBreakpoints`，scope 输出 DAP `variablesReference` 别名，stopped event 可携带 `dataId`/`description` | RED 阶段 1/2 FAIL：`initialize` capability 缺 `supportsDataBreakpoints`，确认旧协议无 data breakpoint 能力；实现后 WSL/GCC `debug_data_breakpoint` PASS，并在重建旧测试产物后 focused gate 12/12 PASS；WSL/Clang focused gate 12/12 PASS；Windows/MSVC focused gate 12/12 PASS。初版限定局部变量与 upvalue，对象字段 watch 返回不可持久化并留后续；软件 watchpoint 成本随 watch 数线性增长 |
-| 2026-06-22 03:43:08 +08:00 | 5.6 远程调试鉴权（可选） | 按计划暂不启用；Phase 5 完成 | 本项为可选增强，当前没有放开非 loopback 调试的需求；保持默认 loopback 限制与既有 `auth_token` 预留字段，不新增远程握手或 token 配置语义；文档边界仍要求未来若开放非 loopback，必须显式配置并校验 token | 无代码变更；沿用 Phase 5.5 三构建 focused gate 12/12 PASS 作为 Phase 5 结束时的调试回归证据。后续如要远程调试，应单独开启 5.6 实施并补 token handshake 测试 |
+退出条件：所有DAP id均session-scoped且generation-safe；resume后variablesReference稳定失败；adapter不在持锁状态等待target callback；source/binary/AOT provider返回一致logical frame与module信息。

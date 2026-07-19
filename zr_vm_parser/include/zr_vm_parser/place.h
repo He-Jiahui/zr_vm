@@ -2,6 +2,7 @@
 #define ZR_VM_PARSER_PLACE_H
 
 #include "zr_vm_core/array.h"
+#include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/semantic.h"
 
 typedef TZrUInt32 TZrPlaceId;
@@ -52,6 +53,14 @@ typedef enum EZrParserPlaceOverlap {
     ZR_PARSER_PLACE_UNKNOWN
 } EZrParserPlaceOverlap;
 
+typedef enum EZrParserPlaceExpressionKind {
+    ZR_PARSER_PLACE_EXPRESSION_INVALID = 0,
+    ZR_PARSER_PLACE_EXPRESSION_LOCAL,
+    ZR_PARSER_PLACE_EXPRESSION_FIELD,
+    ZR_PARSER_PLACE_EXPRESSION_INDEX,
+    ZR_PARSER_PLACE_EXPRESSION_ENUM_MAX
+} EZrParserPlaceExpressionKind;
+
 typedef struct SZrParserPlace {
     TZrPlaceId id;
     TZrPlaceId parentId;
@@ -91,5 +100,7 @@ ZR_PARSER_API EZrParserPlaceOverlap ZrParser_PlaceGraph_Overlap(
         const SZrParserPlaceGraph *graph,
         TZrPlaceId leftId,
         TZrPlaceId rightId);
+ZR_PARSER_API EZrParserPlaceExpressionKind ZrParser_PlaceExpression_Classify(
+        const SZrAstNode *node);
 
 #endif /* ZR_VM_PARSER_PLACE_H */

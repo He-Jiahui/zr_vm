@@ -1,76 +1,41 @@
----
-doc_type: plan-phase
-phase: 4
-title: 脚本层 debug 标准库
-related_code:
-  - zr_vm_lib_debug/
-  - zr_vm_library/src/zr_vm_library/
-  - zr_vm_core/include/zr_vm_core/debug.h
-  - lua/src/ldblib.c
----
+# Debug 04：`zr.debug` Script Facade
 
-# Phase 4 — 脚本层 `debug` 标准库
+## Module identity
 
-把 Phase 1–3 的内核能力以受控方式开放给 zr 脚本，对标 Lua `ldblib.c`。这让脚本作者能写
-自定义 profiler、断言增强、测试框架的栈检查等，而不必走 DAP。
+标准脚本调试库的Canonical ModuleId是`zr.debug`。当前native descriptor与type-hint中的裸`debug`迁移为`zr.debug`；兼容期只提供明确诊断/manifest migration，不永久双注册。
 
-## 4.1 模块定位
+## Surface categories
 
-- 新增可注册的原生模块（沿用 zr 现有 native 模块注册机制，参见 `zr_vm_library` 下其它
-  lib 的注册范式与 `native_registry.h`）。
-- 模块名暂定 `debug`（与 Lua 对齐）。**默认不自动加载到沙箱**：debug 库能力强（可改局部
-  变量、读任意栈），需由宿主显式开启（参照 Lua 把 debug 库视为「可选/受信」）。
+- breakpoint/tracepoint与pause/resume请求。
+- current thread/task/frame/scope snapshot。
+- structured traceback与exception hook。
+- coverage/profile session控制和结果读取。
+- debug logging/assertion与可选evaluate bridge。
 
-## 4.2 API 表（首批）
+API返回typed result/descriptor，不以任意object map作为唯一contract。涉及外部状态、权限或暂停态的调用必须返回显式错误。
 
-| 脚本 API | 内核映射 | 说明 |
-|----------|----------|------|
-| `debug.traceback([msg[, level]])` | `ZrCore_Debug_Traceback`（P3） | 返回回溯字符串 |
-| `debug.getinfo(level_or_func[, what])` | `GetStack`+`GetInfo`（P1/P2） | 返回信息表 |
-| `debug.getlocal(level, idx)` | `ZrCore_Debug_GetLocal`（P2） | 返回 name,value |
-| `debug.setlocal(level, idx, v)` | `ZrCore_Debug_SetLocal`（P2） | 返回 name |
-| `debug.getupvalue(func, idx)` | `ZrCore_Debug_GetUpvalue`（P2） | 返回 name,value |
-| `debug.setupvalue(func, idx, v)` | `ZrCore_Debug_SetUpvalue`（P2） | 返回 name |
-| `debug.upvalueid(func, idx)` | `ZrCore_Debug_GetUpvalueId`（P2） | 别名检测 |
-| `debug.sethook([hook[, mask[, count]])` | `ZrCore_Debug_SetHook`（P1） | mask 用字符串 "crl" 或位 |
-| `debug.gethook()` | `GetHook*`（P1） | 返回当前 hook/mask/count |
+## 能力与安全
 
-第二批（依赖后续阶段，可延后）：`debug.getregistry`、`debug.sethook` 的 count 采样配合
-Phase 6 profiling。
+- release构建可按capability禁用mutation/evaluate/coverage，不改变module identity。
+- script不能伪造FrameId/ValueHandle/ModuleIdentity；opaque handle带generation。
+- evaluate使用compiler+LSP共享语义路径，遵守readonly/ref/resource/native policy。
+- coverage/profile instrumentation与debug hooks共享sequence point，但分别计数，关闭时hot path成本可测。
+- `zr.debug`通过registered native module descriptor导出，metadata schema与runtime exports必须一致。
 
-## 4.3 hook 回调桥接
+## 完成记录
 
-`debug.sethook(zrFunction, "lr", 0)` 需把脚本函数包装成 `FZrDebugHook`：
-- 内核 hook 触发时，C 侧 trampoline 把 `SZrDebugInfo` 转成脚本可读的事件参数
-  （event 名 "line"/"call"/"return"/"count" + currentLine），压栈调用脚本 hook。
-- **重入与 allowDebugHook**：调用脚本 hook 期间 `allowDebugHook=FALSE`（`debug.c:273` 已有），
-  避免 hook 内再触发 hook 无限递归。
-- 每个 state（线程/task）独立 hook —— 与内核 `state->debugHook` 的 per-state 语义一致。
+[2026-06-21 script debug library baseline](./04-zr-debug/2026-06-21-script-debug-library-baseline.md) 记录裸`debug`现有能力；ModuleId迁移和typed contract是新工作。
 
-## 4.4 安全与作用域
+## Module/API 迁移阶段
 
-- `what` 选项字符串解析复用 Lua 约定：`"n"`=name/namewhat, `"S"`=source, `"l"`=line,
-  `"u"`=nups/nparams, `"t"`=tailcall, `"f"`=push function。映射到 `EZrDebugInfoType` 位。
-- 越界/类型错误：返回 nil 或抛 zr 异常（与 zr 其它 stdlib 的错误风格一致）。
-- 写能力（setlocal/setupvalue/sethook）受模块开关保护，沙箱默认禁用。
+| 阶段 | 交付 | Gate |
+|---|---|---|
+| D1 descriptor convergence | descriptor/hint/lookup统一`zr.debug` ModuleId | bare `debug`只触发migration diagnostic |
+| D2 typed exports | snapshot/frame/trace/coverage/profile/result descriptors | runtime exports与metadata hints hash一致 |
+| D3 capability policy | inspect/evaluate/mutate/coverage/profile分权 | sandbox/release拒绝高权限调用 |
+| D4 service lifecycle | per-runtime/module generation、reload/unload与cache | stale/forged handle fail closed |
+| D5 consumers | DAP/CLI/script共享core service | 不复制debug语义或格式化字符串解析 |
 
-## 4.5 验收
+现有bare module代码是迁移输入。目标测试必须验证`let debug = import("zr.debug");`、old spelling诊断、source/binary/native module identity、exports/reflection metadata一致、capability denied和runtime replacement。
 
-- `tests/library/test_debug_library.zr`（或对应 C 驱动）：
-  - `debug.traceback` 在已知调用链返回预期文本。
-  - `debug.getinfo(1,"nSl")` 字段正确。
-  - `debug.getlocal/setlocal` 改值生效。
-  - `debug.sethook` 行 hook 统计行数；count hook 统计指令数。
-  - 沙箱模式下写 API 被拒。
-
-## 4.6 风险
-
-- 脚本 hook 性能：行/指令 hook 调脚本函数开销大，文档需标注「仅调试/测试用」。
-- 把内核裸指针（callInfo/closure）泄漏给脚本是危险的——脚本侧只暴露**层级整数**与
-  **函数值**，绝不暴露 activation 句柄本身。
-
-## 4.7 状态与产出记录
-
-| 时间 | 状态 | 完成项目 | 验证 | 后续 |
-|------|------|----------|------|------|
-| 2026-06-21 23:35:14 +08:00 | 完成 | 新增脚本层 `debug` native module，宿主可选择受信或沙箱注册；首批 API 覆盖 `traceback/getinfo/getlocal/setlocal/getupvalue/setupvalue/upvalueid/sethook/gethook`；`what` 字符串、hook mask/count、脚本 hook trampoline、`__hook` root 与 sandbox 写 API 拒绝均已实现；新增 `tests/library/test_debug_library.c` 和 `docs/library-and-builtins/zr-debug-module.md` | WSL/GCC：`zr_vm_debug_library_test` 构建通过，`debug_library` CTest PASS，`debug_metadata|debug_trace|debug_traceback|debug_library` 4/4 PASS。WSL/Clang：同范围构建与 focused CTest 4/4 PASS；仅余无关 `zr_vm_library/project/project.c` const qualifier warning | Phase 5 的 DAP step 边界、多 task、截断治理与 data breakpoint 未开始；Milestone B 的全量矩阵按计划在 Phase 5 后执行 |
+退出条件：仓库current fixture无裸`debug` import；module loader不保留永久双注册；opaque handles不能由脚本伪造；关闭debug capability时业务模块不依赖`zr.debug`且无额外hook分配。

@@ -3,6 +3,7 @@
 //
 
 #include "type_inference_internal.h"
+#include "zr_vm_parser/place.h"
 
 static EZrParameterPassingMode get_parameter_passing_mode_at(const SZrArray *parameterPassingModes, TZrSize index) {
     EZrParameterPassingMode *mode;
@@ -29,50 +30,121 @@ static const TZrChar *parameter_passing_mode_label(EZrParameterPassingMode passi
     }
 }
 
-static TZrBool expression_is_assignable_storage(SZrAstNode *node) {
-    SZrPrimaryExpression *primaryExpr;
+static EZrCallArgumentMarker call_argument_marker_at(
+        const SZrFunctionCall *call,
+        TZrSize index) {
+    const SZrCallArgumentSyntax *syntax;
 
-    if (node == ZR_NULL) {
-        return ZR_FALSE;
+    if (call == ZR_NULL || call->argumentMarkers == ZR_NULL ||
+        index >= call->argumentMarkers->length) {
+        return ZR_CALL_ARGUMENT_MARKER_NONE;
     }
+    syntax = (const SZrCallArgumentSyntax *)ZrCore_Array_Get(
+            call->argumentMarkers, index);
+    return syntax != ZR_NULL ? syntax->marker : ZR_CALL_ARGUMENT_MARKER_NONE;
+}
 
-    if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
-        return ZR_TRUE;
+static SZrAstNodeArray *function_parameter_list(
+        const SZrFunctionTypeInfo *functionType) {
+    SZrAstNode *declaration =
+            functionType != ZR_NULL ? functionType->declarationNode : ZR_NULL;
+    if (declaration == ZR_NULL) {
+        return ZR_NULL;
     }
-
-    if (node->type != ZR_AST_PRIMARY_EXPRESSION) {
-        return ZR_FALSE;
+    if (declaration->type == ZR_AST_FUNCTION_DECLARATION) {
+        return declaration->data.functionDeclaration.params;
     }
-
-    primaryExpr = &node->data.primaryExpression;
-    if (primaryExpr->property == ZR_NULL) {
-        return ZR_FALSE;
+    if (declaration->type == ZR_AST_EXTERN_FUNCTION_DECLARATION) {
+        return declaration->data.externFunctionDeclaration.params;
     }
+    return ZR_NULL;
+}
 
-    if (!expression_is_assignable_storage(primaryExpr->property) &&
-        primaryExpr->property->type != ZR_AST_IDENTIFIER_LITERAL) {
-        return ZR_FALSE;
+static TZrSize call_argument_index_for_parameter(
+        const SZrFunctionCall *call,
+        const SZrAstNodeArray *parameters,
+        TZrSize parameterIndex) {
+    SZrString *parameterName;
+
+    if (call == ZR_NULL || call->args == ZR_NULL) {
+        return ZR_PARSER_INDEX_NONE;
     }
-
-    if (primaryExpr->members == ZR_NULL || primaryExpr->members->count == 0) {
-        return primaryExpr->property->type == ZR_AST_IDENTIFIER_LITERAL;
+    if (!call->hasNamedArgs || call->argNames == ZR_NULL ||
+        parameters == ZR_NULL || parameterIndex >= parameters->count) {
+        return parameterIndex < call->args->count
+                       ? parameterIndex
+                       : ZR_PARSER_INDEX_NONE;
     }
-
-    for (TZrSize index = 0; index < primaryExpr->members->count; index++) {
-        SZrAstNode *memberNode = primaryExpr->members->nodes[index];
-        if (memberNode == ZR_NULL || memberNode->type != ZR_AST_MEMBER_EXPRESSION) {
-            return ZR_FALSE;
+    if (parameters->nodes[parameterIndex] == ZR_NULL ||
+        parameters->nodes[parameterIndex]->type != ZR_AST_PARAMETER ||
+        parameters->nodes[parameterIndex]->data.parameter.name == ZR_NULL) {
+        return ZR_PARSER_INDEX_NONE;
+    }
+    parameterName =
+            parameters->nodes[parameterIndex]->data.parameter.name->name;
+    for (TZrSize index = 0u; index < call->args->count; index++) {
+        SZrString **argumentName = index < call->argNames->length
+                ? (SZrString **)ZrCore_Array_Get(call->argNames, index)
+                : ZR_NULL;
+        if (argumentName == ZR_NULL || *argumentName == ZR_NULL) {
+            if (index == parameterIndex) {
+                return index;
+            }
+            continue;
+        }
+        if (parameterName != ZR_NULL &&
+            ZrCore_String_Equal(parameterName, *argumentName)) {
+            return index;
         }
     }
+    return ZR_PARSER_INDEX_NONE;
+}
 
-    return ZR_TRUE;
+static TZrBool validate_call_argument_marker(
+        SZrCompilerState *cs,
+        EZrParameterPassingMode passingMode,
+        EZrCallArgumentMarker marker,
+        SZrFileRange location) {
+    const TZrChar *requiredMarker = ZR_NULL;
+
+    if (passingMode == ZR_PARAMETER_PASSING_MODE_OUT) {
+        requiredMarker = "out";
+        if (marker == ZR_CALL_ARGUMENT_MARKER_OUT) {
+            return ZR_TRUE;
+        }
+    } else if (passingMode == ZR_PARAMETER_PASSING_MODE_REF) {
+        requiredMarker = "ref";
+        if (marker == ZR_CALL_ARGUMENT_MARKER_REF) {
+            return ZR_TRUE;
+        }
+    } else {
+        if (marker == ZR_CALL_ARGUMENT_MARKER_NONE) {
+            return ZR_TRUE;
+        }
+        ZrParser_Compiler_Error(
+                cs, "Value and in parameters do not accept an argument marker", location);
+        return ZR_FALSE;
+    }
+
+    {
+        TZrChar errorBuffer[ZR_PARSER_DETAIL_BUFFER_LENGTH];
+        snprintf(errorBuffer,
+                 sizeof(errorBuffer),
+                 "%s parameter requires the '%s' argument marker",
+                 parameter_passing_mode_label(passingMode),
+                 requiredMarker);
+        ZrParser_Compiler_Error(cs, errorBuffer, location);
+    }
+    return ZR_FALSE;
 }
 
 TZrBool validate_call_argument_passing_modes(SZrCompilerState *cs,
                                              const SZrArray *parameterPassingModes,
                                              const SZrArray *parameterTypes,
                                              SZrFunctionCall *call,
-                                             const SZrArray *argTypes) {
+                                             const SZrArray *argTypes,
+                                             const SZrFunctionTypeInfo *functionType) {
+    SZrAstNodeArray *parameters = function_parameter_list(functionType);
     if (cs == ZR_NULL || parameterTypes == ZR_NULL || call == ZR_NULL || argTypes == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -82,31 +154,43 @@ TZrBool validate_call_argument_passing_modes(SZrCompilerState *cs,
         SZrInferredType *argType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)argTypes, index);
         SZrInferredType *paramType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)parameterTypes, index);
         SZrAstNode *argNode;
+        TZrSize argumentIndex;
         TZrChar errorBuffer[ZR_PARSER_DETAIL_BUFFER_LENGTH];
 
-        if (passingMode != ZR_PARAMETER_PASSING_MODE_OUT && passingMode != ZR_PARAMETER_PASSING_MODE_REF) {
+        argumentIndex = call_argument_index_for_parameter(
+                call, parameters, index);
+        if (argumentIndex == ZR_PARSER_INDEX_NONE) {
             continue;
         }
 
-        if (call->args == ZR_NULL || index >= call->args->count) {
-            return ZR_FALSE;
-        }
-
-        argNode = call->args->nodes[index];
+        argNode = call->args->nodes[argumentIndex];
         if (argNode == ZR_NULL || argType == ZR_NULL || paramType == ZR_NULL) {
             return ZR_FALSE;
         }
 
-        if (!expression_is_assignable_storage(argNode)) {
+        if ((passingMode == ZR_PARAMETER_PASSING_MODE_OUT ||
+             passingMode == ZR_PARAMETER_PASSING_MODE_REF) &&
+            ZrParser_PlaceExpression_Classify(argNode) ==
+                    ZR_PARSER_PLACE_EXPRESSION_INVALID) {
             snprintf(errorBuffer,
                      sizeof(errorBuffer),
-                     "%s argument must be an assignable storage location",
+                     "%s argument must be an assignable storage location (writable Place)",
                      parameter_passing_mode_label(passingMode));
             ZrParser_Compiler_Error(cs, errorBuffer, argNode->location);
             return ZR_FALSE;
         }
 
-        if (!ZrParser_InferredType_Equal(argType, paramType)) {
+        if (!validate_call_argument_marker(
+                    cs,
+                    passingMode,
+                    call_argument_marker_at(call, argumentIndex),
+                    argNode->location)) {
+            return ZR_FALSE;
+        }
+
+        if ((passingMode == ZR_PARAMETER_PASSING_MODE_OUT ||
+             passingMode == ZR_PARAMETER_PASSING_MODE_REF) &&
+            !ZrParser_InferredType_Equal(argType, paramType)) {
             snprintf(errorBuffer,
                      sizeof(errorBuffer),
                      "%s argument type mismatch",

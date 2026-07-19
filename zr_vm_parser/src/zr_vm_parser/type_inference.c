@@ -857,7 +857,13 @@ TZrBool ZrParser_FunctionCallCompatibility_Check(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    if (!validate_call_argument_passing_modes(cs, parameterPassingModes, parameterTypes, call, &argTypes)) {
+    if (!validate_call_argument_passing_modes(
+                cs,
+                parameterPassingModes,
+                parameterTypes,
+                call,
+                &argTypes,
+                funcType)) {
         free_inferred_type_array(cs->state, &argTypes);
         return ZR_FALSE;
     }

@@ -5612,7 +5612,7 @@ static void test_type_inference_out_parameter_requires_definite_assignment_on_al
         compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "%out parameter 'value' must be assigned on all control-flow paths"));
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "out parameter 'value' must be assigned on every normal return path"));
 
         ZrParser_Ast_Free(state, ast);
         destroy_test_compiler_state(cs);

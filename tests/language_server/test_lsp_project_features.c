@@ -923,10 +923,12 @@ static TZrBool prepare_generated_source_member_refresh_fixture(const TZrChar *ar
         "}\n";
     static const TZrChar *mainContent =
         "var numbers = %import(\"numbers\");\n"
-        "var cachedAnswer = numbers.answer;\n"
+        "var cachedAnswer = numbers.answer();\n"
         "return cachedAnswer;\n";
     static const TZrChar *moduleContent =
-        "pub var answer: int = 1;\n";
+        "pub answer(): int {\n"
+        "    return 1;\n"
+        "}\n";
     TZrChar generatedProjectPath[ZR_TESTS_PATH_MAX];
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
     TZrChar sourceRootPath[ZR_TESTS_PATH_MAX];
@@ -5482,7 +5484,14 @@ static void test_lsp_watched_binary_metadata_refresh_invalidates_module_cache_ke
 }
 
 static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *state) {
-    static const TZrChar *updatedModuleContent = "pub var answer: float = 1.5;\n";
+    static const TZrChar *bodyUpdatedModuleContent =
+        "pub answer(): int {\n"
+        "    return 2;\n"
+        "}\n";
+    static const TZrChar *updatedModuleContent =
+        "pub answer(): float {\n"
+        "    return 1.5;\n"
+        "}\n";
     SZrTestTimer timer;
     SZrLspContext *context;
     SZrGeneratedSourceMemberRefreshFixture fixture;
@@ -5495,6 +5504,12 @@ static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *s
     SZrLspPosition localHoverPosition;
     SZrArray completions;
     SZrLspHover *hover = ZR_NULL;
+    SZrFileVersion *moduleVersion;
+    SZrSemanticAnalyzer *mainAnalyzer;
+    SZrSemanticAnalyzer *mainAnalyzerAfterRefresh;
+    SZrSemanticAnalysisMetrics initialMainMetrics;
+    SZrSemanticAnalysisMetrics bodyRefreshMainMetrics;
+    SZrSemanticAnalysisMetrics signatureRefreshMainMetrics;
 
     TEST_START("LSP Source Module Refresh Reanalyzes Open Documents");
     TEST_INFO("Source module refresh",
@@ -5572,6 +5587,54 @@ static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *s
         return;
     }
 
+    mainAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, mainUri);
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(mainAnalyzer, &initialMainMetrics);
+    if (mainAnalyzer == ZR_NULL ||
+        !write_text_file(fixture.modulePath,
+                         bodyUpdatedModuleContent,
+                         strlen(bodyUpdatedModuleContent)) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state,
+                                             context,
+                                             moduleUri,
+                                             bodyUpdatedModuleContent,
+                                             strlen(bodyUpdatedModuleContent),
+                                             2)) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Source Module Refresh Reanalyzes Open Documents",
+                  "Failed to apply the exported function body-only refresh");
+        return;
+    }
+
+    moduleVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, moduleUri);
+    mainAnalyzerAfterRefresh = ZrLanguageServer_Lsp_FindAnalyzer(state, context, mainUri);
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(mainAnalyzerAfterRefresh, &bodyRefreshMainMetrics);
+    if (moduleVersion == ZR_NULL ||
+        moduleVersion->lastChangeInfo.impact != ZR_FILE_CHANGE_IMPACT_DECLARATION_BODY ||
+        mainAnalyzerAfterRefresh != mainAnalyzer ||
+        bodyRefreshMainMetrics.executionCount != initialMainMetrics.executionCount) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Source Module Refresh Reanalyzes Open Documents",
+                  "A body-only source edit should preserve importer semantic analysis");
+        return;
+    }
+
+    hover = ZR_NULL;
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, localHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "cachedAnswer") ||
+        !hover_contains_text(hover, "int")) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Source Module Refresh Reanalyzes Open Documents",
+                  "A body-only source edit should preserve the importer's public type facts");
+        return;
+    }
+
     if (!write_text_file(fixture.modulePath,
                          updatedModuleContent,
                          strlen(updatedModuleContent)) ||
@@ -5580,12 +5643,24 @@ static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *s
                                             moduleUri,
                                             updatedModuleContent,
                                             strlen(updatedModuleContent),
-                                            2)) {
+                                            3)) {
         free(mainContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Source Module Refresh Reanalyzes Open Documents",
                   "Failed to update the source module fixture through the standard document refresh path");
+        return;
+    }
+
+    mainAnalyzerAfterRefresh = ZrLanguageServer_Lsp_FindAnalyzer(state, context, mainUri);
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(mainAnalyzerAfterRefresh, &signatureRefreshMainMetrics);
+    if (mainAnalyzerAfterRefresh != mainAnalyzer ||
+        signatureRefreshMainMetrics.executionCount != initialMainMetrics.executionCount + 1) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Source Module Refresh Reanalyzes Open Documents",
+                  "A public signature edit should reanalyze the direct ModuleIdentity importer exactly once");
         return;
     }
 

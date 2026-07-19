@@ -4,11 +4,7 @@
 
 #include "compiler_internal.h"
 #include "compile_expression_internal.h"
-
-typedef struct SZrTrackedOutParameters {
-    SZrString **names;
-    TZrSize count;
-} SZrTrackedOutParameters;
+#include "zr_vm_parser/place.h"
 
 typedef enum EZrVariancePosition {
     ZR_VARIANCE_POSITION_INVARIANT = 0,
@@ -46,461 +42,146 @@ void compiler_register_readonly_parameter_name(SZrCompilerState *cs,
 }
 
 TZrBool compiler_expression_is_assignable_storage_location(const SZrAstNode *node) {
-    if (node == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    switch (node->type) {
-        case ZR_AST_IDENTIFIER_LITERAL:
-            return ZR_TRUE;
-
-        case ZR_AST_MEMBER_EXPRESSION:
-            return ZR_TRUE;
-
-        case ZR_AST_PRIMARY_EXPRESSION: {
-            const SZrPrimaryExpression *primaryExpr = &node->data.primaryExpression;
-
-            if (!compiler_expression_is_assignable_storage_location(primaryExpr->property)) {
-                return ZR_FALSE;
-            }
-
-            if (primaryExpr->members == ZR_NULL || primaryExpr->members->count == 0) {
-                return ZR_TRUE;
-            }
-
-            for (TZrSize index = 0; index < primaryExpr->members->count; index++) {
-                const SZrAstNode *memberNode = primaryExpr->members->nodes[index];
-                if (memberNode == ZR_NULL) {
-                    continue;
-                }
-
-                if (memberNode->type != ZR_AST_MEMBER_EXPRESSION) {
-                    return ZR_FALSE;
-                }
-            }
-
-            return ZR_TRUE;
-        }
-
-        default:
-            return ZR_FALSE;
-    }
+    return ZrParser_PlaceExpression_Classify(node) !=
+           ZR_PARSER_PLACE_EXPRESSION_INVALID;
 }
 
-static TZrInt32 tracked_out_parameter_index(const SZrTrackedOutParameters *tracked, SZrString *name) {
-    if (tracked == ZR_NULL || tracked->names == ZR_NULL || name == ZR_NULL) {
-        return ZR_PARSER_I32_NONE;
+static EZrCallArgumentMarker compiler_call_argument_marker_at(
+        const SZrFunctionCall *call,
+        TZrSize index) {
+    const SZrCallArgumentSyntax *syntax;
+    if (call == ZR_NULL || call->argumentMarkers == ZR_NULL ||
+        index >= call->argumentMarkers->length) {
+        return ZR_CALL_ARGUMENT_MARKER_NONE;
     }
+    syntax = (const SZrCallArgumentSyntax *)ZrCore_Array_Get(
+            call->argumentMarkers, index);
+    return syntax != ZR_NULL ? syntax->marker : ZR_CALL_ARGUMENT_MARKER_NONE;
+}
 
-    for (TZrSize index = 0; index < tracked->count; index++) {
-        if (tracked->names[index] != ZR_NULL && ZrCore_String_Equal(tracked->names[index], name)) {
-            return (TZrInt32)index;
+static SZrString *compiler_call_parameter_name_at(
+        const SZrAstNodeArray *parameterList,
+        const SZrArray *parameterNames,
+        TZrSize index) {
+    if (parameterList != ZR_NULL && index < parameterList->count) {
+        SZrAstNode *parameter = parameterList->nodes[index];
+        if (parameter != ZR_NULL && parameter->type == ZR_AST_PARAMETER &&
+            parameter->data.parameter.name != ZR_NULL) {
+            return parameter->data.parameter.name->name;
         }
     }
-
-    return ZR_PARSER_I32_NONE;
+    if (parameterNames != ZR_NULL && index < parameterNames->length) {
+        SZrString **name = (SZrString **)ZrCore_Array_Get(
+                (SZrArray *)parameterNames, index);
+        return name != ZR_NULL ? *name : ZR_NULL;
+    }
+    return ZR_NULL;
 }
 
-static void copy_assignment_state(const TZrBool *source, TZrBool *dest, TZrSize count) {
-    if (source == ZR_NULL || dest == ZR_NULL || count == 0) {
-        return;
+static TZrSize compiler_call_argument_index_for_parameter(
+        const SZrFunctionCall *call,
+        const SZrAstNodeArray *parameterList,
+        const SZrArray *parameterNames,
+        TZrSize parameterIndex) {
+    SZrString *parameterName;
+    if (call == ZR_NULL || call->args == ZR_NULL) {
+        return ZR_PARSER_INDEX_NONE;
     }
-
-    memcpy(dest, source, sizeof(TZrBool) * count);
-}
-
-static TZrBool all_out_parameters_assigned(const TZrBool *assigned, TZrSize count) {
-    if (assigned == ZR_NULL) {
-        return ZR_TRUE;
+    if (!call->hasNamedArgs || call->argNames == ZR_NULL) {
+        return parameterIndex < call->args->count
+                       ? parameterIndex
+                       : ZR_PARSER_INDEX_NONE;
     }
-
-    for (TZrSize index = 0; index < count; index++) {
-        if (!assigned[index]) {
-            return ZR_FALSE;
-        }
-    }
-
-    return ZR_TRUE;
-}
-
-static TZrBool report_first_unassigned_out_parameter(SZrCompilerState *cs,
-                                                     const SZrTrackedOutParameters *tracked,
-                                                     const TZrBool *assigned,
-                                                     SZrFileRange location) {
-    TZrChar errorBuffer[ZR_PARSER_ERROR_BUFFER_LENGTH];
-
-    if (cs == ZR_NULL || tracked == ZR_NULL || assigned == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (TZrSize index = 0; index < tracked->count; index++) {
-        const TZrChar *nameText;
-
-        if (assigned[index]) {
+    parameterName = compiler_call_parameter_name_at(
+            parameterList, parameterNames, parameterIndex);
+    for (TZrSize index = 0u; index < call->args->count; index++) {
+        SZrString **argumentName = index < call->argNames->length
+                ? (SZrString **)ZrCore_Array_Get(call->argNames, index)
+                : ZR_NULL;
+        if (argumentName == ZR_NULL || *argumentName == ZR_NULL) {
+            if (index == parameterIndex) {
+                return index;
+            }
             continue;
         }
-
-        nameText = compiler_string_native(tracked->names[index]);
-        snprintf(errorBuffer,
-                 sizeof(errorBuffer),
-                 "%%out parameter '%s' must be assigned on all control-flow paths",
-                 nameText != ZR_NULL ? nameText : "<unknown>");
-        ZrParser_Compiler_Error(cs, errorBuffer, location);
-        return ZR_FALSE;
+        if (parameterName != ZR_NULL &&
+            ZrCore_String_Equal(parameterName, *argumentName)) {
+            return index;
+        }
     }
+    return ZR_PARSER_INDEX_NONE;
+}
 
+TZrBool compiler_validate_call_argument_passing_contract(
+        SZrCompilerState *cs,
+        const SZrArray *parameterPassingModes,
+        const SZrAstNodeArray *parameterList,
+        const SZrArray *parameterNames,
+        const SZrFunctionCall *call) {
+    if (cs == ZR_NULL || call == ZR_NULL || call->args == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    TZrSize parameterCount = parameterPassingModes != ZR_NULL
+            ? parameterPassingModes->length
+            : call->args->count;
+    for (TZrSize index = 0u; index < parameterCount; index++) {
+        EZrParameterPassingMode mode = ZR_PARAMETER_PASSING_MODE_VALUE;
+        TZrSize argumentIndex = compiler_call_argument_index_for_parameter(
+                call, parameterList, parameterNames, index);
+        EZrCallArgumentMarker marker;
+        SZrAstNode *argument;
+        if (argumentIndex == ZR_PARSER_INDEX_NONE) {
+            continue;
+        }
+        marker = compiler_call_argument_marker_at(call, argumentIndex);
+        argument = call->args->nodes[argumentIndex];
+        if (parameterPassingModes != ZR_NULL &&
+            index < parameterPassingModes->length) {
+            EZrParameterPassingMode *modePtr =
+                    (EZrParameterPassingMode *)ZrCore_Array_Get(
+                            (SZrArray *)parameterPassingModes, index);
+            if (modePtr != ZR_NULL) {
+                mode = *modePtr;
+            }
+        }
+        if ((mode == ZR_PARAMETER_PASSING_MODE_OUT ||
+             mode == ZR_PARAMETER_PASSING_MODE_REF) &&
+            !compiler_expression_is_assignable_storage_location(argument)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    mode == ZR_PARAMETER_PASSING_MODE_OUT
+                            ? "%out argument must be an assignable storage location (writable Place)"
+                            : "%ref argument must be an assignable storage location (writable Place)",
+                    argument != ZR_NULL ? argument->location : (SZrFileRange){0});
+            return ZR_FALSE;
+        }
+        if (mode == ZR_PARAMETER_PASSING_MODE_OUT &&
+            marker != ZR_CALL_ARGUMENT_MARKER_OUT) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "%out parameter requires the 'out' argument marker",
+                    argument != ZR_NULL ? argument->location : (SZrFileRange){0});
+            return ZR_FALSE;
+        }
+        if (mode == ZR_PARAMETER_PASSING_MODE_REF &&
+            marker != ZR_CALL_ARGUMENT_MARKER_REF) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "%ref parameter requires the 'ref' argument marker",
+                    argument != ZR_NULL ? argument->location : (SZrFileRange){0});
+            return ZR_FALSE;
+        }
+        if (mode != ZR_PARAMETER_PASSING_MODE_OUT &&
+            mode != ZR_PARAMETER_PASSING_MODE_REF &&
+            marker != ZR_CALL_ARGUMENT_MARKER_NONE) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Value and in parameters do not accept an argument marker",
+                    argument != ZR_NULL ? argument->location : (SZrFileRange){0});
+            return ZR_FALSE;
+        }
+    }
     return ZR_TRUE;
-}
-
-static void mark_expression_out_assignments(const SZrTrackedOutParameters *tracked,
-                                            SZrAstNode *node,
-                                            TZrBool *assignedState) {
-    TZrInt32 trackedIndex;
-
-    if (tracked == ZR_NULL || node == ZR_NULL || assignedState == ZR_NULL) {
-        return;
-    }
-
-    switch (node->type) {
-        case ZR_AST_ASSIGNMENT_EXPRESSION:
-            if (node->data.assignmentExpression.left != ZR_NULL &&
-                node->data.assignmentExpression.left->type == ZR_AST_IDENTIFIER_LITERAL) {
-                trackedIndex = tracked_out_parameter_index(tracked,
-                                                           node->data.assignmentExpression.left->data.identifier.name);
-                if (trackedIndex != ZR_PARSER_I32_NONE) {
-                    assignedState[trackedIndex] = ZR_TRUE;
-                }
-            }
-            mark_expression_out_assignments(tracked, node->data.assignmentExpression.right, assignedState);
-            break;
-
-        case ZR_AST_PRIMARY_EXPRESSION:
-            if (node->data.primaryExpression.property != ZR_NULL) {
-                mark_expression_out_assignments(tracked, node->data.primaryExpression.property, assignedState);
-            }
-            if (node->data.primaryExpression.members != ZR_NULL &&
-                node->data.primaryExpression.members->nodes != ZR_NULL) {
-                for (TZrSize index = 0; index < node->data.primaryExpression.members->count; index++) {
-                    mark_expression_out_assignments(tracked,
-                                                    node->data.primaryExpression.members->nodes[index],
-                                                    assignedState);
-                }
-            }
-            break;
-
-        case ZR_AST_FUNCTION_CALL:
-            if (node->data.functionCall.args != ZR_NULL && node->data.functionCall.args->nodes != ZR_NULL) {
-                for (TZrSize index = 0; index < node->data.functionCall.args->count; index++) {
-                    mark_expression_out_assignments(tracked, node->data.functionCall.args->nodes[index], assignedState);
-                }
-            }
-            break;
-
-        default:
-            break;
-    }
-}
-
-static TZrBool analyze_out_assignment_statement(SZrCompilerState *cs,
-                                                const SZrTrackedOutParameters *tracked,
-                                                SZrAstNode *node,
-                                                const TZrBool *assignedBefore,
-                                                TZrBool *assignedAfter,
-                                                TZrBool *continuesPastNode) {
-    TZrBool thenContinues = ZR_TRUE;
-    TZrBool elseContinues = ZR_TRUE;
-
-    if (cs == ZR_NULL || tracked == ZR_NULL || assignedAfter == ZR_NULL || continuesPastNode == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    *continuesPastNode = ZR_TRUE;
-    copy_assignment_state(assignedBefore, assignedAfter, tracked->count);
-    if (node == ZR_NULL || tracked->count == 0) {
-        return ZR_TRUE;
-    }
-
-    switch (node->type) {
-        case ZR_AST_BLOCK: {
-            TZrBool currentContinues = ZR_TRUE;
-            TZrBool *currentAssigned;
-            TZrBool *nextAssigned;
-
-            currentAssigned = (TZrBool *)ZrCore_Memory_RawMallocWithType(
-                    cs->state->global, sizeof(TZrBool) * tracked->count, ZR_MEMORY_NATIVE_TYPE_ARRAY);
-            nextAssigned = (TZrBool *)ZrCore_Memory_RawMallocWithType(
-                    cs->state->global, sizeof(TZrBool) * tracked->count, ZR_MEMORY_NATIVE_TYPE_ARRAY);
-            if (currentAssigned == ZR_NULL || nextAssigned == ZR_NULL) {
-                if (currentAssigned != ZR_NULL) {
-                    ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                                  currentAssigned,
-                                                  sizeof(TZrBool) * tracked->count,
-                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                }
-                if (nextAssigned != ZR_NULL) {
-                    ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                                  nextAssigned,
-                                                  sizeof(TZrBool) * tracked->count,
-                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                }
-                return ZR_FALSE;
-            }
-
-            copy_assignment_state(assignedBefore, currentAssigned, tracked->count);
-            if (node->data.block.body != ZR_NULL && node->data.block.body->nodes != ZR_NULL) {
-                for (TZrSize index = 0; index < node->data.block.body->count; index++) {
-                    SZrAstNode *statement = node->data.block.body->nodes[index];
-                    if (!currentContinues || statement == ZR_NULL) {
-                        break;
-                    }
-
-                    if (!analyze_out_assignment_statement(cs,
-                                                          tracked,
-                                                          statement,
-                                                          currentAssigned,
-                                                          nextAssigned,
-                                                          &currentContinues)) {
-                        ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                                      currentAssigned,
-                                                      sizeof(TZrBool) * tracked->count,
-                                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                        ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                                      nextAssigned,
-                                                      sizeof(TZrBool) * tracked->count,
-                                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                        return ZR_FALSE;
-                    }
-
-                    if (currentContinues) {
-                        copy_assignment_state(nextAssigned, currentAssigned, tracked->count);
-                    }
-                }
-            }
-
-            copy_assignment_state(currentAssigned, assignedAfter, tracked->count);
-            *continuesPastNode = currentContinues;
-            ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                          currentAssigned,
-                                          sizeof(TZrBool) * tracked->count,
-                                          ZR_MEMORY_NATIVE_TYPE_ARRAY);
-            ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                          nextAssigned,
-                                          sizeof(TZrBool) * tracked->count,
-                                          ZR_MEMORY_NATIVE_TYPE_ARRAY);
-            return ZR_TRUE;
-        }
-
-        case ZR_AST_RETURN_STATEMENT:
-        case ZR_AST_THROW_STATEMENT:
-            *continuesPastNode = ZR_FALSE;
-            return report_first_unassigned_out_parameter(cs, tracked, assignedBefore, node->location);
-
-        case ZR_AST_EXPRESSION_STATEMENT:
-            mark_expression_out_assignments(tracked, node->data.expressionStatement.expr, assignedAfter);
-            return ZR_TRUE;
-
-        case ZR_AST_ASSIGNMENT_EXPRESSION:
-            mark_expression_out_assignments(tracked, node, assignedAfter);
-            return ZR_TRUE;
-
-        case ZR_AST_IF_EXPRESSION:
-            if (node->data.ifExpression.isStatement) {
-                TZrBool *thenAssigned;
-                TZrBool *elseAssigned;
-
-                thenAssigned = (TZrBool *)ZrCore_Memory_RawMallocWithType(
-                        cs->state->global, sizeof(TZrBool) * tracked->count, ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                elseAssigned = (TZrBool *)ZrCore_Memory_RawMallocWithType(
-                        cs->state->global, sizeof(TZrBool) * tracked->count, ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                if (thenAssigned == ZR_NULL || elseAssigned == ZR_NULL) {
-                    if (thenAssigned != ZR_NULL) {
-                        ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                                      thenAssigned,
-                                                      sizeof(TZrBool) * tracked->count,
-                                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                    }
-                    if (elseAssigned != ZR_NULL) {
-                        ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                                      elseAssigned,
-                                                      sizeof(TZrBool) * tracked->count,
-                                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                    }
-                    return ZR_FALSE;
-                }
-
-                if (!analyze_out_assignment_statement(cs,
-                                                      tracked,
-                                                      node->data.ifExpression.thenExpr,
-                                                      assignedBefore,
-                                                      thenAssigned,
-                                                      &thenContinues)) {
-                    ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                                  thenAssigned,
-                                                  sizeof(TZrBool) * tracked->count,
-                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                    ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                                  elseAssigned,
-                                                  sizeof(TZrBool) * tracked->count,
-                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                    return ZR_FALSE;
-                }
-
-                if (node->data.ifExpression.elseExpr != ZR_NULL) {
-                    if (!analyze_out_assignment_statement(cs,
-                                                          tracked,
-                                                          node->data.ifExpression.elseExpr,
-                                                          assignedBefore,
-                                                          elseAssigned,
-                                                          &elseContinues)) {
-                        ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                                      thenAssigned,
-                                                      sizeof(TZrBool) * tracked->count,
-                                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                        ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                                      elseAssigned,
-                                                      sizeof(TZrBool) * tracked->count,
-                                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                        return ZR_FALSE;
-                    }
-                } else {
-                    copy_assignment_state(assignedBefore, elseAssigned, tracked->count);
-                    elseContinues = ZR_TRUE;
-                }
-
-                if (thenContinues && elseContinues) {
-                    for (TZrSize index = 0; index < tracked->count; index++) {
-                        assignedAfter[index] = thenAssigned[index] && elseAssigned[index];
-                    }
-                    *continuesPastNode = ZR_TRUE;
-                } else if (thenContinues) {
-                    copy_assignment_state(thenAssigned, assignedAfter, tracked->count);
-                    *continuesPastNode = ZR_TRUE;
-                } else if (elseContinues) {
-                    copy_assignment_state(elseAssigned, assignedAfter, tracked->count);
-                    *continuesPastNode = ZR_TRUE;
-                } else {
-                    *continuesPastNode = ZR_FALSE;
-                }
-
-                ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                              thenAssigned,
-                                              sizeof(TZrBool) * tracked->count,
-                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                              elseAssigned,
-                                              sizeof(TZrBool) * tracked->count,
-                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
-            }
-            return ZR_TRUE;
-
-        case ZR_AST_WHILE_LOOP:
-            if (node->data.whileLoop.block != ZR_NULL &&
-                !analyze_out_assignment_statement(cs,
-                                                  tracked,
-                                                  node->data.whileLoop.block,
-                                                  assignedBefore,
-                                                  assignedAfter,
-                                                  &thenContinues)) {
-                return ZR_FALSE;
-            }
-            copy_assignment_state(assignedBefore, assignedAfter, tracked->count);
-            *continuesPastNode = ZR_TRUE;
-            return ZR_TRUE;
-
-        case ZR_AST_FOR_LOOP:
-            if (node->data.forLoop.block != ZR_NULL &&
-                !analyze_out_assignment_statement(cs,
-                                                  tracked,
-                                                  node->data.forLoop.block,
-                                                  assignedBefore,
-                                                  assignedAfter,
-                                                  &thenContinues)) {
-                return ZR_FALSE;
-            }
-            copy_assignment_state(assignedBefore, assignedAfter, tracked->count);
-            *continuesPastNode = ZR_TRUE;
-            return ZR_TRUE;
-
-        case ZR_AST_FOREACH_LOOP:
-            if (node->data.foreachLoop.block != ZR_NULL &&
-                !analyze_out_assignment_statement(cs,
-                                                  tracked,
-                                                  node->data.foreachLoop.block,
-                                                  assignedBefore,
-                                                  assignedAfter,
-                                                  &thenContinues)) {
-                return ZR_FALSE;
-            }
-            copy_assignment_state(assignedBefore, assignedAfter, tracked->count);
-            *continuesPastNode = ZR_TRUE;
-            return ZR_TRUE;
-
-        default:
-            return ZR_TRUE;
-    }
-}
-
-TZrBool compiler_validate_out_parameter_definite_assignment(SZrCompilerState *cs,
-                                                            SZrAstNodeArray *params,
-                                                            SZrAstNode *body,
-                                                            SZrFileRange fallbackLocation) {
-    SZrTrackedOutParameters tracked = {0};
-    TZrBool *assignedBefore;
-    TZrBool *assignedAfter;
-    TZrBool continuesPastBody = ZR_TRUE;
-
-    if (cs == ZR_NULL || params == ZR_NULL || params->count == 0) {
-        return ZR_TRUE;
-    }
-
-    for (TZrSize index = 0; index < params->count; index++) {
-        SZrAstNode *paramNode = params->nodes[index];
-        if (paramNode != ZR_NULL &&
-            paramNode->type == ZR_AST_PARAMETER &&
-            paramNode->data.parameter.passingMode == ZR_PARAMETER_PASSING_MODE_OUT &&
-            paramNode->data.parameter.name != ZR_NULL &&
-            paramNode->data.parameter.name->name != ZR_NULL) {
-            tracked.count++;
-        }
-    }
-
-    if (tracked.count == 0) {
-        return ZR_TRUE;
-    }
-
-    tracked.names = (SZrString **)ZrCore_Memory_RawMallocWithType(
-            cs->state->global, sizeof(SZrString *) * tracked.count, ZR_MEMORY_NATIVE_TYPE_ARRAY);
-    assignedBefore = (TZrBool *)ZrCore_Memory_RawMallocWithType(
-            cs->state->global, sizeof(TZrBool) * tracked.count, ZR_MEMORY_NATIVE_TYPE_ARRAY);
-    assignedAfter = (TZrBool *)ZrCore_Memory_RawMallocWithType(
-            cs->state->global, sizeof(TZrBool) * tracked.count, ZR_MEMORY_NATIVE_TYPE_ARRAY);
-    if (tracked.names == ZR_NULL || assignedBefore == ZR_NULL || assignedAfter == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    tracked.count = 0;
-    for (TZrSize index = 0; index < params->count; index++) {
-        SZrAstNode *paramNode = params->nodes[index];
-        if (paramNode != ZR_NULL &&
-            paramNode->type == ZR_AST_PARAMETER &&
-            paramNode->data.parameter.passingMode == ZR_PARAMETER_PASSING_MODE_OUT &&
-            paramNode->data.parameter.name != ZR_NULL &&
-            paramNode->data.parameter.name->name != ZR_NULL) {
-            tracked.names[tracked.count++] = paramNode->data.parameter.name->name;
-        }
-    }
-
-    memset(assignedBefore, 0, sizeof(TZrBool) * tracked.count);
-    memset(assignedAfter, 0, sizeof(TZrBool) * tracked.count);
-    if (!analyze_out_assignment_statement(cs, &tracked, body, assignedBefore, assignedAfter, &continuesPastBody)) {
-        return ZR_FALSE;
-    }
-
-    if (continuesPastBody && !all_out_parameters_assigned(assignedAfter, tracked.count)) {
-        report_first_unassigned_out_parameter(cs, &tracked, assignedAfter, fallbackLocation);
-    }
-
-    return !cs->hasError;
 }
 
 static EZrGenericVariance interface_generic_variance_for_name(SZrAstNodeArray *params, SZrString *name) {

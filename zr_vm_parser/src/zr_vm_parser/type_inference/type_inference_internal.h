@@ -96,7 +96,8 @@ TZrBool validate_call_argument_passing_modes(SZrCompilerState *cs,
                                              const SZrArray *parameterPassingModes,
                                              const SZrArray *parameterTypes,
                                              SZrFunctionCall *call,
-                                             const SZrArray *argTypes);
+                                             const SZrArray *argTypes,
+                                             const SZrFunctionTypeInfo *functionType);
 const TZrChar *type_inference_ownership_flow_diagnostic_message(const SZrInferredType *targetType,
                                                                 const SZrInferredType *sourceType);
 ZR_PARSER_API void free_resolved_call_signature(SZrState *state, SZrResolvedCallSignature *signature);

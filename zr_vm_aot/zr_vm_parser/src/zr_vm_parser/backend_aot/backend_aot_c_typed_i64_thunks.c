@@ -1,6 +1,7 @@
 #include "backend_aot_c_typed_i64_thunks.h"
 
 #include "backend_aot_c_emitter.h"
+#include "backend_aot_c_typed_i64_loop_thunks.h"
 #include "backend_aot_c_typed_i64_thunk_shapes.h"
 
 TZrBool backend_aot_c_can_emit_typed_i64_no_arg_thunk(const SZrFunction *function) {
@@ -13,6 +14,7 @@ TZrBool backend_aot_c_can_emit_typed_i64_one_arg_thunk(const SZrFunction *functi
     TZrInt64 ignored;
 
     return (TZrBool)(backend_aot_c_try_get_i64_identity_return(function) ||
+                     backend_aot_c_can_emit_typed_i64_counting_sum_loop_thunk(function) ||
                      backend_aot_c_try_get_i64_arg0_negate_return(function) ||
                      backend_aot_c_try_get_i64_arg0_bitwise_not_return(function) ||
                      backend_aot_c_try_get_i64_arg0_bitwise_and_constant_return(function, &ignored) ||
@@ -198,7 +200,9 @@ void backend_aot_write_c_typed_i64_thunks(FILE *file, const SZrAotFunctionTable 
         const SZrAotFunctionEntry *entry = &table->entries[index];
         TZrInt64 returnValue;
         if (!backend_aot_c_try_get_i64_constant_return(entry->function, &returnValue)) {
-            if (backend_aot_c_try_get_i64_identity_return(entry->function)) {
+            if (backend_aot_c_can_emit_typed_i64_counting_sum_loop_thunk(entry->function)) {
+                backend_aot_c_write_typed_i64_counting_sum_loop_thunk(file, entry->flatIndex);
+            } else if (backend_aot_c_try_get_i64_identity_return(entry->function)) {
                 backend_aot_c_write_i64_one_arg_thunk_definition(file,
                                                                  entry->flatIndex,
                                                                  "    return zr_aot_arg0;\n",

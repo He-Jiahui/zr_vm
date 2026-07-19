@@ -1,96 +1,52 @@
----
-doc_type: plan-phase
-phase: 3
-title: Traceback 生成与错误诊断
-related_code:
-  - zr_vm_core/src/zr_vm_core/debug.c
-  - zr_vm_core/src/zr_vm_core/exception.c
-  - zr_vm_core/include/zr_vm_core/exception.h
-  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
-  - lua/src/lauxlib.c
-  - lua/QuickJS-master/quickjs.c
----
+# Debug 03：Traceback、Exception 与 Async Causality
 
-# Phase 3 — Traceback 生成与错误诊断
+## Structured trace
 
-让运行时错误/未捕获异常携带**人类可读的多帧栈回溯**，并把生成逻辑做成可复用单元，供
-CLI 错误输出、DAP 异常详情、脚本 `debug.traceback` 三处共用。
+```text
+Traceback {
+  exceptionTypeId;
+  message;
+  frames[];
+  cause/suppressed[];
+  asyncLinks[];
+  nativeBoundary?;
+}
 
-## 状态与产出记录
-
-| 时间 | 状态 | 完成项目 | 后续/阻塞 |
-|------|------|----------|-----------|
-| 2026-06-20 11:51:09 +08:00 | 进行中；核心生成器完成；阶段验收未完成 | 新增 `ZrCore_Debug_Traceback` API 与独立 `debug_traceback.c`，避免继续扩张已超过 1000 行的 `debug.c`；实现前缀、多帧脚本栈、native/script/native 混合帧、深栈折叠、小 buffer NUL 截断；异常规范化时写入 `stack` 文本字段并保留 `stacks` 数组，未捕获异常格式器优先使用统一文本；新增 `tests/debug/test_debug_traceback.c` 并注册 CMake/CTest | 手工 WSL/GCC focused 链接运行 4/4 PASS；旧 WSL/GCC 目录正式目标构建两次在 CMake/Ninja glob/regeneration 阶段超时；新 `build/codex-debug-phase3-wsl-gcc` 配置成功，但目标构建因完整依赖编译超时仍未产出正式可执行。仍需补 CLI e2e 命令级验证、DAP exception detail、MSVC/WSL 正式目标构建与 CTest |
-| 2026-06-20 12:47:18 +08:00 | 完成；里程碑 A 全矩阵待补跑 | 正式 WSL/GCC `zr_vm_debug_traceback_test` 目标构建与 `debug_traceback` CTest 通过；补齐 CLI 未捕获错误回溯 e2e；debug agent 异常停止事件输出 `exceptionStack`；VS Code DAP adapter 支持 `exceptionInfo` 并把异常栈写入 stderr output；focused 回归 7/7 PASS，扩展 compile/unit 29/29 PASS | Phase 3 DoD 已满足；进入 Phase 4 前按 `07-testing-and-acceptance.md` §7.5 补跑里程碑 A 全量三构建 `tests/` 与扩展桌面 smoke |
-
-## 3.1 现状
-
-- `ZrCore_Debug_RunError`（`debug.c:190`）：格式化单行 message → 规范化为 Error 对象 →
-  进入 VM 异常链路。**不含栈回溯**。
-- 异常对象已带 "stacks"（`exception.c` 内 NormalizeStatus 路径提及），但缺「渲染成
-  `file:line: in function` 文本」的统一函数。
-- CLI 未捕获错误输出（`runtime.c`）目前只打印 message。
-
-## 3.2 新增统一 traceback 生成器
-
-### API（`debug.h`）
-```c
-// 从 state 当前调用栈生成多帧回溯文本，写入 buffer（截断安全，保证 NUL 结尾）。
-// level: 起始层级（0=当前帧）；maxFrames: 最多渲染帧数，0=不限。
-// 返回写入的字节数（不含 NUL）。
-ZR_CORE_API TZrSize ZrCore_Debug_Traceback(struct SZrState *state,
-                                           TZrNativeString prefixMessage,
-                                           TZrUInt32 level,
-                                           TZrUInt32 maxFrames,
-                                           TZrChar *buffer,
-                                           TZrSize bufferSize);
+TraceFrame {
+  moduleIdentity;
+  functionSymbol;
+  sourceRange;
+  instructionId;
+  inlineChain[];
+  generation;
+}
 ```
 
-### 实现（对照 `luaL_traceback` `lauxlib.c:132` 与 QuickJS `build_backtrace`）
-逐层 `ZrCore_Debug_GetStack(level)` + `GetInfo`，每帧渲染一行：
-```
-  at <function_name> (<source_file>:<line>)        // VM 帧
-  at <native_name> [native]                        // native 帧
-  at <function_name> (<source_file>:<line>:<col>)  // 有列号时（zr 行号表带列，优于 Lua）
-```
-- **省略中段**：帧数超过阈值（如 > 21）时，按 Lua 风格折叠为
-  `... (skipping N levels)`，避免超长栈刷屏。
-- **尾调用标注**：`isTailCall` 为真时追加 `(...tail calls...)`。
-- **截断安全**：所有写入用边界检查的追加器，buffer 满即停止并保证 NUL 结尾。
+格式化字符串是view，不是唯一数据源。DAP、CLI、`zr.debug`和crash report共享structured trace。
 
-## 3.3 把 traceback 接入异常对象
+## 语义
 
-### 在错误规范化时附加
-在 `ZrCore_Exception_NormalizeStatus` / `ZrCore_Debug_RunError` 路径中，于异常对象上
-设置 `stack` 字段（字符串），值来自 `ZrCore_Debug_Traceback`。要点：
-- **生成时机**：在栈尚未被 unwind 之前抓取（抛出点），否则帧已丢失——参照 QuickJS 在
-  构造 Error 时立即 build_backtrace。
-- 若异常由用户 `throw` 抛出，也在抛出点捕获栈快照。
-- 避免在 OOM/字符串创建失败路径再分配大 buffer：使用栈上固定 buffer（如 4KB），
-  失败则降级为仅 message。
+- throw/catch/rethrow保留原exception identity与cause。
+- finally/using Close/Drop失败按统一suppression/aggregation policy记录。
+- async/await、task spawn与thread handoff通过causal link连接，不伪造成同步stack frame。
+- native extern边界记录library/entry/ABI和可用native frame，但不泄漏无效pointer。
+- optimized/inlined AOT frame由DebugMap恢复；artifact/source checksum mismatch明确标记。
+- loader/package错误携带ModuleSpecifier、Canonical ModuleId/package/provider阶段。
 
-## 3.4 CLI 未捕获错误输出
+## 完成记录
 
-`runtime.c` 未捕获错误边界：打印 `message` + 换行 + traceback。格式示例：
-```
-runtime error: index out of range
-  at compute (main.zr:42:7)
-  at main (main.zr:10:3)
-```
-受环境变量控制详略：已有 `ZR_VM_TRACE_RUN_ERROR`（`debug.c:205`）可复用为「附加内部诊断」。
+[2026-06-20 traceback baseline](./03-traceback/2026-06-20-traceback-baseline.md) 是现有异常/trace证据；async causality、native/module identity与cleanup组合仍需实现。
 
-## 3.5 验收
+## 构建与验收
 
-- `tests/debug/test_debug_traceback.c`：
-  - 三层调用中抛错，断言 traceback 含三帧且行号正确。
-  - native→script→native 混合帧，断言 native 帧标 `[native]`。
-  - 深栈（> 阈值）触发折叠，断言出现 `skipping` 行且首尾帧保留。
-  - 截断：极小 buffer 下断言不溢出、NUL 结尾、无崩溃。
-- `tests/cli/test_cli_debug_e2e.c` 扩展：未捕获错误 stdout 含 traceback 文本。
-- DAP：异常停止事件的详情包含 `stack`（供 5 阶段 UI 使用）。
+输入包括当前/异步frame chain、structured exception/cause、cleanup failure、DebugMap、ModuleIdentity与native boundary descriptor；缺失symbol不能使原始frame丢失。
 
-## 3.6 风险
+1. **T1 frame capture**：从VM frame/AOT unwind/DebugMap生成结构frame，保留inline chain、module generation和source checksum。
+2. **T2 exception graph**：保留cause、suppressed、rethrow identity及Drop/Close cleanup failure，不把字符串拼接当结构。
+3. **T3 async causality**：task spawn/await/thread handoff记录causal link，设置深度/循环/丢失策略。
+4. **T4 native/module boundary**：native extern callback、loader/package failure记录library/entry/ABI与resolver阶段，同时隐藏敏感地址。
+5. **T5 formatting/transport**：CLI、DAP、`zr.debug`从同一Traceback投影；截断明确标记且原结构可分页。
 
-- **抓取时机**是最大陷阱：unwind 后再生成会得到残缺栈。必须在抛出点（最深帧仍在）生成。
-- 重入：traceback 生成本身若触发 GC/分配进而再次出错，需保证不递归进 RunError。用栈 buffer +
-  仅读不分配的渲染路径规避。
+验证入口：`tests/debug/test_debug_trace.c`、`test_debug_traceback.c`、`tests/acceptance/2026-06-20-debug-phase3-traceback.md`。新增nested cause/suppressed、finally/Drop/Close双异常、async cycle、optimized inline、native callback、missing `.zrm` export与source mismatch。
+
+退出条件：四backendframe identity和异常分类一致；formatter变化不改变协议数据；无悬空module/runtime pointer；trace截断、metadata缺失与symbolization失败均显式可诊断。

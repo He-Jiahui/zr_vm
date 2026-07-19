@@ -596,10 +596,17 @@ void compiler_register_readonly_parameter_name(SZrCompilerState *cs,
                                                const SZrParameter *parameter,
                                                SZrString *parameterName);
 TZrBool compiler_expression_is_assignable_storage_location(const SZrAstNode *node);
-TZrBool compiler_validate_out_parameter_definite_assignment(SZrCompilerState *cs,
-                                                            SZrAstNodeArray *params,
-                                                            SZrAstNode *body,
-                                                            SZrFileRange fallbackLocation);
+TZrBool compiler_validate_call_argument_passing_contract(
+        SZrCompilerState *cs,
+        const SZrArray *parameterPassingModes,
+        const SZrAstNodeArray *parameterList,
+        const SZrArray *parameterNames,
+        const SZrFunctionCall *call);
+ZR_PARSER_API TZrBool compiler_validate_out_parameter_definite_assignment(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *params,
+        SZrAstNode *body,
+        SZrFileRange fallbackLocation);
 TZrBool compiler_validate_interface_variance_rules(SZrCompilerState *cs,
                                                    SZrAstNode *interfaceNode);
 

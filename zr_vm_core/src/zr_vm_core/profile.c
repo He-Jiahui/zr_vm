@@ -22,7 +22,8 @@ static const TZrChar *const CZrProfileHelperNames[ZR_PROFILE_HELPER_ENUM_MAX] = 
         "get_member",
         "set_member",
         "get_by_index",
-        "set_by_index"
+        "set_by_index",
+        "value_construct"
 };
 
 static const TZrChar *const CZrProfileSlowPathNames[ZR_PROFILE_SLOWPATH_ENUM_MAX] = {

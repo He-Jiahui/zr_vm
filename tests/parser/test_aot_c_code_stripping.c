@@ -973,6 +973,13 @@ static void test_aot_c_code_stripping_option_filters_unreachable_static_callable
     assert_code_stripping_function_body_bytes_contains(generatedCText, 1u);
     assert_code_stripping_function_body_bytes_missing(generatedCText, 2u);
     assert_code_stripping_function_body_bytes_total_present(generatedCText);
+    assert_text_contains(generatedCText, "/* reachability.functionManifest.version = 1 */");
+    assert_text_contains(generatedCText, "/* reachability.functionManifest.count = 2 */");
+    assert_text_contains(generatedCText,
+                         "/* reachability.functionManifest.node[0] = reason=root.entry predecessor=none */");
+    assert_text_contains(generatedCText,
+                         "/* reachability.functionManifest.node[1] = reason=edge.direct_call predecessor=0 */");
+    assert_text_does_not_contain(generatedCText, "reachability.functionManifest.node[2]");
     assert_text_contains(generatedCText,
                          "static const FZrAotEntryThunk zr_aot_function_thunks[] = {\n"
                          "    zr_aot_fn_0,\n"
@@ -1352,6 +1359,9 @@ static void test_aot_c_code_stripping_option_preserves_exported_callable_root(vo
     assert_code_stripping_function_body_bytes_contains(generatedCText, 1u);
     assert_code_stripping_function_body_bytes_contains(generatedCText, 2u);
     assert_code_stripping_function_body_bytes_total_present(generatedCText);
+    assert_text_contains(generatedCText, "/* reachability.functionManifest.count = 3 */");
+    assert_text_contains(generatedCText,
+                         "/* reachability.functionManifest.node[2] = reason=root.export predecessor=none */");
     assert_text_contains(generatedCText,
                          "static const FZrAotEntryThunk zr_aot_function_thunks[] = {\n"
                          "    zr_aot_fn_0,\n"
@@ -1415,6 +1425,9 @@ static void test_aot_c_code_stripping_option_preserves_manifest_function_root(vo
     assert_code_stripping_function_body_bytes_contains(generatedCText, 1u);
     assert_code_stripping_function_body_bytes_contains(generatedCText, 2u);
     assert_code_stripping_function_body_bytes_total_present(generatedCText);
+    assert_text_contains(generatedCText, "/* reachability.functionManifest.count = 3 */");
+    assert_text_contains(generatedCText,
+                         "/* reachability.functionManifest.node[2] = reason=root.manifest predecessor=none */");
     assert_text_contains(generatedCText,
                          "static const FZrAotEntryThunk zr_aot_function_thunks[] = {\n"
                          "    zr_aot_fn_0,\n"

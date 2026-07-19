@@ -15,6 +15,48 @@ static TZrBool place_projection_is_valid(
                      projection->kind < ZR_PARSER_PLACE_PROJECTION_ENUM_MAX);
 }
 
+EZrParserPlaceExpressionKind ZrParser_PlaceExpression_Classify(
+        const SZrAstNode *node) {
+    EZrParserPlaceExpressionKind kind;
+    const SZrPrimaryExpression *primary;
+
+    if (node == ZR_NULL) {
+        return ZR_PARSER_PLACE_EXPRESSION_INVALID;
+    }
+
+    if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_PARSER_PLACE_EXPRESSION_LOCAL;
+    }
+    if (node->type == ZR_AST_MEMBER_EXPRESSION) {
+        return node->data.memberExpression.computed
+                       ? ZR_PARSER_PLACE_EXPRESSION_INDEX
+                       : ZR_PARSER_PLACE_EXPRESSION_FIELD;
+    }
+    if (node->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_PARSER_PLACE_EXPRESSION_INVALID;
+    }
+
+    primary = &node->data.primaryExpression;
+    kind = ZrParser_PlaceExpression_Classify(primary->property);
+    if (kind == ZR_PARSER_PLACE_EXPRESSION_INVALID) {
+        return kind;
+    }
+    if (primary->members == ZR_NULL) {
+        return kind;
+    }
+
+    for (TZrSize index = 0u; index < primary->members->count; index++) {
+        const SZrAstNode *member = primary->members->nodes[index];
+        if (member == ZR_NULL || member->type != ZR_AST_MEMBER_EXPRESSION) {
+            return ZR_PARSER_PLACE_EXPRESSION_INVALID;
+        }
+        kind = member->data.memberExpression.computed
+                       ? ZR_PARSER_PLACE_EXPRESSION_INDEX
+                       : ZR_PARSER_PLACE_EXPRESSION_FIELD;
+    }
+    return kind;
+}
+
 static void place_free(SZrState *state, SZrParserPlace *place) {
     if (state == ZR_NULL || place == ZR_NULL) {
         return;

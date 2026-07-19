@@ -77,6 +77,12 @@ typedef struct ZrRustBindingRunOptions {
     TZrSize programArgCount;
 } ZrRustBindingRunOptions;
 
+typedef struct ZrRustBindingGcStepResult {
+    TZrUInt64 pauseMicros;
+    TZrUInt64 rootCount;
+    TZrUInt64 crossBoundaryReferenceCount;
+} ZrRustBindingGcStepResult;
+
 typedef enum EZrRustBindingNativeConstantKind {
     ZR_RUST_BINDING_NATIVE_CONSTANT_KIND_NULL = 0,
     ZR_RUST_BINDING_NATIVE_CONSTANT_KIND_BOOL = 1,
@@ -401,6 +407,10 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_CallModuleE
         ZrRustBindingValue *const *arguments,
         TZrSize argumentCount,
         ZrRustBindingValue **outResult);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_GcStep(
+        ZrRustBindingProjectSession *session,
+        TZrUInt64 maxPauseMicros,
+        ZrRustBindingGcStepResult *outResult);
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_Free(
         ZrRustBindingProjectSession *session);
 

@@ -6,7 +6,9 @@ use std::ptr;
 
 use zr_vm_rust_binding_sys as sys;
 
+mod gc;
 mod native;
+pub use gc::GcStepResult;
 pub use native::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1369,6 +1371,37 @@ mod tests {
         let restored = session.call_module_export("main", "saveState", &[])?;
         assert_eq!(restored.kind(), ValueKind::String);
         assert_eq!(restored.as_string()?, "hot:restored");
+        Ok(())
+    }
+
+    #[test]
+    fn project_session_gc_step_reports_cross_boundary_roots(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = acquire_test_lock();
+        let temp = tempfile::tempdir()?;
+        let root = temp.path().join("session_gc_project");
+        let workspace = ProjectWorkspace::scaffold(&root, "session_gc_project")?;
+        fs::write(
+            workspace.project_root()?.join("src").join("main.zr"),
+            concat!(
+                "pub retainedValue(): string {\n",
+                "    return \"rooted\";\n",
+                "}\n",
+                "\n",
+                "return 0;\n",
+            ),
+        )?;
+
+        let mut runtime = RuntimeBuilder::standard().build()?;
+        let mut session = workspace.start_session(&mut runtime, &RunOptions::default())?;
+        let retained = session.call_module_export("main", "retainedValue", &[])?;
+        let rooted = session.gc_step(1_000)?;
+        assert_eq!(rooted.cross_boundary_reference_count, 1);
+        assert!(rooted.root_count >= rooted.cross_boundary_reference_count);
+
+        drop(retained);
+        let released = session.gc_step(1_000)?;
+        assert_eq!(released.cross_boundary_reference_count, 0);
         Ok(())
     }
 }

@@ -3,6 +3,7 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/cfg.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
+  - zr_vm_parser/include/zr_vm_parser/canonical_type.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
   - zr_vm_parser/include/zr_vm_parser/semantic_query.h
@@ -18,6 +19,11 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_flow.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
+  - zr_vm_parser/src/zr_vm_parser/canonical_type.c
+  - zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
+  - zr_vm_parser/src/zr_vm_parser/canonical_type_adapter.c
+  - zr_vm_parser/src/zr_vm_parser/canonical_type_definition.c
+  - zr_vm_parser/src/zr_vm_parser/canonical_type_format.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg.c
@@ -51,6 +57,7 @@ implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/cfg.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
+  - zr_vm_parser/include/zr_vm_parser/canonical_type.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
   - zr_vm_parser/include/zr_vm_parser/semantic_query.h
@@ -58,6 +65,11 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_flow.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
+  - zr_vm_parser/src/zr_vm_parser/canonical_type.c
+  - zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
+  - zr_vm_parser/src/zr_vm_parser/canonical_type_adapter.c
+  - zr_vm_parser/src/zr_vm_parser/canonical_type_definition.c
+  - zr_vm_parser/src/zr_vm_parser/canonical_type_format.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg.c
@@ -108,6 +120,7 @@ plan_sources:
 tests:
   - tests/parser/test_cfg_reachability.c
   - tests/parser/test_pre_semantic_ir.c
+  - tests/parser/test_canonical_type_graph.c
   - tests/parser/test_cfg_constant_conditions.c
   - tests/parser/test_cfg_switch_constants.c
   - tests/parser/test_cfg_finally_abrupt.c
@@ -131,6 +144,7 @@ tests:
   - tests/acceptance/2026-06-20-semantic-stage1-cfg.md
   - tests/acceptance/2026-06-20-semantic-stage1-dataflow.md
   - tests/acceptance/2026-06-20-semantic-stage1-semantic-query.md
+  - tests/acceptance/2026-07-19-syntax-01-m1-canonical-type-graph.md
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
 doc_type: category-index
 ---
@@ -151,9 +165,17 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 
 ## 当前主题
 
+- `canonical-type-graph.md`
+  - immutable structural type nodes and canonical `TypeId` identity
+  - hash-indexed interning and binary `TypeId` lookup
+  - legacy inferred-type, callable-contract, value-construction, and LSP projections
 - `place-cfg-graph.md`
   - stable session-local Place identity and projection paths
   - dynamic typed CFG edges, cleanup routing, and suspension topology
+- `reference-place-out-flow.md`
+  - exact ref/out call markers and Place-only arguments
+  - field-sensitive out initialization across normal and exceptional flow
+  - named argument contract mapping and cross-call out responsibility transfer
 - `pre-semantic-ir-flow.md`
   - pre-execution semantic instructions with owned Place/CFG/Value/loan state
   - compiler ordering and the execution SemIR compatibility boundary

@@ -1136,6 +1136,38 @@ ZrRustBindingStatus ZrRustBinding_ProjectSession_CallModuleExport(ZrRustBindingP
                                                          outResult);
 }
 
+ZrRustBindingStatus ZrRustBinding_ProjectSession_GcStep(ZrRustBindingProjectSession *session,
+                                                        TZrUInt64 maxPauseMicros,
+                                                        ZrRustBindingGcStepResult *outResult) {
+    SZrGlobalState *global;
+    SZrGarbageCollectorStatsSnapshot snapshot;
+    TZrUInt64 crossBoundaryReferenceCount;
+
+    if (session == ZR_NULL || session->owner == ZR_NULL || session->owner->global == ZR_NULL ||
+        session->owner->global->mainThreadState == ZR_NULL || outResult == ZR_NULL) {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
+                                         "project session or GC step result is null");
+    }
+
+    global = session->owner->global;
+    memset(outResult, 0, sizeof(*outResult));
+    memset(&snapshot, 0, sizeof(snapshot));
+    ZrCore_GarbageCollector_GetStatsSnapshot(global, &snapshot);
+    ZrCore_GarbageCollector_SetPauseBudgetUs(global, maxPauseMicros, snapshot.remarkBudgetUs);
+    ZrCore_GarbageCollector_GcStep(global->mainThreadState);
+    memset(&snapshot, 0, sizeof(snapshot));
+    ZrCore_GarbageCollector_GetStatsSnapshot(global, &snapshot);
+
+    crossBoundaryReferenceCount = session->owner->refCount > 0U
+                                          ? (TZrUInt64)(session->owner->refCount - 1U)
+                                          : 0U;
+    outResult->pauseMicros = snapshot.lastStepDurationUs;
+    outResult->crossBoundaryReferenceCount = crossBoundaryReferenceCount;
+    outResult->rootCount = (TZrUInt64)snapshot.ignoredObjectCount + crossBoundaryReferenceCount;
+    zr_rust_binding_clear_error();
+    return ZR_RUST_BINDING_STATUS_OK;
+}
+
 ZrRustBindingStatus ZrRustBinding_ProjectSession_Free(ZrRustBindingProjectSession *session) {
     if (session != ZR_NULL) {
         zr_rust_binding_execution_owner_release(session->owner);

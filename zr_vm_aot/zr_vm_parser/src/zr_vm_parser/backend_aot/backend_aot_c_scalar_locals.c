@@ -373,6 +373,8 @@ static TZrBool backend_aot_c_scalar_locals_instruction_is_call_result_write(EZrI
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
         case ZR_INSTRUCTION_ENUM(DYN_CALL):
+        case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_CALL_NO_ARGS):
@@ -754,6 +756,28 @@ static EZrAotScalarLocalKind backend_aot_c_scalar_locals_kind_from_no_arg_callab
     return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
 }
 
+static EZrAotScalarLocalKind backend_aot_c_scalar_locals_kind_from_one_arg_callable_return(
+        const SZrFunction *calleeFunction) {
+    if (calleeFunction == ZR_NULL) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
+    }
+
+    if (backend_aot_c_can_emit_typed_bool_one_arg_thunk(calleeFunction)) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_BOOL;
+    }
+    if (backend_aot_c_can_emit_typed_i64_one_arg_thunk(calleeFunction)) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_I64;
+    }
+    if (backend_aot_c_can_emit_typed_u64_one_arg_thunk(calleeFunction)) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_U64;
+    }
+    if (backend_aot_c_can_emit_typed_f64_one_arg_thunk(calleeFunction)) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_F64;
+    }
+
+    return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
+}
+
 static EZrAotScalarLocalKind backend_aot_c_scalar_locals_kind_from_call_result_callee(
         const SZrFunction *function,
         TZrUInt32 callInstructionIndex) {
@@ -767,7 +791,10 @@ static EZrAotScalarLocalKind backend_aot_c_scalar_locals_kind_from_call_result_c
     }
 
     instruction = &function->instructionsList[callInstructionIndex];
-    if (!backend_aot_c_scalar_locals_call_result_has_no_arguments(instruction)) {
+    if (!backend_aot_c_scalar_locals_call_result_has_no_arguments(instruction) &&
+        (!backend_aot_c_scalar_locals_instruction_is_call_result_write(
+                 (EZrInstructionCode)instruction->instruction.operationCode) ||
+         instruction->instruction.operand.operand1[1] != 1u)) {
         return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
     }
 
@@ -776,7 +803,10 @@ static EZrAotScalarLocalKind backend_aot_c_scalar_locals_kind_from_call_result_c
             callInstructionIndex,
             instruction->instruction.operand.operand1[0],
             0u);
-    return backend_aot_c_scalar_locals_kind_from_no_arg_callable_return(calleeFunction);
+    if (backend_aot_c_scalar_locals_call_result_has_no_arguments(instruction)) {
+        return backend_aot_c_scalar_locals_kind_from_no_arg_callable_return(calleeFunction);
+    }
+    return backend_aot_c_scalar_locals_kind_from_one_arg_callable_return(calleeFunction);
 }
 
 static EZrAotScalarLocalKind backend_aot_c_scalar_locals_constant_slot_kind_before_instruction(
@@ -1551,7 +1581,8 @@ static TZrBool backend_aot_c_scalar_locals_slot_has_later_scalar_consumer(const 
             continue;
         }
 
-        if (backend_aot_c_scalar_locals_kind_from_result_opcode(opcode) != ZR_AOT_SCALAR_LOCAL_KIND_NONE ||
+        if (backend_aot_c_scalar_locals_instruction_reads_call_argument_slot(instruction, slot) ||
+            backend_aot_c_scalar_locals_kind_from_result_opcode(opcode) != ZR_AOT_SCALAR_LOCAL_KIND_NONE ||
             backend_aot_c_scalar_locals_kind_from_conversion_opcode(opcode) != ZR_AOT_SCALAR_LOCAL_KIND_NONE ||
             backend_aot_c_scalar_locals_kind_from_power_opcode(opcode) != ZR_AOT_SCALAR_LOCAL_KIND_NONE ||
             backend_aot_c_scalar_locals_instruction_is_stack_copy(opcode) ||

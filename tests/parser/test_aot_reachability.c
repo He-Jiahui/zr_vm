@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "unity.h"
@@ -249,6 +251,106 @@ static void test_reachability_preserves_root_reason_and_rejects_invalid_graphs(v
                                                        queue,
                                                        3u,
                                                        &markedCount));
+}
+
+static char *test_read_stream(FILE *file) {
+    long length;
+    char *text;
+
+    TEST_ASSERT_NOT_NULL(file);
+    TEST_ASSERT_EQUAL_INT(0, fflush(file));
+    TEST_ASSERT_EQUAL_INT(0, fseek(file, 0L, SEEK_END));
+    length = ftell(file);
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(0, length);
+    TEST_ASSERT_EQUAL_INT(0, fseek(file, 0L, SEEK_SET));
+
+    text = (char *)malloc((size_t)length + 1u);
+    TEST_ASSERT_NOT_NULL(text);
+    TEST_ASSERT_EQUAL_size_t((size_t)length, fread(text, 1u, (size_t)length, file));
+    text[length] = '\0';
+    return text;
+}
+
+static void test_reachability_function_manifest_is_stable_and_preserves_reason_chain(void) {
+    static const SZrAotReachabilityMark marks[] = {
+            {ZR_AOT_REACHABILITY_STATE_PROCESSED,
+             ZR_AOT_REACHABILITY_REASON_ROOT_ENTRY,
+             ZR_AOT_REACHABILITY_NO_NODE},
+            {ZR_AOT_REACHABILITY_STATE_PROCESSED,
+             ZR_AOT_REACHABILITY_REASON_DIRECT_CALL,
+             0u},
+            {ZR_AOT_REACHABILITY_STATE_UNMARKED,
+             ZR_AOT_REACHABILITY_REASON_NONE,
+             ZR_AOT_REACHABILITY_NO_NODE},
+            {ZR_AOT_REACHABILITY_STATE_PROCESSED,
+             ZR_AOT_REACHABILITY_REASON_FIELD_ACCESS,
+             1u},
+            {ZR_AOT_REACHABILITY_STATE_PROCESSED,
+             ZR_AOT_REACHABILITY_REASON_REFLECTION_ANNOTATION,
+             ZR_AOT_REACHABILITY_NO_NODE},
+    };
+    static const char expected[] =
+            "/* reachability.functionManifest.version = 1 */\n"
+            "/* reachability.functionManifest.count = 4 */\n"
+            "/* reachability.functionManifest.node[0] = reason=root.entry predecessor=none */\n"
+            "/* reachability.functionManifest.node[1] = reason=edge.direct_call predecessor=0 */\n"
+            "/* reachability.functionManifest.node[3] = reason=edge.field_access predecessor=1 */\n"
+            "/* reachability.functionManifest.node[4] = reason=root.reflection_annotation predecessor=none */\n";
+    FILE *file = tmpfile();
+    char *text;
+
+    TEST_ASSERT_NOT_NULL(file);
+    TEST_ASSERT_TRUE(backend_aot_reachability_write_function_manifest(file, marks, 5u));
+    text = test_read_stream(file);
+    TEST_ASSERT_EQUAL_STRING(expected, text);
+
+    free(text);
+    fclose(file);
+}
+
+static void test_reachability_function_manifest_rejects_malformed_reason_chains(void) {
+    static const SZrAotReachabilityMark pendingMarks[] = {
+            {ZR_AOT_REACHABILITY_STATE_MARKED_PENDING,
+             ZR_AOT_REACHABILITY_REASON_ROOT_ENTRY,
+             ZR_AOT_REACHABILITY_NO_NODE},
+    };
+    static const SZrAotReachabilityMark edgeAsRootMarks[] = {
+            {ZR_AOT_REACHABILITY_STATE_PROCESSED,
+             ZR_AOT_REACHABILITY_REASON_DIRECT_CALL,
+             ZR_AOT_REACHABILITY_NO_NODE},
+    };
+    static const SZrAotReachabilityMark outOfRangeMarks[] = {
+            {ZR_AOT_REACHABILITY_STATE_PROCESSED,
+             ZR_AOT_REACHABILITY_REASON_ROOT_ENTRY,
+             ZR_AOT_REACHABILITY_NO_NODE},
+            {ZR_AOT_REACHABILITY_STATE_PROCESSED,
+             ZR_AOT_REACHABILITY_REASON_DIRECT_CALL,
+             2u},
+    };
+    static const SZrAotReachabilityMark cyclicMarks[] = {
+            {ZR_AOT_REACHABILITY_STATE_PROCESSED,
+             ZR_AOT_REACHABILITY_REASON_DIRECT_CALL,
+             1u},
+            {ZR_AOT_REACHABILITY_STATE_PROCESSED,
+             ZR_AOT_REACHABILITY_REASON_FIELD_ACCESS,
+             0u},
+    };
+    static const SZrAotReachabilityMark dirtyUnmarkedMarks[] = {
+            {ZR_AOT_REACHABILITY_STATE_UNMARKED,
+             ZR_AOT_REACHABILITY_REASON_DIRECT_CALL,
+             ZR_AOT_REACHABILITY_NO_NODE},
+    };
+    FILE *file = tmpfile();
+
+    TEST_ASSERT_NOT_NULL(file);
+    TEST_ASSERT_FALSE(backend_aot_reachability_write_function_manifest(file, pendingMarks, 1u));
+    TEST_ASSERT_FALSE(backend_aot_reachability_write_function_manifest(file, edgeAsRootMarks, 1u));
+    TEST_ASSERT_FALSE(backend_aot_reachability_write_function_manifest(file, outOfRangeMarks, 2u));
+    TEST_ASSERT_FALSE(backend_aot_reachability_write_function_manifest(file, cyclicMarks, 2u));
+    TEST_ASSERT_FALSE(backend_aot_reachability_write_function_manifest(file, dirtyUnmarkedMarks, 1u));
+    TEST_ASSERT_EQUAL_INT(0, (int)ftell(file));
+
+    fclose(file);
 }
 
 static void test_function_table_filter_keeps_reachable_entries_without_renumbering(void) {
@@ -883,6 +985,8 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_reachability_marks_roots_and_direct_dependencies);
     RUN_TEST(test_reachability_preserves_root_reason_and_rejects_invalid_graphs);
+    RUN_TEST(test_reachability_function_manifest_is_stable_and_preserves_reason_chain);
+    RUN_TEST(test_reachability_function_manifest_rejects_malformed_reason_chains);
     RUN_TEST(test_function_table_filter_keeps_reachable_entries_without_renumbering);
     RUN_TEST(test_static_callable_reachability_marks_get_sub_function_target);
     RUN_TEST(test_static_callable_reachability_keeps_exported_child_roots);
