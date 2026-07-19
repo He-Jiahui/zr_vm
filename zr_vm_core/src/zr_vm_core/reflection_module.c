@@ -12,14 +12,13 @@
 #include "zr_vm_core/value.h"
 
 #include "reflection_generic_method_native_internal.h"
+#include "reflection_module_internal.h"
 #include "reflection_object_internal.h"
 
-#define ZR_REFLECTION_MODULE_NAME "zr.reflection"
-#define ZR_REFLECTION_MAKE_GENERIC_METHOD_EXPORT "MakeGenericMethod"
-
-SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntime(
+SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntimeInternal(
         SZrState *state,
-        SZrMetadataRuntime *runtime) {
+        SZrMetadataRuntime *runtime,
+        TZrBool pinRuntimeModule) {
     TZrStackValuePointer rootBase;
     SZrTypeValue *closureRoot;
     SZrTypeValue *moduleRoot;
@@ -123,18 +122,33 @@ SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntime(
         installedValue->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule)) {
         goto cleanup;
     }
-    ZrCore_GarbageCollector_PinObject(
-            state,
-            ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule),
-            ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
     ZrCore_Module_SetInitializationState(module, ZR_MODULE_INIT_STATE_READY);
     result = module;
 
 cleanup:
     state->stackTop.valuePointer = rootBase;
+    if (!ZrCore_GarbageCollector_IsObjectIgnoredFast(
+                state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule)) &&
+        !ZrCore_GarbageCollector_IgnoreObject(
+                state, ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule))) {
+        result = ZR_NULL;
+    }
+    if (result != ZR_NULL && pinRuntimeModule) {
+        ZrCore_GarbageCollector_PinObject(
+                state,
+                ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule),
+                ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
+    }
     ZrCore_Reflection_ObjectUnpinRaw(
             state->global,
             ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule),
             runtimeModulePinned);
     return result;
+}
+
+SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntime(
+        SZrState *state,
+        SZrMetadataRuntime *runtime) {
+    return ZrCore_Reflection_CreateModuleForRuntimeInternal(
+            state, runtime, ZR_TRUE);
 }

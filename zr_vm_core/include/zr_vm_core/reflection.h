@@ -456,6 +456,10 @@ ZR_CORE_API struct SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntime(
         struct SZrState *state,
         struct SZrMetadataRuntime *runtime);
 
+ZR_CORE_API struct SZrObjectModule *ZrCore_Reflection_GetOrCreateModuleForRuntime(
+        struct SZrState *state,
+        struct SZrMetadataRuntime *runtime);
+
 ZR_CORE_API struct SZrObject *ZrCore_Reflection_BuildGenericMethodDefinitionObject(
         struct SZrState *state,
         struct SZrMetadataRuntime *runtime,

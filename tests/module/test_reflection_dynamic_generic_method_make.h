@@ -419,4 +419,236 @@ static void test_reflection_runtime_module_exports_bound_make_generic_method(voi
     destroy_reflection_test_state(state);
 }
 
+static void test_reflection_runtime_module_cache_is_owned_by_target_module(void) {
+    SMethodSpecGenericContextFixture firstFixture;
+    SMethodSpecGenericContextFixture secondFixture;
+    SZrMetadataRuntime *fixtureRuntime = method_spec_generic_context_fixture_init(&firstFixture);
+    SZrState *state = create_reflection_test_state();
+    SZrObjectModule *firstTarget;
+    SZrObjectModule *secondTarget;
+    SZrMetadataRuntime *firstRuntime;
+    SZrMetadataRuntime *secondRuntime;
+    SZrObjectModule *firstService;
+    SZrObjectModule *secondService;
+    SZrObjectModule *corruptResult;
+    SZrString *cacheName;
+    SZrString *exportName;
+    const SZrTypeValue *cacheValue;
+    const SZrTypeValue *exportValue;
+    SZrTypeValue *mutableCacheValue;
+    SZrTypeValue *mutableExportValue;
+    SZrTypeValue invalidCacheValue;
+    SZrClosureNative *cachedClosure;
+    SZrClosureValue *captureOwner;
+    TZrStackValuePointer rootBase;
+    TZrStackValuePointer savedStackTop;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NULL(ZrCore_Reflection_GetOrCreateModuleForRuntime(state, fixtureRuntime));
+    firstTarget = ZrCore_Module_Create(state);
+    secondTarget = ZrCore_Module_Create(state);
+    TEST_ASSERT_NOT_NULL(firstTarget);
+    TEST_ASSERT_NOT_NULL(secondTarget);
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(
+            state, ZR_CAST_RAW_OBJECT_AS_SUPER(firstTarget)));
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(
+            state, ZR_CAST_RAW_OBJECT_AS_SUPER(secondTarget)));
+    firstRuntime = ZrCore_Module_AttachMetadataRuntime(
+            firstTarget, &firstFixture.metadataFunction, &firstFixture.registration);
+    TEST_ASSERT_NOT_NULL(firstRuntime);
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_AttachZrpMetadata(
+            firstRuntime, firstFixture.metadataBytes, sizeof(firstFixture.metadataBytes)));
+    TEST_ASSERT_NOT_NULL(method_spec_generic_context_fixture_init(&secondFixture));
+    secondRuntime = ZrCore_Module_AttachMetadataRuntime(
+            secondTarget, &secondFixture.metadataFunction, &secondFixture.registration);
+    TEST_ASSERT_NOT_NULL(secondRuntime);
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_AttachZrpMetadata(
+            secondRuntime, secondFixture.metadataBytes, sizeof(secondFixture.metadataBytes)));
+
+    rootBase = state->stackTop.valuePointer;
+    rootBase = ZrCore_Function_CheckStackAndGc(state, 4u, rootBase);
+    ZrCore_Value_InitAsRawObject(
+            state, ZrCore_Stack_GetValue(rootBase), ZR_CAST_RAW_OBJECT_AS_SUPER(firstTarget));
+    ZrCore_Value_InitAsRawObject(
+            state, ZrCore_Stack_GetValue(rootBase + 1), ZR_CAST_RAW_OBJECT_AS_SUPER(secondTarget));
+    state->stackTop.valuePointer = rootBase + 2;
+
+    savedStackTop = state->stackTop.valuePointer;
+    firstService = ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime);
+    TEST_ASSERT_NOT_NULL(firstService);
+    TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(
+            state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(firstTarget)));
+    TEST_ASSERT_TRUE((firstTarget->super.super.garbageCollectMark.pinFlags &
+                      ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE) != 0u);
+    TEST_ASSERT_EQUAL_PTR(savedStackTop, state->stackTop.valuePointer);
+    ZrCore_Value_InitAsRawObject(
+            state, ZrCore_Stack_GetValue(rootBase + 2), ZR_CAST_RAW_OBJECT_AS_SUPER(firstService));
+    state->stackTop.valuePointer = rootBase + 3;
+    savedStackTop = state->stackTop.valuePointer;
+    TEST_ASSERT_EQUAL_PTR(
+            firstService,
+            ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime));
+    TEST_ASSERT_EQUAL_PTR(savedStackTop, state->stackTop.valuePointer);
+
+    exportName = ZrCore_String_CreateFromNative(state, "MakeGenericMethod");
+    TEST_ASSERT_NOT_NULL(exportName);
+    firstService = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase + 2)->value.object;
+    exportValue = ZrCore_Module_GetPubExport(state, firstService, exportName);
+    TEST_ASSERT_NOT_NULL(exportValue);
+    cachedClosure = ZR_CAST_NATIVE_CLOSURE(state, exportValue->value.object);
+    captureOwner = (SZrClosureValue *)ZrCore_ClosureNative_GetCaptureOwner(cachedClosure, 0u);
+    TEST_ASSERT_NOT_NULL(captureOwner);
+    TEST_ASSERT_TRUE(ZrCore_ClosureValue_IsClosed(captureOwner));
+    captureOwner->value.valuePointer = rootBase;
+    savedStackTop = state->stackTop.valuePointer;
+    corruptResult = ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime);
+    TEST_ASSERT_EQUAL_PTR(savedStackTop, state->stackTop.valuePointer);
+    exportName = ZrCore_String_CreateFromNative(state, "MakeGenericMethod");
+    TEST_ASSERT_NOT_NULL(exportName);
+    firstService = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase + 2)->value.object;
+    exportValue = ZrCore_Module_GetPubExport(state, firstService, exportName);
+    TEST_ASSERT_NOT_NULL(exportValue);
+    cachedClosure = ZR_CAST_NATIVE_CLOSURE(state, exportValue->value.object);
+    captureOwner = (SZrClosureValue *)ZrCore_ClosureNative_GetCaptureOwner(cachedClosure, 0u);
+    TEST_ASSERT_NOT_NULL(captureOwner);
+    captureOwner->value.valuePointer = ZR_CAST_STACK_VALUE(&captureOwner->link.closedValue);
+    TEST_ASSERT_NULL(corruptResult);
+    TEST_ASSERT_EQUAL_PTR(
+            firstService,
+            ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime));
+
+    firstTarget = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
+    firstService = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase + 2)->value.object;
+    firstService->super.prototype = (SZrObjectPrototype *)&firstTarget->super;
+    savedStackTop = state->stackTop.valuePointer;
+    corruptResult = ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime);
+    TEST_ASSERT_EQUAL_PTR(savedStackTop, state->stackTop.valuePointer);
+    firstService = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase + 2)->value.object;
+    firstService->super.prototype = ZR_NULL;
+    TEST_ASSERT_NULL(corruptResult);
+    TEST_ASSERT_EQUAL_PTR(
+            firstService,
+            ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime));
+
+    exportName = ZrCore_String_CreateFromNative(state, "MakeGenericMethod");
+    TEST_ASSERT_NOT_NULL(exportName);
+    firstService = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase + 2)->value.object;
+    mutableExportValue = (SZrTypeValue *)ZrCore_Module_GetPubExport(
+            state, firstService, exportName);
+    TEST_ASSERT_NOT_NULL(mutableExportValue);
+    TEST_ASSERT_TRUE(mutableExportValue->isGarbageCollectable);
+    mutableExportValue->isGarbageCollectable = ZR_FALSE;
+    savedStackTop = state->stackTop.valuePointer;
+    corruptResult = ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime);
+    TEST_ASSERT_EQUAL_PTR(savedStackTop, state->stackTop.valuePointer);
+    exportName = ZrCore_String_CreateFromNative(state, "MakeGenericMethod");
+    TEST_ASSERT_NOT_NULL(exportName);
+    firstService = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase + 2)->value.object;
+    mutableExportValue = (SZrTypeValue *)ZrCore_Module_GetPubExport(
+            state, firstService, exportName);
+    TEST_ASSERT_NOT_NULL(mutableExportValue);
+    mutableExportValue->isGarbageCollectable = ZR_TRUE;
+    TEST_ASSERT_NULL(corruptResult);
+    TEST_ASSERT_EQUAL_PTR(
+            firstService,
+            ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime));
+
+    firstTarget = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
+    firstService = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase + 2)->value.object;
+    firstService->moduleName = (SZrString *)firstTarget;
+    savedStackTop = state->stackTop.valuePointer;
+    corruptResult = ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime);
+    TEST_ASSERT_EQUAL_PTR(savedStackTop, state->stackTop.valuePointer);
+    firstService = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase + 2)->value.object;
+    firstService->moduleName = firstService->fullPath;
+    TEST_ASSERT_NULL(corruptResult);
+    TEST_ASSERT_EQUAL_PTR(
+            firstService,
+            ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime));
+
+    secondTarget->proNodeMap.isValid = ZR_FALSE;
+    savedStackTop = state->stackTop.valuePointer;
+    TEST_ASSERT_NULL(ZrCore_Reflection_GetOrCreateModuleForRuntime(state, secondRuntime));
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(
+            state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(secondTarget)));
+    TEST_ASSERT_EQUAL_PTR(savedStackTop, state->stackTop.valuePointer);
+    secondTarget->proNodeMap.isValid = ZR_TRUE;
+
+    secondService = ZrCore_Reflection_GetOrCreateModuleForRuntime(state, secondRuntime);
+    TEST_ASSERT_NOT_NULL(secondService);
+    TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(
+            state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(secondTarget)));
+    TEST_ASSERT_TRUE((secondTarget->super.super.garbageCollectMark.pinFlags &
+                      ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE) != 0u);
+    TEST_ASSERT_NOT_EQUAL(firstService, secondService);
+    ZrCore_Value_InitAsRawObject(
+            state, ZrCore_Stack_GetValue(rootBase + 3), ZR_CAST_RAW_OBJECT_AS_SUPER(secondService));
+    state->stackTop.valuePointer = rootBase + 4;
+
+    cacheName = ZrCore_String_CreateFromNative(state, "__zr_reflection_service_module");
+    TEST_ASSERT_NOT_NULL(cacheName);
+    firstTarget = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
+    cacheValue = ZrCore_Module_GetProExport(state, firstTarget, cacheName);
+    TEST_ASSERT_NOT_NULL(cacheValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, cacheValue->type);
+    TEST_ASSERT_EQUAL_PTR(
+            ZrCore_Stack_GetValue(rootBase + 2)->value.object,
+            cacheValue->value.object);
+    TEST_ASSERT_FALSE(cacheValue->isNative);
+    TEST_ASSERT_TRUE(cacheValue->isGarbageCollectable);
+    TEST_ASSERT_NULL(ZrCore_Module_GetPubExport(state, firstTarget, cacheName));
+
+    mutableCacheValue = (SZrTypeValue *)cacheValue;
+    mutableCacheValue->isNative = ZR_TRUE;
+    mutableCacheValue->isGarbageCollectable = ZR_FALSE;
+    savedStackTop = state->stackTop.valuePointer;
+    corruptResult = ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime);
+    TEST_ASSERT_EQUAL_PTR(savedStackTop, state->stackTop.valuePointer);
+    cacheName = ZrCore_String_CreateFromNative(state, "__zr_reflection_service_module");
+    TEST_ASSERT_NOT_NULL(cacheName);
+    firstTarget = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
+    mutableCacheValue = (SZrTypeValue *)ZrCore_Module_GetProExport(state, firstTarget, cacheName);
+    TEST_ASSERT_NOT_NULL(mutableCacheValue);
+    mutableCacheValue->isNative = ZR_FALSE;
+    mutableCacheValue->isGarbageCollectable = ZR_TRUE;
+    TEST_ASSERT_NULL(corruptResult);
+    TEST_ASSERT_EQUAL_PTR(
+            ZrCore_Stack_GetValue(rootBase + 2)->value.object,
+            ZR_CAST_RAW_OBJECT_AS_SUPER(
+                    ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime)));
+
+    state->global->garbageCollector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    firstTarget = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
+    secondTarget = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase + 1)->value.object;
+    firstRuntime = ZrCore_Module_GetMetadataRuntime(firstTarget);
+    secondRuntime = ZrCore_Module_GetMetadataRuntime(secondTarget);
+    TEST_ASSERT_NOT_NULL(firstRuntime);
+    TEST_ASSERT_NOT_NULL(secondRuntime);
+    savedStackTop = state->stackTop.valuePointer;
+    firstService = ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime);
+    secondService = ZrCore_Reflection_GetOrCreateModuleForRuntime(state, secondRuntime);
+    TEST_ASSERT_NOT_NULL(firstService);
+    TEST_ASSERT_NOT_NULL(secondService);
+    TEST_ASSERT_EQUAL_PTR(
+            ZrCore_Stack_GetValue(rootBase + 2)->value.object,
+            ZR_CAST_RAW_OBJECT_AS_SUPER(firstService));
+    TEST_ASSERT_EQUAL_PTR(
+            ZrCore_Stack_GetValue(rootBase + 3)->value.object,
+            ZR_CAST_RAW_OBJECT_AS_SUPER(secondService));
+    TEST_ASSERT_EQUAL_PTR(savedStackTop, state->stackTop.valuePointer);
+
+    cacheName = ZrCore_String_CreateFromNative(state, "__zr_reflection_service_module");
+    TEST_ASSERT_NOT_NULL(cacheName);
+    firstTarget = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
+    ZrCore_Value_InitAsInt(state, &invalidCacheValue, 17);
+    ZrCore_Module_AddProExport(state, firstTarget, cacheName, &invalidCacheValue);
+    TEST_ASSERT_NULL(ZrCore_Reflection_GetOrCreateModuleForRuntime(state, firstRuntime));
+    cacheValue = ZrCore_Module_GetProExport(state, firstTarget, cacheName);
+    TEST_ASSERT_NOT_NULL(cacheValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, cacheValue->type);
+
+    destroy_reflection_test_state(state);
+}
+
 #endif

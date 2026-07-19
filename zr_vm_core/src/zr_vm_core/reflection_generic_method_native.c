@@ -165,6 +165,15 @@ SZrClosureNative *ZrCore_Reflection_CreateMakeGenericMethodNativeClosureInternal
             ZR_CAST_RAW_OBJECT_AS_SUPER(closure),
             ZR_CAST_RAW_OBJECT_AS_SUPER(captureOwner));
     ZrCore_Closure_CloseStackValue(state, rootBase + 1);
+    if (!ZrCore_GarbageCollector_IsObjectIgnoredFast(
+                state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule)) &&
+        !ZrCore_GarbageCollector_IgnoreObject(
+                state, ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule))) {
+        ZrCore_Reflection_ObjectUnpinRaw(
+                state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule), modulePinned);
+        state->stackTop.valuePointer = rootBase;
+        return ZR_NULL;
+    }
 
     closure = ZR_CAST_NATIVE_CLOSURE(state, closureRoot->value.object);
     if (pinRuntimeModule) {
