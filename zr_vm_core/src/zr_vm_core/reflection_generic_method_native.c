@@ -13,6 +13,7 @@
 #include "zr_vm_core/value.h"
 
 #include "reflection_object_internal.h"
+#include "reflection_generic_method_native_internal.h"
 
 static TZrInt64 reflection_make_generic_method_native_return_null(
         SZrState *state,
@@ -102,9 +103,10 @@ TZrInt64 ZrCore_Reflection_MakeGenericMethodNativeEntry(SZrState *state) {
     return 1;
 }
 
-SZrClosureNative *ZrCore_Reflection_CreateMakeGenericMethodNativeClosure(
+SZrClosureNative *ZrCore_Reflection_CreateMakeGenericMethodNativeClosureInternal(
         SZrState *state,
-        SZrMetadataRuntime *runtime) {
+        SZrMetadataRuntime *runtime,
+        TZrBool pinRuntimeModule) {
     TZrStackValuePointer rootBase;
     SZrTypeValue *closureRoot;
     SZrTypeValue *moduleRoot;
@@ -165,12 +167,21 @@ SZrClosureNative *ZrCore_Reflection_CreateMakeGenericMethodNativeClosure(
     ZrCore_Closure_CloseStackValue(state, rootBase + 1);
 
     closure = ZR_CAST_NATIVE_CLOSURE(state, closureRoot->value.object);
-    ZrCore_GarbageCollector_PinObject(
-            state,
-            ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule),
-            ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
+    if (pinRuntimeModule) {
+        ZrCore_GarbageCollector_PinObject(
+                state,
+                ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule),
+                ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
+    }
     ZrCore_Reflection_ObjectUnpinRaw(
             state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule), modulePinned);
     state->stackTop.valuePointer = rootBase;
     return closure;
+}
+
+SZrClosureNative *ZrCore_Reflection_CreateMakeGenericMethodNativeClosure(
+        SZrState *state,
+        SZrMetadataRuntime *runtime) {
+    return ZrCore_Reflection_CreateMakeGenericMethodNativeClosureInternal(
+            state, runtime, ZR_TRUE);
 }

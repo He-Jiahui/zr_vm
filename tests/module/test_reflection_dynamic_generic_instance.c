@@ -958,6 +958,7 @@ int main(void) {
     RUN_TEST(test_make_generic_method_object_resolves_and_materializes);
     RUN_TEST(test_make_generic_method_from_objects_decodes_reflection_arguments);
     RUN_TEST(test_make_generic_method_native_entry_uses_trusted_closure_runtime);
+    RUN_TEST(test_reflection_runtime_module_exports_bound_make_generic_method);
     RUN_TEST(test_generic_method_definition_object_materializes_parameters);
     RUN_TEST(test_method_spec_generic_context_materializes_metadata_arguments);
     RUN_TEST(test_method_spec_generic_call_info_context_survives_full_gc);

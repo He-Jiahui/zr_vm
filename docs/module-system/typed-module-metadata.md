@@ -15,6 +15,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/reflection_generic_argument_object.c
   - zr_vm_core/src/zr_vm_core/reflection_generic_method.c
   - zr_vm_core/src/zr_vm_core/reflection_generic_method_native.c
+  - zr_vm_core/src/zr_vm_core/reflection_generic_method_native_internal.h
+  - zr_vm_core/src/zr_vm_core/reflection_module.c
   - zr_vm_core/src/zr_vm_core/reflection_generic_method_object.c
   - zr_vm_core/src/zr_vm_core/reflection_object_internal.c
   - zr_vm_core/src/zr_vm_core/reflection_object_internal.h
@@ -179,6 +181,8 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/reflection_field_value_primitive.h
   - zr_vm_core/src/zr_vm_core/reflection_token_resolve.c
   - zr_vm_core/src/zr_vm_core/reflection_generic_method_native.c
+  - zr_vm_core/src/zr_vm_core/reflection_generic_method_native_internal.h
+  - zr_vm_core/src/zr_vm_core/reflection_module.c
   - zr_vm_core/src/zr_vm_core/reflection_interpreter_generic_instance.c
   - zr_vm_core/src/zr_vm_core/metadata_runtime_layout_binding.c
   - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c
@@ -334,6 +338,7 @@ tests:
   - tests/acceptance/2026-07-19-aot-08-s6y-10-s4z46-11-s5d-make-generic-method-object.md
   - tests/acceptance/2026-07-19-aot-08-s6z-10-s4z47-11-s5e-generic-method-argument-object-decoding.md
   - tests/acceptance/2026-07-19-aot-08-s6aa-10-s4z48-11-s5f-generic-method-native-entry.md
+  - tests/acceptance/2026-07-19-aot-08-s6ab-10-s4z49-11-s5g-runtime-bound-reflection-module.md
   - tests/acceptance/2026-07-02-aot-12-s7zzq-runtime-export-member-token-publication.md
   - tests/acceptance/2026-07-02-aot-11-s7z-zrp-manifest-export-declarations.md
   - tests/acceptance/2026-07-02-aot-11-s7za-export-declaration-writer-options.md
@@ -1618,3 +1623,14 @@ M6 的验证不是“编译成功”级别，而是直接断言 opcode、签名�
   31/0, and 95/0. WSL restarted and cleared the isolated directories before the post-lifetime-fix GCC/Clang wide rerun;
   the same wide matrix passed there before that fix. Metadata schema and registration ABI remain unchanged;
   `zr.reflection` module construction/export and runtime registration lifecycle remain separate work.
+
+- 2026-07-19 08-S6AB / 10-S4Z49 / 11-S5G adds `ZrCore_Reflection_CreateModuleForRuntime()` as the first concrete
+  `zr.reflection` module surface. The factory requires a module-owned metadata runtime, creates a READY service module
+  whose name and full path are `zr.reflection`, and installs one public `MakeGenericMethod` native closure bound to the
+  target metadata module. The service module deliberately has no attached metadata runtime, so service and target
+  identities remain distinct.
+  Construction temporarily ignores the target module, roots the service module/names/closure on the VM stack, reloads
+  managed pointers after export installation, and applies the target `NATIVE_HANDLE` pin only after export and capture
+  verification. Failure restores stack and temporary-ignore state. Dynamic generic tests pass 33/0 under GCC, Clang,
+  and MSVC; final MSVC focused CTest passes 6/6 and shared regressions pass 66/0, 31/0, and 95/0. Global native
+  registry/cache integration, replacement/unload policy, and module generation remain separate work.

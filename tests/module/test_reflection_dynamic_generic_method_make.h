@@ -314,4 +314,109 @@ static void test_make_generic_method_native_entry_uses_trusted_closure_runtime(v
     destroy_reflection_test_state(state);
 }
 
+static void test_reflection_runtime_module_exports_bound_make_generic_method(void) {
+    SMethodSpecGenericContextFixture fixture;
+    SZrMetadataRuntime *runtime = method_spec_generic_context_fixture_init(&fixture);
+    SZrState *state = create_reflection_test_state();
+    SZrObjectModule *runtimeModule;
+    SZrObjectModule *reflectionModule;
+    SZrObject *definitionObject;
+    SZrObject *contextObject;
+    SZrObject *argumentsArray;
+    SZrString *exportName;
+    const SZrTypeValue *exportValue;
+    SZrClosureNative *closure;
+    SZrTypeValue *result;
+    TZrStackValuePointer initialStackTop;
+    TZrStackValuePointer rootBase;
+    TZrStackValuePointer functionBase;
+
+    TEST_ASSERT_NOT_NULL(state);
+    initialStackTop = state->stackTop.valuePointer;
+    TEST_ASSERT_NULL(ZrCore_Reflection_CreateModuleForRuntime(state, runtime));
+    TEST_ASSERT_EQUAL_PTR(initialStackTop, state->stackTop.valuePointer);
+    runtimeModule = ZrCore_Module_Create(state);
+    TEST_ASSERT_NOT_NULL(runtimeModule);
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(
+            state, ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule)));
+    runtime = ZrCore_Module_AttachMetadataRuntime(
+            runtimeModule, &fixture.metadataFunction, &fixture.registration);
+    TEST_ASSERT_NOT_NULL(runtime);
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_AttachZrpMetadata(
+            runtime, fixture.metadataBytes, sizeof(fixture.metadataBytes)));
+    definitionObject = ZrCore_Reflection_BuildGenericMethodDefinitionObject(
+            state, runtime, TEST_METHOD_CONTEXT_MEMBER_TOKEN);
+    contextObject = ZrCore_Reflection_BuildMethodSpecGenericContextObject(
+            state, runtime, TEST_METHOD_CONTEXT_SPEC_TOKEN);
+    TEST_ASSERT_NOT_NULL(definitionObject);
+    TEST_ASSERT_NOT_NULL(contextObject);
+    argumentsArray = assert_object_object_field(
+            state, contextObject, "genericArguments", ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(
+            state, ZR_CAST_RAW_OBJECT_AS_SUPER(definitionObject)));
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(
+            state, ZR_CAST_RAW_OBJECT_AS_SUPER(contextObject)));
+
+    reflectionModule = ZrCore_Reflection_CreateModuleForRuntime(state, runtime);
+    TEST_ASSERT_NOT_NULL(reflectionModule);
+    TEST_ASSERT_EQUAL_PTR(initialStackTop, state->stackTop.valuePointer);
+    rootBase = state->stackTop.valuePointer;
+    ZrCore_Value_InitAsRawObject(
+            state,
+            ZrCore_Stack_GetValue(rootBase),
+            ZR_CAST_RAW_OBJECT_AS_SUPER(reflectionModule));
+    state->stackTop.valuePointer = rootBase + 1;
+    rootBase = ZrCore_Function_CheckStackAndGc(state, 4u, rootBase);
+    reflectionModule = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
+    TEST_ASSERT_NOT_NULL(reflectionModule->moduleName);
+    TEST_ASSERT_NOT_NULL(reflectionModule->fullPath);
+    TEST_ASSERT_EQUAL_STRING("zr.reflection", ZrCore_String_GetNativeString(reflectionModule->moduleName));
+    TEST_ASSERT_EQUAL_STRING("zr.reflection", ZrCore_String_GetNativeString(reflectionModule->fullPath));
+    TEST_ASSERT_EQUAL_UINT64(
+            ZrCore_Module_CalculatePathHash(state, reflectionModule->fullPath),
+            reflectionModule->pathHash);
+    TEST_ASSERT_EQUAL_UINT32(ZR_MODULE_INIT_STATE_READY, reflectionModule->initState);
+    TEST_ASSERT_FALSE(reflectionModule->hasMetadataRuntime);
+    TEST_ASSERT_EQUAL_UINT64(1u, reflectionModule->super.nodeMap.elementCount);
+
+    exportName = ZrCore_String_CreateFromNative(state, "MakeGenericMethod");
+    TEST_ASSERT_NOT_NULL(exportName);
+    reflectionModule = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
+    exportValue = ZrCore_Module_GetPubExport(state, reflectionModule, exportName);
+    TEST_ASSERT_NOT_NULL(exportValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_CLOSURE, exportValue->type);
+    TEST_ASSERT_TRUE(exportValue->isNative);
+    TEST_ASSERT_NOT_NULL(exportValue->value.object);
+    closure = ZR_CAST_NATIVE_CLOSURE(state, exportValue->value.object);
+    TEST_ASSERT_EQUAL_PTR(ZrCore_Reflection_MakeGenericMethodNativeEntry, closure->nativeFunction);
+
+    functionBase = rootBase + 1;
+    prepare_make_generic_method_native_entry(
+            state, functionBase, closure, definitionObject, argumentsArray, 2u);
+    state->global->garbageCollector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+
+    reflectionModule = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
+    TEST_ASSERT_NOT_NULL(reflectionModule);
+    exportName = ZrCore_String_CreateFromNative(state, "MakeGenericMethod");
+    TEST_ASSERT_NOT_NULL(exportName);
+    reflectionModule = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
+    exportValue = ZrCore_Module_GetPubExport(state, reflectionModule, exportName);
+    TEST_ASSERT_NOT_NULL(exportValue);
+    TEST_ASSERT_EQUAL_PTR(
+            ZrCore_Stack_GetValue(functionBase)->value.object,
+            exportValue->value.object);
+    TEST_ASSERT_EQUAL_INT64(1, ZrCore_Reflection_MakeGenericMethodNativeEntry(state));
+    result = ZrCore_Stack_GetValue(functionBase);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result->type);
+    assert_object_string_field(
+            state, ZR_CAST_OBJECT(state, result->value.object), "kind", "constructedGenericMethod");
+
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_UnignoreObject(
+            state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(contextObject)));
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_UnignoreObject(
+            state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(definitionObject)));
+    destroy_reflection_test_state(state);
+}
+
 #endif
