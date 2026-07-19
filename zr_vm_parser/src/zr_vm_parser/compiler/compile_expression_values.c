@@ -459,9 +459,12 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
         // 找到局部变量：使用 GET_STACK
         // 即使这个变量名是 "zr"，也使用局部变量而不是全局 zr 对象
         TZrUInt32 destSlot = allocate_stack_slot(cs);
-        TZrInstruction inst = create_instruction_1(
-                ZR_INSTRUCTION_ENUM(GET_STACK), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)localVarIndex);
-        emit_instruction(cs, inst);
+        if (!compiler_semantic_ir_lower_load(
+                    cs, localVarIndex, destSlot, node->location)) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to lower load through pre-execution Semantic IR", node->location);
+            return;
+        }
         if (!compile_identifier_note_result_slot_type(cs, node, destSlot)) {
             ZrParser_Compiler_Error(cs, "Failed to record identifier result slot type", node->location);
         }

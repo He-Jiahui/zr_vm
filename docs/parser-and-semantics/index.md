@@ -2,6 +2,7 @@
 related_code:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/cfg.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
   - zr_vm_parser/include/zr_vm_parser/semantic_query.h
@@ -14,6 +15,9 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/parser.c
   - zr_vm_parser/src/zr_vm_parser/semantic.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_flow.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg.c
@@ -46,10 +50,14 @@ related_code:
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/cfg.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
   - zr_vm_parser/include/zr_vm_parser/semantic_query.h
   - zr_vm_parser/src/zr_vm_parser/semantic.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_flow.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg.c
@@ -99,6 +107,7 @@ plan_sources:
   - docs/plans/lsp/05-implementation-blueprint.md
 tests:
   - tests/parser/test_cfg_reachability.c
+  - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_cfg_constant_conditions.c
   - tests/parser/test_cfg_switch_constants.c
   - tests/parser/test_cfg_finally_abrupt.c
@@ -122,6 +131,7 @@ tests:
   - tests/acceptance/2026-06-20-semantic-stage1-cfg.md
   - tests/acceptance/2026-06-20-semantic-stage1-dataflow.md
   - tests/acceptance/2026-06-20-semantic-stage1-semantic-query.md
+  - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
 doc_type: category-index
 ---
 
@@ -141,6 +151,13 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 
 ## 当前主题
 
+- `place-cfg-graph.md`
+  - stable session-local Place identity and projection paths
+  - dynamic typed CFG edges, cleanup routing, and suspension topology
+- `pre-semantic-ir-flow.md`
+  - pre-execution semantic instructions with owned Place/CFG/Value/loan state
+  - compiler ordering and the execution SemIR compatibility boundary
+  - separate initialization, availability, borrowing, escape, and reachability joins
 - `ffi-extern-declarations.md`
   - `%extern("lib") decl` 与 `%extern("lib") { decls }` 源级 FFI 语法
   - extern function / struct / enum / delegate 的 declaration metadata 和 lowering 规则
@@ -245,4 +262,6 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 12. 再看 `semantic-query-api-foundation.md`，了解 Stage 1 公共语义查询面骨架和当前限制。
 13. 再看 `union-types.md`，了解 union 前端 slice、构造器 lowering 和后续模式匹配边界。
 14. 最后看 `lsp-semantic-resolution-and-native-imports.md`，了解 language server 如何消费 parser/native import metadata 并稳定命中局部语义引用。
-15. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+15. 再看 `place-cfg-graph.md`，了解 session-local Place identity、typed CFG edge 与 cleanup routing。
+16. 再看 `pre-semantic-ir-flow.md`，了解前置 Semantic IR、compiler bridge、flow facts 与 execution sidecar 边界。
+17. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

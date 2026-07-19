@@ -23,6 +23,7 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     cs->currentAst = ZR_NULL;
     cs->semanticContext = ZrParser_SemanticContext_New(state);
     cs->hirModule = ZR_NULL;
+    compiler_semantic_ir_init(cs);
 
     // 初始化常量池
     ZrCore_Array_Init(state, &cs->constants, sizeof(SZrTypeValue), ZR_PARSER_INITIAL_CAPACITY_MEDIUM);
@@ -698,6 +699,8 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
         ZrParser_TypeEnvironment_Free(state, cs->compileTimeTypeEnv);
         cs->compileTimeTypeEnv = ZR_NULL;
     }
+
+    compiler_semantic_ir_free(cs);
 
     if (cs->semanticContext != ZR_NULL) {
         ZrParser_SemanticContext_Free(cs->semanticContext);

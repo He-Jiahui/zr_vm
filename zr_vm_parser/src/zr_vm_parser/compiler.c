@@ -518,6 +518,7 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
 
     if (cs->semanticContext != ZR_NULL) {
         ZrParser_SemanticContext_Reset(cs->semanticContext);
+        compiler_semantic_ir_reset(cs);
         if (cs->hirModule != ZR_NULL) {
             ZrParser_HirModule_Free(cs->state, cs->hirModule);
             cs->hirModule = ZR_NULL;
@@ -825,6 +826,10 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentFunction->prototypeCount = 0;
     }
     
+    if (!cs->hasError && !ZrParser_Compiler_ValidatePreSemanticIr(cs)) {
+        ZrParser_Compiler_Error(cs, "Pre-execution Semantic IR validation failed", node->location);
+    }
+
     // 重置脚本级别标志
     cs->isScriptLevel = ZR_FALSE;
 }

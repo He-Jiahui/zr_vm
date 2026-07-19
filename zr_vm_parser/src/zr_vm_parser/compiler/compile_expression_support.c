@@ -502,14 +502,6 @@ EZrInstructionCode compiler_ownership_builtin_opcode_from_kind(EZrOwnershipBuilt
     }
 }
 
-static EZrInstructionCode resolve_ownership_builtin_opcode(const SZrConstructExpression *constructExpr) {
-    if (constructExpr == ZR_NULL) {
-        return ZR_INSTRUCTION_ENUM(ENUM_MAX);
-    }
-
-    return compiler_ownership_builtin_opcode_from_kind(resolve_construct_expression_builtin_kind(constructExpr));
-}
-
 static const TZrChar *compile_ownership_builtin_operand_error_message(EZrOwnershipBuiltinKind builtinKind) {
     switch (builtinKind) {
         case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
@@ -592,7 +584,6 @@ static TZrBool validate_ownership_builtin_operand_expression(SZrCompilerState *c
 TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
                                                     SZrConstructExpression *constructExpr,
                                                     SZrFileRange location) {
-    EZrInstructionCode opcode;
     EZrOwnershipBuiltinKind builtinKind;
     TZrUInt32 resultSlot;
     TZrUInt32 argumentSlot;
@@ -602,9 +593,9 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    opcode = resolve_ownership_builtin_opcode(constructExpr);
     builtinKind = resolve_construct_expression_builtin_kind(constructExpr);
-    if (opcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
+    if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
+        builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN) {
         ZrParser_Compiler_Error(cs, "Unsupported ownership builtin expression", location);
         return ZR_FALSE;
     }
@@ -640,11 +631,14 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
             return ZR_FALSE;
         }
 
-        emit_instruction(cs,
-                         create_instruction_2(opcode,
-                                              (TZrUInt16)resultSlot,
-                                              (TZrUInt16)sourceSlot,
-                                              0));
+        if (!compiler_semantic_ir_lower_ownership(
+                    cs, builtinKind, sourceSlot, resultSlot, location)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Failed to lower ownership through pre-execution Semantic IR",
+                    location);
+            return ZR_FALSE;
+        }
         collapse_stack_to_slot(cs, resultSlot);
         return ZR_TRUE;
     }
@@ -672,11 +666,14 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
         }
     }
 
-    emit_instruction(cs,
-                     create_instruction_2(opcode,
-                                          (TZrUInt16)resultSlot,
-                                          (TZrUInt16)argumentSlot,
-                                          0));
+    if (!compiler_semantic_ir_lower_ownership(
+                cs, builtinKind, argumentSlot, resultSlot, location)) {
+        ZrParser_Compiler_Error(
+                cs,
+                "Failed to lower ownership through pre-execution Semantic IR",
+                location);
+        return ZR_FALSE;
+    }
     collapse_stack_to_slot(cs, resultSlot);
     if (shouldResetConsumedIdentifier) {
         if (!emit_null_reset_to_identifier_binding_local(cs,
@@ -695,7 +692,7 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
 TZrBool wrap_constructed_result_with_ownership_builtin(SZrCompilerState *cs,
                                                               SZrConstructExpression *constructExpr,
                                                               SZrFileRange location) {
-    EZrInstructionCode opcode;
+    EZrOwnershipBuiltinKind builtinKind;
     TZrUInt32 resultSlot;
     TZrUInt32 argumentSlot;
 
@@ -703,8 +700,9 @@ TZrBool wrap_constructed_result_with_ownership_builtin(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    opcode = resolve_ownership_builtin_opcode(constructExpr);
-    if (opcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
+    builtinKind = resolve_construct_expression_builtin_kind(constructExpr);
+    if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
+        builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN) {
         ZrParser_Compiler_Error(cs, "Unsupported ownership construct wrapper", location);
         return ZR_FALSE;
     }
@@ -716,11 +714,14 @@ TZrBool wrap_constructed_result_with_ownership_builtin(SZrCompilerState *cs,
                                           (TZrUInt16)argumentSlot,
                                           (TZrInt32)resultSlot));
 
-    emit_instruction(cs,
-                     create_instruction_2(opcode,
-                                          (TZrUInt16)resultSlot,
-                                          (TZrUInt16)argumentSlot,
-                                          0));
+    if (!compiler_semantic_ir_lower_ownership(
+                cs, builtinKind, argumentSlot, resultSlot, location)) {
+        ZrParser_Compiler_Error(
+                cs,
+                "Failed to lower ownership construct through pre-execution Semantic IR",
+                location);
+        return ZR_FALSE;
+    }
     collapse_stack_to_slot(cs, resultSlot);
     return ZR_TRUE;
 }

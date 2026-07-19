@@ -1,5 +1,6 @@
 //
-// Minimal SemIR metadata builder for ownership-aware and dynamic bytecode.
+// Execution SemIR compatibility projection derived after ExecBC assembly.
+// Front-end semantic decisions live in SZrSemanticIrFunction before lowering.
 //
 
 #include <string.h>

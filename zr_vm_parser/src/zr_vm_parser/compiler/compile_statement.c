@@ -2747,6 +2747,38 @@ static void compile_using_pattern_guard_statement(SZrCompilerState *cs, SZrAstNo
 }
 
 // 编译变量声明
+static TZrBool compile_variable_register_semantic_local(
+        SZrCompilerState *cs,
+        SZrString *name,
+        const SZrInferredType *resolvedType,
+        TZrUInt32 stackSlot,
+        SZrFileRange sourceRange,
+        TZrBool initialized) {
+    SZrInferredType defaultType;
+    const SZrInferredType *type = resolvedType;
+    TZrBool defaultTypeInitialized = ZR_FALSE;
+    TZrBool success;
+
+    if (type == ZR_NULL) {
+        ZrParser_InferredType_Init(cs->state, &defaultType, ZR_VALUE_TYPE_OBJECT);
+        type = &defaultType;
+        defaultTypeInitialized = ZR_TRUE;
+    }
+    success = (TZrBool)(cs->typeEnv != ZR_NULL &&
+                        ZrParser_TypeEnvironment_RegisterVariable(
+                                cs->state, cs->typeEnv, name, type) &&
+                        compiler_semantic_ir_register_local(
+                                cs, name, stackSlot, sourceRange, initialized));
+    if (defaultTypeInitialized) {
+        ZrParser_InferredType_Free(cs->state, &defaultType);
+    }
+    if (!success) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to register variable in pre-execution Semantic IR", sourceRange);
+    }
+    return success;
+}
+
 static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -2915,6 +2947,21 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             compile_statement_trace("var decl bind initializer slot=%u reserved=%u",
                                     (unsigned int)initializerSlot,
                                     (unsigned int)reservedVarSlot);
+            if (!compile_variable_register_semantic_local(
+                        cs,
+                        varName,
+                        hasResolvedType ? &resolvedType : ZR_NULL,
+                        reservedVarSlot,
+                        node->location,
+                        ZR_TRUE)) {
+                if (initializerTypeInitialized) {
+                    ZrParser_InferredType_Free(cs->state, &initializerType);
+                }
+                if (resolvedTypeInitialized) {
+                    ZrParser_InferredType_Free(cs->state, &resolvedType);
+                }
+                return;
+            }
             if (initializerConversionOpcode != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
                 emit_type_conversion(cs, initializerSlot, initializerSlot, initializerConversionOpcode);
             }
@@ -2939,6 +2986,22 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             varIndex = allocate_local_var(cs, varName);
             compile_statement_trace("var decl allocate local no initializer varIndex=%u", (unsigned int)varIndex);
 
+            if (!compile_variable_register_semantic_local(
+                        cs,
+                        varName,
+                        hasResolvedType ? &resolvedType : ZR_NULL,
+                        varIndex,
+                        node->location,
+                        ZR_FALSE)) {
+                if (initializerTypeInitialized) {
+                    ZrParser_InferredType_Free(cs->state, &initializerType);
+                }
+                if (resolvedTypeInitialized) {
+                    ZrParser_InferredType_Free(cs->state, &resolvedType);
+                }
+                return;
+            }
+
             if (hasResolvedType && resolve_fixed_array_size(&resolvedType, &fixedArraySize)) {
                 compile_default_fixed_array_initialization(cs, varIndex, fixedArraySize, node->location);
             } else {
@@ -2952,17 +3015,6 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             }
 
             ZrParser_Compiler_TrimStackToSlot(cs, varIndex);
-        }
-
-        if (cs->typeEnv != ZR_NULL) {
-            if (hasResolvedType) {
-                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, varName, &resolvedType);
-            } else {
-                SZrInferredType defaultType;
-                ZrParser_InferredType_Init(cs->state, &defaultType, ZR_VALUE_TYPE_OBJECT);
-                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, varName, &defaultType);
-                ZrParser_InferredType_Free(cs->state, &defaultType);
-            }
         }
 
         if (decl->value != ZR_NULL) {

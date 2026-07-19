@@ -9,6 +9,7 @@
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/semantic.h"
+#include "zr_vm_parser/semantic_ir.h"
 #include "zr_vm_parser/type_system.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/state.h"
@@ -32,6 +33,10 @@ typedef struct SZrCompilerState {
     SZrAstNode *currentAst;             // 当前编译的 AST 节点
     SZrSemanticContext *semanticContext; // 统一语义记录上下文
     SZrHirModule *hirModule;            // 当前脚本的 HIR 模块句柄
+    SZrSemanticIrFunction preSemanticIr; // ExecBC lowering 前的语义函数
+    SZrArray preSemanticIrSlots;         // 栈槽到 PlaceId/ValueId 的编译期桥接
+    TZrBool preSemanticIrInitialized;
+    TZrBool preSemanticIrValidated;
     
     // 常量池管理
     SZrArray constants;                 // 常量值数组（SZrTypeValue）
@@ -421,6 +426,13 @@ ZR_PARSER_API void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *s
 
 // 清理解译器状态
 ZR_PARSER_API void ZrParser_CompilerState_Free(SZrCompilerState *cs);
+
+ZR_PARSER_API const SZrSemanticIrFunction *ZrParser_Compiler_PreSemanticIr(
+        const SZrCompilerState *cs);
+ZR_PARSER_API TZrBool ZrParser_Compiler_PreSemanticIrIsValidated(
+        const SZrCompilerState *cs);
+ZR_PARSER_API TZrBool ZrParser_Compiler_ValidatePreSemanticIr(
+        SZrCompilerState *cs);
 
 // 编译 AST 为函数
 ZR_PARSER_API SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast);

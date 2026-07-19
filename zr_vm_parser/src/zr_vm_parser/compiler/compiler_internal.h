@@ -5,6 +5,7 @@
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/project_imports.h"
+#include "zr_vm_parser/semantic_ir.h"
 #include "zr_vm_parser/type_inference.h"
 
 #include "zr_vm_core/array.h"
@@ -28,6 +29,29 @@
 #ifndef ZR_ARRAY_COUNT
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
+
+void compiler_semantic_ir_init(SZrCompilerState *cs);
+void compiler_semantic_ir_reset(SZrCompilerState *cs);
+void compiler_semantic_ir_free(SZrCompilerState *cs);
+TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
+                                             SZrString *name,
+                                             TZrUInt32 stackSlot,
+                                             SZrFileRange sourceRange,
+                                             TZrBool initialized);
+TZrBool compiler_semantic_ir_lower_load(SZrCompilerState *cs,
+                                        TZrUInt32 stackSlot,
+                                        TZrUInt32 resultSlot,
+                                        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_lower_store(SZrCompilerState *cs,
+                                         TZrUInt32 stackSlot,
+                                         TZrUInt32 valueSlot,
+                                         SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_lower_ownership(
+        SZrCompilerState *cs,
+        EZrOwnershipBuiltinKind builtinKind,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 resultSlot,
+        SZrFileRange sourceRange);
 
 static ZR_FORCE_INLINE EZrMetaType compiler_resolve_meta_type_name(SZrString *metaName) {
     TZrNativeString metaNameText;

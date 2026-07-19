@@ -1172,8 +1172,12 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
         if (localVarIndex != ZR_PARSER_SLOT_NONE) {
             // 简单赋值
             if (strcmp(op, "=") == 0) {
-                TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)localVarIndex, (TZrInt32)rightSlot);
-                emit_instruction(cs, inst);
+                if (!compiler_semantic_ir_lower_store(
+                            cs, localVarIndex, rightSlot, left->location)) {
+                    ZrParser_Compiler_Error(
+                            cs, "Failed to lower store through pre-execution Semantic IR", left->location);
+                    return;
+                }
                 update_identifier_assignment_type_environment(cs, name, right);
                 compile_assignment_record_identifier_write_fact(cs,
                                                                 left,
@@ -1182,11 +1186,12 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
             } else {
                 // 复合赋值：先读取左值，执行运算，再赋值
                 TZrUInt32 leftSlot = allocate_stack_slot(cs);
-                TZrInstruction getInst = create_instruction_1(
-                        ZR_INSTRUCTION_ENUM(GET_STACK),
-                        ZR_COMPILE_SLOT_U16(leftSlot),
-                        (TZrInt32)localVarIndex);
-                emit_instruction(cs, getInst);
+                if (!compiler_semantic_ir_lower_load(
+                            cs, localVarIndex, leftSlot, left->location)) {
+                    ZrParser_Compiler_Error(
+                            cs, "Failed to lower load through pre-execution Semantic IR", left->location);
+                    return;
+                }
                 
                 TZrUInt32 resultSlot = allocate_stack_slot(cs);
                 TZrInstruction opInst = create_instruction_2(
@@ -1197,8 +1202,12 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                 emit_instruction(cs, opInst);
                 
                 // 赋值
-                TZrInstruction setInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)localVarIndex, (TZrInt32)resultSlot);
-                emit_instruction(cs, setInst);
+                if (!compiler_semantic_ir_lower_store(
+                            cs, localVarIndex, resultSlot, left->location)) {
+                    ZrParser_Compiler_Error(
+                            cs, "Failed to lower store through pre-execution Semantic IR", left->location);
+                    return;
+                }
                 compile_assignment_record_identifier_write_fact(cs,
                                                                 left,
                                                                 hasIdentifierWriteBinding,

@@ -656,7 +656,6 @@ static TZrBool compile_ownership_member_builtin_call(SZrCompilerState *cs,
                                                      TZrBool receiverIsRootLocal,
                                                      SZrFileRange location,
                                                      TZrUInt32 *outResultSlot) {
-    EZrInstructionCode opcode;
     TZrUInt32 sourceSlot = currentSlot;
     TZrUInt32 directLocalSlot;
     TZrUInt32 resultSlot = preferredResultSlot;
@@ -690,17 +689,14 @@ static TZrBool compile_ownership_member_builtin_call(SZrCompilerState *cs,
     if (resultSlot == ZR_PARSER_SLOT_NONE || resultSlot == sourceSlot) {
         resultSlot = allocate_stack_slot(cs);
     }
-    opcode = compiler_ownership_builtin_opcode_from_kind(builtinKind);
-    if (opcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
-        ZrParser_Compiler_Error(cs, "Unsupported ownership member call", location);
+    if (!compiler_semantic_ir_lower_ownership(
+                cs, builtinKind, sourceSlot, resultSlot, location)) {
+        ZrParser_Compiler_Error(
+                cs,
+                "Failed to lower ownership member call through pre-execution Semantic IR",
+                location);
         return ZR_FALSE;
     }
-
-    emit_instruction(cs,
-                     create_instruction_2(opcode,
-                                          (TZrUInt16)resultSlot,
-                                          (TZrUInt16)sourceSlot,
-                                          0));
     collapse_stack_to_slot(cs, resultSlot);
 
     if (directLocalSlot != ZR_PARSER_SLOT_NONE &&
