@@ -178,6 +178,7 @@ static void test_lsp_changed_content_invalidates_snapshot_and_semantic_cache(
 
     ZrLanguageServer_SemanticAnalyzer_GetMetrics(analyzer, &afterMetrics);
     if (fileVersion->version != 2 ||
+        fileVersion->lastChangeInfo.isTokenEquivalent ||
         fileVersion->textBlock == textBlock ||
         fileVersion->textBlock->contentGeneration != contentGeneration + 1 ||
         fileVersion->ast == ast ||
@@ -202,6 +203,234 @@ static void test_lsp_changed_content_invalidates_snapshot_and_semantic_cache(
                  (size_t)beforeMetrics.cacheHitCount);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_lsp_token_equivalent_comment_edit_reuses_semantic_snapshot(
+        SZrState *state) {
+    const TZrChar *summary = "LSP Token Equivalent Comment Edit Reuses Semantic Snapshot";
+    const TZrChar *initialContent =
+            "compute(): int {\n"
+            "    // old note\n"
+            "    return 1 + 2;\n"
+            "}\n";
+    const TZrChar *updatedContent =
+            "compute(): int {\n"
+            "    // new note\n"
+            "    return 1 + 2;\n"
+            "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrFileVersionContentBlock *textBlock;
+    SZrAstNode *ast;
+    SZrSemanticAnalyzer *analyzer;
+    SZrSemanticContext *semanticContext;
+    SZrSemanticAnalysisMetrics beforeMetrics;
+    SZrSemanticAnalysisMetrics afterMetrics;
+    TZrSize contentGeneration;
+    TZrChar reason[512];
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///token_equivalent_comment.zr",
+            strlen("file:///token_equivalent_comment.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        strlen(initialContent) != strlen(updatedContent) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, initialContent, strlen(initialContent), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare token-equivalent comment content");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    analyzer = find_test_analyzer(state, context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->textBlock == ZR_NULL ||
+        fileVersion->ast == ZR_NULL || analyzer == ZR_NULL ||
+        analyzer->semanticContext == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Initial comment snapshot was incomplete");
+        return;
+    }
+
+    textBlock = fileVersion->textBlock;
+    contentGeneration = textBlock->contentGeneration;
+    ast = fileVersion->ast;
+    semanticContext = analyzer->semanticContext;
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(analyzer, &beforeMetrics);
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, updatedContent, strlen(updatedContent), 2)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Token-equivalent comment update failed");
+        return;
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(analyzer, &afterMetrics);
+    if (!fileVersion->lastChangeInfo.isTokenEquivalent ||
+        fileVersion->lastChangeInfo.impact != ZR_FILE_CHANGE_IMPACT_DECLARATION_BODY ||
+        fileVersion->textBlock == textBlock ||
+        fileVersion->textBlock->contentGeneration != contentGeneration + 1 ||
+        strstr(fileVersion->textBlock->content, "new note") == ZR_NULL ||
+        fileVersion->ast != ast ||
+        analyzer->semanticContext != semanticContext ||
+        afterMetrics.requestCount != beforeMetrics.requestCount + 1 ||
+        afterMetrics.executionCount != beforeMetrics.executionCount ||
+        afterMetrics.cacheHitCount != beforeMetrics.cacheHitCount + 1) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected token-equivalent reuse; equivalent=%d impact=%d blockChanged=%d generation=%zu/%zu astSame=%d contextSame=%d requests=%zu/%zu executions=%zu/%zu hits=%zu/%zu",
+                 fileVersion->lastChangeInfo.isTokenEquivalent,
+                 (int)fileVersion->lastChangeInfo.impact,
+                 fileVersion->textBlock != textBlock,
+                 (size_t)fileVersion->textBlock->contentGeneration,
+                 (size_t)(contentGeneration + 1),
+                 fileVersion->ast == ast,
+                 analyzer->semanticContext == semanticContext,
+                 (size_t)afterMetrics.requestCount,
+                 (size_t)beforeMetrics.requestCount,
+                 (size_t)afterMetrics.executionCount,
+                 (size_t)beforeMetrics.executionCount,
+                 (size_t)afterMetrics.cacheHitCount,
+                 (size_t)beforeMetrics.cacheHitCount);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_lsp_token_coordinate_change_invalidates_semantic_snapshot(
+        SZrState *state) {
+    const TZrChar *summary = "LSP Token Coordinate Change Invalidates Semantic Snapshot";
+    const TZrChar *initialContent = "compute(): int { return 1; }\n";
+    const TZrChar *updatedContent = "compute(): int {\nreturn 1; }\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrAstNode *ast;
+    SZrSemanticAnalyzer *analyzer;
+    SZrSemanticAnalysisMetrics beforeMetrics;
+    SZrSemanticAnalysisMetrics afterMetrics;
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///token_coordinate_change.zr",
+            strlen("file:///token_coordinate_change.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        strlen(initialContent) != strlen(updatedContent) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, initialContent, strlen(initialContent), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare coordinate-change content");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    analyzer = find_test_analyzer(state, context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL || analyzer == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Initial coordinate snapshot was incomplete");
+        return;
+    }
+    ast = fileVersion->ast;
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(analyzer, &beforeMetrics);
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, updatedContent, strlen(updatedContent), 2)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Coordinate-changing update failed");
+        return;
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(analyzer, &afterMetrics);
+    if (fileVersion->lastChangeInfo.isTokenEquivalent ||
+        fileVersion->ast == ast ||
+        afterMetrics.requestCount != beforeMetrics.requestCount + 1 ||
+        afterMetrics.executionCount != beforeMetrics.executionCount + 1 ||
+        afterMetrics.cacheHitCount != beforeMetrics.cacheHitCount) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Token coordinate movement reused a stale semantic snapshot");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_lsp_token_value_change_invalidates_semantic_snapshot(
+        SZrState *state) {
+    const TZrChar *summary = "LSP Token Value Change Invalidates Semantic Snapshot";
+    const TZrChar *initialContent = "compute(): int { return 1; }\n";
+    const TZrChar *updatedContent = "compute(): int { return 2; }\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrAstNode *ast;
+    SZrSemanticAnalyzer *analyzer;
+    SZrSemanticAnalysisMetrics beforeMetrics;
+    SZrSemanticAnalysisMetrics afterMetrics;
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///token_value_change.zr",
+            strlen("file:///token_value_change.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        strlen(initialContent) != strlen(updatedContent) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, initialContent, strlen(initialContent), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare token-value content");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    analyzer = find_test_analyzer(state, context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL || analyzer == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Initial token-value snapshot was incomplete");
+        return;
+    }
+    ast = fileVersion->ast;
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(analyzer, &beforeMetrics);
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, updatedContent, strlen(updatedContent), 2)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Token-value update failed");
+        return;
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(analyzer, &afterMetrics);
+    if (fileVersion->lastChangeInfo.isTokenEquivalent ||
+        fileVersion->ast == ast ||
+        afterMetrics.requestCount != beforeMetrics.requestCount + 1 ||
+        afterMetrics.executionCount != beforeMetrics.executionCount + 1 ||
+        afterMetrics.cacheHitCount != beforeMetrics.cacheHitCount) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "A changed token value reused a stale semantic snapshot");
         return;
     }
 

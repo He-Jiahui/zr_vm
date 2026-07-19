@@ -4,6 +4,7 @@
 
 #include "zr_vm_language_server/incremental_parser.h"
 #include "incremental_change.h"
+#include "incremental_token_equivalence.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/object.h"
@@ -300,12 +301,14 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
     content_block_release(state, fileVersion->textBlock);
     fileVersion->textBlock = newBlock;
     fileVersion->version = version;
-    fileVersion->isDirty = ZR_TRUE;
+    fileVersion->isDirty = !changeInfo->isTokenEquivalent;
     fileVersion->lastChangeInfo = *changeInfo;
     fileVersion->lastChangeRange = changeInfo->newRange;
     fileVersion->hasIncrementalInfo = ZR_TRUE; /* 标记有增量信息 */
 
-    clear_parser_diagnostics(state, fileVersion);
+    if (!changeInfo->isTokenEquivalent) {
+        clear_parser_diagnostics(state, fileVersion);
+    }
 
     if (fileVersion->lastContentHash != ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, fileVersion->lastContentHash, fileVersion->lastContentHashLength + 1);
@@ -408,6 +411,15 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
                 content,
                 contentLength,
                 &changeInfo);
+        changeInfo.isTokenEquivalent = fileVersion->ast != ZR_NULL &&
+                                       !fileVersion->usesFallbackAst &&
+                                       ZrLanguageServer_IncrementalTokenStreams_AreEquivalent(
+                                               state,
+                                               uri,
+                                               fileVersion->textBlock->content,
+                                               fileVersion->textBlock->contentLength,
+                                               content,
+                                               contentLength);
         return ZrLanguageServer_FileVersion_UpdateContent(
                 state,
                 fileVersion,
@@ -493,6 +505,28 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
 
     if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         return ZR_FALSE;
+    }
+
+    if (!fileVersion->isDirty &&
+        fileVersion->ast != ZR_NULL &&
+        fileVersion->hasIncrementalInfo &&
+        fileVersion->lastChangeInfo.isTokenEquivalent) {
+        if (parser->enableContentHash) {
+            if (fileVersion->lastContentHash != ZR_NULL) {
+                ZrCore_Memory_RawFree(
+                        state->global,
+                        fileVersion->lastContentHash,
+                        fileVersion->lastContentHashLength + 1);
+            }
+            compute_content_hash(
+                    state,
+                    snapshot.content,
+                    snapshot.contentLength,
+                    &fileVersion->lastContentHash,
+                    &fileVersion->lastContentHashLength);
+        }
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        return ZR_TRUE;
     }
 
     // 如果不需要重新解析，检查内容哈希（如果启用）

@@ -38,6 +38,7 @@ typedef struct SZrFileChangeInfo {
     EZrAstNodeType declarationType;
     SZrFileRange declarationRange;
     TZrBool hasDeclaration;
+    TZrBool isTokenEquivalent;
 } SZrFileChangeInfo;
 
 // 文件版本

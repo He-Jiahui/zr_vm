@@ -1757,6 +1757,43 @@
 - The frozen snapshots retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
 - Full repository GREEN is not claimed.
 
+## Token-Equivalent Semantic Snapshot Reuse Acceptance
+
+### Scope
+
+- Reuse the current AST, semantic context, and semantic cache for a real content update only when the existing lexer proves identical token kinds, semantic values, byte/line coordinates, and EOS position.
+- Require equal byte lengths, a valid non-fallback AST, and no lexer error before reuse can be considered.
+- Replace the text block and advance content generation even on a reuse hit so source text, protocol positions, and raw projections observe the new content.
+- Preserve parser diagnostics, refresh the content hash, and route the normal semantic request through the existing cache-hit path.
+
+### Baseline And TDD
+
+- Compile RED failed because `SZrFileChangeInfo.isTokenEquivalent` did not exist.
+- GREEN for `// old note -> // new note` produces a new text block/generation while keeping AST and semantic-context identities, adding one semantic request/cache hit, and adding no semantic execution.
+- A same-length space-to-newline edit rejects reuse because token line coordinates move.
+- A same-length `return 1 -> return 2` edit rejects reuse because the integer token value changes; this negative boundary was discovery/GREEN on the completed comparator.
+
+### Test And Module Inventory
+
+- `incremental_token_equivalence.c/.h` owns two-lexer exact comparison and parser-state cleanup; the implementation/header are 151/15 lines.
+- `incremental_parser.h/.c` records the decision, keeps equivalent snapshots parser-clean, preserves diagnostics, and refreshes the content hash.
+- `test_lsp_snapshot_cache_cases.h` is a 759-line focused include covering identical content, changed content, token-equivalent comments, token coordinate/value negatives, declaration classification, stale metadata, and fallback ASTs.
+- `test_lsp_interface.c` registers 86 total cases; `test_incremental_parser.c` remains 6/6 for parser and snapshot lifetime behavior.
+
+### Tooling And Results
+
+- Frozen WSL source: `/home/hejiahui/zr_vm-lsp-head-d53e21c-20260719-1930-wsl-src`; it was refreshed from current `HEAD=1413501`, then overlaid with this stage and the existing external core profile baseline. GCC and Clang builds use the matching `-wsl-gcc` and `-wsl-clang` directories.
+- Frozen Windows source/build: `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-head-d53e21c-20260719-1930-msvc-src` and matching `-msvc-build` directory; committed syntax M4 paths were overlaid from the same current HEAD before the final matrix.
+- WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each passed the final fourteen-target matrix with `run=14 failures=0`, interface 86/86, and no `Fail -` / `:FAIL:` markers.
+- Each toolchain passed incremental parser 6/6 and `language_server_stdio_smoke` 1/1. Counted matrix suites include semantic query 16/16, compiler query diagnostics 16/16, parser 75/75, expression facts 28/28, type inference 118/118, and dataflow 9/9.
+
+### Acceptance Decision
+
+- Accepted at `2026-07-19 20:53 +08:00` as the token-equivalent semantic snapshot reuse submilestone for L6 robustness.
+- L6 remains open: ordinary body token edits still rebuild and reanalyze the full file; declaration CFG/query cache invalidation, direct-caller and ModuleIdentity propagation, cached token inventories, stale-version rejection, cancellation, immutable snapshot races, provider parity, latency percentiles, and memory budgets are not claimed.
+- The frozen snapshots retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
+- Full repository GREEN is not claimed.
+
 ## Stage 3 English Diagnostic Message Catalog Foundation Acceptance
 
 ### Scope

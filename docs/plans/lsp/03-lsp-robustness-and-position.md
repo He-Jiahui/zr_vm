@@ -30,6 +30,8 @@
 
 [2026-07-19 minimal change range and declaration classification](./03-robustness/2026-07-19-minimal-change-range-and-declaration-classification.md) 完成真实内容变化的old/new最小byte range测量，并在旧AST释放前区分module、declaration signature和declaration body影响；partial reparse、按声明失效和依赖传播仍未完成。
 
+[2026-07-19 token-equivalent semantic snapshot reuse](./03-robustness/2026-07-19-token-equivalent-semantic-snapshot-reuse.md) 完成同长度、无lex error且token语义值与全部坐标一致的真实内容更新复用；token值/坐标变化继续整文件重算，声明级CFG/query cache与依赖传播仍未完成。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

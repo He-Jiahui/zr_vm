@@ -7271,6 +7271,15 @@ int main(void) {
     test_lsp_changed_content_invalidates_snapshot_and_semantic_cache(state);
     TEST_DIVIDER();
 
+    test_lsp_token_equivalent_comment_edit_reuses_semantic_snapshot(state);
+    TEST_DIVIDER();
+
+    test_lsp_token_coordinate_change_invalidates_semantic_snapshot(state);
+    TEST_DIVIDER();
+
+    test_lsp_token_value_change_invalidates_semantic_snapshot(state);
+    TEST_DIVIDER();
+
     test_lsp_body_edit_records_minimal_change_and_declaration_scope(state);
     TEST_DIVIDER();
 
