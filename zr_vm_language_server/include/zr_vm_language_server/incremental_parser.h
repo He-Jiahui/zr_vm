@@ -74,6 +74,7 @@ typedef struct SZrIncrementalParser {
     SZrParserState *parserState;      // 解析器状态（共享）
     TZrBool enableIncrementalParse;     // 是否启用增量解析
     TZrBool enableContentHash;          // 是否使用内容哈希优化
+    SZrAstNode **retainedPreviousAstOutput; // 单次parse的旧AST所有权移交槽
 } SZrIncrementalParser;
 
 // 增量解析器管理函数
@@ -97,6 +98,13 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZr
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
                                                         SZrIncrementalParser *parser,
                                                         SZrString *uri);
+ZR_LANGUAGE_SERVER_API TZrBool
+ZrLanguageServer_IncrementalParser_ParseRetainingPreviousAst(
+    SZrState *state,
+    SZrIncrementalParser *parser,
+    SZrString *uri,
+    /* Non-null result transfers the previous AST to the caller. */
+    SZrAstNode **retainedPreviousAst);
 
 // 获取 AST
 ZR_LANGUAGE_SERVER_API SZrAstNode *ZrLanguageServer_IncrementalParser_GetAST(SZrIncrementalParser *parser,

@@ -431,6 +431,262 @@ static void test_scoped_query_analyzer_cache_reuses_scope_and_invalidates_on_edi
     TEST_PASS(timer, summary);
 }
 
+static void test_body_edit_preserves_unaffected_scoped_query_cache(
+        SZrState *state) {
+    const TZrChar *summary =
+            "Body Edit Preserves Unaffected Scoped Query Cache";
+    const TZrChar *uriText = "file:///unaffected_scoped_query_cache.zr";
+    const TZrChar *initialContent =
+            "first(): int {\n"
+            "    return 1 + 2;\n"
+            "}\n"
+            "second(): int {\n"
+            "    return 10 + 20;\n"
+            "}\n";
+    const TZrChar *updatedContent =
+            "first(): int {\n"
+            "    return 1 + 3;\n"
+            "}\n"
+            "second(): int {\n"
+            "    return 10 + 20;\n"
+            "}\n";
+    const TZrChar *secondStableContent =
+            "first(): int {\n"
+            "    return 1 + 4;\n"
+            "}\n"
+            "second(): int {\n"
+            "    return 10 + 20;\n"
+            "}\n";
+    const TZrChar *shiftedContent =
+            "first(): int {\n"
+            "    return 1 +\n"
+            "4;\n"
+            "}\n"
+            "second(): int {\n"
+            "    return 10 + 20;\n"
+            "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrSemanticAnalyzer *owner;
+    SZrSemanticAnalyzer *scopedAnalyzer;
+    SZrSemanticContext *cachedContext;
+    SZrAstNode *initialAst;
+    SZrAstNode *secondFunction;
+    SZrAstNode *secondExpression;
+    SZrAstNode *cachedExpression;
+    SZrAstNode *currentSecondFunction;
+    const SZrSemanticNumericFact *numericFact;
+    SZrFileRange cachedRange;
+    SZrSemanticAnalysisMetrics metrics;
+    SZrSemanticAnalysisMetrics ownerMetrics;
+    TZrChar reason[512];
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                initialContent,
+                strlen(initialContent),
+                1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare unaffected scope fixture");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    owner = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    initialAst = fileVersion != ZR_NULL ? fileVersion->ast : ZR_NULL;
+    secondFunction = local_scope_test_function_at(initialAst, 1);
+    cachedExpression = local_scope_test_return_expression(secondFunction);
+    scopedAnalyzer = ZrLanguageServer_SemanticAnalyzer_GetOrCreateScopedQueryAnalyzer(
+            state,
+            owner);
+    if (fileVersion == ZR_NULL || owner == ZR_NULL || secondFunction == ZR_NULL ||
+        cachedExpression == ZR_NULL ||
+        scopedAnalyzer == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
+                state,
+                scopedAnalyzer,
+                initialAst,
+                secondFunction) ||
+        !ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
+                state,
+                scopedAnalyzer,
+                initialAst,
+                secondFunction)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to prime unaffected scope cache");
+        return;
+    }
+    cachedContext = scopedAnalyzer->semanticContext;
+    cachedRange = scopedAnalyzer->cache->cacheRange;
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                updatedContent,
+                strlen(updatedContent),
+                2)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to apply body-local edit");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    secondFunction = fileVersion != ZR_NULL
+                             ? local_scope_test_function_at(fileVersion->ast, 1)
+                             : ZR_NULL;
+    if (fileVersion == ZR_NULL || fileVersion->ast == initialAst ||
+        fileVersion->lastChangeInfo.impact !=
+                ZR_FILE_CHANGE_IMPACT_DECLARATION_BODY ||
+        owner->scopedQueryAnalyzer != scopedAnalyzer || secondFunction == ZR_NULL) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Unaffected scope cache was discarded: astChanged=%d impact=%d ownerCache=%p expected=%p",
+                 fileVersion != ZR_NULL && fileVersion->ast != initialAst,
+                 fileVersion != ZR_NULL ? (int)fileVersion->lastChangeInfo.impact : -1,
+                 (void *)owner->scopedQueryAnalyzer,
+                 (void *)scopedAnalyzer);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    secondExpression = local_scope_test_return_expression(secondFunction);
+    if (secondExpression == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
+                state,
+                scopedAnalyzer,
+                fileVersion->ast,
+                secondFunction)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to query preserved unaffected scope");
+        return;
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(scopedAnalyzer, &metrics);
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(owner, &ownerMetrics);
+    numericFact = ZrParser_SemanticFacts_FindNumericByNode(
+            scopedAnalyzer->semanticContext,
+            cachedExpression);
+    if (scopedAnalyzer->semanticContext != cachedContext ||
+        metrics.requestCount != 3 || metrics.executionCount != 1 ||
+        metrics.cacheHitCount != 2 ||
+        ownerMetrics.scopedCachePreservationCount != 1 ||
+        ownerMetrics.scopedCacheInvalidationCount != 0 ||
+        numericFact == ZR_NULL ||
+        !numericFact->hasRange || numericFact->minValue != 30 ||
+        numericFact->maxValue != 30) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Preserved scope cache mismatch: contextSame=%d requests=%zu executions=%zu hits=%zu preserved=%zu invalidated=%zu numeric=%p",
+                 scopedAnalyzer->semanticContext == cachedContext,
+                 (size_t)metrics.requestCount,
+                 (size_t)metrics.executionCount,
+                 (size_t)metrics.cacheHitCount,
+                 (size_t)ownerMetrics.scopedCachePreservationCount,
+                 (size_t)ownerMetrics.scopedCacheInvalidationCount,
+                 (void *)numericFact);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                secondStableContent,
+                strlen(secondStableContent),
+                3)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to apply repeated stable body edit");
+        return;
+    }
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    secondFunction = fileVersion != ZR_NULL
+                             ? local_scope_test_function_at(fileVersion->ast, 1)
+                             : ZR_NULL;
+    if (fileVersion == ZR_NULL || secondFunction == ZR_NULL ||
+        owner->scopedQueryAnalyzer != scopedAnalyzer ||
+        !ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
+                state,
+                scopedAnalyzer,
+                fileVersion->ast,
+                secondFunction)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Repeated stable edit discarded the original scope cache");
+        return;
+    }
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(scopedAnalyzer, &metrics);
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(owner, &ownerMetrics);
+    if (scopedAnalyzer->semanticContext != cachedContext ||
+        metrics.requestCount != 4 || metrics.executionCount != 1 ||
+        metrics.cacheHitCount != 3 ||
+        ownerMetrics.scopedCachePreservationCount != 2 ||
+        ownerMetrics.scopedCacheInvalidationCount != 0) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Repeated stable edit did not reuse the original semantic snapshot");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                shiftedContent,
+                strlen(shiftedContent),
+                4)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to apply equal-length coordinate shift");
+        return;
+    }
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    currentSecondFunction = fileVersion != ZR_NULL
+                                    ? local_scope_test_function_at(
+                                          fileVersion->ast,
+                                          1)
+                                    : ZR_NULL;
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(owner, &ownerMetrics);
+    if (fileVersion == ZR_NULL ||
+        fileVersion->lastChangeInfo.impact !=
+                ZR_FILE_CHANGE_IMPACT_DECLARATION_BODY ||
+        owner->scopedQueryAnalyzer != ZR_NULL ||
+        ownerMetrics.scopedCachePreservationCount != 2 ||
+        ownerMetrics.scopedCacheInvalidationCount != 1) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Coordinate-shifted scope cache was not invalidated: impact=%d cachedLines=%d-%d currentLines=%d-%d cache=%p preserved=%zu invalidated=%zu",
+                 fileVersion != ZR_NULL ? (int)fileVersion->lastChangeInfo.impact : -1,
+                 cachedRange.start.line,
+                 cachedRange.end.line,
+                 currentSecondFunction != ZR_NULL
+                         ? currentSecondFunction->location.start.line
+                         : -1,
+                 currentSecondFunction != ZR_NULL
+                         ? currentSecondFunction->location.end.line
+                         : -1,
+                 (void *)owner->scopedQueryAnalyzer,
+                 (size_t)ownerMetrics.scopedCachePreservationCount,
+                 (size_t)ownerMetrics.scopedCacheInvalidationCount);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 static void test_completion_fallback_reuses_scoped_query_analyzer_cache(
         SZrState *state) {
     const TZrChar *summary =

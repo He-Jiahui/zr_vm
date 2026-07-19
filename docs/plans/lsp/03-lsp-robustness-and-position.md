@@ -38,6 +38,8 @@
 
 [2026-07-19 canonical signature-help provider parity](./03-robustness/2026-07-19-canonical-signature-help-provider-parity.md) 完成canonical call fact的extern参数名保留，并使canonical signature-help provider从callable contracts发布按序parameter information与argument semantic-fact文档；member/meta/constructor/imported/native provider全面对等性仍待后续。
 
+[2026-07-19 owning-function scoped query cache preservation](./03-robustness/2026-07-19-owning-function-scoped-query-cache-preservation.md) 完成同长度body edit对未受影响且坐标/hash稳定scope的跨AST semantic cache复用、旧AST所有权移交和preservation/invalidation计数；主document仍全量parse/analyze，direct-caller与ModuleIdentity传播仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

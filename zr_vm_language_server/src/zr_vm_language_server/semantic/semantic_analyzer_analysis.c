@@ -1,4 +1,5 @@
 #include "semantic/semantic_analyzer_internal.h"
+#include "zr_vm_parser/parser.h"
 
 #include <string.h>
 
@@ -6,7 +7,11 @@ static TZrBool semantic_analysis_ranges_equal(const SZrFileRange *left,
                                                const SZrFileRange *right) {
     return left != ZR_NULL && right != ZR_NULL &&
            left->start.offset == right->start.offset &&
-           left->end.offset == right->end.offset;
+           left->start.line == right->start.line &&
+           left->start.column == right->start.column &&
+           left->end.offset == right->end.offset &&
+           left->end.line == right->end.line &&
+           left->end.column == right->end.column;
 }
 
 static TZrSize semantic_analysis_cache_hash(SZrAstNode *ast, SZrAstNode *scopeRoot) {
@@ -115,6 +120,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
         SZrAstNode *scopeRoot) {
     SZrAstNode *previousAst;
     TZrSize analysisHash = 0;
+    TZrSize scopeAstHash = 0;
 
     if (state == ZR_NULL || analyzer == ZR_NULL ||
         !semantic_analysis_root_is_valid(ast, scopeRoot)) {
@@ -125,13 +131,17 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
 
     previousAst = analyzer->ast;
     if (previousAst != ZR_NULL && previousAst != ast) {
-        ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(
-                state,
-                analyzer);
+        if (analyzer->preserveScopedQueryAnalyzerOnNextAstChange) {
+            analyzer->preserveScopedQueryAnalyzerOnNextAstChange = ZR_FALSE;
+        } else {
+            ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(
+                    state,
+                    analyzer);
+        }
     }
-    analyzer->ast = ast;
     if (analyzer->enableCache && analyzer->cache != ZR_NULL) {
         analysisHash = semantic_analysis_cache_hash(ast, scopeRoot);
+        scopeAstHash = ZrLanguageServer_SemanticAnalyzer_ComputeAstHash(scopeRoot);
         if (previousAst == ast && analyzer->cache->isValid &&
             analyzer->cache->astHash == analysisHash &&
             semantic_analysis_ranges_equal(
@@ -140,12 +150,27 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
             analyzer->metrics.cacheHitCount++;
             return ZR_TRUE;
         }
+        if (previousAst != ast && analyzer->ownedAst == previousAst &&
+            analyzer->cache->isValid &&
+            analyzer->cache->scopeAstHash == scopeAstHash &&
+            semantic_analysis_ranges_equal(
+                    &analyzer->cache->cacheRange,
+                    &scopeRoot->location)) {
+            analyzer->metrics.cacheHitCount++;
+            return ZR_TRUE;
+        }
         analyzer->cache->isValid = ZR_FALSE;
     }
 
+    analyzer->ast = ast;
     ZrLanguageServer_SemanticAnalyzer_ReleaseDiagnostics(state, analyzer, ZR_TRUE);
     if (!ZrLanguageServer_SemanticAnalyzer_PrepareState(state, analyzer, ast)) {
+        analyzer->ast = previousAst;
         return ZR_FALSE;
+    }
+    if (analyzer->ownedAst != ZR_NULL && analyzer->ownedAst != ast) {
+        ZrParser_Ast_Free(state, analyzer->ownedAst);
+        analyzer->ownedAst = ZR_NULL;
     }
 
     ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, ast);
@@ -163,6 +188,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
 
     if (analyzer->enableCache && analyzer->cache != ZR_NULL) {
         analyzer->cache->astHash = analysisHash;
+        analyzer->cache->scopeAstHash = scopeAstHash;
         analyzer->cache->cacheRange = scopeRoot->location;
         analyzer->cache->isValid = ZR_TRUE;
         analyzer->cache->cachedDiagnostics.length = 0;

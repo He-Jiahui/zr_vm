@@ -1698,6 +1698,8 @@ int main(void) {
     TEST_DIVIDER();
     test_scoped_query_analyzer_cache_reuses_scope_and_invalidates_on_edit(state);
     TEST_DIVIDER();
+    test_body_edit_preserves_unaffected_scoped_query_cache(state);
+    TEST_DIVIDER();
     test_completion_fallback_reuses_scoped_query_analyzer_cache(state);
     TEST_DIVIDER();
     test_analysis_root_resolver_rejects_non_callable_wrappers(state);

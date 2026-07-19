@@ -336,6 +336,7 @@ SZrIncrementalParser *ZrLanguageServer_IncrementalParser_New(SZrState *state) {
     parser->parserState = ZR_NULL; // 延迟初始化
     parser->enableIncrementalParse = ZR_TRUE; // 默认启用增量解析
     parser->enableContentHash = ZR_TRUE; // 默认启用内容哈希
+    parser->retainedPreviousAstOutput = ZR_NULL;
 
     return parser;
 }
@@ -616,7 +617,11 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
         if (parsedAst != ZR_NULL) {
             if (!parser_diagnostics_have_errors(fileVersion) || previousAst == ZR_NULL) {
                 if (previousAst != ZR_NULL && previousAst != parsedAst) {
-                    ZrParser_Ast_Free(state, previousAst);
+                    if (parser->retainedPreviousAstOutput != ZR_NULL) {
+                        *parser->retainedPreviousAstOutput = previousAst;
+                    } else {
+                        ZrParser_Ast_Free(state, previousAst);
+                    }
                 }
                 fileVersion->ast = parsedAst;
                 fileVersion->usesFallbackAst = ZR_FALSE;
@@ -628,7 +633,11 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
             fileVersion->usesFallbackAst = ZR_TRUE;
         } else {
             if (previousAst != ZR_NULL) {
-                ZrParser_Ast_Free(state, previousAst);
+                if (parser->retainedPreviousAstOutput != ZR_NULL) {
+                    *parser->retainedPreviousAstOutput = previousAst;
+                } else {
+                    ZrParser_Ast_Free(state, previousAst);
+                }
             }
             fileVersion->ast = ZR_NULL;
             fileVersion->usesFallbackAst = ZR_FALSE;
@@ -654,6 +663,26 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
 
     ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ZR_FALSE;
+}
+
+TZrBool ZrLanguageServer_IncrementalParser_ParseRetainingPreviousAst(
+        SZrState *state,
+        SZrIncrementalParser *parser,
+        SZrString *uri,
+        SZrAstNode **retainedPreviousAst) {
+    TZrBool result;
+
+    if (state == ZR_NULL || parser == ZR_NULL || uri == ZR_NULL ||
+        retainedPreviousAst == ZR_NULL ||
+        parser->retainedPreviousAstOutput != ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *retainedPreviousAst = ZR_NULL;
+    parser->retainedPreviousAstOutput = retainedPreviousAst;
+    result = ZrLanguageServer_IncrementalParser_Parse(state, parser, uri);
+    parser->retainedPreviousAstOutput = ZR_NULL;
+    return result;
 }
 
 // 获取 AST

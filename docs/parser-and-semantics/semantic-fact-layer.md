@@ -647,6 +647,8 @@ tests:
   - tests/parser/test_canonical_consumers.c
   - tests/language_server/test_lsp_inlay_semantic_facts.c
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_incremental_parser.c
+  - tests/language_server/test_lsp_local_semantic_query.c
   - tests/language_server/test_lsp_local_semantic_scope_cases.h
   - tests/language_server/test_lsp_snapshot_cache_cases.h
   - tests/language_server/stdio_smoke.js
@@ -1002,6 +1004,14 @@ Compile RED failed because the owner field and exported get-or-create API did no
 The fix stays below provider precedence. `CallAt` and `FormatCall` remain the source of the complete signature; the adapter adds parameter records from structured canonical contracts rather than inferring types from display text. If contract formatting or allocation fails, it frees the partial help and returns false so the established provider chain can continue. No stdio-specific formatting path was added.
 
 Current-HEAD integration first failed interface 86/87 because the extern call label was `NativeAdd(i32, i32): i32`; the new parser canonical-consumer RED reproduced that exact value and passes 5/5 after the shared emitter fix. The next integration run failed `language_server_stdio_smoke` and the lower LSP semantic-fact suite at 7/9 because canonical parameter arrays were empty and numeric/logical docs were null. After the structured parameter adapter, WSL GCC 11.4, WSL Clang 14, and Windows MSVC 19.44.35228 each pass canonical consumers 5/5, signature/inlay semantic facts 9/9, interface 87/87, incremental parser 7/7, the same fourteen-target semantic/LSP matrix with zero exit or failure-marker failures, and stdio smoke 1/1 on `HEAD=1fe46d6` plus this parity stage. Broader member/meta/constructor/imported/native provider parity and all declaration/dependency invalidation and budget work remain open.
+
+## Stage 3 Owning-Function Scoped Query Cache Preservation
+
+2026-07-19 update: declaration-body classification now drives the first safe cross-AST semantic-query reuse boundary. A main document analyzer keeps its single scoped child only when the changed declaration does not overlap the cached scope and the old/new byte spans have equal length. The incremental parser can explicitly transfer the previous AST instead of freeing it; that ownership is adopted only when the scoped analyzer still references that exact AST, and is released after the child compiler state. Intermediate ASTs from repeated stable updates are not retained.
+
+Preservation is committed after parse, not from the offset-only change fact. The new AST must resolve the same analysis root with identical offset/line/column bounds and the same scope AST hash. `AnalyzeScope` applies the same full-range and scope-hash guard before a cross-AST hit, while the main analyzer still rebuilds against the new document AST. Signature, module, fallback, owner-body, length-changing, coordinate-drifting, missing-root, and hash-changing cases invalidate conservatively. Public metrics separately count committed scoped-cache preservation and invalidation.
+
+TDD RED ran local semantic query 24 cases with 23 passing and the new unaffected-scope case reporting `impact=3` but a null owner cache. GREEN preserves the original semantic context through two edits, advances scoped metrics from `2/1/1` to `4/1/3`, retains the `30..30` numeric fact, and records owner metrics `2 preservation / 0 invalidation`. Replacing a space with a newline at equal byte length shifts the downstream scope from lines 4-6 to 5-7 and records one invalidation. On current `HEAD=a3fa73f` plus the stage and external core-profile baseline, GCC 11.4, Clang 14, and clean-rebuilt MSVC 19.44.35228 each pass local query 24/24, interface 87/87, incremental parser 7/7, semantic analyzer 46/46, the same fourteen-target matrix plus incremental with zero failures, and stdio smoke. Main-document partial parse/analysis, multi-function caches, direct callers, ModuleIdentity propagation, cancellation, races, and budgets remain open.
 
 ## Stage 3 English Diagnostic Message Catalog Foundation
 

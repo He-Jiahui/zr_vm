@@ -77,12 +77,15 @@ typedef struct SZrAnalysisCache {
     SZrArray cachedSymbols;            // 缓存的符号（用于补全等）
     TZrBool isValid;                     // 缓存是否有效
     TZrSize astHash;                   // AST 哈希（用于验证缓存有效性）
+    TZrSize scopeAstHash;              // scope AST 哈希（用于坐标稳定的跨快照复用）
 } SZrAnalysisCache;
 
 typedef struct SZrSemanticAnalysisMetrics {
     TZrSize requestCount;
     TZrSize executionCount;
     TZrSize cacheHitCount;
+    TZrSize scopedCacheInvalidationCount;
+    TZrSize scopedCachePreservationCount;
     SZrFileRange lastExecutionRange;
 } SZrSemanticAnalysisMetrics;
 
@@ -99,6 +102,8 @@ typedef struct SZrSemanticAnalyzer {
     SZrSemanticContext *semanticContext; // 当前分析共享的语义上下文（借用）
     SZrHirModule *hirModule;           // 当前分析共享的 HIR 模块（借用）
     struct SZrSemanticAnalyzer *scopedQueryAnalyzer; // 独立的单作用域查询缓存（所有）
+    SZrAstNode *ownedAst;              // scoped cache保留的旧AST（可选，所有）
+    TZrBool preserveScopedQueryAnalyzerOnNextAstChange;
     SZrSemanticAnalysisMetrics metrics;
 } SZrSemanticAnalyzer;
 
@@ -123,6 +128,19 @@ ZR_LANGUAGE_SERVER_API void
 ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(
     SZrState *state,
     SZrSemanticAnalyzer *analyzer);
+ZR_LANGUAGE_SERVER_API TZrBool
+ZrLanguageServer_SemanticAnalyzer_PrepareScopedQueryCacheForChange(
+    SZrState *state,
+    SZrSemanticAnalyzer *analyzer,
+    SZrAstNode *currentAst,
+    const SZrFileChangeInfo *changeInfo,
+    TZrBool *retainCurrentAst);
+ZR_LANGUAGE_SERVER_API TZrBool
+ZrLanguageServer_SemanticAnalyzer_CommitScopedQueryCachePreservation(
+    SZrState *state,
+    SZrSemanticAnalyzer *analyzer,
+    SZrAstNode *newAst,
+    SZrAstNode *retainedAst);
 
 // 释放语义分析器
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer *analyzer);

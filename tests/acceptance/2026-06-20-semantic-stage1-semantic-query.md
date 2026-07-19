@@ -1907,6 +1907,46 @@
 - The isolated sources retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
 - Full repository GREEN is not claimed.
 
+## Owning-Function Scoped Query Cache Preservation Acceptance
+
+### Scope
+
+- Connect declaration-body change classification to scoped-query cache invalidation instead of destroying every real-edit cache.
+- Preserve an unaffected scoped semantic context only when byte length, resolved scope range, line/column coordinates, and scope hash remain stable.
+- Transfer and release the old AST explicitly so cached semantic facts never point into parser-freed storage.
+- Count committed preservation and invalidation; keep signature/module/fallback/owner/coordinate drift conservative.
+
+### Baseline And TDD
+
+- RED added only the unaffected second-function case: WSL GCC ran 24 cases with 23 passes and failed because body impact `3` still left `ownerCache=(nil)`.
+- First GREEN retained the analyzer and context across `return 1 + 2` to `return 1 + 3`, producing `3 requests / 1 execution / 2 hits` and numeric fact `30..30`.
+- A second stable edit to `1 + 4` reused the original context at `4/1/3`, proving the intermediate AST is not required by the cache.
+- The equal-byte space-to-newline boundary initially remained a preservation candidate because change ranges carry offsets only. Post-parse full-range validation now detects downstream line drift and increments invalidation instead of returning old-position facts.
+
+### Code And Test Evidence
+
+- `semantic_analyzer_scope_cache.c` owns candidate selection, new-scope commit validation, old-AST adoption, and preservation/invalidation metrics.
+- `incremental_parser.c` exposes a one-call previous-AST transfer slot; a non-null result belongs to the caller.
+- `semantic_analyzer_analysis.c` requires full range and scope-hash equality for cross-AST hits and releases an adopted AST after replacing its compiler state.
+- `lsp_interface.c` orders classify, prepare, parse, commit, and main-document analysis; failures and fallback paths release or invalidate before returning.
+- `test_lsp_local_semantic_scope_cases.h` covers owner invalidation, unaffected repeated reuse, numeric fact validity, coordinate drift, and context destruction.
+
+### Tooling And Results
+
+- WSL source/builds: `/home/hejiahui/zr_vm-lsp-head-d53e21c-20260719-1930-wsl-src` and matching GCC/Clang build directories.
+- Windows source/build: `C:\Users\HeJiahui\AppData\Local\Temp\zr_vm-lsp-head-d53e21c-20260719-1930-msvc-src` and matching MSVC build directory.
+- Final sources are current `HEAD=a3fa73f` plus this stage and the external core-profile baseline overlay.
+- GCC 11.4, Clang 14, and MSVC 19.44.35228 each pass local query 24/24, interface 87/87, incremental parser 7/7, and semantic analyzer 46/46.
+- Each toolchain passes the same fourteen-target semantic/LSP matrix plus incremental parser with `run=15`, zero exit/failure-marker failures, and `language_server_stdio_smoke` success.
+- MSVC's first post-refresh incremental run used archive mtimes older than existing objects and failed generic ABI-sensitive tests. CMake clean removed 740 generated files; the complete 578-object rebuild and all target runs passed, so the stale incremental result is excluded.
+
+### Acceptance Decision
+
+- Accepted at `2026-07-19 22:58 +08:00` as the owning-function scoped-query cache preservation submilestone for L6 robustness.
+- Main-document parse/analysis remains whole-file, only one scoped cache is retained, and length-changing edits remain conservative. Multi-function CFG caches, direct-caller and ModuleIdentity propagation, cancellation, races, latency percentiles, and memory budgets remain open.
+- The isolated sources retain the unrelated current core profiling helper only as an external baseline overlay; those core files are excluded from this acceptance scope.
+- Full repository GREEN is not claimed.
+
 ## Stage 3 English Diagnostic Message Catalog Foundation Acceptance
 
 ### Scope

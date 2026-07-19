@@ -2102,6 +2102,8 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     analyzer->semanticContext = ZR_NULL;
     analyzer->hirModule = ZR_NULL;
     analyzer->scopedQueryAnalyzer = ZR_NULL;
+    analyzer->ownedAst = ZR_NULL;
+    analyzer->preserveScopedQueryAnalyzerOnNextAstChange = ZR_FALSE;
     memset(&analyzer->metrics, 0, sizeof(analyzer->metrics));
     
     if (analyzer->symbolTable == ZR_NULL) {
@@ -2123,6 +2125,7 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     if (analyzer->cache != ZR_NULL) {
         analyzer->cache->isValid = ZR_FALSE;
         analyzer->cache->astHash = 0;
+        analyzer->cache->scopeAstHash = 0;
         analyzer->cache->cacheRange = ZrParser_FileRange_Create(
                 ZrParser_FilePosition_Create(0, 1, 1),
                 ZrParser_FilePosition_Create(0, 1, 1),
@@ -2176,6 +2179,11 @@ void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer
     if (analyzer->compilerState != ZR_NULL) {
         ZrParser_CompilerState_Free(analyzer->compilerState);
         ZrCore_Memory_RawFree(state->global, analyzer->compilerState, sizeof(SZrCompilerState));
+    }
+
+    if (analyzer->ownedAst != ZR_NULL) {
+        ZrParser_Ast_Free(state, analyzer->ownedAst);
+        analyzer->ownedAst = ZR_NULL;
     }
 
     analyzer->semanticContext = ZR_NULL;
@@ -2812,6 +2820,7 @@ void ZrLanguageServer_SemanticAnalyzer_ClearCache(SZrState *state, SZrSemanticAn
     
     analyzer->cache->isValid = ZR_FALSE;
     analyzer->cache->astHash = 0;
+    analyzer->cache->scopeAstHash = 0;
     analyzer->cache->cacheRange = ZrParser_FileRange_Create(
             ZrParser_FilePosition_Create(0, 1, 1),
             ZrParser_FilePosition_Create(0, 1, 1),
