@@ -16,6 +16,10 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_canonical_signature_help.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_canonical_signature_help.h
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_external_callable_signature_help.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_external_callable_signature_help.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_callable_contract.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_callable_contract.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_scope_cache.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
@@ -49,6 +53,7 @@ related_code:
   - tests/language_server/test_lsp_local_semantic_query.c
   - tests/language_server/test_lsp_local_semantic_receiver_dependency_cases.h
   - tests/language_server/test_lsp_project_features.c
+  - tests/language_server/test_lsp_project_native_callable_signature_cases.h
   - tests/language_server/stdio_smoke.js
   - tests/parser/test_parser_extern.c
 implementation_files:
@@ -66,6 +71,8 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_canonical_signature_help.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_external_callable_signature_help.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_external_callable_contract.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_scope_cache.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
@@ -107,6 +114,7 @@ tests:
   - tests/language_server/test_lsp_reference_callable_consumer_cases.h
   - tests/language_server/test_lsp_local_semantic_query.c
   - tests/language_server/test_lsp_project_features.c
+  - tests/language_server/test_lsp_project_native_callable_signature_cases.h
   - tests/language_server/test_lsp_project_utf16_ranges.c
   - tests/language_server/test_lsp_source_contracts.c
   - tests/language_server/descriptor_plugin_fixture_int.c
@@ -169,6 +177,14 @@ Descriptor-plugin receiver members now resolve before the generic import-chain p
 Physical plugin files have no source text for their synthetic type declarations. `lsp_virtual_documents.c` already publishes deterministic compact member ranges; `lsp_descriptor_metadata_coordinates.c` converts those one-based structural coordinates only when the resolved source kind is `NATIVE_DESCRIPTOR_PLUGIN`. Definition, references and document highlights from either source usages or the compact declaration therefore keep the same member identity and no longer collapse to the plugin module entry at `0:0`.
 
 Receiver completion is tested first on a valid `point.x` snapshot and then after an incomplete version 2 edit to `point.;`. The second request uses the existing last-good AST contract; the LSP does not recover the receiver by scanning member names or rebuilding type facts from local text. Full behavior and constraints are documented in [LSP Descriptor Metadata Coordinate Projection](./lsp-descriptor-metadata-coordinate-projection.md).
+
+## Native Descriptor Module Function Callables
+
+Native builtin and descriptor-plugin module functions now enter signature help through the same semantic query that resolves their ModuleIdentity, provider source kind and exact `ZrLibFunctionDescriptor`. `lsp_external_callable_signature_help.c` receives only the parsed callee identifier range, runs `ZrLanguageServer_LspSemanticQuery_ResolveAtPosition`, and accepts a result only when the current resolved member is a native module `FUNCTION`.
+
+`lsp_external_callable_contract.c` is the shared structured adapter for hover and signature help. It formats the descriptor's function name, generic parameter names, ordered parameter names/types and return type, while parameter information preserves descriptor documentation and existing argument semantic facts. Descriptor-plugin reload therefore updates both features from the newly queried provider generation; the adapter does not cache descriptor pointers.
+
+The resolver is deliberately tri-state. A non-native target continues to established source/binary/receiver consumers. A complete native function descriptor resolves. A recognized native function with incomplete or unsupported structured fields returns unavailable and blocks AST/member-name/text fallback. Native receiver methods remain on their existing closed-generic path because raw method descriptors do not yet publish the substituted owner contract. Full behavior, failure boundaries and tests are documented in [LSP Native Descriptor Function Callable Contract](./lsp-native-descriptor-function-callable-contract.md).
 
 ## 隐式接收者符号
 

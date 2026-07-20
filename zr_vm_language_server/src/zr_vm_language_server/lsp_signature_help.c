@@ -1,5 +1,6 @@
 #include "interface/lsp_interface_internal.h"
 #include "lsp_canonical_signature_help.h"
+#include "lsp_external_callable_signature_help.h"
 #include "lsp_signature_help_internal.h"
 #include "semantic/semantic_analyzer_internal.h"
 
@@ -35,6 +36,34 @@ typedef struct SZrLspGenericBinding {
     TZrBool isBound;
     SZrInferredType inferredType;
 } SZrLspGenericBinding;
+
+static TZrBool signature_external_callable_callee_range(
+        const SZrLspCallContext *context,
+        SZrFileRange *range) {
+    SZrAstNode *memberNode;
+
+    if (context == ZR_NULL || range == ZR_NULL ||
+        context->primaryNode == ZR_NULL ||
+        context->primaryNode->type != ZR_AST_PRIMARY_EXPRESSION ||
+        context->primaryNode->data.primaryExpression.members == ZR_NULL ||
+        context->callMemberIndex == 0U ||
+        context->callMemberIndex >
+                context->primaryNode->data.primaryExpression.members->count) {
+        return ZR_FALSE;
+    }
+    memberNode = context->primaryNode->data.primaryExpression.members
+                         ->nodes[context->callMemberIndex - 1U];
+    if (memberNode == ZR_NULL ||
+        memberNode->type != ZR_AST_MEMBER_EXPRESSION ||
+        memberNode->data.memberExpression.computed ||
+        memberNode->data.memberExpression.property == ZR_NULL ||
+        memberNode->data.memberExpression.property->type !=
+                ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_FALSE;
+    }
+    *range = memberNode->data.memberExpression.property->location;
+    return ZR_TRUE;
+}
 
 typedef struct SZrSignatureTypeResolutionContext SZrSignatureTypeResolutionContext;
 
@@ -3865,6 +3894,33 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
     signature_find_call_context_in_node(analyzer->ast, fileRange, &callContext);
     if (callContext.kind == ZR_LSP_CALL_CONTEXT_NONE) {
         return ZR_FALSE;
+    }
+
+    if (callContext.kind == ZR_LSP_CALL_CONTEXT_FUNCTION_CALL &&
+        callContext.callNode != ZR_NULL &&
+        callContext.callNode->type == ZR_AST_FUNCTION_CALL) {
+        SZrFileRange calleeRange;
+        EZrLspExternalCallableSignatureStatus externalStatus =
+                signature_external_callable_callee_range(
+                        &callContext, &calleeRange)
+                        ? ZrLanguageServer_LspExternalCallableSignatureHelp_Resolve(
+                                  state,
+                                  context,
+                                  analyzer,
+                                  uri,
+                                  calleeRange,
+                                  callContext.argumentNodes,
+                                  signature_active_parameter_index(
+                                          &callContext.callNode->data.functionCall,
+                                          filePosition),
+                                  result)
+                        : ZR_LSP_EXTERNAL_CALLABLE_SIGNATURE_NOT_EXTERNAL;
+        if (externalStatus == ZR_LSP_EXTERNAL_CALLABLE_SIGNATURE_RESOLVED) {
+            return *result != ZR_NULL;
+        }
+        if (externalStatus == ZR_LSP_EXTERNAL_CALLABLE_SIGNATURE_UNAVAILABLE) {
+            return ZR_FALSE;
+        }
     }
 
     if (callContext.kind == ZR_LSP_CALL_CONTEXT_FUNCTION_CALL &&

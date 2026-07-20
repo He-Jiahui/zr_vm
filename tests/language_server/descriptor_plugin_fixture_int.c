@@ -4,6 +4,11 @@
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
+static const ZrLibParameterDescriptor g_descriptor_plugin_combine_parameters[] = {
+    {"left", "int", "Left value to combine."},
+    {"right", "int", "Right value to combine."},
+};
+
 static const ZrLibFunctionDescriptor g_descriptor_plugin_functions[] = {
     {
         .name = "answer",
@@ -22,6 +27,26 @@ static const ZrLibFunctionDescriptor g_descriptor_plugin_functions[] = {
         .callback = ZR_NULL,
         .returnTypeName = "ProbePoint",
         .documentation = "Descriptor plugin fixture that exposes a ProbePoint factory.",
+        .parameters = ZR_NULL,
+        .parameterCount = 0,
+    },
+    {
+        .name = "combine",
+        .minArgumentCount = 2,
+        .maxArgumentCount = 2,
+        .callback = ZR_NULL,
+        .returnTypeName = "int",
+        .documentation = "Combines two integer values for callable contract tests.",
+        .parameters = g_descriptor_plugin_combine_parameters,
+        .parameterCount = ZR_ARRAY_COUNT(g_descriptor_plugin_combine_parameters),
+    },
+    {
+        .name = "incomplete_callable",
+        .minArgumentCount = 0,
+        .maxArgumentCount = 0,
+        .callback = ZR_NULL,
+        .returnTypeName = "unknown",
+        .documentation = "Deliberately incomplete callable contract for unavailable tests.",
         .parameters = ZR_NULL,
         .parameterCount = 0,
     },

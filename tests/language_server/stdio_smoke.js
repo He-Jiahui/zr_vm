@@ -613,6 +613,8 @@ async function main() {
     const documentUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr';
     const docsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-docs.zr';
     const genericUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr';
+    const nativeCallableUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-native-callable.zr';
     const parserDiagnosticUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-parser-diagnostic.zr';
     const missingConditionUri =
@@ -732,6 +734,11 @@ async function main() {
         '    box.shape(m);',
         '    pick(1 + 2, true || false);',
         '}',
+        '',
+    ].join('\n');
+    const nativeCallableText = [
+        'var gc = %import("zr.system.gc");',
+        'gc.set_budget(2000);',
         '',
     ].join('\n');
     const noopFormatText = [
@@ -1765,6 +1772,62 @@ async function main() {
             signature.parameters[1].documentation.value.includes('logical true') &&
             signature.parameters[1].documentation.value.includes('short-circuits')),
     'signatureHelp parameter documentation should serialize argument logical semantic facts');
+
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: nativeCallableUri,
+            languageId: 'zr',
+            version: 1,
+            text: nativeCallableText,
+        },
+    });
+
+    const nativeCallableDiagnostics =
+        await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(nativeCallableDiagnostics.uri === nativeCallableUri,
+        'native callable diagnostics uri mismatch');
+    assert(Array.isArray(nativeCallableDiagnostics.diagnostics) &&
+        nativeCallableDiagnostics.diagnostics.length === 0,
+    'native callable fixture should open without diagnostics');
+
+    const nativeCallableLabel = 'set_budget(microseconds: int): null';
+    const nativeCallableSignature = await client.request('textDocument/signatureHelp', {
+        textDocument: { uri: nativeCallableUri },
+        position: findPosition(nativeCallableText, 'gc.set_budget(2000)', 0, 17),
+    });
+    assert(nativeCallableSignature && nativeCallableSignature.activeParameter === 0 &&
+        Array.isArray(nativeCallableSignature.signatures) &&
+        nativeCallableSignature.signatures.some((signature) =>
+            signature && signature.label === nativeCallableLabel &&
+            Array.isArray(signature.parameters) &&
+            signature.parameters.length === 1 &&
+            signature.parameters[0].label === 'microseconds: int' &&
+            signature.parameters[0].documentation &&
+            typeof signature.parameters[0].documentation.value === 'string' &&
+            signature.parameters[0].documentation.value.includes(
+                'Pause budget in microseconds used for both pause and remark slices.')),
+    'native callable signatureHelp should preserve the structured builtin descriptor contract');
+
+    const nativeCallableHover = await client.request('textDocument/hover', {
+        textDocument: { uri: nativeCallableUri },
+        position: findPosition(nativeCallableText, 'gc.set_budget(2000)', 0, 5),
+    });
+    assert(nativeCallableHover && nativeCallableHover.contents &&
+        typeof nativeCallableHover.contents.value === 'string' &&
+        nativeCallableHover.contents.value.includes(nativeCallableLabel) &&
+        nativeCallableHover.contents.value.includes('Source: native builtin'),
+    'native callable hover should reuse the same structured builtin descriptor contract');
+
+    client.notify('textDocument/didClose', {
+        textDocument: { uri: nativeCallableUri },
+    });
+    const nativeCallableCloseDiagnostics =
+        await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(nativeCallableCloseDiagnostics.uri === nativeCallableUri,
+        'native callable didClose diagnostics uri mismatch');
+    assert(Array.isArray(nativeCallableCloseDiagnostics.diagnostics) &&
+        nativeCallableCloseDiagnostics.diagnostics.length === 0,
+    'native callable didClose must clear diagnostics');
 
     const genericInlayHints = await client.request('textDocument/inlayHint', {
         textDocument: { uri: genericUri },

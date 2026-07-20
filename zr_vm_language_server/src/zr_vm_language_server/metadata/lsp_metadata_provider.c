@@ -1,6 +1,7 @@
 #include "metadata/lsp_metadata_provider.h"
 #include "interface/lsp_interface_internal.h"
 #include "lsp_virtual_documents.h"
+#include "semantic/lsp_external_callable_contract.h"
 
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
@@ -1921,28 +1922,52 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                                     ? resolvedMember->typeHintDescriptor->documentation
                                     : ""));
                 break;
-            case ZR_LSP_METADATA_MEMBER_FUNCTION:
-                snprintf(buffer,
-                         sizeof(buffer),
-                         "**function** `%s`\n\nType: %s\n\nSource: %s%s%s",
-                         memberText != ZR_NULL ? memberText : "",
-                         resolvedMember->resolvedTypeText != ZR_NULL
-                             ? metadata_provider_string_text(resolvedMember->resolvedTypeText)
-                             : metadata_provider_exact_type_failure_text(),
-                         hoverSourceText != ZR_NULL ? hoverSourceText : "unresolved",
-                         resolvedMember->functionDescriptor != ZR_NULL && resolvedMember->functionDescriptor->documentation != ZR_NULL
-                             ? "\n\n"
-                             : (resolvedMember->typeHintDescriptor != ZR_NULL &&
-                                         resolvedMember->typeHintDescriptor->documentation != ZR_NULL
-                                     ? "\n\n"
-                                    : ""),
-                         resolvedMember->functionDescriptor != ZR_NULL && resolvedMember->functionDescriptor->documentation != ZR_NULL
-                             ? resolvedMember->functionDescriptor->documentation
-                             : (resolvedMember->typeHintDescriptor != ZR_NULL &&
-                                        resolvedMember->typeHintDescriptor->documentation != ZR_NULL
-                                    ? resolvedMember->typeHintDescriptor->documentation
-                                    : ""));
+            case ZR_LSP_METADATA_MEMBER_FUNCTION: {
+                SZrLspExternalCallableContract callableContract;
+                TZrChar signatureBuffer[ZR_LSP_TEXT_BUFFER_LENGTH];
+                const TZrChar *documentation =
+                        resolvedMember->functionDescriptor != ZR_NULL &&
+                                resolvedMember->functionDescriptor->documentation !=
+                                        ZR_NULL
+                                ? resolvedMember->functionDescriptor->documentation
+                                : (resolvedMember->typeHintDescriptor != ZR_NULL &&
+                                           resolvedMember->typeHintDescriptor
+                                                   ->documentation != ZR_NULL
+                                           ? resolvedMember->typeHintDescriptor
+                                                     ->documentation
+                                           : "");
+
+                if (ZrLanguageServer_LspExternalCallableContract_FromResolvedMember(
+                            resolvedMember, &callableContract) &&
+                    ZrLanguageServer_LspExternalCallableContract_Format(
+                            &callableContract,
+                            signatureBuffer,
+                            sizeof(signatureBuffer))) {
+                    snprintf(buffer,
+                             sizeof(buffer),
+                             "**function** `%s`\n\nSignature: %s\n\nSource: %s%s%s",
+                             memberText != ZR_NULL ? memberText : "",
+                             signatureBuffer,
+                             hoverSourceText != ZR_NULL ? hoverSourceText
+                                                        : "unresolved",
+                             documentation[0] != '\0' ? "\n\n" : "",
+                             documentation);
+                } else {
+                    snprintf(buffer,
+                             sizeof(buffer),
+                             "**function** `%s`\n\nType: %s\n\nSource: %s%s%s",
+                             memberText != ZR_NULL ? memberText : "",
+                             resolvedMember->resolvedTypeText != ZR_NULL
+                                     ? metadata_provider_string_text(
+                                               resolvedMember->resolvedTypeText)
+                                     : metadata_provider_exact_type_failure_text(),
+                             hoverSourceText != ZR_NULL ? hoverSourceText
+                                                        : "unresolved",
+                             documentation[0] != '\0' ? "\n\n" : "",
+                             documentation);
+                }
                 break;
+            }
             case ZR_LSP_METADATA_MEMBER_TYPE:
                 snprintf(buffer,
                          sizeof(buffer),

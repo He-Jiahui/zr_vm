@@ -19,6 +19,7 @@
 #include "zr_vm_library/file.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h"
+#include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h"
 #include "path_support.h"
 
 #ifndef ZR_VM_DESCRIPTOR_PLUGIN_FIXTURE_INT_PATH
@@ -7640,6 +7641,7 @@ static void test_lsp_native_value_constructor_members_surface_hover_and_completi
 
 #include "test_lsp_project_public_contract_cases.h"
 #include "test_lsp_project_module_identity_edge_cases.h"
+#include "test_lsp_project_native_callable_signature_cases.h"
 #include "test_lsp_project_source_rename_edit_cases.h"
 
 int main(void) {
@@ -7730,6 +7732,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_descriptor_plugin_type_member_navigation(state);
+    TEST_DIVIDER();
+
+    test_lsp_descriptor_plugin_callable_query_hover_and_signature_share_contract(state);
     TEST_DIVIDER();
 
     test_lsp_descriptor_plugin_project_local_definition_overrides_stale_registry(state);
