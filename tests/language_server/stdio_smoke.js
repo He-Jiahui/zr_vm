@@ -129,6 +129,15 @@ function workspaceEditContainsTextEdit(workspaceEdit, uri, start, end, newText) 
             edit.newText === newText);
 }
 
+function workspaceEditDocumentVersion(workspaceEdit, uri) {
+    const documentChange = workspaceEdit &&
+        Array.isArray(workspaceEdit.documentChanges)
+        ? workspaceEdit.documentChanges.find((change) => change &&
+            change.textDocument && change.textDocument.uri === uri)
+        : undefined;
+    return documentChange ? documentChange.textDocument.version : undefined;
+}
+
 function createWatchedProjectFixture() {
     const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-watch-'));
     const sourcePath = path.join(rootPath, 'src');
@@ -3085,6 +3094,18 @@ async function main() {
     assert(Array.isArray(moduleIdentityWillRename.documentChanges) &&
         moduleIdentityWillRename.documentChanges.length === 3,
     'workspace/willRenameFiles must publish versioned documentChanges for all edited source files');
+    assert(workspaceEditDocumentVersion(
+        moduleIdentityWillRename,
+        moduleIdentityRenameFixture.oldUserUri) === 1,
+    'workspace/willRenameFiles must serialize the captured opened old-edge importer version');
+    assert(workspaceEditDocumentVersion(
+        moduleIdentityWillRename,
+        moduleIdentityRenameFixture.newUserUri) === 1,
+    'workspace/willRenameFiles must serialize the captured opened new-edge importer version');
+    assert(workspaceEditDocumentVersion(
+        moduleIdentityWillRename,
+        moduleIdentityRenameFixture.oldProviderUri) === null,
+    'workspace/willRenameFiles must keep unopened provider documentChanges unversioned');
 
     fs.renameSync(
         moduleIdentityRenameFixture.oldProviderPath,

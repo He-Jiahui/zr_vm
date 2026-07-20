@@ -3,6 +3,18 @@
 
 #include "interface/lsp_interface_internal.h"
 
+#ifndef ZR_LSP_SOURCE_RENAME_DOCUMENT_SNAPSHOT_DEFINED
+#define ZR_LSP_SOURCE_RENAME_DOCUMENT_SNAPSHOT_DEFINED
+typedef struct SZrLspSourceRenameDocumentSnapshot {
+    SZrString *uri;
+    TZrUInt64 contentHash;
+    TZrSize contentLength;
+    TZrSize version;
+    TZrSize contentGeneration;
+    TZrBool isOpenDocument;
+} SZrLspSourceRenameDocumentSnapshot;
+#endif
+
 typedef struct SZrLspImportBinding {
     SZrString *aliasName;
     SZrString *moduleName;
@@ -76,6 +88,22 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectSourceRenameEd
         SZrString *newUri,
         SZrString **outNewModuleName,
         SZrArray *outLocations);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectSourceRenameEditPlan(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *oldUri,
+        SZrString *newUri,
+        SZrString **outNewModuleName,
+        SZrArray *outLocations,
+        SZrArray *outDocumentSnapshots);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
+        SZrState *state,
+        SZrLspContext *context,
+        const SZrArray *documentSnapshots);
+ZR_LANGUAGE_SERVER_API const SZrLspSourceRenameDocumentSnapshot *
+ZrLanguageServer_LspProject_FindSourceRenameDocumentSnapshot(
+        const SZrArray *documentSnapshots,
+        SZrString *uri);
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *state,
                                                                                             SZrLspContext *context,
                                                                                             SZrString *uri);

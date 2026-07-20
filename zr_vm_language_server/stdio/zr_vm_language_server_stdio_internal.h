@@ -19,6 +19,23 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 
+#ifndef ZR_LSP_SOURCE_RENAME_DOCUMENT_SNAPSHOT_DEFINED
+#define ZR_LSP_SOURCE_RENAME_DOCUMENT_SNAPSHOT_DEFINED
+typedef struct SZrLspSourceRenameDocumentSnapshot {
+    SZrString *uri;
+    TZrUInt64 contentHash;
+    TZrSize contentLength;
+    TZrSize version;
+    TZrSize contentGeneration;
+    TZrBool isOpenDocument;
+} SZrLspSourceRenameDocumentSnapshot;
+#endif
+
+ZR_LANGUAGE_SERVER_API const SZrLspSourceRenameDocumentSnapshot *
+ZrLanguageServer_LspProject_FindSourceRenameDocumentSnapshot(
+        const SZrArray *documentSnapshots,
+        SZrString *uri);
+
 typedef struct SZrCachedUri {
     char *text;
     SZrString *value;
@@ -100,11 +117,13 @@ cJSON *serialize_text_edit(const SZrLspTextEdit *edit);
 cJSON *serialize_text_edits_array(SZrArray *edits);
 cJSON *create_workspace_edit_for_locations(SZrStdioServer *server,
                                            SZrArray *locations,
-                                           SZrString *newName);
+                                           SZrString *newName,
+                                           const SZrArray *documentSnapshots);
 TZrBool append_workspace_edit_locations(SZrStdioServer *server,
                                         cJSON *edit,
                                         SZrArray *locations,
-                                        SZrString *newName);
+                                        SZrString *newName,
+                                        const SZrArray *documentSnapshots);
 cJSON *serialize_code_actions_array(const char *uriText,
                                     TZrBool hasVersion,
                                     TZrSize version,

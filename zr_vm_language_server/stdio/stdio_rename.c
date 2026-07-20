@@ -34,11 +34,13 @@ static cJSON *find_document_change_edits(cJSON *documentChanges, const char *uri
 
 static cJSON *create_document_change(SZrStdioServer *server,
                                      const SZrLspLocation *location,
-                                     const char *uriText) {
+                                     const char *uriText,
+                                     const SZrArray *documentSnapshots) {
     cJSON *documentChange = cJSON_CreateObject();
     cJSON *textDocument = cJSON_CreateObject();
     cJSON *edits = cJSON_CreateArray();
     SZrFileVersion *fileVersion;
+    const SZrLspSourceRenameDocumentSnapshot *documentSnapshot = ZR_NULL;
 
     if (documentChange == NULL || textDocument == NULL || edits == NULL) {
         cJSON_Delete(documentChange);
@@ -47,9 +49,28 @@ static cJSON *create_document_change(SZrStdioServer *server,
         return NULL;
     }
 
-    fileVersion = location != NULL ? get_file_version_for_uri(server, location->uri) : ZR_NULL;
+    if (documentSnapshots != ZR_NULL) {
+        documentSnapshot =
+                location != ZR_NULL
+                        ? ZrLanguageServer_LspProject_FindSourceRenameDocumentSnapshot(
+                                  documentSnapshots, location->uri)
+                        : ZR_NULL;
+        if (documentSnapshot == ZR_NULL) {
+            cJSON_Delete(documentChange);
+            cJSON_Delete(textDocument);
+            cJSON_Delete(edits);
+            return NULL;
+        }
+    }
+    fileVersion = documentSnapshots == ZR_NULL && location != NULL
+                          ? get_file_version_for_uri(server, location->uri)
+                          : ZR_NULL;
     cJSON_AddStringToObject(textDocument, ZR_LSP_FIELD_URI, uriText != NULL ? uriText : "");
-    if (fileVersion != ZR_NULL) {
+    if (documentSnapshot != ZR_NULL && documentSnapshot->isOpenDocument) {
+        cJSON_AddNumberToObject(textDocument,
+                                ZR_LSP_FIELD_VERSION,
+                                (double)documentSnapshot->version);
+    } else if (documentSnapshots == ZR_NULL && fileVersion != ZR_NULL) {
         cJSON_AddNumberToObject(textDocument, ZR_LSP_FIELD_VERSION, (double)fileVersion->version);
     } else {
         cJSON_AddNullToObject(textDocument, ZR_LSP_FIELD_VERSION);
@@ -62,7 +83,8 @@ static cJSON *create_document_change(SZrStdioServer *server,
 static cJSON *ensure_document_change_edits(SZrStdioServer *server,
                                            cJSON *documentChanges,
                                            const SZrLspLocation *location,
-                                           const char *uriText) {
+                                           const char *uriText,
+                                           const SZrArray *documentSnapshots) {
     cJSON *documentChange;
     cJSON *edits;
 
@@ -71,7 +93,8 @@ static cJSON *ensure_document_change_edits(SZrStdioServer *server,
         return edits;
     }
 
-    documentChange = create_document_change(server, location, uriText);
+    documentChange = create_document_change(
+            server, location, uriText, documentSnapshots);
     if (documentChange == NULL) {
         return NULL;
     }
@@ -84,7 +107,8 @@ static cJSON *ensure_document_change_edits(SZrStdioServer *server,
 TZrBool append_workspace_edit_locations(SZrStdioServer *server,
                                         cJSON *edit,
                                         SZrArray *locations,
-                                        SZrString *newName) {
+                                        SZrString *newName,
+                                        const SZrArray *documentSnapshots) {
     cJSON *changes;
     cJSON *documentChanges;
     TZrSize index;
@@ -126,7 +150,11 @@ TZrBool append_workspace_edit_locations(SZrStdioServer *server,
                     cJSON_AddItemToObject(changes, uriText, uriEdits);
                 }
             }
-            documentEdits = ensure_document_change_edits(server, documentChanges, *locationPtr, uriText);
+            documentEdits = ensure_document_change_edits(server,
+                                                          documentChanges,
+                                                          *locationPtr,
+                                                          uriText,
+                                                          documentSnapshots);
 
             if (uriEdits == NULL || documentEdits == NULL) {
                 free(uriText);
@@ -160,7 +188,8 @@ TZrBool append_workspace_edit_locations(SZrStdioServer *server,
 
 cJSON *create_workspace_edit_for_locations(SZrStdioServer *server,
                                            SZrArray *locations,
-                                           SZrString *newName) {
+                                           SZrString *newName,
+                                           const SZrArray *documentSnapshots) {
     cJSON *edit = cJSON_CreateObject();
     cJSON *changes = cJSON_CreateObject();
     cJSON *documentChanges = cJSON_CreateArray();
@@ -174,7 +203,8 @@ cJSON *create_workspace_edit_for_locations(SZrStdioServer *server,
 
     cJSON_AddItemToObject(edit, ZR_LSP_FIELD_CHANGES, changes);
     cJSON_AddItemToObject(edit, ZR_LSP_FIELD_DOCUMENT_CHANGES, documentChanges);
-    if (!append_workspace_edit_locations(server, edit, locations, newName)) {
+    if (!append_workspace_edit_locations(
+                server, edit, locations, newName, documentSnapshots)) {
         cJSON_Delete(edit);
         return NULL;
     }
@@ -255,7 +285,8 @@ cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params) {
         return cJSON_CreateNull();
     }
 
-    result = create_workspace_edit_for_locations(server, &locations, newName);
+    result = create_workspace_edit_for_locations(
+            server, &locations, newName, ZR_NULL);
     free_locations_array(server->state, &locations);
     return result != NULL ? result : cJSON_CreateNull();
 }

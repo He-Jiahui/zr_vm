@@ -52,7 +52,7 @@ related_tests:
 
 ## Snapshot、Schema与协议边界
 
-- 本阶段不改变document snapshot schema、semantic fact schema、public-contract hash schema v1、cache key或artifact schema。WorkspaceEdit只是既有canonical source/import facts的协议投影。
+- 本阶段不改变document snapshot schema、semantic fact schema、public-contract hash schema v1、cache key或artifact schema。WorkspaceEdit只是既有canonical source/import facts的协议投影；后续瞬时fingerprint plan见[source rename workspace edit snapshot revalidation](./2026-07-20-source-rename-workspace-edit-snapshot-revalidation.md)。
 - `willRenameFiles`返回的provider URI仍是old URI，importer URI保持各自document identity；open importer携带known version，unopened importer的`TextDocumentEdit` version为null。
 - 直接覆盖的协议能力是`workspace/willRenameFiles`，并与后续`workspace/didRenameFiles`的old/new ModuleIdentity迁移组成完整source rename workflow。
 - 本阶段没有采集p50/p95/p99、峰值内存、cancellation latency或snapshot race压力报告，因此不晋级完整L6 robustness。
@@ -61,4 +61,4 @@ related_tests:
 
 - property、constructor、meta-member及imported/native callable target identity仍需统一query shape，不得由LSP按名称或文本兼容。
 - public type/property/layout/import hash、package/alias export迁移、`.zrp/.zrm` generation和binary/native/artifact provider replacement仍待后续。
-- workspace edit在client apply前的document version/checksum复验、partial reparse、多scope cache、snapshot race、cancellation、workspace cache预算、性能百分位和峰值内存门禁仍未完成。
+- 当时未完成的source rename document version/checksum提交前复验已由[source rename workspace edit snapshot revalidation](./2026-07-20-source-rename-workspace-edit-snapshot-revalidation.md)关闭；general rename/code action/fix、partial reparse、多scope cache、snapshot race、cancellation、workspace cache预算、性能百分位和峰值内存门禁仍未完成。

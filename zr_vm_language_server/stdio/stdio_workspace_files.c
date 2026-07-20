@@ -11,13 +11,18 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_PrepareSourceRename(
         SZrLspContext *context,
         SZrString *oldUri,
         SZrString *newUri);
-ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectSourceRenameEdits(
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectSourceRenameEditPlan(
         SZrState *state,
         SZrLspContext *context,
         SZrString *oldUri,
         SZrString *newUri,
         SZrString **outNewModuleName,
-        SZrArray *outLocations);
+        SZrArray *outLocations,
+        SZrArray *outDocumentSnapshots);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
+        SZrState *state,
+        SZrLspContext *context,
+        const SZrArray *documentSnapshots);
 TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *state,
                                                                      SZrLspContext *context,
                                                                      SZrString *uri);
@@ -317,30 +322,56 @@ cJSON *handle_will_rename_files_request(SZrStdioServer *server, const cJSON *par
                 server, get_object_item(file, ZR_LSP_FIELD_NEW_URI));
         SZrString *newModuleName = ZR_NULL;
         SZrArray locations = {0};
+        SZrArray documentSnapshots = {0};
 
-        if (!ZrLanguageServer_LspProject_CollectSourceRenameEdits(
+        if (!ZrLanguageServer_LspProject_CollectSourceRenameEditPlan(
                     server->state,
                     server->context,
                     oldUri,
                     newUri,
                     &newModuleName,
-                    &locations)) {
+                    &locations,
+                    &documentSnapshots)) {
+            TZrBool failedPlan =
+                    locations.length > 0U || documentSnapshots.length > 0U;
             free_locations_array(server->state, &locations);
+            if (documentSnapshots.isValid) {
+                ZrCore_Array_Free(server->state, &documentSnapshots);
+            }
+            if (failedPlan) {
+                cJSON_Delete(workspaceEdit);
+                return cJSON_CreateNull();
+            }
             continue;
+        }
+
+        if (!ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
+                    server->state,
+                    server->context,
+                    &documentSnapshots)) {
+            free_locations_array(server->state, &locations);
+            ZrCore_Array_Free(server->state, &documentSnapshots);
+            cJSON_Delete(workspaceEdit);
+            return cJSON_CreateNull();
         }
 
         if (workspaceEdit == NULL) {
             workspaceEdit = create_workspace_edit_for_locations(
-                    server, &locations, newModuleName);
+                    server,
+                    &locations,
+                    newModuleName,
+                    &documentSnapshots);
         } else if (!append_workspace_edit_locations(
                            server,
                            workspaceEdit,
                            &locations,
-                           newModuleName)) {
+                           newModuleName,
+                           &documentSnapshots)) {
             cJSON_Delete(workspaceEdit);
             workspaceEdit = NULL;
         }
         free_locations_array(server->state, &locations);
+        ZrCore_Array_Free(server->state, &documentSnapshots);
 
         if (workspaceEdit == NULL) {
             return cJSON_CreateNull();

@@ -18,6 +18,15 @@ static void test_free_source_rename_locations(SZrState *state,
     ZrCore_Array_Free(state, locations);
 }
 
+static void test_free_source_rename_document_snapshots(
+        SZrState *state,
+        SZrArray *documentSnapshots) {
+    if (state != ZR_NULL && documentSnapshots != ZR_NULL &&
+        documentSnapshots->isValid) {
+        ZrCore_Array_Free(state, documentSnapshots);
+    }
+}
+
 static void test_lsp_source_rename_collects_canonical_workspace_edits(
         SZrState *state) {
     static const TZrChar *projectContent =
@@ -56,6 +65,9 @@ static void test_lsp_source_rename_collects_canonical_workspace_edits(
     SZrString *renamedProviderUri = ZR_NULL;
     SZrString *newModuleName = ZR_NULL;
     SZrArray locations = {0};
+    SZrArray documentSnapshots = {0};
+    const SZrLspSourceRenameDocumentSnapshot *mainSnapshot;
+    const SZrLspSourceRenameDocumentSnapshot *secondarySnapshot;
     SZrLspPosition mainImportStart;
     SZrLspPosition secondaryImportStart;
     SZrLspPosition providerModuleStart;
@@ -125,18 +137,31 @@ static void test_lsp_source_rename_collects_canonical_workspace_edits(
         goto cleanup;
     }
 
-    collected = ZrLanguageServer_LspProject_CollectSourceRenameEdits(
+    collected = ZrLanguageServer_LspProject_CollectSourceRenameEditPlan(
             state,
             context,
             providerUri,
             renamedProviderUri,
             &newModuleName,
-            &locations);
+            &locations,
+            &documentSnapshots);
+    mainSnapshot =
+            ZrLanguageServer_LspProject_FindSourceRenameDocumentSnapshot(
+                    &documentSnapshots, mainUri);
+    secondarySnapshot =
+            ZrLanguageServer_LspProject_FindSourceRenameDocumentSnapshot(
+                    &documentSnapshots, secondaryUri);
 
     if (!collected ||
         newModuleName == ZR_NULL ||
         strcmp(test_string_ptr(newModuleName), "modern") != 0 ||
         locations.length != 3U ||
+        documentSnapshots.length != 3U ||
+        mainSnapshot == ZR_NULL || !mainSnapshot->isOpenDocument ||
+        mainSnapshot->version != 1U || secondarySnapshot == ZR_NULL ||
+        secondarySnapshot->isOpenDocument ||
+        !ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
+                state, context, &documentSnapshots) ||
         !location_array_contains_uri_and_range(
                 &locations,
                 mainUri,
@@ -164,8 +189,54 @@ static void test_lsp_source_rename_collects_canonical_workspace_edits(
         goto cleanup;
     }
 
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                mainUri,
+                mainContent,
+                strlen(mainContent),
+                2U) ||
+        ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
+                state, context, &documentSnapshots)) {
+        TEST_FAIL(timer,
+                  summary,
+                  "An opened document version change should invalidate the captured rename plan");
+        goto cleanup;
+    }
+
     test_free_source_rename_locations(state, &locations);
+    test_free_source_rename_document_snapshots(state, &documentSnapshots);
     ZrCore_Array_Construct(&locations);
+    ZrCore_Array_Construct(&documentSnapshots);
+    newModuleName = ZR_NULL;
+    if (!ZrLanguageServer_LspProject_CollectSourceRenameEditPlan(
+                state,
+                context,
+                providerUri,
+                renamedProviderUri,
+                &newModuleName,
+                &locations,
+                &documentSnapshots) ||
+        !ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
+                state, context, &documentSnapshots) ||
+        !write_text_file(
+                secondaryPath,
+                "var dep = %import(\"legacy\");\n"
+                "return dep.value() + 0;\n",
+                strlen("var dep = %import(\"legacy\");\n"
+                       "return dep.value() + 0;\n")) ||
+        ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
+                state, context, &documentSnapshots)) {
+        TEST_FAIL(timer,
+                  summary,
+                  "An unopened file content change should invalidate the captured rename plan");
+        goto cleanup;
+    }
+
+    test_free_source_rename_locations(state, &locations);
+    test_free_source_rename_document_snapshots(state, &documentSnapshots);
+    ZrCore_Array_Construct(&locations);
+    ZrCore_Array_Construct(&documentSnapshots);
     newModuleName = ZR_NULL;
     if (ZrLanguageServer_LspProject_CollectSourceRenameEdits(
                 state,
@@ -183,6 +254,7 @@ static void test_lsp_source_rename_collects_canonical_workspace_edits(
 
 cleanup:
     test_free_source_rename_locations(state, &locations);
+    test_free_source_rename_document_snapshots(state, &documentSnapshots);
     if (context != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
     }
