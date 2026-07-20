@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-07-20 19:30 +08:00
+updated_at: 2026-07-20 22:33 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -35,9 +35,10 @@ source_plans:
 | 2026-07-20 18:13 +08:00 | 已完成 | `workspace/willRenameFiles`从old record与new canonical path ModuleIdentity生成只读rename plan；provider声明与opened/unopened importer精确range；批量`changes + documentChanges`；同URI及unsupported边界无edit；三工具链十六目标矩阵与stdio/CLI烟测且marker归零 | [Canonical source rename workspace edits](../03-robustness/2026-07-20-source-rename-workspace-edits.md) |
 | 2026-07-20 19:30 +08:00 | 已完成 | native builtin与descriptor-plugin module function通过统一query消费structured function descriptor；hover/signature help共享canonical label与参数文档；plugin generation reload不复用旧contract；unavailable阻断name/AST fallback；三工具链十六目标矩阵与stdio/CLI烟测且marker归零 | [Native descriptor function callable parity](../01-semantic-core/2026-07-20-native-descriptor-function-callable-parity.md) |
 | 2026-07-20 20:18 +08:00 | 已完成 | native builtin与descriptor-plugin instance method call-site合并exact metadata identity和parser canonical function TypeId；hover/signature help共享closed parameter/return types、receiver effect及descriptor参数名/文档；reload跟随provider generation；incomplete contract阻断name/AST/raw-owner fallback；三工具链十六目标矩阵与stdio/CLI烟测且marker归零 | [Native receiver method callable parity](../01-semantic-core/2026-07-20-native-receiver-method-callable-parity.md) |
+| 2026-07-20 22:33 +08:00 | 已完成 | descriptor-plugin unconstrained generic instance method由exact metadata identity与parser closed callable TypeId共同投影；hover/signature help共享`fn echo<T>(value: int): int`；generic name和参数名来自structured descriptor，closed类型与receiver effect来自canonical fact；constraint-bearing与字段缺失合同保持unavailable；三工具链十六目标矩阵与stdio/CLI烟测且marker归零 | [Native generic receiver callable parity](../01-semantic-core/2026-07-20-native-generic-receiver-callable-parity.md) |
 
 ## 当前状态
 
-- 总体目标进行中。当前记录只表示十九个子里程碑完成，不表示L1-L8整体完成。
-- 下一步扩展property/constructor/meta callable target identity、native generic/effectful method contract，并补齐public type/layout、binary/native/artifact provider contract parity、public import/package alias变化的反向依赖传播、workspace edit snapshot复验及性能/内存预算证据。
+- 总体目标进行中。当前记录只表示二十个子里程碑完成，不表示L1-L8整体完成。
+- 下一步扩展property/constructor/meta callable target identity、native generic constraint/effectful method contract，并补齐public type/layout、binary/native/artifact provider contract parity、public import/package alias变化的反向依赖传播、workspace edit snapshot复验及性能/内存预算证据。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

@@ -57,6 +57,29 @@ static const ZrLibFieldDescriptor g_descriptor_plugin_probe_point_fields[] = {
     ZR_LIB_FIELD_DESCRIPTOR_INIT("y", "int", "Probe point y coordinate."),
 };
 
+static const ZrLibGenericParameterDescriptor
+        g_descriptor_plugin_echo_generic_parameters[] = {
+            {"T", "Echoed value type.", ZR_NULL, 0},
+        };
+
+static const ZrLibParameterDescriptor g_descriptor_plugin_echo_parameters[] = {
+    {"value", "T", "Value returned with its closed generic type."},
+};
+
+static const TZrChar *g_descriptor_plugin_constrained_echo_constraints[] = {
+    "ProbePoint",
+};
+
+static const ZrLibGenericParameterDescriptor
+        g_descriptor_plugin_constrained_echo_generic_parameters[] = {
+            {
+                "T",
+                "Echoed value constrained to the receiver type.",
+                g_descriptor_plugin_constrained_echo_constraints,
+                ZR_ARRAY_COUNT(g_descriptor_plugin_constrained_echo_constraints),
+            },
+        };
+
 static const ZrLibMethodDescriptor g_descriptor_plugin_probe_point_methods[] = {
     {
         .name = "total",
@@ -71,6 +94,37 @@ static const ZrLibMethodDescriptor g_descriptor_plugin_probe_point_methods[] = {
         .contractRole = 0U,
         .genericParameters = ZR_NULL,
         .genericParameterCount = 0,
+    },
+    {
+        .name = "echo",
+        .minArgumentCount = 1,
+        .maxArgumentCount = 1,
+        .callback = ZR_NULL,
+        .returnTypeName = "T",
+        .documentation = "Returns a value using an unconstrained method generic.",
+        .isStatic = ZR_FALSE,
+        .parameters = g_descriptor_plugin_echo_parameters,
+        .parameterCount = ZR_ARRAY_COUNT(g_descriptor_plugin_echo_parameters),
+        .contractRole = 0U,
+        .genericParameters = g_descriptor_plugin_echo_generic_parameters,
+        .genericParameterCount =
+                ZR_ARRAY_COUNT(g_descriptor_plugin_echo_generic_parameters),
+    },
+    {
+        .name = "constrained_echo",
+        .minArgumentCount = 1,
+        .maxArgumentCount = 1,
+        .callback = ZR_NULL,
+        .returnTypeName = "T",
+        .documentation = "Returns a value through a constrained method generic.",
+        .isStatic = ZR_FALSE,
+        .parameters = g_descriptor_plugin_echo_parameters,
+        .parameterCount = ZR_ARRAY_COUNT(g_descriptor_plugin_echo_parameters),
+        .contractRole = 0U,
+        .genericParameters =
+                g_descriptor_plugin_constrained_echo_generic_parameters,
+        .genericParameterCount = ZR_ARRAY_COUNT(
+                g_descriptor_plugin_constrained_echo_generic_parameters),
     },
     {
         .name = "incomplete_total",

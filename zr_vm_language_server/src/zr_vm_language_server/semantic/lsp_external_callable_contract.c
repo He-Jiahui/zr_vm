@@ -10,6 +10,24 @@ static TZrBool external_callable_text_is_available(const TZrChar *text) {
            strcmp(text, "unknown") != 0;
 }
 
+static TZrBool external_callable_generic_parameters_are_supported(
+        const ZrLibGenericParameterDescriptor *parameters,
+        TZrSize parameterCount) {
+    if (parameterCount == 0U) {
+        return ZR_TRUE;
+    }
+    if (parameters == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0U; index < parameterCount; index++) {
+        if (!external_callable_text_is_available(parameters[index].name) ||
+            parameters[index].constraintTypeCount > 0U) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool external_callable_append(TZrChar *buffer,
                                         TZrSize bufferSize,
                                         TZrSize *offset,
@@ -134,7 +152,9 @@ TZrBool ZrLanguageServer_LspExternalCallableContract_FromResolvedMethod(
         functionType->data.function.effectFlags !=
                 ZR_CANONICAL_CALLABLE_EFFECT_NONE ||
         descriptor->isStatic ||
-        descriptor->genericParameterCount != 0U ||
+        !external_callable_generic_parameters_are_supported(
+                descriptor->genericParameters,
+                descriptor->genericParameterCount) ||
         !external_callable_text_is_available(descriptor->returnTypeName) ||
         functionType->data.function.parameterContracts.length !=
                 descriptor->parameterCount ||
@@ -153,6 +173,8 @@ TZrBool ZrLanguageServer_LspExternalCallableContract_FromResolvedMethod(
     contract->documentation = descriptor->documentation;
     contract->parameters = descriptor->parameters;
     contract->parameterCount = descriptor->parameterCount;
+    contract->genericParameters = descriptor->genericParameters;
+    contract->genericParameterCount = descriptor->genericParameterCount;
     contract->canonicalContext = canonicalContext;
     contract->canonicalFunctionType = functionType;
     return external_callable_text_is_available(contract->name);
@@ -288,8 +310,7 @@ TZrBool ZrLanguageServer_LspExternalCallableContract_Format(
         return ZR_FALSE;
     }
 
-    if (contract->kind == ZR_LSP_EXTERNAL_CALLABLE_FUNCTION &&
-        contract->genericParameterCount > 0U) {
+    if (contract->genericParameterCount > 0U) {
         if (!external_callable_append(buffer, bufferSize, &offset, "<")) {
             return ZR_FALSE;
         }

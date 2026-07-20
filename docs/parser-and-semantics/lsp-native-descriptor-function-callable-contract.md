@@ -37,7 +37,7 @@ Native module functions already expose structured `ZrLibFunctionDescriptor` meta
 
 The external callable contract adapter makes the resolved descriptor the single display source for native module functions. Hover and signature help now consume the same name, generic parameter list, ordered parameters, return type and documentation without searching by member text or reconstructing a callable from the AST.
 
-Native receiver call sites use a split structured contract. The current metadata descriptor supplies exact method identity, parameter names and documentation, while the parser `CallAt` fact supplies the closed canonical function `TypeId`. The LSP formats parameter and return types plus receiver effect from that `TypeId`, so a `LinkedList<int>` method cannot regress to raw descriptor types containing `T`.
+Native receiver call sites use a split structured contract. The current metadata descriptor supplies exact method identity, generic parameter names, parameter names and documentation, while the parser `CallAt` fact supplies the closed canonical function `TypeId`. The LSP formats parameter and return types plus receiver effect from that `TypeId`, so a generic instance method can retain `<T>` without regressing its closed call-site types to raw descriptor text.
 
 ## Data Flow
 
@@ -68,7 +68,7 @@ Parameter information uses the same ordered descriptor array. Descriptor paramet
 
 Hover calls the same formatter and adds provider source and callable documentation around that exact label. A descriptor-plugin reload therefore changes both features together when the provider generation publishes a new descriptor.
 
-Receiver methods emit `const fn` or `fn` from the canonical receiver effect. Ordered descriptor parameter names are paired by index with canonical parameter contracts; passing, escape, closed parameter type and return type all come from the canonical function. For example, the builtin contract is `fn addLast(value: int): LinkedNode<int>`.
+Receiver methods emit `const fn` or `fn` from the canonical receiver effect. Ordered descriptor generic and parameter names are paired with canonical parameter contracts; passing, escape, closed parameter type and return type all come from the canonical function. For example, the builtin contract is `fn addLast(value: int): LinkedNode<int>`, while an unconstrained descriptor method can display `fn echo<T>(value: int): int` at a closed `int` call site.
 
 ## Availability And Fallback Rules
 
@@ -78,11 +78,11 @@ The signature resolver returns three states:
 - `RESOLVED`: a complete structured descriptor contract produced signature help.
 - `UNAVAILABLE`: semantic query resolved an in-scope native function, but required descriptor fields or formatting were unavailable. The caller returns no signature instead of falling back to member-name or AST-text inference.
 
-Unknown return or parameter types are not rewritten as `any`. Generic module-function descriptors are formatted only when their structured names are available. Constraint-bearing generic module functions and generic receiver methods currently return unavailable because this adapter does not yet have a canonical generic-constraint/method-clause formatter.
+Unknown return or parameter types are not rewritten as `any`. Generic module-function and receiver-method descriptors are formatted only when every generic parameter has a structured name. Constraint-bearing generics return unavailable because this adapter does not yet have a canonical generic-constraint formatter.
 
 ## Receiver Method Boundary
 
-Only instance method call sites with both exact metadata identity and a canonical parser call fact enter the receiver adapter. Bare method references keep the established metadata hover. Static methods return `NOT_EXTERNAL`. A recognized instance method whose descriptor is incomplete, whose canonical function is effectful, or whose method generic clause is non-empty returns `UNAVAILABLE`; it does not fall through to member-name, AST-text or raw-owner substitution.
+Only instance method call sites with both exact metadata identity and a canonical parser call fact enter the receiver adapter. Bare method references keep the established metadata hover. Static methods return `NOT_EXTERNAL`. An unconstrained generic method additionally requires a non-empty structured name for every descriptor generic parameter. A recognized instance method whose descriptor is incomplete, whose canonical function is effectful, or whose generic parameter carries constraints returns `UNAVAILABLE`; it does not fall through to member-name, AST-text or raw-owner substitution.
 
 This boundary still excludes constructors, meta-members and properties. They require their own query kinds and effect/access contracts rather than being treated as functions or instance methods.
 
@@ -109,12 +109,14 @@ Receiver coverage adds:
 
 - builtin `LinkedList<int>.addLast(1)` query identity, exact `fn addLast(value: int): LinkedNode<int>` hover/signature label and active parameter 0;
 - descriptor-plugin `ProbePoint.total()` before and after provider reload, including method documentation and canonical `float` to `double` normalization;
+- descriptor-plugin `ProbePoint.echo<T>(value: T): T` with inferred/explicit parser binding, structured generic/parameter names and the exact closed `fn echo<T>(value: int): int` label in semantic query, hover, signature help and stdio;
+- constraint-bearing `ProbePoint.constrained_echo<T>` remaining unavailable to callable consumers while the metadata query still exposes its structured generic constraint;
 - `incomplete_total(): unknown` returning no signature help, proving no canonical-wide or member-name fallback;
 - the same builtin receiver label through real stdio `textDocument/signatureHelp` and `textDocument/hover` requests.
 
 ## Open Work
 
-- Publish structured generic method clauses and effect display before accepting generic/effectful native receiver methods.
+- Publish canonical generic constraint clauses and effect display before accepting constrained/effectful native receiver methods.
 - Decide whether bare and static native method references should converge on the call-site adapter or retain distinct contracts.
 - Add canonical generic constraint formatting for descriptor functions.
 - Converge binary module functions on the same external callable query shape.

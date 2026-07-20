@@ -48,5 +48,6 @@
 - [Descriptor plugin type member parity](./03-robustness/2026-07-20-descriptor-plugin-type-member-parity.md)
 - [Native descriptor function callable parity](./01-semantic-core/2026-07-20-native-descriptor-function-callable-parity.md)
 - [Native receiver method callable parity](./01-semantic-core/2026-07-20-native-receiver-method-callable-parity.md)
+- [Native generic receiver callable parity](./01-semantic-core/2026-07-20-native-generic-receiver-callable-parity.md)
 
 这些记录只对应L1/L2/L3/L6的部分历史能力；binary export、descriptor-plugin与native callable记录没有性能、race或峰值内存报告，不改变L4-L8及完整L6状态。

@@ -326,6 +326,51 @@ function createImportDiagnosticsFixture() {
     };
 }
 
+function createDescriptorPluginGenericCallableFixture(serverPath) {
+    const buildRoot = path.dirname(path.dirname(serverPath));
+    const fixtureCandidates = [
+        path.join(path.dirname(serverPath), 'zr_vm_descriptor_plugin_fixture_int.dll'),
+        path.join(buildRoot, 'lib', 'libzr_vm_descriptor_plugin_fixture_int.so'),
+        path.join(buildRoot, 'lib', 'libzr_vm_descriptor_plugin_fixture_int.dylib'),
+    ];
+    const fixtureSourcePath = fixtureCandidates.find((candidate) => fs.existsSync(candidate));
+    assert(fixtureSourcePath,
+        `Unable to locate descriptor plugin fixture beside ${serverPath}`);
+
+    const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-generic-plugin-'));
+    const sourcePath = path.join(rootPath, 'src');
+    const nativePath = path.join(rootPath, 'native');
+    const projectPath = path.join(rootPath, 'generic_plugin.zrp');
+    const mainPath = path.join(sourcePath, 'main.zr');
+    const pluginPath = path.join(
+        nativePath,
+        `zrvm_native_zr_pluginprobe${path.extname(fixtureSourcePath)}`);
+    const content = [
+        'var plugin = %import("zr.pluginprobe");',
+        'var point = plugin.makePoint();',
+        'var echoed = point.echo(1);',
+        'return echoed;',
+        '',
+    ].join('\n');
+
+    fs.mkdirSync(sourcePath, { recursive: true });
+    fs.mkdirSync(nativePath, { recursive: true });
+    fs.writeFileSync(projectPath, JSON.stringify({
+        name: 'generic_plugin',
+        source: 'src',
+        binary: 'bin',
+        entry: 'main',
+    }, null, 2));
+    fs.writeFileSync(mainPath, content);
+    fs.copyFileSync(fixtureSourcePath, pluginPath);
+
+    return {
+        rootPath,
+        content,
+        mainUri: pathToFileURL(mainPath).toString(),
+    };
+}
+
 function sleepSync(milliseconds) {
     const waitArray = new Int32Array(new SharedArrayBuffer(4));
     Atomics.wait(waitArray, 0, 0, milliseconds);
@@ -362,6 +407,7 @@ let watchedBinaryFixtureRootToCleanup = null;
 let importDiagnosticsFixtureRootToCleanup = null;
 let fileOperationsFixtureRootToCleanup = null;
 let moduleIdentityRenameFixtureRootToCleanup = null;
+let descriptorPluginGenericFixtureRootToCleanup = null;
 
 class LspClient {
     constructor(serverPath) {
@@ -603,11 +649,15 @@ async function main() {
     const importDiagnosticsFixture = createImportDiagnosticsFixture();
     const fileOperationsFixture = createWatchedProjectFixture();
     const moduleIdentityRenameFixture = createModuleIdentityRenameFixture();
+    const descriptorPluginGenericFixture =
+        createDescriptorPluginGenericCallableFixture(serverPath);
     watchedFixtureRootToCleanup = watchedFixture.rootPath;
     watchedBinaryFixtureRootToCleanup = watchedBinaryFixture.rootPath;
     importDiagnosticsFixtureRootToCleanup = importDiagnosticsFixture.rootPath;
     fileOperationsFixtureRootToCleanup = fileOperationsFixture.rootPath;
     moduleIdentityRenameFixtureRootToCleanup = moduleIdentityRenameFixture.rootPath;
+    descriptorPluginGenericFixtureRootToCleanup =
+        descriptorPluginGenericFixture.rootPath;
 
     const client = new LspClient(serverPath);
     const documentUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr';
@@ -1847,12 +1897,73 @@ async function main() {
         nativeReceiverCallableHover.contents.value.includes('Source: native builtin'),
     'native receiver hover should reuse the same canonical closed descriptor contract');
 
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: descriptorPluginGenericFixture.mainUri,
+            languageId: 'zr',
+            version: 1,
+            text: descriptorPluginGenericFixture.content,
+        },
+    });
+    const genericPluginDiagnostics =
+        await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(genericPluginDiagnostics.uri === descriptorPluginGenericFixture.mainUri &&
+        Array.isArray(genericPluginDiagnostics.diagnostics) &&
+        genericPluginDiagnostics.diagnostics.length === 0,
+    `native generic receiver fixture should open without diagnostics: ${JSON.stringify(genericPluginDiagnostics)}`);
+
+    const nativeGenericReceiverLabel = 'fn echo<T>(value: int): int';
+    const nativeGenericReceiverSignature =
+        await client.request('textDocument/signatureHelp', {
+            textDocument: { uri: descriptorPluginGenericFixture.mainUri },
+            position: findPosition(
+                descriptorPluginGenericFixture.content,
+                'point.echo(1)',
+                0,
+                11),
+        });
+    assert(nativeGenericReceiverSignature &&
+        nativeGenericReceiverSignature.activeParameter === 0 &&
+        Array.isArray(nativeGenericReceiverSignature.signatures) &&
+        nativeGenericReceiverSignature.signatures.some((signature) =>
+            signature && signature.label === nativeGenericReceiverLabel &&
+            Array.isArray(signature.parameters) &&
+            signature.parameters.length === 1 &&
+            signature.parameters[0].label === 'value: int'),
+    'native generic receiver signatureHelp should preserve the structured generic clause and closed type');
+
+    const nativeGenericReceiverHover = await client.request('textDocument/hover', {
+        textDocument: { uri: descriptorPluginGenericFixture.mainUri },
+        position: findPosition(
+            descriptorPluginGenericFixture.content,
+            'point.echo(1)',
+            0,
+            8),
+    });
+    assert(nativeGenericReceiverHover && nativeGenericReceiverHover.contents &&
+        typeof nativeGenericReceiverHover.contents.value === 'string' &&
+        nativeGenericReceiverHover.contents.value.includes(nativeGenericReceiverLabel) &&
+        nativeGenericReceiverHover.contents.value.includes(
+            'Returns a value using an unconstrained method generic.'),
+    'native generic receiver hover should share the structured generic contract');
+
+    client.notify('textDocument/didClose', {
+        textDocument: { uri: descriptorPluginGenericFixture.mainUri },
+    });
+    const genericPluginCloseDiagnostics = await waitForDiagnosticsUri(
+        client,
+        descriptorPluginGenericFixture.mainUri,
+        'native generic receiver didClose diagnostics uri mismatch');
+    assert(Array.isArray(genericPluginCloseDiagnostics.diagnostics) &&
+        genericPluginCloseDiagnostics.diagnostics.length === 0,
+    'native generic receiver didClose must clear diagnostics');
+
     client.notify('textDocument/didClose', {
         textDocument: { uri: nativeCallableUri },
     });
-    const nativeCallableCloseDiagnostics =
-        await client.waitForNotification('textDocument/publishDiagnostics');
-    assert(nativeCallableCloseDiagnostics.uri === nativeCallableUri,
+    const nativeCallableCloseDiagnostics = await waitForDiagnosticsUri(
+        client,
+        nativeCallableUri,
         'native callable didClose diagnostics uri mismatch');
     assert(Array.isArray(nativeCallableCloseDiagnostics.diagnostics) &&
         nativeCallableCloseDiagnostics.diagnostics.length === 0,
@@ -3240,11 +3351,13 @@ async function main() {
     cleanupPath(importDiagnosticsFixtureRootToCleanup);
     cleanupPath(fileOperationsFixtureRootToCleanup);
     cleanupPath(moduleIdentityRenameFixtureRootToCleanup);
+    cleanupPath(descriptorPluginGenericFixtureRootToCleanup);
     watchedFixtureRootToCleanup = null;
     watchedBinaryFixtureRootToCleanup = null;
     importDiagnosticsFixtureRootToCleanup = null;
     fileOperationsFixtureRootToCleanup = null;
     moduleIdentityRenameFixtureRootToCleanup = null;
+    descriptorPluginGenericFixtureRootToCleanup = null;
 }
 
 main().catch((error) => {
@@ -3253,11 +3366,13 @@ main().catch((error) => {
     cleanupPath(importDiagnosticsFixtureRootToCleanup);
     cleanupPath(fileOperationsFixtureRootToCleanup);
     cleanupPath(moduleIdentityRenameFixtureRootToCleanup);
+    cleanupPath(descriptorPluginGenericFixtureRootToCleanup);
     watchedFixtureRootToCleanup = null;
     watchedBinaryFixtureRootToCleanup = null;
     importDiagnosticsFixtureRootToCleanup = null;
     fileOperationsFixtureRootToCleanup = null;
     moduleIdentityRenameFixtureRootToCleanup = null;
+    descriptorPluginGenericFixtureRootToCleanup = null;
     console.error(error.stack || String(error));
     process.exit(1);
 });
