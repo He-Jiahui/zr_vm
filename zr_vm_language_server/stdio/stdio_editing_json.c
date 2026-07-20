@@ -1,5 +1,7 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+#include <inttypes.h>
+
 cJSON *serialize_text_edit(const SZrLspTextEdit *edit) {
     cJSON *json;
     char *text;
@@ -56,10 +58,49 @@ static cJSON *serialize_versioned_document_change(const char *uriText,
     return documentChange;
 }
 
+static cJSON *serialize_workspace_edit_document_snapshot(
+        const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot) {
+    cJSON *json;
+    char contentHash[17];
+
+    if (documentSnapshot == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if ((double)documentSnapshot->contentLength >
+                ZR_LSP_JSON_SAFE_INTEGER_MAX ||
+        (double)documentSnapshot->version > ZR_LSP_JSON_SAFE_INTEGER_MAX ||
+        (double)documentSnapshot->contentGeneration >
+                ZR_LSP_JSON_SAFE_INTEGER_MAX) {
+        return ZR_NULL;
+    }
+    json = cJSON_CreateObject();
+    if (json == NULL) {
+        return NULL;
+    }
+
+    snprintf(contentHash,
+             sizeof(contentHash),
+             "%016" PRIx64,
+             (uint64_t)documentSnapshot->contentHash);
+    cJSON_AddStringToObject(json, ZR_LSP_FIELD_CONTENT_HASH, contentHash);
+    cJSON_AddNumberToObject(json,
+                            ZR_LSP_FIELD_CONTENT_LENGTH,
+                            (double)documentSnapshot->contentLength);
+    cJSON_AddNumberToObject(json,
+                            ZR_LSP_FIELD_VERSION,
+                            (double)documentSnapshot->version);
+    cJSON_AddNumberToObject(json,
+                            ZR_LSP_FIELD_CONTENT_GENERATION,
+                            (double)documentSnapshot->contentGeneration);
+    cJSON_AddBoolToObject(json,
+                          ZR_LSP_FIELD_IS_OPEN_DOCUMENT,
+                          documentSnapshot->isOpenDocument ? 1 : 0);
+    return json;
+}
+
 static cJSON *serialize_workspace_edit(const char *uriText,
                                        SZrArray *edits,
-                                       TZrBool hasVersion,
-                                       TZrSize version) {
+                                       const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot) {
     cJSON *json = cJSON_CreateObject();
     cJSON *changes = cJSON_CreateObject();
 
@@ -71,10 +112,11 @@ static cJSON *serialize_workspace_edit(const char *uriText,
 
     cJSON_AddItemToObject(changes, uriText != NULL ? uriText : "", serialize_text_edits_array(edits));
     cJSON_AddItemToObject(json, ZR_LSP_FIELD_CHANGES, changes);
-    if (hasVersion) {
+    if (documentSnapshot != ZR_NULL && documentSnapshot->isOpenDocument) {
         cJSON *documentChanges = cJSON_CreateArray();
         if (documentChanges != NULL) {
-            cJSON *documentChange = serialize_versioned_document_change(uriText, version, edits);
+            cJSON *documentChange = serialize_versioned_document_change(
+                    uriText, documentSnapshot->version, edits);
             if (documentChange != NULL) {
                 cJSON_AddItemToArray(documentChanges, documentChange);
             }
@@ -85,10 +127,10 @@ static cJSON *serialize_workspace_edit(const char *uriText,
 }
 
 static cJSON *serialize_code_action(const char *uriText,
-                                    TZrBool hasVersion,
-                                    TZrSize version,
+                                    const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot,
                                     const SZrLspCodeAction *action) {
     cJSON *json;
+    cJSON *snapshotJson;
     char *titleText;
     char *kindText;
 
@@ -111,18 +153,39 @@ static cJSON *serialize_code_action(const char *uriText,
     {
         cJSON *data = cJSON_CreateObject();
         if (data != NULL) {
+            snapshotJson = serialize_workspace_edit_document_snapshot(
+                    documentSnapshot);
+            if (snapshotJson == NULL) {
+                cJSON_Delete(data);
+                cJSON_Delete(json);
+                free(titleText);
+                free(kindText);
+                return NULL;
+            }
             cJSON_AddStringToObject(data, ZR_LSP_FIELD_URI, uriText != NULL ? uriText : "");
             cJSON_AddStringToObject(data, ZR_LSP_FIELD_TITLE, titleText != NULL ? titleText : "");
             if (kindText != NULL) {
                 cJSON_AddStringToObject(data, ZR_LSP_FIELD_KIND, kindText);
             }
             cJSON_AddBoolToObject(data, ZR_LSP_FIELD_IS_PREFERRED, action->isPreferred ? 1 : 0);
+            cJSON_AddItemToObject(
+                    data,
+                    ZR_LSP_FIELD_SNAPSHOT,
+                    snapshotJson);
             cJSON_AddItemToObject(json, ZR_LSP_FIELD_DATA, data);
+        } else {
+            cJSON_Delete(json);
+            free(titleText);
+            free(kindText);
+            return NULL;
         }
     }
     cJSON_AddItemToObject(json,
                           ZR_LSP_FIELD_EDIT,
-                          serialize_workspace_edit(uriText, (SZrArray *)&action->edits, hasVersion, version));
+                          serialize_workspace_edit(
+                                  uriText,
+                                  (SZrArray *)&action->edits,
+                                  documentSnapshot));
 
     free(titleText);
     free(kindText);
@@ -170,8 +233,7 @@ static int code_action_allowed_by_context_only(const SZrLspCodeAction *action, c
 }
 
 cJSON *serialize_code_actions_array(const char *uriText,
-                                    TZrBool hasVersion,
-                                    TZrSize version,
+                                    const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot,
                                     SZrArray *actions,
                                     const cJSON *params) {
     cJSON *json = cJSON_CreateArray();
@@ -185,7 +247,13 @@ cJSON *serialize_code_actions_array(const char *uriText,
         if (actionPtr != ZR_NULL &&
             *actionPtr != ZR_NULL &&
             code_action_allowed_by_context_only(*actionPtr, params)) {
-            cJSON_AddItemToArray(json, serialize_code_action(uriText, hasVersion, version, *actionPtr));
+            cJSON *actionJson = serialize_code_action(
+                    uriText, documentSnapshot, *actionPtr);
+            if (actionJson == NULL) {
+                cJSON_Delete(json);
+                return NULL;
+            }
+            cJSON_AddItemToArray(json, actionJson);
         }
     }
 

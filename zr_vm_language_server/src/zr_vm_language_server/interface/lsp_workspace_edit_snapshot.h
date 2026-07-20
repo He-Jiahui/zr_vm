@@ -19,6 +19,17 @@ typedef SZrLspWorkspaceEditDocumentSnapshot
         SZrLspSourceRenameDocumentSnapshot;
 
 ZR_LANGUAGE_SERVER_API TZrBool
+ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshot(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *uri,
+        SZrLspWorkspaceEditDocumentSnapshot *outDocumentSnapshot);
+ZR_LANGUAGE_SERVER_API TZrBool
+ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
+        SZrState *state,
+        SZrLspContext *context,
+        const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot);
+ZR_LANGUAGE_SERVER_API TZrBool
 ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshots(
         SZrState *state,
         SZrLspContext *context,

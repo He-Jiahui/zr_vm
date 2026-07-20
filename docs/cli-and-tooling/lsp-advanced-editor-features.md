@@ -6,6 +6,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_position_codec.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_workspace_edit_snapshot.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_workspace_edit_snapshot.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_descriptor_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_source_spans.c
@@ -32,6 +34,8 @@ related_code:
   - zr_vm_language_server/include/zr_vm_language_server/incremental_parser.h
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/stdio/stdio_editor_features.c
+  - zr_vm_language_server/stdio/stdio_editing.c
+  - zr_vm_language_server/stdio/stdio_editing_json.c
   - zr_vm_language_server/stdio/stdio_linked_editing.c
   - zr_vm_language_server/stdio/stdio_moniker.c
   - zr_vm_language_server/stdio/stdio_document_color.c
@@ -53,6 +57,8 @@ related_code:
 implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_workspace_edit_snapshot.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_workspace_edit_snapshot.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_descriptor_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_source_spans.c
@@ -79,6 +85,8 @@ implementation_files:
   - zr_vm_language_server/include/zr_vm_language_server/incremental_parser.h
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/stdio/stdio_editor_features.c
+  - zr_vm_language_server/stdio/stdio_editing.c
+  - zr_vm_language_server/stdio/stdio_editing_json.c
   - zr_vm_language_server/stdio/stdio_linked_editing.c
   - zr_vm_language_server/stdio/stdio_moniker.c
   - zr_vm_language_server/stdio/stdio_document_color.c
@@ -167,7 +175,7 @@ doc_type: module-detail
 `lsp_editor_features.c` / `lsp_code_actions.c` 是新的公共接口实现文件，避免继续扩大 `lsp_interface.c`。它们只负责编辑器形态的结果建模：
 
 - formatting 生成 `SZrLspTextEdit`，当前使用基于 brace/block 的保守缩进。
-- code action 使用 `SZrLspCodeAction`，第一阶段提供 `source.organizeImports`、缺失 import quickfix 和缺失分号 `quickfix`，返回最小 `TextEdit`；code action 入口会先获取文件内容 owned snapshot，再把显式 content bytes 传给缺失 import alias/insert-offset 扫描和缺失分号 quickfix；缺失分号 quickfix 会先确认 trimmed statement start 位于 code span，避免 block comment 正文中的 `return ...` 文本触发编辑。
+- code action 使用 `SZrLspCodeAction`，第一阶段提供 `source.organizeImports`、`source.removeUnused`、缺失 import quickfix 和缺失分号 `quickfix`，返回最小 `TextEdit`；code action 入口会先获取文件内容 owned snapshot，再把显式 content bytes 传给缺失 import alias/insert-offset 扫描和缺失分号 quickfix；缺失分号 quickfix 会先确认 trimmed statement start 位于 code span，避免 block comment 正文中的 `return ...` 文本触发编辑。stdio在producer运行前捕获URI/version/generation/open-state/length/hash，producer返回后复验并只序列化captured version；fingerprint以opaque `data.snapshot`随action往返，`codeAction/resolve`发现stale或malformed token时删除edit并返回disabled reason，不按title/kind/source重建。
 - folding / selection range 从当前文档文本结构生成轻量结构范围，包含 block、连续 import/comment region，以及 word -> line -> block selection chain。
 - document link 扫描 `%import("...")` 字面量、`.zrp` 的 `source` / `binary` / `entry` 路径，以及 native virtual declaration 里的 module link；import 优先复用 definition 查询结果作为跳转目标。
 - declaration / typeDefinition / implementation 当前复用 definition 查询，保证和已有导航结果一致。

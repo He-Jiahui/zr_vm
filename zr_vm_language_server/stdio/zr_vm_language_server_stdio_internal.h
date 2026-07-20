@@ -109,8 +109,7 @@ TZrBool append_workspace_edit_locations(SZrStdioServer *server,
                                         SZrString *newName,
                                         const SZrArray *documentSnapshots);
 cJSON *serialize_code_actions_array(const char *uriText,
-                                    TZrBool hasVersion,
-                                    TZrSize version,
+                                    const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot,
                                     SZrArray *actions,
                                     const cJSON *params);
 

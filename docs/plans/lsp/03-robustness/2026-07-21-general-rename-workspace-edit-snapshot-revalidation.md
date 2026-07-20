@@ -78,6 +78,6 @@ evidence_scope: general-rename-workspace-edit-snapshot-revalidation
 
 ## 未完成边界
 
-- 普通`textDocument/rename`和source-file rename已统一；code action、safe fix及其他workspace-edit producer尚未接入通用fingerprint API。
+- 普通`textDocument/rename`和source-file rename已统一；code action已由[2026-07-21 follow-up](./2026-07-21-code-action-workspace-edit-snapshot-revalidation.md)接入单document capture/validate与resolve复验，parser diagnostic safe fix及其他workspace-edit producer仍待统一。
 - package/alias/public import edge migration、`.zrp/.zrm` generation、binary/native/artifact provider replacement及public type/property/layout hash仍待后续。
 - cancellation、100次乱序edit/race stress、partial reparse、多scope cache、workspace cache预算、性能百分位和峰值内存门禁仍未完成。

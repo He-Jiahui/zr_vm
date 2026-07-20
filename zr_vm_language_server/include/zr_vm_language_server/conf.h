@@ -46,6 +46,7 @@
 #define ZR_LSP_NUMERIC_RANGE_SEGMENT_DISPLAY_LIMIT 4U
 
 #define ZR_LSP_STDIO_CONTENT_LENGTH_HEADER_PREFIX "Content-Length:"
+#define ZR_LSP_JSON_SAFE_INTEGER_MAX 9007199254740991.0
 
 #define ZR_LSP_JSON_RPC_FIELD_JSONRPC "jsonrpc"
 #define ZR_LSP_JSON_RPC_VERSION "2.0"
@@ -96,6 +97,10 @@
 #define ZR_LSP_FIELD_TEXT_DOCUMENT "textDocument"
 #define ZR_LSP_FIELD_TEXT "text"
 #define ZR_LSP_FIELD_VERSION "version"
+#define ZR_LSP_FIELD_CONTENT_HASH "contentHash"
+#define ZR_LSP_FIELD_CONTENT_LENGTH "contentLength"
+#define ZR_LSP_FIELD_CONTENT_GENERATION "contentGeneration"
+#define ZR_LSP_FIELD_IS_OPEN_DOCUMENT "isOpenDocument"
 #define ZR_LSP_FIELD_DIAGNOSTICS "diagnostics"
 #define ZR_LSP_FIELD_POSITION "position"
 #define ZR_LSP_FIELD_NEW_TEXT "newText"
@@ -109,6 +114,9 @@
 #define ZR_LSP_FIELD_TOKEN_TYPES "tokenTypes"
 #define ZR_LSP_FIELD_TOKEN_MODIFIERS "tokenModifiers"
 #define ZR_LSP_FIELD_DATA "data"
+#define ZR_LSP_FIELD_SNAPSHOT "snapshot"
+#define ZR_LSP_FIELD_DISABLED "disabled"
+#define ZR_LSP_FIELD_REASON "reason"
 #define ZR_LSP_FIELD_PLACEHOLDER "placeholder"
 #define ZR_LSP_FIELD_NEW_NAME "newName"
 #define ZR_LSP_FIELD_OPEN_CLOSE "openClose"

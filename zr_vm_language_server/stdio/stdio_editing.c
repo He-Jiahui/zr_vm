@@ -1,5 +1,117 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+#include <errno.h>
+#include <stdint.h>
+
+#define ZR_LSP_CODE_ACTION_STALE_REASON \
+    "Document changed since this code action was computed"
+
+static TZrBool parse_code_action_snapshot_size(
+        const cJSON *json,
+        TZrSize *outValue) {
+    TZrSize value;
+
+    if (!cJSON_IsNumber((cJSON *)json) || json->valuedouble < 0.0 ||
+        json->valuedouble > ZR_LSP_JSON_SAFE_INTEGER_MAX ||
+        json->valuedouble > (double)SIZE_MAX ||
+        outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    value = (TZrSize)json->valuedouble;
+    if ((double)value != json->valuedouble) {
+        return ZR_FALSE;
+    }
+    *outValue = value;
+    return ZR_TRUE;
+}
+
+static TZrBool parse_code_action_snapshot_hash(
+        const cJSON *json,
+        TZrUInt64 *outValue) {
+    char *end;
+    unsigned long long value;
+
+    if (!cJSON_IsString((cJSON *)json) || json->valuestring == NULL ||
+        strlen(json->valuestring) != 16U || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    errno = 0;
+    end = ZR_NULL;
+    value = strtoull(json->valuestring, &end, 16);
+    if (errno != 0 || end == json->valuestring || *end != '\0') {
+        return ZR_FALSE;
+    }
+    *outValue = (TZrUInt64)value;
+    return ZR_TRUE;
+}
+
+static TZrBool parse_code_action_document_snapshot(
+        SZrStdioServer *server,
+        const cJSON *params,
+        SZrLspWorkspaceEditDocumentSnapshot *outSnapshot) {
+    const cJSON *data;
+    const cJSON *uriJson;
+    const cJSON *snapshotJson;
+    const cJSON *isOpenDocumentJson;
+
+    if (server == ZR_NULL || outSnapshot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    data = get_object_item(params, ZR_LSP_FIELD_DATA);
+    uriJson = get_object_item(data, ZR_LSP_FIELD_URI);
+    snapshotJson = get_object_item(data, ZR_LSP_FIELD_SNAPSHOT);
+    isOpenDocumentJson =
+            get_object_item(snapshotJson, ZR_LSP_FIELD_IS_OPEN_DOCUMENT);
+    if (!cJSON_IsString((cJSON *)uriJson) || uriJson->valuestring == NULL ||
+        !cJSON_IsObject((cJSON *)snapshotJson) ||
+        !cJSON_IsBool((cJSON *)isOpenDocumentJson)) {
+        return ZR_FALSE;
+    }
+
+    memset(outSnapshot, 0, sizeof(*outSnapshot));
+    outSnapshot->uri = server_get_cached_uri(server, uriJson->valuestring);
+    outSnapshot->isOpenDocument = cJSON_IsTrue((cJSON *)isOpenDocumentJson)
+                                      ? ZR_TRUE
+                                      : ZR_FALSE;
+    return outSnapshot->uri != ZR_NULL &&
+           parse_code_action_snapshot_hash(
+                   get_object_item(snapshotJson, ZR_LSP_FIELD_CONTENT_HASH),
+                   &outSnapshot->contentHash) &&
+           parse_code_action_snapshot_size(
+                   get_object_item(snapshotJson, ZR_LSP_FIELD_CONTENT_LENGTH),
+                   &outSnapshot->contentLength) &&
+           parse_code_action_snapshot_size(
+                   get_object_item(snapshotJson, ZR_LSP_FIELD_VERSION),
+                   &outSnapshot->version) &&
+           parse_code_action_snapshot_size(
+                   get_object_item(
+                           snapshotJson, ZR_LSP_FIELD_CONTENT_GENERATION),
+                   &outSnapshot->contentGeneration);
+}
+
+static cJSON *disable_stale_code_action(const cJSON *params) {
+    cJSON *result;
+    cJSON *disabled;
+
+    result = params != NULL
+                 ? cJSON_Duplicate((cJSON *)params, 1)
+                 : cJSON_CreateObject();
+    if (result == NULL || !cJSON_IsObject(result)) {
+        cJSON_Delete(result);
+        return cJSON_CreateObject();
+    }
+
+    cJSON_DeleteItemFromObjectCaseSensitive(result, ZR_LSP_FIELD_EDIT);
+    cJSON_DeleteItemFromObjectCaseSensitive(result, ZR_LSP_FIELD_DISABLED);
+    disabled = cJSON_CreateObject();
+    if (disabled != NULL) {
+        cJSON_AddStringToObject(
+                disabled, ZR_LSP_FIELD_REASON, ZR_LSP_CODE_ACTION_STALE_REASON);
+        cJSON_AddItemToObject(result, ZR_LSP_FIELD_DISABLED, disabled);
+    }
+    return result;
+}
+
 cJSON *handle_formatting_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray edits = {0};
     const char *uriText;
@@ -126,12 +238,19 @@ cJSON *handle_on_type_formatting_request(SZrStdioServer *server, const cJSON *pa
 cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray actions = {0};
     SZrLspRange range = {{0, 0}, {0, 0}};
+    SZrLspWorkspaceEditDocumentSnapshot documentSnapshot = {0};
     const char *uriText;
     SZrString *uri;
-    SZrFileVersion *fileVersion;
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
+        return cJSON_CreateArray();
+    }
+    if (!ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshot(
+                server->state,
+                server->context,
+                uri,
+                &documentSnapshot)) {
         return cJSON_CreateArray();
     }
     parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &range);
@@ -142,17 +261,31 @@ cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
         return cJSON_CreateArray();
     }
 
-    fileVersion = get_file_version_for_uri(server, uri);
-    result = serialize_code_actions_array(uriText,
-                                          fileVersion != ZR_NULL ? ZR_TRUE : ZR_FALSE,
-                                          fileVersion != ZR_NULL ? fileVersion->version : 0,
-                                          &actions,
-                                          params);
+    if (!ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
+                server->state,
+                server->context,
+                &documentSnapshot)) {
+        ZrLanguageServer_Lsp_FreeCodeActions(server->state, &actions);
+        return cJSON_CreateArray();
+    }
+    result = serialize_code_actions_array(
+            uriText, &documentSnapshot, &actions, params);
     ZrLanguageServer_Lsp_FreeCodeActions(server->state, &actions);
     return result;
 }
 
 cJSON *handle_code_action_resolve_request(SZrStdioServer *server, const cJSON *params) {
-    ZR_UNUSED_PARAMETER(server);
-    return params != NULL ? cJSON_Duplicate((cJSON *)params, 1) : cJSON_CreateObject();
+    SZrLspWorkspaceEditDocumentSnapshot documentSnapshot = {0};
+
+    if (!parse_code_action_document_snapshot(
+                server, params, &documentSnapshot) ||
+        !ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
+                server->state,
+                server->context,
+                &documentSnapshot)) {
+        return disable_stale_code_action(params);
+    }
+    return params != NULL
+               ? cJSON_Duplicate((cJSON *)params, 1)
+               : cJSON_CreateObject();
 }

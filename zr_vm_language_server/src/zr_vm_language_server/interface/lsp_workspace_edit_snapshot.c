@@ -64,7 +64,7 @@ static TZrBool workspace_edit_capture_disk_snapshot(
     return cacheMatches;
 }
 
-static TZrBool workspace_edit_capture_document_snapshot(
+TZrBool ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshot(
         SZrState *state,
         SZrLspContext *context,
         SZrString *uri,
@@ -102,6 +102,24 @@ static TZrBool workspace_edit_capture_document_snapshot(
     ZrLanguageServer_FileVersionContentSnapshot_Free(
             state, &contentSnapshot);
     return ZR_TRUE;
+}
+
+TZrBool ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
+        SZrState *state,
+        SZrLspContext *context,
+        const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot) {
+    SZrLspWorkspaceEditDocumentSnapshot current;
+
+    if (documentSnapshot == ZR_NULL || documentSnapshot->uri == ZR_NULL ||
+        !ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshot(
+                state, context, documentSnapshot->uri, &current)) {
+        return ZR_FALSE;
+    }
+    return current.isOpenDocument == documentSnapshot->isOpenDocument &&
+           current.contentHash == documentSnapshot->contentHash &&
+           current.contentLength == documentSnapshot->contentLength &&
+           current.version == documentSnapshot->version &&
+           current.contentGeneration == documentSnapshot->contentGeneration;
 }
 
 const SZrLspWorkspaceEditDocumentSnapshot *
@@ -156,7 +174,7 @@ TZrBool ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshots(
                     outDocumentSnapshots, (*locationPtr)->uri) != ZR_NULL) {
             continue;
         }
-        if (!workspace_edit_capture_document_snapshot(
+        if (!ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshot(
                     state, context, (*locationPtr)->uri, &snapshot)) {
             return ZR_FALSE;
         }
@@ -178,16 +196,8 @@ TZrBool ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshots(
         const SZrLspWorkspaceEditDocumentSnapshot *expected =
                 (const SZrLspWorkspaceEditDocumentSnapshot *)ZrCore_Array_Get(
                         (SZrArray *)documentSnapshots, index);
-        SZrLspWorkspaceEditDocumentSnapshot current;
-
-        if (expected == ZR_NULL || expected->uri == ZR_NULL ||
-            !workspace_edit_capture_document_snapshot(
-                    state, context, expected->uri, &current) ||
-            current.isOpenDocument != expected->isOpenDocument ||
-            current.contentHash != expected->contentHash ||
-            current.contentLength != expected->contentLength ||
-            current.version != expected->version ||
-            current.contentGeneration != expected->contentGeneration) {
+        if (!ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
+                    state, context, expected)) {
             return ZR_FALSE;
         }
     }

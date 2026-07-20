@@ -858,6 +858,7 @@ static void test_lsp_rename(SZrState *state) {
     SZrTestTimer timer;
     SZrArray locations = {0};
     SZrArray documentSnapshots = {0};
+    SZrLspWorkspaceEditDocumentSnapshot directDocumentSnapshot = {0};
     const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot;
     TZrBool success = ZR_FALSE;
     TEST_START("LSP Rename");
@@ -880,6 +881,18 @@ static void test_lsp_rename(SZrState *state) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, "LSP Rename", "Failed to open the rename document");
         return;
+    }
+
+    if (!ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshot(
+                state, context, uri, &directDocumentSnapshot) ||
+        !directDocumentSnapshot.isOpenDocument ||
+        directDocumentSnapshot.version != 0U ||
+        !ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
+                state, context, &directDocumentSnapshot)) {
+        TEST_FAIL(timer,
+                  "LSP Rename",
+                  "Single-document workspace-edit snapshot did not preserve version-zero provenance");
+        goto cleanup;
     }
     
     // 重命名
@@ -906,10 +919,15 @@ static void test_lsp_rename(SZrState *state) {
     if (documentSnapshots.length != 1U || documentSnapshot == ZR_NULL ||
         !documentSnapshot->isOpenDocument ||
         documentSnapshot->version != 0U ||
+        documentSnapshot->contentHash != directDocumentSnapshot.contentHash ||
+        documentSnapshot->contentGeneration !=
+                directDocumentSnapshot.contentGeneration ||
         !ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshots(
                 state, context, &documentSnapshots) ||
         !ZrLanguageServer_Lsp_UpdateDocument(
                 state, context, uri, content, contentLength, 1U) ||
+        ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
+                state, context, &directDocumentSnapshot) ||
         ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshots(
                 state, context, &documentSnapshots)) {
         TEST_FAIL(timer,

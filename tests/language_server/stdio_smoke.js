@@ -2204,7 +2204,7 @@ async function main() {
         textDocument: {
             uri: moduleImportsUri,
             languageId: 'zr',
-            version: 1,
+            version: 0,
             text: moduleImportsText,
         },
     });
@@ -2227,7 +2227,7 @@ async function main() {
             documentChange &&
             documentChange.textDocument &&
             documentChange.textDocument.uri === moduleImportsUri &&
-            documentChange.textDocument.version === 1 &&
+            documentChange.textDocument.version === 0 &&
             Array.isArray(documentChange.edits) &&
             documentChange.edits.some((edit) =>
                 edit.newText.includes('%import("zr.math");\n%import("zr.system");')))),
@@ -2238,8 +2238,14 @@ async function main() {
         organizeImportAction.data &&
         organizeImportAction.data.uri === moduleImportsUri &&
         organizeImportAction.data.kind === organizeImportAction.kind &&
-        organizeImportAction.data.title === organizeImportAction.title,
-    'textDocument/codeAction must attach stable resolve data');
+        organizeImportAction.data.title === organizeImportAction.title &&
+        organizeImportAction.data.snapshot &&
+        organizeImportAction.data.snapshot.version === 0 &&
+        organizeImportAction.data.snapshot.isOpenDocument === true &&
+        Number.isInteger(organizeImportAction.data.snapshot.contentGeneration) &&
+        Number.isInteger(organizeImportAction.data.snapshot.contentLength) &&
+        /^[0-9a-f]{16}$/.test(organizeImportAction.data.snapshot.contentHash),
+    'textDocument/codeAction must attach exact version-zero snapshot resolve data');
     const resolvedOrganizeImportAction = await client.request('codeAction/resolve', organizeImportAction);
     assert(resolvedOrganizeImportAction &&
         resolvedOrganizeImportAction.title === organizeImportAction.title &&
@@ -2249,6 +2255,42 @@ async function main() {
         resolvedOrganizeImportAction.data &&
         resolvedOrganizeImportAction.data.uri === moduleImportsUri,
     'codeAction/resolve must preserve resolved edits');
+
+    client.notify('textDocument/didChange', {
+        textDocument: { uri: moduleImportsUri, version: 1 },
+        contentChanges: [{ text: moduleImportsText }],
+    });
+    const staleResolvedOrganizeImportAction =
+        await client.request('codeAction/resolve', organizeImportAction);
+    assert(staleResolvedOrganizeImportAction &&
+        !staleResolvedOrganizeImportAction.edit &&
+        staleResolvedOrganizeImportAction.disabled &&
+        staleResolvedOrganizeImportAction.disabled.reason ===
+            'Document changed since this code action was computed',
+    'codeAction/resolve must disable stale workspace edits instead of replaying them');
+
+    const freshModuleImportActions = await client.request('textDocument/codeAction', {
+        textDocument: { uri: moduleImportsUri },
+        range: { start: { line: 0, character: 0 }, end: { line: moduleImportsText.split('\n').length, character: 0 } },
+        context: { diagnostics: [], only: ['source.organizeImports'] },
+    });
+    const freshOrganizeImportAction = freshModuleImportActions.find((action) =>
+        action && action.kind === 'source.organizeImports' && action.edit);
+    assert(freshOrganizeImportAction &&
+        freshOrganizeImportAction.data &&
+        freshOrganizeImportAction.data.snapshot &&
+        freshOrganizeImportAction.data.snapshot.version === 1 &&
+        freshOrganizeImportAction.edit.documentChanges.some((documentChange) =>
+            documentChange &&
+            documentChange.textDocument &&
+            documentChange.textDocument.version === 1),
+    'fresh code actions must serialize the recaptured document version');
+    const resolvedFreshOrganizeImportAction =
+        await client.request('codeAction/resolve', freshOrganizeImportAction);
+    assert(resolvedFreshOrganizeImportAction &&
+        resolvedFreshOrganizeImportAction.edit &&
+        !resolvedFreshOrganizeImportAction.disabled,
+    'codeAction/resolve must preserve edits while the captured snapshot remains current');
 
     const aliasImportsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-alias-imports.zr';
     const aliasImportsText = [
