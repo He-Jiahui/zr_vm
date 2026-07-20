@@ -55,12 +55,34 @@ body delimiter、返回类型和 block/expression body 标记。表达式体在 
 | in | in | readonly | function | initialized/unchanged | none |
 | ref | ref | writable | caller | initialized/unchanged | ref |
 | ref readonly | ref readonly | readonly | caller | initialized/unchanged | ref |
-| scoped ref | ref | writable | block | initialized/unchanged | ref |
-| scoped ref readonly | ref readonly | readonly | block | initialized/unchanged | ref |
+| scoped ref | ref | writable | function | initialized/unchanged | ref |
+| scoped ref readonly | ref readonly | readonly | function | initialized/unchanged | ref |
 | out | out | writable | function | uninitialized/definitely initialized | out |
 
 `ZrParser_SyntaxCallable_Intern()` 对参数契约和返回 TypeId 驻留 canonical function TypeId。
 命名声明与函数类型只要契约相同，就得到同一 TypeId；分隔符不进入类型身份。
+
+这里的 `function` 表示引用不能逃出当前被调用函数，`caller` 表示普通 `ref` 契约允许把
+引用传播回调用者边界。`scoped` 不是 lexical block lifetime；将它编码为 `block` 会让声明、
+泛型闭包和 artifact import 得到互不相容的 callable 身份。
+
+生产类型注册通过 `ZrParser_SyntaxCallable_RefineFromDeclaration()` 把 legacy inferred
+parameter TypeId 与 AST source form 合并为上述完整契约。泛型调用关闭参数类型时，
+`ZrParser_CanonicalType_RebindFunctionSignature()` 只替换已解析的参数/返回 TypeId，并保留
+声明的 passing、escape、ref access、receiver effect 和 callable effects。rebind 每次通过
+TypeId 重新取得 canonical node，不能跨 interning 扩容保存内部数组指针。
+
+member receiver effect 由公共的
+`ZrParser_SyntaxCallable_ReceiverEffectFromDeclaration()` 从声明 AST 推导：static/free 为
+`none`，`const` 或 borrowed/shared/weak receiver 为 `readonly`，其余 instance member 为
+`mutable`。`RefineFromDeclaration()` 内部使用该规则，包括 AST 用空参数指针表示的零参数
+member；LSP、compiler 和其他消费者不能自行复制 receiver 规则或依赖预填的 member metadata。
+
+resolved call fact 在同一条记录中保存 closed callable TypeId、结构化 signature display 与
+`SymbolId + declarationRange` target identity。display 的 generic clause 来自声明 record，
+参数/返回类型来自 closed TypeId；因此 generic receiver 不会丢失 `<const N: int>`，也不会
+把 open `Matrix<T, N>` 错显示为调用点类型。consumer 必须在 `hasResolvedTarget` 为真时才使用
+target identity，不能按 member name 猜测声明。
 
 ## Compatibility boundary
 
@@ -70,3 +92,10 @@ canonical contract，也不得成为 borrow checker 分支条件。
 
 新增引用语义时应扩展 canonical contract、Place/CFG/loan 数据流与诊断，不得向
 `EZrParameterPassingMode` 增加新值，也不得按 `:`, `->`, `=>` 重新推导语义。
+
+## Verification
+
+M1-M6 的最终 callable contract 验收见
+`tests/acceptance/2026-07-20-syntax-02-m6-artifact-lsp-consumers.md`；该门禁覆盖 source
+binding、binary signature import、VM/AOT projection、resolved LSP hover/signature/diagnostic
+consumer，以及 scoped/ref readonly/receiver/generic display。

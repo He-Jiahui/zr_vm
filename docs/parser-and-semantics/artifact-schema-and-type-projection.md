@@ -1,6 +1,7 @@
 ---
 related_code:
   - zr_vm_core/include/zr_vm_core/artifact_schema.h
+  - zr_vm_core/include/zr_vm_core/canonical_consumer.h
   - zr_vm_parser/include/zr_vm_parser/artifact_projection.h
   - zr_vm_core/src/zr_vm_core/artifact_encoding.c
   - zr_vm_core/src/zr_vm_core/artifact_identity.c
@@ -8,9 +9,11 @@ related_code:
   - zr_vm_core/src/zr_vm_core/artifact_schema.c
   - zr_vm_core/src/zr_vm_core/artifact_signature.c
   - zr_vm_core/src/zr_vm_core/artifact_text.c
+  - zr_vm_core/src/zr_vm_core/canonical_consumer.c
   - zr_vm_parser/src/zr_vm_parser/artifact_projection.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/artifact_schema.h
+  - zr_vm_core/include/zr_vm_core/canonical_consumer.h
   - zr_vm_parser/include/zr_vm_parser/artifact_projection.h
   - zr_vm_core/src/zr_vm_core/artifact_encoding.c
   - zr_vm_core/src/zr_vm_core/artifact_identity.c
@@ -18,13 +21,18 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/artifact_schema.c
   - zr_vm_core/src/zr_vm_core/artifact_signature.c
   - zr_vm_core/src/zr_vm_core/artifact_text.c
+  - zr_vm_core/src/zr_vm_core/canonical_consumer.c
   - zr_vm_parser/src/zr_vm_parser/artifact_projection.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md
+  - docs/plans/syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md
 tests:
   - tests/parser/test_artifact_schema.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
+  - tests/parser/test_reference_callable_consumers.c
+  - tests/parser/test_canonical_consumers.c
   - tests/acceptance/2026-07-19-syntax-01-m4-artifact-schema.md
+  - tests/acceptance/2026-07-20-syntax-02-m6-artifact-lsp-consumers.md
 doc_type: module-detail
 ---
 
@@ -63,6 +71,11 @@ Signature bytes encode canonical structure rather than display spelling. Nodes c
 
 Function nodes encode receiver effect, ref-export effect, public effect flags, return type, and the full contract for every parameter: passing form, escape upper bound, entry/exit initialization, temporary acceptance, and call-site marker. Surface `:` versus `->` delimiters do not enter the signature.
 
+The writer derives `ref-export effect` from the canonical return node: non-reference returns use
+`none`, writable references use `writable`, and readonly references use `readonly`. The importer
+reconstructs the return TypeId first and rejects a header marker that does not match its ref access;
+the marker is never accepted as an independent source of truth.
+
 Validation is recursive but bounded by a fixed depth and child-count limit. Truncation, illegal node tags, illegal metadata tokens, invalid qualifiers, trailing bytes, and excessive nesting fail before interning. Duplicate structural signatures are safe because each TypeRef/TypeSpec row uses an explicit token and bounded slice; serialized graphs cannot contain pointer cycles.
 
 ## Identity And Diagnostics
@@ -86,6 +99,13 @@ Metadata tokens are checked for a nonzero RID and the table required by their ro
 
 `ZrParser_ArtifactType_BuildPublicIdentity` derives stable TypeRef, TypeSpec, and signature hashes from the serialized structure, then combines them with the independently supplied layout, callable-contract, and module identities. The real-source acceptance test compiles a typed function, obtains its canonical function type through the compiler type projection, imports the resulting binary signature, and proves equal `TypeId`, signature bytes, and public identity.
 
+`ZrCore_Artifact_ReadCallableSignatureSummary` validates a complete function signature before
+projecting receiver effect, ref-export effect, effect flags, parameter count, and whether any
+`ref`/`ref readonly` parameter has a function-scoped escape bound. The core canonical consumer
+cross-validates this summary against the root ContractRow. A stale parameter count, scoped flag,
+receiver effect, ref-export effect, or callable effect therefore fails VM and AOT opening with the
+same `INVALID_SIGNATURE` result.
+
 ## Safety And Compatibility
 
 The reader validates magic, exact schema version, header/directory sizes, total length, section and row limits, fixed element sizes, token shapes, signature slices, row payloads, internal identity, and section overlap before returning a view. It avoids pointer arithmetic for an untrusted offset until that offset is within the declared buffer.
@@ -96,6 +116,6 @@ The existing `SZrIo` execution format remains a compatibility path for consumers
 
 ## Verification
 
-The focused suite covers all three artifact kinds, exact binary/text roundtrips, readable syntax and Semantic IR payloads, fixed widths, zero/one/256-row tables, duplicate signatures, value-construction capability and constructor identity, repeat-write hash stability, every public mismatch, unknown mandatory versus optional sections, truncation, invalid tokens, count limits, forbidden/duplicate/overlapping sections, recursive signature limits, relocation bounds, and source-compile versus binary-import identity.
+The focused suite covers all three artifact kinds, exact binary/text roundtrips, readable syntax and Semantic IR payloads, fixed widths, zero/one/256-row tables, duplicate signatures, value-construction capability and constructor identity, repeat-write hash stability, every public mismatch, unknown mandatory versus optional sections, truncation, invalid tokens, count limits, forbidden/duplicate/overlapping sections, recursive signature limits, relocation bounds, and source-compile versus binary-import identity. Reference-callable coverage starts with the production source query TypeId, proves signature import returns the same TypeId, then verifies the same bytes and ContractRow through VM and AOT projections, including negative ref-export and scoped-flag mismatches.
 
-Parent regression suites protect the M1 type graph, M2 Place/CFG, M3 pre-execution Semantic IR, legacy metadata token/ZRP formats, runtime binding diagnostics, project imports, and compiler behavior while M5 consumer migration remains pending.
+Parent regression suites protect the M1 type graph, M2 Place/CFG, M3 pre-execution Semantic IR, legacy metadata token/ZRP formats, runtime binding diagnostics, project imports, and compiler behavior. Syntax 02 M6 additionally proves one reference-callable signature starts at the source contract, survives binary signature import, and is consumed byte-for-byte by VM and AOT while the LSP projects the same source callable facts.
