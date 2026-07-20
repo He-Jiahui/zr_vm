@@ -44,6 +44,7 @@ assert(serverPath, 'Expected stdio server executable path');
 const documentUri = 'file:///zr-diagnostic-fix-smoke.zr';
 const semicolonDocumentUri = 'file:///zr-diagnostic-semicolon-fix-smoke.zr';
 const conditionDocumentUri = 'file:///zr-diagnostic-condition-close-fix-smoke.zr';
+const indexDocumentUri = 'file:///zr-diagnostic-index-close-fix-smoke.zr';
 const documentText = [
     'func choose(flag: bool): int {',
     '    var seed: int;',
@@ -56,6 +57,7 @@ const documentText = [
 ].join('\n');
 const semicolonDocumentText = 'var answer = 42';
 const conditionDocumentText = 'if (ready { return 1; }\n';
+const indexDocumentText = 'return value[0;\n';
 
 const payload = Buffer.concat([
     createMessage({
@@ -146,7 +148,39 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: conditionDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 7, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: indexDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: indexDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: indexDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didChange',
+        params: {
+            textDocument: { uri: indexDocumentUri, version: 2 },
+            contentChanges: [{ text: 'return value[0];\n' }],
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 8,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: indexDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 9, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -269,3 +303,44 @@ assert(fixedConditionPublication &&
     !fixedConditionPublication.params.diagnostics.some((entry) =>
         entry.code === 'missing_condition_close'),
     'Expected the applied condition-close fix to clear the diagnostic');
+
+const indexPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === indexDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'missing_index_close'));
+assert(indexPublication,
+    'Expected missing_index_close publication');
+
+const indexDiagnostic = indexPublication.params.diagnostics.find((entry) =>
+    entry.code === 'missing_index_close');
+assert(indexDiagnostic.data &&
+    Array.isArray(indexDiagnostic.data.fixes) &&
+    indexDiagnostic.data.fixes.length === 1,
+    'Expected one serialized index-close diagnostic fix');
+
+const indexFix = indexDiagnostic.data.fixes[0];
+assert(indexFix.title === "Insert missing ']'" &&
+    indexFix.applicability === 1 &&
+    indexFix.edit &&
+    indexFix.edit.newText === ']',
+    'Expected a machine-applicable serialized index-close edit');
+assert(indexFix.edit.range.start.line === 0 &&
+    indexFix.edit.range.start.character === 14 &&
+    indexFix.edit.range.end.line === 0 &&
+    indexFix.edit.range.end.character === 14,
+    'Expected the index-close edit before the statement terminator');
+
+const fixedIndexPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === indexDocumentUri &&
+    message.params.version === 2 &&
+    Array.isArray(message.params.diagnostics));
+assert(fixedIndexPublication &&
+    !fixedIndexPublication.params.diagnostics.some((entry) =>
+        entry.code === 'missing_index_close'),
+    'Expected the applied index-close fix to clear the diagnostic');

@@ -66,6 +66,8 @@
 
 [2026-07-21 condition-close safe-fix convergence](./02-diagnostics/2026-07-21-condition-close-safe-fix-convergence.md) 让`missing_condition_close`复用同一通用structured-fix consumer与code-action snapshot，不新增code/message/source fallback；`)` edit由parser绑定到block opener前，stdio apply后的新version清除诊断。其他delimiter producer、并发race/cancellation与性能内存预算仍待后续。
 
+[2026-07-21 index-close safe-fix convergence](./02-diagnostics/2026-07-21-index-close-safe-fix-convergence.md) 让`missing_index_close`复用同一通用structured-fix consumer与code-action snapshot；parser把`]` edit绑定到current token起点，stdio apply后的新version清除诊断，不新增code/message/source fallback。其他delimiter producer、并发race/cancellation与性能内存预算仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。
