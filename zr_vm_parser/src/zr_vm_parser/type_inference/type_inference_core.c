@@ -3081,6 +3081,7 @@ static TZrBool ensure_generic_instance_type_prototype_internal(
             }
 
             copiedMember = *sourceMember;
+            copiedMember.ownerTypeName = registeredPrototype->name;
             copiedMember.fieldTypeName = substitute_generic_type_name(cs->state,
                                                                       sourceMember->fieldTypeName,
                                                                       &openPrototypeSnapshot.genericParameters,

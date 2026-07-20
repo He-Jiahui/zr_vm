@@ -99,6 +99,59 @@ static void test_const_fn_and_readonly_view_are_preserved_in_ast(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+static void test_readonly_struct_contextual_declaration_normalizes_instance_contracts(void) {
+    const TZrChar *source =
+            "readonly struct Snapshot {\n"
+            "  pub var value: int;\n"
+            "  pub fn read(): int { return this.value; }\n"
+            "  pub const fn explicitRead(): int { return this.value; }\n"
+            "  pub static fn create(): int { return 1; }\n"
+            "}\n"
+            "readonly();\n";
+    SZrAstNode *script = parse_source(source);
+    SZrAstNode *structNode = script_statement(script, 0U);
+    SZrAstNode *expressionNode = script_statement(script, 1U);
+    SZrAstNodeArray *members;
+
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, structNode->type);
+    TEST_ASSERT_TRUE(structNode->data.structDeclaration.isReadonly);
+    members = structNode->data.structDeclaration.members;
+    TEST_ASSERT_NOT_NULL(members);
+    TEST_ASSERT_EQUAL_UINT32(4U, (TZrUInt32)members->count);
+    TEST_ASSERT_FALSE(members->nodes[0]->data.structField.isConst);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_METHOD_RECEIVER_CONST,
+            members->nodes[1]->data.structMethod.receiverModifier);
+    TEST_ASSERT_TRUE(
+            members->nodes[1]->data.structMethod.isImplicitReadonlyReceiver);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_METHOD_RECEIVER_CONST,
+            members->nodes[2]->data.structMethod.receiverModifier);
+    TEST_ASSERT_FALSE(
+            members->nodes[2]->data.structMethod.isImplicitReadonlyReceiver);
+    TEST_ASSERT_TRUE(members->nodes[3]->data.structMethod.isStatic);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_METHOD_RECEIVER_DEFAULT,
+            members->nodes[3]->data.structMethod.receiverModifier);
+    TEST_ASSERT_FALSE(
+            members->nodes[3]->data.structMethod.isImplicitReadonlyReceiver);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXPRESSION_STATEMENT, expressionNode->type);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_AST_PRIMARY_EXPRESSION,
+            expressionNode->data.expressionStatement.expr->type);
+    TEST_ASSERT_NOT_NULL(
+            expressionNode->data.expressionStatement.expr->data.primaryExpression.members);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U,
+            (TZrUInt32)expressionNode->data.expressionStatement.expr
+                    ->data.primaryExpression.members->count);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_AST_FUNCTION_CALL,
+            expressionNode->data.expressionStatement.expr->data.primaryExpression
+                    .members->nodes[0]->type);
+    ZrParser_Ast_Free(g_state, script);
+}
+
 static void test_static_const_fn_is_rejected(void) {
     const TZrChar *source = "class Invalid { static const fn inspect(): void {} }";
     SZrString *sourceName = ZrCore_String_CreateFromNative(g_state, "invalid_receiver.zr");
@@ -667,6 +720,343 @@ static SZrFunction *compile_source(const TZrChar *source, const TZrChar *name) {
             g_state, source, strlen(source), sourceName);
 }
 
+static TZrUInt32 count_instruction_opcode(
+        const SZrFunction *function,
+        EZrInstructionCode opcode) {
+    TZrUInt32 count = 0U;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        return 0U;
+    }
+    for (TZrUInt32 index = 0U; index < function->instructionsLength; index++) {
+        if ((EZrInstructionCode)function->instructionsList[index]
+                    .instruction.operationCode == opcode) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static const SZrFunctionFrameSlotLayout *find_inline_receiver_argument_layout(
+        const SZrFunction *function) {
+    if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (TZrUInt32 index = 0U; index < function->frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *layout =
+                &function->frameSlotLayouts[index];
+        if ((layout->reserved0 &
+             ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT) != 0U) {
+            return layout;
+        }
+    }
+    return ZR_NULL;
+}
+
+static TZrUInt32 count_set_stack_writes_to_slot_from_slot(
+        const SZrFunction *function,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 sourceSlot) {
+    TZrUInt32 count = 0U;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        return 0U;
+    }
+    for (TZrUInt32 index = 0U; index < function->instructionsLength; index++) {
+        const TZrInstruction *instruction = &function->instructionsList[index];
+        if ((EZrInstructionCode)instruction->instruction.operationCode ==
+                    ZR_INSTRUCTION_ENUM(SET_STACK) &&
+            instruction->instruction.operandExtra == destinationSlot) {
+            if ((TZrUInt32)instruction->instruction.operand.operand2[0] ==
+                sourceSlot) {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
+static void assert_inline_receiver_argument_is_borrowed(
+        const SZrFunction *function) {
+    const SZrFunctionFrameSlotLayout *argumentLayout =
+            find_inline_receiver_argument_layout(function);
+    TZrBool sharesSourcePlace = ZR_FALSE;
+    TZrUInt32 sourceStackSlot = UINT32_MAX;
+
+    TEST_ASSERT_NOT_NULL(argumentLayout);
+    TEST_ASSERT_BITS_HIGH(
+            ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS,
+            argumentLayout->reserved0);
+    for (TZrUInt32 index = 0U; index < function->frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *candidate =
+                &function->frameSlotLayouts[index];
+        if (candidate->stackSlot != argumentLayout->stackSlot &&
+            candidate->slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
+            candidate->byteOffset == argumentLayout->byteOffset &&
+            candidate->byteSize == argumentLayout->byteSize &&
+            candidate->typeLayoutId == argumentLayout->typeLayoutId) {
+            sharesSourcePlace = ZR_TRUE;
+            sourceStackSlot = candidate->stackSlot;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE(sharesSourcePlace);
+    TEST_ASSERT_EQUAL_UINT32(
+            0U,
+            count_set_stack_writes_to_slot_from_slot(
+                    function, argumentLayout->stackSlot, sourceStackSlot));
+}
+
+static void assert_readonly_receiver_parameter_is_borrowed(
+        const SZrFunction *function) {
+    const SZrFunctionFrameSlotLayout *receiverLayout;
+
+    TEST_ASSERT_NOT_NULL(function);
+    receiverLayout = ZrCore_Function_FindFrameSlotLayout(function, 0U);
+    TEST_ASSERT_NOT_NULL(receiverLayout);
+    TEST_ASSERT_TRUE(receiverLayout->isParameter);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT,
+            receiverLayout->slotKind);
+    TEST_ASSERT_BITS_HIGH(
+            ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS,
+            receiverLayout->reserved0);
+}
+
+static TZrUInt32 count_non_identity_semir_value_copies(
+        const SZrFunction *function) {
+    TZrUInt32 count = 0U;
+
+    if (function == ZR_NULL || function->semIrInstructions == ZR_NULL) {
+        return 0U;
+    }
+    for (TZrUInt32 index = 0U; index < function->semIrInstructionLength; index++) {
+        const SZrSemIrInstruction *instruction =
+                &function->semIrInstructions[index];
+        if (instruction->opcode == ZR_SEMIR_OPCODE_COPY_VALUE &&
+            instruction->destinationSlot != instruction->operand0) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static const SZrFunction *find_named_function_recursive(
+        const SZrFunction *function,
+        const TZrChar *name,
+        TZrUInt32 depth) {
+    TZrNativeString functionName;
+
+    if (function == ZR_NULL || name == ZR_NULL || depth > 32U) {
+        return ZR_NULL;
+    }
+    functionName = function->functionName != ZR_NULL
+                           ? ZrCore_String_GetNativeString(function->functionName)
+                           : ZR_NULL;
+    if (functionName != ZR_NULL && strcmp(functionName, name) == 0) {
+        return function;
+    }
+    for (TZrUInt32 index = 0U; index < function->childFunctionLength; index++) {
+        const SZrFunction *match = find_named_function_recursive(
+                &function->childFunctionList[index], name, depth + 1U);
+        if (match != ZR_NULL) {
+            return match;
+        }
+    }
+    for (TZrUInt32 index = 0U; index < function->constantValueLength; index++) {
+        const SZrTypeValue *constant = &function->constantValueList[index];
+        const SZrFunction *candidate;
+        const SZrFunction *match;
+
+        if (constant->type != ZR_VALUE_TYPE_FUNCTION ||
+            constant->value.object == ZR_NULL || constant->isNative) {
+            continue;
+        }
+        candidate = ZR_CAST_FUNCTION(g_state, constant->value.object);
+        if (candidate == function) {
+            continue;
+        }
+        match = find_named_function_recursive(candidate, name, depth + 1U);
+        if (match != ZR_NULL) {
+            return match;
+        }
+    }
+    return ZR_NULL;
+}
+
+static void test_readonly_struct_source_pipeline_freezes_contract_without_copy(void) {
+    const TZrChar *source =
+            "readonly struct Snapshot {\n"
+            "  pub var value: int;\n"
+            "  pub @constructor(value: int) { this.value = value; }\n"
+            "  pub fn read(): int { return this.value; }\n"
+            "}\n"
+            "var snapshot: Snapshot = init Snapshot(7);\n"
+            "return snapshot.read();\n";
+    SZrFunction *function = compile_source(
+            source, "receiver_readonly_struct_contract.zr");
+    const SZrCompiledPrototypeInfo *prototype;
+    const SZrCompiledMemberInfo *members;
+    const SZrFunction *readFunction;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(function->prototypeData);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(
+            1U, *(const TZrUInt32 *)function->prototypeData);
+    prototype = (const SZrCompiledPrototypeInfo *)(
+            function->prototypeData + sizeof(TZrUInt32));
+    members = (const SZrCompiledMemberInfo *)(
+            (const TZrByte *)prototype + sizeof(*prototype) +
+            prototype->inheritsCount * sizeof(TZrUInt32) +
+            prototype->decoratorsCount * sizeof(TZrUInt32));
+    TEST_ASSERT_BITS_HIGH(
+            ZR_DECLARATION_MODIFIER_READONLY,
+            prototype->modifierFlags);
+    TEST_ASSERT_EQUAL_UINT32(3U, prototype->membersCount);
+    TEST_ASSERT_TRUE(members[0].isConst);
+    TEST_ASSERT_FALSE(members[1].isConst);
+    TEST_ASSERT_TRUE(members[2].isConst);
+    TEST_ASSERT_GREATER_THAN_UINT32(
+            0U,
+            count_instruction_opcode(
+                    function, ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)) +
+                    count_instruction_opcode(
+                            function,
+                            ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8)) +
+                    count_instruction_opcode(
+                            function, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)) +
+                    count_instruction_opcode(
+                            function, ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL)));
+    TEST_ASSERT_EQUAL_UINT32(
+            0U,
+            count_instruction_opcode(
+                    function, ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL)));
+    assert_inline_receiver_argument_is_borrowed(function);
+    readFunction = find_named_function_recursive(function, "read", 0U);
+    assert_readonly_receiver_parameter_is_borrowed(readFunction);
+    TEST_ASSERT_EQUAL_UINT32(0U, count_non_identity_semir_value_copies(function));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(7, result);
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_readonly_struct_reference_parameters_avoid_defensive_copy(void) {
+    const TZrChar *source =
+            "readonly struct Snapshot {\n"
+            "  pub var value: int;\n"
+            "  pub @constructor(value: int) { this.value = value; }\n"
+            "  pub fn read(): int { return this.value; }\n"
+            "}\n"
+            "fn inspectIn(value: in Snapshot): int { return value.read(); }\n"
+            "fn inspectRef(value: ref readonly Snapshot): int { return value.read(); }\n"
+            "var snapshot: Snapshot = init Snapshot(7);\n"
+            "return inspectIn(snapshot) + inspectRef(ref snapshot);\n";
+    SZrFunction *function = compile_source(
+            source, "receiver_readonly_struct_reference_parameters.zr");
+    const SZrFunction *inspectIn;
+    const SZrFunction *inspectRef;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    inspectIn = find_named_function_recursive(function, "inspectIn", 0U);
+    inspectRef = find_named_function_recursive(function, "inspectRef", 0U);
+    TEST_ASSERT_NOT_NULL(inspectIn);
+    TEST_ASSERT_NOT_NULL(inspectRef);
+    assert_inline_receiver_argument_is_borrowed(inspectIn);
+    assert_inline_receiver_argument_is_borrowed(inspectRef);
+    TEST_ASSERT_EQUAL_UINT32(0U, count_non_identity_semir_value_copies(inspectIn));
+    TEST_ASSERT_EQUAL_UINT32(0U, count_non_identity_semir_value_copies(inspectRef));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(14, result);
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_readonly_struct_field_receiver_borrows_projected_place(void) {
+    const TZrChar *source =
+            "readonly struct Snapshot {\n"
+            "  pub var value: int;\n"
+            "  pub @constructor(value: int) { this.value = value; }\n"
+            "  pub fn read(): int { return this.value; }\n"
+            "}\n"
+            "struct Holder {\n"
+            "  pub var snapshot: Snapshot;\n"
+            "  pub @constructor(snapshot: Snapshot) { this.snapshot = snapshot; }\n"
+            "}\n"
+            "var snapshot: Snapshot = init Snapshot(7);\n"
+            "var holder: Holder = init Holder(snapshot);\n"
+            "return holder.snapshot.read();\n";
+    SZrFunction *function = compile_source(
+            source, "receiver_readonly_struct_field_place.zr");
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    assert_inline_receiver_argument_is_borrowed(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(7, result);
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_mutable_struct_receiver_preserves_copy_writeback_boundary(void) {
+    const TZrChar *source =
+            "struct Buffer {\n"
+            "  pub var value: int;\n"
+            "  pub @constructor(value: int) { this.value = value; }\n"
+            "  pub fn write(next: int): int { this.value = next; return this.value; }\n"
+            "}\n"
+            "var buffer: Buffer = init Buffer(1);\n"
+            "buffer.write(9);\n"
+            "return buffer.value;\n";
+    SZrFunction *function = compile_source(
+            source, "receiver_mutable_struct_copy_writeback.zr");
+    const SZrFunction *writeFunction;
+    const SZrFunctionFrameSlotLayout *receiverLayout;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NULL(find_inline_receiver_argument_layout(function));
+    writeFunction = find_named_function_recursive(function, "write", 0U);
+    TEST_ASSERT_NOT_NULL(writeFunction);
+    receiverLayout = ZrCore_Function_FindFrameSlotLayout(writeFunction, 0U);
+    TEST_ASSERT_NOT_NULL(receiverLayout);
+    TEST_ASSERT_BITS_LOW(
+            ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS,
+            receiverLayout->reserved0);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(9, result);
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_readonly_struct_rejects_instance_field_writes_after_construction(void) {
+    const TZrChar *source =
+            "readonly struct Snapshot {\n"
+            "  pub var value: int;\n"
+            "  pub @constructor(value: int) { this.value = value; }\n"
+            "}\n"
+            "var snapshot: Snapshot = init Snapshot(7);\n"
+            "snapshot.value = 8;\n";
+
+    TEST_ASSERT_NULL(compile_source(
+            source, "receiver_readonly_struct_post_init_write.zr"));
+}
+
+static void test_readonly_struct_rejects_writes_from_implicitly_readonly_method(void) {
+    const TZrChar *source =
+            "readonly struct Snapshot {\n"
+            "  pub var value: int;\n"
+            "  pub fn reset(): void { this.value = 0; }\n"
+            "}\n";
+
+    TEST_ASSERT_NULL(compile_source(
+            source, "receiver_readonly_struct_method_write.zr"));
+}
+
 static void test_readonly_view_calls_const_fn_in_source_pipeline(void) {
     const TZrChar *source =
             "class Counter {\n"
@@ -724,6 +1114,44 @@ static void test_readonly_view_cannot_call_writable_member(void) {
             "view.bump();\n";
     SZrFunction *function = compile_source(
             source, "receiver_readonly_view_write_rejected.zr");
+
+    TEST_ASSERT_NULL(function);
+}
+
+static void test_readonly_view_property_getter_preserves_readonly_receiver(void) {
+    const TZrChar *source =
+            "class Score {\n"
+            "  pub var stored: int;\n"
+            "  pub get value: int { return this.stored; }\n"
+            "  pub set value(next: int) { this.stored = next; }\n"
+            "}\n"
+            "var score = new Score();\n"
+            "score.value = 9;\n"
+            "var view: readonly Score = score;\n"
+            "return view.value;\n";
+    SZrFunction *function = compile_source(
+            source, "receiver_readonly_property_getter.zr");
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(9, result);
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_readonly_view_property_setter_requires_writable_receiver(void) {
+    const TZrChar *source =
+            "class Score {\n"
+            "  pub var stored: int;\n"
+            "  pub get value: int { return this.stored; }\n"
+            "  pub set value(next: int) { this.stored = next; }\n"
+            "}\n"
+            "var score = new Score();\n"
+            "var view: readonly Score = score;\n"
+            "view.value = 9;\n";
+    SZrFunction *function = compile_source(
+            source, "receiver_readonly_property_setter.zr");
 
     TEST_ASSERT_NULL(function);
 }
@@ -826,6 +1254,7 @@ static void test_compiler_readonly_receiver_rejects_writable_argument_call(void)
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_const_fn_and_readonly_view_are_preserved_in_ast);
+    RUN_TEST(test_readonly_struct_contextual_declaration_normalizes_instance_contracts);
     RUN_TEST(test_static_const_fn_is_rejected);
     RUN_TEST(test_top_level_const_fn_is_rejected);
     RUN_TEST(test_receiver_capability_matrix_and_owner_auto_deref);
@@ -835,9 +1264,17 @@ int main(void) {
     RUN_TEST(test_reserved_receiver_rejects_direct_write_and_second_reserve);
     RUN_TEST(test_branch_activation_does_not_dominate_join);
     RUN_TEST(test_loop_backedge_preserves_maybe_active_conflict);
+    RUN_TEST(test_readonly_struct_source_pipeline_freezes_contract_without_copy);
+    RUN_TEST(test_readonly_struct_reference_parameters_avoid_defensive_copy);
+    RUN_TEST(test_readonly_struct_field_receiver_borrows_projected_place);
+    RUN_TEST(test_mutable_struct_receiver_preserves_copy_writeback_boundary);
+    RUN_TEST(test_readonly_struct_rejects_instance_field_writes_after_construction);
+    RUN_TEST(test_readonly_struct_rejects_writes_from_implicitly_readonly_method);
     RUN_TEST(test_readonly_view_calls_const_fn_in_source_pipeline);
     RUN_TEST(test_const_fn_cannot_write_receiver_in_source_pipeline);
     RUN_TEST(test_readonly_view_cannot_call_writable_member);
+    RUN_TEST(test_readonly_view_property_getter_preserves_readonly_receiver);
+    RUN_TEST(test_readonly_view_property_setter_requires_writable_receiver);
     RUN_TEST(test_readonly_override_cannot_be_strengthened_to_writable);
     RUN_TEST(test_readonly_interface_contract_rejects_writable_implementation);
     RUN_TEST(test_compiler_two_phase_receiver_allows_readonly_argument_call);

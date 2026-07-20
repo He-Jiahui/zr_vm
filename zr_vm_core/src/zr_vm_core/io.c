@@ -1287,6 +1287,7 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         ZR_IO_READ_NATIVE_TYPE(io, function->parametersLength, TZrSize);
         ZR_IO_READ_NATIVE_TYPE(io, function->hasVarArgs, TZrUInt64);
         ZR_IO_READ_NATIVE_TYPE(io, function->stackSize, TZrUInt32);
+        function->sourceVersionPatch = io->sourceVersionPatch;
         function->frameByteSize = 0;
         function->frameByteAlign = 0;
         function->frameSlotLayoutsLength = 0;

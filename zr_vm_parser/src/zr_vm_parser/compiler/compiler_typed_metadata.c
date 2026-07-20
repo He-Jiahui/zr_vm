@@ -48,6 +48,13 @@ static void typed_type_ref_from_inferred(SZrFunctionTypedTypeRef *dest, const SZ
 static const SZrCompilerStackSlotTypeHint *find_stack_slot_type_hint_for_slot(const SZrCompilerState *cs,
                                                                               TZrUInt32 stackSlot);
 
+static TZrBool typed_metadata_current_function_borrows_receiver(
+        const SZrCompilerState *cs) {
+    return (TZrBool)(cs != ZR_NULL && cs->currentFunctionNode != ZR_NULL &&
+                     get_member_receiver_effect(cs->currentFunctionNode) ==
+                             ZR_CANONICAL_RECEIVER_READONLY);
+}
+
 static SZrGenericDeclaration *typed_metadata_current_generic_declaration(SZrCompilerState *cs) {
     SZrAstNode *node;
 
@@ -1746,6 +1753,25 @@ TZrBool compiler_register_stack_slot_type_hint(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+TZrBool compiler_register_stack_slot_inline_receiver_argument_alias(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        TZrUInt32 receiverStackSlot) {
+    SZrCompilerStackSlotTypeHint *hint;
+
+    if (cs == ZR_NULL || receiverStackSlot >= stackSlot) {
+        return ZR_FALSE;
+    }
+    hint = (SZrCompilerStackSlotTypeHint *)find_stack_slot_type_hint_for_slot(
+            cs, stackSlot);
+    if (hint == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    hint->isInlineReceiverArgument = ZR_TRUE;
+    hint->aliasParentStackSlot = receiverStackSlot;
+    return ZR_TRUE;
+}
+
 TZrBool compiler_register_stack_slot_field_alias(
         SZrCompilerState *cs,
         TZrUInt32 stackSlot,
@@ -2075,7 +2101,9 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
         const SZrCompilerStackSlotTypeHint *rawHint =
                 find_stack_slot_type_hint_for_slot(cs, slot);
         const SZrCompilerStackSlotTypeHint *hint =
-                (binding == ZR_NULL && !compiler_stack_slot_requires_plain_value_layout(function, slot))
+                (binding == ZR_NULL &&
+                 (!compiler_stack_slot_requires_plain_value_layout(function, slot) ||
+                  (rawHint != ZR_NULL && rawHint->isInlineReceiverArgument)))
                         ? rawHint
                         : ZR_NULL;
         SZrFunctionTypedTypeRef hintTypeRef;
@@ -2085,6 +2113,31 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
         TZrUInt32 typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
         TZrUInt32 inlineFieldCount = 0u;
         TZrUInt8 slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+        TZrBool slotIsParameter =
+                typed_local_binding_slot_is_parameter(function, slot);
+
+        if (rawHint != ZR_NULL && rawHint->isInlineReceiverArgument) {
+            const SZrFunctionFrameSlotLayout *receiverLayout;
+
+            if (rawHint->aliasParentStackSlot >= slot ||
+                rawHint->aliasParentStackSlot >= slotCount) {
+                goto fail;
+            }
+            receiverLayout = &layouts[rawHint->aliasParentStackSlot];
+            if (receiverLayout->slotKind !=
+                        (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+                receiverLayout->typeLayoutId ==
+                        ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+                goto fail;
+            }
+            layouts[slot] = *receiverLayout;
+            layouts[slot].stackSlot = slot;
+            layouts[slot].isParameter = slotIsParameter ? 1 : 0;
+            layouts[slot].reserved0 =
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT;
+            continue;
+        }
 
         if (rawHint != ZR_NULL && rawHint->isArrayElementAlias) {
             TZrUInt32 aliasTypeLayoutId;
@@ -2194,6 +2247,32 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
             frameAlign = byteAlign;
         }
 
+        if (slot == 0u && slotIsParameter &&
+            slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
+            typed_metadata_current_function_borrows_receiver(cs)) {
+            TZrUInt32 bindingAlign =
+                    (TZrUInt32)_Alignof(SZrFunctionFrameBorrowedAliasBinding);
+
+            cursor = frame_layout_align_offset(cursor, bindingAlign);
+            if (bindingAlign > frameAlign) {
+                frameAlign = bindingAlign;
+            }
+            ZrCore_Memory_RawSet(&layouts[slot], 0, sizeof(layouts[slot]));
+            layouts[slot].stackSlot = slot;
+            layouts[slot].byteOffset = cursor;
+            layouts[slot].byteSize = byteSize;
+            layouts[slot].byteAlign = byteAlign;
+            layouts[slot].typeLayoutId = typeLayoutId;
+            layouts[slot].slotKind = slotKind;
+            layouts[slot].isParameter = 1;
+            layouts[slot].reserved0 =
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
+            cursor += (TZrUInt32)sizeof(SZrFunctionFrameBorrowedAliasBinding);
+            continue;
+        }
+
         cursor = frame_layout_align_offset(cursor, byteAlign);
         ZrCore_Memory_RawSet(&layouts[slot], 0, sizeof(layouts[slot]));
         layouts[slot].stackSlot = slot;
@@ -2202,7 +2281,7 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
         layouts[slot].byteAlign = byteAlign;
         layouts[slot].typeLayoutId = typeLayoutId;
         layouts[slot].slotKind = slotKind;
-        layouts[slot].isParameter = typed_local_binding_slot_is_parameter(function, slot) ? 1 : 0;
+        layouts[slot].isParameter = slotIsParameter ? 1 : 0;
         if (cs->isInConstructor && slot == 0u && layouts[slot].isParameter &&
             slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
             constructorReceiverFieldCount = inlineFieldCount > 0u

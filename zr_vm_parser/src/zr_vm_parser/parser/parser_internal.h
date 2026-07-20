@@ -422,6 +422,8 @@ SZrAstNode *parse_struct_method(SZrParserState *ps);
 
 SZrAstNode *parse_struct_meta_function(SZrParserState *ps);
 
+TZrBool parser_struct_declaration_starts_here(SZrParserState *ps);
+
 SZrAstNode *parse_struct_declaration(SZrParserState *ps);
 
 SZrAstNode *parse_class_declaration(SZrParserState *ps);

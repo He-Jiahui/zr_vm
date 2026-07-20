@@ -238,6 +238,7 @@ static void test_zro_roundtrips_fixed_width_public_contract_sections(void) {
     TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_OK,
                           ZrCore_Artifact_ReadTypeDefRow(&section, 0u, &typeDef, &diagnostic));
     TEST_ASSERT_BITS_HIGH(ZR_ARTIFACT_TYPE_FLAG_VALUE_CONSTRUCTIBLE, typeDef.flags);
+    TEST_ASSERT_BITS_HIGH(ZR_ARTIFACT_TYPE_FLAG_READONLY, typeDef.flags);
     TEST_ASSERT_EQUAL_UINT32(TEST_CONSTRUCTOR_TOKEN, typeDef.constructorToken);
     TEST_ASSERT_EQUAL_UINT64(TEST_CONTRACT_HASH, typeDef.constructorContractHash);
 

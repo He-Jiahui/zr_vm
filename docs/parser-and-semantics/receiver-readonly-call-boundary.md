@@ -1,13 +1,28 @@
 ---
 related_code:
+  - zr_vm_common/include/zr_vm_common/zr_io_conf.h
+  - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_core/include/zr_vm_core/io.h
+  - zr_vm_library/src/zr_vm_library/aot_runtime.c
+  - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/receiver_call.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/include/zr_vm_parser/type_system.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/receiver_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_receiver_effect.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c
 implementation_files:
+  - zr_vm_common/include/zr_vm_common/zr_io_conf.h
+  - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_core/src/zr_vm_core/function_frame_place.c
+  - zr_vm_core/src/zr_vm_core/io_runtime.c
+  - zr_vm_library/src/zr_vm_library/aot_runtime.c
+  - zr_vm_aot/zr_vm_library/src/zr_vm_library/aot_runtime.c
+  - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/receiver_call.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/receiver_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_receiver_effect.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -15,12 +30,18 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_conflicts.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_facts.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_liveness.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md
+  - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
+  - tests/core/test_type_layout_inline_copy.c
+  - tests/parser/test_aot_llvm_symbol_stripping.c
+  - tests/parser/test_artifact_schema.c
   - tests/parser/test_reference_receiver_call_boundary.c
+  - tests/parser/test_canonical_consumers.c
   - tests/parser/test_compiler_features.c
   - tests/acceptance/2026-07-20-syntax-02-m4-receiver-readonly-call-boundary.md
 doc_type: module-detail
@@ -65,6 +86,19 @@ semantic receiver contract. Static native methods and constructors always
 normalize to receiver-none. The builtin `IArrayLike` and container Array/Map
 get-item descriptors explicitly carry the readonly receiver flag; corresponding
 set-item descriptors remain mutable.
+
+Syntax plan 03 M2 extends the same contract to contextual `readonly struct`.
+Every instance field is frozen after constructor completion. An ordinary instance
+`fn` is normalized to readonly, an explicit `const fn` is equivalent, and a
+static method remains receiver-none. The constructor keeps a mutable initializing
+receiver so it can populate the destination Place. The readonly capability is
+also published on the canonical TypeDef instead of being rediscovered from the
+source spelling.
+
+Class property accessors use the same rule as interface property contracts:
+getters are readonly and setters are mutable. A readonly view may execute a
+getter but setter binding fails at the receiver-capability gate before bytecode
+publication.
 
 ## Receiver capability analysis
 
@@ -133,6 +167,46 @@ tests. A readonly outer call such as `buffer.observe(buffer.mutate())` is also
 rejected because its shared receiver loan remains live during argument
 evaluation.
 
+Readonly inline-struct calls do not materialize an object wrapper or defensive
+copy. The caller's hidden argument is a frame-layout alias with
+`ALIAS | INLINE_RECEIVER_ARGUMENT`; it retains the source Place's layout and
+never emits `SET_STACK` or stores a second payload. The callee receiver slot
+stores only a `SZrFunctionFrameBorrowedAliasBinding` and is marked
+`ALIAS | INDIRECT_ALIAS | BORROWED_ALIAS`. That binding carries the source call
+identity, source frame anchor and source stack slot, so Place resolution follows
+the original local/field/array alias even after stack relocation instead of
+caching a raw address.
+
+Call-window staging deliberately leaves borrowed receiver arguments
+unmaterialized. VM pre-call binds the callee alias before ordinary inline
+parameter copies; copy and writeback paths skip it. Tail-frame reuse remains
+disabled because the source frame must stay live for the borrowed call. Ordinary
+locals, `in T`, and `ref readonly T` use the same alias contract. Writable struct
+receivers retain the existing value staging and post-call writeback path.
+
+Generated AOT direct calls use the same VM pre-call contract rather than
+reimplementing frame initialization. The runtime allocates a scratch call window
+after the caller's full frame storage top, not after its dense/generated slot
+count. Scalar and ordinary VALUE arguments are staged there; an inline borrowed
+receiver is left unmaterialized so `BindAndCopyInlineFrameParametersFromCaller`
+resolves it from the caller frame identity. The cached callee size is
+`ZrCore_Function_GetFrameStorageSlotCount()`, which includes byte-backed inline
+layout storage.
+
+Every allocation boundary protects the call window, destination and caller frame
+with stack anchors. After the shared PreCall and its CALL debug hook, the AOT
+runtime derives the callee top from the relocated `callInfo->functionBase`.
+Failure cleanup first lets core roll back initialized frame ownership, then
+discards the remaining staging values. A direct AOT return still closes callee
+upvalues before PostCall because it bypasses the interpreter return path. The
+root and hard-split AOT runtime mirrors keep this sequence aligned.
+
+Borrowed frame aliases are serialized only in function artifact v1 patch 35 or
+newer. The loader rejects the exact borrowed flag combination on older patches,
+unknown frame flags, non-inline slot kinds, undersized/misaligned bindings and
+bindings outside frame storage. This prevents an older runtime or malformed
+artifact from interpreting inline payload bytes as a live caller-frame alias.
+
 ## Semantic identity boundary
 
 Receiver effect alone is not a call-target identity. Any semantic query or LSP
@@ -149,10 +223,23 @@ surface is a later M6 consumer-integration boundary. Until it is present, LSP
 must report unknown or fall back conservatively rather than guessing by member
 name.
 
+Syntax plan 03 M2 also publishes exact source unbound method references as
+canonical member-access facts. The fact contains the function TypeId with its
+hidden receiver effect, resolved SymbolId and declaration range. Schema-v1
+callable signature roundtrip retains readonly versus mutable receiver effects.
+The publisher requires a source declaration plus fully available parameter and
+return types. It revalidates declaration parameter count, rejects variadic
+methods, requires every parameter AST type to convert exactly to its recorded
+prototype type, and requires a non-generic owner and method. An open generic,
+missing parameter type or otherwise incomplete reference stays unavailable
+rather than being reconstructed from a type or member name.
+
 ## Milestone boundary
 
 M4 covers receiver readonly capability, owner auto-deref, override/interface
 variance, artifact/native metadata and two-phase call-scoped loans. M5 owns
 caller/function/heap escape, ref return, closure capture and suspension rules.
 M6 owns final canonical consumer convergence, including resolved receiver-call
-target fact publication.
+target fact publication. Syntax plan 03 M2 builds on those contracts for
+readonly struct execution, property accessors, and exact unbound method-reference
+facts without changing their ownership or query boundaries.

@@ -169,7 +169,7 @@ static TZrBool compiler_struct_register_canonical_definition(
     SZrArray genericParameterKinds;
     TZrBool definitionRegistered;
     TZrTypeId typeId;
-    const TZrUInt32 capabilityFlags =
+    TZrUInt32 capabilityFlags =
             ZR_CANONICAL_TYPE_CAPABILITY_VALUE_TYPE |
             ZR_CANONICAL_TYPE_CAPABILITY_VALUE_CONSTRUCTIBLE;
 
@@ -179,6 +179,10 @@ static TZrBool compiler_struct_register_canonical_definition(
     typeId = ZrParser_CanonicalType_FromName(cs->semanticContext, typeName);
     if (typeId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
+    }
+    if (info != ZR_NULL &&
+        (info->modifierFlags & ZR_DECLARATION_MODIFIER_READONLY) != 0U) {
+        capabilityFlags |= ZR_CANONICAL_TYPE_CAPABILITY_READONLY_TYPE;
     }
 
     if (info != ZR_NULL && info->genericParameters.length > 0U) {
@@ -1143,6 +1147,9 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.name = typeName;
     info.type = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
     info.accessModifier = structDecl->accessModifier;
+    info.modifierFlags = structDecl->isReadonly
+                                 ? ZR_DECLARATION_MODIFIER_READONLY
+                                 : ZR_DECLARATION_MODIFIER_NONE;
     info.isImportedNative = ZR_FALSE;
     info.allowValueConstruction = ZR_TRUE;
     info.allowBoxedConstruction = ZR_TRUE;
@@ -1236,6 +1243,9 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             memberInfo.metaType = ZR_META_ENUM_MAX;
             memberInfo.isMetaMethod = ZR_FALSE;
             memberInfo.returnTypeName = ZR_NULL;
+            memberInfo.ownerTypeName = typeName;
+            memberInfo.baseDefinitionOwnerTypeName = typeName;
+            memberInfo.baseDefinitionName = ZR_NULL;
             
             // 根据成员类型提取信息
             switch (member->type) {
@@ -1243,7 +1253,8 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     SZrStructField *field = &member->data.structField;
                     memberInfo.accessModifier = field->access;
                     memberInfo.isStatic = field->isStatic;
-                    memberInfo.isConst = field->isConst;
+                    memberInfo.isConst = field->isConst ||
+                                         (structDecl->isReadonly && !field->isStatic);
                     if (field->name != ZR_NULL) {
                         memberInfo.name = field->name->name;
                     }

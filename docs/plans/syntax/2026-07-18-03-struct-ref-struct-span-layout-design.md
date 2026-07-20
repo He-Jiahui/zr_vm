@@ -508,6 +508,13 @@ native FFI 不自动采用 ZR ref struct ABI。需要显式 extern layout/marsha
 
 晋级门：每种 receiver capability 调用矩阵和 artifact roundtrip 完整；readonly 调用不产生 defensive copy。
 
+状态：已完成（2026-07-21 03:12 +08:00）。class/struct/readonly struct/interface/override/
+method reference/property accessor 共用 canonical receiver effect；readonly inline receiver 通过
+borrowed frame alias 执行，VM/AOT 栈迁移、artifact patch 35 roundtrip/validation 与三工具链
+focused matrix 均已通过。
+
+状态记录：[M2 Receiver effect](./03-struct-ref-struct-span-layout/m2-receiver-effect.md)。
+
 ### M3 ref struct restrictions
 
 覆盖 local、parameter、return、field、array、box、closure、async、native。

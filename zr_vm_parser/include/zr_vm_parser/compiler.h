@@ -28,6 +28,7 @@ typedef struct SZrCompilerStackSlotTypeHint {
     TZrUInt32 aliasMemberEntryIndex;
     TZrBool isFieldAlias;
     TZrBool isArrayElementAlias;
+    TZrBool isInlineReceiverArgument;
 } SZrCompilerStackSlotTypeHint;
 
 // 编译器状态结构

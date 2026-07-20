@@ -4,10 +4,12 @@
 
 #include "tests/harness/runtime_support.h"
 #include "zr_vm_common/zr_ast_constants.h"
+#include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_object_conf.h"
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/io.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/object.h"
@@ -2479,6 +2481,193 @@ static void test_function_post_call_copies_inline_return_payload_before_frame_dr
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_borrowed_frame_alias_survives_stack_relocation(void) {
+    static const TZrByte payload[] = {0x11u, 0x22u, 0x33u, 0x44u,
+                                      0x55u, 0x66u, 0x77u, 0x88u};
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *callerFunction;
+    SZrFunction *calleeFunction;
+    SZrFunctionFrameSlotLayout *callerLayouts;
+    SZrFunctionFrameSlotLayout *calleeLayouts;
+    SZrCallInfo callerCallInfo;
+    SZrCallInfo calleeCallInfo;
+    SZrStackFramePlace sourcePlace;
+    SZrStackFramePlace borrowedPlace;
+    SZrFunctionStackAnchor calleeFrameAnchor;
+    TZrStackValuePointer callerFunctionBase;
+    TZrStackValuePointer callerFrameBase;
+    TZrStackValuePointer calleeFunctionBase;
+    TZrStackValuePointer calleeFrameBase;
+    TZrSize previousStackSize;
+
+    TEST_ASSERT_NOT_NULL(state);
+    callerFunction = ZrCore_Function_New(state);
+    calleeFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(callerFunction);
+    TEST_ASSERT_NOT_NULL(calleeFunction);
+
+    callerLayouts = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(*callerLayouts),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    calleeLayouts = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(*calleeLayouts),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(callerLayouts);
+    TEST_ASSERT_NOT_NULL(calleeLayouts);
+    memset(callerLayouts, 0, sizeof(*callerLayouts));
+    memset(calleeLayouts, 0, sizeof(*calleeLayouts));
+
+    callerLayouts[0].stackSlot = 0u;
+    callerLayouts[0].byteOffset = 64u;
+    callerLayouts[0].byteSize = (TZrUInt32)sizeof(payload);
+    callerLayouts[0].byteAlign = (TZrUInt32)_Alignof(TZrUInt64);
+    callerLayouts[0].typeLayoutId = 0u;
+    callerLayouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+
+    calleeLayouts[0].stackSlot = 0u;
+    calleeLayouts[0].byteOffset = 64u;
+    calleeLayouts[0].byteSize = (TZrUInt32)sizeof(payload);
+    calleeLayouts[0].byteAlign = (TZrUInt32)_Alignof(TZrUInt64);
+    calleeLayouts[0].typeLayoutId = 0u;
+    calleeLayouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    calleeLayouts[0].isParameter = 1u;
+    calleeLayouts[0].reserved0 =
+            ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
+
+    callerFunction->stackSize = 4u;
+    callerFunction->frameSlotLayouts = callerLayouts;
+    callerFunction->frameSlotLayoutLength = 1u;
+    callerFunction->frameByteSize =
+            callerLayouts[0].byteOffset + callerLayouts[0].byteSize;
+    callerFunction->frameByteAlign = callerLayouts[0].byteAlign;
+    calleeFunction->stackSize = 4u;
+    calleeFunction->parameterCount = 1u;
+    calleeFunction->frameSlotLayouts = calleeLayouts;
+    calleeFunction->frameSlotLayoutLength = 1u;
+    calleeFunction->frameByteSize =
+            calleeLayouts[0].byteOffset +
+            (TZrUInt32)sizeof(SZrFunctionFrameBorrowedAliasBinding);
+    calleeFunction->frameByteAlign =
+            (TZrUInt32)_Alignof(SZrFunctionFrameBorrowedAliasBinding);
+
+    callerFunctionBase = ZrCore_Function_CheckStackAndGc(
+            state, 32u, state->stackTop.valuePointer);
+    TEST_ASSERT_NOT_NULL(callerFunctionBase);
+    callerFrameBase = callerFunctionBase + 1u;
+    calleeFunctionBase = callerFrameBase +
+                         ZrCore_Function_GetFrameStorageSlotCount(callerFunction);
+    calleeFrameBase = calleeFunctionBase + 1u;
+    TEST_ASSERT_TRUE(ZrCore_Function_MakeFrameSlotPlace(
+            state, callerFunction, callerFrameBase, 0u, &sourcePlace));
+    memcpy(sourcePlace.address, payload, sizeof(payload));
+
+    memset(&callerCallInfo, 0, sizeof(callerCallInfo));
+    callerCallInfo.metadataFunction = callerFunction;
+    callerCallInfo.functionBase.valuePointer = callerFunctionBase;
+    callerCallInfo.functionTop.valuePointer = calleeFrameBase;
+    memset(&calleeCallInfo, 0, sizeof(calleeCallInfo));
+    calleeCallInfo.metadataFunction = calleeFunction;
+    calleeCallInfo.functionBase.valuePointer = calleeFunctionBase;
+    calleeCallInfo.functionTop.valuePointer =
+            calleeFunctionBase + 1u +
+            ZrCore_Function_GetFrameStorageSlotCount(calleeFunction);
+    calleeCallInfo.previous = &callerCallInfo;
+    ZrCore_Function_SetCallInfoArgumentSourceFrame(
+            &calleeCallInfo, callerFrameBase, 0u);
+    ZrCore_Function_InitializeFrameLayoutStorage(
+            state, calleeFunctionBase, calleeFunction, 1u);
+    TEST_ASSERT_TRUE(ZrCore_Function_BindAndCopyInlineFrameParametersFromCaller(
+            state,
+            calleeFunction,
+            calleeFunctionBase,
+            calleeFunctionBase,
+            &calleeCallInfo));
+    TEST_ASSERT_TRUE(ZrCore_Function_MakeFrameSlotPlace(
+            state, calleeFunction, calleeFrameBase, 0u, &borrowedPlace));
+    TEST_ASSERT_EQUAL_PTR(sourcePlace.address, borrowedPlace.address);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(payload, borrowedPlace.address, sizeof(payload));
+
+    ZrCore_Function_StackAnchorInit(
+            state, calleeFrameBase, &calleeFrameAnchor);
+    previousStackSize =
+            (TZrSize)(state->stackTail.valuePointer - state->stackBase.valuePointer);
+    TEST_ASSERT_TRUE(ZrCore_Stack_GrowTo(
+            state, previousStackSize + 128u, ZR_TRUE));
+    calleeFrameBase = ZrCore_Function_StackAnchorRestore(
+            state, &calleeFrameAnchor);
+    TEST_ASSERT_NOT_NULL(calleeFrameBase);
+    TEST_ASSERT_TRUE(ZrCore_Function_MakeFrameSlotPlace(
+            state, calleeFunction, calleeFrameBase, 0u, &borrowedPlace));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(payload, borrowedPlace.address, sizeof(payload));
+
+    ZrCore_Function_Free(state, calleeFunction);
+    ZrCore_Function_Free(state, callerFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_borrowed_frame_alias_artifact_version_and_flags_are_validated(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrIoFunctionFrameSlotLayout layout;
+    SZrIoFunction ioFunction;
+    SZrIoModule module;
+    SZrIoSource source;
+    SZrFunction *runtimeFunction;
+    const TZrUInt32 bindingAlign =
+            (TZrUInt32)_Alignof(SZrFunctionFrameBorrowedAliasBinding);
+
+    TEST_ASSERT_NOT_NULL(state);
+    memset(&layout, 0, sizeof(layout));
+    memset(&ioFunction, 0, sizeof(ioFunction));
+    memset(&module, 0, sizeof(module));
+    memset(&source, 0, sizeof(source));
+
+    layout.stackSlot = 0u;
+    layout.byteOffset = test_align_up(
+            (TZrUInt32)sizeof(SZrTypeValueOnStack), bindingAlign);
+    layout.byteSize = (TZrUInt32)sizeof(TZrUInt64);
+    layout.byteAlign = (TZrUInt32)_Alignof(TZrUInt64);
+    layout.typeLayoutId = 0u;
+    layout.slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    layout.isParameter = 1u;
+    layout.reserved0 =
+            ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
+
+    ioFunction.parametersLength = 1u;
+    ioFunction.stackSize = 1u;
+    ioFunction.sourceVersionPatch =
+            ZR_IO_SOURCE_PATCH_HAS_BORROWED_FRAME_ALIAS;
+    ioFunction.frameByteAlign = bindingAlign;
+    ioFunction.frameByteSize =
+            layout.byteOffset +
+            (TZrUInt32)sizeof(SZrFunctionFrameBorrowedAliasBinding);
+    ioFunction.frameSlotLayoutsLength = 1u;
+    ioFunction.frameSlotLayouts = &layout;
+    module.entryFunction = &ioFunction;
+    source.modulesLength = 1u;
+    source.modules = &module;
+
+    runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, &source);
+    TEST_ASSERT_NOT_NULL(runtimeFunction);
+    ZrCore_Function_Free(state, runtimeFunction);
+
+    ioFunction.sourceVersionPatch =
+            ZR_IO_SOURCE_PATCH_HAS_BORROWED_FRAME_ALIAS - 1u;
+    TEST_ASSERT_NULL(ZrCore_Io_LoadEntryFunctionToRuntime(state, &source));
+
+    ioFunction.sourceVersionPatch =
+            ZR_IO_SOURCE_PATCH_HAS_BORROWED_FRAME_ALIAS;
+    layout.reserved0 = ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
+    TEST_ASSERT_NULL(ZrCore_Io_LoadEntryFunctionToRuntime(state, &source));
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -2518,6 +2707,8 @@ int main(void) {
     RUN_TEST(test_function_inline_frame_gc_and_drop_scan_inline_struct_payload);
     RUN_TEST(test_function_post_call_drops_inline_frame_values_with_prototype_resolver);
     RUN_TEST(test_function_post_call_copies_inline_return_payload_before_frame_drop);
+    RUN_TEST(test_borrowed_frame_alias_survives_stack_relocation);
+    RUN_TEST(test_borrowed_frame_alias_artifact_version_and_flags_are_validated);
 
     return UNITY_END();
 }

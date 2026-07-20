@@ -4,6 +4,7 @@
 
 #include "zr_vm_core/function.h"
 
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/metadata_runtime.h"
@@ -864,6 +865,62 @@ TZrBool ZrCore_Function_MakeFrameSlotPlace(struct SZrState *state,
         return ZR_FALSE;
     }
 
+    if ((slotLayout->reserved0 &
+         ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS) != 0u) {
+        SZrStackFramePlace bindingPlace;
+        SZrFunctionFrameBorrowedAliasBinding binding;
+        SZrFunction *sourceFunction;
+        TZrStackValuePointer sourceFrameBase;
+        const SZrFunctionFrameSlotLayout *sourceLayout;
+        SZrStackFramePlace sourcePlace;
+
+        if ((slotLayout->reserved0 &
+             (ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+              ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS)) !=
+                    (ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                     ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS) ||
+            !ZrCore_Stack_MakeFramePlace(
+                    state,
+                    frameBase,
+                    slotLayout->byteOffset,
+                    (TZrUInt32)sizeof(binding),
+                    (TZrUInt32)_Alignof(SZrFunctionFrameBorrowedAliasBinding),
+                    &bindingPlace)) {
+            return ZR_FALSE;
+        }
+        memcpy(&binding, bindingPlace.address, sizeof(binding));
+        if (binding.sourceCallInfo == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        sourceFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(
+                state, binding.sourceCallInfo);
+        sourceFrameBase = ZrCore_Function_StackAnchorRestore(
+                state, &binding.sourceFrameBase);
+        if (sourceFunction == ZR_NULL || sourceFrameBase == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        sourceLayout = ZrCore_Function_FindFrameSlotLayout(
+                sourceFunction, binding.sourceStackSlot);
+        if (sourceLayout == ZR_NULL ||
+            sourceLayout->slotKind !=
+                    (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+            sourceLayout->byteSize != slotLayout->byteSize ||
+            sourceLayout->byteAlign < slotLayout->byteAlign ||
+            !ZrCore_Function_MakeFrameSlotPlace(
+                    state,
+                    sourceFunction,
+                    sourceFrameBase,
+                    binding.sourceStackSlot,
+                    &sourcePlace)) {
+            return ZR_FALSE;
+        }
+        *outPlace = sourcePlace;
+        outPlace->byteOffset = (TZrMemoryOffset)-1;
+        outPlace->byteSize = slotLayout->byteSize;
+        outPlace->byteAlign = slotLayout->byteAlign;
+        return ZR_TRUE;
+    }
+
     if ((slotLayout->reserved0 & ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS) != 0u) {
         SZrStackFramePlace bindingPlace;
         SZrFunctionFrameIndirectAliasBinding binding;
@@ -989,6 +1046,72 @@ TZrBool ZrCore_Function_BindFrameSlotInlineArrayElement(
         return ZR_FALSE;
     }
     binding.ownerStackSlot = arrayStackSlot;
+    memcpy(bindingPlace.address, &binding, sizeof(binding));
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Function_BindFrameSlotBorrowedAlias(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 aliasStackSlot,
+        SZrCallInfo *sourceCallInfo,
+        TZrStackValuePointer sourceFrameBase,
+        TZrUInt32 sourceStackSlot) {
+    const SZrFunctionFrameSlotLayout *aliasLayout;
+    SZrFunction *sourceFunction;
+    const SZrFunctionFrameSlotLayout *sourceLayout;
+    SZrStackFramePlace bindingPlace;
+    SZrStackFramePlace sourcePlace;
+    SZrFunctionFrameBorrowedAliasBinding binding;
+
+    if (state == ZR_NULL || function == ZR_NULL || frameBase == ZR_NULL ||
+        sourceCallInfo == ZR_NULL || sourceFrameBase == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    aliasLayout = ZrCore_Function_FindFrameSlotLayout(function, aliasStackSlot);
+    sourceFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(
+            state, sourceCallInfo);
+    if (sourceFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    sourceLayout = ZrCore_Function_FindFrameSlotLayout(
+            sourceFunction, sourceStackSlot);
+    if (aliasLayout == ZR_NULL || sourceLayout == ZR_NULL ||
+        aliasLayout->slotKind !=
+                (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+        sourceLayout->slotKind !=
+                (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+        (aliasLayout->reserved0 &
+         (ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+          ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+          ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS)) !=
+                (ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                 ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+                 ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS) ||
+        aliasLayout->byteSize != sourceLayout->byteSize ||
+        sourceLayout->byteAlign < aliasLayout->byteAlign ||
+        !ZrCore_Stack_MakeFramePlace(
+                state,
+                frameBase,
+                aliasLayout->byteOffset,
+                (TZrUInt32)sizeof(binding),
+                (TZrUInt32)_Alignof(SZrFunctionFrameBorrowedAliasBinding),
+                &bindingPlace) ||
+        !ZrCore_Function_MakeFrameSlotPlace(
+                state,
+                sourceFunction,
+                sourceFrameBase,
+                sourceStackSlot,
+                &sourcePlace)) {
+        return ZR_FALSE;
+    }
+
+    memset(&binding, 0, sizeof(binding));
+    binding.sourceCallInfo = sourceCallInfo;
+    binding.sourceStackSlot = sourceStackSlot;
+    ZrCore_Function_StackAnchorInit(
+            state, sourceFrameBase, &binding.sourceFrameBase);
     memcpy(bindingPlace.address, &binding, sizeof(binding));
     return ZR_TRUE;
 }
@@ -1129,6 +1252,8 @@ TZrBool ZrCore_Function_CopyInlineFrameParameters(struct SZrState *state,
         TZrUInt32 sourceStackSlot;
 
         if (!parameterLayout->isParameter ||
+            (parameterLayout->reserved0 &
+             ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS) != 0u ||
             parameterLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
             continue;
         }

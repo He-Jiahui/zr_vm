@@ -1666,6 +1666,10 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
 SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
+    if (parser_struct_declaration_starts_here(ps)) {
+        return parse_struct_declaration(ps);
+    }
+
     if (parser_async_function_declaration_starts_here(ps)) {
         return parse_reserved_async_function_declaration(ps);
     }

@@ -734,6 +734,10 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
 TZrBool compiler_register_stack_slot_type_hint(SZrCompilerState *cs,
                                                TZrUInt32 stackSlot,
                                                const SZrInferredType *type);
+TZrBool compiler_register_stack_slot_inline_receiver_argument_alias(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        TZrUInt32 receiverStackSlot);
 TZrBool compiler_register_stack_slot_field_alias(
         SZrCompilerState *cs,
         TZrUInt32 stackSlot,

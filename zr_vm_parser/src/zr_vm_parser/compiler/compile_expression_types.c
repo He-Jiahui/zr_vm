@@ -1556,6 +1556,30 @@ static TZrBool stage_pending_receiver_binding(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+static TZrBool bind_pending_readonly_receiver_alias(
+        SZrCompilerState *cs,
+        TZrUInt32 receiverSourceSlot,
+        TZrUInt32 receiverTargetSlot,
+        TZrUInt32 *outReceiverSlot) {
+    if (cs == ZR_NULL || outReceiverSlot == ZR_NULL || cs->hasError ||
+        receiverSourceSlot == ZR_PARSER_SLOT_NONE ||
+        receiverTargetSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+    if (cs->stackSlotCount <= (TZrSize)receiverTargetSlot) {
+        cs->stackSlotCount = (TZrSize)receiverTargetSlot + 1u;
+        if (cs->maxStackSlotCount < cs->stackSlotCount) {
+            cs->maxStackSlotCount = cs->stackSlotCount;
+        }
+    }
+    if (!compiler_register_stack_slot_inline_receiver_argument_alias(
+                cs, receiverTargetSlot, receiverSourceSlot)) {
+        return ZR_FALSE;
+    }
+    *outReceiverSlot = receiverTargetSlot;
+    return ZR_TRUE;
+}
+
 static TZrBool emit_argument_conversion_if_needed(SZrCompilerState *cs,
                                                   SZrAstNode *argNode,
                                                   TZrUInt32 argSlot,
@@ -2277,6 +2301,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
     const SZrTypeMemberInfo *pendingCallMemberInfo = ZR_NULL;
     TZrBool pendingReceiverRequiresBinding = ZR_FALSE;
     TZrBool pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
+    TZrBool pendingInlineCompiledMemberCall = ZR_FALSE;
     TZrBool currentSlotIsArrayElementAlias = ZR_FALSE;
     SZrString *rootTypeName = ioRootTypeName != ZR_NULL ? *ioRootTypeName : ZR_NULL;
     TZrBool rootIsTypeReference = ioRootIsTypeReference != ZR_NULL ? *ioRootIsTypeReference : ZR_FALSE;
@@ -2326,6 +2351,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             pendingReceiverSemanticPlace = ZR_PLACE_ID_INVALID;
             pendingReceiverRequiresBinding = ZR_FALSE;
             pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
+            pendingInlineCompiledMemberCall = ZR_FALSE;
 
             if (!memberExpr->computed && memberExpr->property != ZR_NULL &&
                 memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
@@ -2522,9 +2548,14 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                 directLocalSlot,
                                                 member->location);
                                 if (typeMember->memberType ==
-                                    ZR_AST_STRUCT_METHOD) {
+                                            ZR_AST_STRUCT_METHOD &&
+                                    typeMember->receiverEffect ==
+                                            ZR_CANONICAL_RECEIVER_MUTABLE) {
                                     pendingReceiverSourceSlot = directLocalSlot;
                                     pendingReceiverWritebackSlot = directLocalSlot;
+                                } else if (typeMember->memberType ==
+                                           ZR_AST_STRUCT_METHOD) {
+                                    pendingReceiverSourceSlot = directLocalSlot;
                                 }
                             }
                         }
@@ -2572,6 +2603,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                             TZrBool memberEntryBoundAtCompileTime = ZR_FALSE;
                             TZrBool canUseDirectKnownMemberCall =
                                     ZR_FALSE;
+                            TZrBool canUseInlineCompiledMemberCall = ZR_FALSE;
                             if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
                                 ZrParser_Compiler_Error(cs,
                                                         "Failed to register member access symbol",
@@ -2603,6 +2635,14 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                     typeMember != ZR_NULL &&
                                     (typeMember->compiledFunction == ZR_NULL ||
                                      typeMember->compiledFunction->closureValueLength == 0);
+                            canUseInlineCompiledMemberCall =
+                                    nextIsFunctionCall &&
+                                    pendingReceiverRequiresBinding &&
+                                    !memberUsesSuperLookup &&
+                                    typeMember != ZR_NULL &&
+                                    typeMember->compiledFunction != ZR_NULL &&
+                                    typeMember->compiledFunction->closureValueLength == 0 &&
+                                    type_name_is_inline_struct_or_union_prototype(cs, rootTypeName);
 
                             if (canUseDirectKnownMemberCall) {
                                 if (preferredDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE &&
@@ -2619,6 +2659,31 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                     return;
                                 }
                                 pendingDirectMemberCallMemberEntryIndex = memberId;
+                            } else if (canUseInlineCompiledMemberCall) {
+                                TZrBool receiverBound;
+                                if (!note_inline_struct_result_slot(
+                                            cs, currentSlot + 1u, rootTypeName)) {
+                                    return;
+                                }
+                                receiverBound =
+                                        typeMember->receiverEffect ==
+                                                ZR_CANONICAL_RECEIVER_READONLY
+                                                ? bind_pending_readonly_receiver_alias(
+                                                          cs,
+                                                          pendingReceiverSourceSlot,
+                                                          currentSlot + 1u,
+                                                          &pendingReceiverSlot)
+                                                : stage_pending_receiver_binding(
+                                                          cs,
+                                                          pendingReceiverSourceSlot,
+                                                          currentSlot + 1u,
+                                                          &pendingReceiverSlot);
+                                if (!receiverBound ||
+                                    !emit_member_function_constant_to_slot(
+                                            cs, currentSlot, typeMember, member->location)) {
+                                    return;
+                                }
+                                pendingInlineCompiledMemberCall = ZR_TRUE;
                             } else if (canEmitMemberSlot) {
                                 SZrString *fieldTypeName = typeMember != ZR_NULL
                                                                    ? typeMember->fieldTypeName
@@ -2626,7 +2691,29 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 TZrBool isInlineStructOrUnionField =
                                         type_name_is_inline_struct_or_union_prototype(cs, fieldTypeName);
                                 TZrBool isFinalMember = (TZrBool)(i + 1u >= members->count);
+                                TZrBool feedsFunctionCall = ZR_FALSE;
+                                TZrBool preservesInlineFieldPlace;
                                 TZrUInt32 resultSlot = currentSlot;
+
+                                for (TZrSize lookahead = i + 1u;
+                                     lookahead < members->count;
+                                     lookahead++) {
+                                    const SZrAstNode *nextMember =
+                                            members->nodes[lookahead];
+                                    if (nextMember == ZR_NULL) {
+                                        continue;
+                                    }
+                                    if (nextMember->type == ZR_AST_FUNCTION_CALL) {
+                                        feedsFunctionCall = ZR_TRUE;
+                                    }
+                                    if (nextMember->type != ZR_AST_MEMBER_EXPRESSION) {
+                                        break;
+                                    }
+                                }
+                                preservesInlineFieldPlace =
+                                        (TZrBool)(isInlineStructOrUnionField &&
+                                                  !isFinalMember &&
+                                                  feedsFunctionCall);
 
                                 if (isInlineStructOrUnionField ||
                                     currentSlotIsArrayElementAlias) {
@@ -2647,16 +2734,28 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                                    &pendingReceiverSlot)) {
                                     return;
                                 }
-                                if (!emit_member_slot_get(cs,
-                                                          resultSlot,
-                                                          currentSlot,
-                                                          memberId,
-                                                          member->location)) {
-                                    return;
-                                }
                                 if (!note_inline_struct_member_result_slot(cs,
                                                                            resultSlot,
                                                                            fieldTypeName)) {
+                                    return;
+                                }
+                                if (preservesInlineFieldPlace) {
+                                    if (!compiler_register_stack_slot_field_alias(
+                                                cs,
+                                                resultSlot,
+                                                currentSlot,
+                                                memberId)) {
+                                        ZrParser_Compiler_Error(
+                                                cs,
+                                                "Failed to preserve inline struct field Place",
+                                                member->location);
+                                        return;
+                                    }
+                                } else if (!emit_member_slot_get(cs,
+                                                                 resultSlot,
+                                                                 currentSlot,
+                                                                 memberId,
+                                                                 member->location)) {
                                     return;
                                 }
                                 currentSlot = resultSlot;
@@ -3115,7 +3214,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     useKnownNativeDirectMemberCallOpcode = ZR_TRUE;
                 }
                 EZrInstructionCode callOpcode =
-                        cs->isInTailCallContext
+                        cs->isInTailCallContext && !pendingInlineCompiledMemberCall
                                 ? (emitMetaCallOpcode
                                            ? ZR_INSTRUCTION_ENUM(META_TAIL_CALL)
                                            : (useDynamicCallOpcode
@@ -3224,6 +3323,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
             pendingReceiverRequiresBinding = ZR_FALSE;
             pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
+            pendingInlineCompiledMemberCall = ZR_FALSE;
             pendingDirectMemberCallMemberEntryIndex = ZR_PARSER_MEMBER_ID_NONE;
             if (hasResolvedMemberSignature) {
                 rootTypeName = get_type_name_from_inferred_type(cs, &resolvedMemberSignature.returnType);

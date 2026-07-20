@@ -721,6 +721,323 @@ static void test_receiver_call_publishes_resolved_target_identity(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_unbound_method_references_preserve_receiver_effect_roundtrip(void) {
+    const TZrChar *source =
+            "readonly struct Snapshot {\n"
+            "  pub var value: int;\n"
+            "  pub fn read(): int { return this.value; }\n"
+            "}\n"
+            "struct Buffer {\n"
+            "  pub var value: int;\n"
+            "  pub fn write(next: int): int { this.value = next; return this.value; }\n"
+            "}\n"
+            "var read = Snapshot.read;\n"
+            "var write = Buffer.write;\n";
+    const TZrChar *readonlyReference = strstr(source, "Snapshot.read");
+    const TZrChar *mutableReference = strstr(source, "Buffer.write");
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFileRange position;
+    SZrParserSemanticTypeQuery query;
+    const SZrCanonicalTypeNode *callableType;
+    TZrChar typeLabel[128];
+    TZrByte signature[256];
+    TZrSize signatureLength = 0U;
+    TZrTypeId importedTypeId = ZR_SEMANTIC_ID_INVALID;
+    SZrArtifactDiagnostic diagnostic;
+
+    TEST_ASSERT_NOT_NULL(readonlyReference);
+    TEST_ASSERT_NOT_NULL(mutableReference);
+    sourceName = ZrCore_String_Create(
+            g_state, "canonical_method_reference.zr", 29u);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+
+    position = consumer_range(
+            (TZrSize)(readonlyReference - source + strlen("Snapshot.")),
+            (TZrSize)(readonlyReference - source + strlen("Snapshot.")));
+    position.source = sourceName;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CanonicalTypeAt(
+            cs.semanticContext, position, ZR_NULL, &query));
+    callableType = ZrParser_CanonicalType_Find(cs.semanticContext, query.typeId);
+    TEST_ASSERT_NOT_NULL(callableType);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_FUNCTION, callableType->kind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_CANONICAL_RECEIVER_READONLY,
+            callableType->data.function.receiverEffect);
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            cs.semanticContext, query.typeId, typeLabel, sizeof(typeLabel)));
+    TEST_ASSERT_EQUAL_STRING("const fn() -> int", typeLabel);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrParser_ArtifactType_WriteSignature(
+                    cs.semanticContext,
+                    query.typeId,
+                    signature,
+                    sizeof(signature),
+                    &signatureLength,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrParser_ArtifactType_InternSignature(
+                    cs.semanticContext,
+                    ZR_NULL,
+                    signature,
+                    signatureLength,
+                    &importedTypeId,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_UINT32(query.typeId, importedTypeId);
+
+    position = consumer_range(
+            (TZrSize)(mutableReference - source + strlen("Buffer.")),
+            (TZrSize)(mutableReference - source + strlen("Buffer.")));
+    position.source = sourceName;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CanonicalTypeAt(
+            cs.semanticContext, position, ZR_NULL, &query));
+    callableType = ZrParser_CanonicalType_Find(cs.semanticContext, query.typeId);
+    TEST_ASSERT_NOT_NULL(callableType);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_FUNCTION, callableType->kind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_CANONICAL_RECEIVER_MUTABLE,
+            callableType->data.function.receiverEffect);
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            cs.semanticContext, query.typeId, typeLabel, sizeof(typeLabel)));
+    TEST_ASSERT_EQUAL_STRING("fn(int) -> int", typeLabel);
+    signatureLength = 0U;
+    importedTypeId = ZR_SEMANTIC_ID_INVALID;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrParser_ArtifactType_WriteSignature(
+                    cs.semanticContext,
+                    query.typeId,
+                    signature,
+                    sizeof(signature),
+                    &signatureLength,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrParser_ArtifactType_InternSignature(
+                    cs.semanticContext,
+                    ZR_NULL,
+                    signature,
+                    signatureLength,
+                    &importedTypeId,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_UINT32(query.typeId, importedTypeId);
+
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_unbound_open_generic_owner_does_not_publish_callable_fact(void) {
+    const TZrChar *source =
+            "struct Box<T> {\n"
+            "  pub var value: T;\n"
+            "  pub fn read(): T { return this.value; }\n"
+            "}\n"
+            "var openRead = Box.read;\n";
+    const TZrChar *openReference = strstr(source, "Box.read");
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFileRange position;
+    SZrParserSemanticTypeQuery query;
+
+    TEST_ASSERT_NOT_NULL(openReference);
+    sourceName = ZrCore_String_Create(
+            g_state, "canonical_generic_method_reference.zr", 37u);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+
+    position = consumer_range(
+            (TZrSize)(openReference - source + strlen("Box.")),
+            (TZrSize)(openReference - source + strlen("Box.")));
+    position.source = sourceName;
+    (void)ZrParser_SemanticQuery_CanonicalTypeAt(
+            cs.semanticContext, position, ZR_NULL, &query);
+    if (query.reference != ZR_NULL) {
+        const SZrCanonicalTypeNode *referenceType =
+                ZrParser_CanonicalType_Find(
+                        cs.semanticContext, query.reference->typeId);
+        TEST_ASSERT_FALSE(
+                query.reference->kind == ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS &&
+                query.reference->isResolved && referenceType != ZR_NULL &&
+                referenceType->kind == ZR_CANONICAL_TYPE_FUNCTION);
+    }
+
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_unbound_method_with_untyped_parameter_does_not_publish_callable_fact(void) {
+    const TZrChar *source =
+            "struct Buffer {\n"
+            "  pub fn write(next): int { return 1; }\n"
+            "}\n"
+            "var write = Buffer.write;\n";
+    const TZrChar *reference = strstr(source, "Buffer.write");
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFileRange position;
+    SZrParserSemanticTypeQuery query;
+
+    TEST_ASSERT_NOT_NULL(reference);
+    sourceName = ZrCore_String_Create(
+            g_state, "canonical_untyped_method_reference.zr", 37u);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+
+    position = consumer_range(
+            (TZrSize)(reference - source + strlen("Buffer.")),
+            (TZrSize)(reference - source + strlen("Buffer.")));
+    position.source = sourceName;
+    (void)ZrParser_SemanticQuery_CanonicalTypeAt(
+            cs.semanticContext, position, ZR_NULL, &query);
+    if (query.reference != ZR_NULL) {
+        const SZrCanonicalTypeNode *referenceType =
+                ZrParser_CanonicalType_Find(
+                        cs.semanticContext, query.reference->typeId);
+        TEST_ASSERT_FALSE(
+                query.reference->kind == ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS &&
+                query.reference->isResolved && referenceType != ZR_NULL &&
+                referenceType->kind == ZR_CANONICAL_TYPE_FUNCTION);
+    }
+
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_unbound_method_reference_preserves_structured_generic_return(void) {
+    const TZrChar *source =
+            "class Matrix<T, const N: int> { }\n"
+            "readonly struct Factory {\n"
+            "  pub fn make(): Matrix<int, 4> { return new Matrix<int, 4>(); }\n"
+            "}\n"
+            "var make = Factory.make;\n";
+    const TZrChar *reference = strstr(source, "Factory.make");
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFileRange position;
+    SZrParserSemanticTypeQuery query;
+    TZrChar typeLabel[160];
+
+    TEST_ASSERT_NOT_NULL(reference);
+    sourceName = ZrCore_String_Create(
+            g_state, "canonical_structured_return_method_reference.zr", 47u);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+
+    position = consumer_range(
+            (TZrSize)(reference - source + strlen("Factory.")),
+            (TZrSize)(reference - source + strlen("Factory.")));
+    position.source = sourceName;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CanonicalTypeAt(
+            cs.semanticContext, position, ZR_NULL, &query));
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            cs.semanticContext, query.typeId, typeLabel, sizeof(typeLabel)));
+    TEST_ASSERT_EQUAL_STRING("const fn() -> Matrix<int, 4>", typeLabel);
+
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_unbound_generic_method_does_not_publish_callable_fact(void) {
+    const TZrChar *source =
+            "struct Factory {\n"
+            "  pub fn echo<T>(value: T): T { return value; }\n"
+            "}\n"
+            "var echo = Factory.echo;\n";
+    const TZrChar *reference = strstr(source, "Factory.echo");
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFileRange position;
+    SZrParserSemanticTypeQuery query;
+
+    TEST_ASSERT_NOT_NULL(reference);
+    sourceName = ZrCore_String_Create(
+            g_state, "canonical_generic_method_reference.zr", 37u);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+
+    position = consumer_range(
+            (TZrSize)(reference - source + strlen("Factory.")),
+            (TZrSize)(reference - source + strlen("Factory.")));
+    position.source = sourceName;
+    (void)ZrParser_SemanticQuery_CanonicalTypeAt(
+            cs.semanticContext, position, ZR_NULL, &query);
+    if (query.reference != ZR_NULL) {
+        const SZrCanonicalTypeNode *referenceType =
+                ZrParser_CanonicalType_Find(
+                        cs.semanticContext, query.reference->typeId);
+        TEST_ASSERT_FALSE(
+                query.reference->kind == ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS &&
+                query.reference->isResolved && referenceType != ZR_NULL &&
+                referenceType->kind == ZR_CANONICAL_TYPE_FUNCTION);
+    }
+
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_vm_and_aot_consume_the_same_canonical_contract_and_fail_identically);
@@ -731,6 +1048,11 @@ int main(void) {
     RUN_TEST(test_resolved_extern_call_preserves_parameter_names_in_canonical_signature);
     RUN_TEST(test_source_scoped_call_preserves_contract_and_target_identity);
     RUN_TEST(test_receiver_call_publishes_resolved_target_identity);
+    RUN_TEST(test_unbound_method_references_preserve_receiver_effect_roundtrip);
+    RUN_TEST(test_unbound_open_generic_owner_does_not_publish_callable_fact);
+    RUN_TEST(test_unbound_method_with_untyped_parameter_does_not_publish_callable_fact);
+    RUN_TEST(test_unbound_method_reference_preserves_structured_generic_return);
+    RUN_TEST(test_unbound_generic_method_does_not_publish_callable_fact);
     RUN_TEST(test_reference_callable_contract_roundtrips_across_artifact_vm_and_aot);
     RUN_TEST(test_reference_callable_ref_export_matches_return_access);
     return UNITY_END();

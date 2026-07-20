@@ -520,11 +520,13 @@ static SZrExecBcAotTestRuntimeState *aot_runtime_test_install_project_record(SZr
             (TZrUInt32 *)aot_runtime_test_project_alloc(state, sizeof(*generatedFrameSlotCounts) * functionCount);
     TEST_ASSERT_NOT_NULL(generatedFrameSlotCounts);
     functionTable[0] = function;
-    generatedFrameSlotCounts[0] = ZrCore_Function_GetGeneratedFrameSlotCount(function);
+    generatedFrameSlotCounts[0] =
+            (TZrUInt32)ZrCore_Function_GetFrameStorageSlotCount(function);
     for (TZrUInt32 index = 0; index < function->childFunctionLength; index++) {
         functionTable[index + 1u] = &function->childFunctionList[index];
         generatedFrameSlotCounts[index + 1u] =
-                ZrCore_Function_GetGeneratedFrameSlotCount(&function->childFunctionList[index]);
+                (TZrUInt32)ZrCore_Function_GetFrameStorageSlotCount(
+                        &function->childFunctionList[index]);
     }
 
     records[0].backendKind = backendKind;
@@ -3624,6 +3626,8 @@ static void test_aot_runtime_prepare_static_direct_call_uses_cached_callee_slot_
         childInstructions[0] = make_instruction_constant_operand(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 5, 0);
         childInstructions[1] = make_instruction_return(5);
         init_manual_test_function(&childFunctions[0], childInstructions, 2, ZR_NULL, 0, ZR_NULL, 0, 0);
+        childFunctions[0].frameByteSize =
+                (TZrUInt32)(sizeof(SZrTypeValueOnStack) * 9u);
 
         rootInstructions[0] = make_instruction_return(1);
         init_manual_test_function(&rootFunction,
@@ -3638,7 +3642,7 @@ static void test_aot_runtime_prepare_static_direct_call_uses_cached_callee_slot_
         runtimeState = aot_runtime_test_install_project_record(state, &project, &rootFunction, ZR_AOT_BACKEND_KIND_C);
         TEST_ASSERT_NOT_NULL(runtimeState);
         TEST_ASSERT_EQUAL_UINT32(2u, runtimeState->records[0].functionCount);
-        TEST_ASSERT_EQUAL_UINT32(6u, runtimeState->records[0].generatedFrameSlotCounts[1]);
+        TEST_ASSERT_EQUAL_UINT32(9u, runtimeState->records[0].generatedFrameSlotCounts[1]);
 
         descriptor.functionThunks = functionThunks;
         descriptor.functionThunkCount = 2;
@@ -3670,15 +3674,19 @@ static void test_aot_runtime_prepare_static_direct_call_uses_cached_callee_slot_
         TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame));
 
         childFunctions[0].instructionsLength = 0;
+        childFunctions[0].frameByteSize = 0u;
 
         TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_PrepareStaticDirectCall(state, &frame, 1, 0, 0, 1, &directCall));
         TEST_ASSERT_TRUE(directCall.prepared);
         TEST_ASSERT_EQUAL_UINT32(1u, directCall.calleeFunctionIndex);
-        TEST_ASSERT_EQUAL_PTR(frame.slotBase, directCall.calleeCallInfo->functionBase.valuePointer);
-        TEST_ASSERT_EQUAL_PTR(frame.slotBase + 7, directCall.calleeCallInfo->functionTop.valuePointer);
+        TEST_ASSERT_EQUAL_PTR(frame.slotBase + frame.generatedFrameSlotCount,
+                              directCall.calleeCallInfo->functionBase.valuePointer);
+        TEST_ASSERT_EQUAL_PTR(directCall.calleeCallInfo->functionBase.valuePointer + 10,
+                              directCall.calleeCallInfo->functionTop.valuePointer);
         TEST_ASSERT_EQUAL_PTR(frame.slotBase + 1, directCall.calleeCallInfo->returnDestination);
         TEST_ASSERT_EQUAL_PTR(childInstructions, directCall.calleeCallInfo->context.context.programCounter);
-        TEST_ASSERT_EQUAL_PTR(frame.slotBase + 1, state->stackTop.valuePointer);
+        TEST_ASSERT_EQUAL_PTR(directCall.calleeCallInfo->functionBase.valuePointer + 1,
+                              state->stackTop.valuePointer);
 
         TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_FinishDirectCall(state, &frame, &directCall, 0));
         TEST_ASSERT_EQUAL_PTR(&state->baseCallInfo, state->callInfoList);

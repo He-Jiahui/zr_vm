@@ -7,6 +7,8 @@
 #include "zr_vm_parser/syntax_contract.h"
 #include "zr_vm_parser/type_inference.h"
 
+#include "type_inference_internal.h"
+
 static SZrAstNode *type_inference_call_target(const SZrPrimaryExpression *primary,
                                               SZrAstNode *callNode) {
     SZrAstNode *candidate = ZR_NULL;
@@ -412,6 +414,128 @@ static TZrSymbolId type_inference_member_symbol_id(
             ZR_SEMANTIC_ID_INVALID,
             memberInfo->declarationNode,
             memberInfo->declarationNode->location);
+}
+
+static TZrTypeId type_inference_unbound_member_reference_type_id(
+        SZrCompilerState *cs,
+        const SZrTypeMemberInfo *memberInfo) {
+    SZrInferredType returnType;
+    TZrTypeId typeId = ZR_SEMANTIC_ID_INVALID;
+    SZrTypePrototypeInfo *ownerPrototype;
+
+    const SZrAstNodeArray *parameters;
+    const SZrParameter *variadicParameter = ZR_NULL;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberInfo == ZR_NULL ||
+        memberInfo->declarationNode == ZR_NULL ||
+        memberInfo->ownerTypeName == ZR_NULL ||
+        memberInfo->genericParameters.length > 0U ||
+        memberInfo->parameterCount == ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ||
+        memberInfo->parameterTypes.length != memberInfo->parameterCount ||
+        memberInfo->parameterPassingModes.length != memberInfo->parameterCount ||
+        !memberInfo->hasStructuredReturnType) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    parameters = type_inference_call_parameters(memberInfo->declarationNode);
+    switch (memberInfo->declarationNode->type) {
+        case ZR_AST_CLASS_METHOD:
+            variadicParameter = memberInfo->declarationNode->data.classMethod.args;
+            break;
+        case ZR_AST_STRUCT_METHOD:
+            variadicParameter = memberInfo->declarationNode->data.structMethod.args;
+            break;
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            variadicParameter =
+                    memberInfo->declarationNode->data.interfaceMethodSignature.args;
+            break;
+        default:
+            return ZR_SEMANTIC_ID_INVALID;
+    }
+    if (variadicParameter != ZR_NULL ||
+        (parameters == ZR_NULL
+                 ? memberInfo->parameterCount != 0U
+                 : parameters->count != memberInfo->parameterCount)) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    for (TZrSize index = 0U; index < memberInfo->parameterCount; index++) {
+        const SZrAstNode *parameter = parameters->nodes[index];
+        const SZrInferredType *recordedType =
+                (const SZrInferredType *)ZrCore_Array_Get(
+                        (SZrArray *)&memberInfo->parameterTypes, index);
+        SZrInferredType declarationType;
+        TZrBool matches;
+
+        if (parameter == ZR_NULL || parameter->type != ZR_AST_PARAMETER ||
+            parameter->data.parameter.typeInfo == ZR_NULL ||
+            recordedType == ZR_NULL ||
+            !ZrParser_AstTypeToInferredType_Convert(
+                    cs, parameter->data.parameter.typeInfo, &declarationType)) {
+            return ZR_SEMANTIC_ID_INVALID;
+        }
+        matches = ZrParser_InferredType_Equal(&declarationType, recordedType);
+        ZrParser_InferredType_Free(cs->state, &declarationType);
+        if (!matches) {
+            return ZR_SEMANTIC_ID_INVALID;
+        }
+    }
+    ownerPrototype = find_compiler_type_prototype_inference(
+            cs, memberInfo->ownerTypeName);
+    if (ownerPrototype == ZR_NULL || ownerPrototype->genericParameters.length > 0U) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &returnType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Copy(
+            cs->state, &returnType, &memberInfo->structuredReturnType);
+    typeId = ZrParser_CanonicalType_FromFunctionSignature(
+            cs->semanticContext,
+            &memberInfo->parameterTypes,
+            &memberInfo->parameterPassingModes,
+            &returnType,
+            memberInfo->receiverEffect,
+            ZR_CANONICAL_CALLABLE_EFFECT_NONE);
+    if (typeId != ZR_SEMANTIC_ID_INVALID) {
+        typeId = ZrParser_SyntaxCallable_RefineFromDeclaration(
+                cs->semanticContext, memberInfo->declarationNode, typeId);
+    }
+    ZrParser_InferredType_Free(cs->state, &returnType);
+    return typeId;
+}
+
+void type_inference_record_unbound_member_reference_fact(
+        SZrCompilerState *cs,
+        SZrAstNode *memberNode,
+        const SZrTypeMemberInfo *memberInfo) {
+    SZrSemanticReferenceFact fact;
+    SZrAstNode *target;
+    TZrTypeId typeId;
+    TZrSymbolId symbolId;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberNode == ZR_NULL ||
+        memberNode->type != ZR_AST_MEMBER_EXPRESSION || memberInfo == ZR_NULL ||
+        memberInfo->name == ZR_NULL || memberInfo->declarationNode == ZR_NULL) {
+        return;
+    }
+    typeId = type_inference_unbound_member_reference_type_id(cs, memberInfo);
+    if (typeId == ZR_SEMANTIC_ID_INVALID) {
+        return;
+    }
+    target = memberNode->data.memberExpression.property;
+    symbolId = type_inference_member_symbol_id(cs, memberInfo, typeId);
+    if (symbolId == ZR_SEMANTIC_ID_INVALID) {
+        return;
+    }
+
+    memset(&fact, 0, sizeof(fact));
+    fact.node = target != ZR_NULL ? target : memberNode;
+    fact.range = target != ZR_NULL ? target->location : memberNode->location;
+    fact.declarationRange = memberInfo->declarationNode->location;
+    fact.kind = ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS;
+    fact.symbolId = symbolId;
+    fact.typeId = typeId;
+    fact.name = memberInfo->name;
+    fact.isResolved = ZR_TRUE;
+    ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
 
 void type_inference_record_member_call_reference_fact(

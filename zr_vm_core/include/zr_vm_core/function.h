@@ -75,11 +75,20 @@ typedef enum EZrFunctionFrameSlotKind {
 #define ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS ((TZrUInt16)1u)
 #define ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS ((TZrUInt16)2u)
 #define ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP ((TZrUInt16)4u)
+#define ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT ((TZrUInt16)8u)
+#define ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS ((TZrUInt16)16u)
 
 typedef struct SZrFunctionFrameIndirectAliasBinding {
     TZrUInt32 ownerStackSlot;
     TZrUInt32 ownerByteOffset;
 } SZrFunctionFrameIndirectAliasBinding;
+
+typedef struct SZrFunctionFrameBorrowedAliasBinding {
+    struct SZrCallInfo *sourceCallInfo;
+    SZrFunctionStackAnchor sourceFrameBase;
+    TZrUInt32 sourceStackSlot;
+    TZrUInt32 reserved0;
+} SZrFunctionFrameBorrowedAliasBinding;
 
 typedef struct SZrFunctionFrameSlotLayout {
     TZrUInt32 stackSlot;
@@ -752,6 +761,14 @@ ZR_CORE_API TZrBool ZrCore_Function_BindFrameSlotInlineArrayElement(
         TZrUInt32 aliasStackSlot,
         TZrUInt32 arrayStackSlot,
         TZrInt64 elementIndex);
+ZR_CORE_API TZrBool ZrCore_Function_BindFrameSlotBorrowedAlias(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 aliasStackSlot,
+        struct SZrCallInfo *sourceCallInfo,
+        TZrStackValuePointer sourceFrameBase,
+        TZrUInt32 sourceStackSlot);
 ZR_CORE_API void ZrCore_Function_InitializeFrameLayoutStorage(struct SZrState *state,
                                                               TZrStackValuePointer functionBase,
                                                               const SZrFunction *function,
@@ -805,6 +822,12 @@ ZR_CORE_API TZrBool ZrCore_Function_CopyInlineFrameParameters(struct SZrState *s
                                                               TZrUInt32 callerArgumentStartSlot,
                                                               FZrFunctionFrameTypeLayoutResolver resolver,
                                                               TZrPtr resolverUserData);
+ZR_CORE_API TZrBool ZrCore_Function_BindAndCopyInlineFrameParametersFromCaller(
+        struct SZrState *state,
+        const SZrFunction *calleeFunction,
+        TZrStackValuePointer calleeFunctionBase,
+        TZrStackValuePointer callStackPointer,
+        struct SZrCallInfo *callInfo);
 ZR_CORE_API TZrBool ZrCore_Function_CopyValueFrameParameters(struct SZrState *state,
                                                              const SZrFunction *calleeFunction,
                                                              TZrStackValuePointer calleeFrameBase,

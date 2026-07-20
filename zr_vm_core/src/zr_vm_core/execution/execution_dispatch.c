@@ -702,6 +702,20 @@ static ZR_FORCE_INLINE TZrBool execution_call_window_value_is_callable(const SZr
                       value->type == ZR_VALUE_TYPE_NATIVE_POINTER));
 }
 
+static ZR_FORCE_INLINE TZrBool execution_frame_slot_is_borrowed_receiver_argument(
+        const SZrFunction *function,
+        TZrUInt32 stackSlot) {
+    const SZrFunctionFrameSlotLayout *slotLayout =
+            ZrCore_Function_FindFrameSlotLayout(function, stackSlot);
+
+    return (TZrBool)(slotLayout != ZR_NULL &&
+                     (slotLayout->reserved0 &
+                      (ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                       ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT)) ==
+                             (ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                              ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT));
+}
+
 static ZR_FORCE_INLINE void execution_stage_frame_layout_call_values(SZrState *state,
                                                                      SZrFunction *function,
                                                                      TZrStackValuePointer frameBase,
@@ -730,6 +744,10 @@ static ZR_FORCE_INLINE void execution_stage_frame_layout_call_values(SZrState *s
         SZrTypeValue *layoutSource = execution_inline_frame_get_value_slot(state, function, frameBase, logicalSlot);
 
         ZrCore_Value_ResetAsNullNoProfile(&snapshot[offset]);
+        if (execution_frame_slot_is_borrowed_receiver_argument(
+                    function, logicalSlot)) {
+            continue;
+        }
         if (offset == 0u && execution_call_window_value_is_callable(layoutSource)) {
             snapshot[offset] = *layoutSource;
         } else if (offset == 0u && execution_call_window_value_is_callable(physicalSource)) {
@@ -811,6 +829,10 @@ static ZR_FORCE_INLINE TZrStackValuePointer execution_prepare_frame_layout_call_
         SZrTypeValue *layoutSource = execution_inline_frame_get_value_slot(state, function, frameBase, logicalSlot);
 
         ZrCore_Value_ResetAsNullNoProfile(&snapshot[offset]);
+        if (execution_frame_slot_is_borrowed_receiver_argument(
+                    function, logicalSlot)) {
+            continue;
+        }
         if (offset == 0u && execution_call_window_value_is_callable(layoutSource)) {
             snapshot[offset] = *layoutSource;
         } else if (offset == 0u && execution_call_window_value_is_callable(physicalSource)) {
