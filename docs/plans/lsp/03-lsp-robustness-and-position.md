@@ -54,6 +54,8 @@
 
 [2026-07-20 ModuleIdentity edge migration](./03-robustness/2026-07-20-module-identity-edge-migration.md) 完成同一project source root内`.zr` rename的old/new canonical record桥接；`workspace/didRenameFiles`保留previous module/hash snapshot，reverse traversal同时传播removed与added identity并按URI去重；重叠importer只重分析一次，hover与definition更新到renamed source。`willRenameFiles` import workspace edit、package/alias/public import迁移与预算报告仍待后续。
 
+[2026-07-20 canonical source rename workspace edits](./03-robustness/2026-07-20-source-rename-workspace-edits.md) 完成`workspace/willRenameFiles`对同source root `.zr` rename的只读规划：新名称来自canonical project ModuleIdentity，provider声明和opened/unopened importer均消费精确AST target range，批量操作合并为`changes + documentChanges`；不按filename、member name或raw text推断。package/alias/public import迁移、workspace edit snapshot复验与预算报告仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

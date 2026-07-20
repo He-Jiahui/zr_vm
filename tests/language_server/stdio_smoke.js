@@ -118,6 +118,17 @@ function findPosition(text, substring, occurrence = 0, offset = 0) {
     };
 }
 
+function workspaceEditContainsTextEdit(workspaceEdit, uri, start, end, newText) {
+    return workspaceEdit && workspaceEdit.changes &&
+        Array.isArray(workspaceEdit.changes[uri]) &&
+        workspaceEdit.changes[uri].some((edit) => edit && edit.range &&
+            edit.range.start.line === start.line &&
+            edit.range.start.character === start.character &&
+            edit.range.end.line === end.line &&
+            edit.range.end.character === end.character &&
+            edit.newText === newText);
+}
+
 function createWatchedProjectFixture() {
     const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-watch-'));
     const sourcePath = path.join(rootPath, 'src');
@@ -201,6 +212,7 @@ function createModuleIdentityRenameFixture() {
         rootPath,
         oldUserContent,
         newUserContent,
+        initialProviderContent,
         renamedProviderContent,
         oldProviderPath,
         newProviderPath,
@@ -2831,6 +2843,45 @@ async function main() {
         client,
         moduleIdentityRenameFixture.newUserUri,
         'module identity new importer diagnostics uri mismatch');
+
+    const moduleIdentityWillRename = await client.request('workspace/willRenameFiles', {
+        files: [
+            {
+                oldUri: moduleIdentityRenameFixture.oldProviderUri,
+                newUri: moduleIdentityRenameFixture.newProviderUri,
+            },
+        ],
+    });
+    const oldUserImportStart = findPosition(
+        moduleIdentityRenameFixture.oldUserContent, 'legacy', 1);
+    const newUserImportStart = findPosition(
+        moduleIdentityRenameFixture.newUserContent, 'legacy', 1);
+    const providerModuleStart = findPosition(
+        moduleIdentityRenameFixture.initialProviderContent, 'legacy');
+    assert(workspaceEditContainsTextEdit(
+        moduleIdentityWillRename,
+        moduleIdentityRenameFixture.oldUserUri,
+        oldUserImportStart,
+        { line: oldUserImportStart.line, character: oldUserImportStart.character + 6 },
+        'modern'),
+    'workspace/willRenameFiles must edit the opened old-edge import specifier');
+    assert(workspaceEditContainsTextEdit(
+        moduleIdentityWillRename,
+        moduleIdentityRenameFixture.newUserUri,
+        newUserImportStart,
+        { line: newUserImportStart.line, character: newUserImportStart.character + 6 },
+        'modern'),
+    'workspace/willRenameFiles must edit the overlapping importer old-edge specifier');
+    assert(workspaceEditContainsTextEdit(
+        moduleIdentityWillRename,
+        moduleIdentityRenameFixture.oldProviderUri,
+        providerModuleStart,
+        { line: providerModuleStart.line, character: providerModuleStart.character + 6 },
+        'modern'),
+    'workspace/willRenameFiles must edit the explicit provider module declaration');
+    assert(Array.isArray(moduleIdentityWillRename.documentChanges) &&
+        moduleIdentityWillRename.documentChanges.length === 3,
+    'workspace/willRenameFiles must publish versioned documentChanges for all edited source files');
 
     fs.renameSync(
         moduleIdentityRenameFixture.oldProviderPath,

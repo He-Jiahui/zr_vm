@@ -1077,6 +1077,21 @@ static TZrBool append_project_import_target_references(SZrState *state,
                                                                result);
 }
 
+TZrBool ZrLanguageServer_LspProject_AppendProjectImportTargetReferences(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrLspProjectIndex *projectIndex,
+        SZrString *fallbackUri,
+        SZrString *moduleName,
+        SZrArray *result) {
+    return append_project_import_target_references(state,
+                                                   context,
+                                                   projectIndex,
+                                                   fallbackUri,
+                                                   moduleName,
+                                                   result);
+}
+
 static TZrBool project_navigation_resolve_descriptor_plugin_module_from_project(SZrState *state,
                                                                                 SZrLspContext *context,
                                                                                 SZrLspProjectIndex *projectIndex,

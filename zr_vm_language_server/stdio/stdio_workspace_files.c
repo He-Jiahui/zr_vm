@@ -11,6 +11,13 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_PrepareSourceRename(
         SZrLspContext *context,
         SZrString *oldUri,
         SZrString *newUri);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectSourceRenameEdits(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *oldUri,
+        SZrString *newUri,
+        SZrString **outNewModuleName,
+        SZrArray *outLocations);
 TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *state,
                                                                      SZrLspContext *context,
                                                                      SZrString *uri);
@@ -290,7 +297,55 @@ int handle_did_rename_files(SZrStdioServer *server, const cJSON *params) {
 }
 
 cJSON *handle_will_rename_files_request(SZrStdioServer *server, const cJSON *params) {
-    ZR_UNUSED_PARAMETER(server);
-    ZR_UNUSED_PARAMETER(params);
-    return cJSON_CreateNull();
+    const cJSON *files;
+    cJSON *workspaceEdit = NULL;
+
+    if (server == ZR_NULL || params == NULL) {
+        return cJSON_CreateNull();
+    }
+
+    files = get_object_item(params, ZR_LSP_FIELD_FILES);
+    if (!cJSON_IsArray((cJSON *)files)) {
+        return cJSON_CreateNull();
+    }
+
+    for (int index = 0; index < cJSON_GetArraySize((cJSON *)files); index++) {
+        const cJSON *file = cJSON_GetArrayItem((cJSON *)files, index);
+        SZrString *oldUri = workspace_file_operation_uri(
+                server, get_object_item(file, ZR_LSP_FIELD_OLD_URI));
+        SZrString *newUri = workspace_file_operation_uri(
+                server, get_object_item(file, ZR_LSP_FIELD_NEW_URI));
+        SZrString *newModuleName = ZR_NULL;
+        SZrArray locations = {0};
+
+        if (!ZrLanguageServer_LspProject_CollectSourceRenameEdits(
+                    server->state,
+                    server->context,
+                    oldUri,
+                    newUri,
+                    &newModuleName,
+                    &locations)) {
+            free_locations_array(server->state, &locations);
+            continue;
+        }
+
+        if (workspaceEdit == NULL) {
+            workspaceEdit = create_workspace_edit_for_locations(
+                    server, &locations, newModuleName);
+        } else if (!append_workspace_edit_locations(
+                           server,
+                           workspaceEdit,
+                           &locations,
+                           newModuleName)) {
+            cJSON_Delete(workspaceEdit);
+            workspaceEdit = NULL;
+        }
+        free_locations_array(server->state, &locations);
+
+        if (workspaceEdit == NULL) {
+            return cJSON_CreateNull();
+        }
+    }
+
+    return workspaceEdit != NULL ? workspaceEdit : cJSON_CreateNull();
 }

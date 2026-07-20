@@ -98,6 +98,13 @@ cJSON *serialize_hierarchy_items_array(SZrArray *items);
 cJSON *serialize_hierarchy_calls_array(SZrArray *calls, TZrBool outgoing);
 cJSON *serialize_text_edit(const SZrLspTextEdit *edit);
 cJSON *serialize_text_edits_array(SZrArray *edits);
+cJSON *create_workspace_edit_for_locations(SZrStdioServer *server,
+                                           SZrArray *locations,
+                                           SZrString *newName);
+TZrBool append_workspace_edit_locations(SZrStdioServer *server,
+                                        cJSON *edit,
+                                        SZrArray *locations,
+                                        SZrString *newName);
 cJSON *serialize_code_actions_array(const char *uriText,
                                     TZrBool hasVersion,
                                     TZrSize version,

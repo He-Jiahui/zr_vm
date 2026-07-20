@@ -69,6 +69,13 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_PrepareSourceRename(
         SZrLspContext *context,
         SZrString *oldUri,
         SZrString *newUri);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectSourceRenameEdits(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *oldUri,
+        SZrString *newUri,
+        SZrString **outNewModuleName,
+        SZrArray *outLocations);
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *state,
                                                                                             SZrLspContext *context,
                                                                                             SZrString *uri);
@@ -129,6 +136,13 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportTargetLocations(SZrState
                                                                         SZrArray *bindings,
                                                                         SZrString *moduleName,
                                                                         SZrArray *result);
+TZrBool ZrLanguageServer_LspProject_AppendProjectImportTargetReferences(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrLspProjectIndex *projectIndex,
+        SZrString *fallbackUri,
+        SZrString *moduleName,
+        SZrArray *result);
 TZrBool ZrLanguageServer_LspProject_CollectImportDiagnostics(SZrState *state,
                                                              SZrLspContext *context,
                                                              SZrLspProjectIndex *projectIndex,

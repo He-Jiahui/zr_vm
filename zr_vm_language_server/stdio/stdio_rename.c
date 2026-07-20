@@ -81,23 +81,29 @@ static cJSON *ensure_document_change_edits(SZrStdioServer *server,
     return edits;
 }
 
-static cJSON *create_workspace_edit(SZrStdioServer *server, SZrArray *locations, SZrString *newName) {
-    cJSON *edit = cJSON_CreateObject();
-    cJSON *changes = cJSON_CreateObject();
-    cJSON *documentChanges = cJSON_CreateArray();
+TZrBool append_workspace_edit_locations(SZrStdioServer *server,
+                                        cJSON *edit,
+                                        SZrArray *locations,
+                                        SZrString *newName) {
+    cJSON *changes;
+    cJSON *documentChanges;
     TZrSize index;
     char *newNameText;
 
-    if (edit == NULL || changes == NULL || documentChanges == NULL) {
-        cJSON_Delete(edit);
-        cJSON_Delete(changes);
-        cJSON_Delete(documentChanges);
-        return NULL;
+    if (server == ZR_NULL || edit == NULL || locations == ZR_NULL ||
+        newName == ZR_NULL) {
+        return ZR_FALSE;
     }
 
+    changes = cJSON_GetObjectItemCaseSensitive(edit, ZR_LSP_FIELD_CHANGES);
+    documentChanges = cJSON_GetObjectItemCaseSensitive(
+            edit, ZR_LSP_FIELD_DOCUMENT_CHANGES);
+    if (!cJSON_IsObject(changes) || !cJSON_IsArray(documentChanges)) {
+        return ZR_FALSE;
+    }
     newNameText = zr_string_to_c_string(newName);
     if (newNameText == NULL) {
-        newNameText = duplicate_c_string("");
+        return ZR_FALSE;
     }
 
     for (index = 0; index < locations->length; index++) {
@@ -109,7 +115,8 @@ static cJSON *create_workspace_edit(SZrStdioServer *server, SZrArray *locations,
             cJSON *textEdit;
 
             if (uriText == NULL) {
-                continue;
+                free(newNameText);
+                return ZR_FALSE;
             }
 
             uriEdits = cJSON_GetObjectItemCaseSensitive(changes, uriText);
@@ -121,26 +128,56 @@ static cJSON *create_workspace_edit(SZrStdioServer *server, SZrArray *locations,
             }
             documentEdits = ensure_document_change_edits(server, documentChanges, *locationPtr, uriText);
 
-            textEdit = create_rename_text_edit((*locationPtr)->range, newNameText);
-            if (uriEdits != NULL && textEdit != NULL) {
-                cJSON_AddItemToArray(uriEdits, textEdit);
-            } else {
-                cJSON_Delete(textEdit);
+            if (uriEdits == NULL || documentEdits == NULL) {
+                free(uriText);
+                free(newNameText);
+                return ZR_FALSE;
             }
+
             textEdit = create_rename_text_edit((*locationPtr)->range, newNameText);
-            if (documentEdits != NULL && textEdit != NULL) {
-                cJSON_AddItemToArray(documentEdits, textEdit);
-            } else {
-                cJSON_Delete(textEdit);
+            if (textEdit == NULL) {
+                free(uriText);
+                free(newNameText);
+                return ZR_FALSE;
             }
+            cJSON_AddItemToArray(uriEdits, textEdit);
+
+            textEdit = create_rename_text_edit((*locationPtr)->range, newNameText);
+            if (textEdit == NULL) {
+                free(uriText);
+                free(newNameText);
+                return ZR_FALSE;
+            }
+            cJSON_AddItemToArray(documentEdits, textEdit);
 
             free(uriText);
         }
     }
 
+    free(newNameText);
+    return ZR_TRUE;
+}
+
+cJSON *create_workspace_edit_for_locations(SZrStdioServer *server,
+                                           SZrArray *locations,
+                                           SZrString *newName) {
+    cJSON *edit = cJSON_CreateObject();
+    cJSON *changes = cJSON_CreateObject();
+    cJSON *documentChanges = cJSON_CreateArray();
+
+    if (edit == NULL || changes == NULL || documentChanges == NULL) {
+        cJSON_Delete(edit);
+        cJSON_Delete(changes);
+        cJSON_Delete(documentChanges);
+        return NULL;
+    }
+
     cJSON_AddItemToObject(edit, ZR_LSP_FIELD_CHANGES, changes);
     cJSON_AddItemToObject(edit, ZR_LSP_FIELD_DOCUMENT_CHANGES, documentChanges);
-    free(newNameText);
+    if (!append_workspace_edit_locations(server, edit, locations, newName)) {
+        cJSON_Delete(edit);
+        return NULL;
+    }
     return edit;
 }
 
@@ -218,7 +255,7 @@ cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params) {
         return cJSON_CreateNull();
     }
 
-    result = create_workspace_edit(server, &locations, newName);
+    result = create_workspace_edit_for_locations(server, &locations, newName);
     free_locations_array(server->state, &locations);
     return result != NULL ? result : cJSON_CreateNull();
 }

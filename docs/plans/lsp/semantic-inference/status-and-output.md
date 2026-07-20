@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-07-20 17:11 +08:00
+updated_at: 2026-07-20 18:13 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -32,9 +32,10 @@ source_plans:
 | 2026-07-20 14:16 +08:00 | 已完成 | binary typed-export declaration URI/range通过统一query进入definition/references/documentHighlight；显式binary metadata坐标adapter保留无snapshot structural identity并在有snapshot时转换UTF-16；source与`.zro`双向命中同一fact；三工具链十六目标矩阵与stdio/CLI烟测 | [Binary export declaration identity](../03-robustness/2026-07-20-binary-export-declaration-identity.md) |
 | 2026-07-20 15:15 +08:00 | 已完成 | descriptor-plugin receiver type member fact优先于通用import-chain；显式compact-coordinate adapter保留member declaration identity；completion/definition/references/documentHighlight统一消费；valid v1到incomplete v2 last-good AST边界；三工具链十六目标矩阵与stdio/CLI烟测且marker归零 | [Descriptor plugin type member parity](../03-robustness/2026-07-20-descriptor-plugin-type-member-parity.md) |
 | 2026-07-20 17:11 +08:00 | 已完成 | 同project source root `.zr` rename保留old canonical module/hash snapshot；removed与added ModuleIdentity反向边统一传播并按URI去重；overlap importer只重分析一次；added-edge hover/definition更新；三工具链十六目标矩阵与stdio/CLI烟测且marker归零 | [ModuleIdentity edge migration](../03-robustness/2026-07-20-module-identity-edge-migration.md) |
+| 2026-07-20 18:13 +08:00 | 已完成 | `workspace/willRenameFiles`从old record与new canonical path ModuleIdentity生成只读rename plan；provider声明与opened/unopened importer精确range；批量`changes + documentChanges`；同URI及unsupported边界无edit；三工具链十六目标矩阵与stdio/CLI烟测且marker归零 | [Canonical source rename workspace edits](../03-robustness/2026-07-20-source-rename-workspace-edits.md) |
 
 ## 当前状态
 
-- 总体目标进行中。当前记录只表示十六个子里程碑完成，不表示L1-L8整体完成。
-- 下一步扩展property/constructor/meta/imported/native callable target identity，并补齐public type/layout、binary/native/artifact provider contract parity、public import/package alias变化的反向依赖传播及`willRenameFiles` workspace edit证据。
+- 总体目标进行中。当前记录只表示十七个子里程碑完成，不表示L1-L8整体完成。
+- 下一步扩展property/constructor/meta/imported/native callable target identity，并补齐public type/layout、binary/native/artifact provider contract parity、public import/package alias变化的反向依赖传播、workspace edit snapshot复验及性能/内存预算证据。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。
