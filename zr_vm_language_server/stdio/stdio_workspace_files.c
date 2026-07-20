@@ -6,6 +6,11 @@ TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
 TZrBool ZrLanguageServer_LspProject_RemoveFileRecordByUri(SZrState *state,
                                                           SZrLspContext *context,
                                                           SZrString *uri);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_PrepareSourceRename(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *oldUri,
+        SZrString *newUri);
 TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *state,
                                                                      SZrLspContext *context,
                                                                      SZrString *uri);
@@ -192,6 +197,18 @@ static int handle_file_operation_uri(SZrStdioServer *server, const cJSON *uriJso
     return handle_single_workspace_file_change(server, uri, changeType);
 }
 
+static SZrString *workspace_file_operation_uri(SZrStdioServer *server,
+                                               const cJSON *uriJson) {
+    const char *uriText;
+
+    if (server == ZR_NULL || !cJSON_IsString((cJSON *)uriJson)) {
+        return ZR_NULL;
+    }
+
+    uriText = cJSON_GetStringValue((cJSON *)uriJson);
+    return uriText != NULL ? server_get_cached_uri(server, uriText) : ZR_NULL;
+}
+
 static int handle_file_operation_list(SZrStdioServer *server,
                                       const cJSON *params,
                                       TZrSize changeType,
@@ -251,6 +268,20 @@ int handle_did_rename_files(SZrStdioServer *server, const cJSON *params) {
 
     for (int index = 0; index < cJSON_GetArraySize((cJSON *)files); index++) {
         const cJSON *file = cJSON_GetArrayItem((cJSON *)files, index);
+        SZrString *oldUri = workspace_file_operation_uri(
+                server, get_object_item(file, ZR_LSP_FIELD_OLD_URI));
+        SZrString *newUri = workspace_file_operation_uri(
+                server, get_object_item(file, ZR_LSP_FIELD_NEW_URI));
+
+        if (workspace_file_string_ends_with(oldUri, ".zr") &&
+            workspace_file_string_ends_with(newUri, ".zr") &&
+            ZrLanguageServer_LspProject_PrepareSourceRename(
+                    server->state, server->context, oldUri, newUri)) {
+            publish_empty_diagnostics(server, oldUri);
+            handledAny = update_document_contents_from_disk(server, newUri) || handledAny;
+            continue;
+        }
+
         handledAny = handle_file_operation_uri(server, get_object_item(file, ZR_LSP_FIELD_OLD_URI), 3) || handledAny;
         handledAny = handle_file_operation_uri(server, get_object_item(file, ZR_LSP_FIELD_NEW_URI), 1) || handledAny;
     }

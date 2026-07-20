@@ -149,6 +149,68 @@ function createWatchedProjectFixture() {
     };
 }
 
+function createModuleIdentityRenameFixture() {
+    const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-module-rename-'));
+    const sourcePath = path.join(rootPath, 'src');
+    const projectPath = path.join(rootPath, 'module_identity_rename.zrp');
+    const oldUserPath = path.join(sourcePath, 'old_user.zr');
+    const newUserPath = path.join(sourcePath, 'new_user.zr');
+    const oldProviderPath = path.join(sourcePath, 'legacy.zr');
+    const newProviderPath = path.join(sourcePath, 'modern.zr');
+    const oldUserContent = [
+        'var legacy = %import("legacy");',
+        'var cached = legacy.value();',
+        'return cached;',
+        '',
+    ].join('\n');
+    const newUserContent = [
+        'var legacy = %import("legacy");',
+        'var modern = %import("modern");',
+        'var prior = legacy.value();',
+        'var cached = modern.value();',
+        'return cached;',
+        '',
+    ].join('\n');
+    const initialProviderContent = [
+        '%module "legacy";',
+        'pub value(): int {',
+        '    return 1;',
+        '}',
+        '',
+    ].join('\n');
+    const renamedProviderContent = [
+        '%module "modern";',
+        'pub value(): float {',
+        '    return 1.5;',
+        '}',
+        '',
+    ].join('\n');
+
+    fs.mkdirSync(sourcePath, { recursive: true });
+    fs.writeFileSync(projectPath, JSON.stringify({
+        name: 'module_identity_rename',
+        source: 'src',
+        binary: 'bin',
+        entry: 'old_user',
+    }, null, 2));
+    fs.writeFileSync(oldUserPath, oldUserContent);
+    fs.writeFileSync(newUserPath, newUserContent);
+    fs.writeFileSync(oldProviderPath, initialProviderContent);
+
+    return {
+        rootPath,
+        oldUserContent,
+        newUserContent,
+        renamedProviderContent,
+        oldProviderPath,
+        newProviderPath,
+        oldUserUri: pathToFileURL(oldUserPath).toString(),
+        newUserUri: pathToFileURL(newUserPath).toString(),
+        oldProviderUri: pathToFileURL(oldProviderPath).toString(),
+        newProviderUri: pathToFileURL(newProviderPath).toString(),
+    };
+}
+
 function regenerateWatchedBinaryMetadataFixture(serverPath, rootPath, cliPathOptional) {
     const cliPath =
         typeof cliPathOptional === 'string' && cliPathOptional.length > 0
@@ -287,6 +349,7 @@ let watchedFixtureRootToCleanup = null;
 let watchedBinaryFixtureRootToCleanup = null;
 let importDiagnosticsFixtureRootToCleanup = null;
 let fileOperationsFixtureRootToCleanup = null;
+let moduleIdentityRenameFixtureRootToCleanup = null;
 
 class LspClient {
     constructor(serverPath) {
@@ -527,10 +590,12 @@ async function main() {
     const watchedBinaryFixture = createWatchedBinaryMetadataFixture(serverPath, cliPathOptional);
     const importDiagnosticsFixture = createImportDiagnosticsFixture();
     const fileOperationsFixture = createWatchedProjectFixture();
+    const moduleIdentityRenameFixture = createModuleIdentityRenameFixture();
     watchedFixtureRootToCleanup = watchedFixture.rootPath;
     watchedBinaryFixtureRootToCleanup = watchedBinaryFixture.rootPath;
     importDiagnosticsFixtureRootToCleanup = importDiagnosticsFixture.rootPath;
     fileOperationsFixtureRootToCleanup = fileOperationsFixture.rootPath;
+    moduleIdentityRenameFixtureRootToCleanup = moduleIdentityRenameFixture.rootPath;
 
     const client = new LspClient(serverPath);
     const documentUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr';
@@ -2742,6 +2807,67 @@ async function main() {
         item.name === 'watched_before_refresh'),
     'workspace/didCreateFiles must index newly created unopened project sources');
 
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: moduleIdentityRenameFixture.oldUserUri,
+            languageId: 'zr',
+            version: 1,
+            text: moduleIdentityRenameFixture.oldUserContent,
+        },
+    });
+    await waitForDiagnosticsUri(
+        client,
+        moduleIdentityRenameFixture.oldUserUri,
+        'module identity old importer diagnostics uri mismatch');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: moduleIdentityRenameFixture.newUserUri,
+            languageId: 'zr',
+            version: 1,
+            text: moduleIdentityRenameFixture.newUserContent,
+        },
+    });
+    await waitForDiagnosticsUri(
+        client,
+        moduleIdentityRenameFixture.newUserUri,
+        'module identity new importer diagnostics uri mismatch');
+
+    fs.renameSync(
+        moduleIdentityRenameFixture.oldProviderPath,
+        moduleIdentityRenameFixture.newProviderPath);
+    fs.writeFileSync(
+        moduleIdentityRenameFixture.newProviderPath,
+        moduleIdentityRenameFixture.renamedProviderContent);
+    client.notify('workspace/didRenameFiles', {
+        files: [
+            {
+                oldUri: moduleIdentityRenameFixture.oldProviderUri,
+                newUri: moduleIdentityRenameFixture.newProviderUri,
+            },
+        ],
+    });
+    await waitForDiagnosticsUri(
+        client,
+        moduleIdentityRenameFixture.newProviderUri,
+        'workspace/didRenameFiles renamed provider diagnostics uri mismatch');
+
+    const renamedImporterHover = await client.request('textDocument/hover', {
+        textDocument: { uri: moduleIdentityRenameFixture.newUserUri },
+        position: findPosition(moduleIdentityRenameFixture.newUserContent, 'cached', 1),
+    });
+    assert(renamedImporterHover && renamedImporterHover.contents &&
+        typeof renamedImporterHover.contents.value === 'string' &&
+        renamedImporterHover.contents.value.includes('float'),
+    'workspace/didRenameFiles must refresh semantic facts on the added ModuleIdentity edge');
+    const renamedProviderDefinition = await client.request('textDocument/definition', {
+        textDocument: { uri: moduleIdentityRenameFixture.newUserUri },
+        position: findPosition(moduleIdentityRenameFixture.newUserContent, 'value', 1),
+    });
+    assert(Array.isArray(renamedProviderDefinition) && renamedProviderDefinition.some((location) =>
+        location && diagnosticRelatedUriMatches(
+            moduleIdentityRenameFixture.newProviderUri, location.uri)),
+    `workspace/didRenameFiles must resolve the added ModuleIdentity edge to the renamed source: ${JSON.stringify(renamedProviderDefinition)}`);
+
     const willRenameFiles = await client.request('workspace/willRenameFiles', {
         files: [
             {
@@ -2922,6 +3048,17 @@ async function main() {
         },
     });
 
+    client.notify('textDocument/didClose', {
+        textDocument: {
+            uri: moduleIdentityRenameFixture.oldUserUri,
+        },
+    });
+    client.notify('textDocument/didClose', {
+        textDocument: {
+            uri: moduleIdentityRenameFixture.newUserUri,
+        },
+    });
+
     const expectedClosedUris = new Set([
         watchedBinaryFixture.mainUri,
         documentUri,
@@ -2934,6 +3071,8 @@ async function main() {
         documentHighlightFilterUri,
         linkedEditingFilterUri,
         monikerFilterUri,
+        moduleIdentityRenameFixture.oldUserUri,
+        moduleIdentityRenameFixture.newUserUri,
     ]);
     let clearedCloseCount = 0;
     while (clearedCloseCount < expectedClosedUris.size) {
@@ -2957,10 +3096,12 @@ async function main() {
     cleanupPath(watchedBinaryFixtureRootToCleanup);
     cleanupPath(importDiagnosticsFixtureRootToCleanup);
     cleanupPath(fileOperationsFixtureRootToCleanup);
+    cleanupPath(moduleIdentityRenameFixtureRootToCleanup);
     watchedFixtureRootToCleanup = null;
     watchedBinaryFixtureRootToCleanup = null;
     importDiagnosticsFixtureRootToCleanup = null;
     fileOperationsFixtureRootToCleanup = null;
+    moduleIdentityRenameFixtureRootToCleanup = null;
 }
 
 main().catch((error) => {
@@ -2968,10 +3109,12 @@ main().catch((error) => {
     cleanupPath(watchedBinaryFixtureRootToCleanup);
     cleanupPath(importDiagnosticsFixtureRootToCleanup);
     cleanupPath(fileOperationsFixtureRootToCleanup);
+    cleanupPath(moduleIdentityRenameFixtureRootToCleanup);
     watchedFixtureRootToCleanup = null;
     watchedBinaryFixtureRootToCleanup = null;
     importDiagnosticsFixtureRootToCleanup = null;
     fileOperationsFixtureRootToCleanup = null;
+    moduleIdentityRenameFixtureRootToCleanup = null;
     console.error(error.stack || String(error));
     process.exit(1);
 });

@@ -7639,6 +7639,7 @@ static void test_lsp_native_value_constructor_members_surface_hover_and_completi
 }
 
 #include "test_lsp_project_public_contract_cases.h"
+#include "test_lsp_project_module_identity_edge_cases.h"
 
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
@@ -7779,6 +7780,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_source_module_refresh_uses_canonical_public_contract_hash(state);
+    TEST_DIVIDER();
+
+    test_lsp_source_module_identity_change_refreshes_old_and_new_importers(state);
     TEST_DIVIDER();
 
     test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(state);

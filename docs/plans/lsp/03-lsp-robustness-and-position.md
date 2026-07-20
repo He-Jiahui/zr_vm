@@ -52,6 +52,8 @@
 
 [2026-07-20 descriptor plugin type member parity](./03-robustness/2026-07-20-descriptor-plugin-type-member-parity.md) 完成descriptor receiver type member fact对generic import-chain的优先级、compact member declaration坐标的provider-specific投影，以及completion/definition/references/documentHighlight统一消费；valid v1到incomplete v2使用既有last-good AST，不新增name/text推断fallback。property/constructor/meta/imported-native callable parity、性能与峰值内存报告仍待后续。
 
+[2026-07-20 ModuleIdentity edge migration](./03-robustness/2026-07-20-module-identity-edge-migration.md) 完成同一project source root内`.zr` rename的old/new canonical record桥接；`workspace/didRenameFiles`保留previous module/hash snapshot，reverse traversal同时传播removed与added identity并按URI去重；重叠importer只重分析一次，hover与definition更新到renamed source。`willRenameFiles` import workspace edit、package/alias/public import迁移与预算报告仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

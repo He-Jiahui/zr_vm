@@ -2448,15 +2448,27 @@ static TZrBool project_refresh_transitive_importers(SZrState *state,
     ZrCore_Array_Init(state, &discovered, sizeof(SZrString *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     ZrCore_Array_Push(state, &discovered, &changedUri);
 
-    project_enqueue_importers_of_module(state,
-                                       context,
-                                       projectIndex,
-                                       previousModuleName != ZR_NULL
-                                               ? previousModuleName
-                                               : record->moduleName,
-                                       changedUri,
-                                       &queue,
-                                       &discovered);
+    if (previousModuleName != ZR_NULL) {
+        project_enqueue_importers_of_module(state,
+                                           context,
+                                           projectIndex,
+                                           previousModuleName,
+                                           changedUri,
+                                           &queue,
+                                           &discovered);
+    }
+    if (record != ZR_NULL && record->moduleName != ZR_NULL &&
+        (previousModuleName == ZR_NULL ||
+         !ZrLanguageServer_Lsp_StringsEqual(
+                 previousModuleName, record->moduleName))) {
+        project_enqueue_importers_of_module(state,
+                                           context,
+                                           projectIndex,
+                                           record->moduleName,
+                                           changedUri,
+                                           &queue,
+                                           &discovered);
+    }
 
     head = 0;
     while (head < queue.length) {

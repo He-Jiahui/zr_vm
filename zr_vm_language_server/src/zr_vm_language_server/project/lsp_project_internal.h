@@ -64,6 +64,11 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjec
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_RemoveFileRecordByUri(SZrState *state,
                                                                                  SZrLspContext *context,
                                                                                  SZrString *uri);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_PrepareSourceRename(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *oldUri,
+        SZrString *newUri);
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *state,
                                                                                             SZrLspContext *context,
                                                                                             SZrString *uri);
