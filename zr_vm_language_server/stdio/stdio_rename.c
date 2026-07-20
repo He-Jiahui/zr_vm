@@ -40,7 +40,7 @@ static cJSON *create_document_change(SZrStdioServer *server,
     cJSON *textDocument = cJSON_CreateObject();
     cJSON *edits = cJSON_CreateArray();
     SZrFileVersion *fileVersion;
-    const SZrLspSourceRenameDocumentSnapshot *documentSnapshot = ZR_NULL;
+    const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot = ZR_NULL;
 
     if (documentChange == NULL || textDocument == NULL || edits == NULL) {
         cJSON_Delete(documentChange);
@@ -52,7 +52,7 @@ static cJSON *create_document_change(SZrStdioServer *server,
     if (documentSnapshots != ZR_NULL) {
         documentSnapshot =
                 location != ZR_NULL
-                        ? ZrLanguageServer_LspProject_FindSourceRenameDocumentSnapshot(
+                        ? ZrLanguageServer_LspWorkspaceEdit_FindDocumentSnapshot(
                                   documentSnapshots, location->uri)
                         : ZR_NULL;
         if (documentSnapshot == ZR_NULL) {
@@ -248,6 +248,7 @@ cJSON *handle_prepare_rename_request(SZrStdioServer *server, const cJSON *params
 
 cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray locations = {0};
+    SZrArray documentSnapshots = {0};
     SZrLspPosition position;
     const cJSON *newNameJson;
     const char *newNameText;
@@ -285,8 +286,25 @@ cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params) {
         return cJSON_CreateNull();
     }
 
+    if (!ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshots(
+                server->state,
+                server->context,
+                &locations,
+                &documentSnapshots) ||
+        !ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshots(
+                server->state,
+                server->context,
+                &documentSnapshots)) {
+        free_locations_array(server->state, &locations);
+        if (documentSnapshots.isValid) {
+            ZrCore_Array_Free(server->state, &documentSnapshots);
+        }
+        return cJSON_CreateNull();
+    }
+
     result = create_workspace_edit_for_locations(
-            server, &locations, newName, ZR_NULL);
+            server, &locations, newName, &documentSnapshots);
     free_locations_array(server->state, &locations);
+    ZrCore_Array_Free(server->state, &documentSnapshots);
     return result != NULL ? result : cJSON_CreateNull();
 }

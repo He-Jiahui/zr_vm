@@ -4,6 +4,7 @@
 #include "zr_vm_language_server/lsp_interface.h"
 #include "zr_vm_library/project.h"
 #include "interface/lsp_position_codec.h"
+#include "interface/lsp_workspace_edit_snapshot.h"
 
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/hash_set.h"

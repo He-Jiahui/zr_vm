@@ -58,6 +58,8 @@
 
 [2026-07-20 source rename workspace edit snapshot revalidation](./03-robustness/2026-07-20-source-rename-workspace-edit-snapshot-revalidation.md) 完成source-file rename的提交前snapshot门禁：每个edited URI记录open-state/version/generation/length/stable hash，opened或disk内容漂移使整批plan失效；serializer只消费captured version且unopened source保持`version: null`。general rename/code action/fix producer、并发race/cancellation与性能内存预算仍待后续。
 
+[2026-07-21 general rename workspace edit snapshot revalidation](./03-robustness/2026-07-21-general-rename-workspace-edit-snapshot-revalidation.md) 发布opened overlay与disk cache的显式provenance，允许synthetic disk version 0到client `didOpen` version 0的一次origin transition，并使普通`textDocument/rename`与source rename统一使用通用capture/validate/captured-version路径。code action/fix及其他workspace edit producer、并发race/cancellation与性能内存预算仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

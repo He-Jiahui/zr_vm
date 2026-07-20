@@ -983,7 +983,7 @@ async function main() {
         textDocument: {
             uri: documentUri,
             languageId: 'zr',
-            version: 1,
+            version: 0,
             text: initialText,
         },
     });
@@ -991,6 +991,14 @@ async function main() {
     const openDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
     assert(openDiagnostics.uri === documentUri, 'didOpen diagnostics uri mismatch');
     assert(Array.isArray(openDiagnostics.diagnostics), 'didOpen diagnostics must be an array');
+
+    const versionZeroRename = await client.request('textDocument/rename', {
+        textDocument: { uri: documentUri },
+        position: { line: 0, character: 4 },
+        newName: 'versionZeroX',
+    });
+    assert(workspaceEditDocumentVersion(versionZeroRename, documentUri) === 0,
+        'rename must serialize the captured version-zero opened document provenance');
 
     client.notify('textDocument/didChange', {
         textDocument: {

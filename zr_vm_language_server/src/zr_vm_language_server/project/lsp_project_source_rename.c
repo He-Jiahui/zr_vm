@@ -1,8 +1,5 @@
 #include "project/lsp_project_internal.h"
 
-#include "zr_vm_core/hash.h"
-#include "zr_vm_library/file.h"
-
 #include <ctype.h>
 #include <string.h>
 
@@ -333,153 +330,6 @@ static TZrBool source_rename_collect_edits(
     return ZR_TRUE;
 }
 
-static TZrBool source_rename_capture_disk_snapshot(
-        SZrState *state,
-        SZrLspContext *context,
-        SZrString *uri,
-        SZrLspSourceRenameDocumentSnapshot *outSnapshot) {
-    SZrFileVersion *fileVersion;
-    TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrNativeString content;
-    TZrSize contentLength;
-    TZrUInt64 contentHash;
-
-    if (state == ZR_NULL || state->global == ZR_NULL || context == ZR_NULL ||
-        uri == ZR_NULL || outSnapshot == ZR_NULL ||
-        !ZrLanguageServer_Lsp_FileUriToNativePath(
-                uri, nativePath, sizeof(nativePath))) {
-        return ZR_FALSE;
-    }
-
-    content = ZrLibrary_File_ReadAll(state->global, nativePath);
-    if (content == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    contentLength = strlen(content);
-    contentHash = ZrCore_Hash_CreateStable64(
-            (const TZrByte *)content, contentLength);
-
-    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (fileVersion != ZR_NULL && fileVersion->textBlock != ZR_NULL &&
-        (fileVersion->textBlock->contentLength != contentLength ||
-         ZrCore_Hash_CreateStable64(
-                 (const TZrByte *)fileVersion->textBlock->content,
-                 fileVersion->textBlock->contentLength) != contentHash)) {
-        ZrCore_Memory_RawFreeWithType(
-                state->global,
-                content,
-                contentLength + 1U,
-                ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
-        return ZR_FALSE;
-    }
-
-    memset(outSnapshot, 0, sizeof(*outSnapshot));
-    outSnapshot->uri = uri;
-    outSnapshot->contentHash = contentHash;
-    outSnapshot->contentLength = contentLength;
-    outSnapshot->isOpenDocument = ZR_FALSE;
-    ZrCore_Memory_RawFreeWithType(
-            state->global,
-            content,
-            contentLength + 1U,
-            ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
-    return ZR_TRUE;
-}
-
-static TZrBool source_rename_capture_document_snapshot(
-        SZrState *state,
-        SZrLspContext *context,
-        SZrString *uri,
-        SZrLspSourceRenameDocumentSnapshot *outSnapshot) {
-    SZrFileVersion *fileVersion;
-
-    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL ||
-        outSnapshot == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    /* Project scans materialize unopened disk files at synthetic version zero. */
-    if (fileVersion == ZR_NULL || fileVersion->textBlock == ZR_NULL ||
-        fileVersion->version == 0U) {
-        return source_rename_capture_disk_snapshot(
-                state, context, uri, outSnapshot);
-    }
-
-    memset(outSnapshot, 0, sizeof(*outSnapshot));
-    outSnapshot->uri = uri;
-    outSnapshot->contentHash = ZrCore_Hash_CreateStable64(
-            (const TZrByte *)fileVersion->textBlock->content,
-            fileVersion->textBlock->contentLength);
-    outSnapshot->contentLength = fileVersion->textBlock->contentLength;
-    outSnapshot->version = fileVersion->version;
-    outSnapshot->contentGeneration =
-            fileVersion->textBlock->contentGeneration;
-    outSnapshot->isOpenDocument = ZR_TRUE;
-    return ZR_TRUE;
-}
-
-ZR_LANGUAGE_SERVER_API const SZrLspSourceRenameDocumentSnapshot *
-ZrLanguageServer_LspProject_FindSourceRenameDocumentSnapshot(
-        const SZrArray *documentSnapshots,
-        SZrString *uri) {
-    if (documentSnapshots == ZR_NULL || !documentSnapshots->isValid ||
-        uri == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize index = 0U; index < documentSnapshots->length; index++) {
-        const SZrLspSourceRenameDocumentSnapshot *snapshot =
-                (const SZrLspSourceRenameDocumentSnapshot *)ZrCore_Array_Get(
-                        (SZrArray *)documentSnapshots, index);
-        if (snapshot != ZR_NULL &&
-            ZrLanguageServer_Lsp_StringsEqual(snapshot->uri, uri)) {
-            return snapshot;
-        }
-    }
-    return ZR_NULL;
-}
-
-static TZrBool source_rename_capture_plan_snapshots(
-        SZrState *state,
-        SZrLspContext *context,
-        const SZrArray *locations,
-        SZrArray *outDocumentSnapshots) {
-    if (state == ZR_NULL || context == ZR_NULL || locations == ZR_NULL ||
-        outDocumentSnapshots == ZR_NULL || outDocumentSnapshots->length != 0U) {
-        return ZR_FALSE;
-    }
-    if (!outDocumentSnapshots->isValid) {
-        ZrCore_Array_Init(
-                state,
-                outDocumentSnapshots,
-                sizeof(SZrLspSourceRenameDocumentSnapshot),
-                ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
-    }
-
-    for (TZrSize index = 0U; index < locations->length; index++) {
-        SZrLspLocation **locationPtr =
-                (SZrLspLocation **)ZrCore_Array_Get(
-                        (SZrArray *)locations, index);
-        SZrLspSourceRenameDocumentSnapshot snapshot;
-
-        if (locationPtr == ZR_NULL || *locationPtr == ZR_NULL ||
-            (*locationPtr)->uri == ZR_NULL) {
-            return ZR_FALSE;
-        }
-        if (ZrLanguageServer_LspProject_FindSourceRenameDocumentSnapshot(
-                    outDocumentSnapshots, (*locationPtr)->uri) != ZR_NULL) {
-            continue;
-        }
-        if (!source_rename_capture_document_snapshot(
-                    state, context, (*locationPtr)->uri, &snapshot)) {
-            return ZR_FALSE;
-        }
-        ZrCore_Array_Push(state, outDocumentSnapshots, &snapshot);
-    }
-    return outDocumentSnapshots->length > 0U;
-}
-
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectSourceRenameEdits(
         SZrState *state,
         SZrLspContext *context,
@@ -514,7 +364,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectSourceRenameEd
                 outLocations)) {
         return ZR_FALSE;
     }
-    return source_rename_capture_plan_snapshots(
+    return ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshots(
             state, context, outLocations, outDocumentSnapshots);
 }
 
@@ -522,27 +372,14 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ValidateSourceRenameE
         SZrState *state,
         SZrLspContext *context,
         const SZrArray *documentSnapshots) {
-    if (state == ZR_NULL || context == ZR_NULL || documentSnapshots == ZR_NULL ||
-        !documentSnapshots->isValid || documentSnapshots->length == 0U) {
-        return ZR_FALSE;
-    }
+    return ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshots(
+            state, context, documentSnapshots);
+}
 
-    for (TZrSize index = 0U; index < documentSnapshots->length; index++) {
-        const SZrLspSourceRenameDocumentSnapshot *expected =
-                (const SZrLspSourceRenameDocumentSnapshot *)ZrCore_Array_Get(
-                        (SZrArray *)documentSnapshots, index);
-        SZrLspSourceRenameDocumentSnapshot current;
-
-        if (expected == ZR_NULL || expected->uri == ZR_NULL ||
-            !source_rename_capture_document_snapshot(
-                    state, context, expected->uri, &current) ||
-            current.isOpenDocument != expected->isOpenDocument ||
-            current.contentHash != expected->contentHash ||
-            current.contentLength != expected->contentLength ||
-            current.version != expected->version ||
-            current.contentGeneration != expected->contentGeneration) {
-            return ZR_FALSE;
-        }
-    }
-    return ZR_TRUE;
+ZR_LANGUAGE_SERVER_API const SZrLspSourceRenameDocumentSnapshot *
+ZrLanguageServer_LspProject_FindSourceRenameDocumentSnapshot(
+        const SZrArray *documentSnapshots,
+        SZrString *uri) {
+    return ZrLanguageServer_LspWorkspaceEdit_FindDocumentSnapshot(
+            documentSnapshots, uri);
 }

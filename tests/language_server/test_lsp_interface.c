@@ -856,6 +856,10 @@ static void test_lsp_find_references(SZrState *state) {
 // 测试重命名
 static void test_lsp_rename(SZrState *state) {
     SZrTestTimer timer;
+    SZrArray locations = {0};
+    SZrArray documentSnapshots = {0};
+    const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot;
+    TZrBool success = ZR_FALSE;
     TEST_START("LSP Rename");
     
     TEST_INFO("Rename Symbol", "Renaming a symbol and getting all locations");
@@ -871,7 +875,12 @@ static void test_lsp_rename(SZrState *state) {
     TZrSize contentLength = strlen(content);
     
     // 更新文档
-    ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, contentLength, 1);
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, contentLength, 0U)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Rename", "Failed to open the rename document");
+        return;
+    }
     
     // 重命名
     SZrLspPosition position;
@@ -879,14 +888,55 @@ static void test_lsp_rename(SZrState *state) {
     position.character = 4; // 'x' 的位置
     
     SZrString *newName = ZrCore_String_Create(state, "newX", 4);
-    SZrArray locations;
     ZrCore_Array_Init(state, &locations, sizeof(SZrLspLocation *), 4);
-    (void)ZrLanguageServer_Lsp_Rename(state, context, uri, position, newName, &locations);
-    
-    // 重命名可能失败，只要不崩溃就算成功
+    if (!ZrLanguageServer_Lsp_Rename(
+                state, context, uri, position, newName, &locations) ||
+        locations.length < 2U ||
+        !ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshots(
+                state, context, &locations, &documentSnapshots)) {
+        TEST_FAIL(timer,
+                  "LSP Rename",
+                  "Rename did not publish a capturable declaration and usage plan");
+        goto cleanup;
+    }
+
+    documentSnapshot =
+            ZrLanguageServer_LspWorkspaceEdit_FindDocumentSnapshot(
+                    &documentSnapshots, uri);
+    if (documentSnapshots.length != 1U || documentSnapshot == ZR_NULL ||
+        !documentSnapshot->isOpenDocument ||
+        documentSnapshot->version != 0U ||
+        !ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshots(
+                state, context, &documentSnapshots) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, contentLength, 1U) ||
+        ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshots(
+                state, context, &documentSnapshots)) {
+        TEST_FAIL(timer,
+                  "LSP Rename",
+                  "Rename snapshots did not preserve version-zero open provenance or reject a stale plan");
+        goto cleanup;
+    }
+
+    success = ZR_TRUE;
+
+cleanup:
+    for (TZrSize index = 0U; index < locations.length; index++) {
+        SZrLspLocation **locationPtr =
+                (SZrLspLocation **)ZrCore_Array_Get(&locations, index);
+        if (locationPtr != ZR_NULL && *locationPtr != ZR_NULL) {
+            ZrCore_Memory_RawFree(
+                    state->global, *locationPtr, sizeof(SZrLspLocation));
+        }
+    }
     ZrCore_Array_Free(state, &locations);
+    if (documentSnapshots.isValid) {
+        ZrCore_Array_Free(state, &documentSnapshots);
+    }
     ZrLanguageServer_LspContext_Free(state, context);
-    TEST_PASS(timer, "LSP Rename");
+    if (success) {
+        TEST_PASS(timer, "LSP Rename");
+    }
 }
 
 static const char *test_string_ptr(SZrString *value) {

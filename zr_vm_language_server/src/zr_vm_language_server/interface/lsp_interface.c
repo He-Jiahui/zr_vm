@@ -1164,12 +1164,21 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
     }
 
     if (lsp_string_ends_with_native(uri, ".zrp")) {
-        if (!ZrLanguageServer_IncrementalParser_UpdateFile(state,
-                                                           context->parser,
-                                                           uri,
-                                                           content,
-                                                           contentLength,
-                                                           version)) {
+        if (!(allowProjectRefresh
+                      ? ZrLanguageServer_IncrementalParser_UpdateOpenDocument(
+                                state,
+                                context->parser,
+                                uri,
+                                content,
+                                contentLength,
+                                version)
+                      : ZrLanguageServer_IncrementalParser_UpdateFile(
+                                state,
+                                context->parser,
+                                uri,
+                                content,
+                                contentLength,
+                                version))) {
             return ZR_FALSE;
         }
         if (allowProjectRefresh) {
@@ -1184,7 +1193,21 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
     }
     
     // 更新文件
-    if (!ZrLanguageServer_IncrementalParser_UpdateFile(state, context->parser, uri, content, contentLength, version)) {
+    if (!(allowProjectRefresh
+                  ? ZrLanguageServer_IncrementalParser_UpdateOpenDocument(
+                            state,
+                            context->parser,
+                            uri,
+                            content,
+                            contentLength,
+                            version)
+                  : ZrLanguageServer_IncrementalParser_UpdateFile(
+                            state,
+                            context->parser,
+                            uri,
+                            content,
+                            contentLength,
+                            version))) {
         return ZR_FALSE;
     }
 

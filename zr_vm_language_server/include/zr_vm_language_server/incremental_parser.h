@@ -45,6 +45,7 @@ typedef struct SZrFileChangeInfo {
 typedef struct SZrFileVersion {
     SZrString *uri;                   // 文件 URI
     TZrSize version;                  // 版本号
+    TZrBool isOpenDocument;           // 客户端 overlay，而非 workspace disk cache
     SZrFileVersionContentBlock *textBlock; // 当前内容块
     SZrAstNode *ast;                  // 解析后的 AST
     TZrBool usesFallbackAst;            // 当前 AST 是否是旧版本保留下来的 last-good 快照
@@ -60,6 +61,7 @@ typedef struct SZrFileVersion {
 typedef struct SZrFileVersionContentSnapshot {
     SZrString *uri;
     TZrSize version;
+    TZrBool isOpenDocument;
     TZrChar *content;
     TZrSize contentLength;
     TZrSize contentGeneration;
@@ -93,6 +95,14 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZr
                                                               const TZrChar *content,
                                                               TZrSize contentLength,
                                                               TZrSize version);
+ZR_LANGUAGE_SERVER_API TZrBool
+ZrLanguageServer_IncrementalParser_UpdateOpenDocument(
+        SZrState *state,
+        SZrIncrementalParser *parser,
+        SZrString *uri,
+        const TZrChar *content,
+        TZrSize contentLength,
+        TZrSize version);
 
 // 解析文件（增量）
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,

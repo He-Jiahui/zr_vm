@@ -19,10 +19,6 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectSourceRenameEd
         SZrString **outNewModuleName,
         SZrArray *outLocations,
         SZrArray *outDocumentSnapshots);
-ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
-        SZrState *state,
-        SZrLspContext *context,
-        const SZrArray *documentSnapshots);
 TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *state,
                                                                      SZrLspContext *context,
                                                                      SZrString *uri);
@@ -345,7 +341,7 @@ cJSON *handle_will_rename_files_request(SZrStdioServer *server, const cJSON *par
             continue;
         }
 
-        if (!ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
+        if (!ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshots(
                     server->state,
                     server->context,
                     &documentSnapshots)) {

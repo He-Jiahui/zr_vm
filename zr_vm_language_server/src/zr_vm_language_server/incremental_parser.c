@@ -191,6 +191,7 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
 
     fileVersion->uri = uri;
     fileVersion->version = version;
+    fileVersion->isOpenDocument = ZR_FALSE;
     fileVersion->textBlock = content_block_new(state, content, contentLength, 1);
     if (fileVersion->textBlock == ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, fileVersion, sizeof(SZrFileVersion));
@@ -257,6 +258,7 @@ TZrBool ZrLanguageServer_FileVersionContentSnapshot_Acquire(
     outSnapshot->content = fileVersion->textBlock->content;
     outSnapshot->uri = fileVersion->uri;
     outSnapshot->version = fileVersion->version;
+    outSnapshot->isOpenDocument = fileVersion->isOpenDocument;
     outSnapshot->contentLength = fileVersion->textBlock->contentLength;
     outSnapshot->contentGeneration = fileVersion->textBlock->contentGeneration;
     outSnapshot->usesFallbackAst = fileVersion->usesFallbackAst;
@@ -380,13 +382,14 @@ void ZrLanguageServer_IncrementalParser_Free(SZrState *state, SZrIncrementalPars
     ZrCore_Memory_RawFree(state->global, parser, sizeof(SZrIncrementalParser));
 }
 
-// 更新文件内容
-TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
-                                      SZrIncrementalParser *parser,
-                                      SZrString *uri,
-                                      const TZrChar *content,
-                                      TZrSize contentLength,
-                                      TZrSize version) {
+static TZrBool incremental_parser_update_file(
+        SZrState *state,
+        SZrIncrementalParser *parser,
+        SZrString *uri,
+        const TZrChar *content,
+        TZrSize contentLength,
+        TZrSize version,
+        TZrBool isOpenDocument) {
     if (state == ZR_NULL || parser == ZR_NULL || uri == ZR_NULL || content == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -394,11 +397,15 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
     // 查找是否已存在
     SZrFileVersion *fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
     if (fileVersion != ZR_NULL) {
-        if (version <= fileVersion->version) {
+        TZrBool isOpeningSyntheticSnapshot =
+                isOpenDocument && !fileVersion->isOpenDocument &&
+                version == fileVersion->version;
+        if (!isOpeningSyntheticSnapshot && version <= fileVersion->version) {
             return ZR_FALSE;
         }
         if (file_version_content_equals(fileVersion, content, contentLength)) {
             fileVersion->version = version;
+            fileVersion->isOpenDocument = isOpenDocument;
             ZrLanguageServer_IncrementalChange_Reset(uri, &fileVersion->lastChangeInfo);
             fileVersion->lastChangeRange = fileVersion->lastChangeInfo.newRange;
             fileVersion->hasIncrementalInfo = ZR_FALSE;
@@ -422,19 +429,24 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
                                                fileVersion->textBlock->contentLength,
                                                content,
                                                contentLength);
-        return ZrLanguageServer_FileVersion_UpdateContent(
+        TZrBool updated = ZrLanguageServer_FileVersion_UpdateContent(
                 state,
                 fileVersion,
                 content,
                 contentLength,
                 version,
                 &changeInfo);
+        if (updated) {
+            fileVersion->isOpenDocument = isOpenDocument;
+        }
+        return updated;
     } else {
         // 创建新文件
         fileVersion = ZrLanguageServer_FileVersion_New(state, uri, content, contentLength, version);
         if (fileVersion == ZR_NULL) {
             return ZR_FALSE;
         }
+        fileVersion->isOpenDocument = isOpenDocument;
 
         // 添加到哈希表
         SZrTypeValue key;
@@ -451,6 +463,40 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
     }
 
     return ZR_TRUE;
+}
+
+// 更新 workspace 或 provider cache 中的文件内容。
+TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
+                                      SZrIncrementalParser *parser,
+                                      SZrString *uri,
+                                      const TZrChar *content,
+                                      TZrSize contentLength,
+                                      TZrSize version) {
+    return incremental_parser_update_file(
+            state,
+            parser,
+            uri,
+            content,
+            contentLength,
+            version,
+            ZR_FALSE);
+}
+
+TZrBool ZrLanguageServer_IncrementalParser_UpdateOpenDocument(
+        SZrState *state,
+        SZrIncrementalParser *parser,
+        SZrString *uri,
+        const TZrChar *content,
+        TZrSize contentLength,
+        TZrSize version) {
+    return incremental_parser_update_file(
+            state,
+            parser,
+            uri,
+            content,
+            contentLength,
+            version,
+            ZR_TRUE);
 }
 
 // 辅助函数：计算内容哈希（简化实现）

@@ -441,6 +441,75 @@ static void test_incremental_parser_rejects_non_monotonic_versions(SZrState *sta
     TEST_PASS(timer, "Incremental Parser Rejects Non-Monotonic Versions");
 }
 
+static void test_lsp_update_promotes_synthetic_version_zero_to_open_document(
+        SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    const TZrChar *diskContent = "var value = 1;";
+    const TZrChar *openContent = "var value = 2;";
+
+    TEST_START("LSP Update Promotes Synthetic Version Zero To Open Document");
+    TEST_INFO(
+            "Version-zero provenance",
+            "A client didOpen at version zero must replace a synthetic disk snapshot without weakening later monotonic version checks");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///version-zero-open.zr",
+            strlen("file:///version-zero-open.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state,
+                context->parser,
+                uri,
+                diskContent,
+                strlen(diskContent),
+                0U) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                openContent,
+                strlen(openContent),
+                0U)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer,
+                  "LSP Update Promotes Synthetic Version Zero To Open Document",
+                  "Version-zero didOpen was rejected as a stale synthetic snapshot update");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(
+            context->parser, uri);
+    if (fileVersion == ZR_NULL || fileVersion->textBlock == ZR_NULL ||
+        fileVersion->version != 0U || !fileVersion->isOpenDocument ||
+        fileVersion->textBlock->contentLength != strlen(openContent) ||
+        memcmp(fileVersion->textBlock->content,
+               openContent,
+               strlen(openContent)) != 0 ||
+        ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                openContent,
+                strlen(openContent),
+                0U)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Update Promotes Synthetic Version Zero To Open Document",
+                  "Open provenance or the post-open monotonic version gate was not preserved");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Update Promotes Synthetic Version Zero To Open Document");
+}
+
 // 主测试函数
 int main(void) {
     printf("==========\n");
@@ -486,6 +555,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_incremental_parser_rejects_non_monotonic_versions(state);
+    TEST_DIVIDER();
+
+    test_lsp_update_promotes_synthetic_version_zero_to_open_document(state);
     TEST_DIVIDER();
     
     // 清理

@@ -50,5 +50,6 @@
 - [Native receiver method callable parity](./01-semantic-core/2026-07-20-native-receiver-method-callable-parity.md)
 - [Native generic receiver callable parity](./01-semantic-core/2026-07-20-native-generic-receiver-callable-parity.md)
 - [Source rename workspace edit snapshot revalidation](./03-robustness/2026-07-20-source-rename-workspace-edit-snapshot-revalidation.md)
+- [General rename workspace edit snapshot revalidation](./03-robustness/2026-07-21-general-rename-workspace-edit-snapshot-revalidation.md)
 
-这些记录只对应L1/L2/L3/L6的部分历史能力；source rename记录关闭单一workspace-edit producer的提交前重校验，但general rename/code action/fix、并发race/cancellation、性能与峰值内存报告仍缺失，不改变L4-L8及完整L6状态。
+这些记录只对应L1/L2/L3/L6的部分历史能力；source-file rename和普通`textDocument/rename`已共享workspace-edit提交前snapshot重校验，但code action/fix及其他producer、并发race/cancellation、性能与峰值内存报告仍缺失，不改变L4-L8及完整L6状态。

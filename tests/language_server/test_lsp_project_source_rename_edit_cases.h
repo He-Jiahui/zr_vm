@@ -68,6 +68,8 @@ static void test_lsp_source_rename_collects_canonical_workspace_edits(
     SZrArray documentSnapshots = {0};
     const SZrLspSourceRenameDocumentSnapshot *mainSnapshot;
     const SZrLspSourceRenameDocumentSnapshot *secondarySnapshot;
+    SZrFileVersion *secondaryFileVersion;
+    SZrFileVersionContentBlock *secondaryContentBlock;
     SZrLspPosition mainImportStart;
     SZrLspPosition secondaryImportStart;
     SZrLspPosition providerModuleStart;
@@ -126,7 +128,7 @@ static void test_lsp_source_rename_collects_canonical_workspace_edits(
                 mainUri,
                 mainContent,
                 strlen(mainContent),
-                1U) ||
+                0U) ||
         !lsp_find_position_for_substring(
                 mainContent, "legacy", 1U, 0, &mainImportStart) ||
         !lsp_find_position_for_substring(
@@ -158,7 +160,7 @@ static void test_lsp_source_rename_collects_canonical_workspace_edits(
         locations.length != 3U ||
         documentSnapshots.length != 3U ||
         mainSnapshot == ZR_NULL || !mainSnapshot->isOpenDocument ||
-        mainSnapshot->version != 1U || secondarySnapshot == ZR_NULL ||
+        mainSnapshot->version != 0U || secondarySnapshot == ZR_NULL ||
         secondarySnapshot->isOpenDocument ||
         !ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
                 state, context, &documentSnapshots) ||
@@ -186,6 +188,30 @@ static void test_lsp_source_rename_collects_canonical_workspace_edits(
         TEST_FAIL(timer,
                   summary,
                   "Canonical rename edits did not cover the declaration and both import specifiers exactly once");
+        goto cleanup;
+    }
+
+    secondaryFileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(
+            context, secondaryUri);
+    if (secondaryFileVersion == ZR_NULL ||
+        secondaryFileVersion->isOpenDocument ||
+        secondaryFileVersion->textBlock == ZR_NULL) {
+        TEST_FAIL(timer,
+                  summary,
+                  "The unopened importer did not retain a disk-cache provenance record");
+        goto cleanup;
+    }
+    secondaryContentBlock = secondaryFileVersion->textBlock;
+    secondaryFileVersion->textBlock = ZR_NULL;
+    collected = ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
+            state, context, &documentSnapshots);
+    secondaryFileVersion->textBlock = secondaryContentBlock;
+    if (collected ||
+        !ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
+                state, context, &documentSnapshots)) {
+        TEST_FAIL(timer,
+                  summary,
+                  "A missing unopened cache snapshot should invalidate the plan until its content block is restored");
         goto cleanup;
     }
 

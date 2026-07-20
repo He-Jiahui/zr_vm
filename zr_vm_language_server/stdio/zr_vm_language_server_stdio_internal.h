@@ -13,28 +13,12 @@
 #include "cJSON/cJSON.h"
 
 #include "zr_vm_language_server/lsp_interface.h"
+#include "interface/lsp_workspace_edit_snapshot.h"
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
-
-#ifndef ZR_LSP_SOURCE_RENAME_DOCUMENT_SNAPSHOT_DEFINED
-#define ZR_LSP_SOURCE_RENAME_DOCUMENT_SNAPSHOT_DEFINED
-typedef struct SZrLspSourceRenameDocumentSnapshot {
-    SZrString *uri;
-    TZrUInt64 contentHash;
-    TZrSize contentLength;
-    TZrSize version;
-    TZrSize contentGeneration;
-    TZrBool isOpenDocument;
-} SZrLspSourceRenameDocumentSnapshot;
-#endif
-
-ZR_LANGUAGE_SERVER_API const SZrLspSourceRenameDocumentSnapshot *
-ZrLanguageServer_LspProject_FindSourceRenameDocumentSnapshot(
-        const SZrArray *documentSnapshots,
-        SZrString *uri);
 
 typedef struct SZrCachedUri {
     char *text;

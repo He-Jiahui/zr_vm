@@ -1,11 +1,16 @@
 ---
 related_code:
+  - zr_vm_language_server/include/zr_vm_language_server/incremental_parser.h
+  - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_workspace_edit_snapshot.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_workspace_edit_snapshot.h
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_source_rename.c
   - zr_vm_language_server/stdio/stdio_workspace_files.c
   - zr_vm_language_server/stdio/stdio_rename.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
 implementation_files:
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_workspace_edit_snapshot.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_source_rename.c
   - zr_vm_language_server/stdio/stdio_workspace_files.c
   - zr_vm_language_server/stdio/stdio_rename.c
@@ -14,6 +19,8 @@ plan_sources:
   - docs/plans/lsp/03-lsp-robustness-and-position.md
   - docs/plans/lsp/05-implementation-blueprint.md
 tests:
+  - tests/language_server/test_incremental_parser.c
+  - tests/language_server/test_lsp_interface.c
   - tests/language_server/test_lsp_project_features.c
   - tests/language_server/test_lsp_project_source_rename_edit_cases.h
   - tests/language_server/stdio_smoke.js
@@ -39,10 +46,10 @@ evidence_scope: source-rename-workspace-edit-snapshot-revalidation
 ## 已实现契约
 
 - `ZrLanguageServer_LspProject_CollectSourceRenameEdits`继续提供兼容的canonical location collection；新`CollectSourceRenameEditPlan`在同一结果上按URI去重并发布`SZrLspSourceRenameDocumentSnapshot`，没有复制content或保留AST指针。
-- opened document指纹来自当前incremental-parser text block：URI、LSP version、`contentGeneration`、content length和`ZrCore_Hash_CreateStable64`。project scan按既有约定以synthetic version 0表示unopened disk source；其指纹直接读取disk content，并要求已有version-0 cache与disk一致。
+- opened document指纹来自当前incremental-parser text block：URI、LSP version、`contentGeneration`、content length和`ZrCore_Hash_CreateStable64`。后续通用化已为file version发布显式`isOpenDocument` provenance；client version 0与synthetic disk version 0不再靠数值约定区分。unopened指纹读取disk content，并要求任何已有closed cache都可获取且与disk一致。
 - `ValidateSourceRenameEditPlan`重新捕获每个URI。任一missing file、open/closed状态、version、generation、length、hash或cache/disk不一致均返回false；不按range、module name或source text尝试补救。
 - stdio在每个batch item序列化前验证全部指纹。capture/validation/serialization失败会删除已构造的整个workspace edit并返回JSON `null`，不发布partial mixed-snapshot edit。
-- source-rename `TextDocumentEdit`从fingerprint读取captured version；unopened source显式写JSON `null`。普通`textDocument/rename`仍使用既有live file-version路径，行为未改变。
+- source-rename `TextDocumentEdit`从fingerprint读取captured version；unopened source显式写JSON `null`。普通`textDocument/rename`已在后续[general rename workspace edit snapshot revalidation](./2026-07-21-general-rename-workspace-edit-snapshot-revalidation.md)中接入同一通用capture/validate/captured-version路径。
 
 ## TDD与根因证据
 
@@ -60,13 +67,13 @@ evidence_scope: source-rename-workspace-edit-snapshot-revalidation
 
 ## Snapshot、Schema与协议边界
 
-- `SZrLspSourceRenameDocumentSnapshot`是单次request内的瞬时POD，不改变persistent document snapshot schema、semantic fact schema、public-contract hash、cache key或artifact schema。
+- `SZrLspSourceRenameDocumentSnapshot`现为通用`SZrLspWorkspaceEditDocumentSnapshot`的兼容alias，仍是单次request内的瞬时POD。后续persistent document snapshot只新增显式open provenance；semantic fact、public-contract hash、cache key和artifact schema未改变。
 - stable hash用于变化检测，不作为semantic identity。rename replacement与range仍完全来自canonical project record和parsed import/module facts。
 - 校验发生在server返回workspace edit之前。返回之后若client document再次变化，LSP client仍必须按`TextDocumentEdit.version`拒绝stale apply；server不能在response交付后重新验证client本地状态。
 - 本阶段没有p50/p95/p99、峰值内存、cancellation latency或并发snapshot压力报告，因此不晋级完整L6 robustness。
 
 ## 未完成边界
 
-- general rename、code action、safe fix与其他workspace edit producer尚未统一到同一fingerprint plan；本记录只关闭source-file rename的提交前重校验。
+- 本记录只关闭source-file rename的提交前重校验；普通general rename已由[2026-07-21 follow-up](./2026-07-21-general-rename-workspace-edit-snapshot-revalidation.md)统一到同一fingerprint plan，code action、safe fix与其他workspace edit producer仍未接入。
 - package/alias/public import edge migration、`.zrp/.zrm` generation、binary/native/artifact provider replacement及public type/property/layout hash仍待后续。
 - cancellation、100次乱序edit/race stress、partial reparse、多scope cache、workspace cache预算、性能百分位和峰值内存门禁仍未完成。
