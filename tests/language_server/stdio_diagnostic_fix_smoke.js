@@ -42,6 +42,7 @@ const serverPath = process.argv[2];
 assert(serverPath, 'Expected stdio server executable path');
 
 const documentUri = 'file:///zr-diagnostic-fix-smoke.zr';
+const semicolonDocumentUri = 'file:///zr-diagnostic-semicolon-fix-smoke.zr';
 const documentText = [
     'func choose(flag: bool): int {',
     '    var seed: int;',
@@ -52,6 +53,7 @@ const documentText = [
     '}',
     '',
 ].join('\n');
+const semicolonDocumentText = 'var answer = 42';
 
 const payload = Buffer.concat([
     createMessage({
@@ -78,7 +80,39 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: documentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 3, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: semicolonDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: semicolonDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: semicolonDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didChange',
+        params: {
+            textDocument: { uri: semicolonDocumentUri, version: 2 },
+            contentChanges: [{ text: 'var answer = 42;' }],
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 4,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: semicolonDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 5, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -119,3 +153,44 @@ assert(fix.applicability === 2,
 assert(fix.edit.range.start.line === 5 && fix.edit.range.start.character === 11 &&
     fix.edit.range.end.line === 5 && fix.edit.range.end.character === 15,
     'Expected serialized fix range for seed read');
+
+const semicolonPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === semicolonDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'missing_statement_semicolon'));
+assert(semicolonPublication,
+    'Expected EOF missing_statement_semicolon publication');
+
+const semicolonDiagnostic = semicolonPublication.params.diagnostics.find((entry) =>
+    entry.code === 'missing_statement_semicolon');
+assert(semicolonDiagnostic.data &&
+    Array.isArray(semicolonDiagnostic.data.fixes) &&
+    semicolonDiagnostic.data.fixes.length === 1,
+    'Expected one serialized semicolon diagnostic fix');
+
+const semicolonFix = semicolonDiagnostic.data.fixes[0];
+assert(semicolonFix.title === 'Insert missing semicolon' &&
+    semicolonFix.applicability === 1 &&
+    semicolonFix.edit &&
+    semicolonFix.edit.newText === ';',
+    'Expected a machine-applicable serialized semicolon edit');
+assert(semicolonFix.edit.range.start.line === 0 &&
+    semicolonFix.edit.range.start.character === 15 &&
+    semicolonFix.edit.range.end.line === 0 &&
+    semicolonFix.edit.range.end.character === 15,
+    'Expected the semicolon edit at the previous token end');
+
+const fixedSemicolonPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === semicolonDocumentUri &&
+    message.params.version === 2 &&
+    Array.isArray(message.params.diagnostics));
+assert(fixedSemicolonPublication &&
+    !fixedSemicolonPublication.params.diagnostics.some((entry) =>
+        entry.code === 'missing_statement_semicolon'),
+    'Expected the applied semicolon fix to clear the diagnostic');

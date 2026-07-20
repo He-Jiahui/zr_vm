@@ -33,12 +33,6 @@ static TZrBool lsp_editor_line_contains_text(const TZrChar *line,
     return ZR_FALSE;
 }
 
-static TZrBool lsp_editor_line_has_prefix(const TZrChar *line, TZrSize length, const TZrChar *prefix) {
-    TZrSize prefixLength = prefix != ZR_NULL ? strlen(prefix) : 0;
-    return line != ZR_NULL && prefix != ZR_NULL && length >= prefixLength &&
-           memcmp(line, prefix, prefixLength) == 0;
-}
-
 static const TZrChar *lsp_editor_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -143,26 +137,6 @@ static TZrSize lsp_editor_skip_non_code_span_on_line(const TZrChar *content,
         }
     }
     return cursor;
-}
-
-static TZrSize lsp_editor_find_line_comment_start(const TZrChar *content,
-                                                  TZrSize lineStart,
-                                                  TZrSize lineEnd) {
-    TZrSize cursor = lineStart;
-
-    while (content != ZR_NULL && cursor + 1 < lineEnd) {
-        TZrSize nextCodeOffset = lsp_editor_skip_non_code_span_on_line(content, cursor, lineEnd);
-        if (nextCodeOffset != cursor) {
-            if (content[cursor] == '/' && cursor + 1 < lineEnd && content[cursor + 1] == '/') {
-                return cursor;
-            }
-            cursor = nextCodeOffset;
-            continue;
-        }
-        cursor++;
-    }
-
-    return lineEnd;
 }
 
 static TZrBool lsp_editor_has_import_alias(const TZrChar *content,
@@ -545,89 +519,134 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrBool lsp_editor_line_can_accept_semicolon(const TZrChar *content,
-                                                    TZrSize trimStart,
-                                                    TZrSize trimEnd) {
-    TZrChar last;
-    const TZrChar *line;
-    TZrSize length;
-
-    if (content == ZR_NULL || trimStart >= trimEnd) {
-        return ZR_FALSE;
+static TZrInt32 lsp_code_action_compare_position(
+        SZrLspPosition left,
+        SZrLspPosition right) {
+    if (left.line != right.line) {
+        return left.line < right.line ? -1 : 1;
     }
-
-    last = content[trimEnd - 1];
-    if (last == ';' || last == '{' || last == '}' || last == ':') {
-        return ZR_FALSE;
+    if (left.character == right.character) {
+        return 0;
     }
-
-    line = content + trimStart;
-    length = trimEnd - trimStart;
-    return lsp_editor_line_has_prefix(line, length, "var ") ||
-           lsp_editor_line_has_prefix(line, length, "let ") ||
-           lsp_editor_line_has_prefix(line, length, "return ") ||
-           lsp_editor_line_has_prefix(line, length, "%import");
+    return left.character < right.character ? -1 : 1;
 }
 
-static TZrBool lsp_editor_append_missing_semicolon_action(SZrState *state,
-                                                          const TZrChar *content,
-                                                          TZrSize contentLength,
-                                                          SZrLspRange range,
-                                                          SZrArray *result) {
-    TZrSize lineStart;
-    TZrSize lineEnd;
-    TZrSize trimStart;
-    TZrSize trimEnd;
-    SZrLspRange editRange;
-    SZrLspCodeAction *action;
+static TZrBool lsp_code_action_ranges_intersect(
+        SZrLspRange left,
+        SZrLspRange right) {
+    return lsp_code_action_compare_position(left.start, right.end) <= 0 &&
+           lsp_code_action_compare_position(right.start, left.end) <= 0;
+}
 
-    if (state == ZR_NULL || content == ZR_NULL || result == ZR_NULL) {
+static TZrBool lsp_code_action_range_selects(
+        SZrLspRange requested,
+        SZrLspRange candidate) {
+    return lsp_code_action_ranges_intersect(requested, candidate) ||
+           (requested.start.line <= candidate.end.line &&
+            candidate.start.line <= requested.end.line);
+}
+
+static TZrBool lsp_editor_append_diagnostic_fix_actions(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *uri,
+        SZrLspRange requestedRange,
+        SZrArray *result) {
+    SZrArray diagnostics = {0};
+    TZrBool ok = ZR_TRUE;
+
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL ||
+        result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Array_Init(
+            state,
+            &diagnostics,
+            sizeof(SZrLspDiagnostic *),
+            ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(
+                state, context, uri, &diagnostics)) {
+        ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
         return ZR_FALSE;
     }
 
-    lineStart = lsp_editor_line_start_offset(content, contentLength, range.start.line);
-    lineEnd = lsp_editor_line_end_offset(content, contentLength, range.start.line);
-    trimStart = lineStart;
-    trimEnd = lineEnd;
-    trimEnd = lsp_editor_find_line_comment_start(content, lineStart, lineEnd);
-    while (trimStart < trimEnd &&
-           (content[trimStart] == ' ' || content[trimStart] == '\t')) {
-        trimStart++;
-    }
-    while (trimEnd > trimStart &&
-           (content[trimEnd - 1] == ' ' || content[trimEnd - 1] == '\t')) {
-        trimEnd--;
+    for (TZrSize diagnosticIndex = 0U;
+         ok && diagnosticIndex < diagnostics.length;
+         diagnosticIndex++) {
+        SZrLspDiagnostic **diagnosticPtr =
+                (SZrLspDiagnostic **)ZrCore_Array_Get(
+                        &diagnostics, diagnosticIndex);
+        if (diagnosticPtr == ZR_NULL || *diagnosticPtr == ZR_NULL ||
+            !(*diagnosticPtr)->fixes.isValid) {
+            continue;
+        }
+
+        for (TZrSize fixIndex = 0U;
+             ok && fixIndex < (*diagnosticPtr)->fixes.length;
+             fixIndex++) {
+            const SZrLspDiagnosticFix *fix =
+                    (const SZrLspDiagnosticFix *)ZrCore_Array_Get(
+                            &(*diagnosticPtr)->fixes, fixIndex);
+            const TZrChar *title;
+            const TZrChar *editText;
+            SZrLspCodeAction *action;
+
+            if (fix == ZR_NULL ||
+                fix->applicability !=
+                        ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE ||
+                (!lsp_code_action_range_selects(
+                         requestedRange, (*diagnosticPtr)->range) &&
+                 !lsp_code_action_range_selects(
+                         requestedRange, fix->editRange))) {
+                continue;
+            }
+            title = lsp_editor_string_text(fix->title);
+            editText = lsp_editor_string_text(fix->editText);
+            if (title == ZR_NULL || editText == ZR_NULL) {
+                ok = ZR_FALSE;
+                break;
+            }
+
+            action = (SZrLspCodeAction *)ZrCore_Memory_RawMalloc(
+                    state->global, sizeof(SZrLspCodeAction));
+            if (action == ZR_NULL) {
+                ok = ZR_FALSE;
+                break;
+            }
+            action->title = lsp_editor_create_string(
+                    state, title, strlen(title));
+            action->kind = lsp_editor_create_string(
+                    state,
+                    ZR_LSP_CODE_ACTION_KIND_QUICK_FIX,
+                    strlen(ZR_LSP_CODE_ACTION_KIND_QUICK_FIX));
+            action->isPreferred = ZR_TRUE;
+            ZrCore_Array_Init(
+                    state,
+                    &action->edits,
+                    sizeof(SZrLspTextEdit *),
+                    ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+            if (action->title == ZR_NULL || action->kind == ZR_NULL ||
+                !lsp_editor_append_text_edit(
+                        state,
+                        &action->edits,
+                        fix->editRange,
+                        editText,
+                        strlen(editText))) {
+                ZrLanguageServer_Lsp_FreeTextEdits(
+                        state, &action->edits);
+                ZrCore_Memory_RawFree(
+                        state->global,
+                        action,
+                        sizeof(SZrLspCodeAction));
+                ok = ZR_FALSE;
+                break;
+            }
+            ZrCore_Array_Push(state, result, &action);
+        }
     }
 
-    if (!lsp_editor_offset_is_code(content, contentLength, trimStart) ||
-        !lsp_editor_line_can_accept_semicolon(content, trimStart, trimEnd)) {
-        return ZR_TRUE;
-    }
-
-    action = (SZrLspCodeAction *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspCodeAction));
-    if (action == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    action->title = lsp_editor_create_string(state,
-                                             "Insert missing semicolon",
-                                             strlen("Insert missing semicolon"));
-    action->kind = lsp_editor_create_string(state,
-                                            ZR_LSP_CODE_ACTION_KIND_QUICK_FIX,
-                                            strlen(ZR_LSP_CODE_ACTION_KIND_QUICK_FIX));
-    action->isPreferred = ZR_TRUE;
-    ZrCore_Array_Init(state, &action->edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
-
-    editRange.start = lsp_editor_position_from_offset(content, contentLength, trimEnd);
-    editRange.end = editRange.start;
-    if (!lsp_editor_append_text_edit(state, &action->edits, editRange, ";", 1)) {
-        ZrLanguageServer_Lsp_FreeTextEdits(state, &action->edits);
-        ZrCore_Memory_RawFree(state->global, action, sizeof(SZrLspCodeAction));
-        return ZR_FALSE;
-    }
-
-    ZrCore_Array_Push(state, result, &action);
-    return ZR_TRUE;
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    return ok;
 }
 
 static TZrBool lsp_editor_append_unused_import_cleanup_action(SZrState *state,
@@ -718,7 +737,8 @@ TZrBool ZrLanguageServer_Lsp_GetCodeActions(SZrState *state,
         ZrCore_Memory_RawFree(state->global, action, sizeof(SZrLspCodeAction));
         ok = lsp_editor_append_unused_import_cleanup_action(state, fileVersion, result) &&
              lsp_editor_append_missing_import_action(state, context, uri, content, contentLength, range, result) &&
-             lsp_editor_append_missing_semicolon_action(state, content, contentLength, range, result);
+             lsp_editor_append_diagnostic_fix_actions(
+                     state, context, uri, range, result);
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ok;
     }
@@ -726,7 +746,8 @@ TZrBool ZrLanguageServer_Lsp_GetCodeActions(SZrState *state,
     ZrCore_Array_Push(state, result, &action);
     ok = lsp_editor_append_unused_import_cleanup_action(state, fileVersion, result) &&
          lsp_editor_append_missing_import_action(state, context, uri, content, contentLength, range, result) &&
-         lsp_editor_append_missing_semicolon_action(state, content, contentLength, range, result);
+         lsp_editor_append_diagnostic_fix_actions(
+                 state, context, uri, range, result);
     ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ok;
 }

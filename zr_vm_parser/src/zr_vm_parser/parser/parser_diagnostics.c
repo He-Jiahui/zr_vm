@@ -1,5 +1,43 @@
 #include "parser_internal.h"
 
+static SZrFileRange missing_semicolon_fix_location(
+        SZrParserState *ps,
+        SZrFileRange diagnosticLocation) {
+    SZrFileRange fixLocation = ZrParser_FileRange_Create(
+            diagnosticLocation.start,
+            diagnosticLocation.start,
+            diagnosticLocation.source);
+    SZrParserState probe;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL ||
+        ps->lexer->source == ZR_NULL) {
+        return fixLocation;
+    }
+
+    memset(&probe, 0, sizeof(probe));
+    ZrParser_State_Init(
+            &probe,
+            ps->state,
+            ps->lexer->source,
+            ps->lexer->sourceLength,
+            ps->lexer->sourceName);
+    while (probe.lexer != ZR_NULL &&
+           probe.lexer->t.token != ZR_TK_EOS) {
+        SZrFileRange tokenLocation = get_current_token_location(&probe);
+
+        if (tokenLocation.end.offset > diagnosticLocation.start.offset) {
+            break;
+        }
+        fixLocation = ZrParser_FileRange_Create(
+                tokenLocation.end,
+                tokenLocation.end,
+                diagnosticLocation.source);
+        ZrParser_Lexer_Next(probe.lexer);
+    }
+    ZrParser_State_Free(&probe);
+    return fixLocation;
+}
+
 static void report_conditional_diagnostic(
         SZrParserState *ps,
         SZrFileRange location,
@@ -43,15 +81,19 @@ void report_missing_conditional_alternate(SZrParserState *ps, SZrFileRange locat
 
 void report_missing_statement_semicolon(SZrParserState *ps, const TZrChar *statementKind, SZrFileRange location) {
     SZrStructuredDiagnostic diagnostic;
+    SZrFileRange fixLocation;
 
     if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
         return;
     }
 
-    if (!ZrParser_DiagnosticBuilder_BuildMissingStatementSemicolon(ps->state,
-                                                                   &diagnostic,
-                                                                   location,
-                                                                   statementKind)) {
+    fixLocation = missing_semicolon_fix_location(ps, location);
+    if (!ZrParser_DiagnosticBuilder_BuildMissingStatementSemicolon(
+                ps->state,
+                &diagnostic,
+                location,
+                fixLocation,
+                statementKind)) {
         report_error_with_token(ps, "Missing ';' after statement", ps->lexer->t.token);
         return;
     }

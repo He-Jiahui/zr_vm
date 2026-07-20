@@ -175,7 +175,7 @@ doc_type: module-detail
 `lsp_editor_features.c` / `lsp_code_actions.c` 是新的公共接口实现文件，避免继续扩大 `lsp_interface.c`。它们只负责编辑器形态的结果建模：
 
 - formatting 生成 `SZrLspTextEdit`，当前使用基于 brace/block 的保守缩进。
-- code action 使用 `SZrLspCodeAction`，第一阶段提供 `source.organizeImports`、`source.removeUnused`、缺失 import quickfix 和缺失分号 `quickfix`，返回最小 `TextEdit`；code action 入口会先获取文件内容 owned snapshot，再把显式 content bytes 传给缺失 import alias/insert-offset 扫描和缺失分号 quickfix；缺失分号 quickfix 会先确认 trimmed statement start 位于 code span，避免 block comment 正文中的 `return ...` 文本触发编辑。stdio在producer运行前捕获URI/version/generation/open-state/length/hash，producer返回后复验并只序列化captured version；fingerprint以opaque `data.snapshot`随action往返，`codeAction/resolve`发现stale或malformed token时删除edit并返回disabled reason，不按title/kind/source重建。
+- code action 使用 `SZrLspCodeAction`，提供 `source.organizeImports`、`source.removeUnused`、缺失 import quickfix 和缺失分号 `quickfix`，返回最小 `TextEdit`。缺失分号动作只消费`ZrLanguageServer_Lsp_GetDiagnostics`返回的`ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE` structured fix；title、edit range和edit text来自parser fact，LSP不再按`var`/`return`等源码前缀重建。stdio在producer运行前捕获URI/version/generation/open-state/length/hash，producer返回后复验并只序列化captured version；fingerprint以opaque `data.snapshot`随action往返，`codeAction/resolve`发现stale或malformed token时删除edit并返回disabled reason，不按title/kind/source重建。
 - folding / selection range 从当前文档文本结构生成轻量结构范围，包含 block、连续 import/comment region，以及 word -> line -> block selection chain。
 - document link 扫描 `%import("...")` 字面量、`.zrp` 的 `source` / `binary` / `entry` 路径，以及 native virtual declaration 里的 module link；import 优先复用 definition 查询结果作为跳转目标。
 - declaration / typeDefinition / implementation 当前复用 definition 查询，保证和已有导航结果一致。
@@ -287,7 +287,7 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
 ## 当前限制
 
 - formatting 仍是保守文本缩进器，不是 AST pretty-printer；它不会重排表达式、参数列表或注释。
-- code action 第一阶段稳定输出 organize imports、缺失 import quickfix 和缺失分号 quickfix；缺失 import/缺失分号 quickfix 仍是轻量文本能力，使用 owned snapshot 做 alias/insert-offset/code-span 检查和 line-comment 前插入，不声明 AST-backed rewrite。后续可按 diagnostics code/data 增加未解析成员等修复。
+- code action 稳定输出 organize imports、缺失 import quickfix 和缺失分号 quickfix。缺失 import仍使用owned snapshot做alias/insert-offset/code-span检查；缺失分号已收敛到parser structured diagnostic fix，支持EOF和line-comment前精确插入并跳过placeholder/maybe fix。delimiter及其他diagnostic fix仍需按同一fact-first边界接入。
 - declaration / typeDefinition / implementation 目前复用 definition 查询；后续如果 class/interface/extern 语义拆分，需要在统一语义查询层细化，不要在 stdio 层分叉。
 - workspace diagnostic 会为当前增量解析器已知文档返回 full report；document pull diagnostics 复用现有单文档诊断。
 - linked editing 仍优先依赖语义 references；fallback 是文档级 token 扫描，只用于语义 references 不足时的保守体验，不声明声明解析或跨文件 rename。
@@ -314,6 +314,7 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
   - `%import(...)` document link
   - organize imports code action
   - missing semicolon quickfix keeps insertion before line comments and skips block-comment bodies
+  - missing semicolon quickfix consumes only machine-applicable diagnostic fixes, preserves exact token-end edit range, rejects placeholder fixes, disables stale resolve and clears the diagnostic after apply/rebind
   - reference count 和 `%test(...)` CodeLens command
   - call hierarchy / type hierarchy prepare item
 - `tests/language_server/test_lsp_position_mapping.c`

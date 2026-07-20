@@ -163,6 +163,7 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementSemicolon(
     SZrState *state,
     SZrStructuredDiagnostic *out,
     SZrFileRange location,
+    SZrFileRange fixLocation,
     const TZrChar *statementKind);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyOpen(
     SZrState *state,

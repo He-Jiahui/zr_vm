@@ -113,7 +113,7 @@ static SZrAstNode *parse_variable_declaration_impl(SZrParserState *ps, TZrBool r
 
     if (ps->lexer->t.token == ZR_TK_SEMICOLON && reportMissingSemicolon) {
         consume_token(ps, ZR_TK_SEMICOLON);
-    } else if (reportMissingSemicolon && ps->lexer->t.token != ZR_TK_EOS && ps->lexer->t.token != ZR_TK_DOT &&
+    } else if (reportMissingSemicolon && ps->lexer->t.token != ZR_TK_DOT &&
                ps->lexer->t.token != ZR_TK_LBRACKET && ps->lexer->t.token != ZR_TK_LPAREN) {
         report_missing_statement_semicolon(ps, "variable declaration", get_current_token_location(ps));
     }

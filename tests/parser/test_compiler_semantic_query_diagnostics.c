@@ -1142,6 +1142,46 @@ static void test_compiler_structured_error_publisher_deep_copies_diagnostic(void
     ZrParser_CompilerState_Free(&cs);
 }
 
+static void test_missing_statement_semicolon_builder_publishes_machine_fix(void) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrStructuredDiagnosticFix *fix;
+    SZrFileRange location;
+    SZrFileRange fixLocation;
+
+    memset(&location, 0, sizeof(location));
+    location.start = ZrParser_FilePosition_Create(24U, 3, 1);
+    location.end = ZrParser_FilePosition_Create(25U, 3, 2);
+    fixLocation = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(17U, 2, 10),
+            ZrParser_FilePosition_Create(17U, 2, 10),
+            ZR_NULL);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingStatementSemicolon(
+            g_state,
+            &diagnostic,
+            location,
+            fixLocation,
+            "break"));
+    TEST_ASSERT_EQUAL_UINT64(24U, diagnostic.location.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(25U, diagnostic.location.end.offset);
+    TEST_ASSERT_TRUE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostic.fixes.length);
+
+    fix = (SZrStructuredDiagnosticFix *)ZrCore_Array_Get(
+            &diagnostic.fixes, 0U);
+    TEST_ASSERT_NOT_NULL(fix);
+    TEST_ASSERT_EQUAL_STRING(
+            "Insert missing semicolon",
+            ZrCore_String_GetNativeString(fix->title));
+    TEST_ASSERT_EQUAL_STRING(";", ZrCore_String_GetNativeString(fix->editText));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE, fix->applicability);
+    TEST_ASSERT_EQUAL_UINT64(17U, fix->editRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(17U, fix->editRange.end.offset);
+
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_compile_script_publishes_semantic_query_diagnostics_without_error);
@@ -1162,5 +1202,6 @@ int main(void) {
     RUN_TEST(test_compile_script_suppresses_true_loop_break_definite_assignment_diagnostic);
     RUN_TEST(test_compiler_error_publishes_persistent_semantic_diagnostic_fact);
     RUN_TEST(test_compiler_structured_error_publisher_deep_copies_diagnostic);
+    RUN_TEST(test_missing_statement_semicolon_builder_publishes_machine_fix);
     return UNITY_END();
 }

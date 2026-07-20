@@ -88,6 +88,10 @@ doc_type: category-index
   - LSP code action、formatting、folding、selection、document link、CodeLens 和 pull diagnostics
   - stdio capability 广告、request wiring 与 JSON wire shape
   - 新增 C 单测和 stdio smoke 覆盖
+- `lsp-diagnostic-safe-fixes.md`
+  - parser structured fix的primary/edit range与applicability ownership
+  - LSP machine-applicable projection、placeholder负边界与diagnostic数组释放
+  - code-action snapshot resolve、stale拒绝和apply-edit-rebind验证
 - `lsp-workspace-edit-snapshot-provenance.md`
   - opened overlay 与 disk cache 的显式 provenance，含合法 client version 0
   - workspace edit 的 URI/version/generation/open-state/length/hash 捕获与提交前复验
@@ -106,6 +110,7 @@ doc_type: category-index
 4. 需要修改 `.zrp` 编辑体验或 project config 刷新路径时，再看 `zrp-editor-schema-and-lsp-refresh.md`。
 5. 需要修改 VSCode extension 的 grammar、debug commands、native asset sync 或 VSIX 打包时，再看 `vscode-extension-language-support.md`。
 6. 需要修改 language server 的现代编辑器能力、stdio request wiring 或 provider capability 时，再看 `lsp-advanced-editor-features.md`。
-7. 需要修改 rename/code action/fix 的 workspace edit 快照、document version 或 disk/open provenance 时，再看 `lsp-workspace-edit-snapshot-provenance.md`。
-8. 需要修改 Rust 绑定 ABI、Rust workspace、host runtime lifecycle 或 cargo/CMake 集成时，再看 `zr-vm-rust-binding.md`。
-9. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。
+7. 需要修改diagnostic fix的parser ownership、applicability或LSP projection时，再看`lsp-diagnostic-safe-fixes.md`。
+8. 需要修改 rename/code action/fix 的 workspace edit 快照、document version 或 disk/open provenance 时，再看 `lsp-workspace-edit-snapshot-provenance.md`。
+9. 需要修改 Rust 绑定 ABI、Rust workspace、host runtime lifecycle 或 cargo/CMake 集成时，再看 `zr-vm-rust-binding.md`。
+10. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。

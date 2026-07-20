@@ -34,25 +34,7 @@ void free_symbols_array(SZrState *state, SZrArray *symbols) {
 }
 
 void free_diagnostics_array(SZrState *state, SZrArray *diagnostics) {
-    TZrSize index;
-
-    if (state == ZR_NULL || diagnostics == ZR_NULL) {
-        return;
-    }
-
-    for (index = 0; index < diagnostics->length; index++) {
-        SZrLspDiagnostic **diagnosticPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, index);
-        if (diagnosticPtr != ZR_NULL && *diagnosticPtr != ZR_NULL) {
-            if ((*diagnosticPtr)->relatedInformation.isValid) {
-                ZrCore_Array_Free(state, &(*diagnosticPtr)->relatedInformation);
-            }
-            if ((*diagnosticPtr)->fixes.isValid) {
-                ZrCore_Array_Free(state, &(*diagnosticPtr)->fixes);
-            }
-            ZrCore_Memory_RawFree(state->global, *diagnosticPtr, sizeof(SZrLspDiagnostic));
-        }
-    }
-    ZrCore_Array_Free(state, diagnostics);
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, diagnostics);
 }
 
 void free_completion_items_array(SZrState *state, SZrArray *items) {

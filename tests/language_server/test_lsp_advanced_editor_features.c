@@ -2083,6 +2083,8 @@ static void test_lsp_advanced_editor_features_return_empty_for_unopened_document
     }
 }
 
+#include "test_lsp_diagnostic_safe_fix_cases.h"
+
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;
@@ -2123,6 +2125,9 @@ int main(void) {
     test_lsp_code_action_inserts_missing_semicolon(state, &failures);
     test_lsp_code_action_inserts_semicolon_before_line_comment(state, &failures);
     test_lsp_code_action_skips_semicolon_inside_block_comment(state, &failures);
+    test_lsp_code_action_consumes_machine_applicable_diagnostic_fix(
+            state, &failures);
+    test_lsp_code_action_skips_placeholder_diagnostic_fix(state, &failures);
     test_lsp_code_action_inserts_missing_native_import(state, &failures);
     test_lsp_code_action_uses_requested_range_for_missing_import(state, &failures);
     test_lsp_code_action_skips_existing_import_alias(state, &failures);

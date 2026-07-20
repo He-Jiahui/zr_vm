@@ -942,6 +942,31 @@ void ZrLanguageServer_Lsp_FreeTextEdits(SZrState *state, SZrArray *result) {
     ZrCore_Array_Free(state, result);
 }
 
+void ZrLanguageServer_Lsp_FreeDiagnostics(SZrState *state, SZrArray *result) {
+    if (state == ZR_NULL || result == ZR_NULL) {
+        return;
+    }
+    for (TZrSize index = 0U; index < result->length; index++) {
+        SZrLspDiagnostic **diagnosticPtr =
+                (SZrLspDiagnostic **)ZrCore_Array_Get(result, index);
+        if (diagnosticPtr == ZR_NULL || *diagnosticPtr == ZR_NULL) {
+            continue;
+        }
+        if ((*diagnosticPtr)->relatedInformation.isValid) {
+            ZrCore_Array_Free(
+                    state, &(*diagnosticPtr)->relatedInformation);
+        }
+        if ((*diagnosticPtr)->fixes.isValid) {
+            ZrCore_Array_Free(state, &(*diagnosticPtr)->fixes);
+        }
+        ZrCore_Memory_RawFree(
+                state->global,
+                *diagnosticPtr,
+                sizeof(SZrLspDiagnostic));
+    }
+    ZrCore_Array_Free(state, result);
+}
+
 void ZrLanguageServer_Lsp_FreeCodeActions(SZrState *state, SZrArray *result) {
     if (state == ZR_NULL || result == ZR_NULL) {
         return;

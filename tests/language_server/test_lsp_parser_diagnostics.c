@@ -698,6 +698,18 @@ static void test_lsp_missing_statement_semicolon_parser_diagnostics(SZrState *st
     if (!run_parser_diagnostic_case(state,
                                     &timer,
                                     summary,
+                                    "file:///parser_missing_variable_declaration_semicolon_at_eof.zr",
+                                    "var answer = 42",
+                                    "missing_statement_semicolon",
+                                    "Missing ';' after variable declaration statement",
+                                    "Insert ';' after the variable declaration statement",
+                                    "expected an EOF variable declaration to publish the same structured missing-semicolon diagnostic")) {
+        return;
+    }
+
+    if (!run_parser_diagnostic_case(state,
+                                    &timer,
+                                    summary,
                                     "file:///parser_missing_module_declaration_semicolon.zr",
                                     "%module \"main\"\n"
                                     "var next = 2;\n",

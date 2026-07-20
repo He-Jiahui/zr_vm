@@ -412,6 +412,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetTypeHierarchySubtypes(SZr
                                                                              SZrArray *result);
 
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeTextEdits(SZrState *state, SZrArray *result);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeDiagnostics(SZrState *state, SZrArray *result);
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeCodeActions(SZrState *state, SZrArray *result);
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeFoldingRanges(SZrState *state, SZrArray *result);
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeSelectionRanges(SZrState *state, SZrArray *result);

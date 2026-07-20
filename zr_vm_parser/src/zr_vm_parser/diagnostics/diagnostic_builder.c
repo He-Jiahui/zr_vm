@@ -855,6 +855,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalAlternate(SZrState *st
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementSemicolon(SZrState *state,
                                                                   SZrStructuredDiagnostic *out,
                                                                   SZrFileRange location,
+                                                                  SZrFileRange fixLocation,
                                                                   const TZrChar *statementKind) {
     const TZrChar *kind = statementKind != ZR_NULL ? statementKind : "statement";
     TZrChar message[160];
@@ -874,15 +875,30 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementSemicolon(SZrState *stat
              "Insert ';' after the %s statement before the next statement.",
              kind);
 
-    return ZrParser_DiagnosticBuilder_Build(
-            state,
-            out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
-            location,
-            "missing_statement_semicolon",
-            message,
-            cause,
-            suggestion);
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "missing_statement_semicolon",
+                message,
+                cause,
+                suggestion)) {
+        return ZR_FALSE;
+    }
+
+    fixLocation.end = fixLocation.start;
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Insert missing semicolon",
+                fixLocation,
+                ";",
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildWeakUpgrade(SZrState *state,

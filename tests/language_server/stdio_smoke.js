@@ -54,6 +54,18 @@ async function waitForDiagnosticsUri(client, uri, message) {
     throw new Error(message);
 }
 
+async function waitForDiagnosticsUriVersion(client, uri, version, message) {
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+        const diagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+        if (diagnosticRelatedUriMatches(uri, diagnostics.uri) &&
+            diagnostics.version === version) {
+            return diagnostics;
+        }
+    }
+
+    throw new Error(message);
+}
+
 function copyPathSync(sourcePath, targetPath) {
     const stats = fs.statSync(sourcePath);
 
@@ -2415,21 +2427,93 @@ async function main() {
             text: semicolonFixtureText,
         },
     });
-    await waitForDiagnosticsUri(client, semicolonFixtureUri, 'semicolon quickfix diagnostics uri mismatch');
+    const semicolonDiagnostics = await waitForDiagnosticsUri(
+        client,
+        semicolonFixtureUri,
+        'semicolon quickfix diagnostics uri mismatch');
+    assert(Array.isArray(semicolonDiagnostics.diagnostics) &&
+        semicolonDiagnostics.diagnostics.some((diagnostic) =>
+            diagnostic && diagnostic.code === 'missing_statement_semicolon'),
+    'EOF variable declaration must publish missing_statement_semicolon before offering a quickfix');
 
     const quickFixActions = await client.request('textDocument/codeAction', {
         textDocument: { uri: semicolonFixtureUri },
         range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
         context: { diagnostics: [], only: ['quickfix'] },
     });
-    assert(Array.isArray(quickFixActions) && quickFixActions.some((action) =>
-        action &&
-        action.kind === 'quickfix' &&
-        action.edit &&
-        action.edit.changes &&
-        Array.isArray(action.edit.changes[semicolonFixtureUri]) &&
-        action.edit.changes[semicolonFixtureUri].some((edit) => edit.newText === ';')),
-    'textDocument/codeAction must return a semicolon quickfix edit');
+    const semicolonAction = Array.isArray(quickFixActions)
+        ? quickFixActions.find((action) =>
+            action &&
+            action.title === 'Insert missing semicolon' &&
+            action.kind === 'quickfix')
+        : null;
+    assert(semicolonAction &&
+        semicolonAction.data &&
+        semicolonAction.data.snapshot &&
+        semicolonAction.data.snapshot.version === 1 &&
+        semicolonAction.data.snapshot.isOpenDocument === true &&
+        semicolonAction.edit &&
+        semicolonAction.edit.changes &&
+        Array.isArray(semicolonAction.edit.changes[semicolonFixtureUri]) &&
+        semicolonAction.edit.changes[semicolonFixtureUri].some((edit) =>
+            edit.newText === ';' &&
+            edit.range.start.line === 0 &&
+            edit.range.start.character === 15 &&
+            edit.range.end.line === 0 &&
+            edit.range.end.character === 15),
+    'textDocument/codeAction must serialize the exact structured semicolon fix and captured snapshot');
+
+    const resolvedSemicolonAction = await client.request(
+        'codeAction/resolve', semicolonAction);
+    assert(resolvedSemicolonAction &&
+        resolvedSemicolonAction.edit &&
+        !resolvedSemicolonAction.disabled,
+    'codeAction/resolve must preserve the semicolon edit while its snapshot is current');
+
+    client.notify('textDocument/didChange', {
+        textDocument: { uri: semicolonFixtureUri, version: 2 },
+        contentChanges: [{ text: semicolonFixtureText }],
+    });
+    const staleResolvedSemicolonAction = await client.request(
+        'codeAction/resolve', semicolonAction);
+    assert(staleResolvedSemicolonAction &&
+        !staleResolvedSemicolonAction.edit &&
+        staleResolvedSemicolonAction.disabled &&
+        staleResolvedSemicolonAction.disabled.reason ===
+            'Document changed since this code action was computed',
+    'codeAction/resolve must disable a stale structured semicolon fix');
+
+    const freshSemicolonActions = await client.request('textDocument/codeAction', {
+        textDocument: { uri: semicolonFixtureUri },
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+        context: { diagnostics: [], only: ['quickfix'] },
+    });
+    const freshSemicolonAction = Array.isArray(freshSemicolonActions)
+        ? freshSemicolonActions.find((action) =>
+            action &&
+            action.title === 'Insert missing semicolon' &&
+            action.kind === 'quickfix')
+        : null;
+    assert(freshSemicolonAction &&
+        freshSemicolonAction.data &&
+        freshSemicolonAction.data.snapshot &&
+        freshSemicolonAction.data.snapshot.version === 2,
+    'fresh semicolon code action must recapture the changed document version');
+
+    const fixedSemicolonFixtureText = 'var answer = 42;\n';
+    client.notify('textDocument/didChange', {
+        textDocument: { uri: semicolonFixtureUri, version: 3 },
+        contentChanges: [{ text: fixedSemicolonFixtureText }],
+    });
+    const fixedSemicolonDiagnostics = await waitForDiagnosticsUriVersion(
+        client,
+        semicolonFixtureUri,
+        3,
+        'fixed semicolon diagnostics uri mismatch');
+    assert(Array.isArray(fixedSemicolonDiagnostics.diagnostics) &&
+        !fixedSemicolonDiagnostics.diagnostics.some((diagnostic) =>
+            diagnostic && diagnostic.code === 'missing_statement_semicolon'),
+    'applying the exact semicolon edit must clear the parser diagnostic after rebind');
 
     const missingImportFixturePath = path.join(watchedFixture.rootPath, 'missing_import_action.zr');
     const missingImportFixtureUri = pathToFileURL(missingImportFixturePath).toString();
