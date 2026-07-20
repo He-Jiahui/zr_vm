@@ -496,8 +496,15 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
             case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
             case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
             case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
+            case ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY):
             case ZR_INSTRUCTION_ENUM(CATCH):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
+                break;
+
+            case ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE):
+                function_note_generated_frame_slot(destinationSlot, &slotCount);
+                function_note_generated_frame_slot(operandA1, &slotCount);
+                function_note_generated_frame_slot(operandB1, &slotCount);
                 break;
 
             case ZR_INSTRUCTION_ENUM(GET_STACK):
@@ -2074,7 +2081,8 @@ void ZrCore_Function_InitializeFrameLayoutStorage(struct SZrState *state,
         const SZrFunctionFrameSlotLayout *slotLayout = &function->frameSlotLayouts[index];
         SZrStackFramePlace place;
 
-        if ((slotLayout->isParameter &&
+        if ((slotLayout->reserved0 & ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS) != 0u ||
+            (slotLayout->isParameter &&
              slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
              function_frame_layout_parameter_index_for_stack_slot(function, slotLayout->stackSlot) <
                      preservedArgumentCount) ||

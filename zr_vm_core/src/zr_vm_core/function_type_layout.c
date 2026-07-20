@@ -1207,6 +1207,10 @@ static TZrBool function_type_layout_build_managed_fields(SZrState *state,
                 return ZR_FALSE;
             }
             if (resolvedField.kind == ZR_FUNCTION_TYPE_LAYOUT_RESOLVED_FIELD_SKIP) {
+                if (function_type_layout_member_is_field(member) &&
+                    !function_type_layout_checked_add_u32(managedFieldCount, 1u, &managedFieldCount)) {
+                    return ZR_FALSE;
+                }
                 continue;
             }
             if (resolvedField.kind == ZR_FUNCTION_TYPE_LAYOUT_RESOLVED_FIELD_VALUE) {
@@ -1220,7 +1224,9 @@ static TZrBool function_type_layout_build_managed_fields(SZrState *state,
             }
             if (!function_type_layout_member_nested_layout_is_safe(prototype, member, resolvedField.nestedLayout) ||
                 !function_type_layout_checked_add_u32(managedFieldCount,
-                                                      resolvedField.nestedLayout->fieldCount > 0u
+                                                      resolvedField.nestedLayout->blittable
+                                                              ? 1u
+                                                              : resolvedField.nestedLayout->fieldCount > 0u
                                                               ? resolvedField.nestedLayout->fieldCount
                                                               : 1u,
                                                       &managedFieldCount)) {
@@ -1262,6 +1268,14 @@ static TZrBool function_type_layout_build_managed_fields(SZrState *state,
                 return ZR_FALSE;
             }
             if (resolvedField.kind == ZR_FUNCTION_TYPE_LAYOUT_RESOLVED_FIELD_SKIP) {
+                if (function_type_layout_member_is_field(member)) {
+                    fields[fieldCursor].byteOffset = member->fieldOffset;
+                    fields[fieldCursor].byteSize = member->fieldSize;
+                    fields[fieldCursor].typeLayoutIndex = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+                    fields[fieldCursor].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_NONE;
+                    fields[fieldCursor].activeTag = 0u;
+                    fieldCursor++;
+                }
                 continue;
             }
             if (resolvedField.kind == ZR_FUNCTION_TYPE_LAYOUT_RESOLVED_FIELD_VALUE) {
@@ -1279,11 +1293,12 @@ static TZrBool function_type_layout_build_managed_fields(SZrState *state,
             if (!function_type_layout_member_nested_layout_is_safe(prototype, member, resolvedField.nestedLayout)) {
                 return ZR_FALSE;
             }
-            if (resolvedField.nestedLayout->fieldCount == 0u) {
+            if (resolvedField.nestedLayout->blittable ||
+                resolvedField.nestedLayout->fieldCount == 0u) {
                 fields[fieldCursor].byteOffset = member->fieldOffset;
                 fields[fieldCursor].byteSize = member->fieldSize;
                 fields[fieldCursor].typeLayoutIndex = resolvedField.nestedTypeLayoutId;
-                fields[fieldCursor].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_NONE;
+                fields[fieldCursor].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_NESTED_LAYOUT;
                 fieldCursor++;
                 continue;
             }
@@ -1596,6 +1611,30 @@ static TZrBool function_type_layout_union_tag_size(SZrState *state,
     return (TZrBool)(*outTagSize != 0u);
 }
 
+static void function_type_layout_select_operations(const SZrTypeLayoutField *fields,
+                                                   TZrUInt32 fieldCount,
+                                                   EZrTypeLayoutCopyKind *outCopyKind,
+                                                   EZrTypeLayoutDropKind *outDropKind) {
+    EZrTypeLayoutCopyKind copyKind = ZR_TYPE_LAYOUT_COPY_KIND_BITWISE;
+    EZrTypeLayoutDropKind dropKind = ZR_TYPE_LAYOUT_DROP_KIND_NONE;
+
+    for (TZrUInt32 index = 0u; fields != ZR_NULL && index < fieldCount; index++) {
+        if ((fields[index].flags & ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT) != 0u) {
+            copyKind = ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE;
+        }
+        if ((fields[index].flags & ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE) != 0u) {
+            dropKind = ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE;
+        }
+    }
+
+    if (outCopyKind != ZR_NULL) {
+        *outCopyKind = copyKind;
+    }
+    if (outDropKind != ZR_NULL) {
+        *outDropKind = dropKind;
+    }
+}
+
 const SZrTypeLayout *ZrCore_Function_ResolvePrototypeFrameTypeLayout(const SZrFunction *function,
                                                                      TZrUInt32 typeLayoutId,
                                                                      TZrPtr userData) {
@@ -1604,8 +1643,11 @@ const SZrTypeLayout *ZrCore_Function_ResolvePrototypeFrameTypeLayout(const SZrFu
     SZrFunction *entryFunction = (SZrFunction *)entryFunctionConst;
     SZrFunctionPrototypeRecord record;
     SZrTypeLayoutField *fields = ZR_NULL;
+    SZrTypeLayoutContract layoutContract;
     TZrUInt32 fieldCount = 0u;
     TZrUInt32 unionTagSize = 0u;
+    EZrTypeLayoutCopyKind copyKind;
+    EZrTypeLayoutDropKind dropKind;
     TZrUInt8 stateFlag;
     TZrBool usingFallbackRecord = ZR_FALSE;
 
@@ -1649,6 +1691,8 @@ const SZrTypeLayout *ZrCore_Function_ResolvePrototypeFrameTypeLayout(const SZrFu
     }
 
 zr_function_type_layout_retry_record:
+    memset(&layoutContract, 0, sizeof(layoutContract));
+    layoutContract.cTypeId = typeLayoutId;
     fields = ZR_NULL;
     fieldCount = 0u;
     unionTagSize = 0u;
@@ -1690,17 +1734,19 @@ zr_function_type_layout_retry_record:
             return ZR_NULL;
         }
 
-        ZrCore_TypeLayout_InitUnion(&entryFunction->prototypeFrameTypeLayouts[typeLayoutId],
-                                    record.prototype->layoutByteSize,
-                                    record.prototype->layoutByteAlign,
-                                    0u,
-                                    unionTagSize,
-                                    fieldCount > 0u ? ZR_TYPE_LAYOUT_COPY_KIND_FIELD_COPY
-                                                    : ZR_TYPE_LAYOUT_COPY_KIND_POD,
-                                    fieldCount > 0u ? ZR_TYPE_LAYOUT_DROP_KIND_FIELD_DROP
-                                                    : ZR_TYPE_LAYOUT_DROP_KIND_NONE,
-                                    fields,
-                                    fieldCount);
+        function_type_layout_select_operations(fields, fieldCount, &copyKind, &dropKind);
+
+        ZrCore_TypeLayout_InitUnionWithContract(
+                &entryFunction->prototypeFrameTypeLayouts[typeLayoutId],
+                record.prototype->layoutByteSize,
+                record.prototype->layoutByteAlign,
+                0u,
+                unionTagSize,
+                copyKind,
+                dropKind,
+                fields,
+                fieldCount,
+                &layoutContract);
     } else {
         if (!function_type_layout_build_managed_fields(state,
                                                        entryFunction,
@@ -1721,15 +1767,21 @@ zr_function_type_layout_retry_record:
             return ZR_NULL;
         }
 
-        ZrCore_TypeLayout_InitStruct(&entryFunction->prototypeFrameTypeLayouts[typeLayoutId],
-                                     record.prototype->layoutByteSize,
-                                     record.prototype->layoutByteAlign,
-                                     fieldCount > 0u ? ZR_TYPE_LAYOUT_COPY_KIND_FIELD_COPY
-                                                     : ZR_TYPE_LAYOUT_COPY_KIND_POD,
-                                     fieldCount > 0u ? ZR_TYPE_LAYOUT_DROP_KIND_FIELD_DROP
-                                                     : ZR_TYPE_LAYOUT_DROP_KIND_NONE,
-                                     fields,
-                                     fieldCount);
+        function_type_layout_select_operations(fields, fieldCount, &copyKind, &dropKind);
+
+        ZrCore_TypeLayout_InitStructWithContract(
+                &entryFunction->prototypeFrameTypeLayouts[typeLayoutId],
+                record.prototype->layoutByteSize,
+                record.prototype->layoutByteAlign,
+                copyKind,
+                dropKind,
+                fields,
+                fieldCount,
+                &layoutContract);
+    }
+    if (!ZrCore_TypeLayout_Validate(&entryFunction->prototypeFrameTypeLayouts[typeLayoutId])) {
+        entryFunction->prototypeFrameTypeLayoutStates[typeLayoutId] = ZR_FUNCTION_TYPE_LAYOUT_CACHE_FAILED;
+        return ZR_NULL;
     }
     entryFunction->prototypeFrameTypeLayoutStates[typeLayoutId] = ZR_FUNCTION_TYPE_LAYOUT_CACHE_READY;
     return &entryFunction->prototypeFrameTypeLayouts[typeLayoutId];

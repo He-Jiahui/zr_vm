@@ -24,6 +24,43 @@ static const SZrAotExecIrFrameSlotLayout *backend_aot_c_find_frame_slot_layout(
     return ZR_NULL;
 }
 
+TZrBool backend_aot_c_value_semir_needs_skip_drop_slot(
+        const SZrAotExecIrModule *module,
+        const SZrAotExecIrFunction *functionIr) {
+    TZrUInt32 instructionIndex;
+
+    if (module == ZR_NULL || functionIr == ZR_NULL ||
+        module->instructions == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (instructionIndex = 0u;
+         instructionIndex < functionIr->instructionCount;
+         instructionIndex++) {
+        TZrUInt32 moduleInstructionIndex =
+                functionIr->firstInstructionOffset + instructionIndex;
+        const SZrAotExecIrInstruction *instruction;
+        const SZrAotExecIrFrameSlotLayout *sourceLayout;
+
+        if (moduleInstructionIndex >= module->instructionCount) {
+            return ZR_FALSE;
+        }
+        instruction = &module->instructions[moduleInstructionIndex];
+        if (instruction->semIrOpcode != (TZrUInt32)ZR_SEMIR_OPCODE_RETURN_TYPED) {
+            continue;
+        }
+        sourceLayout = backend_aot_c_find_frame_slot_layout(
+                &functionIr->frameLayout, instruction->operand0);
+        if (sourceLayout != ZR_NULL &&
+            sourceLayout->slotKind ==
+                    (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
+            sourceLayout->typeLayoutId != ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE &&
+            sourceLayout->byteSize > 0u) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrUInt32 backend_aot_c_value_semir_register_frame_bytes(const SZrAotExecIrFrameLayout *frameLayout) {
     TZrUInt32 layoutIndex;
     TZrUInt32 registerFrameBytes = 0u;
@@ -102,6 +139,8 @@ static TZrBool backend_aot_c_value_layouts_can_inline_copy(
                      sourceLayout != ZR_NULL &&
                      destinationLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
                      sourceLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
+                     (destinationLayout->reserved0 & ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS) == 0u &&
+                     (sourceLayout->reserved0 & ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS) == 0u &&
                      destinationLayout->typeLayoutId != ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE &&
                      destinationLayout->typeLayoutId == sourceLayout->typeLayoutId &&
                      destinationLayout->byteSize > 0u &&
@@ -130,17 +169,21 @@ static TZrBool backend_aot_try_write_c_value_copy_exec(
             "    {\n"
             "        const SZrTypeLayout *zr_aot_copy_layout =\n"
             "                ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, %u);\n"
-            "        if (zr_aot_copy_layout == ZR_NULL || zr_aot_copy_layout->byteSize != %u) {\n"
+            "        SZrTypeLayoutRegistryView zr_aot_copy_registry;\n"
+            "        if (zr_aot_copy_layout == ZR_NULL || zr_aot_copy_layout->byteSize != %u ||\n"
+            "            !ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(frame.function,\n"
+            "                                                                  &zr_aot_copy_registry)) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
             "        if (ZrCore_TypeLayout_CanRawCopy(zr_aot_copy_layout)) {\n"
             "            memmove((TZrByte *)frame.slotBase + %u, (const TZrByte *)frame.slotBase + %u, %u);\n"
             "        } else {\n"
             "            /* zr_aot_value_exec_inline_field_copy dstSlot=%u sourceSlot=%u */\n"
-            "            ZR_AOT_C_GUARD(ZrCore_TypeLayout_CopyInline(state,\n"
-            "                                                        zr_aot_copy_layout,\n"
-            "                                                        (TZrByte *)frame.slotBase + %u,\n"
-            "                                                        (const TZrByte *)frame.slotBase + %u));\n"
+            "            ZR_AOT_C_GUARD(ZrCore_TypeLayout_CopyInlineWithRegistry(state,\n"
+            "                    zr_aot_copy_layout,\n"
+            "                    &zr_aot_copy_registry,\n"
+            "                    (TZrByte *)frame.slotBase + %u,\n"
+            "                    (const TZrByte *)frame.slotBase + %u));\n"
             "        }\n"
             "    }\n",
             (unsigned)instruction->destinationSlot,

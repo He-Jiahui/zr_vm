@@ -151,6 +151,9 @@ TZrBool infer_prototype_reference_type(SZrCompilerState *cs,
 ZR_PARSER_API TZrBool infer_construct_expression_type(SZrCompilerState *cs,
                                                       SZrAstNode *node,
                                                       SZrInferredType *result);
+TZrBool infer_struct_init_expression_type(SZrCompilerState *cs,
+                                          SZrAstNode *node,
+                                          SZrInferredType *result);
 TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
                                                          const SZrInferredType *iterableType,
                                                          SZrInferredType *outType);

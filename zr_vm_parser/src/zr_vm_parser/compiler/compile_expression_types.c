@@ -761,9 +761,9 @@ TZrBool emit_module_plain_share_helper_call(SZrCompilerState *cs,
     return !cs->hasError;
 }
 
-static TZrBool note_inline_struct_result_slot(SZrCompilerState *cs,
-                                              TZrUInt32 stackSlot,
-                                              SZrString *typeName) {
+TZrBool note_inline_struct_result_slot(SZrCompilerState *cs,
+                                      TZrUInt32 stackSlot,
+                                      SZrString *typeName) {
     SZrTypePrototypeInfo *prototypeInfo;
     SZrInferredType resultType;
     TZrBool ok;
@@ -2277,6 +2277,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
     const SZrTypeMemberInfo *pendingCallMemberInfo = ZR_NULL;
     TZrBool pendingReceiverRequiresBinding = ZR_FALSE;
     TZrBool pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
+    TZrBool currentSlotIsArrayElementAlias = ZR_FALSE;
     SZrString *rootTypeName = ioRootTypeName != ZR_NULL ? *ioRootTypeName : ZR_NULL;
     TZrBool rootIsTypeReference = ioRootIsTypeReference != ZR_NULL ? *ioRootIsTypeReference : ZR_FALSE;
     EZrOwnershipQualifier rootOwnershipQualifier =
@@ -2317,6 +2318,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                      members->nodes[i + 1] != ZR_NULL &&
                      members->nodes[i + 1]->type == ZR_AST_FUNCTION_CALL);
             TZrBool memberUsesSuperLookup = superLookupActive && i == memberStartIndex;
+            TZrBool computedInlineArrayElement = ZR_FALSE;
 
             pendingDirectMemberCallMemberEntryIndex = ZR_PARSER_MEMBER_ID_NONE;
             pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
@@ -2626,7 +2628,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 TZrBool isFinalMember = (TZrBool)(i + 1u >= members->count);
                                 TZrUInt32 resultSlot = currentSlot;
 
-                                if (isInlineStructOrUnionField) {
+                                if (isInlineStructOrUnionField ||
+                                    currentSlotIsArrayElementAlias) {
                                     resultSlot = (isFinalMember &&
                                                   preferredDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE &&
                                                   preferredDirectMemberCallResultSlot != currentSlot)
@@ -2657,6 +2660,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                     return;
                                 }
                                 currentSlot = resultSlot;
+                                currentSlotIsArrayElementAlias = ZR_FALSE;
                             } else {
                                 if (pendingReceiverRequiresBinding &&
                                     !stage_pending_receiver_binding(cs,
@@ -2693,17 +2697,97 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                             return;
                         }
 
-                        emit_instruction(cs,
-                                         create_instruction_2(ZR_INSTRUCTION_ENUM(GET_BY_INDEX),
-                                                              (TZrUInt16)currentSlot,
-                                                              (TZrUInt16)currentSlot,
-                                                              (TZrUInt16)keySlot));
-                        if (pendingReceiverSlot == ZR_PARSER_SLOT_NONE) {
-                            collapse_stack_to_slot(cs, currentSlot);
+                        if (i == memberStartIndex) {
+                            SZrInferredType arrayType;
+                            TZrBool hasArrayType;
+
+                            ZrParser_InferredType_Init(
+                                    cs->state, &arrayType, ZR_VALUE_TYPE_OBJECT);
+                            hasArrayType = ZrParser_ExpressionType_Infer(
+                                    cs, propertyNode, &arrayType);
+                            if (hasArrayType &&
+                                arrayType.baseType == ZR_VALUE_TYPE_ARRAY &&
+                                arrayType.hasArraySizeConstraint &&
+                                arrayType.elementTypes.length == 1u) {
+                                const SZrInferredType *elementType =
+                                        (const SZrInferredType *)ZrCore_Array_Get(
+                                                &arrayType.elementTypes, 0u);
+                                if (elementType != ZR_NULL &&
+                                    compiler_find_inline_type_layout_for_inferred(
+                                            cs,
+                                            elementType,
+                                            ZR_NULL,
+                                            ZR_NULL,
+                                            ZR_NULL) &&
+                                    ZrParser_ArrayIndexBounds_Check(
+                                            cs,
+                                            memberExpr->property,
+                                            &arrayType,
+                                            member->location)) {
+                                    TZrUInt32 arraySlot = currentSlot;
+                                    TZrUInt32 aliasSlot;
+
+                                    compiler_advance_stack_to_fresh_slot(cs);
+                                    aliasSlot = allocate_stack_slot(cs);
+
+                                    if (aliasSlot == ZR_PARSER_SLOT_NONE ||
+                                        !compiler_register_stack_slot_type_hint(
+                                                cs, aliasSlot, elementType) ||
+                                        !compiler_register_stack_slot_array_element_alias(
+                                                cs, aliasSlot, arraySlot)) {
+                                        ZrParser_InferredType_Free(cs->state, &arrayType);
+                                        ZrParser_Compiler_Error(
+                                                cs,
+                                                "Failed to bind inline struct array element",
+                                                member->location);
+                                        return;
+                                    }
+                                    emit_instruction(
+                                            cs,
+                                            create_instruction_2(
+                                                    ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE),
+                                                    (TZrUInt16)aliasSlot,
+                                                    (TZrUInt16)arraySlot,
+                                                    (TZrUInt16)keySlot));
+                                    if (currentSemanticPlace != ZR_PLACE_ID_INVALID) {
+                                        currentSemanticPlace =
+                                                compiler_semantic_ir_project_index(
+                                                        cs,
+                                                        currentSemanticPlace,
+                                                        keySlot,
+                                                        member->location);
+                                    }
+                                    currentSlot = aliasSlot;
+                                    rootTypeName = get_type_name_from_inferred_type(
+                                            cs, elementType);
+                                    rootOwnershipQualifier =
+                                            elementType->ownershipQualifier;
+                                    rootIsTypeReference = ZR_FALSE;
+                                    computedInlineArrayElement = ZR_TRUE;
+                                    currentSlotIsArrayElementAlias = ZR_TRUE;
+                                }
+                            }
+                            ZrParser_InferredType_Free(cs->state, &arrayType);
+                            if (cs->hasError) {
+                                return;
+                            }
+                        }
+
+                        if (!computedInlineArrayElement) {
+                            emit_instruction(cs,
+                                             create_instruction_2(ZR_INSTRUCTION_ENUM(GET_BY_INDEX),
+                                                                  (TZrUInt16)currentSlot,
+                                                                  (TZrUInt16)currentSlot,
+                                                                  (TZrUInt16)keySlot));
+                            if (pendingReceiverSlot == ZR_PARSER_SLOT_NONE) {
+                                collapse_stack_to_slot(cs, currentSlot);
+                            }
                         }
                     }
 
-                    if (declaredFieldMatch) {
+                    if (computedInlineArrayElement) {
+                        /* Root type was updated from the canonical array element contract. */
+                    } else if (declaredFieldMatch) {
                         rootTypeName = typeMember != ZR_NULL ? typeMember->fieldTypeName : declaredFieldTypeName;
                         rootOwnershipQualifier = typeMember != ZR_NULL ? typeMember->ownershipQualifier
                                                                        : declaredFieldOwnershipQualifier;

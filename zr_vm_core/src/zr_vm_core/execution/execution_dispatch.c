@@ -2185,6 +2185,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT)] = &&LZrFastInstruction_SET_MEMBER_SLOT,
             [ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT_NULL)] = &&LZrFastInstruction_SET_MEMBER_SLOT_NULL,
             [ZR_INSTRUCTION_ENUM(GET_BY_INDEX)] = &&LZrFastInstruction_GET_BY_INDEX,
+            [ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY)] = &&LZrFastInstruction_CREATE_INLINE_ARRAY,
+            [ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE)] =
+                    &&LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE,
             [ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)] = &&LZrFastInstruction_FUNCTION_TAIL_CALL,
             [ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL)] = &&LZrFastInstruction_KNOWN_VM_TAIL_CALL,
             [ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL)] = &&LZrFastInstruction_KNOWN_NATIVE_TAIL_CALL,
@@ -8687,6 +8690,56 @@ LZrFastInstruction_JUMP_IF_NULL: {
                     ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(array));
                 } else {
                     ZrCore_Value_ResetAsNull(destination);
+                }
+            }
+            DONE(1);
+LZrFastInstruction_CREATE_INLINE_ARRAY:
+            ZR_INSTRUCTION_LABEL(CREATE_INLINE_ARRAY) {
+                SZrObject *array = ZrCore_Object_NewInlineArray(
+                        state,
+                        currentFunction,
+                        (TZrUInt32)A1(instruction),
+                        (TZrUInt32)B1(instruction));
+                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG
+                                      ? &ret
+                                      : FRAME_VALUE_SLOT(E(instruction));
+                execution_prepare_destination_for_direct_store_no_profile(state, destination);
+                if (array != ZR_NULL) {
+                    ZrCore_Value_InitAsRawObject(
+                            state,
+                            destination,
+                            ZR_CAST_RAW_OBJECT_AS_SUPER(array));
+                } else {
+                    ZrCore_Value_ResetAsNull(destination);
+                    ZrCore_Debug_RunError(state, "CREATE_INLINE_ARRAY: invalid inline array layout");
+                }
+            }
+            DONE(1);
+LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
+            ZR_INSTRUCTION_LABEL(BIND_INLINE_ARRAY_ELEMENT_PLACE) {
+                TZrInt64 elementIndex;
+                opA = FRAME_VALUE_SLOT(B1(instruction));
+                if (opA == ZR_NULL || !ZR_VALUE_IS_TYPE_INT(opA->type) ||
+                    (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) &&
+                     opA->value.nativeObject.nativeUInt64 > (TZrUInt64)ZR_TYPE_RANGE_INT64_MAX)) {
+                    ZrCore_Debug_RunError(
+                            state,
+                            "BIND_INLINE_ARRAY_ELEMENT_PLACE: index must be an integer");
+                } else {
+                    elementIndex = ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)
+                                           ? (TZrInt64)opA->value.nativeObject.nativeUInt64
+                                           : opA->value.nativeObject.nativeInt64;
+                    if (!ZrCore_Function_BindFrameSlotInlineArrayElement(
+                                state,
+                                currentFunction,
+                                base,
+                                (TZrUInt32)E(instruction),
+                                (TZrUInt32)A1(instruction),
+                                elementIndex)) {
+                        ZrCore_Debug_RunError(
+                                state,
+                                "BIND_INLINE_ARRAY_ELEMENT_PLACE: invalid inline array element");
+                    }
                 }
             }
             DONE(1);

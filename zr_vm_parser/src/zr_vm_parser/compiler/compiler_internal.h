@@ -52,6 +52,23 @@ TZrBool compiler_semantic_ir_lower_ownership(
         TZrUInt32 sourceSlot,
         TZrUInt32 resultSlot,
         SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_lower_value_construct(
+        SZrCompilerState *cs,
+        TZrUInt32 destinationSlot,
+        TZrTypeId typeId,
+        TZrSymbolId constructorId,
+        const TZrUInt32 *argumentSlots,
+        TZrSize argumentCount,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_lower_value_construct_to_place(
+        SZrCompilerState *cs,
+        TZrUInt32 destinationSlot,
+        TZrPlaceId destinationPlaceId,
+        TZrTypeId typeId,
+        TZrSymbolId constructorId,
+        const TZrUInt32 *argumentSlots,
+        TZrSize argumentCount,
+        SZrFileRange sourceRange);
 TZrLoanId compiler_semantic_ir_begin_receiver_call(
         SZrCompilerState *cs,
         TZrUInt32 receiverSlot,
@@ -61,10 +78,19 @@ TZrPlaceId compiler_semantic_ir_place_for_slot(
         SZrCompilerState *cs,
         TZrUInt32 stackSlot,
         SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_bind_slot_to_place(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        TZrPlaceId placeId);
 TZrPlaceId compiler_semantic_ir_project_field(
         SZrCompilerState *cs,
         TZrPlaceId parentPlaceId,
         TZrSymbolId fieldIdentity,
+        SZrFileRange sourceRange);
+TZrPlaceId compiler_semantic_ir_project_index(
+        SZrCompilerState *cs,
+        TZrPlaceId parentPlaceId,
+        TZrUInt32 indexStackSlot,
         SZrFileRange sourceRange);
 TZrLoanId compiler_semantic_ir_begin_receiver_call_place(
         SZrCompilerState *cs,
@@ -367,6 +393,8 @@ TZrUInt32 find_child_function_index(SZrCompilerState *cs, SZrString *name) ;
 TZrUInt32 generate_function_reference_path_constant(SZrCompilerState *cs, TZrUInt32 childFunctionIndex) ;
 
 TZrUInt32 allocate_stack_slot(SZrCompilerState *cs) ;
+
+void compiler_advance_stack_to_fresh_slot(SZrCompilerState *cs) ;
 
 SZrString *extract_simple_type_name_from_type_node(SZrAstNode *typeNode) ;
 
@@ -706,6 +734,21 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
 TZrBool compiler_register_stack_slot_type_hint(SZrCompilerState *cs,
                                                TZrUInt32 stackSlot,
                                                const SZrInferredType *type);
+TZrBool compiler_register_stack_slot_field_alias(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        TZrUInt32 parentStackSlot,
+        TZrUInt32 memberEntryIndex);
+TZrBool compiler_register_stack_slot_array_element_alias(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        TZrUInt32 arrayStackSlot);
+TZrBool compiler_find_inline_type_layout_for_inferred(
+        SZrCompilerState *cs,
+        const SZrInferredType *type,
+        TZrUInt32 *outLayoutId,
+        TZrUInt32 *outSize,
+        TZrUInt32 *outAlign);
 void compiler_clear_stack_slot_type_hints_from(SZrCompilerState *cs, TZrSize startIndex);
 TZrSize compiler_enter_stack_slot_type_hint_scope(SZrCompilerState *cs);
 void compiler_restore_stack_slot_type_hint_scope(SZrCompilerState *cs, TZrSize previousScopeStart);

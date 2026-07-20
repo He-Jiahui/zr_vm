@@ -1,8 +1,10 @@
 # 08 `zr.reflection` 独立反射库与运行时类型系统
 
-> 状态：细化草案，等待人工确认。
+> 状态：已补齐直接依赖、分层里程碑与晋级门，等待按里程碑实施。
 >
-> 硬依赖：[Canonical TypeRef/Place/CFG/artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[struct/layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[property](./2026-07-18-05-property-unified-ast-design.md)。
+> 语义硬依赖：[Canonical TypeRef/Place/CFG/artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[struct/layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[resource ownership/GC bridge](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md)、[property](./2026-07-18-05-property-unified-ast-design.md)。
+>
+> 集成依赖：M4-M5 依赖 10R 的 ModuleIdentity/native descriptor substrate；M1-M3 不等待 10F FFI ABI。
 
 ## 1. 目标结果
 
@@ -412,7 +414,43 @@ reflection.byref_invoke_requires_typed_api
 - migration 绝不能把任意 runtime Type expression 改写成 TypeRef，或把 reflection call lower 为 ConstructExpression。
 - 旧 `ReflectionTypeInstance` 术语全部迁为 `Type` + `ConstructibleType` capability；不保留平行兼容类。
 
-## 11. 测试矩阵
+## 11. 分层里程碑与晋级门
+
+### M1 TypeId 与 descriptor category
+
+目标：建立 `Type`/`TypeOf<T>`、class/struct/interface/resource class/ref struct category 和 `typeid/typeof/resolve` 的单一 canonical identity，不接入成员 binder。
+
+依赖：01、03、04。晋级门：静态 identity、运行时 exact type、nullable/base/interface fallback、resource/ref-struct 分类和错误类别均有 parser/type-inference/runtime 单测；descriptor 由 TypeId/category capability 驱动，不存在类型名分支。
+
+### M2 Member descriptor 与 property/callable contract
+
+目标：接入 FieldInfo、PropertyInfo、MethodInfo、MemberQuery、访问控制、稳定顺序和 value-only/by-ref invocation 边界。
+
+依赖：M1、05，以及 03 已冻结的 receiver/layout contract。晋级门：field let/var、concrete/ref-return property、overload/generic method、declared/inherited/access/query ambiguity 全矩阵通过；ref getter 和 `in/ref/out` 不被 object invocation 擦除。
+
+### M3 Metadata graph、artifact 与 preservation
+
+目标：让 source、binary 与 runtime descriptor 共用 TypeDef/member/layout/ownership/meta record schema，并建立裁剪/preservation 状态和损坏输入拒绝。
+
+依赖：M2、04 的 ownership/GC map 语义。晋级门：`.zri/.zro` writer/reader 对称，source/native/binary contract hash 一致；unknown mandatory kind、断裂 token、超限表、伪造 category 和 stripped metadata 均有负例。08 只提供 immutable retained metadata contract，11 在其上定义 compile-time attribute/patch，不形成反向依赖。
+
+### M4 Runtime construction、cache、AOT 与 native module
+
+目标：实现 `ConstructibleType.createInstance`、binder cache/generation invalidation、throw cleanup、boxed struct/class result，并通过 10R 注册唯一 `zr.reflection` ModuleIdentity。
+
+依赖：M1-M3、10R。晋级门：direct/spread arguments、constructor no-match/ambiguity/throw、resource/ref struct/interface/abstract/open-generic 拒绝、GC compact、AOT 与 VM 等价全部通过；普通调用/构造不经过 reflection 慢路径。
+
+### M5 LSP、迁移与压力验收
+
+目标：接通 precise hover/completion/navigation、06A 的 `%type`/dynamic construction migration adapter，以及查询/cache/GC 压力测试。
+
+依赖：M1-M4、06A。晋级门：LSP 只消费 canonical query；migration edit 对 machine/requiresReview/blocked 分类稳定且幂等；100k members、深继承、重复查询和 compact/throw 压力无陈旧 pointer 或对象泄漏。
+
+### 整体晋级门
+
+只有 M1-M5 各自通过、下列测试矩阵全部有直接证据、10R native identity 集成完成且不存在 concrete type-name dispatch 时，08 才可供 11、06B 和 07B 作为已晋级依赖。任何缺失层保持对应里程碑 open，不能用 LSP 或 end-to-end smoke 替代。
+
+## 12. 测试矩阵
 
 ### Parser/type inference
 
@@ -442,7 +480,7 @@ reflection.byref_invoke_requires_typed_api
 - GC compact 期间 descriptor/member cache 不持有实例或陈旧裸 pointer。
 - reflection exceptions 不泄漏 partially constructed struct/class。
 
-## 12. 参考依据与差异
+## 13. 参考依据与差异
 
 - .NET `Type` 查询 API：`lua/runtime/src/libraries/System.Private.CoreLib/src/System/Type.cs`。
 - .NET `MemberInfo/FieldInfo/PropertyInfo/MethodInfo`：`lua/runtime/src/libraries/System.Private.CoreLib/src/System/Reflection/`。

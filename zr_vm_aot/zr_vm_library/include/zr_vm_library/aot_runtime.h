@@ -163,6 +163,19 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CreateArray(struct SZrState *state,
                                                         ZrAotGeneratedFrame *frame,
                                                         TZrUInt32 destinationSlot);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CreateInlineArray(struct SZrState *state,
+                                                              ZrAotGeneratedFrame *frame,
+                                                              TZrUInt32 destinationSlot,
+                                                              TZrUInt32 elementTypeLayoutId,
+                                                              TZrUInt32 length);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_BindInlineArrayElementPlace(
+        struct SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 arraySlot,
+        TZrUInt32 indexSlot);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_TypeOf(struct SZrState *state,
                                                    ZrAotGeneratedFrame *frame,
                                                    TZrUInt32 destinationSlot,

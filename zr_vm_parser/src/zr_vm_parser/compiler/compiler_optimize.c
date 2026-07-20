@@ -175,6 +175,12 @@ static void optimizer_classify_instruction(const SZrFunction *function,
         case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
         case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
         case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
+        case ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY):
+            optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            return;
+        case ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE):
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[1]);
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             return;
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
@@ -1318,11 +1324,19 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
         case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
         case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
         case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
+        case ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY):
         case ZR_INSTRUCTION_ENUM(SET_CONSTANT):
         case ZR_INSTRUCTION_ENUM(SET_CLOSURE):
         case ZR_INSTRUCTION_ENUM(SETUPVAL):
         case ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED):
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            return;
+        case ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE):
+            optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            optimizer_remap_slot_value(
+                    &instruction->instruction.operand.operand1[0], slotMap, slotCount);
+            optimizer_remap_slot_value(
+                    &instruction->instruction.operand.operand1[1], slotMap, slotCount);
             return;
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):

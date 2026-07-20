@@ -80,16 +80,30 @@ TZrBool ZrParser_SemanticIr_FormatGolden(
             buffer[0] = '\0';
             return ZR_FALSE;
         }
-        written = snprintf(
-                buffer + offset,
-                bufferSize - offset,
-                "%u %s type=%u place=%u value=%u result=%u\n",
-                (unsigned int)instruction->id,
-                ZrParser_SemanticIr_OpcodeName(instruction->opcode),
-                (unsigned int)instruction->typeId,
-                (unsigned int)instruction->placeId,
-                (unsigned int)instruction->valueId,
-                (unsigned int)instruction->resultValueId);
+        if (instruction->opcode == ZR_SEMANTIC_IR_VALUE_CONSTRUCT) {
+            written = snprintf(
+                    buffer + offset,
+                    bufferSize - offset,
+                    "%u %s type=%u place=%u value=%u result=%u constructor=%u\n",
+                    (unsigned int)instruction->id,
+                    ZrParser_SemanticIr_OpcodeName(instruction->opcode),
+                    (unsigned int)instruction->typeId,
+                    (unsigned int)instruction->placeId,
+                    (unsigned int)instruction->valueId,
+                    (unsigned int)instruction->resultValueId,
+                    (unsigned int)instruction->constructorId);
+        } else {
+            written = snprintf(
+                    buffer + offset,
+                    bufferSize - offset,
+                    "%u %s type=%u place=%u value=%u result=%u\n",
+                    (unsigned int)instruction->id,
+                    ZrParser_SemanticIr_OpcodeName(instruction->opcode),
+                    (unsigned int)instruction->typeId,
+                    (unsigned int)instruction->placeId,
+                    (unsigned int)instruction->valueId,
+                    (unsigned int)instruction->resultValueId);
+        }
         if (written < 0 || (TZrSize)written >= bufferSize - offset) {
             buffer[0] = '\0';
             return ZR_FALSE;

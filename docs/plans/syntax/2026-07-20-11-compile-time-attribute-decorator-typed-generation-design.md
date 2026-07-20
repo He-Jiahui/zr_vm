@@ -12,7 +12,7 @@
 
 > 状态：按Occam原则修订；类型化声明生成边界已确认。
 >
-> 上游契约：[01 Canonical TypeRef、Place、CFG与artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[03 `init TypeRef`与layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[05 property](./2026-07-18-05-property-unified-ast-design.md)、[06迁移](./2026-07-18-06-percent-migration-lsp-fixtures-design.md)、[08 reflection metadata](./2026-07-19-08-reflection-library-type-system-design.md)、[10 module/package](./2026-07-19-10-native-ffi-module-package-design.md)。
+> 上游契约：[01 Canonical TypeRef、Place、CFG与artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[03 `init TypeRef`与layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[05 property](./2026-07-18-05-property-unified-ast-design.md)、[06A migration inventory/frontend](./2026-07-18-06-percent-migration-lsp-fixtures-design.md)、[08 reflection metadata](./2026-07-19-08-reflection-library-type-system-design.md)、[10R module/package foundation](./2026-07-19-10-native-ffi-module-package-design.md)。本计划不依赖 06B 最终仓库切换。
 
 ## 1. Occam硬约束
 

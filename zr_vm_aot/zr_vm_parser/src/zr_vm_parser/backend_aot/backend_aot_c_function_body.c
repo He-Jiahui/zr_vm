@@ -75,6 +75,7 @@ static TZrBool backend_aot_instruction_creates_new_owner_in_slot(const TZrInstru
     switch (instruction->instruction.operationCode) {
         case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
         case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
+        case ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY):
             return ZR_TRUE;
         default:
             return ZR_FALSE;
@@ -109,6 +110,7 @@ static TZrBool backend_aot_instruction_is_new_owner_linear_barrier_boundary(cons
     switch (instruction->instruction.operationCode) {
         case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
         case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
+        case ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY):
             return ZR_TRUE;
         default:
             break;
@@ -459,7 +461,9 @@ void backend_aot_write_c_function_body(FILE *file,
             module, functionIr, entry->function, publishExports, needsFrameCleanup);
     needsGcRootFrame = (TZrBool)(backend_aot_c_method_metadata_count_gc_roots(state, functionIr) > 0u);
     needsReferenceLocalRootFrame = backend_aot_c_reference_locals_has_locals(functionIr);
-    needsSkipDropSlot = needsFrameCleanup;
+    needsSkipDropSlot = (TZrBool)(
+            needsFrameCleanup ||
+            backend_aot_c_value_semir_needs_skip_drop_slot(module, functionIr));
 
     fprintf(file, "static TZrInt64 zr_aot_fn_%u(struct SZrState *state) {\n", (unsigned)entry->flatIndex);
     if (includeFrameDescriptor) {
@@ -724,6 +728,18 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY):
+                backend_aot_write_c_direct_create_inline_array(
+                        file, destinationSlot, operandA1, operandB1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE):
+                backend_aot_write_c_direct_bind_inline_array_element_place(
+                        file, destinationSlot, operandA1, operandB1);
                 break;
             case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2):
                 if (backend_aot_c_scalar_locals_reset2_can_skip_value_slots(

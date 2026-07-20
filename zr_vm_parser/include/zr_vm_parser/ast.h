@@ -147,6 +147,9 @@ enum EZrAstNodeType {
     // Union 类型（新增节点追加在尾部，避免已有 AST 编号漂移）
     ZR_AST_UNION_DECLARATION,
     ZR_AST_UNION_VARIANT,
+
+    // 值类型构造（追加节点，避免已有 AST 编号漂移）
+    ZR_AST_STRUCT_INIT_EXPRESSION,
 };
 
 typedef enum EZrAstNodeType EZrAstNodeType;
@@ -511,6 +514,14 @@ typedef struct SZrConstructExpression {
     TZrBool isNew;
     EZrOwnershipBuiltinKind builtinKind;
 } SZrConstructExpression;
+
+typedef struct SZrStructInitExpression {
+    SZrType *typeInfo;
+    SZrAstNodeArray *args;
+    SZrArray *argNames;        // SZrString*，与 args 对齐
+    SZrArray *argumentMarkers; // SZrCallArgumentSyntax，与 args 对齐
+    TZrBool hasNamedArgs;
+} SZrStructInitExpression;
 
 // 字面量表达式
 typedef struct SZrArrayLiteral {
@@ -1023,6 +1034,7 @@ typedef struct SZrAstNode {
         SZrTypeLiteralExpression typeLiteralExpression;
         SZrPrototypeReferenceExpression prototypeReferenceExpression;
         SZrConstructExpression constructExpression;
+        SZrStructInitExpression structInitExpression;
 
         // 字面量
         SZrBooleanLiteral booleanLiteral;

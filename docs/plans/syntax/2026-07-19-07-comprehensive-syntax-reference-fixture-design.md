@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 建立一个单一、多模块、可运行的ZR参考工程，用正例、负例和产物golden覆盖本目录01-06、08-14已确认的全部目标语法与语义边界。
+**Goal:** 先建立不冒充实现证据的 fixture/manifest 骨架，再在 06B 与 08-14 全部晋级后发布一个单一、多模块、可运行的 ZR current reference，用正例、负例和产物 golden 覆盖全部目标语法与语义边界。
 
 **Architecture:** `syntax_reference_v1` 是一项完整的像素渲染任务，不是互不相干的语法片段集合。源码层覆盖声明、类型、构造、调用、借用、布局、属性、所有权和反射；同一份 bound/SemIR facts 再由 VM、AOT、artifact、LSP 和 migration fixture 共同验证。
 
@@ -10,9 +10,11 @@
 
 ---
 
-> 状态：设计参考第一版，等待人工修改与确认；不是当前编译器已经支持的语法声明。
+> 状态：已拆为 07A fixture 骨架与 07B current reference 晋级，分别验收；不是当前编译器已经支持的语法声明。
 >
-> 硬依赖：[01-14子设计索引](./README.md)。任何代码块与已确认子设计冲突时，以对应细化设计为准，并同步修订本文。
+> 07A 硬依赖：01-05 与 06A；只建立目录、feature id、manifest schema 和 design-pending 样例，不证明尚未实现的语义。
+>
+> 07B 硬依赖：07A、06B 与 08-14 全部通过各自 promotion gate；只有 07B 可以发布 current reference。任何代码块与已确认子设计冲突时，以对应细化设计和[索引](./README.md)为准，并同步修订本文。
 
 ## 1. “覆盖所有语法”的范围
 
@@ -1367,6 +1369,8 @@ async fn asyncChecksum(): task.Task<void> {
 
 `golden/coverage.json` 必须按稳定 feature id 记录覆盖位置，禁止只写“由 main 覆盖”。最小矩阵如下：
 
+07A 中下表只是目标 coverage slot 清单；owner plan 未晋级的行必须是 `design-pending`，不能填入 current-pass 统计。
+
 | feature group                                           | current-pass 证据             | compile-fail 证据                       | 核心 consumer                 |
 | ------------------------------------------------------- | ----------------------------- | --------------------------------------- | ----------------------------- |
 | function definition`:`                                | host/model/algorithms/effects | definition 使用`->`                   | parser, AST, formatter, LSP   |
@@ -1405,13 +1409,18 @@ async fn asyncChecksum(): task.Task<void> {
 ```json
 {
   "feature": "reflection.create_instance.spread",
+  "status": "design-pending",
+  "ownerPlan": "08",
+  "ownerGate": "M4",
   "source": "src/reflection.zr",
-  "expect": "pass",
+  "expectAfterPromotion": "pass",
   "ast": "CallExpression(MemberAccess, SpreadArgument)",
   "semantic": "ConstructibleType.createInstance(object...): object",
   "consumers": ["vm", "aot_c", "aot_llvm", "artifact", "lsp"]
 }
 ```
+
+`status` 只允许 `design-pending | current | negative`。`design-pending` 必须带 `ownerPlan/ownerGate`，从 current compile/test collection 排除；owner gate 通过后，07B 才能把它改为 `current` 并把 `expectAfterPromotion` 固化为实际 `expect`。`negative` 必须指向稳定诊断 golden，不能用来掩盖尚未实现的正例。
 
 ## 7. 负例与定向诊断
 
@@ -1612,7 +1621,7 @@ FunctionDefinition(attributes = [Test, Case?, Skip?], returnType = void | Task<v
 
 ## 11. 实施任务
 
-### Task 1: 建立 reference fixture 与 coverage manifest
+### Task 1（07A）: 建立 reference fixture 与 coverage manifest 骨架
 
 **Files:**
 
@@ -1625,78 +1634,75 @@ FunctionDefinition(attributes = [Test, Case?, Skip?], returnType = void | Task<v
 
 - [ ] **Step 1: 先加入只读取 fixture 并枚举 stable feature id 的失败测试**
 - [ ] **Step 2: 运行 `cmake --build build-wsl-gcc --target zr_vm_syntax_reference_v1_test -j2`，确认因 fixture/feature id 缺失失败**
-- [ ] **Step 3: 按第 4-6 节逐文件加入源码和 coverage manifest，不调整 production parser**
+- [ ] **Step 3: 按第 4-6 节建立目录、stable feature id、golden schema 与 design-pending 源码；未通过 owner plan gate 的文件必须从 current compile collection 排除，不调整 production parser**
 - [ ] **Step 3a: 对formatted与single-line minified版本断言相同AST/semantic hash，证明newline不参与终止**
 - [ ] **Step 3b: 注册RegisteredNative `engine.render`并保留同名Workspace source；生成本机规范`file:` URI正例，golden用placeholder去路径化**
 - [ ] **Step 4: 重跑 focused target，确认 manifest 完整且 current/negative 文件没有交叉收集**
 - [ ] **Step 5: 提交 `test: add target syntax reference fixture`**
 
-### Task 2: 按基础层顺序开放 parser 与 semantic coverage
+07A 晋级门：fixture discovery 能区分 `current`、`negative`、`design-pending`，manifest 中每个 pending feature 都有 owner plan/gate，且 focused target 不会把未晋级语义当作 current-pass 证据。07A 可在 08-14 前完成，但不能满足本文第 12 节的最终晋级门。
+
+### Task 2（07B）: 按基础层顺序开放 parser 与 semantic coverage
 
 **Files:**
 
-- Modify: parser AST/token/grammar 文件，以实施时模块清单为准
-- Modify: canonical TypeRef、Place、CFG facts 和 borrow checker 文件
+- Modify: `tests/fixtures/projects/syntax_reference_v1/golden/coverage.json`
+- Modify: `tests/fixtures/projects/syntax_reference_v1/src/*.zr`
 - Test: `tests/parser/test_syntax_reference_v1.c`
 - Test: `tests/compiler/test_syntax_reference_semantics.c`
 
-- [ ] **Step 1: 为一个尚未支持的 current-pass feature启用单一失败断言，记录 expected AST/bound kind**
-- [ ] **Step 2: 运行 focused parser/semantic target，确认只失败该 feature**
-- [ ] **Step 3: 从 TypeRef/Place/CFG foundation 实施最小通用能力，不加入 `Pixel/Span/Unique` 名字判断**
-- [ ] **Step 4: 重跑当前 feature及全部已开放 feature，确认没有 AST kind或 contract 回退**
-- [ ] **Step 5: 每完成一个独立 feature group提交一次，commit message使用 `feat(syntax): <feature id>`**
+- [ ] **Step 1: 逐 feature id 核对 owner plan/gate 的通过证据；缺少证据时保持 design-pending**
+- [ ] **Step 2: 对已晋级 feature 加入 exact AST/bound/SemIR assertion，并把该 id 从 design-pending 改为 current**
+- [ ] **Step 3: 运行 focused parser/semantic target；若失败则重新打开 owner milestone，不在 07 内修改 parser、TypeRef、Place、CFG 或 borrow checker**
+- [ ] **Step 4: 重跑当前 feature 及全部已开放 feature，确认没有 AST kind 或 contract 回退**
+- [ ] **Step 5: 每完成一个独立 feature group 提交一次 reference fixture/golden 变更**
 
-### Task 3: 实施 `zr.reflection` Type/TypeOf层级与ConstructibleType
+### Task 3（07B）: 接入 `zr.reflection` Type/TypeOf层级与ConstructibleType
 
 **Files:**
 
-- Modify: `zr_vm_core/include/zr_vm_core/reflection.h`
-- Modify: `zr_vm_core/src/zr_vm_core/reflection*.c`
-- Modify: reflection metadata/binder/runtime registration对应模块
+- Modify: `tests/fixtures/projects/syntax_reference_v1/src/reflection.zr`
+- Modify: `tests/fixtures/projects/syntax_reference_v1/golden/coverage.json`
 - Test: `tests/core/test_reflection_create_instance.c`
 - Test: `tests/compiler/test_syntax_reference_semantics.c`
 
-- [ ] **Step 1: 写失败测试，锁定TypeOf<T>: Type、Class/Concrete/Instance/Struct/Interface精确分类和`typeof/typeid/resolve`职责**
-- [ ] **Step 2: 写失败测试，锁定direct args、`object[]` spread、class result、boxed struct result、`@call`不参与，以及ref struct/resource/interface/abstract/open generic拒绝**
-- [ ] **Step 3: 运行 focused reflection target，确认新测试按缺失 API/contract失败**
-- [ ] **Step 4: 注册`zr.reflection`模块、member/meta query和`ConstructibleType.createInstance(...constructionArgs: object): object`，复用通用call spread和constructor metadata**
-- [ ] **Step 5: 实施按 TypeId + argument runtime TypeIds + generation键控的 binder cache与失效**
-- [ ] **Step 6: 运行 focused reflection、GC和ownership regression，确认 constructor失败时清理且 cache不保存对象**
-- [ ] **Step 7: 提交 `feat(reflection): add createInstance variadic constructor binding`**
+- [ ] **Step 1: 核对 08 M1-M5、10R ModuleIdentity 与 `zr.reflection` descriptor 注册证据**
+- [ ] **Step 2: 把 TypeOf category、`typeof/typeid/resolve`、member query、direct/spread construction 及全部拒绝边界映射到 fixture/golden**
+- [ ] **Step 3: 运行 focused reflection、GC、ownership 和 syntax semantic targets**
+- [ ] **Step 4: 任一 API/contract/cache/cleanup 证据缺失时保持 design-pending 并重新打开 08 对应 milestone；07 不补 production reflection 实现**
+- [ ] **Step 5: 证据完整后把 reflection coverage ids 晋级为 current**
 
-### Task 4: 实施 `zr.pooling` generational handle 与 guarded ref
+### Task 4（07B）: 接入 `zr.pooling` generational handle 与 guarded ref
 
 **Files:**
 
-- Create/Modify: `zr.pooling`标准库与runtime registration模块
-- Modify: canonical TypeLayout `GcScanKind`/StableSlotSource contract
+- Modify: `tests/fixtures/projects/syntax_reference_v1/src/pooling.zr`
+- Modify: `tests/fixtures/projects/syntax_reference_v1/golden/coverage.json`
 - Test: `tests/core/test_pooling_generational_handle.c`
-- Test: `tests/projects/syntax_reference_v1/src/pooling.zr`
 
-- [ ] **Step 1: 写失败测试锁定PoolId/slot/generation、wrong/stale/double recycle和ABA永久失效**
-- [ ] **Step 2: 写失败测试锁定Try/out default view、reader/writer guard、recycle立即retire、active guard归零后Drop/reuse**
-- [ ] **Step 3: 实施ordinary PoolHandle与ref-like PoolRef/PoolReadRef，不增加pool专用AST/opcode或type-name dispatch**
-- [ ] **Step 4: 接通GcFree/GcMapped/GcBarriered slab、compact base+offset ref、barrier/card与resource Drop**
-- [ ] **Step 5: 运行hot borrow/direct field/recycle churn和GC scan bytes基准，确认field访问不重复generation check**
+- [ ] **Step 1: 核对 09 M1-M5、08 metadata projection、10R ModuleIdentity 与 `zr.pooling` descriptor 注册证据**
+- [ ] **Step 2: 把 identity/ABA、try/out、guard/reclamation、GcFree/GcMapped/GcBarriered 和 resource Drop 映射到 fixture/golden**
+- [ ] **Step 3: 运行 focused pooling、GC、ownership、hot borrow/direct-field 和 scan-bytes targets**
+- [ ] **Step 4: 任一状态、layout、barrier、cleanup 或性能证据缺失时保持 design-pending 并重新打开 09 对应 milestone；07 不补 production pooling 实现**
+- [ ] **Step 5: 证据完整后把 pooling coverage ids 晋级为 current**
 
-### Task 5: 接通 VM、AOT、artifact 与 LSP
+### Task 5（07B）: 接通 VM、AOT、artifact 与 LSP
 
 **Files:**
 
-- Modify: VM/AOT lowering对应模块
-- Modify: `.zrs/.zri/.zro` writer/reader和schema tests
-- Modify: `zr_vm_language_server` semantic query/display模块
+- Modify: `tests/fixtures/projects/syntax_reference_v1/golden/{artifacts,lsp}.json`
+- Modify: reference project 的 CMake/project-suite 注册
 - Test: `tests/cmake/run_projects_suite.cmake`
 - Test: `tests/language_server/test_lsp_syntax_reference_v1.c`
 
-- [ ] **Step 1: 注册 interp、binary-first、aot_c和aot_llvm四条项目 case，先确认未接线时失败**
-- [ ] **Step 2: 让四 backend消费同一 bound/SemIR contract并断言相同 checksum**
+- [ ] **Step 1: 注册 interp、binary-first、aot_c 和 aot_llvm 四条项目 case，均只消费已标为 current 的 feature ids**
+- [ ] **Step 2: 断言四 backend 已消费 owner plans 冻结的同一 bound/SemIR contract并产生相同 checksum**
 - [ ] **Step 3: 生成并 roundtrip `.zrs/.zri/.zro` golden，断言 source/binary public contract parity**
 - [ ] **Step 4: 加入第 9 节 hover/signature/semantic-token/diagnostic/code-action golden**
-- [ ] **Step 5: 运行 focused project、artifact和LSP targets，确认无 concrete type-name dispatch**
+- [ ] **Step 5: 运行 focused project、artifact和LSP targets；失败返回对应 owner milestone，07 不增加 consumer 特判**
 - [ ] **Step 6: 提交 `test(syntax): validate reference project across consumers`**
 
-### Task 6: 收口 negative、migration 与文档
+### Task 6（07B）: 收口 negative、migration 与文档
 
 **Files:**
 
@@ -1706,14 +1712,14 @@ FunctionDefinition(attributes = [Test, Case?, Skip?], returnType = void | Task<v
 - Modify: `docs/zr_language_specification.md`
 - Modify: `docs/plans/syntax/README.md`
 
-- [ ] **Step 1: 按第 7 节逐 case加入 primary diagnostic断言，先确认旧 generic diagnostic不满足 golden**
-- [ ] **Step 2: 实施定向诊断和 migration AST edit，验证二次迁移幂等**
+- [ ] **Step 1: 按第 7 节逐 case 对照 owner plan 已通过的 primary/related diagnostic 与精确 range**
+- [ ] **Step 2: 对照 06B 结果验证 migration AST edit、target gate 记录和二次迁移幂等；缺失时重新打开 06B**
 - [ ] **Step 3: 把 current文档代码块纳入 doc-test，把 legacy代码块标记为 migration input**
 - [ ] **Step 4: 运行仓库 `%xxx`/`$` inventory，确认剩余命中只在 legacy、negative或历史计划排除项**
 - [ ] **Step 5: 运行完整 parser/compiler/project/artifact/LSP/migration矩阵并记录准确通过数量**
 - [ ] **Step 6: 提交 `docs(syntax): publish syntax reference v1`**
 
-### Task 7: 接入11-14编译期、异步、迭代器与测试子设计
+### Task 7（07B）: 接入11-14编译期、异步、迭代器与测试子设计
 
 **Files:**
 
@@ -1726,17 +1732,18 @@ FunctionDefinition(attributes = [Test, Case?, Skip?], returnType = void | Task<v
 - Modify: `tests/parser/test_syntax_reference_v1.c`
 - Modify: `tests/compiler/test_syntax_reference_semantics.c`
 
-- [ ] **Step 1: 先加入11-14正例和coverage ids，运行focused parser/compiler target并确认因未实现contract失败**
+- [ ] **Step 1: 核对 11-14 各自 promotion gate 与 10R descriptor 注册证据，再逐组把 coverage ids 从 design-pending 改为 current**
 - [ ] **Step 2: 加入condition/transform、await/Send、yield/Drop/async close和test metadata/case全部第7节负例及精确range golden**
 - [ ] **Step 3: 断言`.zri/.zro`中的expansion、async/iterator frame和TestManifest section；production artifact断言无test code**
 - [ ] **Step 4: 在interp、binary-first、AOT C、AOT LLVM运行相同checksum/test manifest，比较结果、cleanup与allocation counters**
 - [ ] **Step 5: 运行LSP expansion/inactive/async/iterator/test discovery golden和legacy migration幂等测试**
-- [ ] **Step 6: 只有11-14各自promotion gate已通过后，才把对应coverage ids从design-pending改为current**
+- [ ] **Step 6: 任一 compiler/runtime/artifact/LSP/migration 证据失败时恢复对应 id 为 design-pending 并重新打开 owner milestone；不在 07 内补 production 实现**
 
 ## 12. 晋级门
 
 本文只有在以下条件全部满足后才能从“设计参考”改为“current reference”：
 
+- 07A 已通过骨架 gate，06B 已完成最终仓库切换，08-14 已分别通过各自 promotion gate；07A 完成不能替代其余前置条件。
 - 第 6 节 coverage manifest 的每个 feature id都有 current或negative证据，且没有未解释的 `surfacePending`。
 - 正例项目在 interp、binary-first、AOT C、AOT LLVM输出相同结果。
 - 所有负例具有稳定 primary diagnostic、精确 range和关联 origin range。

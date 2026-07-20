@@ -95,6 +95,23 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     }
 }
 
+static void test_init_registry_layout(SZrTypeLayout *layout,
+                                      TZrUInt32 cTypeId,
+                                      TZrUInt32 byteSize) {
+    SZrTypeLayoutContract contract;
+
+    memset(&contract, 0, sizeof(contract));
+    contract.cTypeId = cTypeId;
+    ZrCore_TypeLayout_InitStructWithContract(layout,
+                                             byteSize,
+                                             8u,
+                                             ZR_TYPE_LAYOUT_COPY_KIND_BITWISE,
+                                             ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+                                             ZR_NULL,
+                                             0u,
+                                             &contract);
+}
+
 static void test_metadata_runtime_attaches_type_layout_registry_count(void) {
     SZrObjectModule module = {0};
     SZrFunction metadataFunction = {0};
@@ -110,6 +127,33 @@ static void test_metadata_runtime_attaches_type_layout_registry_count(void) {
     TEST_ASSERT_NOT_NULL(runtime);
     TEST_ASSERT_EQUAL_PTR(typeLayouts, runtime->codeRegistration->typeLayouts);
     TEST_ASSERT_EQUAL_UINT32(4u, runtime->typeLayoutCount);
+}
+
+static void test_metadata_runtime_exposes_attached_function_type_layout_registry_view(void) {
+    SZrObjectModule module = {0};
+    SZrFunction entryFunction = {0};
+    SZrFunction childFunction = {0};
+    SZrAotCodeRegistration registration = {0};
+    const SZrTypeLayout *typeLayouts[4] = {0};
+    SZrTypeLayoutRegistryView view = {(const SZrTypeLayout *const *)1, 99u};
+    SZrMetadataRuntime *runtime;
+
+    registration.typeLayouts = typeLayouts;
+    registration.typeLayoutCount = ARRAY_COUNT(typeLayouts);
+    runtime = ZrCore_Module_AttachMetadataRuntime(&module, &entryFunction, &registration);
+    TEST_ASSERT_NOT_NULL(runtime);
+    ZrCore_MetadataRuntime_AttachFunction(runtime, &entryFunction);
+    childFunction.prototypeContextFunction = &entryFunction;
+
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(
+            &childFunction, &view));
+    TEST_ASSERT_EQUAL_PTR(typeLayouts, view.layouts);
+    TEST_ASSERT_EQUAL_UINT32(ARRAY_COUNT(typeLayouts), view.count);
+
+    TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(
+            ZR_NULL, &view));
+    TEST_ASSERT_NULL(view.layouts);
+    TEST_ASSERT_EQUAL_UINT32(0u, view.count);
 }
 
 static void test_metadata_runtime_resolves_type_layout_from_code_registration_registry(void) {
@@ -128,10 +172,8 @@ static void test_metadata_runtime_resolves_type_layout_from_code_registration_re
     metadataFunction.prototypeFrameTypeLayouts = stalePrototypeLayouts;
     metadataFunction.prototypeFrameTypeLayoutLength = 44u;
 
-    matchingLayout.cTypeId = 42u;
-    matchingLayout.byteSize = 24u;
-    mismatchedLayout.cTypeId = 99u;
-    mismatchedLayout.byteSize = 32u;
+    test_init_registry_layout(&matchingLayout, 42u, 24u);
+    test_init_registry_layout(&mismatchedLayout, 99u, 32u);
     registeredLayouts[42] = &matchingLayout;
     registeredLayouts[43] = &mismatchedLayout;
     registration.typeLayouts = registeredLayouts;
@@ -175,6 +217,8 @@ static void test_metadata_runtime_resolves_gc_descriptor_from_code_registration_
     SZrTypeLayout matchingLayout = {0};
     SZrTypeLayout sparseLayout = {0};
     SZrTypeLayout mismatchedLayout = {0};
+    SZrTypeLayoutField matchingFields[1] = {0};
+    SZrTypeLayoutContract matchingContract = {0};
     const SZrTypeLayout *registeredLayouts[44] = {0};
     TZrUInt32 gcOffsets[1] = {8u};
     SZrAotGcDescriptor matchingDescriptor = {0};
@@ -184,12 +228,25 @@ static void test_metadata_runtime_resolves_gc_descriptor_from_code_registration_
     const SZrAotGcDescriptor *resolvedDescriptor;
     SZrMetadataRuntime *runtime;
 
-    matchingLayout.cTypeId = 42u;
-    matchingLayout.byteSize = 24u;
-    sparseLayout.cTypeId = 41u;
-    sparseLayout.byteSize = 16u;
-    mismatchedLayout.cTypeId = 43u;
-    mismatchedLayout.byteSize = 32u;
+    matchingFields[0].byteOffset = 8u;
+    matchingFields[0].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    matchingFields[0].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                              ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE;
+    matchingContract.cTypeId = 42u;
+    matchingContract.gcScanKind = ZR_TYPE_LAYOUT_GC_SCAN_MAPPED;
+    matchingContract.gcFieldOffsets = gcOffsets;
+    matchingContract.gcFieldCount = ARRAY_COUNT(gcOffsets);
+    ZrCore_TypeLayout_InitStructWithContract(&matchingLayout,
+                                             8u + (TZrUInt32)sizeof(SZrTypeValue),
+                                             8u,
+                                             ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+                                             ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+                                             matchingFields,
+                                             ARRAY_COUNT(matchingFields),
+                                             &matchingContract);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&matchingLayout));
+    test_init_registry_layout(&sparseLayout, 41u, 16u);
+    test_init_registry_layout(&mismatchedLayout, 43u, 32u);
     registeredLayouts[41] = &sparseLayout;
     registeredLayouts[42] = &matchingLayout;
     registeredLayouts[43] = &mismatchedLayout;
@@ -271,8 +328,7 @@ static void test_metadata_runtime_function_layout_resolver_uses_attached_registr
     entryFunction.prototypeFrameTypeLayoutLength = 44u;
     childFunction.prototypeContextFunction = &entryFunction;
 
-    registryLayout.cTypeId = 42u;
-    registryLayout.byteSize = 24u;
+    test_init_registry_layout(&registryLayout, 42u, 24u);
     registeredLayouts[42] = &registryLayout;
     registration.typeLayouts = registeredLayouts;
     registration.typeLayoutCount = 44u;
@@ -325,8 +381,7 @@ static void test_metadata_runtime_resolves_prototype_layout_from_attached_regist
     entryFunction.prototypeFrameTypeLayouts = stalePrototypeLayouts;
     entryFunction.prototypeFrameTypeLayoutLength = 44u;
 
-    registryLayout.cTypeId = 42u;
-    registryLayout.byteSize = 24u;
+    test_init_registry_layout(&registryLayout, 42u, 24u);
     registeredLayouts[42] = &registryLayout;
     registration.typeLayouts = registeredLayouts;
     registration.typeLayoutCount = 44u;
@@ -377,7 +432,11 @@ static void test_reflection_layout_source_consumes_metadata_runtime_registry(voi
             "ZrCore_MetadataRuntime_ResolveFunctionPrototypeTypeLayout(entryFunction, prototype, &typeLayoutId)",
             "reflection_find_registry_field_by_instance_index(typeLayout, scriptFieldCount)",
             "reflection_apply_type_layout_to_layout_object(state, layoutObject, typeLayout)",
-            "reflection_apply_field_layout_to_member(state, memberReflection, registryField)"};
+            "reflection_apply_field_layout_to_member(state, memberReflection, registryField)",
+            "\"layoutVersion\", typeLayout->layoutVersion",
+            "\"layoutHash\", typeLayout->layoutHash",
+            "\"gcScanKind\", typeLayout->gcScanKind",
+            "\"refFieldCount\", typeLayout->refFieldCount"};
     char *reflectionText = read_repo_text_file_owned("zr_vm_core/src/zr_vm_core/reflection.c");
 
     TEST_ASSERT_NOT_NULL(reflectionText);
@@ -388,6 +447,7 @@ static void test_reflection_layout_source_consumes_metadata_runtime_registry(voi
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_metadata_runtime_attaches_type_layout_registry_count);
+    RUN_TEST(test_metadata_runtime_exposes_attached_function_type_layout_registry_view);
     RUN_TEST(test_metadata_runtime_resolves_type_layout_from_code_registration_registry);
     RUN_TEST(test_metadata_runtime_resolve_type_layout_does_not_fallback_to_prototype_cache);
     RUN_TEST(test_metadata_runtime_resolves_gc_descriptor_from_code_registration_registry);

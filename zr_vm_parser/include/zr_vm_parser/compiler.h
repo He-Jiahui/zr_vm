@@ -24,6 +24,10 @@
 typedef struct SZrCompilerStackSlotTypeHint {
     TZrUInt32 stackSlot;
     SZrInferredType type;
+    TZrUInt32 aliasParentStackSlot;
+    TZrUInt32 aliasMemberEntryIndex;
+    TZrBool isFieldAlias;
+    TZrBool isArrayElementAlias;
 } SZrCompilerStackSlotTypeHint;
 
 // 编译器状态结构
@@ -348,6 +352,7 @@ typedef struct SZrTypeMemberInfo {
       // 方法特定信息
       SZrFunction *compiledFunction;       // 编译后的函数对象（用于最终序列化时重新落常量池）
     TZrUInt32 functionConstantIndex;      // 函数在常量池中的索引（如果方法是函数）
+    TZrSymbolId symbolId;                 // canonical declaration identity
     TZrUInt32 parameterCount;             // 参数数量
     TZrUInt32 minArgumentCount;           // 允许省略尾部可选参数后的最小实参数量
     SZrArray parameterTypes;              // 参数类型数组（SZrInferredType）

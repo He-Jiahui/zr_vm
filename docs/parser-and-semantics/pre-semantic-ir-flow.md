@@ -1,22 +1,34 @@
 ---
 related_code:
+  - zr_vm_parser/include/zr_vm_parser/ast.h
+  - zr_vm_parser/include/zr_vm_parser/bound_expression.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_flow.c
+  - zr_vm_parser/src/zr_vm_parser/bound_expression.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_struct_init.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_value_construct.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
 implementation_files:
+  - zr_vm_parser/include/zr_vm_parser/ast.h
+  - zr_vm_parser/include/zr_vm_parser/bound_expression.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_format.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_flow.c
+  - zr_vm_parser/src/zr_vm_parser/bound_expression.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_struct_init.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_value_construct.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md
+  - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
   - tests/parser/test_pre_semantic_ir.c
+  - tests/parser/test_struct_value_init.c
   - tests/acceptance/2026-07-19-syntax-01-m3-pre-semantic-ir.md
 doc_type: module-detail
 ---
@@ -43,6 +55,8 @@ Every compiler state owns an independent pre-execution semantic function and a p
 
 For the current lowering surface, local initialization, identifier load, local store, and ownership operations emit semantic instructions first. The bridge then selects `GET_STACK`, `SET_STACK`, or the exact `OWN_*` ExecBC opcode from that emitted semantic instruction; AST callers no longer make a second load/store/move/borrow decision. Both percent directives such as `%borrow(owner)` and point-form operations such as `owner.borrow()` use this path. `%borrow` creates a shared loan, while the exclusive `%loan` path creates a mutable loan; both carry explicit loan facts and regions. `%detach` is a move, `%release` is a drop, and owner transformations use `own.construct` with an explicit operation. Unsupported ownership kinds fail instead of falling through to construction. Script compilation validates the complete pre-execution function before final function assembly, optimization sidecars, and quickening.
 
+Struct value construction follows the same semantic-first rule. The contextual `init TypeRef(...)` syntax produces a dedicated AST node, and `SZrBoundValueConstruct` resolves the canonical constructor plus named/default argument mapping. Lowering emits `VALUE_CONSTRUCT(destinationPlaceId, typeId, constructorId, arguments)` before ExecBC selection. Local, field, fixed-array element, and return construction all pass the final destination Place into this path; ordinary call, GC allocation, and ownership construction remain separate and do not serve as fallback routes.
+
 The old `SZrSemIrInstruction` table is an execution compatibility projection. `compiler_semir.c` builds it only after final ExecBC assembly. It is not consulted when the compiler chooses local or ownership semantics, and it may legitimately be empty for source programs whose front-end Semantic IR is non-empty.
 
 ## Flow Facts
@@ -57,10 +71,12 @@ The old `SZrSemIrInstruction` table is an execution compatibility projection. `c
 
 Unreachable predecessors do not participate in joins. Initialization and availability join conservatively, and escape takes the widest bound. A store restores an assignable moved Place to initialized/available. Shared/mutable borrowing is then replaced by the backward CFG liveness result: ref values propagate through values and Place Store/Load, Store performs kill/gen for overwritten ref slots, reborrow keeps its parent live, and each block receives the exact live loan set at its entry and exit. Place access conflicts use projection overlap and end after the final possible use instead of the lexical block. The diagnostic pass reports uninitialized or maybe-uninitialized use, use after move/drop, maybe-moved use, NLL loan conflicts, and escape violations with instruction, Place, loan, block, overlap, origin, declaration, last-use, and source-range identities. See `reference-loan-nll.md` for the loan algorithm and M3 boundary.
 
+`FIELD_INITIALIZE` requires a field-projected destination. Flow analysis marks the field initialized and records the matching parent-field bit without claiming that sibling fields are initialized. The resulting bitmap is the semantic source for partial-constructor cleanup; joins preserve the independent field facts rather than collapsing the whole aggregate to initialized.
+
 ## Boundaries
 
-This graph remains compilation-session data. M4 decides which canonical public contracts and hashes enter `.zrs`, `.zri`, and `.zro`; local Place, block, loan, and flow state do not become `.zro` ABI by default. M5 migrates VM, AOT, LSP, reflection, and debug consumers to canonical projections. Execution-side optimization and quickening continue to consume assembled execution structures rather than redefining front-end semantics.
+This graph remains compilation-session data. Canonical public contracts and hashes enter `.zrs`, `.zri`, and `.zro`, while local Place, block, loan, field-initialization bitmap, and flow state do not become `.zro` ABI by default. VM, AOT, LSP, reflection, and debug consume canonical projections where their contract requires them. Execution-side optimization and quickening continue to consume assembled execution structures rather than redefining front-end semantics. Owner/resource field teardown and the complete cross-function exception protocol remain Syntax 04 promotion gates; struct M1 only publishes the generic layout maps and the partial-initialization mechanism they will consume.
 
 ## Verification
 
-`test_pre_semantic_ir.c` fixes the complete opcode-family golden, a source-level local initialize/load/store golden, explicit ownership-operation and shared-loan lowering, structural validation before execution-sidecar construction, CFG join negatives for definite assignment, move availability, loan conflicts, and caller escape, plus store-after-move and NLL replacement of compatibility borrow states. `test_reference_loan_nll.c` covers last-use release, shared/mutable conflicts, ref-slot overwrite, branch/loop liveness, dynamic-index unknown overlap, nested reborrow, and move/drop rejection. The compiler integration and ownership suites protect existing ExecBC behavior while the new semantic source is introduced.
+`test_pre_semantic_ir.c` fixes the complete opcode-family golden, destination-bearing `VALUE_CONSTRUCT`, field-projected `FIELD_INITIALIZE`, parent cleanup bitmap behavior, a source-level local initialize/load/store golden, explicit ownership-operation and shared-loan lowering, structural validation before execution-sidecar construction, CFG join negatives for definite assignment, move availability, loan conflicts, and caller escape, plus store-after-move and NLL replacement of compatibility borrow states. `test_struct_value_init.c` covers contextual parsing, qualified/generic TypeRef targets, named/default binding, constructor isolation, destination-first local/field/array lowering, runtime constructor aliases, and partial unwind. `test_reference_loan_nll.c` covers last-use release, shared/mutable conflicts, ref-slot overwrite, branch/loop liveness, dynamic-index unknown overlap, nested reborrow, and move/drop rejection. The compiler integration and ownership suites protect existing ExecBC behavior while the new semantic source is introduced.

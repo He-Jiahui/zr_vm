@@ -992,6 +992,10 @@ static ZR_FORCE_INLINE void garbage_collector_free_object_known_size(
     if ((object->type == ZR_RAW_OBJECT_TYPE_ARRAY || object->type == ZR_RAW_OBJECT_TYPE_OBJECT) &&
         objectSize >= sizeof(SZrObject)) {
         SZrObject *coreObject = ZR_CAST(SZrObject *, object);
+        if (coreObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
+            coreObject->inlineArrayElementByteSize > 0u) {
+            (void)ZrCore_Object_DropInlineArrayElements(state, coreObject);
+        }
         if (coreObject->superArrayRawIntData != ZR_NULL &&
             coreObject->superArrayRawIntCapacity > 0) {
             ZrCore_Memory_RawFreeWithType(global,

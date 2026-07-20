@@ -863,6 +863,80 @@ static void backend_aot_c_type_layout_write_ownership_offsets(FILE *file,
     fprintf(file, "};\n\n");
 }
 
+static TZrBool backend_aot_c_type_layout_try_get_ref_offset(const SZrTypeLayout *typeLayout,
+                                                            TZrUInt32 refFieldIndex,
+                                                            TZrUInt32 *outOffset) {
+    TZrUInt32 matchedIndex = 0u;
+
+    if (outOffset == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *outOffset = 0u;
+    if (typeLayout == ZR_NULL || refFieldIndex >= typeLayout->refFieldCount) {
+        return ZR_FALSE;
+    }
+    if (typeLayout->refFieldOffsets != ZR_NULL) {
+        *outOffset = typeLayout->refFieldOffsets[refFieldIndex];
+        return ZR_TRUE;
+    }
+    if (typeLayout->fields == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 fieldIndex = 0u; fieldIndex < typeLayout->fieldCount; fieldIndex++) {
+        const SZrTypeLayoutField *field = &typeLayout->fields[fieldIndex];
+        if ((field->flags & ZR_TYPE_LAYOUT_FIELD_FLAG_REF_VALUE) == 0u) {
+            continue;
+        }
+        if (matchedIndex == refFieldIndex) {
+            *outOffset = field->byteOffset;
+            return ZR_TRUE;
+        }
+        matchedIndex++;
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool backend_aot_c_type_layout_can_emit_ref_offsets(const SZrTypeLayout *typeLayout) {
+    if (typeLayout == ZR_NULL || typeLayout->refFieldCount == 0u) {
+        return ZR_FALSE;
+    }
+    for (TZrUInt32 index = 0u; index < typeLayout->refFieldCount; index++) {
+        TZrUInt32 byteOffset;
+        if (!backend_aot_c_type_layout_try_get_ref_offset(typeLayout, index, &byteOffset) ||
+            byteOffset > typeLayout->byteSize ||
+            sizeof(SZrTypeValue) > typeLayout->byteSize - byteOffset) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static void backend_aot_c_type_layout_write_ref_offsets(FILE *file,
+                                                        const SZrTypeLayout *typeLayout,
+                                                        TZrUInt32 typeLayoutId) {
+    if (file == ZR_NULL || typeLayout == ZR_NULL || typeLayout->refFieldCount == 0u) {
+        return;
+    }
+    if (!backend_aot_c_type_layout_can_emit_ref_offsets(typeLayout)) {
+        fprintf(file, "/* zr_aot_ref_offsets_failed layout=%u */\n\n", (unsigned)typeLayoutId);
+        return;
+    }
+
+    fprintf(file,
+            "/* zr_aot_ref_offsets layout=%u count=%u */\n"
+            "static const TZrUInt32 ZrRefOffsets_%u[] = {\n",
+            (unsigned)typeLayoutId,
+            (unsigned)typeLayout->refFieldCount,
+            (unsigned)typeLayoutId);
+    for (TZrUInt32 index = 0u; index < typeLayout->refFieldCount; index++) {
+        TZrUInt32 byteOffset = 0u;
+        (void)backend_aot_c_type_layout_try_get_ref_offset(typeLayout, index, &byteOffset);
+        fprintf(file, "    %uu,\n", (unsigned)byteOffset);
+    }
+    fprintf(file, "};\n\n");
+}
+
 static void backend_aot_c_type_layout_write_runtime_field_table(FILE *file,
                                                                 const SZrTypeLayout *typeLayout,
                                                                 TZrUInt32 typeLayoutId) {
@@ -905,14 +979,14 @@ static void backend_aot_c_type_layout_write_runtime_descriptor(FILE *file,
             "    .kind = %uu,\n"
             "    .copyKind = %uu,\n"
             "    .dropKind = %uu,\n"
-            "    .reserved0 = %uu,\n",
+            "    .gcScanKind = %uu,\n",
             (unsigned)typeLayoutId,
             (unsigned)typeLayout->byteSize,
             (unsigned)typeLayout->byteAlign,
             (unsigned)typeLayout->kind,
             (unsigned)typeLayout->copyKind,
             (unsigned)typeLayout->dropKind,
-            (unsigned)typeLayout->reserved0);
+            (unsigned)typeLayout->gcScanKind);
     if (typeLayout->fields != ZR_NULL && typeLayout->fieldCount > 0u) {
         fprintf(file, "    .fields = ZrTypeLayoutFields_%u,\n", (unsigned)typeLayoutId);
     } else {
@@ -922,23 +996,29 @@ static void backend_aot_c_type_layout_write_runtime_descriptor(FILE *file,
             "    .fieldCount = %uu,\n"
             "    .gcFieldCount = %uu,\n"
             "    .ownershipFieldCount = %uu,\n"
+            "    .refFieldCount = %uu,\n"
             "    .tagOffset = %uu,\n"
             "    .tagSize = %uu,\n"
             "    .blittable = %s,\n"
             "    .reserved1 = %uu,\n"
             "    .reserved2 = %uu,\n"
             "    .reserved3 = %uu,\n"
-            "    .cTypeId = %uu,\n",
+            "    .cTypeId = %uu,\n"
+            "    .layoutVersion = %uu,\n"
+            "    .layoutHash = %lluULL,\n",
             (unsigned)typeLayout->fieldCount,
             (unsigned)typeLayout->gcFieldCount,
             (unsigned)typeLayout->ownershipFieldCount,
+            (unsigned)typeLayout->refFieldCount,
             (unsigned)typeLayout->tagOffset,
             (unsigned)typeLayout->tagSize,
             typeLayout->blittable ? "ZR_TRUE" : "ZR_FALSE",
             (unsigned)typeLayout->reserved1,
             (unsigned)typeLayout->reserved2,
             (unsigned)typeLayout->reserved3,
-            (unsigned)typeLayoutId);
+            (unsigned)typeLayoutId,
+            (unsigned)typeLayout->layoutVersion,
+            (unsigned long long)typeLayout->layoutHash);
     if (backend_aot_c_type_layout_can_emit_gc_descriptor(typeLayout)) {
         fprintf(file, "    .gcFieldOffsets = ZrGcOffsets_%u,\n", (unsigned)typeLayoutId);
     } else {
@@ -949,6 +1029,14 @@ static void backend_aot_c_type_layout_write_runtime_descriptor(FILE *file,
     } else {
         fprintf(file, "    .ownershipFieldOffsets = ZR_NULL,\n");
     }
+    if (backend_aot_c_type_layout_can_emit_ref_offsets(typeLayout)) {
+        fprintf(file, "    .refFieldOffsets = ZrRefOffsets_%u,\n", (unsigned)typeLayoutId);
+    } else {
+        fprintf(file, "    .refFieldOffsets = ZR_NULL,\n");
+    }
+    fprintf(file,
+            "    .customDrop = ZR_NULL,\n"
+            "    .customDropUserData = ZR_NULL,\n");
     fprintf(file, "};\n\n");
 }
 
@@ -1047,6 +1135,7 @@ static unsigned long long backend_aot_c_type_layout_emit_one(FILE *file,
 
     backend_aot_c_type_layout_write_gc_descriptor(file, typeLayout, typeLayoutId);
     backend_aot_c_type_layout_write_ownership_offsets(file, typeLayout, typeLayoutId);
+    backend_aot_c_type_layout_write_ref_offsets(file, typeLayout, typeLayoutId);
     backend_aot_c_type_layout_write_runtime_descriptor(file, typeLayout, typeLayoutId);
     typeLayoutEnd = ftell(file);
     if (typeLayoutStart >= 0 && typeLayoutEnd >= typeLayoutStart) {

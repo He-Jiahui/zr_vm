@@ -2,9 +2,11 @@
 related_code:
   - zr_vm_core/include/zr_vm_core/type_layout.h
   - zr_vm_core/src/zr_vm_core/type_layout.c
+  - zr_vm_core/src/zr_vm_core/type_layout_initialization.c
   - zr_vm_core/include/zr_vm_core/constant_reference.h
   - zr_vm_core/include/zr_vm_core/object.h
   - zr_vm_core/src/zr_vm_core/object/object.c
+  - zr_vm_core/src/zr_vm_core/object/object_inline_array.c
   - zr_vm_core/src/zr_vm_core/module/module_internal.h
   - zr_vm_core/src/zr_vm_core/module/module_prototype.c
   - zr_vm_core/src/zr_vm_core/debug.c
@@ -23,6 +25,7 @@ related_code:
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c
   - zr_vm_core/src/zr_vm_core/function_precall_internal.h
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
   - zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
@@ -36,11 +39,17 @@ related_code:
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
   - zr_vm_parser/include/zr_vm_parser/compiler.h
+  - zr_vm_parser/include/zr_vm_parser/ast.h
+  - zr_vm_parser/include/zr_vm_parser/bound_expression.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/src/zr_vm_parser/writer.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_value_construct.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_struct_init.c
+  - zr_vm_parser/src/zr_vm_parser/bound_expression.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
@@ -68,6 +77,7 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c
   - tests/core/test_type_layout_inline_copy.c
+  - tests/core/test_inline_struct_array_layout.c
   - tests/core/test_precall_frame_slot_reset.c
   - tests/core/test_tail_reuse_callinfo_reset.c
   - tests/core/test_object_call_known_native_fast_path.c
@@ -76,13 +86,16 @@ related_code:
   - tests/gc/gc_tests.c
   - tests/module/test_metadata_runtime_type_layout.c
   - tests/parser/test_compiler_features.c
+  - tests/parser/test_struct_value_init.c
   - tests/parser/test_compiler_integration_main.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/type_layout.h
   - zr_vm_core/src/zr_vm_core/type_layout.c
+  - zr_vm_core/src/zr_vm_core/type_layout_initialization.c
   - zr_vm_core/include/zr_vm_core/constant_reference.h
   - zr_vm_core/include/zr_vm_core/object.h
   - zr_vm_core/src/zr_vm_core/object/object.c
+  - zr_vm_core/src/zr_vm_core/object/object_inline_array.c
   - zr_vm_core/src/zr_vm_core/module/module_internal.h
   - zr_vm_core/src/zr_vm_core/module/module_prototype.c
   - zr_vm_core/src/zr_vm_core/debug.c
@@ -101,6 +114,7 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c
   - zr_vm_core/src/zr_vm_core/function_precall_internal.h
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
   - zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
@@ -114,9 +128,15 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
   - zr_vm_parser/include/zr_vm_parser/compiler.h
+  - zr_vm_parser/include/zr_vm_parser/ast.h
+  - zr_vm_parser/include/zr_vm_parser/bound_expression.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/src/zr_vm_parser/writer.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_value_construct.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_struct_init.c
+  - zr_vm_parser/src/zr_vm_parser/bound_expression.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
@@ -152,6 +172,7 @@ plan_sources:
   - docs/plans/aot/06-implementation-blueprint.md
 tests:
   - tests/core/test_type_layout_inline_copy.c
+  - tests/core/test_inline_struct_array_layout.c
   - tests/core/test_precall_frame_slot_reset.c
   - tests/core/test_tail_reuse_callinfo_reset.c
   - tests/core/test_object_call_known_native_fast_path.c
@@ -163,6 +184,7 @@ tests:
   - tests/module/test_metadata_runtime_typespec_layout.c
   - tests/module/test_metadata_runtime_type_layout.c
   - tests/parser/test_compiler_features.c
+  - tests/parser/test_struct_value_init.c
   - tests/parser/test_compiler_integration_main.c
   - tests/parser/test_value_type_runtime.c
   - tests/parser/test_aot_c_type_layout_contracts.c
@@ -222,10 +244,12 @@ This module is the first runtime layer for moving `struct` values toward inline,
 - `byteSize` and `byteAlign` describe storage requirements.
 - `copyKind` selects POD raw copy versus field-aware copy.
 - `dropKind` selects no-op drop versus field-aware drop.
+- `gcScanKind` distinguishes pointer-free, mapped, and barriered layouts.
 - `fields` describes managed subfields such as embedded `SZrTypeValue` slots.
 - `blittable` records the computed raw-copy eligibility used by `ZrCore_TypeLayout_CanRawCopy`.
 - `cTypeId` is the stable generated-C type identifier reserved for AOT layout emission.
-- `gcFieldOffsets` and `ownershipFieldOffsets` carry precomputed managed subfield locations for
+- `layoutVersion` and `layoutHash` freeze the schema-v1 structural identity consumed by VM, metadata runtime, AOT, artifact roundtrip, and reflection.
+- `gcFieldOffsets`, `ownershipFieldOffsets`, and `refFieldOffsets` carry precomputed managed subfield locations for
   generated C, GC scanning, and ownership/drop lowering.
 
 POD layouts use `memmove` through `ZrCore_TypeLayout_CopyInline`, so overlapping source and destination spans are safe. Field-copy layouts copy unmanaged byte ranges directly and route `SZrTypeValue` fields through the existing value/ownership copy path. Field-drop layouts release only embedded value slots marked with `ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE` through `ZrCore_Ownership_ReleaseValue`; GC-only value fields stay available for mark/rewrite visitors without being treated as owned storage.
@@ -237,6 +261,18 @@ Generated AOT C descriptors now preserve that contract for owner-field struct la
 `ZR_TYPE_LAYOUT_KIND_VALUE` is a special layout for a standalone `SZrTypeValue`. It always copies through `ZrCore_Value_Copy`, so boxed struct objects still clone instead of being raw-copied by pointer. Dropping a value layout releases the value slot through the ownership runtime.
 
 `ZR_TYPE_LAYOUT_KIND_UNION` is the matching inline layout kind for tagged union values. The layout records the tag byte offset and size, and managed fields carry an `activeTag`. Copy, drop, and GC visitors only process fields whose `activeTag` matches the currently stored union tag. Union copy first drops the destination's old active value payload, then copies non-active byte ranges and active `SZrTypeValue` payload fields through the normal value copy path.
+
+Schema-v1 layout initialization computes the hash from the size, alignment, kind, copy/drop/scan classifications, field spans, nested layout indices, active tags, and all three maps. `ZrCore_TypeLayout_Validate` rejects invalid alignment, out-of-range or overlapping field spans, inconsistent map counts, and a hash that does not match the structural payload. AOT C descriptors emit the same version, hash, copy/drop/scan kinds, and map offsets; metadata runtime and reflection consume the attached registry instead of deriving a second layout.
+
+`ZrCore_TypeLayout_InitializeStorageWithRegistry` recursively initializes nested fields and embedded value slots before a destination becomes live. Registry-aware copy rejects move-only nested layouts. Full drop walks fields in reverse declaration order and can run custom drop before field teardown. `ZrCore_TypeLayout_DropPartialInlineWithRegistry` consumes a constructor initialization bitmap and drops only completed fields, also in reverse declaration order.
+
+## Destination-First Struct Initialization
+
+Source `init TypeRef(arguments)` has a distinct `ZR_AST_STRUCT_INIT_EXPRESSION`; it is not the existing object/new/ownership construct node. The parser enters the TypeRef grammar immediately after the contextual `init`, preserving qualified and constructed generic targets plus named argument syntax. `SZrBoundValueConstruct` resolves one canonical struct constructor, maps named arguments to parameters, synthesizes defaults, and uses a dedicated synthesized-default constructor identity only when the type declares no explicit constructor. Ordinary calls never retry this binder, and value construction never falls back to `@call` or class allocation.
+
+The compiler lowers the bound form to `ZR_SEMANTIC_IR_VALUE_CONSTRUCT` with a destination `PlaceId`, `TypeId`, and constructor `SymbolId`. Local declarations, inline fields, fixed-array elements, and return storage provide their final destination before argument or constructor lowering, so normal struct construction does not allocate an object wrapper or perform prototype dispatch. Explicit constructor receivers are indirect aliases of that final inline storage. Field stores also emit `FIELD_INITIALIZE`, allowing semantic flow and the runtime constructor bitmap to describe partial initialization without reconstructing it from ExecBC.
+
+Constructor frame metadata reserves a bitmap tail under `ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP`. Successful top-level field stores set the corresponding bit. VM exception unwinding resolves the receiver layout and invokes partial reverse drop for those bits; generated AOT C emits the same cleanup contract. Resuming a caller-side catch after a generated direct AOT callee throws still depends on the broader AOT cross-function exception protocol and remains a Syntax 04 promotion gate, not an M1 claim.
 
 ## Byte Stack Primitives
 
@@ -407,6 +443,8 @@ Frame-layout generic calls compute their effective return destination only after
 Ownership and typed branch/equality opcodes are part of the same boundary. When frame layout metadata is active, ownership casts/releases, object conversion, typed equality, typed comparisons, and fused signed branch tests read the logical `FRAME_VALUE_SLOT` rather than assuming the physical `BASE(slot)` storage unit is the canonical value. Weak reference expiry additionally verifies that a candidate slot is still weak and still points to the expiring weak ref before clearing it, which prevents a release path from nulling unrelated frame-layout values that happen to share an old weak-reference side table entry.
 
 ## GC, Drop, And Native Entries
+
+Inline arrays use the same registry contract instead of storing boxed struct elements. `ZrCore_Object_NewInlineArray` allocates an aligned object tail, records the element layout id/hash/size, and initializes every element through the registry. `CREATE_INLINE_ARRAY` creates that storage and `BIND_INLINE_ARRAY_ELEMENT_PLACE` resolves a checked element offset for destination-first construction. GC mark/rewrite and object teardown visit or drop each initialized element with the recorded layout, rejecting registry/hash drift rather than interpreting the tail as ordinary object values.
 
 The frame byte layout is now used by real runtime entries when metadata is present and the resolver proves the inline layout.
 

@@ -1365,6 +1365,44 @@ void backend_aot_write_c_direct_create_array(FILE *file, TZrUInt32 destinationSl
     fprintf(file, "    } while (0);\n");
 }
 
+void backend_aot_write_c_direct_create_inline_array(FILE *file,
+                                                    TZrUInt32 destinationSlot,
+                                                    TZrUInt32 elementTypeLayoutId,
+                                                    TZrUInt32 length) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    do {\n"
+            "        /* zr_aot_value_exec_create_inline_array */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CreateInlineArray(state, &frame, %u, %u, %u));\n",
+            (unsigned)destinationSlot,
+            (unsigned)elementTypeLayoutId,
+            (unsigned)length);
+    backend_aot_write_c_gc_safepoint(file, "        ", "zr_aot_gc_safepoint_allocation");
+    fprintf(file, "    } while (0);\n");
+}
+
+void backend_aot_write_c_direct_bind_inline_array_element_place(FILE *file,
+                                                               TZrUInt32 destinationSlot,
+                                                               TZrUInt32 arraySlot,
+                                                               TZrUInt32 indexSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    do {\n"
+            "        /* zr_aot_value_exec_bind_inline_array_element_place */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BindInlineArrayElementPlace("
+            "state, &frame, %u, %u, %u));\n"
+            "    } while (0);\n",
+            (unsigned)destinationSlot,
+            (unsigned)arraySlot,
+            (unsigned)indexSlot);
+}
+
 void backend_aot_write_c_direct_typeof(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {
         return;

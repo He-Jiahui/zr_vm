@@ -341,6 +341,14 @@ void backend_aot_write_c_direct_sub_float(FILE *file,
 void backend_aot_write_c_direct_get_global(FILE *file, TZrUInt32 destinationSlot);
 void backend_aot_write_c_direct_create_object(FILE *file, TZrUInt32 destinationSlot);
 void backend_aot_write_c_direct_create_array(FILE *file, TZrUInt32 destinationSlot);
+void backend_aot_write_c_direct_create_inline_array(FILE *file,
+                                                    TZrUInt32 destinationSlot,
+                                                    TZrUInt32 elementTypeLayoutId,
+                                                    TZrUInt32 length);
+void backend_aot_write_c_direct_bind_inline_array_element_place(FILE *file,
+                                                               TZrUInt32 destinationSlot,
+                                                               TZrUInt32 arraySlot,
+                                                               TZrUInt32 indexSlot);
 void backend_aot_write_c_direct_typeof(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_to_object(FILE *file,
                                           TZrUInt32 destinationSlot,

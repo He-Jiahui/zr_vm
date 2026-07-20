@@ -494,11 +494,13 @@ native FFI 不自动采用 ZR ref struct ABI。需要显式 extern layout/marsha
 
 ## 11. 里程碑
 
-### M1 Struct layout 与 copy/drop
+### M1 Struct layout、copy 分类与通用 map 表示
 
-覆盖 `init TypeRef(...)` 的 syntax/binding/ValueConstruct、primitive、nested struct、union、array element、generic instance、GC/owner field maps。
+覆盖 `init TypeRef(...)` 的 syntax/binding/ValueConstruct、primitive、nested struct、union、array element、generic instance，以及供后续消费者填充的通用 field-slot/map 表示。M1 只定义 field kind、offset、TypeId、capability id 和可为空的 GC/ownership/ref map entry，不要求 resource/owner 的 drop、release、retain 或 GC bridge 语义已经成立。
 
-晋级门：VM/AOT/layout registry/artifact/reflection 对 size/align/offset/hash 一致；`init` 直接写 destination Place；无 object wrapper 参与普通 struct construction/field access；普通 call 与 constructor 无 fallback。
+晋级门：VM/AOT/layout registry/artifact 对 size/align/offset/hash 和通用 map 编解码一致；`init` 直接写 destination Place；无 object wrapper 参与普通 struct construction/field access；普通 call 与 constructor 无 fallback。owner/resource map 的语义填充、field teardown 和异常清理属于 04 的 promotion gate；08 的 reflection projection 只消费已冻结布局，不反向成为 M1 的前置验收条件。
+
+状态记录：[M1 Struct layout、copy 分类与通用 map 表示](./03-struct-ref-struct-span-layout/m1-struct-layout-copy-maps.md)。
 
 ### M2 Receiver effect
 

@@ -1748,6 +1748,12 @@ TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, T
         cs->isInTailCallContext = oldTailCallContext;
         return slot;
     }
+    if (node->type == ZR_AST_STRUCT_INIT_EXPRESSION) {
+        TZrUInt32 slot = compile_struct_init_expression_into_slot(
+                cs, node, targetSlot);
+        cs->isInTailCallContext = oldTailCallContext;
+        return slot;
+    }
 
     compile_expression_non_tail(cs, node);
     cs->isInTailCallContext = oldTailCallContext;

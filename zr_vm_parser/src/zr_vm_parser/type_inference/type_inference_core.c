@@ -4576,6 +4576,18 @@ static SZrTypeMemberInfo *find_type_constructor_member_inference(SZrCompilerStat
     return ZR_NULL;
 }
 
+TZrBool infer_struct_init_expression_type(SZrCompilerState *cs,
+                                          SZrAstNode *node,
+                                          SZrInferredType *result) {
+    if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL ||
+        node->type != ZR_AST_STRUCT_INIT_EXPRESSION ||
+        node->data.structInitExpression.typeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    return ZrParser_AstTypeToInferredType_Convert(
+            cs, node->data.structInitExpression.typeInfo, result);
+}
+
 TZrBool infer_construct_expression_type(SZrCompilerState *cs,
                                         SZrAstNode *node,
                                         SZrInferredType *result) {

@@ -72,6 +72,15 @@ typedef enum EZrFunctionFrameSlotKind {
     ZR_FUNCTION_FRAME_SLOT_KIND_UNKNOWN = 2
 } EZrFunctionFrameSlotKind;
 
+#define ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS ((TZrUInt16)1u)
+#define ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS ((TZrUInt16)2u)
+#define ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP ((TZrUInt16)4u)
+
+typedef struct SZrFunctionFrameIndirectAliasBinding {
+    TZrUInt32 ownerStackSlot;
+    TZrUInt32 ownerByteOffset;
+} SZrFunctionFrameIndirectAliasBinding;
+
 typedef struct SZrFunctionFrameSlotLayout {
     TZrUInt32 stackSlot;
     TZrUInt32 byteOffset;
@@ -80,7 +89,7 @@ typedef struct SZrFunctionFrameSlotLayout {
     TZrUInt32 typeLayoutId;
     TZrUInt8 slotKind;
     TZrUInt8 isParameter;
-    TZrUInt16 reserved0;
+    TZrUInt16 reserved0; /* EZrFunctionFrameSlotFlags */
 } SZrFunctionFrameSlotLayout;
 
 typedef struct SZrFunctionFrameFieldLayout {
@@ -722,6 +731,27 @@ ZR_CORE_API TZrBool ZrCore_Function_MakeFrameSlotPlace(struct SZrState *state,
                                                        TZrStackValuePointer frameBase,
                                                        TZrUInt32 stackSlot,
                                                        SZrStackFramePlace *outPlace);
+ZR_CORE_API TZrBool ZrCore_Function_GetFrameSlotInlineMember(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 destinationStackSlot,
+        TZrUInt32 receiverStackSlot,
+        struct SZrString *memberName);
+ZR_CORE_API TZrBool ZrCore_Function_SetFrameSlotInlineMember(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 sourceStackSlot,
+        TZrUInt32 receiverStackSlot,
+        struct SZrString *memberName);
+ZR_CORE_API TZrBool ZrCore_Function_BindFrameSlotInlineArrayElement(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 aliasStackSlot,
+        TZrUInt32 arrayStackSlot,
+        TZrInt64 elementIndex);
 ZR_CORE_API void ZrCore_Function_InitializeFrameLayoutStorage(struct SZrState *state,
                                                               TZrStackValuePointer functionBase,
                                                               const SZrFunction *function,
@@ -822,10 +852,28 @@ ZR_CORE_API TZrBool ZrCore_Function_VisitFrameGcValues(struct SZrState *state,
                                                        FZrFunctionFrameGcValueVisitor visitor,
                                                        TZrPtr visitorUserData);
 ZR_CORE_API TZrBool ZrCore_Function_DropInlineFrameValues(struct SZrState *state,
-                                                          const SZrFunction *function,
-                                                          TZrStackValuePointer frameBase,
-                                                          FZrFunctionFrameTypeLayoutResolver resolver,
-                                                          TZrPtr resolverUserData);
+                                                           const SZrFunction *function,
+                                                           TZrStackValuePointer frameBase,
+                                                           FZrFunctionFrameTypeLayoutResolver resolver,
+                                                           TZrPtr resolverUserData);
+ZR_CORE_API TZrBool ZrCore_Function_GetInlineConstructorInitializedFieldBitmap(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        const TZrUInt64 **outInitializedFieldWords,
+        TZrUInt32 *outInitializedFieldWordCount);
+ZR_CORE_API TZrBool ZrCore_Function_MarkInlineConstructorFieldInitialized(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 receiverStackSlot,
+        struct SZrString *memberName);
+ZR_CORE_API TZrBool ZrCore_Function_DropInlineFrameValuesOnUnwind(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        FZrFunctionFrameTypeLayoutResolver resolver,
+        TZrPtr resolverUserData);
 ZR_CORE_API TZrBool ZrCore_Function_ApplyReturnEscape(struct SZrState *state,
                                                       const SZrFunction *function,
                                                       TZrUInt32 stackSlot,

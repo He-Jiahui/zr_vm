@@ -3,7 +3,9 @@
 static TZrUInt32 backend_aot_c_frame_setup_register_frame_bytes(
         const SZrAotExecIrFrameLayout *frameLayout) {
     TZrUInt32 layoutIndex;
-    TZrUInt32 registerFrameBytes = 0u;
+    TZrUInt32 registerFrameBytes = frameLayout != ZR_NULL
+                                           ? frameLayout->frameByteSize
+                                           : 0u;
 
     if (frameLayout == ZR_NULL || frameLayout->slotLayouts == ZR_NULL) {
         return 0u;

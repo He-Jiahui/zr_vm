@@ -1,8 +1,10 @@
 # 09 generational `PoolHandle<T>`、`PoolRef<T>` 与连续池化内存
 
-> 状态：细化草案，等待人工确认。
+> 状态：已补齐直接依赖、分层里程碑与晋级门，等待按里程碑实施。
 >
-> 硬依赖：[Canonical Place/CFG](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md)、[ref struct/Span/layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[ownership/GC bridge](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md)。
+> 语义硬依赖：[Canonical Place/CFG](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md)、[ref struct/Span/layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[ownership/GC bridge](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md)、[property/ref-return contract](./2026-07-18-05-property-unified-ast-design.md)。
+>
+> 集成依赖：M4 依赖 08 的 metadata projection 和 10R 的 ModuleIdentity/native descriptor substrate；M1-M3 可独立验收。
 
 ## 1. 目标结果
 
@@ -362,7 +364,39 @@ pool.layout_not_poolable
 
 stale/retired 是 `tryBorrow` 的正常 `false` 结果；required/throwing API 才产生 structured error。debug build 可以记录 issue/recycle site，但 release correctness 不依赖全局 runtime borrow stack。
 
-## 14. 测试矩阵
+## 14. 分层里程碑与晋级门
+
+### M1 Handle identity 与状态机
+
+目标：实现 ordinary readonly `PoolHandle<T>`、PoolId/slot/generation identity、deliver/recycle/retire 和 ABA 永久失效，不引入 direct ref。
+
+依赖：01、03、04 的通用 TypeLayout/drop capability。晋级门：first generation、wrong pool、stale、double recycle、slot reuse、generation near-wrap 和 construction failure 均有确定状态/诊断；handle 只含 scalar identity 且可存入普通容器/artifact。
+
+### M2 Guarded direct ref 与 ref property
+
+目标：实现 `PoolRef<T>`/`PoolReadRef<T>`、try/out default view、reader/writer guard、getter-only ref property 和 region/escape facts。
+
+依赖：M1、02/03、05。晋级门：read/read、read/write、write/write、ref getter 派生 loan、view 替换顺序以及 local/return/field/array/box/closure/suspension 的合法/非法矩阵完整；成功借用后的字段访问不重复 generation check。
+
+### M3 Deferred reclamation、slab layout 与 GC
+
+目标：实现 recycle 立即 retire、active guard 归零后 Drop/reuse、GcFree/GcMapped/GcBarriered slab 和 compact-safe base+offset ref。
+
+依赖：M1-M2、04 的 resource/drop/GC bridge。晋级门：异常/early-exit cleanup、resource T exactly-once Drop、partial initialization、barrier/card、compact、alignment/padding/跨 slab 扩容均通过；NoScan 只由 closed TypeLayout `GcFree` 证明。
+
+### M4 Artifact、reflection、LSP 与 native module
+
+目标：保存 pool/slot/generation/guard/layout contract，向 08 暴露只读 metadata，并通过 10R 注册唯一 `zr.pooling` ModuleIdentity/capability。
+
+依赖：M1-M3、08 metadata projection、10R。晋级门：source/binary/native contract hash 一致，LSP 不按 `PoolHandle/PoolRef` 名字推断，artifact corrupt/unknown layout 拒绝，reflection 不装箱或长期保存 direct ref。
+
+### M5 Stress、性能与整体晋级
+
+目标：验证高 churn、百万级 handle、GC scan bytes、并发能力边界和 direct-field hot path。
+
+依赖：M1-M4。晋级门：下列测试矩阵全部有直接证据；stale/ABA、guard/reclamation、GcFree/GcMapped、resource Drop 和性能计数分别报告，不能混合为单一 smoke。只有 M1-M5 全部通过，09 才可供 12、10C 与 07B 作为已晋级依赖。
+
+## 15. 测试矩阵
 
 ### Identity/state
 
@@ -394,7 +428,7 @@ stale/retired 是 `tryBorrow` 的正常 `false` 结果；required/throwing API �
 - GcFree 与 GcMapped slab 分别统计 scan bytes，禁止把结果混合。
 - thread-local non-atomic与 concurrent atomic pool单独 benchmark。
 
-## 15. 参考依据与差异
+## 16. 参考依据与差异
 
 - CPython arena/pool/size class：`lua/cpython/Include/internal/pycore_obmalloc.h`、`lua/cpython/Objects/obmalloc.c`。
 - .NET Span/managed byref：`lua/runtime/src/libraries/System.Private.CoreLib/src/System/Span.cs`、`ByReference.cs`。

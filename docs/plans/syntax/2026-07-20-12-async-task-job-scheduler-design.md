@@ -4,15 +4,15 @@
 
 **Goal:** 用显式`zr.task.Task<T>`返回类型、一个cold `zr.task.Job<T>`和一个`zr.task.Scheduler.schedule`contract表达异步、协程与线程执行，不引入spawn/thread/coroutine/job关键字、重复模块或第二套启动协议。
 
-**Architecture:** `async fn`是返回`Task<T>`的普通`fn`；`await`挂起当前state。需要延迟或指定执行位置时，以既有`init`构造non-Copy Job并交给Scheduler。`zr.thread.ThreadScheduler`只提供独立isolate上的同一Scheduler contract，不创建第二套Task类型。
+**Architecture:** `async fn`是返回`Task<T>`的普通`fn`；`await`挂起当前state。需要延迟或指定执行位置时，以既有`init`构造non-Copy Job并交给Scheduler。`zr.thread.ThreadScheduler`使用同一Scheduler contract，宿主可把worker挂到caller的`GcDomain`，也可映射到隔离domain；两种策略不创建第二套Task类型。
 
 **Tech Stack:** Canonical callable/effect、Place/CFG suspension facts、borrow checker、TypeLayout/GC map、ZR VM state machine、`zr.task`、`zr.thread`、AOT、artifact、LSP、Unity/CMake tests。
 
 ---
 
-> 状态：按Occam原则修订，等待按里程碑实施。
+> 状态：已接入可配置 GC domain、Send/Sync 与跨域传输成本，等待按里程碑实施。
 >
-> 上游契约：[01 Semantic IR/CFG/artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[02 borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md)、[03 ref struct/layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[04 ownership/GC](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md)、[09 PoolRef](./2026-07-19-09-generational-pool-handle-ref-struct-design.md)、[10 modules](./2026-07-19-10-native-ffi-module-package-design.md)。
+> 上游契约：[01 Semantic IR/CFG/artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[02 borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md)、[03 ref struct/layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[04 ownership/GC](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md)、[05 property](./2026-07-18-05-property-unified-ast-design.md)、[09 PoolRef](./2026-07-19-09-generational-pool-handle-ref-struct-design.md)、[10R module/native descriptor foundation](./2026-07-19-10-native-ffi-module-package-design.md)、[11 compile-time metadata](./2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md)。
 
 ## 1. Occam硬约束
 
@@ -22,13 +22,14 @@
 Task<T>             hot completion
 Job<T>              cold, non-Copy work value
 Scheduler           schedule contract
-ThreadScheduler     Scheduler的thread-isolate provider
-Send                 可跨isolate move的type capability
+ThreadScheduler     支持宿主GC-domain policy的thread provider
+Send                 可跨mutator move的type capability
+Sync                 可跨mutator共享引用的type capability
 ```
 
 只保留两个相关关键字：已有迁移目标`async`和`await`。不增加`spawn`、`thread`、`coroutine`、`job`、`scheduler`或`task`关键字。
 
-第一版删除此前草案中的：`Async<T>`、`TaskRunner<T>`、TaskGroup、detach、SharedCell、Sync、CancellationToken、Channel、autoCoroutine、普通业务`pump/step`和`create/start/spawn` helper。
+第一版删除此前草案中的：`Async<T>`、`TaskRunner<T>`、TaskGroup、detach、SharedCell、CancellationToken、Channel、autoCoroutine、普通业务`pump/step`和`create/start/spawn` helper。
 
 必要性：
 
@@ -36,7 +37,9 @@ Send                 可跨isolate move的type capability
 - Job不可省：用户明确需要cold work和指定scheduler；直接调用async fn已经是hot，二者语义不同。
 - Scheduler不可省：coroutine、host loop与thread pool需要一个共同投递边界。
 - ThreadScheduler不可省：它是Scheduler的provider，不是新语言概念。
-- Send不可省：不同GC isolate之间必须静态拒绝裸GC/native pointer捕获。
+- Send不可省：同domain多mutator也必须静态限制value/owner move，不能把heap归属当成数据竞争证明。
+- Sync不可省：同domain零拷贝共享引用需要独立于Send的并发访问证明；它不等于`AtomicShared<T>`。
+- 跨domain是否合法由04的`DomainTransferKind`决定；Send/Sync不能替代clone、immutable handle或resource transfer contract。
 
 ### 1.1 Native ModuleId唯一归属
 
@@ -49,8 +52,9 @@ Send                 可跨isolate move的type capability
 | `zr.task.Scheduler` | `zr.task` | N1 Runtime native interface/capability |
 | `zr.thread.ThreadScheduler` | `zr.thread` | N2 Runtime native provider class |
 | `zr.thread.Send` | `zr.thread` | N2 Runtime native capability metadata |
+| `zr.thread.Sync` | `zr.thread` | N2 Runtime native capability metadata |
 
-`let task = import("zr.task");`只建立ModuleNamespace alias，因此源码中的`task.Task<T>`仍规范化为`zr.task.Task<T>`。禁止`zr.async`、`zr.coroutine`、`zr.job`、`zr.scheduler`或`zr.thread.Task/Job`同义定义。compiler按descriptor注册的TaskCarrier/JobWork/Scheduler/Send capability id绑定，不按短名或完整名字字符串特判。
+`let task = import("zr.task");`只建立ModuleNamespace alias，因此源码中的`task.Task<T>`仍规范化为`zr.task.Task<T>`。禁止`zr.async`、`zr.coroutine`、`zr.job`、`zr.scheduler`或`zr.thread.Task/Job`同义定义。compiler按descriptor注册的TaskCarrier/JobWork/Scheduler capability id绑定；`Send`/`Sync`分别投影04已冻结的`MutatorMoveSafe`/`MutatorShareSafe` role，不按短名或完整名字字符串特判，也不让04反向依赖本计划。
 
 ## 2. 所有async函数显式返回`zr.task.Task` TypeRef
 
@@ -99,7 +103,7 @@ TaskState = Running | Suspended | Completed | Faulted
 - completed fast path直接读取inline result，不入queue、不创建continuation node。
 - pending await登记continuation并返回scheduler；完成后恢复到awaiter所属scheduler。
 - fault在await point重抛structured exception并保留logical async stack；finally/Drop只执行一次。
-- Task属于创建它的isolate且不是Send。ThreadScheduler返回caller-isolate中的proxy Task，worker只传输Send result/exception。
+- Task属于创建它的`GcDomain`且不是Send。ThreadScheduler始终返回caller domain中的proxy Task；worker通过completion ABI发布result/exception，不能把worker frame或heap pointer暴露给caller。
 - 当T为Copy/GC handle时可多次await；当T为non-Copy owner时，await消费唯一Task并move结果。
 - Task是must-use。第一版不提供detach/forget函数；未await、未return或未存入可证明consumer的Task产生diagnostic。故意fire-and-forget不属于第一版安全模型。
 - scheduler关闭时pending Task统一fault并释放frame/captures，不增加Cancelled状态或CancellationToken实体。
@@ -131,7 +135,7 @@ let compressed: task.Task<Buffer<byte>> =
 
 - Job是non-Copy value，拥有callable和captures；`schedule(job)`按值消费。
 - Job constructor接受`fn() -> T`。要调度可挂起work，callable写`fn() -> Task<T>`并由constructor overload规范化为`Job<T>`；两种constructor都通过既有`init`选择，不增加`create/createAsync`函数。
-- local scheduler允许普通合法captures；ThreadScheduler要求captures和T满足Send。
+- local scheduler允许普通合法captures；ThreadScheduler根据实例不可变的domain policy检查captures和T：same-domain分支要求跨mutatormove/share满足Send/Sync，isolated-domain分支要求存在`DomainTransferKind` transport。
 - Job尚未开始而scheduler关闭时直接Drop captures并fault proxy Task。
 - priority/deadline/affinity/work stealing属于provider configuration，不进入第一版语言或Job contract。
 
@@ -157,16 +161,39 @@ fn delay(duration: Duration): Task<void>;
 - custom provider实现Scheduler capability，VM不检查具体type name。
 - delay只表达timer completion；第一版没有CancellationToken overload。
 
-## 6. thread isolate
+## 6. ThreadScheduler 与 GC domain policy
 
-`zr.thread.ThreadScheduler`实现同一Scheduler：
+`zr.thread.ThreadScheduler`实现同一Scheduler。它的实例带runtime内部不可变的`executionDomainPolicy`；该值由embedding host/provider配置，不新增游戏实例、domain或thread语言关键字，也不由语言设计者替应用决定拓扑。
 
-- 每个worker拥有独立`SZrGlobalState`、GC、module registry、scheduler和root state。
-- ThreadScheduler object是caller isolate中的provider proxy；worker heap pointer不暴露给caller。
-- Job capture和result必须是Send。Send由Canonical Type capability和closed field/layout递归计算，不依赖marker type name。
-- blittable value、immutable string/blob和显式resource transfer可Send；普通class、closure捕获的GC object、ref/ref struct、native pointer默认不可Send。
-- 用户第一版不能unsafe声明Send。
-- 一个Job只有一个request/result transport，不引入Channel/Shared/Sync等常驻跨线程实体。
+| policy | worker heap关系 | capture/result边界 | 主要代价 |
+|---|---|---|---|
+| `AttachedDomain` | worker state作为mutator挂接caller的`GcDomain` | move capture/result要求Send；保留共享引用还要求Sync；普通合法GC reference可零拷贝 | 本domain任一minor/remark/compact会暂停其全部mutator，另有barrier、TLAB和safepoint成本 |
+| `IsolatedDomain` | worker或worker group按host映射到独立`GcDomain` | 必须使用04定义的`ValueCopy`/`StructuredClone`/`ImmutableHandle`/`ResourceMove`；禁止裸GC/native pointer | GC暂停隔离，但有序列化、复制、资源转移和额外heap余量 |
+
+宿主可以配置全进程一个domain、每游戏实例一个domain、若干实例共享domain，或多线程实例独占domain。`ThreadScheduler`只消费该映射；不能从workerCount、线程id或source module名猜测实例边界。当前实现中“每worker新建`SZrGlobalState`”只是`IsolatedDomain` provider的迁移起点，不是长期语言语义。
+
+### 6.1 Send、Sync 与 transfer 是三个不同问题
+
+- `Send`证明一个value/owner可以在mutator间move；发送后源Place按正常move规则失效。
+- `Sync`证明对同一value的shared reference可被多个mutator并发访问；普通mutable class、非原子`Shared<T>`和含未同步interior mutation的类型默认不是Sync。
+- `DomainTransferKind`证明如何在另一个heap重建payload或访问domain外只读资源；它是layout/descriptor metadata，不是用户marker。
+- `Send + Sync`不允许跨domain GC pointer；`StructuredClone`也不自动允许同一mutable object在两个mutator共享。
+- compiler从closed fields、owner kind、GC map和registered native capability递归计算Send/Sync。普通GC class因handle可复制且可能存在alias，默认既非Send也非Sync；closed immutable graph可推导二者，thread-safe native/resource type由OfficialNative descriptor声明。第一版用户不能unsafe声明或伪造二者。
+
+### 6.2 Job capture descriptor 与绑定
+
+每个Job lowering保存capture/result descriptor的两个可选分支：
+
+```text
+sameDomainRequirements: movedPlaces(Send), sharedPlaces(Sync)
+isolatedDomainTransport: DomainTransferKind + schema/token per payload
+```
+
+- deployment/host manifest若固定provider policy，link/bind阶段验证对应分支并让LSP显示具体违规Place。
+- scheduler value若来自动态provider且policy不能静态确定，artifact必须同时携带两个分支；运行时只选择已完整描述的分支。所选分支缺失时Task以structured `SchedulerPolicyMismatch` fault，不能降级为裸pointer传输。
+- AttachedDomain直接move/borrow-safe publish；IsolatedDomain按transport schema编码，在目标domain解码。两者使用相同Job/Task TypeId与awaiter affinity。
+- ThreadScheduler返回的Task及continuation始终归caller domain。worker只通过thread-safe completion record发布，不让caller直接访问worker Task/frame。
+- 第一版不提供常驻跨domain Channel或任意shared GC object；大型共享只读资产使用04的ImmutableHandle，可变共享使用显式Sync native/resource contract。
 
 ## 7. Suspension IR、frame与GC
 
@@ -192,10 +219,11 @@ AsyncFault(exception)
 - Canonical callable保存Async effect和显式`Task<T>` return TypeId。
 - public return TypeId规范化为`zr.task.Task<T>`；ThreadScheduler返回的proxy也使用同一TypeId，不存在thread-local Task type。
 - `.zri`保存suspension CFG、frame liveness/layout、awaiter scheduler fact和source map。
-- `.zro`保存public `zr.task.Task<T>` signature、Task/Await ABI version、owner ModuleId和required scheduler capability。
+- `.zro`保存public `zr.task.Task<T>` signature、Task/Await ABI version、owner ModuleId、required scheduler capability，以及Job的same-domain Send/Sync requirements和isolated-domain transport schema/token。
+- host/provider manifest保存ThreadScheduler的domain policy与04的GcDomain/safepoint/transport ABI version；bind时不允许policy与artifact capability降级匹配。
 - LSP hover只显示源码真实signature，不再显示“completion T / hidden result Task<T>”双层信息。
 - debugger显示logical async stack；step-over await在suspend时返回host，resume后停在下一source statement。
-- dropped Task、borrow across await和non-Send Job提供定向diagnostic。
+- dropped Task、borrow across await、non-Send/non-Sync capture和Forbidden cross-domain payload提供定向diagnostic。
 
 ## 9. 迁移
 
@@ -206,7 +234,7 @@ AsyncFault(exception)
 | `Async<T>` / `TaskRunner<T>` | `Task<T>`或`Job<T>`，按hot/cold语义人工确认 |
 | `runner.start()/spawn(...)` | `scheduler.schedule(init Job<T>(callable))` |
 | autoCoroutine/pump业务调用 | 删除；host loop自动驱动 |
-| cross-thread shared wrapper | 第一版改为Job capture/result的Send value；无法表达则blocked |
+| cross-thread shared wrapper | same-domain改为Send move或Sync shared reference；cross-domain改为显式transport/immutable handle，无法表达则blocked |
 
 旧artifact的TaskRunner contract不能静默解释为Task，必须重编译或迁移。
 
@@ -224,25 +252,34 @@ AsyncFault(exception)
 
 在同一`zr.task`descriptor登记Job/Scheduler及constructor/functions，覆盖single consume、schedule/currentScheduler/yieldNow/delay、must-use和provider ABI。
 
-### M4 ThreadScheduler/Send
+### M4 AttachedDomain ThreadScheduler/Send/Sync
 
-在`zr.thread`descriptor只登记ThreadScheduler/Send，覆盖worker isolate、capture/result transport、awaiter affinity、scheduler close和non-Send diagnostics；不得re-export Task/Job/Scheduler TypeDef。
+在`zr.thread`descriptor只登记ThreadScheduler/Send/Sync，接入04 M5的mutator attach、domain-local safepoint与barrier；覆盖same-domain zero-copy move/share、awaiter affinity、scheduler close和non-Send/non-Sync diagnostics。不得re-export Task/Job/Scheduler TypeDef。
 
-### M5 artifact/debug/LSP/migration
+晋级门：worker触发GC时只暂停所属domain；共享domain之外的progress counter持续增长；mutable class、Shared/ref-like capture不能借“同heap”绕过Sync。
 
-删除Async/TaskRunner/autoCoroutine public surface和concrete Task type-name checks。
+### M5 IsolatedDomain transport
+
+接入04 M6的DomainTransferKind，覆盖value copy、structured clone、immutable handle、resource move、request/result、quota/rollback、policy mismatch和domain shutdown。
+
+晋级门：worker heap pointer永不暴露给caller；transport前后无跨domain GC edge；相同Job/Task TypeId可在固定policy的host manifest下分别验证两种成本模型。
+
+### M6 artifact/debug/LSP/migration
+
+保存policy分支、Send/Sync requirements、transport schema与ABI version；删除Async/TaskRunner/autoCoroutine public surface和concrete Task type-name checks。
 
 晋级要求：
 
 - 所有async declaration显式写`: Task<T>`或13的`: AsyncIterator<T>`；
-- `Task<T>`、`Job<T>`、`Scheduler`的owner TypeId只能是`zr.task`，ThreadScheduler/Send只能是`zr.thread`；builtin/plugin/source import得到相同contract hash。
+- `Task<T>`、`Job<T>`、`Scheduler`的owner TypeId只能是`zr.task`，ThreadScheduler/Send/Sync只能是`zr.thread`；builtin/plugin/source import得到相同contract hash。
 - parser没有新增job/scheduler/thread/coroutine关键字；
 - public ZR functions仅有reference ledger列出的`schedule/yieldNow/delay`；
 - sync-complete path allocation counter为0；
 - illegal borrow在lowering前失败；
 - Task/frame全exit释放；
-- thread provider不跨isolate传裸GC/native pointer；
-- million completed awaits、100k suspended Tasks、worker churn和GC stress有测试。
+- AttachedDomain provider只让满足Send/Sync的capture跨mutator，不因共享heap放宽并发安全；
+- IsolatedDomain provider不跨domain传裸GC/native pointer，所有payload命中稳定transport schema；
+- 一个domain STW时其他domain仍有进展；million completed awaits、100k suspended Tasks、worker churn、multi-mutator barrier和multi-domain GC stress有测试。
 
 ## 11. Public API reference ledger
 
@@ -257,7 +294,10 @@ AsyncFault(exception)
 | `task.currentScheduler` | 明确continuation归属 | `lua/runtime/src/libraries/System.Private.CoreLib/src/System/Threading/Tasks/TaskScheduler.cs` | `lua/runtime/src/libraries/System.Runtime/tests/System.Threading.Tasks.Tests/TaskScheduler/TaskSchedulerTests.cs`；`lua/testes/coroutine.lua` |
 | `task.yieldNow(): Task<void>` | cooperative fairness | `lua/runtime/src/libraries/System.Private.CoreLib/src/System/Runtime/CompilerServices/YieldAwaitable.cs` | `lua/runtime/src/libraries/System.Runtime/tests/System.Threading.Tasks.Tests/System.Runtime.CompilerServices/YieldAwaitableTests.cs`；`lua/testes/coroutine.lua` |
 | `task.delay(Duration): Task<void>` | timer await without blocking thread | `lua/runtime/src/libraries/System.Private.CoreLib/src/System/Threading/Tasks/Task.cs`；`lua/jdk/src/java.base/share/classes/java/util/concurrent/ScheduledThreadPoolExecutor.java` | `lua/runtime/src/libraries/System.Runtime/tests/System.Threading.Tasks.Tests/Task/TaskRtTests.cs`；`lua/jdk/test/jdk/java/util/concurrent/tck/ScheduledExecutorTest.java` |
-| `new zr.thread.ThreadScheduler(workerCount: int)` | 同一contract的worker provider及唯一public constructor | `lua/jdk/src/java.base/share/classes/java/util/concurrent/ThreadPoolExecutor.java` | `lua/jdk/test/jdk/java/util/concurrent/tck/ThreadPoolExecutorTest.java`；`lua/jdk/test/jdk/java/util/concurrent/tck/ThreadPoolExecutorSubclassTest.java` |
-| `zr.thread.Send` capability | 静态限制跨isolate value | `lua/rust/library/core/src/marker.rs` | `lua/rust/tests/ui/async-await/async-fn-nonsend.rs`；`lua/rust/tests/ui/async-await/async-fn-send-uses-nonsend.rs` |
+| `new zr.thread.ThreadScheduler(workerCount: int)` | 同一contract、由host配置domain policy的worker provider及唯一public constructor | `lua/jdk/src/java.base/share/classes/java/util/concurrent/ThreadPoolExecutor.java` | `lua/jdk/test/jdk/java/util/concurrent/tck/ThreadPoolExecutorTest.java`；`lua/jdk/test/jdk/java/util/concurrent/tck/ThreadPoolExecutorSubclassTest.java` |
+| `zr.thread.Send` capability | 静态限制value/owner跨mutator move | `lua/rust/library/core/src/marker.rs` | `lua/rust/tests/ui/async-await/async-fn-nonsend.rs`；`lua/rust/tests/ui/async-await/async-fn-send-uses-nonsend.rs` |
+| `zr.thread.Sync` capability | 静态限制shared reference跨mutator并发访问 | `lua/rust/library/core/src/marker.rs` | `lua/rust/tests/ui/async-await/issue-64130-1-sync.rs`；`lua/rust/tests/ui/async-await/async-fn-send-uses-nonsend.rs` |
 
-刻意差异：ZR采用.NET显式Task return和eager execution，但不复制custom awaiter、SynchronizationContext、TaskCreationOptions或完整cancellation体系；thread只作为Scheduler provider。
+`DomainTransferKind`不是public ZR surface，因此不增加ledger实体；其runtime参考为QuickJS/Lua的runtime/state隔离（`lua/QuickJS-master/quickjs.c`、`lua/src/lstate.h`），当前迁移锚点为`zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_transport.c`与`tests/thread/test_thread_runtime.c`。
+
+刻意差异：ZR采用.NET显式Task return和eager execution，但不复制custom awaiter、SynchronizationContext、TaskCreationOptions或完整cancellation体系；thread只作为Scheduler provider。GC隔离策略由host配置，语言只固定Send/Sync、domain identity和transport安全边界。

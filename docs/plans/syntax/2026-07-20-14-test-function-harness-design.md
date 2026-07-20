@@ -12,7 +12,7 @@
 
 > 状态：设计第一版，等待按里程碑实施。
 >
-> 上游契约：[01 artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[06 migration/LSP/fixtures](./2026-07-18-06-percent-migration-lsp-fixtures-design.md)、[10 module/native library](./2026-07-19-10-native-ffi-module-package-design.md)、[11 compile-time metadata](./2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md)、[12 Task/Scheduler](./2026-07-20-12-async-task-job-scheduler-design.md)。
+> 上游契约：[01 artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[06A migration inventory/frontend](./2026-07-18-06-percent-migration-lsp-fixtures-design.md)、[10R module/native descriptor foundation](./2026-07-19-10-native-ffi-module-package-design.md)、[11 compile-time metadata](./2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md)、[12 Task/Scheduler](./2026-07-20-12-async-task-job-scheduler-design.md)。本计划基于 10R 登记 `zr.testing` provider，不依赖 06B 最终仓库切换；本计划晋级后由 10C 做全局汇聚审计。
 
 ## 1. 语法：普通函数加最小元数据
 

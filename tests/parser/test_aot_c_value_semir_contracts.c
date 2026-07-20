@@ -188,10 +188,12 @@ static void test_aot_c_value_semir_inline_struct_field_transfer_uses_layout_copy
             "zr_aot_field_layout->byteSize != %u",
             "ZrCore_TypeLayout_CanRawCopy(zr_aot_field_layout)",
             "zr_aot_value_exec_field_inline_struct_copy",
-            "ZrCore_TypeLayout_CopyInline(state,",
+            "ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(frame.function",
+            "ZrCore_TypeLayout_CopyInlineWithRegistry(state,",
     };
     static const char *const fieldSourceForbiddenNeedles[] = {
             "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function",
+            "ZrCore_TypeLayout_CopyInline(state,",
     };
     char *fieldSourceText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c");
@@ -217,6 +219,124 @@ static void test_aot_c_value_semir_field_resolver_uses_stable_member_entries(voi
     assert_text_contains_all(fieldSourceText, fieldSourceNeedles, ARRAY_COUNT(fieldSourceNeedles));
 
     free(fieldSourceText);
+}
+
+static void test_aot_c_type_layout_descriptor_preserves_canonical_identity_and_maps(void) {
+    static const char *const typeLayoutNeedles[] = {
+            "backend_aot_c_type_layout_write_ref_offsets(",
+            "typeLayout->layoutVersion",
+            "typeLayout->layoutHash",
+            "typeLayout->gcScanKind",
+            "typeLayout->refFieldCount",
+            ".refFieldOffsets = ZrRefOffsets_",
+            ".customDrop = ZR_NULL",
+            ".customDropUserData = ZR_NULL",
+    };
+    static const char *const forbiddenNeedles[] = {
+            ".reserved0 =",
+    };
+    char *typeLayoutSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c");
+
+    TEST_ASSERT_NOT_NULL(typeLayoutSourceText);
+    assert_text_contains_all(typeLayoutSourceText,
+                             typeLayoutNeedles,
+                             ARRAY_COUNT(typeLayoutNeedles));
+    assert_text_contains_none(typeLayoutSourceText,
+                              forbiddenNeedles,
+                              ARRAY_COUNT(forbiddenNeedles));
+    free(typeLayoutSourceText);
+}
+
+static void test_aot_c_frame_alias_preserves_addressing_without_duplicate_lifecycle(void) {
+    static const char *const execIrNeedles[] = {
+            "destinationLayout->reserved0 = sourceLayout->reserved0;",
+    };
+    static const char *const cleanupNeedles[] = {
+            "layout->reserved0 & ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS",
+            "ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(frame.function",
+            "ZrCore_TypeLayout_DropInlineWithRegistry(state,",
+    };
+    static const char *const methodMetadataNeedles[] = {
+            "slotLayout->reserved0 & ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS",
+    };
+    static const char *const valueSemIrNeedles[] = {
+            "ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(frame.function",
+            "ZrCore_TypeLayout_CopyInlineWithRegistry(state,",
+    };
+    static const char *const lifecycleForbiddenNeedles[] = {
+            "ZrCore_TypeLayout_CopyInline(state,",
+            "ZrCore_TypeLayout_DropInline(state,",
+    };
+    char *execIrSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c");
+    char *cleanupSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.c");
+    char *methodMetadataSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c");
+    char *valueSemIrSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c");
+
+    TEST_ASSERT_NOT_NULL(execIrSourceText);
+    TEST_ASSERT_NOT_NULL(cleanupSourceText);
+    TEST_ASSERT_NOT_NULL(methodMetadataSourceText);
+    TEST_ASSERT_NOT_NULL(valueSemIrSourceText);
+    assert_text_contains_all(execIrSourceText, execIrNeedles, ARRAY_COUNT(execIrNeedles));
+    assert_text_contains_all(cleanupSourceText, cleanupNeedles, ARRAY_COUNT(cleanupNeedles));
+    assert_text_contains_all(methodMetadataSourceText,
+                             methodMetadataNeedles,
+                             ARRAY_COUNT(methodMetadataNeedles));
+    assert_text_contains_all(valueSemIrSourceText,
+                             valueSemIrNeedles,
+                             ARRAY_COUNT(valueSemIrNeedles));
+    assert_text_contains_none(cleanupSourceText,
+                              lifecycleForbiddenNeedles,
+                              ARRAY_COUNT(lifecycleForbiddenNeedles));
+    assert_text_contains_none(valueSemIrSourceText,
+                              lifecycleForbiddenNeedles,
+                              ARRAY_COUNT(lifecycleForbiddenNeedles));
+
+    free(execIrSourceText);
+    free(cleanupSourceText);
+    free(methodMetadataSourceText);
+    free(valueSemIrSourceText);
+}
+
+static void test_aot_c_indirect_alias_field_access_uses_canonical_frame_member_transfer(void) {
+    static const char *const fieldSourceNeedles[] = {
+            "ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS",
+            "backend_aot_c_value_field_layout_is_indirect_alias(",
+    };
+    static const char *const coreHeaderNeedles[] = {
+            "ZrCore_Function_GetFrameSlotInlineMember(",
+            "ZrCore_Function_SetFrameSlotInlineMember(",
+    };
+    static const char *const runtimeNeedles[] = {
+            "ZrCore_Function_GetFrameSlotInlineMember(",
+            "ZrCore_Function_SetFrameSlotInlineMember(",
+    };
+    char *fieldSourceText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c");
+    char *coreHeaderText = read_repo_text_file_owned(
+            "zr_vm_core/include/zr_vm_core/function.h");
+    char *rootRuntimeText = read_repo_text_file_owned(
+            "zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    char *aotRuntimeText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_library/src/zr_vm_library/aot_runtime.c");
+
+    TEST_ASSERT_NOT_NULL(fieldSourceText);
+    TEST_ASSERT_NOT_NULL(coreHeaderText);
+    TEST_ASSERT_NOT_NULL(rootRuntimeText);
+    TEST_ASSERT_NOT_NULL(aotRuntimeText);
+    assert_text_contains_all(fieldSourceText, fieldSourceNeedles, ARRAY_COUNT(fieldSourceNeedles));
+    assert_text_contains_all(coreHeaderText, coreHeaderNeedles, ARRAY_COUNT(coreHeaderNeedles));
+    assert_text_contains_all(rootRuntimeText, runtimeNeedles, ARRAY_COUNT(runtimeNeedles));
+    assert_text_contains_all(aotRuntimeText, runtimeNeedles, ARRAY_COUNT(runtimeNeedles));
+
+    free(fieldSourceText);
+    free(coreHeaderText);
+    free(rootRuntimeText);
+    free(aotRuntimeText);
 }
 
 static void test_aot_c_value_semir_typed_call_return_lives_in_focused_module(void) {
@@ -294,11 +414,39 @@ static void test_aot_c_value_semir_typed_call_return_lives_in_focused_module(voi
     free(orchestratorText);
 }
 
+static void test_aot_c_constructor_failure_uses_partial_inline_frame_cleanup(void) {
+    static const char *const cleanupNeedles[] = {
+            "ZrCore_Function_DropInlineFrameValuesOnUnwind(",
+            "state->hasCurrentException",
+            "zr_aot_constructor_unwind_dropped",
+    };
+    static const char *const setupNeedles[] = {
+            "frameLayout->frameByteSize",
+            "registerFrameBytes",
+    };
+    char *cleanupText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.c");
+    char *setupText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.c");
+
+    TEST_ASSERT_NOT_NULL(cleanupText);
+    TEST_ASSERT_NOT_NULL(setupText);
+    assert_text_contains_all(cleanupText, cleanupNeedles, ARRAY_COUNT(cleanupNeedles));
+    assert_text_contains_all(setupText, setupNeedles, ARRAY_COUNT(setupNeedles));
+
+    free(cleanupText);
+    free(setupText);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_value_semir_field_lowering_lives_in_focused_module);
     RUN_TEST(test_aot_c_value_semir_inline_struct_field_transfer_uses_layout_copy_for_non_pod);
     RUN_TEST(test_aot_c_value_semir_field_resolver_uses_stable_member_entries);
+    RUN_TEST(test_aot_c_type_layout_descriptor_preserves_canonical_identity_and_maps);
+    RUN_TEST(test_aot_c_frame_alias_preserves_addressing_without_duplicate_lifecycle);
+    RUN_TEST(test_aot_c_indirect_alias_field_access_uses_canonical_frame_member_transfer);
     RUN_TEST(test_aot_c_value_semir_typed_call_return_lives_in_focused_module);
+    RUN_TEST(test_aot_c_constructor_failure_uses_partial_inline_frame_cleanup);
     return UNITY_END();
 }

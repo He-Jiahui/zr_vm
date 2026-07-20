@@ -2579,6 +2579,9 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
         case ZR_AST_CONSTRUCT_EXPRESSION:
             success = infer_construct_expression_type(cs, node, result);
             break;
+        case ZR_AST_STRUCT_INIT_EXPRESSION:
+            success = infer_struct_init_expression_type(cs, node, result);
+            break;
         // TODO: 处理其他表达式类型
         case ZR_AST_PRIMARY_EXPRESSION:
             success = ZrParser_PrimaryExpressionType_Infer(cs, node, result);

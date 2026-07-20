@@ -148,6 +148,8 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_GetGlobal(ptr, ptr, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_CreateObject(ptr, ptr, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_CreateArray(ptr, ptr, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_CreateInlineArray(ptr, ptr, i32, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_BindInlineArrayElementPlace(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_TypeOf(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_ToBool(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_ToObject(ptr, ptr, i32, i32, i32)\n");

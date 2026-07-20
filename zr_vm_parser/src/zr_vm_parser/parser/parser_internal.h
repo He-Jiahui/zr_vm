@@ -272,6 +272,8 @@ SZrAstNode *parse_construct_expression(SZrParserState *ps,
                                               TZrBool isUsing,
                                               EZrOwnershipBuiltinKind builtinKind);
 
+SZrAstNode *parse_struct_init_expression(SZrParserState *ps);
+
 EZrOwnershipQualifier parse_optional_method_receiver_qualifier(SZrParserState *ps);
 
 SZrAstNode *parse_percent_ownership_expression(SZrParserState *ps);

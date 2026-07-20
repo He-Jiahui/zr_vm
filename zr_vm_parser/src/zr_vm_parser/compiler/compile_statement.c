@@ -1646,12 +1646,41 @@ static TZrBool resolve_fixed_array_size(const SZrInferredType *type, TZrSize *fi
 static void compile_default_fixed_array_initialization(SZrCompilerState *cs,
                                                        TZrUInt32 arraySlot,
                                                        TZrSize fixedSize,
+                                                       const SZrInferredType *arrayType,
                                                        SZrFileRange location) {
     SZrTypeValue nullValue;
     TZrUInt32 nullConstantIndex;
 
     if (cs == ZR_NULL || cs->hasError) {
         return;
+    }
+
+    if (arrayType != ZR_NULL && arrayType->baseType == ZR_VALUE_TYPE_ARRAY &&
+        arrayType->elementTypes.length == 1u) {
+        const SZrInferredType *elementType =
+                (const SZrInferredType *)ZrCore_Array_Get(
+                        (SZrArray *)&arrayType->elementTypes, 0u);
+        TZrUInt32 elementLayoutId;
+
+        if (elementType != ZR_NULL &&
+            compiler_find_inline_type_layout_for_inferred(
+                    cs, elementType, &elementLayoutId, ZR_NULL, ZR_NULL)) {
+            if (fixedSize > UINT16_MAX || elementLayoutId > UINT16_MAX) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Inline struct array size or layout identity exceeds the current VM limit",
+                        location);
+                return;
+            }
+            emit_instruction(
+                    cs,
+                    create_instruction_2(
+                            ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY),
+                            (TZrUInt16)arraySlot,
+                            (TZrUInt16)elementLayoutId,
+                            (TZrUInt16)fixedSize));
+            return;
+        }
     }
 
     emit_instruction(cs,
@@ -2815,6 +2844,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         TZrBool resolvedTypeInitialized = ZR_FALSE;
         TZrBool initializerTypeInitialized = ZR_FALSE;
         TZrBool hasResolvedType = ZR_FALSE;
+        TZrBool hasInlineLocalLayout = ZR_FALSE;
         if (varName == ZR_NULL) {
             ZrParser_Compiler_Error(cs, "Variable name is null", node->location);
             return;
@@ -2852,6 +2882,10 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             }
             return;
         }
+
+        hasInlineLocalLayout =
+                hasResolvedType &&
+                compile_statement_type_has_inline_byte_layout(cs, &resolvedType);
 
         if (decl->typeInfo != ZR_NULL && decl->value != ZR_NULL && hasResolvedType) {
             compile_statement_trace("var decl compatibility check start");
@@ -2911,9 +2945,29 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
 
         // 如果有初始值，编译初始值表达式
         if (decl->value != ZR_NULL) {
-            TZrUInt32 reservedVarSlot = allocate_stack_slot(cs);
+            TZrUInt32 valueConstructFunctionSlot = ZR_PARSER_SLOT_NONE;
+            TZrUInt32 reservedVarSlot;
             TZrUInt32 initializerSlot = ZR_PARSER_SLOT_NONE;
             TZrUInt32 activateOffset;
+            TZrBool semanticLocalPreRegistered = ZR_FALSE;
+
+            if (hasInlineLocalLayout) {
+                compiler_advance_stack_to_fresh_slot(cs);
+            }
+
+            if (decl->value->type == ZR_AST_STRUCT_INIT_EXPRESSION) {
+                valueConstructFunctionSlot = allocate_stack_slot(cs);
+                if (valueConstructFunctionSlot == ZR_PARSER_SLOT_NONE) {
+                    if (initializerTypeInitialized) {
+                        ZrParser_InferredType_Free(cs->state, &initializerType);
+                    }
+                    if (resolvedTypeInitialized) {
+                        ZrParser_InferredType_Free(cs->state, &resolvedType);
+                    }
+                    return;
+                }
+            }
+            reservedVarSlot = allocate_stack_slot(cs);
 
             compile_statement_trace("var decl initializer compile start reservedSlot=%u stackCount=%llu",
                                     (unsigned int)reservedVarSlot,
@@ -2927,6 +2981,39 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                     ZrParser_InferredType_Free(cs->state, &resolvedType);
                 }
                 return;
+            }
+            if (valueConstructFunctionSlot != ZR_PARSER_SLOT_NONE &&
+                reservedVarSlot != valueConstructFunctionSlot + 1U) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Struct init destination must follow its constructor call slot",
+                        decl->value->location);
+                if (initializerTypeInitialized) {
+                    ZrParser_InferredType_Free(cs->state, &initializerType);
+                }
+                if (resolvedTypeInitialized) {
+                    ZrParser_InferredType_Free(cs->state, &resolvedType);
+                }
+                return;
+            }
+
+            if (decl->value->type == ZR_AST_STRUCT_INIT_EXPRESSION) {
+                semanticLocalPreRegistered = compile_variable_register_semantic_local(
+                        cs,
+                        varName,
+                        hasResolvedType ? &resolvedType : ZR_NULL,
+                        reservedVarSlot,
+                        node->location,
+                        ZR_FALSE);
+                if (!semanticLocalPreRegistered) {
+                    if (initializerTypeInitialized) {
+                        ZrParser_InferredType_Free(cs->state, &initializerType);
+                    }
+                    if (resolvedTypeInitialized) {
+                        ZrParser_InferredType_Free(cs->state, &resolvedType);
+                    }
+                    return;
+                }
             }
 
             initializerSlot = compile_expression_into_slot(cs, decl->value, reservedVarSlot);
@@ -2947,7 +3034,8 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             compile_statement_trace("var decl bind initializer slot=%u reserved=%u",
                                     (unsigned int)initializerSlot,
                                     (unsigned int)reservedVarSlot);
-            if (!compile_variable_register_semantic_local(
+            if (!semanticLocalPreRegistered &&
+                !compile_variable_register_semantic_local(
                         cs,
                         varName,
                         hasResolvedType ? &resolvedType : ZR_NULL,
@@ -2983,6 +3071,9 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             compile_statement_trace("var decl local binding done varIndex=%u", (unsigned int)varIndex);
         } else {
             TZrSize fixedArraySize;
+            if (hasInlineLocalLayout) {
+                compiler_advance_stack_to_fresh_slot(cs);
+            }
             varIndex = allocate_local_var(cs, varName);
             compile_statement_trace("var decl allocate local no initializer varIndex=%u", (unsigned int)varIndex);
 
@@ -3003,7 +3094,12 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             }
 
             if (hasResolvedType && resolve_fixed_array_size(&resolvedType, &fixedArraySize)) {
-                compile_default_fixed_array_initialization(cs, varIndex, fixedArraySize, node->location);
+                compile_default_fixed_array_initialization(
+                        cs,
+                        varIndex,
+                        fixedArraySize,
+                        &resolvedType,
+                        node->location);
             } else {
                 // 没有初始值，设置为 null
                 SZrTypeValue nullValue;

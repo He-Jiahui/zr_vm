@@ -1,12 +1,14 @@
 # 06 `%xxx` 迁移、LSP、文档与全项目 fixture
 
-> 状态：细化草案，等待人工确认。
+> 状态：已拆为 06A 前置迁移基础设施与 06B 最终仓库切换，分别验收。
 >
-> 硬依赖：本目录 01-05 子设计全部通过各自 promotion gate。
+> 06A 硬依赖：本目录 01-05 子设计全部通过各自 promotion gate。
+>
+> 06B 硬依赖：06A 已晋级，且 08、10、11、12、13、14 的目标契约全部通过各自 promotion gate。10、11、14 只能依赖 06A，不能依赖 06B。
 
 ## 1. 目标结果
 
-一次性把仓库和用户源码从旧 `%xxx`/兼容语法迁移到新规范，并确保 compiler、LSP、规范、示例、fixture、golden、artifact 和扩展表现一致。
+06A 先完成旧语法盘点、结构化 migration frontend、LSP edit 基础设施和不写仓库的 dry-run；06B 在全部目标语义可执行后，一次性把仓库和用户源码从旧 `%xxx`/兼容语法迁移到新规范，并确保 compiler、LSP、规范、示例、fixture、golden、artifact 和扩展表现一致。
 
 目标状态：
 
@@ -78,6 +80,8 @@
 | `%weak(shared)` | `shared.weak()` |
 | `%shared(unique)` | `unique.share()` |
 | `%detach(unique)` | `unique.intoGc()` |
+
+上表在 06A 中是迁移 schema 与责任归属，不代表所有 edit 已可发布：`%type` 的目标由 08 提供，`%extern` 由 10F 提供，`%compileTime` 由 11 提供，`%async/%await` 由 12 提供，旧 generator 由 13 提供，`%test` 由 14 提供。对应计划未晋级时，frontend 只能产出 `targetNotPromoted(planId)` 分类和可测试的 edit plan，不得把 code action 标为 machine-applicable，也不得据此切换正式 parser。
 
 兼容 `func name(...)` 和无关键字函数声明也迁移为 `fn name(...)`，保留/补全定义返回类型前的 `:`。migration frontend 必须先区分 FunctionDefinition、AnonymousFunctionExpression 和 FunctionTypeSyntax：定义中的 `->` 改为 `:`，类型中的 `->` 保留，旧 type arrow `=>` 改为 `->`，expression body 才保留 `=>`。
 
@@ -236,12 +240,14 @@ machineApplicable
 maybeIncorrect
 requiresReview
 blocked
+targetNotPromoted
 ```
 
 - machineApplicable：语法和语义均证明等价。
 - maybeIncorrect：能生成候选，但存在 dynamic/overload/format 风险。
 - requiresReview：control flow、lifetime 或 API 会改变。
 - blocked：旧代码依赖新模型明确禁止的行为。
+- targetNotPromoted：edit schema 已知，但拥有目标语义的 08、10-14 尚未通过对应 promotion gate；该状态不可由 `--write` 应用。
 
 `--write` 默认只应用 machineApplicable。
 
@@ -265,6 +271,8 @@ targetConstructKind
 oldTargetBindingKind
 resolvedTargetTypeId?
 applicability
+targetPlanId?
+targetPromotionGate?
 edits[]
 relatedDeclarations[]
 reason
@@ -503,32 +511,40 @@ cutover gate 使用结构化 allowlist，而不是简单要求零 `%`：
 
 检查工具应解析 token/文件类别，避免 `Select-String "%"` 产生大量误报。
 
-## 11. 里程碑
+## 11. 分阶段里程碑与晋级门
 
-### M1 Migration inventory
+### 06A 迁移盘点与 frontend
+
+#### M1 Migration inventory
 
 - 构建所有 `%xxx`、`func`、keywordless function、旧 property、old artifact 使用清单。
 - 构建所有 `$Type(...)`、`$(expr)(...)`、裸 type-name call、`new Struct(...)` 和 native prototype factory 使用清单。
-- 为每类标 machine/manual/blocked。
+- 为每类标 machine/manual/blocked/targetNotPromoted。
 
 晋级门：仓库所有 current source 和 fixture 都被分类；无“未知以后再看”。
 
-### M2 Migration frontend + LSP fixes
+#### M2 Migration frontend + LSP fixes
 
 - legacy parser adapter、semantic edit planner、JSON/text report、idempotence。
 - LSP diagnostics/code action/workspace edit。
 
-晋级门：每类 migration 都有 pass/ambiguous/blocked 测试；machine edit 后新 parser/typecheck 通过。
+晋级门：每类 migration 都有 pass/ambiguous/blocked/targetNotPromoted 测试；已经通过目标计划 gate 的 machine edit 在新 parser/typecheck 下通过；未通过目标 gate 的 edit 保持不可发布。
 
-### M3 Repository dry run
+#### M3 Repository dry run
 
 - `--check` 运行全仓，不写文件。
-- 审查 manual/blocked 清单。
+- 审查 manual/blocked/targetNotPromoted 清单。
 - 重建 golden/binary 的命令和预期 diff 准备完成。
 
-晋级门：blocked 项为零；manual 项全部有已确认改写。
+晋级门：仓库中没有 unknown 项；每个 manual/blocked/targetNotPromoted 项都有稳定文件范围、目标计划 owner 和解除条件。06A 允许保留仅因 08、10-14 尚未晋级而产生的 targetNotPromoted 项，但不允许把它们计作可切换。
 
-### M4 Atomic cutover
+06A 的独立晋级门：M1-M3 全部通过，migration inventory 对全仓闭合，frontend/edit/report/LSP 基础设施可独立回归，且没有任何正式 compiler/parser 语义切换。下游计划只能引用这个 gate。
+
+### 06B 最终仓库切换
+
+进入 06B 前必须重新运行 06A dry-run，并证明 08、10、11、12、13、14 已分别晋级；所有 targetNotPromoted 已转为经目标 parser/typecheck 验证的 machine/manual edit，blocked 项为零，manual 项全部有已确认改写。
+
+#### M4 Atomic cutover
 
 - 应用源码 edits。
 - 更新 spec/docs/snippets。
@@ -538,7 +554,7 @@ cutover gate 使用结构化 allowlist，而不是简单要求零 `%`：
 
 晋级门：parser -> semantic -> VM/AOT -> artifact -> CLI -> LSP 全矩阵通过。
 
-### M5 Cleanup
+#### M5 Cleanup
 
 - 删除 migration frontend 以外的 legacy parser helper。
 - 删除旧 AST fields/enums/opcodes/formatters。
@@ -547,11 +563,14 @@ cutover gate 使用结构化 allowlist，而不是简单要求零 `%`：
 
 晋级门：shared production path 无旧 spelling/owner-kind branch；allowlist 只剩有意保留项。
 
+06B 的独立晋级门：M4-M5 全部通过，正式 parser、VM/AOT、artifact、CLI、LSP 和仓库 current source 只剩一套新语义。06B 未通过时，禁止把 07 的全量 reference 标为 current。
+
 ## 12. 测试矩阵
 
 ### Migration tool
 
 - 每个 `%xxx` 单项、嵌套和组合。
+- 08、10-14 未晋级时对应 edit 只能报告 targetNotPromoted；模拟 owner gate 晋级后才进入 machine/manual 验证。
 - missing semicolon at newline/`}`/EOF、multiline expression、braced declaration optional single trailing semicolon、拒绝`}`与`else/catch/finally`之间的`;`和formatter normalization。
 - `%import` expression到module-scope `let alias = import("literal");`；standalone alias推导冲突、dynamic/local/conditional import拒绝。
 - named/local/member/interface/async/anonymous definition与native extern block declaration的return delimiter迁移；callable TypeRef arrow不误改。

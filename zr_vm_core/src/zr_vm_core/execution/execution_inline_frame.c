@@ -1931,6 +1931,8 @@ TZrBool execution_inline_frame_try_set_member_by_name_from_slot(SZrState *state,
                                                              memberName,
                                                              sourceSlot,
                                                              assignedValue)) {
+        (void)ZrCore_Function_MarkInlineConstructorFieldInitialized(
+                state, function, frameBase, receiverSlot, memberName);
         return ZR_TRUE;
     }
 
@@ -1952,6 +1954,8 @@ TZrBool execution_inline_frame_try_set_member_by_name_from_slot(SZrState *state,
                                                          &fieldLayout,
                                                          fieldAddress)) {
         execution_inline_frame_sync_physical_struct_field(state, frameBase, receiverSlot, memberName, assignedValue);
+        (void)ZrCore_Function_MarkInlineConstructorFieldInitialized(
+                state, function, frameBase, receiverSlot, memberName);
         return ZR_TRUE;
     }
 
@@ -1959,6 +1963,8 @@ TZrBool execution_inline_frame_try_set_member_by_name_from_slot(SZrState *state,
         return ZR_FALSE;
     }
     execution_inline_frame_sync_physical_struct_field(state, frameBase, receiverSlot, memberName, assignedValue);
+    (void)ZrCore_Function_MarkInlineConstructorFieldInitialized(
+            state, function, frameBase, receiverSlot, memberName);
     return ZR_TRUE;
 }
 
@@ -2018,4 +2024,81 @@ TZrBool execution_inline_frame_try_set_member_from_slot(SZrState *state,
 
     return execution_inline_frame_try_set_member_by_name_from_slot(
             state, function, frameBase, receiverSlot, memberName, sourceSlot, assignedValue);
+}
+
+TZrBool ZrCore_Function_GetFrameSlotInlineMember(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 destinationStackSlot,
+        TZrUInt32 receiverStackSlot,
+        SZrString *memberName) {
+    const SZrFunctionFrameSlotLayout *destinationLayout;
+    SZrTypeValue *denseDestination;
+    SZrTypeValue *physicalDestination;
+
+    if (state == ZR_NULL || function == ZR_NULL || frameBase == ZR_NULL ||
+        memberName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    destinationLayout = ZrCore_Function_FindFrameSlotLayout(
+            function, destinationStackSlot);
+    denseDestination = &frameBase[destinationStackSlot].value;
+    physicalDestination = execution_inline_frame_get_value_slot(
+            state, function, frameBase, destinationStackSlot);
+    if (destinationLayout == ZR_NULL || physicalDestination == ZR_NULL ||
+        !execution_inline_frame_try_get_member_by_name_to_slot(
+                state,
+                function,
+                frameBase,
+                receiverStackSlot,
+                memberName,
+                destinationStackSlot,
+                physicalDestination)) {
+        return ZR_FALSE;
+    }
+
+    if (destinationLayout->slotKind ==
+            (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+        ZrCore_Value_ResetAsNull(denseDestination);
+    } else if (physicalDestination != denseDestination) {
+        ZrCore_Value_Copy(state, denseDestination, physicalDestination);
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Function_SetFrameSlotInlineMember(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 sourceStackSlot,
+        TZrUInt32 receiverStackSlot,
+        SZrString *memberName) {
+    SZrTypeValue *denseSource;
+    SZrTypeValue *physicalSource;
+    const SZrTypeValue *effectiveSource;
+
+    if (state == ZR_NULL || function == ZR_NULL || frameBase == ZR_NULL ||
+        memberName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    denseSource = &frameBase[sourceStackSlot].value;
+    physicalSource = execution_inline_frame_get_value_slot(
+            state, function, frameBase, sourceStackSlot);
+    if (physicalSource == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    effectiveSource = !ZR_VALUE_IS_TYPE_NULL(denseSource->type)
+            ? denseSource
+            : physicalSource;
+    return execution_inline_frame_try_set_member_by_name_from_slot(
+            state,
+            function,
+            frameBase,
+            receiverStackSlot,
+            memberName,
+            sourceStackSlot,
+            effectiveSource);
 }

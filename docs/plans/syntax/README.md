@@ -1,31 +1,31 @@
 # ZR 语法重设计子计划索引
 
-> 状态：总设计已批准；本目录中的十四份细化设计按依赖顺序实施。
+> 状态：总设计已批准；03-14 不作整体确认，按本文的分阶段依赖和各自 promotion gate 单独确认。
 >
 > 总设计：[ZR 语法、引用与内存模型重设计](./2026-07-18-zr-syntax-and-memory-model-redesign.md)
 
 ## 1. 目的
 
-本目录把总设计拆成十四个依赖有序、可以独立验收的设计单元。拆分的目标不是让多条实现线并行绕过基础层，而是让每个单元都具有清晰输入、输出和晋级门。
+本目录把总设计拆成十四份设计文档。文档编号是稳定标识，不再等同于完整实施顺序；06、07、10 各自包含可独立验收的阶段节点。拆分的目标不是让多条实现线并行绕过基础层，而是让每个阶段都具有清晰输入、输出和晋级门。
 
 ## 2. 设计文档
 
-| 顺序 | 文档 | 主要产物 | 硬依赖 |
+| 编号 | 文档 | 主要产物 | 硬依赖 |
 |---:|---|---|---|
 | 1 | [Canonical TypeRef、Place IR、CFG facts 与 artifact schema](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md) | 规范类型、Place/Value IR、数据流事实、产物契约 | 无 |
 | 2 | [`fn/ref/in/out/scoped/readonly` 与 borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md) | 新语法、引用契约、借用检查、诊断 | 1 |
 | 3 | [struct/ref struct、receiver effect、Span 与 layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md) | `init TypeRef(...)` 值构造、值布局、ref-like 限制、receiver effect、连续视图 | 1、2 |
-| 4 | [resource class、Unique/Shared/Weak、Drop 与 GC bridge](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md) | 确定性生命周期、引用计数、drop glue、跨世界桥 | 1、2、3 的布局契约 |
+| 4 | [resource class、Unique/Shared/Weak、Drop 与 GC bridge](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md) | 确定性生命周期、GcDomain、domain-local STW、跨世界/跨domain桥 | 1、2、3 的布局契约 |
 | 5 | [property 统一 AST、显式字段与 ref-return property](./2026-07-18-05-property-unified-ast-design.md) | 统一属性模型、访问器、显式 `let/var` field、ref 返回 | 1、2、3 的 receiver/layout 契约 |
-| 6 | [`%xxx` 迁移、LSP、文档与全项目 fixture](./2026-07-18-06-percent-migration-lsp-fixtures-design.md) | 迁移工具、编辑器表现、规范切换、仓库收口 | 1-5 |
-| 7 | [目标语法全覆盖参考工程](./2026-07-19-07-comprehensive-syntax-reference-fixture-design.md) | 单一多模块正例、负例目录、coverage manifest、VM/AOT/artifact/LSP 验收参考 | 1-6、8-14 |
-| 8 | [`zr.reflection` 独立反射库与运行时类型系统](./2026-07-19-08-reflection-library-type-system-design.md) | Type/TypeOf层级、成员查询、typeof/typeid、动态构造、metadata/AOT边界 | 1、3、5 |
-| 9 | [generational PoolHandle/PoolRef 与连续池化内存](./2026-07-19-09-generational-pool-handle-ref-struct-design.md) | 弱handle、guarded direct ref、延迟复用、slab/GC scan contract | 1-4、5 的 ref property契约 |
-| 10 | [Native extern、`zr.*`核心库、模块与包解析](./2026-07-19-10-native-ffi-module-package-design.md) | FfiSignature、native descriptor、N0-N3 inventory、ModuleDomain/Specifier/Identity、`.zrp/.zrm` | 1、6 |
-| 11 | [编译期执行、条件编译、静态元数据与类型化声明生成](./2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md) | BuildPredicate、comptime sandbox、AttributeData、DeclarationPatch、conditional call | 1-6、8、10 |
-| 12 | [`async/await`、Task/Job/Scheduler 与线程协程模型](./2026-07-20-12-async-task-job-scheduler-design.md) | Async effect、suspension CFG、hot Task、cold Job、scheduler/isolate contract | 1-4、9-11 |
-| 13 | [普通 `fn`、Enumerator、`yield` 与异步迭代](./2026-07-20-13-iterator-enumerator-yield-design.md) | 显式 Iterator TypeRef、yield state machine、for lowering、AsyncIterator | 1-4、12 |
-| 14 | [普通函数、测试元数据、断言与 TestManifest](./2026-07-20-14-test-function-harness-design.md) | TestEntry/TestManifest、`zr.testing`、同步/异步/参数化 runner | 1、6、10-12 |
+| 6 | [`%xxx` 迁移、LSP、文档与全项目 fixture](./2026-07-18-06-percent-migration-lsp-fixtures-design.md) | 06A：迁移盘点、frontend 与 dry-run；06B：最终仓库切换与清理 | 06A：1-5；06B：06A、8、10-14 |
+| 7 | [目标语法全覆盖参考工程](./2026-07-19-07-comprehensive-syntax-reference-fixture-design.md) | 07A：fixture/manifest 骨架；07B：VM/AOT/artifact/LSP 的 current reference 晋级 | 07A：1-5、06A；07B：07A、06B、8-14 |
+| 8 | [`zr.reflection` 独立反射库与运行时类型系统](./2026-07-19-08-reflection-library-type-system-design.md) | Type/TypeOf层级、成员查询、typeof/typeid、动态构造、metadata/AOT边界 | 语义：1、3-5；native 集成：10R |
+| 9 | [generational PoolHandle/PoolRef 与连续池化内存](./2026-07-19-09-generational-pool-handle-ref-struct-design.md) | 弱handle、guarded direct ref、延迟复用、slab/GC scan contract | 语义：1-5；native/反射集成：8、10R |
+| 10 | [Native extern、`zr.*`核心库、模块与包解析](./2026-07-19-10-native-ffi-module-package-design.md) | 10R：resolver/package；10F：FFI ABI；10C：native provider 汇聚 | 10R：1、06A；10F：1-4、10R；10C：8、9、11-14 的 provider contract |
+| 11 | [编译期执行、条件编译、静态元数据与类型化声明生成](./2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md) | BuildPredicate、comptime sandbox、AttributeData、DeclarationPatch、conditional call | 1-5、06A、8、10R |
+| 12 | [`async/await`、Task/Job/Scheduler 与线程协程模型](./2026-07-20-12-async-task-job-scheduler-design.md) | Async effect、hot Task/cold Job、scheduler domain policy、Send/Sync/transport contract | 1-5、9、10R、11；AttachedDomain依赖04 M5，IsolatedDomain依赖04 M6 |
+| 13 | [普通 `fn`、Enumerator、`yield` 与异步迭代](./2026-07-20-13-iterator-enumerator-yield-design.md) | 显式 Iterator TypeRef、yield state machine、for lowering、AsyncIterator | 1-5、12 |
+| 14 | [普通函数、测试元数据、断言与 TestManifest](./2026-07-20-14-test-function-harness-design.md) | TestEntry/TestManifest、`zr.testing`、同步/异步/参数化 runner | 1、06A、10R、11、12 |
 
 ## 3. 依赖关系
 
@@ -39,50 +39,80 @@ flowchart TD
     C --> E["05 property / explicit field / ref return"]
     B --> E
     A --> E
-    D --> F["06 迁移 / LSP / docs / fixtures"]
+    D --> F["06A 迁移盘点 / frontend / dry-run"]
     E --> F
     C --> F
+    F --> S["07A reference fixture / manifest 骨架"]
+    A --> R["10R ModuleSpecifier / resolver / package"]
+    F --> R
     A --> H["08 zr.reflection / typeof / typeid"]
     C --> H
+    D --> H
     E --> H
     A --> I["09 zr.pooling / PoolHandle / PoolRef"]
     B --> I
     C --> I
     D --> I
-    F --> G["07 全语法参考工程"]
-    H --> G
-    I --> G
-    A --> J["10 native extern / module / package"]
-    F --> J
-    J --> G
+    E --> I
+    R --> H
+    R --> I
+    H --> I
+    A --> J["10F native extern / FFI ABI"]
+    B --> J
+    C --> J
+    D --> J
+    R --> J
     A --> K["11 comptime / metadata / typed transform"]
     F --> K
     H --> K
-    J --> K
+    R --> K
+    E --> K
     A --> L["12 async / Task / Job / Scheduler"]
     B --> L
     C --> L
     D --> L
+    E --> L
     I --> L
-    J --> L
+    R --> L
     K --> L
     A --> M["13 fn returning Iterator / Enumerator / yield"]
     B --> M
     C --> M
     D --> M
+    E --> M
     L --> M
     A --> N["14 test metadata / assertion / manifest"]
     F --> N
-    J --> N
+    R --> N
     K --> N
     L --> N
+    H --> Q["10C official native provider convergence"]
+    I --> Q
+    J --> Q
+    K --> Q
+    L --> Q
+    M --> Q
+    N --> Q
+    R --> Q
+    F --> P["06B atomic repository cutover / cleanup"]
+    H --> P
+    Q --> P
+    K --> P
+    L --> P
+    M --> P
+    N --> P
+    P --> G["07B current syntax reference promotion"]
+    H --> G
+    I --> G
+    Q --> G
     K --> G
     L --> G
     M --> G
     N --> G
+    S --> G
 ```
 
-第 4、5 项在第 1-3 项稳定后可以分别实施；第 8、9 项分别把reflection和pooling建立在这些通用contract上，第10项统一native/module/package边界。第11项先固定编译阶段和静态metadata，第12项才能稳定定义suspension与scheduler，第13项再复用普通函数、显式carrier和这些事实形成同步/异步iterator，第14项最后复用静态metadata和Task完成test manifest/runner。第6项的正式切换必须等待受影响的下层能力通过。第7项是目标语法的纵向验收与设计样例，只有1-6、8-14的相应contract已冻结后，才能把对应代码块晋级为current fixture。
+实施顺序以阶段节点而不是文档编号为准：第 4、5 项在第 1-3 项稳定后可以分别实施；06A 和 07A 只建立迁移/fixture 基础设施。10R 随后固定 module/package/resolver 与 descriptor substrate，第 8、9 项和 10F 再分别完成 reflection、pooling 与 FFI ABI。第 11 项固定编译阶段和静态 metadata。第 12 项的AttachedDomain worker必须等待04 M5的domain-local STW/multi-mutator gate，IsolatedDomain worker必须等待04 M6的transport gate；第13、14项再分别完成iterator与test harness。08、09、11-14 各自基于 10R 登记本计划拥有的 provider contract；10C 只汇聚并审计这些已晋级 contract 的 inventory、identity 和 phase 一致性。06B 必须等待 08、10-14 全部目标契约通过后才执行最终仓库切换；07B 又必须等待 07A、06B 和 08-14，才能把设计样例晋级为 current reference。下游引用“依赖 06”时必须写明 `06A` 或 `06B`，不得把二者视为同一个已完成 gate。
 
 ## 4. 共同约束
 
@@ -116,9 +146,10 @@ flowchart TD
 26. 所有function definition必须显式写`: ReturnType`，签名就是调用方和artifact看到的真实TypeRef；禁止把`: T`暗中改写为`Task<T>`、`Iterator<T>`等carrier。每个新增公共类型、constructor、函数和metadata role都必须分别列出仓库内reference implementation与behavior/compiler tests；不能用某个相关函数的来源替代类型本身的来源，无来源的定义不进入第一版。
 27. 编译期用户扩展只能读取immutable declaration view，并以typed `DeclarationPatch` data返回新增声明；禁止token/source string、任意AST改写、修改已有function body和runtime module-init decoration。attribute schema是带`AttributeUsage` role的普通`readonly struct`，declaration transform是带role的普通`comptime fn(...): Patch`。
 28. `#zr.compile.conditional("feature")#`只允许可直接静态绑定的`fn(...): void`；禁用时call与argument lowering整体消失。declaration/statement条件裁剪只使用`comptime if`，不增加`when`或重复的条件metadata。
-29. `async fn(...): zr.task.Task<T>`显式声明hot Task carrier；cold work使用`zr.task.Job<T>`，由`zr.task.Scheduler.schedule(...): Task<T>`消费。`zr.thread`只拥有`ThreadScheduler`和`Send`，不复制Task/Job/Scheduler；语言不增加spawn/thread/coroutine/job关键字。
+29. `async fn(...): zr.task.Task<T>`显式声明hot Task carrier；cold work使用`zr.task.Job<T>`，由`zr.task.Scheduler.schedule(...): Task<T>`消费。`zr.thread`只拥有`ThreadScheduler`、`Send`和`Sync`，不复制Task/Job/Scheduler；语言不增加spawn/thread/coroutine/job/domain关键字。
 30. 含`yield`的普通函数显式返回`zr.iteration.Iterator<T>`；异步迭代显式返回`zr.iteration.AsyncIterator<T>`。二者的public TypeId由`zr.iteration` native descriptor唯一拥有，function-private frame只进入artifact；`for`只消费同模块的Enumerator/Iterable capability。
 31. 测试是带`#zr.testing.test#`metadata的普通`fn(...): void`或显式返回`zr.task.Task<void>`的`async fn`；`zr.testing`是N3 Test native host模块，compiler不增加`test`关键字或宏生成main，production graph不链接testing executable。
+32. GC collection/pause scope是host配置的`GcDomain`，不与进程、OS thread或游戏实例强绑定。一个domain可含多个state/mutator，STW只等待该domain；same-domain跨mutatormove/share分别受Send/Sync约束，跨domain禁止普通GC edge并只走Canonical `DomainTransferKind` transport。host可选择全局、每实例或分组domain，语言不替部署决定成本策略。
 
 ## 5. 建议重点复核的细化决定
 
@@ -127,6 +158,7 @@ flowchart TD
 - 具体 struct 继承被取消，改用 interface 与组合，以保持内联布局稳定。
 - readonly struct 内普通 `fn` 自动获得 readonly receiver；普通 class/struct 仍以 `const fn` 显式只读。
 - `Shared<T>` 第一版非原子且不能跨线程，`AtomicShared<T>` 后续独立提供。
+- `GcDomain`采用混合模型：host选择共享或隔离heap，每个domain内部以local-STW为正确性基线并可演进concurrent major；不存在隐式process-wide full GC。
 - `Unique<T>.intoGc()` 生成 `GcBox<T>` 并明确放弃确定性释放；Shared 不支持该转换。
 - resource class 持有 GC 对象必须通过 `Gc<T>` root handle。
 - concrete property 必须显式代理预先声明的 field；ref-return property 必须显式 getter，且不允许 set/init/auto backing。
@@ -136,7 +168,7 @@ flowchart TD
 - `PoolHandle<T>` 不因为语义上是 weak identity 就声明为 ref struct；只有包含 direct ref/guard 的 `PoolRef<T>` 受 ref-like 存储限制。
 - enum/union variant和其他无独立 block 的 member declaration统一使用 `;`；不保留 comma/newline terminator双轨。
 - import binding的 alias既是 module namespace symbol，也是运行时只读 module object；只有原始 immutable import binding可以在 TypeRef中限定 imported type，普通 object alias不能伪装成 type namespace。
-- 官方core TypeRef不允许跨模块re-export同名定义：Task/Job/Scheduler归`zr.task`，ThreadScheduler/Send归`zr.thread`，Iterable/Enumerator/Iterator/AsyncIterator归`zr.iteration`；compiler按descriptor role/capability id识别，不比较type-name字符串。
+- 官方core TypeRef不允许跨模块re-export同名定义：Task/Job/Scheduler归`zr.task`，ThreadScheduler/Send/Sync归`zr.thread`，Iterable/Enumerator/Iterator/AsyncIterator归`zr.iteration`；compiler按descriptor role/capability id识别，不比较type-name字符串。
 - generated field在final TypeLayout前参与正常layout/GC map/hash，但declaration transform不能修改已有field或body；需要代理时只能新增显式member。
 - `Task<T>`、`Job<T>`、`Iterator<T>`和`AsyncIterator<T>`分别建立独立reference ledger项；它们的状态、cold/hot、single-use、cleanup和allocation contract不能互相借用一个笼统“协程参考”。
 - async invocation采用显式`Task<T>`返回类型；指定执行位置、延迟执行和thread work统一用`init Job<T>(...)`与Scheduler表达。
@@ -157,7 +189,8 @@ flowchart TD
 - `zr_vm_core/include/zr_vm_core/ownership.h` 已有 unique/shared/weak/borrow/loan/detach/release runtime 入口，但需要按新模型删减并分层。
 - `zr_vm_language_server` 已经消费 semantic facts；迁移目标是扩充统一查询，而不是在 LSP 内重做类型和借用判断。
 - `zr_vm_parser/compiler/compile_time_executor.c` 目前混合typed value、runtime object projection和decorator patch；目标拆为BuildPredicate、typed evaluator、declaration expansion和late check。
-- `zr_vm_lib_task`与`zr_vm_lib_thread`目前各自持有dynamic scheduler/object-field状态；目标共用Task/Await/Scheduler ABI，thread只实现isolate/transport provider。
+- `zr_vm_core/include/zr_vm_core/global.h`目前由每个`SZrGlobalState`直接拥有collector，`zr_vm_core/src/zr_vm_core/gc/gc.c`只有单state safepoint/step入口；目标拆出可挂接多个state的GcDomain与domain-local safepoint handshake。
+- `zr_vm_lib_task`与`zr_vm_lib_thread`目前各自持有dynamic scheduler/object-field状态，thread worker目前新建独立`SZrGlobalState`；目标共用Task/Await/Scheduler ABI，并让host在AttachedDomain与IsolatedDomain provider policy间选择。
 - AST仍有`ZR_AST_GENERATOR_EXPRESSION`和`SZrTestDeclaration`特殊block形态；目标分别替换为Iterator effect/yield CFG与普通function上的TestEntry contract。
 
 ## 7. 晋级规则
@@ -181,4 +214,4 @@ flowchart TD
 3. `docs/zr_language_specification.md` 当前版本。
 4. `.codex/plans/` 中被本设计替代的历史计划。
 
-在第 6 项完成前，正式语言规范仍描述当前可执行语法；子设计是目标规范，不应被误写成当前版本已经支持的能力。
+在 06B 完成前，正式语言规范仍描述当前可执行语法；子设计是目标规范，不应被误写成当前版本已经支持的能力。

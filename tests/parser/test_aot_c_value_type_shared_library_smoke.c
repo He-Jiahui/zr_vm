@@ -147,13 +147,15 @@ static void test_aot_c_generated_shared_library_executes_string_field_value_type
             "    }\n"
             "}\n"
             "pub makeLabel(text: string): Label {\n"
-            "    var local: Label = $Label(text);\n"
+            "    var local: Label = init Label(text);\n"
             "    return local;\n"
             "}\n"
-            "var original: Label = $Label(\"left\");\n"
+            "var original: Label = init Label(\"left\");\n"
             "var copied: Label = original;\n"
             "copied.text = \"right\";\n"
-            "var returned: Label = makeLabel(copied.text);\n"
+            "var items: Label[2];\n"
+            "items[0] = init Label(copied.text);\n"
+            "var returned: Label = makeLabel(items[0].text);\n"
             "returned.text = \"done\";\n"
             "if (original.text == \"left\" && copied.text == \"right\") {\n"
             "    return returned.text;\n"
@@ -244,8 +246,14 @@ static void test_aot_c_generated_shared_library_executes_string_field_value_type
                                 "ZrCore_Value_Copy(state, zr_aot_dense_destination, "
                                 "(const SZrTypeValue *)zr_aot_field);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_field_value_slot_store"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_TypeLayout_CopyInline(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(frame.function,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrCore_TypeLayout_CopyInlineWithRegistry(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_TypeLayout_CopyInline(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_TryCopyInlineFrameReturnValue"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CreateInlineArray"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_BindInlineArrayElementPlace"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static const TZrUInt32 zr_aot_type_layout_tokens[]"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Gc_WriteBarrier("));
     TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT value SemIR field"));
@@ -254,13 +262,14 @@ static void test_aot_c_generated_shared_library_executes_string_field_value_type
 
     snprintf(command,
              sizeof(command),
-             "\"%s\" -std=c11 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "\"%s\" -std=c11 -g -O0 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
              "-I\"%s/zr_vm_common/include\" "
              "-I\"%s/zr_vm_core/include\" "
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             "-lzr_vm_library -lzr_vm_core -lzr_c_json -lzr_miniz -lzr_tiny_dir "
+             "-lzr_xx_hash -lzr_utf8proc -lm "
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -480,7 +489,8 @@ static void test_aot_c_generated_type_layout_gc_descriptors_are_ref_exact_and_sk
                  "-I\"%s/zr_vm_library/include\" "
                  "\"%s\" "
                  "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-                 "-lzr_vm_library -lzr_vm_core "
+                 "-lzr_vm_library -lzr_vm_core -lzr_c_json -lzr_miniz -lzr_tiny_dir "
+                 "-lzr_xx_hash -lzr_utf8proc -lm "
                  "-o \"%s\"",
                  ZR_VM_TESTS_C_COMPILER,
                  ZR_VM_TESTS_REPO_ROOT,

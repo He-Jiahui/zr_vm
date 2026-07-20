@@ -6,6 +6,7 @@
 static TZrBool backend_aot_c_frame_cleanup_layout_needs_drop(
         const SZrAotExecIrFrameSlotLayout *layout) {
     return (TZrBool)(layout != ZR_NULL &&
+                     (layout->reserved0 & ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS) == 0u &&
                      layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
                      layout->typeLayoutId != ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE &&
                      layout->byteSize > 0u);
@@ -97,6 +98,27 @@ void backend_aot_write_c_frame_cleanup(FILE *file,
         return;
     }
 
+    fprintf(file,
+            "        TZrBool zr_aot_constructor_unwind_dropped = ZR_FALSE;\n"
+            "        const TZrUInt64 *zr_aot_constructor_initialized_fields = ZR_NULL;\n"
+            "        TZrUInt32 zr_aot_constructor_initialized_field_word_count = 0u;\n"
+            "        if (state->hasCurrentException &&\n"
+            "            ZrCore_Function_GetInlineConstructorInitializedFieldBitmap(\n"
+            "                    state,\n"
+            "                    frame.function,\n"
+            "                    frame.slotBase,\n"
+            "                    &zr_aot_constructor_initialized_fields,\n"
+            "                    &zr_aot_constructor_initialized_field_word_count)) {\n"
+            "            zr_aot_constructor_unwind_dropped =\n"
+            "                    ZrCore_Function_DropInlineFrameValuesOnUnwind(\n"
+            "                            state,\n"
+            "                            frame.function,\n"
+            "                            frame.slotBase,\n"
+            "                            ZrCore_Function_ResolvePrototypeFrameTypeLayout,\n"
+            "                            state);\n"
+            "        }\n"
+            "        if (!zr_aot_constructor_unwind_dropped) {\n");
+
     for (reverseIndex = frameLayout->slotLayoutCount; reverseIndex > 0u; reverseIndex--) {
         const SZrAotExecIrFrameSlotLayout *layout = &frameLayout->slotLayouts[reverseIndex - 1u];
 
@@ -109,12 +131,17 @@ void backend_aot_write_c_frame_cleanup(FILE *file,
                 "        if (zr_aot_skip_drop_slot != %u) {\n"
                 "            const SZrTypeLayout *zr_aot_drop_layout =\n"
                 "                    ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, %u);\n"
+                "            SZrTypeLayoutRegistryView zr_aot_drop_registry;\n"
                 "            if (zr_aot_drop_layout != ZR_NULL &&\n"
                 "                zr_aot_drop_layout->byteSize == %u &&\n"
-                "                zr_aot_drop_layout->dropKind != ZR_TYPE_LAYOUT_DROP_KIND_NONE) {\n"
-                "                ZrCore_TypeLayout_DropInline(state,\n"
-                "                                             zr_aot_drop_layout,\n"
-                "                                             (TZrByte *)frame.slotBase + %u);\n"
+                "                zr_aot_drop_layout->dropKind != ZR_TYPE_LAYOUT_DROP_KIND_NONE &&\n"
+                "                ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(frame.function,\n"
+                "                                                                     &zr_aot_drop_registry) &&\n"
+                "                !ZrCore_TypeLayout_DropInlineWithRegistry(state,\n"
+                "                        zr_aot_drop_layout,\n"
+                "                        &zr_aot_drop_registry,\n"
+                "                        (TZrByte *)frame.slotBase + %u)) {\n"
+                "                ZrCore_Debug_RunError(state, \"AOT inline frame drop failed\");\n"
                 "            }\n"
                 "        }\n",
                 (unsigned)layout->stackSlot,
@@ -126,4 +153,5 @@ void backend_aot_write_c_frame_cleanup(FILE *file,
                 (unsigned)layout->byteSize,
                 (unsigned)layout->byteOffset);
     }
+    fprintf(file, "        }\n");
 }

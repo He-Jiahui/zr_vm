@@ -164,6 +164,7 @@ typedef struct SZrSemanticIrInstruction {
     TZrValueId resultValueId;
     TZrValueId auxiliaryValueId;
     TZrSymbolId symbolId;
+    TZrSymbolId constructorId;
     EZrSemanticOwnershipOperation ownershipOperation;
     TZrUInt32 targetBlockId;
     TZrLoanId loanId;
@@ -183,6 +184,7 @@ typedef struct SZrSemanticIrInstructionSpec {
     TZrValueId resultValueId;
     TZrValueId auxiliaryValueId;
     TZrSymbolId symbolId;
+    TZrSymbolId constructorId;
     EZrSemanticOwnershipOperation ownershipOperation;
     TZrUInt32 targetBlockId;
     TZrLoanId loanId;
@@ -404,6 +406,12 @@ ZR_PARSER_API const SZrSemanticPlaceFlowState *ZrParser_SemanticFlow_PlaceState(
         const SZrSemanticBlockFlowFacts *facts,
         TZrPlaceId placeId,
         TZrBool entryState);
+ZR_PARSER_API TZrBool ZrParser_SemanticFlow_BuildInitializedPlaceBitmap(
+        const SZrSemanticBlockFlowFacts *facts,
+        const TZrPlaceId *placeIds,
+        TZrSize placeCount,
+        TZrUInt64 *words,
+        TZrSize wordCount);
 ZR_PARSER_API TZrBool ZrParser_SemanticFlow_HasDiagnostic(
         const SZrSemanticFlowResult *result,
         EZrSemanticFlowDiagnosticKind kind,

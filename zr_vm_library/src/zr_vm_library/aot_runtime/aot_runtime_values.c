@@ -73,7 +73,12 @@ TZrBool ZrLibrary_AotRuntime_CopyStack(SZrState *state,
         destinationLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
         if (!ZrCore_Function_CopyObjectValueToFrameSlotInline(
                     state, frame->function, frame->slotBase, destinationSlot, sourceValue)) {
-            aot_runtime_fail(state, runtimeState, "COPY_STACK: failed inline object copy");
+            aot_runtime_fail(state,
+                             runtimeState,
+                             "COPY_STACK: failed inline object copy destination=%u source=%u sourceType=%u",
+                             (unsigned)destinationSlot,
+                             (unsigned)sourceSlot,
+                             (unsigned)sourceValue->type);
             return ZR_FALSE;
         }
         return ZR_TRUE;

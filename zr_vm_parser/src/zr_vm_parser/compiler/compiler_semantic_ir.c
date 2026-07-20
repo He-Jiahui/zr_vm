@@ -262,6 +262,31 @@ TZrPlaceId compiler_semantic_ir_place_for_slot(
     return slot != ZR_NULL ? slot->placeId : ZR_PLACE_ID_INVALID;
 }
 
+TZrBool compiler_semantic_ir_bind_slot_to_place(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        TZrPlaceId placeId) {
+    const SZrParserPlace *place;
+    SZrCompilerSemanticIrSlot slot;
+
+    if (cs == ZR_NULL || stackSlot == ZR_PARSER_SLOT_NONE ||
+        placeId == ZR_PLACE_ID_INVALID ||
+        compiler_semantic_ir_find_slot(cs, stackSlot) != ZR_NULL) {
+        return ZR_FALSE;
+    }
+    place = ZrParser_PlaceGraph_Get(&cs->preSemanticIr.places, placeId);
+    if (place == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    memset(&slot, 0, sizeof(slot));
+    slot.stackSlot = stackSlot;
+    slot.placeId = placeId;
+    slot.valueId = ZR_VALUE_ID_INVALID;
+    slot.typeId = place->typeId;
+    ZrCore_Array_Push(cs->state, &cs->preSemanticIrSlots, &slot);
+    return ZR_TRUE;
+}
+
 TZrPlaceId compiler_semantic_ir_project_field(
         SZrCompilerState *cs,
         TZrPlaceId parentPlaceId,
@@ -291,6 +316,49 @@ TZrPlaceId compiler_semantic_ir_project_field(
     spec.opcode = ZR_SEMANTIC_IR_PLACE_PROJECT;
     spec.placeId = placeId;
     spec.symbolId = fieldIdentity;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    if (!compiler_semantic_ir_emit(cs, &spec)) {
+        return ZR_PLACE_ID_INVALID;
+    }
+    return placeId;
+}
+
+TZrPlaceId compiler_semantic_ir_project_index(
+        SZrCompilerState *cs,
+        TZrPlaceId parentPlaceId,
+        TZrUInt32 indexStackSlot,
+        SZrFileRange sourceRange) {
+    SZrCompilerSemanticIrSlot *indexSlot;
+    SZrParserPlaceProjection projection;
+    SZrSemanticIrInstructionSpec spec;
+    TZrPlaceId placeId;
+
+    if (cs == ZR_NULL || parentPlaceId == ZR_PLACE_ID_INVALID ||
+        indexStackSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_PLACE_ID_INVALID;
+    }
+    indexSlot = compiler_semantic_ir_materialize_slot(
+            cs, indexStackSlot, sourceRange);
+    if (indexSlot == ZR_NULL || indexSlot->valueId == ZR_VALUE_ID_INVALID) {
+        return ZR_PLACE_ID_INVALID;
+    }
+    memset(&projection, 0, sizeof(projection));
+    projection.kind = ZR_PARSER_PLACE_PROJECTION_INDEX;
+    projection.data.valueId = indexSlot->valueId;
+    placeId = ZrParser_PlaceGraph_Project(
+            &cs->preSemanticIr.places,
+            parentPlaceId,
+            &projection,
+            ZR_SEMANTIC_ID_INVALID,
+            sourceRange);
+    if (placeId == ZR_PLACE_ID_INVALID) {
+        return placeId;
+    }
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_PLACE_PROJECT;
+    spec.placeId = placeId;
+    spec.auxiliaryValueId = indexSlot->valueId;
     spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     spec.sourceRange = sourceRange;
     if (!compiler_semantic_ir_emit(cs, &spec)) {
@@ -843,4 +911,110 @@ TZrBool compiler_semantic_ir_lower_ownership(
                     (TZrUInt16)sourceSlot,
                     0));
     return ZR_TRUE;
+}
+
+TZrBool compiler_semantic_ir_lower_value_construct(
+        SZrCompilerState *cs,
+        TZrUInt32 destinationSlot,
+        TZrTypeId typeId,
+        TZrSymbolId constructorId,
+        const TZrUInt32 *argumentSlots,
+        TZrSize argumentCount,
+        SZrFileRange sourceRange) {
+    return compiler_semantic_ir_lower_value_construct_to_place(
+            cs,
+            destinationSlot,
+            ZR_PLACE_ID_INVALID,
+            typeId,
+            constructorId,
+            argumentSlots,
+            argumentCount,
+            sourceRange);
+}
+
+TZrBool compiler_semantic_ir_lower_value_construct_to_place(
+        SZrCompilerState *cs,
+        TZrUInt32 destinationSlot,
+        TZrPlaceId destinationPlaceId,
+        TZrTypeId typeId,
+        TZrSymbolId constructorId,
+        const TZrUInt32 *argumentSlots,
+        TZrSize argumentCount,
+        SZrFileRange sourceRange) {
+    SZrCompilerSemanticIrSlot *destination;
+    const SZrParserPlace *destinationPlace;
+    SZrSemanticIrInstructionSpec spec;
+    TZrValueId *operands = ZR_NULL;
+    TZrValueId resultValueId;
+    TZrBool success = ZR_FALSE;
+
+    if (cs == ZR_NULL || typeId == ZR_SEMANTIC_ID_INVALID ||
+        constructorId == ZR_SEMANTIC_ID_INVALID ||
+        (argumentCount > 0U && argumentSlots == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+    destination = compiler_semantic_ir_materialize_slot(
+            cs, destinationSlot, sourceRange);
+    if (destination == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (destinationPlaceId == ZR_PLACE_ID_INVALID) {
+        destinationPlaceId = destination->placeId;
+    }
+    destinationPlace = ZrParser_PlaceGraph_Get(
+            &cs->preSemanticIr.places, destinationPlaceId);
+    if (destinationPlace == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (argumentCount > 0U) {
+        operands = (TZrValueId *)ZrCore_Memory_RawMallocWithType(
+                cs->state->global,
+                sizeof(TZrValueId) * argumentCount,
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        if (operands == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        for (TZrSize index = 0U; index < argumentCount; index++) {
+            SZrCompilerSemanticIrSlot *argument =
+                    compiler_semantic_ir_materialize_slot(
+                            cs, argumentSlots[index], sourceRange);
+            if (argument == ZR_NULL || argument->valueId == ZR_VALUE_ID_INVALID) {
+                goto cleanup;
+            }
+            operands[index] = argument->valueId;
+        }
+    }
+    resultValueId = ZrParser_SemanticIr_AddValue(
+            &cs->preSemanticIr, typeId, sourceRange);
+    if (resultValueId == ZR_VALUE_ID_INVALID) {
+        goto cleanup;
+    }
+
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_VALUE_CONSTRUCT;
+    spec.typeId = typeId;
+    spec.placeId = destinationPlaceId;
+    spec.resultValueId = resultValueId;
+    spec.symbolId = destination->symbolId;
+    spec.constructorId = constructorId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.operands = operands;
+    spec.operandCount = argumentCount;
+    spec.sourceRange = sourceRange;
+    if (!compiler_semantic_ir_emit(cs, &spec)) {
+        goto cleanup;
+    }
+    destination->typeId = typeId;
+    destination->valueId = resultValueId;
+    success = ZR_TRUE;
+
+cleanup:
+    if (operands != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(
+                cs->state->global,
+                operands,
+                sizeof(TZrValueId) * argumentCount,
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    return success;
 }

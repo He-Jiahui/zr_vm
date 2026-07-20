@@ -131,7 +131,7 @@ static void test_pre_semantic_ir_opcode_golden_covers_supported_families(void) {
         "24 scope.enter type=5 place=1 value=1 result=2\n"
         "25 scope.exit type=5 place=1 value=1 result=2\n"
         "26 cleanup type=5 place=1 value=1 result=2\n"
-        "27 value.construct type=5 place=1 value=1 result=2\n"
+        "27 value.construct type=5 place=1 value=1 result=2 constructor=100663362\n"
         "28 aggregate.construct type=5 place=1 value=1 result=2\n"
         "29 field.initialize type=5 place=1 value=1 result=2\n"
         "30 union.construct type=5 place=1 value=1 result=2\n"
@@ -170,12 +170,75 @@ static void test_pre_semantic_ir_opcode_golden_covers_supported_families(void) {
     for (index = 0; index < ZR_ARRAY_COUNT(opcodes); index++) {
         spec = instruction_spec(
                 opcodes[index], placeId, sourceValueId, resultValueId, 5U);
+        if (opcodes[index] == ZR_SEMANTIC_IR_VALUE_CONSTRUCT) {
+            spec.constructorId = 0x06000042U;
+        }
         emit_instruction(&function, spec);
     }
 
     TEST_ASSERT_TRUE(ZrParser_SemanticIr_FormatGolden(
             &function, actual, sizeof(actual)));
     TEST_ASSERT_EQUAL_STRING(expected, actual);
+    ZrParser_SemanticIrFunction_Free(g_state, &function);
+}
+
+static void test_value_construct_requires_destination_place_and_constructor_identity(void) {
+    SZrSemanticIrFunction function;
+    SZrParserPlaceBase base;
+    SZrSemanticIrInstructionSpec spec;
+    TZrPlaceId placeId;
+    TZrValueId resultValueId;
+
+    ZrParser_SemanticIrFunction_Init(g_state, &function, 31U, 32U);
+    memset(&base, 0, sizeof(base));
+    base.kind = ZR_PARSER_PLACE_BASE_LOCAL;
+    base.identity = 301U;
+    placeId = ZrParser_SemanticIr_AddLocal(
+            &function, 301U, &base, 5U, empty_range(), ZR_FALSE);
+    resultValueId = ZrParser_SemanticIr_AddValue(&function, 5U, empty_range());
+
+    spec = instruction_spec(
+            ZR_SEMANTIC_IR_VALUE_CONSTRUCT,
+            placeId,
+            ZR_VALUE_ID_INVALID,
+            resultValueId,
+            5U);
+    spec.constructorId = 0x06000043U;
+    emit_instruction(&function, spec);
+    TEST_ASSERT_TRUE(ZrParser_SemanticIr_Validate(&function));
+    TEST_ASSERT_EQUAL_UINT32(
+            0x06000043U,
+            ZrParser_SemanticIr_InstructionAt(&function, 0U)->constructorId);
+    ZrParser_SemanticIrFunction_Free(g_state, &function);
+
+    ZrParser_SemanticIrFunction_Init(g_state, &function, 31U, 32U);
+    resultValueId = ZrParser_SemanticIr_AddValue(&function, 5U, empty_range());
+    spec = instruction_spec(
+            ZR_SEMANTIC_IR_VALUE_CONSTRUCT,
+            ZR_PLACE_ID_INVALID,
+            ZR_VALUE_ID_INVALID,
+            resultValueId,
+            5U);
+    spec.constructorId = 0x06000043U;
+    emit_instruction(&function, spec);
+    TEST_ASSERT_FALSE(ZrParser_SemanticIr_Validate(&function));
+    ZrParser_SemanticIrFunction_Free(g_state, &function);
+
+    ZrParser_SemanticIrFunction_Init(g_state, &function, 31U, 32U);
+    memset(&base, 0, sizeof(base));
+    base.kind = ZR_PARSER_PLACE_BASE_LOCAL;
+    base.identity = 301U;
+    placeId = ZrParser_SemanticIr_AddLocal(
+            &function, 301U, &base, 5U, empty_range(), ZR_FALSE);
+    resultValueId = ZrParser_SemanticIr_AddValue(&function, 5U, empty_range());
+    spec = instruction_spec(
+            ZR_SEMANTIC_IR_VALUE_CONSTRUCT,
+            placeId,
+            ZR_VALUE_ID_INVALID,
+            resultValueId,
+            5U);
+    emit_instruction(&function, spec);
+    TEST_ASSERT_FALSE(ZrParser_SemanticIr_Validate(&function));
     ZrParser_SemanticIrFunction_Free(g_state, &function);
 }
 
@@ -279,6 +342,146 @@ static void bind_block(SZrSemanticIrFunction *function,
                        EZrParserCfgTerminatorKind terminatorKind) {
     TEST_ASSERT_TRUE(ZrParser_SemanticIr_BindBlockRange(
             function, cfg, blockId, first, count, terminatorKind));
+}
+
+static void test_field_initialization_tracks_partial_parent_and_cleanup_bitmap(void) {
+    SZrSemanticIrFunction function;
+    SZrSemanticFlowResult result;
+    SZrParserPlaceBase base;
+    SZrParserPlaceProjection projection;
+    SZrSemanticIrInstructionSpec spec;
+    const SZrSemanticBlockFlowFacts *facts;
+    const SZrSemanticPlaceFlowState *flowState;
+    TZrPlaceId parentPlace;
+    TZrPlaceId fieldPlaces[2];
+    TZrValueId fieldValue;
+    TZrValueId constructedValue;
+    TZrUInt64 initializedFields[1] = {0u};
+    SZrParserCfg *cfg;
+    TZrUInt32 entryBlock;
+    TZrUInt32 commitBlock;
+    TZrUInt32 exitBlock;
+
+    ZrParser_SemanticIrFunction_Init(g_state, &function, 35U, 36U);
+    ZrParser_SemanticFlowResult_Init(g_state, &result);
+    memset(&base, 0, sizeof(base));
+    base.kind = ZR_PARSER_PLACE_BASE_LOCAL;
+    base.identity = 350U;
+    parentPlace = ZrParser_SemanticIr_AddLocal(
+            &function, 350U, &base, 50U, empty_range(), ZR_FALSE);
+    TEST_ASSERT_NOT_EQUAL(ZR_PLACE_ID_INVALID, parentPlace);
+
+    memset(&projection, 0, sizeof(projection));
+    projection.kind = ZR_PARSER_PLACE_PROJECTION_FIELD;
+    projection.data.symbolId = 351U;
+    fieldPlaces[0] = ZrParser_PlaceGraph_Project(
+            &function.places, parentPlace, &projection, 51U, empty_range());
+    projection.data.symbolId = 352U;
+    fieldPlaces[1] = ZrParser_PlaceGraph_Project(
+            &function.places, parentPlace, &projection, 52U, empty_range());
+    TEST_ASSERT_NOT_EQUAL(ZR_PLACE_ID_INVALID, fieldPlaces[0]);
+    TEST_ASSERT_NOT_EQUAL(ZR_PLACE_ID_INVALID, fieldPlaces[1]);
+
+    fieldValue = ZrParser_SemanticIr_AddValue(&function, 51U, empty_range());
+    spec = instruction_spec(
+            ZR_SEMANTIC_IR_FIELD_INITIALIZE,
+            fieldPlaces[0],
+            fieldValue,
+            ZR_VALUE_ID_INVALID,
+            51U);
+    emit_instruction(&function, spec);
+    constructedValue = ZrParser_SemanticIr_AddValue(
+            &function, 50U, empty_range());
+    spec = instruction_spec(
+            ZR_SEMANTIC_IR_VALUE_CONSTRUCT,
+            parentPlace,
+            ZR_VALUE_ID_INVALID,
+            constructedValue,
+            50U);
+    spec.constructorId = 353U;
+    emit_instruction(&function, spec);
+
+    cfg = &function.cfg;
+    entryBlock = append_block(cfg, ZR_PARSER_CFG_BLOCK_ENTRY);
+    commitBlock = append_block(cfg, ZR_PARSER_CFG_BLOCK_STATEMENT);
+    exitBlock = append_block(cfg, ZR_PARSER_CFG_BLOCK_EXIT);
+    cfg->entryBlockId = entryBlock;
+    cfg->exitBlockId = exitBlock;
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            cfg, entryBlock, commitBlock, ZR_PARSER_CFG_EDGE_NORMAL, ZR_NULL));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+            cfg, commitBlock, exitBlock, ZR_PARSER_CFG_EDGE_RETURN, ZR_NULL));
+    bind_block(&function, cfg, entryBlock, 0U, 1U, ZR_PARSER_CFG_TERMINATOR_BRANCH);
+    bind_block(&function, cfg, commitBlock, 1U, 1U, ZR_PARSER_CFG_TERMINATOR_RETURN);
+    bind_block(&function, cfg, exitBlock, 2U, 0U, ZR_PARSER_CFG_TERMINATOR_EXIT);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticIr_Validate(&function));
+    TEST_ASSERT_TRUE(ZrParser_SemanticFlow_Analyze(
+            g_state, &function, cfg, &result));
+    facts = ZrParser_SemanticFlow_BlockFacts(&result, entryBlock);
+    TEST_ASSERT_NOT_NULL(facts);
+    flowState = ZrParser_SemanticFlow_PlaceState(facts, parentPlace, ZR_FALSE);
+    TEST_ASSERT_NOT_NULL(flowState);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_INITIALIZATION_MAYBE_INITIALIZED,
+            flowState->initialization);
+    flowState = ZrParser_SemanticFlow_PlaceState(facts, fieldPlaces[0], ZR_FALSE);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_INITIALIZATION_INITIALIZED,
+            flowState->initialization);
+    flowState = ZrParser_SemanticFlow_PlaceState(facts, fieldPlaces[1], ZR_FALSE);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_INITIALIZATION_UNINITIALIZED,
+            flowState->initialization);
+    TEST_ASSERT_TRUE(ZrParser_SemanticFlow_BuildInitializedPlaceBitmap(
+            facts,
+            fieldPlaces,
+            ZR_ARRAY_COUNT(fieldPlaces),
+            initializedFields,
+            ZR_ARRAY_COUNT(initializedFields)));
+    TEST_ASSERT_EQUAL_HEX64(UINT64_C(1), initializedFields[0]);
+
+    facts = ZrParser_SemanticFlow_BlockFacts(&result, commitBlock);
+    TEST_ASSERT_NOT_NULL(facts);
+    flowState = ZrParser_SemanticFlow_PlaceState(facts, parentPlace, ZR_FALSE);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_INITIALIZATION_INITIALIZED,
+            flowState->initialization);
+    TEST_ASSERT_TRUE(ZrParser_SemanticFlow_BuildInitializedPlaceBitmap(
+            facts,
+            fieldPlaces,
+            ZR_ARRAY_COUNT(fieldPlaces),
+            initializedFields,
+            ZR_ARRAY_COUNT(initializedFields)));
+    TEST_ASSERT_EQUAL_HEX64(UINT64_C(3), initializedFields[0]);
+
+    ZrParser_SemanticFlowResult_Free(g_state, &result);
+    ZrParser_SemanticIrFunction_Free(g_state, &function);
+}
+
+static void test_field_initialize_rejects_non_projected_destination(void) {
+    SZrSemanticIrFunction function;
+    SZrParserPlaceBase base;
+    SZrSemanticIrInstructionSpec spec;
+    TZrPlaceId placeId;
+    TZrValueId valueId;
+
+    ZrParser_SemanticIrFunction_Init(g_state, &function, 37U, 38U);
+    memset(&base, 0, sizeof(base));
+    base.kind = ZR_PARSER_PLACE_BASE_LOCAL;
+    base.identity = 370U;
+    placeId = ZrParser_SemanticIr_AddLocal(
+            &function, 370U, &base, 50U, empty_range(), ZR_FALSE);
+    valueId = ZrParser_SemanticIr_AddValue(&function, 50U, empty_range());
+    spec = instruction_spec(
+            ZR_SEMANTIC_IR_FIELD_INITIALIZE,
+            placeId,
+            valueId,
+            ZR_VALUE_ID_INVALID,
+            50U);
+    emit_instruction(&function, spec);
+    TEST_ASSERT_FALSE(ZrParser_SemanticIr_Validate(&function));
+    ZrParser_SemanticIrFunction_Free(g_state, &function);
 }
 
 static void test_flow_join_keeps_dimensions_separate_and_reports_negative_uses(void) {
@@ -732,7 +935,10 @@ static void test_compiler_ownership_lowering_records_explicit_semantic_operation
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_pre_semantic_ir_opcode_golden_covers_supported_families);
+    RUN_TEST(test_value_construct_requires_destination_place_and_constructor_identity);
     RUN_TEST(test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar);
+    RUN_TEST(test_field_initialization_tracks_partial_parent_and_cleanup_bitmap);
+    RUN_TEST(test_field_initialize_rejects_non_projected_destination);
     RUN_TEST(test_flow_join_keeps_dimensions_separate_and_reports_negative_uses);
     RUN_TEST(test_store_restores_moved_place_and_end_loan_restores_read_access);
     RUN_TEST(test_joined_mutable_loans_end_after_conservative_path_conflict);

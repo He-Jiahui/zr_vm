@@ -129,6 +129,9 @@ typedef enum EZrCanonicalReceiverEffect EZrCanonicalReceiverEffect;
 #define ZR_CANONICAL_TYPE_CAPABILITY_SEND ((TZrUInt32)1U << 10U)
 #define ZR_CANONICAL_TYPE_CAPABILITY_SYNC ((TZrUInt32)1U << 11U)
 
+// Reserved constructor identity for a compiler-synthesized zero-argument value initializer.
+#define ZR_CANONICAL_SYNTHESIZED_DEFAULT_CONSTRUCTOR_ID ((TZrSymbolId)UINT32_MAX)
+
 enum EZrCanonicalGcScanKind {
     ZR_CANONICAL_GC_SCAN_FREE = 0,
     ZR_CANONICAL_GC_SCAN_MAPPED,
@@ -218,6 +221,27 @@ typedef struct SZrCanonicalParameterContract {
     TZrBool acceptsTemporary;
     EZrCanonicalCallSiteMarker callSiteMarker;
 } SZrCanonicalParameterContract;
+
+typedef struct SZrCanonicalConstructorParameter {
+    SZrString *name;
+    SZrCanonicalParameterContract contract;
+    TZrBool hasDefaultValue;
+} SZrCanonicalConstructorParameter;
+
+typedef struct SZrCanonicalValueArgument {
+    TZrTypeId typeId;
+    SZrString *name;
+    EZrCanonicalCallSiteMarker callSiteMarker;
+} SZrCanonicalValueArgument;
+
+typedef enum EZrValueConstructorResolution {
+    ZR_VALUE_CONSTRUCTOR_RESOLVED = 0,
+    ZR_VALUE_CONSTRUCTOR_NOT_CONSTRUCTIBLE,
+    ZR_VALUE_CONSTRUCTOR_NO_MATCH,
+    ZR_VALUE_CONSTRUCTOR_INACCESSIBLE,
+    ZR_VALUE_CONSTRUCTOR_AMBIGUOUS,
+    ZR_VALUE_CONSTRUCTOR_INVALID_ARGUMENTS
+} EZrValueConstructorResolution;
 
 typedef struct SZrCanonicalFunctionType {
     SZrArray parameterContracts; // SZrCanonicalParameterContract
@@ -430,6 +454,14 @@ ZR_PARSER_API TZrBool ZrParser_CanonicalType_RegisterConstructor(
         TZrSize parameterCount,
         TZrBool isPublic);
 
+ZR_PARSER_API TZrBool ZrParser_CanonicalType_RegisterConstructorContract(
+        struct SZrSemanticContext *context,
+        TZrTypeId typeId,
+        TZrSymbolId constructorSymbolId,
+        const SZrCanonicalConstructorParameter *parameters,
+        TZrSize parameterCount,
+        TZrBool isPublic);
+
 ZR_PARSER_API TZrBool ZrParser_CanonicalType_HasCapabilities(
         const struct SZrSemanticContext *context,
         TZrTypeId typeId,
@@ -441,6 +473,15 @@ ZR_PARSER_API TZrBool ZrParser_CanonicalType_ResolveValueConstructor(
         const TZrTypeId *argumentTypeIds,
         TZrSize argumentCount,
         TZrSymbolId *outConstructorSymbolId);
+
+ZR_PARSER_API EZrValueConstructorResolution
+ZrParser_CanonicalType_ResolveValueConstructorContract(
+        const struct SZrSemanticContext *context,
+        TZrTypeId typeId,
+        const SZrCanonicalValueArgument *arguments,
+        TZrSize argumentCount,
+        TZrSymbolId *outConstructorSymbolId,
+        TZrUInt32 *outParameterIndices);
 
 ZR_PARSER_API void ZrParser_CanonicalType_Reset(struct SZrSemanticContext *context);
 ZR_PARSER_API void ZrParser_CanonicalType_Free(struct SZrSemanticContext *context);

@@ -10,6 +10,7 @@
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/type_layout.h"
 #include "zr_vm_core/object_known_native_dispatch.h"
 #include "zr_vm_common/zr_contract_conf.h"
 struct SZrState;
@@ -117,11 +118,39 @@ struct ZR_STRUCT_ALIGN SZrObject {
     TZrSize superArrayRawIntLength;
     TZrSize superArrayRawIntCapacity;
     TZrBool superArrayRawIntDirty;
+    struct SZrFunction *inlineArrayLayoutFunction;
+    TZrUInt64 inlineArrayElementLayoutHash;
+    TZrSize inlineArrayObjectByteSize;
+    TZrUInt32 inlineArrayElementLayoutId;
+    TZrUInt32 inlineArrayElementByteOffset;
+    TZrUInt32 inlineArrayElementByteSize;
+    TZrUInt32 inlineArrayLength;
 
     // SZrRawObject *gcList;
 };
 
 typedef struct SZrObject SZrObject;
+
+ZR_CORE_API SZrObject *ZrCore_Object_NewInlineArray(
+        struct SZrState *state,
+        struct SZrFunction *layoutFunction,
+        TZrUInt32 elementTypeLayoutId,
+        TZrUInt32 length);
+ZR_CORE_API TZrBool ZrCore_Object_TryGetInlineArrayElementOffset(
+        struct SZrState *state,
+        const SZrObject *array,
+        const struct SZrFunction *expectedLayoutFunction,
+        TZrUInt32 expectedTypeLayoutId,
+        TZrInt64 index,
+        TZrUInt32 *outByteOffset);
+ZR_CORE_API TZrBool ZrCore_Object_VisitInlineArrayGcValues(
+        struct SZrState *state,
+        SZrObject *array,
+        FZrTypeLayoutGcValueVisitor visitor,
+        TZrPtr userData);
+ZR_CORE_API TZrBool ZrCore_Object_DropInlineArrayElements(
+        struct SZrState *state,
+        SZrObject *array);
 
 typedef struct SZrManagedFieldInfo {
     struct SZrString *name;

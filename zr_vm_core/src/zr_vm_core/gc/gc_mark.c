@@ -150,6 +150,43 @@ static TZrSize garbage_collector_mark_object_node_map(SZrState *state, SZrObject
     return garbage_collector_mark_hash_set(state, &object->nodeMap);
 }
 
+static void garbage_collector_mark_inline_array_value(
+        SZrState *state,
+        SZrTypeValue *value,
+        TZrPtr userData) {
+    TZrSize *work = (TZrSize *)userData;
+
+    garbage_collector_mark_value(state, value);
+    if (work != ZR_NULL) {
+        (*work)++;
+    }
+}
+
+static TZrSize garbage_collector_mark_inline_array(
+        SZrState *state,
+        SZrObject *array) {
+    TZrSize work = 0u;
+
+    if (state == ZR_NULL || array == ZR_NULL ||
+        array->inlineArrayElementByteSize == 0u) {
+        return 0u;
+    }
+    if (!ZrCore_Object_VisitInlineArrayGcValues(
+                state,
+                array,
+                garbage_collector_mark_inline_array_value,
+                &work)) {
+        return work;
+    }
+    if (array->inlineArrayLayoutFunction != ZR_NULL) {
+        garbage_collector_mark_object(
+                state,
+                ZR_CAST_RAW_OBJECT_AS_SUPER(array->inlineArrayLayoutFunction));
+        work++;
+    }
+    return work;
+}
+
 static TZrSize garbage_collector_mark_string_table_minor_roots(SZrGlobalState *global) {
     SZrStringTable *stringTable;
     TZrSize work = 0;
@@ -916,6 +953,10 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
             SZrObject *obj = ZR_CAST_OBJECT(state, object);
 
             work += garbage_collector_mark_object_node_map(state, obj);
+            if (obj != ZR_NULL &&
+                obj->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+                work += garbage_collector_mark_inline_array(state, obj);
+            }
             if (obj != ZR_NULL && obj->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
                 garbage_collector_mark_object_prototype_graph(state, (SZrObjectPrototype *)obj, &work);
             }

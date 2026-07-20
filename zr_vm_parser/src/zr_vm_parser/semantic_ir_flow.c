@@ -391,6 +391,40 @@ const SZrSemanticPlaceFlowState *ZrParser_SemanticFlow_PlaceState(
             (SZrArray *)states, (TZrSize)placeId - 1U);
 }
 
+TZrBool ZrParser_SemanticFlow_BuildInitializedPlaceBitmap(
+        const SZrSemanticBlockFlowFacts *facts,
+        const TZrPlaceId *placeIds,
+        TZrSize placeCount,
+        TZrUInt64 *words,
+        TZrSize wordCount) {
+    TZrSize index;
+    TZrSize requiredWordCount = (placeCount + 63U) / 64U;
+
+    if (facts == ZR_NULL ||
+        (placeCount > 0U && placeIds == ZR_NULL) ||
+        wordCount < requiredWordCount ||
+        (wordCount > 0U && words == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+    if (wordCount > 0U) {
+        memset(words, 0, wordCount * sizeof(*words));
+    }
+    for (index = 0U; index < placeCount; index++) {
+        const SZrSemanticPlaceFlowState *placeState =
+                ZrParser_SemanticFlow_PlaceState(
+                        facts, placeIds[index], ZR_FALSE);
+        if (placeState == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        if (placeState->initialization ==
+                    ZR_SEMANTIC_INITIALIZATION_INITIALIZED &&
+            placeState->availability == ZR_SEMANTIC_AVAILABILITY_AVAILABLE) {
+            words[index / 64U] |= UINT64_C(1) << (index % 64U);
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool semantic_flow_diagnostic_exists(
         const SZrSemanticFlowResult *result,
         EZrSemanticFlowDiagnosticKind kind,
@@ -588,6 +622,88 @@ static void semantic_flow_begin_loan(
     }
 }
 
+static TZrBool semantic_flow_place_is_descendant(
+        const SZrSemanticIrFunction *function,
+        TZrPlaceId candidateId,
+        TZrPlaceId ancestorId) {
+    const SZrParserPlace *candidate;
+    TZrSize remaining;
+
+    if (function == ZR_NULL || candidateId == ZR_PLACE_ID_INVALID ||
+        ancestorId == ZR_PLACE_ID_INVALID || candidateId == ancestorId) {
+        return ZR_FALSE;
+    }
+    candidate = ZrParser_PlaceGraph_Get(&function->places, candidateId);
+    remaining = function->places.places.length;
+    while (candidate != ZR_NULL && remaining-- > 0U &&
+           candidate->parentId != ZR_PLACE_ID_INVALID) {
+        if (candidate->parentId == ancestorId) {
+            return ZR_TRUE;
+        }
+        candidate = ZrParser_PlaceGraph_Get(
+                &function->places, candidate->parentId);
+    }
+    return ZR_FALSE;
+}
+
+static void semantic_flow_mark_descendants_initialized(
+        const SZrSemanticIrFunction *function,
+        SZrArray *placeStates,
+        TZrPlaceId placeId) {
+    TZrSize index;
+
+    if (function == ZR_NULL || placeStates == ZR_NULL) {
+        return;
+    }
+    for (index = 0U; index < function->places.places.length; index++) {
+        TZrPlaceId candidateId = (TZrPlaceId)(index + 1U);
+        SZrSemanticPlaceFlowState *candidateState;
+
+        if (!semantic_flow_place_is_descendant(
+                    function, candidateId, placeId)) {
+            continue;
+        }
+        candidateState = (SZrSemanticPlaceFlowState *)ZrCore_Array_Get(
+                placeStates, index);
+        if (candidateState != ZR_NULL) {
+            candidateState->initialization =
+                    ZR_SEMANTIC_INITIALIZATION_INITIALIZED;
+            candidateState->availability = ZR_SEMANTIC_AVAILABILITY_AVAILABLE;
+        }
+    }
+}
+
+static void semantic_flow_mark_ancestors_partially_initialized(
+        const SZrSemanticIrFunction *function,
+        SZrArray *placeStates,
+        TZrPlaceId placeId) {
+    const SZrParserPlace *place;
+    TZrSize remaining;
+
+    if (function == ZR_NULL || placeStates == ZR_NULL) {
+        return;
+    }
+    place = ZrParser_PlaceGraph_Get(&function->places, placeId);
+    remaining = function->places.places.length;
+    while (place != ZR_NULL && remaining-- > 0U &&
+           place->parentId != ZR_PLACE_ID_INVALID) {
+        SZrSemanticPlaceFlowState *parentState =
+                (SZrSemanticPlaceFlowState *)ZrCore_Array_Get(
+                        placeStates, (TZrSize)place->parentId - 1U);
+        if (parentState == ZR_NULL) {
+            return;
+        }
+        if (parentState->initialization !=
+            ZR_SEMANTIC_INITIALIZATION_INITIALIZED) {
+            parentState->initialization =
+                    ZR_SEMANTIC_INITIALIZATION_MAYBE_INITIALIZED;
+        }
+        parentState->availability = ZR_SEMANTIC_AVAILABILITY_AVAILABLE;
+        place = ZrParser_PlaceGraph_Get(
+                &function->places, place->parentId);
+    }
+}
+
 static void semantic_flow_transfer_instruction(
         SZrState *state,
         const SZrSemanticIrFunction *function,
@@ -608,6 +724,7 @@ static void semantic_flow_transfer_instruction(
 
     switch (instruction->opcode) {
         case ZR_SEMANTIC_IR_INITIALIZE:
+        case ZR_SEMANTIC_IR_VALUE_CONSTRUCT:
             semantic_flow_check_exclusive_access(
                     result,
                     blockId,
@@ -616,6 +733,22 @@ static void semantic_flow_transfer_instruction(
                     recordDiagnostics);
             placeState->initialization = ZR_SEMANTIC_INITIALIZATION_INITIALIZED;
             placeState->availability = ZR_SEMANTIC_AVAILABILITY_AVAILABLE;
+            semantic_flow_mark_descendants_initialized(
+                    function, placeStates, instruction->placeId);
+            break;
+        case ZR_SEMANTIC_IR_FIELD_INITIALIZE:
+            semantic_flow_check_exclusive_access(
+                    result,
+                    blockId,
+                    instruction,
+                    placeState,
+                    recordDiagnostics);
+            placeState->initialization = ZR_SEMANTIC_INITIALIZATION_INITIALIZED;
+            placeState->availability = ZR_SEMANTIC_AVAILABILITY_AVAILABLE;
+            semantic_flow_mark_descendants_initialized(
+                    function, placeStates, instruction->placeId);
+            semantic_flow_mark_ancestors_partially_initialized(
+                    function, placeStates, instruction->placeId);
             break;
         case ZR_SEMANTIC_IR_LOAD:
         case ZR_SEMANTIC_IR_COPY:
@@ -635,6 +768,8 @@ static void semantic_flow_transfer_instruction(
                     recordDiagnostics);
             placeState->initialization = ZR_SEMANTIC_INITIALIZATION_INITIALIZED;
             placeState->availability = ZR_SEMANTIC_AVAILABILITY_AVAILABLE;
+            semantic_flow_mark_descendants_initialized(
+                    function, placeStates, instruction->placeId);
             break;
         case ZR_SEMANTIC_IR_MOVE:
             semantic_flow_check_read(

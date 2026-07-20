@@ -1,8 +1,12 @@
 # 10 Native extern、内建库、模块与包解析设计
 
-> 状态：设计已确认，等待按里程碑实施。
+> 状态：已拆分 resolver、FFI ABI 与 provider convergence 依赖，等待按里程碑实施。
 >
-> 上游契约：[01 Canonical TypeRef、Place、CFG 与 artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[06 `%xxx` 迁移](./2026-07-18-06-percent-migration-lsp-fixtures-design.md)。
+> 10R resolver/package 硬依赖：[01 Canonical TypeRef、Place、CFG 与 artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[06A migration inventory/frontend](./2026-07-18-06-percent-migration-lsp-fixtures-design.md)。
+>
+> 10F FFI ABI 硬依赖：10R、[02 borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md)、[03 TypeLayout/ref struct](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[04 ownership/resource/GC bridge](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md)。
+>
+> 10C provider convergence 集成依赖：10R/10F 以及 08、09、11-14 各自已晋级的 provider contract；不依赖 06B 最终仓库切换。
 >
 > 使用本设计的计划：[AOT](../aot/index.md)、[LSP](../lsp/index.md)、[debug](../debug/index.md)。
 
@@ -529,15 +533,41 @@ provider descriptor还必须声明`Runtime | Test | CompileTool` phase。phase�
 
 读取旧 `.zrp` 可以有版本化兼容窗口；目标源码、目标 artifact 与 formatter 不输出旧形式。迁移后二次运行必须幂等。
 
-## 10. 实施里程碑与验收
+## 10. 分轨里程碑与验收
 
-1. **M1 specifier foundation**：加入domain-aware ModuleSpecifier/ModuleIdentity、`zr`/`native:`/`file:`分类、分隔符等价、relative、`#alias`、单段`@package` parser和resolver单元测试。
-2. **M2 manifest/artifact**：实现 `.zrp` v2 reader/writer、exports、dependency lock identity、`.zrm` entry 与 `.zro` dependency roundtrip。
-3. **M3 native contract**：实现 NativeExtern AST、CanonicalCallableContract 到 FfiSignature 的静态校验和 VM/AOT 共享 golden。
-4. **M4 native library convergence**：保留`zr.*`根，冻结N0-N3 inventory；把`debug`迁移到`zr.debug`，为task/iteration/container/thread/reflection/pooling/compile/testing登记唯一native/host descriptor和canonical type role。
-5. **M5 consumers/migration**：LSP、reflection、debug、formatter、migration tool 只消费 canonical identity/schema。
+### 10R Resolver、manifest 与 artifact identity
 
-晋级要求：
+#### M1 Specifier foundation
+
+加入 domain-aware ModuleSpecifier/ModuleIdentity、`zr`/`native:`/`file:` 分类、分隔符等价、relative、`#alias`、单段 `@package` parser 和 resolver 单元测试。
+
+#### M2 Manifest/artifact
+
+实现 `.zrp` v2 reader/writer、exports、dependency lock identity、`.zrm` entry、provider phase/descriptor substrate 与 `.zro` dependency roundtrip。
+
+10R 晋级门：M1-M2 可以在 FFI ABI 和具体 `zr.*` provider 尚未完成时独立验收；全部 specifier/identity/manifest/provider-phase 正负例通过，resolver、artifact、LSP/debug query 共用结构化 identity API，且 06A 只提供旧 import/manifest 输入适配，不切换仓库。
+
+### 10F Native extern 与 FFI ABI
+
+#### M3 Native contract
+
+实现 NativeExtern AST、CanonicalCallableContract 到 FfiSignature 的静态校验和 VM/AOT 共享 golden。该里程碑必须直接消费 02 的 `in/ref/out` 与 definite-assignment facts、03 的 TypeLayout/layout hash/ref-like contract、04 的 owner/resource/GC/pin/marshaller 边界；不得只依赖 01 或迁移计划推断这些语义。
+
+10F 晋级门：scalar、struct/union、in/ref/out、callback、owner/resource/ref-struct/Span 拒绝或显式 marshalling、target ABI、throw/cleanup 和 corrupt artifact 全部在 VM/libffi 与 AOT 使用同一 FfiSignature 向量通过。10F 只依赖 06A 的 `%extern` edit schema，不等待 06B 应用全仓 edit。
+
+### 10C Official native provider convergence 与消费者
+
+#### M4 Native library convergence
+
+保留 `zr.*` 根，冻结 N0-N3 inventory，并由 10 自身完成 `debug` 到 `zr.debug` 的迁移；收集并校验 08、09、11-14 已经基于 10R substrate 登记的 task/iteration/container/thread/reflection/pooling/compile/testing native/host descriptor 和 canonical type role。provider 的 schema/注册由 owner 计划自己的 gate 负责，10C 不替 owner 补实现；未晋级 provider 不得以占位 TypeDef 冒充完成。
+
+#### M5 Consumers/migration
+
+LSP、reflection、debug、formatter和 06A migration frontend 只消费 canonical identity/schema。M5 验证迁移 edit plan 与 target contract，但全仓 edit、parser cutover 和 legacy 删除仍由 06B 独占。
+
+10C 晋级门：M4-M5 全部 provider/consumer 证据完成；10R、10F 可以在此之前分别晋级，但 10 作为 06B 的整体前置依赖时必须连同 10C 一起通过。
+
+整体晋级要求：
 
 - 本文全部同domain等价import对产生相同Canonical ModuleId；`RegisteredNative:engine.render`与`Workspace:engine.render`必须产生不同ModuleIdentity并能同时导入；不同package version不产生相同ModuleIdentity。
 - 非法package root/空module segment、未导出子模块、越出workspace root、alias cycle、同domain duplicate provider和provider ambiguity都有稳定负例。

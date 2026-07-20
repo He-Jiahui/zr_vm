@@ -5697,8 +5697,12 @@ static TZrBool compiler_quickening_instruction_may_read_slot(const TZrInstructio
         case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
         case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
         case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
+        case ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY):
         case ZR_INSTRUCTION_ENUM(JUMP):
             return ZR_FALSE;
+        case ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE):
+            return (TZrBool)(instruction->instruction.operand.operand1[0] == slot ||
+                             instruction->instruction.operand.operand1[1] == slot);
         case ZR_INSTRUCTION_ENUM(GET_STACK):
         case ZR_INSTRUCTION_ENUM(SET_STACK):
             return (TZrUInt32)instruction->instruction.operand.operand2[0] == slot;
@@ -6139,6 +6143,21 @@ static TZrBool compiler_quickening_instruction_replace_read_slot_if_supported(TZ
         case ZR_INSTRUCTION_ENUM(GET_GLOBAL):
         case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
         case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
+        case ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY):
+            break;
+        case ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE):
+            if (instruction->instruction.operand.operand1[0] == oldSlot) {
+                if (applyChanges) {
+                    instruction->instruction.operand.operand1[0] = (TZrUInt16)newSlot;
+                }
+                replaced = ZR_TRUE;
+            }
+            if (instruction->instruction.operand.operand1[1] == oldSlot) {
+                if (applyChanges) {
+                    instruction->instruction.operand.operand1[1] = (TZrUInt16)newSlot;
+                }
+                replaced = ZR_TRUE;
+            }
             break;
         case ZR_INSTRUCTION_ENUM(GET_STACK):
             /*

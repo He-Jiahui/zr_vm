@@ -594,6 +594,26 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             free_type_info(state, &node->data.type);
             break;
         }
+        case ZR_AST_STRUCT_INIT_EXPRESSION: {
+            SZrStructInitExpression *init = &node->data.structInitExpression;
+            free_owned_type(state, init->typeInfo);
+            free_ast_node_array_with_elements(state, init->args);
+            if (init->argNames != ZR_NULL) {
+                ZrCore_Array_Free(state, init->argNames);
+                ZrCore_Memory_RawFreeWithType(state->global,
+                                              init->argNames,
+                                              sizeof(SZrArray),
+                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            }
+            if (init->argumentMarkers != ZR_NULL) {
+                ZrCore_Array_Free(state, init->argumentMarkers);
+                ZrCore_Memory_RawFreeWithType(state->global,
+                                              init->argumentMarkers,
+                                              sizeof(SZrArray),
+                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            }
+            break;
+        }
         case ZR_AST_FUNCTION_TYPE: {
             SZrFunctionType *funcType = &node->data.functionType;
             if (funcType->generic != ZR_NULL) {

@@ -22,6 +22,13 @@ static const SZrAotExecIrFrameSlotLayout *backend_aot_c_value_field_find_frame_s
     return ZR_NULL;
 }
 
+static TZrBool backend_aot_c_value_field_layout_is_indirect_alias(
+        const SZrAotExecIrFrameSlotLayout *layout) {
+    return (TZrBool)(layout != ZR_NULL &&
+                     (layout->reserved0 &
+                      ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS) != 0u);
+}
+
 static TZrBool backend_aot_c_value_field_callsite_cache_kind_matches(
         const SZrFunctionCallSiteCacheEntry *cacheEntry,
         EZrFunctionCallSiteCacheKind expectedKind) {
@@ -443,17 +450,21 @@ static TZrBool backend_aot_try_write_c_value_field_inline_struct_load_exec(
             "    {\n"
             "        const SZrTypeLayout *zr_aot_field_layout =\n"
             "                ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, %u);\n"
-            "        if (zr_aot_field_layout == ZR_NULL || zr_aot_field_layout->byteSize != %u) {\n"
+            "        SZrTypeLayoutRegistryView zr_aot_field_registry;\n"
+            "        if (zr_aot_field_layout == ZR_NULL || zr_aot_field_layout->byteSize != %u ||\n"
+            "            !ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(frame.function,\n"
+            "                                                                  &zr_aot_field_registry)) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
             "        if (ZrCore_TypeLayout_CanRawCopy(zr_aot_field_layout)) {\n"
             "            memmove((TZrByte *)frame.slotBase + %u, (const TZrByte *)frame.slotBase + %u + %u, %u);\n"
             "        } else {\n"
             "            /* zr_aot_value_exec_field_inline_struct_copy dstSlot=%u sourceSlot=%u */\n"
-            "            ZR_AOT_C_GUARD(ZrCore_TypeLayout_CopyInline(state,\n"
-            "                                                        zr_aot_field_layout,\n"
-            "                                                        (TZrByte *)frame.slotBase + %u,\n"
-            "                                                        (const TZrByte *)frame.slotBase + %u + %u));\n"
+            "            ZR_AOT_C_GUARD(ZrCore_TypeLayout_CopyInlineWithRegistry(state,\n"
+            "                    zr_aot_field_layout,\n"
+            "                    &zr_aot_field_registry,\n"
+            "                    (TZrByte *)frame.slotBase + %u,\n"
+            "                    (const TZrByte *)frame.slotBase + %u + %u));\n"
             "        }\n"
             "    }\n",
             (unsigned)instruction->destinationSlot,
@@ -492,17 +503,21 @@ static TZrBool backend_aot_try_write_c_value_field_inline_struct_store_exec(
             "    {\n"
             "        const SZrTypeLayout *zr_aot_field_layout =\n"
             "                ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, %u);\n"
-            "        if (zr_aot_field_layout == ZR_NULL || zr_aot_field_layout->byteSize != %u) {\n"
+            "        SZrTypeLayoutRegistryView zr_aot_field_registry;\n"
+            "        if (zr_aot_field_layout == ZR_NULL || zr_aot_field_layout->byteSize != %u ||\n"
+            "            !ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(frame.function,\n"
+            "                                                                  &zr_aot_field_registry)) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
             "        if (ZrCore_TypeLayout_CanRawCopy(zr_aot_field_layout)) {\n"
             "            memmove((TZrByte *)frame.slotBase + %u + %u, (const TZrByte *)frame.slotBase + %u, %u);\n"
             "        } else {\n"
             "            /* zr_aot_value_exec_field_inline_struct_copy dstSlot=%u sourceSlot=%u */\n"
-            "            ZR_AOT_C_GUARD(ZrCore_TypeLayout_CopyInline(state,\n"
-            "                                                        zr_aot_field_layout,\n"
-            "                                                        (TZrByte *)frame.slotBase + %u + %u,\n"
-            "                                                        (const TZrByte *)frame.slotBase + %u));\n"
+            "            ZR_AOT_C_GUARD(ZrCore_TypeLayout_CopyInlineWithRegistry(state,\n"
+            "                    zr_aot_field_layout,\n"
+            "                    &zr_aot_field_registry,\n"
+            "                    (TZrByte *)frame.slotBase + %u + %u,\n"
+            "                    (const TZrByte *)frame.slotBase + %u));\n"
             "        }\n"
             "    }\n",
             (unsigned)instruction->destinationSlot,
@@ -614,6 +629,10 @@ TZrBool backend_aot_try_write_c_value_semir_field_load_exec(
 
     sourceLayout = backend_aot_c_value_field_find_frame_slot_layout(frameLayout, instruction->operand0);
     destinationLayout = backend_aot_c_value_field_find_frame_slot_layout(frameLayout, instruction->destinationSlot);
+    if (backend_aot_c_value_field_layout_is_indirect_alias(sourceLayout) ||
+        backend_aot_c_value_field_layout_is_indirect_alias(destinationLayout)) {
+        return ZR_FALSE;
+    }
     if (!backend_aot_c_value_field_resolve_layout(state,
                                                   functionIr,
                                                   sourceLayout,
@@ -740,6 +759,10 @@ TZrBool backend_aot_try_write_c_value_semir_field_store_exec(
 
     destinationLayout = backend_aot_c_value_field_find_frame_slot_layout(frameLayout, instruction->destinationSlot);
     sourceLayout = backend_aot_c_value_field_find_frame_slot_layout(frameLayout, instruction->operand0);
+    if (backend_aot_c_value_field_layout_is_indirect_alias(destinationLayout) ||
+        backend_aot_c_value_field_layout_is_indirect_alias(sourceLayout)) {
+        return ZR_FALSE;
+    }
     if (!backend_aot_c_value_field_resolve_layout(state,
                                                   functionIr,
                                                   destinationLayout,

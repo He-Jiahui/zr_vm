@@ -248,7 +248,9 @@
     Z(RESET_STACK_NULL2)                                                                                               \
     Z(MUL_SIGNED_LOAD_STACK)                                                                                           \
     Z(ADD_SIGNED_MOD_CONST)                                                                                            \
-    Z(OWN_RETURN_LOAN)
+    Z(OWN_RETURN_LOAN)                                                                                                 \
+    Z(CREATE_INLINE_ARRAY)                                                                                             \
+    Z(BIND_INLINE_ARRAY_ELEMENT_PLACE)
 
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)

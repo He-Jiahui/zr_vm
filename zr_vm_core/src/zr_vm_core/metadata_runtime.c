@@ -685,6 +685,10 @@ const SZrTypeLayout *ZrCore_MetadataRuntime_ResolveTypeLayout(SZrMetadataRuntime
     if (layout == ZR_NULL || layout->cTypeId != typeLayoutId) {
         return ZR_NULL;
     }
+    if ((layout->layoutVersion == 0u) != (layout->layoutHash == 0u) ||
+        (layout->layoutVersion != 0u && !ZrCore_TypeLayout_Validate(layout))) {
+        return ZR_NULL;
+    }
 
     return layout;
 }
@@ -692,11 +696,29 @@ const SZrTypeLayout *ZrCore_MetadataRuntime_ResolveTypeLayout(SZrMetadataRuntime
 const SZrAotGcDescriptor *ZrCore_MetadataRuntime_ResolveGcDescriptor(SZrMetadataRuntime *runtime,
                                                                      TZrUInt32 typeLayoutId) {
     const SZrAotGcDescriptor *descriptor = metadata_runtime_get_gc_descriptor(runtime, typeLayoutId);
+    const SZrTypeLayout *layout;
 
     if (descriptor == ZR_NULL ||
-        descriptor->typeLayoutId != typeLayoutId ||
-        ZrCore_MetadataRuntime_ResolveTypeLayout(runtime, typeLayoutId) == ZR_NULL) {
+        descriptor->typeLayoutId != typeLayoutId) {
         return ZR_NULL;
+    }
+
+    layout = ZrCore_MetadataRuntime_ResolveTypeLayout(runtime, typeLayoutId);
+    if (layout == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (layout->layoutVersion != 0u) {
+        if (descriptor->gcFieldCount != layout->gcFieldCount) {
+            return ZR_NULL;
+        }
+        for (TZrUInt32 index = 0u; index < layout->gcFieldCount; index++) {
+            TZrUInt32 canonicalOffset;
+            if (descriptor->gcFieldOffsets == ZR_NULL ||
+                !ZrCore_TypeLayout_TryGetGcFieldOffset(layout, index, &canonicalOffset) ||
+                descriptor->gcFieldOffsets[index] != canonicalOffset) {
+                return ZR_NULL;
+            }
+        }
     }
 
     return descriptor;
@@ -762,16 +784,46 @@ static TZrBool metadata_runtime_find_prototype_type_layout_id(const SZrFunction 
     return ZR_FALSE;
 }
 
-const SZrTypeLayout *ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(const SZrFunction *function,
-                                                                      TZrUInt32 typeLayoutId) {
+static const SZrFunction *metadata_runtime_select_registration_function(
+        const SZrFunction *function) {
     const SZrFunction *registryFunction = function;
-    SZrMetadataRuntime runtimeView;
 
     if (registryFunction != ZR_NULL &&
         registryFunction->metadataCodeRegistration == ZR_NULL &&
         registryFunction->prototypeContextFunction != ZR_NULL) {
         registryFunction = registryFunction->prototypeContextFunction;
     }
+    return registryFunction;
+}
+
+TZrBool ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(
+        const SZrFunction *function,
+        SZrTypeLayoutRegistryView *outRegistry) {
+    const SZrFunction *registryFunction =
+            metadata_runtime_select_registration_function(function);
+
+    if (outRegistry != ZR_NULL) {
+        outRegistry->layouts = ZR_NULL;
+        outRegistry->count = 0u;
+    }
+    if (outRegistry == ZR_NULL || registryFunction == ZR_NULL ||
+        registryFunction->metadataCodeRegistration == ZR_NULL ||
+        registryFunction->metadataCodeRegistration->typeLayouts == ZR_NULL ||
+        registryFunction->metadataTypeLayoutCount == 0u) {
+        return ZR_FALSE;
+    }
+
+    outRegistry->layouts = registryFunction->metadataCodeRegistration->typeLayouts;
+    outRegistry->count = registryFunction->metadataTypeLayoutCount;
+    return ZR_TRUE;
+}
+
+const SZrTypeLayout *ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(const SZrFunction *function,
+                                                                      TZrUInt32 typeLayoutId) {
+    const SZrFunction *registryFunction =
+            metadata_runtime_select_registration_function(function);
+    SZrMetadataRuntime runtimeView;
+
     if (registryFunction == ZR_NULL || registryFunction->metadataCodeRegistration == ZR_NULL) {
         return ZR_NULL;
     }

@@ -1621,6 +1621,17 @@ static void reflection_apply_type_layout_to_layout_object(SZrState *state,
     reflection_set_field_int(state, layoutObject, "fieldCount", typeLayout->fieldCount);
     reflection_set_field_int(state, layoutObject, "size", typeLayout->byteSize);
     reflection_set_field_int(state, layoutObject, "alignment", typeLayout->byteAlign);
+    reflection_set_field_int(state, layoutObject, "copyKind", typeLayout->copyKind);
+    reflection_set_field_int(state, layoutObject, "dropKind", typeLayout->dropKind);
+    reflection_set_field_int(state, layoutObject, "gcScanKind", typeLayout->gcScanKind);
+    reflection_set_field_int(state, layoutObject, "gcFieldCount", typeLayout->gcFieldCount);
+    reflection_set_field_int(state,
+                             layoutObject,
+                             "ownershipFieldCount",
+                             typeLayout->ownershipFieldCount);
+    reflection_set_field_int(state, layoutObject, "refFieldCount", typeLayout->refFieldCount);
+    reflection_set_field_int(state, layoutObject, "layoutVersion", typeLayout->layoutVersion);
+    reflection_set_field_uint(state, layoutObject, "layoutHash", typeLayout->layoutHash);
 }
 
 static void reflection_apply_field_layout_to_member(SZrState *state,

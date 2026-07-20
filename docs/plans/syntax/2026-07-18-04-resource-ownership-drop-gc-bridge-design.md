@@ -1,6 +1,6 @@
 # 04 resource class、Unique/Shared/Weak、Drop 与 GC bridge
 
-> 状态：细化草案，等待人工确认。
+> 状态：已按可配置 GC domain 混合模型补齐并发边界，等待按里程碑实施。
 >
 > 硬依赖：[Canonical TypeRef/Place/CFG](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md)、[TypeLayout/ref struct](./2026-07-18-03-struct-ref-struct-span-layout-design.md)
 
@@ -10,11 +10,12 @@
 
 - `resource class` 明确表示确定性生命周期类型。
 - `Unique<T>` 表示唯一 owner，move 后源静态失效。
-- `Shared<T>` 表示线程域内非原子共享 owner。
+- `Shared<T>` 表示单 mutator/线程局部的非原子共享 owner；跨 mutator 共享不是它的隐含能力。
 - `Weak<T>` 观察 Shared 生命周期，不延长对象存活。
 - shared/mutable borrow 分别由 `ref readonly T`/`ref T` 表示，不再创建运行时 Borrow/Loan wrapper。
 - Drop glue 统一正常退出、早返回、异常和部分构造清理。
 - GC 与 ownership world 通过显式 bridge 交互，不使用隐藏 ignore registry 猜测生命周期。
+- GC 的 collection/pause scope 是宿主可配置的 `GcDomain`，不是语言强制的“全进程”或“每游戏实例”策略。
 - 普通路径不需要运行时 use-after-move、double-drop 或 loan 检查。
 
 ## 2. 生命周期世界
@@ -29,6 +30,7 @@ let document = new Document(...);
 - 普通 class 由精确 GC 管理。
 - class 可以形成强环，GC 负责回收不可达图。
 - class handle 可以复制。
+- 每个 GC object 永久属于一个 `GcDomain`；同一 domain 可以挂接一个或多个 VM state/mutator。
 - GC compact/移动由 runtime handle 和精确根图处理。
 - finalization 不作为普通业务资源的确定性释放基础。
 
@@ -186,7 +188,7 @@ SharedControl<T>
 第一版 `Shared<T>` 不跨线程。后续 `AtomicShared<T>`：
 
 - strong/weak 使用原子操作。
-- target 满足 Send/Sync 或等价 capability。
+- target 满足`MutatorMoveSafe`/`MutatorShareSafe`；第12章可通过Send/Sync public projection查询同一事实。
 - Weak 对应 AtomicWeak 或 owner kind 关联的 Weak。
 - memory ordering 是 runtime contract，不由普通 Shared 路径动态选择。
 
@@ -328,7 +330,80 @@ resource/entity pool 可以持有实体本身，只向调用方交付 `PoolHandl
 
 pool长期存活不自动允许GC跳过其内容。只有closed T的TypeLayout为`GcFree`时slab可NoScan；`GcMapped/GcBarriered`仍需要precise pointer map、barrier/card和remembered set。
 
-## 11. Runtime 操作
+## 11. GC domain 与多 mutator
+
+### 11.1 Collection scope 由 domain 定义
+
+`GcDomain` 是 runtime/host abstraction，不是第一版源码关键字、普通 class 或可反射构造的 public TypeDef。它至少拥有：
+
+```text
+GcDomainId + generation
+collector/regions/allocation budget
+mutator registry + precise root registry
+remembered sets + write-barrier state
+safepoint epoch + pause state
+pause/memory/transfer telemetry
+```
+
+- 每个 GC object、GC handle、coroutine frame 和 movable root 都带可验证的 domain identity；object 从创建到回收不改变 domain。
+- 一个 VM state/mutator 同一时刻只挂接一个 domain；一个 domain 可以挂接一个或多个 state/mutator。
+- 宿主在创建 state/scheduler 时选择映射：全进程单 domain、每游戏实例一 domain、若干实例一组，或一个多线程实例独占一 domain 都合法。
+- 语言规范不把“游戏实例”等同于 GC 隔离单元，也不强制每个 OS thread 拥有独立 heap。
+- `collect/fullCollect` 只针对调用者当前 domain；不存在默认停止全部 runtime domain 的语言级全局 GC。
+
+因此，同一可执行程序可以按部署成本选择 C# 风格的共享 heap，也可以选择 Lua/QuickJS 风格的隔离 runtime，还可以在多个 domain 内分别使用多 mutator GC。选择改变共享与传输成本，不改变类型安全规则。
+
+### 11.2 Domain-local STW
+
+第一版正确性基线是 **domain-local STW**，不是 process-wide STW：
+
+1. collector 增加当前 domain 的 safepoint epoch 并阻止该 domain 新 mutator 进入运行态；
+2. 该 domain 内每个 mutator在 allocation slow path、call/backedge、await/scheduler边界和native entry/exit轮询；
+3. mutator发布精确stack/frame/handle roots、barrier buffer和当前执行状态后park；
+4. collector只等待本domain的registered mutators，完成collection/relocation后更新epoch并唤醒；
+5. 其他domain继续运行；它们只可能受共享OS资源、allocator或host lock竞争影响，不能被本domain safepoint协议直接暂停。
+
+native/FFI descriptor必须声明 safepoint mode：可轮询的`GcAware`、发布roots后离开mutator集合的`BlockingDetached`，或有严格时限且禁止GC/裸指针逃逸的`NoSafepointCritical`。移动阶段若仍存在未pin的native interior pointer，collection必须等待或失败为structured host error，不能猜测更新裸地址。
+
+收集阶段按成本分层：
+
+- minor evacuation：domain-local STW；
+- major mark：先实现incremental，再允许后台concurrent mark；
+- remark/reference processing：短domain-local STW；
+- compact：按region执行domain-local STW，宿主可按pause budget推迟；
+- emergency/full collection：仍只停止当前domain，不能升级为隐式process-wide pause。
+
+### 11.3 同域共享与跨域传输
+
+同 domain 的普通 GC reference 可以零拷贝跨 state 使用，但跨 mutator move/share 分别还要满足本章底层的`MutatorMoveSafe`/`MutatorShareSafe` capability role；“指针同属一个 heap”不等于数据竞争安全。04只定义这两个runtime/artifact role，不新增public TypeDef；第12章再单向依赖本章，把它们投影为`zr.thread.Send`/`zr.thread.Sync`。
+
+跨 domain 永远禁止普通 GC edge、`Gc<T>` target、async frame pointer、borrow/ref、`Span`、`PoolRef`和未声明的native pointer。跨域边界只接受由 Canonical TypeLayout/descriptor 计算的 `DomainTransferKind`：
+
+| kind | 语义与成本 |
+|---|---|
+| `ValueCopy` | `GcFree`/无owner裸指针的closed value按布局复制 |
+| `StructuredClone` | 显式可克隆GC graph按字段schema复制，保留payload内部alias/cycle，拒绝指向payload外部domain object的edge |
+| `ImmutableHandle` | 指向domain外只读arena、mmap/blob或host asset；handle可复制，payload不可写且不进入moving heap |
+| `ResourceMove` | 消耗`Unique<T>`并由注册的transfer/drop contract在目标domain重建owner；失败必须回滚或保持唯一owner |
+| `Forbidden` | 默认；不生成transport，绑定或schedule时报定向diagnostic |
+
+`DomainTransferKind` 是 artifact/runtime capability metadata，不新增一个用户可随意实现的marker。`StructuredClone`必须有稳定schema、对象/字节/depth quota和失败原子性；它不是隐式参数传值。跨域发送完成后两个heap之间仍不存在GC pointer，transport table也不能成为隐藏全局root registry。
+
+大型共享只读资源优先放在moving GC之外，通过`ImmutableHandle`或线程安全resource handle访问。这样可避免每实例复制，又不把所有实例绑到同一次GC暂停。可变共享资源必须由显式并发native/resource contract保护，不能借`GcDomain`绕过`MutatorShareSafe`。
+
+### 11.4 Barrier、handle 与失败语义
+
+- allocation根据当前mutator的attached domain选择region；无attached domain时禁止分配GC object。
+- GC field write barrier先验证source/target domain一致，再执行generational/concurrent barrier；跨域写入在debug和host boundary都必须失败，release构建不能静默接受。
+- `Gc<T>`、pin、weak、Task completion和native handle保存`GcDomainId + generation`，避免domain销毁/复用后的ABA。
+- domain shutdown先停止接收mutator和transport，drain/fault pending Task，再做本domain终结与回收；不能等待另一个domain中的GC object finalizer释放本domain资源。
+- collector内部可并行使用worker thread，但collector worker不因此成为语言mutator，也不改变domain pause scope。
+
+### 11.5 成本与可观测性
+
+宿主选择domain拓扑时必须能读取每domain的heap bytes、allocation rate、minor/major/remark/compact pause、safepoint wait、active mutator、cross-domain bytes/object count和transport failure。验收必须覆盖三种部署：单共享domain、多隔离domain、每domain多mutator；不能只用单线程microbenchmark证明并发方案成立。
+
+## 12. Runtime 操作
 
 Semantic IR 至少需要：
 
@@ -355,7 +430,7 @@ hidden ownership-to-GC detach guessing
 
 VM/AOT 可以对 Unique move/drop、known final Shared drop 做优化，但必须保留同一可观察 Drop 顺序。
 
-## 12. Artifact 与 ABI
+## 13. Artifact 与 ABI
 
 保存：
 
@@ -363,7 +438,9 @@ VM/AOT 可以对 Unique move/drop、known final Shared drop 做优化，但必�
 - Owner TypeRef kind。
 - Drop contract/function token。
 - field ownership/GC-bridge map。
-- 第一版保存Send/isolation capability；Sync只在后续AtomicShared设计批准后扩展schema。
+- `GcDomainId`/generation handle ABI、safepoint ABI 与 collector capability version。
+- `MutatorMoveSafe`、`MutatorShareSafe`和`DomainTransferKind`的规范capability id；它们由closed TypeLayout/descriptor计算，不按类型名字符串识别。第12章的Send/Sync只绑定前两项，不反向拥有本章schema。
+- structured clone schema、resource transfer token和immutable handle provider identity。
 - callable move/borrow/escape contract。
 - GcBox/Gc handle bridge kind。
 
@@ -372,10 +449,11 @@ VM/AOT 可以对 Unique move/drop、known final Shared drop 做优化，但必�
 native ABI：
 
 - Unique transfer、borrowed ref、Shared clone、Weak handle 必须分别声明。
+- native callable必须声明`GcAware`、`BlockingDetached`或`NoSafepointCritical`，并给出pin/root/transfer contract。
 - native 未声明 ownership 时默认不接管 owner，也不得保存 ref。
 - native 返回 owner 时必须提供对应 destroy/drop callback/token。
 
-## 13. 里程碑
+## 14. 里程碑
 
 ### M1 resource/Unique + Drop
 
@@ -395,19 +473,31 @@ native ABI：
 
 晋级门：全部冲突由 compile-time facts 拒绝；runtime Borrow/Loan 不再是正确性依赖。
 
-### M4 `Gc<T>`/`GcBox<T>`
+### M4 domain identity 与单 mutator bridge
 
-覆盖双向 bridge、GC compact、barrier、finalization、native handles。
+覆盖`GcDomain`创建/销毁、state attach/detach、object/handle domain identity、`Gc<T>`/`GcBox<T>`双向bridge、单mutator precise roots和跨domain write拒绝。
 
-晋级门：GC 压力和 Drop 期间 collection 下无漏标、悬空、double-drop；无隐藏 ignore registry。
+晋级门：GC压力和Drop期间collection下无漏标、悬空、double-drop；domain generation可检测stale handle；任何普通GC edge都不能跨domain；无隐藏ignore registry。
 
-### M5 artifact/AOT/LSP
+### M5 domain-local STW 与多 mutator
 
-覆盖跨模块 owner/Drop/bridge contract、AOT helper、hover/diagnostic。
+覆盖mutator registry、precise root publish、safepoint epoch/handshake、native safepoint mode、minor/remark/compact pause和同domain多mutator barrier。
 
-晋级门：source/binary/VM/AOT 行为一致，旧 detach/borrow/loan opcode 不再由新语法发出。
+晋级门：collector只等待当前domain mutator；其他domain持续推进；超时报告阻塞mutator/native frame；VM/AOT在相同root/barrier stress下结果一致。第12章的same-domain ThreadScheduler不得早于本gate晋级。
 
-## 14. 测试矩阵
+### M6 跨 domain transport
+
+覆盖`ValueCopy`、`StructuredClone`、`ImmutableHandle`、`ResourceMove`和`Forbidden`，包含alias/cycle保持、quota、失败回滚及domain shutdown。
+
+晋级门：所有跨domain payload都可由artifact schema复现；传输前后heap间无GC edge；resource move恰好一个owner；第12章的isolated-domain ThreadScheduler不得早于本gate晋级。
+
+### M7 concurrent major + artifact/AOT/LSP
+
+覆盖incremental/concurrent major mark、短remark、按budget compact、跨模块owner/domain/transfer contract、AOT helper、telemetry、hover/diagnostic。
+
+晋级门：source/binary/VM/AOT行为一致；并发mark下barrier无漏标；pause与transfer指标可按domain归因；旧detach/borrow/loan opcode不再由新语法发出。
+
+## 15. 测试矩阵
 
 ### Unique/Drop
 
@@ -440,6 +530,16 @@ native ABI：
 - ownership/GC 双向图、native pin/handle。
 - heap pressure、重复 collect、深层 bridge graph。
 
+### GC domain/concurrency
+
+- 单domain单mutator、单domain多mutator、多domain并行分配与回收。
+- 一个domain执行minor/remark/compact/full GC时，其他domain的progress counter持续增长。
+- safepoint命中allocation/call/backedge/await/native entry/exit，阻塞native可定位且不会静默跳过root。
+- same-domain GC reference零拷贝但仍执行MutatorMoveSafe/MutatorShareSafe检查；跨domain普通pointer/ref/Gc handle全部拒绝；第12章另测Send/Sync public projection。
+- StructuredClone保留payload内alias/cycle，拒绝外部edge并遵守object/byte/depth quota。
+- ImmutableHandle并发读取、ResourceMove成功/失败回滚、domain shutdown与stale generation。
+- concurrent mark期间mutator写屏障、weak/finalizer/GcBox/Drop组合压力。
+
 ### Performance
 
 - Unique 构造/move/drop 与普通 malloc/free/RAII 对比。
@@ -447,14 +547,19 @@ native ABI：
 - Weak upgrade 热路径。
 - 大量 Gc handle 对 root scan 的成本。
 - GcFree pool slab/owner图不进入普通 tracing 的收益，以及GcMapped/GcBarriered scan bytes和barrier成本。
+- 单全局domain、每实例domain和分组domain在相同游戏负载下的p50/p95/p99 pause、throughput与内存冗余。
+- domain内1/N mutator的safepoint wait、barrier/TLAB成本；跨domain clone bytes/objects和immutable handle收益。
 
-## 15. 参考依据
+## 16. 参考依据
 
 - Rust Box/Rc/Weak/Arc：`lua/rust/library/alloc/src/boxed.rs`、`lua/rust/library/alloc/src/rc.rs`、`lua/rust/library/alloc/src/sync.rs`。
 - Rust move/drop/borrow tests：`lua/rust/tests/ui/moves`、`lua/rust/tests/ui/drop`、`lua/rust/tests/ui/borrowck`。
 - QuickJS refcount、Weak 和 remove-cycles：`lua/QuickJS-master/quickjs.c`。
-- Lua incremental/generational barrier：`lua/src/lgc.c`。
+- QuickJS runtime级heap/GC边界：`lua/QuickJS-master/quickjs.c`中的`JSRuntime`、`gc_obj_list`、`JS_RunGC`。
+- Lua state/global state与incremental/generational barrier：`lua/src/lstate.h`、`lua/src/lgc.c`。
+- .NET共享heap、后台GC与STW协调：`lua/runtime/src/coreclr/gc/gc.cpp`、`lua/runtime/src/coreclr/gc/gcpriv.h`。
+- JDK G1 concurrent mark、safepoint与region collection：`lua/jdk/src/hotspot/share/gc/g1/g1CollectedHeap.cpp`、`lua/jdk/src/hotspot/share/gc/g1/g1ConcurrentMark.cpp`。
 - CPython weakref/GC 对比：`lua/cpython/Objects/weakrefobject.c`、`lua/cpython/Modules/gcmodule.c`。
-- ZR 当前 runtime：`zr_vm_core/include/zr_vm_core/ownership.h`、`zr_vm_core/src/zr_vm_core/ownership.c`、`zr_vm_core/include/zr_vm_core/type_layout.h`。
+- ZR 当前 runtime：`zr_vm_core/include/zr_vm_core/global.h`、`zr_vm_core/include/zr_vm_core/ownership.h`、`zr_vm_core/src/zr_vm_core/ownership.c`、`zr_vm_core/include/zr_vm_core/type_layout.h`、`zr_vm_core/src/zr_vm_core/gc/gc.c`。
 
-ZR 的刻意差异是：普通业务对象继续使用 GC；resource class 才进入 Rust-like ownership。Shared 第一版为线程域内非原子计数，不引入 QuickJS 式 ownership cycle collector；跨世界通过 Gc/GcBox 明示成本。
+ZR 的刻意差异是：普通业务对象继续使用GC；resource class才进入Rust-like ownership。Shared第一版为单mutator非原子计数，不引入QuickJS式ownership cycle collector；跨世界通过Gc/GcBox明示成本。`GcDomain`把heap隔离范围和pause算法拆开：宿主可选共享或隔离domain，每个domain内部仍可使用local-STW与concurrent major的混合收集。

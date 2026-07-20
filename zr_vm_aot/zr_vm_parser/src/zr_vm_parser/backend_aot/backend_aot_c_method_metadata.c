@@ -431,6 +431,7 @@ static const SZrTypeLayout *backend_aot_c_gc_root_map_resolve_layout(
         functionIr == ZR_NULL ||
         functionIr->function == ZR_NULL ||
         slotLayout == ZR_NULL ||
+        (slotLayout->reserved0 & ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS) != 0u ||
         slotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
         slotLayout->typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE ||
         slotLayout->byteSize == 0u) {

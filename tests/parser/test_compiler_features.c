@@ -405,6 +405,24 @@ static SZrString *get_string_constant_at(SZrState *state, const SZrFunction *fun
     return ZR_CAST_STRING(state, constant->value.object);
 }
 
+static SZrFunction *get_function_constant_at(SZrState *state,
+                                             const SZrFunction *function,
+                                             TZrUInt32 index) {
+    const SZrTypeValue *constant;
+
+    if (state == ZR_NULL || function == ZR_NULL ||
+        function->constantValueList == ZR_NULL ||
+        index >= function->constantValueLength) {
+        return ZR_NULL;
+    }
+    constant = &function->constantValueList[index];
+    if (constant->type != ZR_VALUE_TYPE_FUNCTION ||
+        constant->value.object == ZR_NULL || constant->isNative) {
+        return ZR_NULL;
+    }
+    return ZR_CAST_FUNCTION(state, constant->value.object);
+}
+
 static const SZrCompiledPrototypeInfoView *find_compiled_prototype_by_name(SZrState *state,
                                                                            const SZrFunction *function,
                                                                            const TZrChar *prototypeName) {
@@ -2677,8 +2695,13 @@ void test_binary_roundtrip_preserves_function_frame_layout_metadata(void) {
 
     {
         const char *source =
-            "pub struct FrameProbe { var a: i8; var b: int; }\n"
-            "useProbe(p: FrameProbe) { var n: int = 7; return n; }";
+            "struct FrameProbe {\n"
+            "    pub var a: i8;\n"
+            "    pub var b: int;\n"
+            "    pub @constructor(a: i8, b: int) { this.a = a; this.b = b; }\n"
+            "}\n"
+            "useProbe(p: FrameProbe) { var n: int = 7; return n; }\n"
+            "var probe: FrameProbe = init FrameProbe(1, 2);";
         const char *binaryPath = "function_frame_layout_roundtrip.zro";
         const TZrUInt32 expectedStructAlign = ZR_ALIGN_SIZE;
         const TZrUInt32 offsetA = 0;
@@ -2686,24 +2709,25 @@ void test_binary_roundtrip_preserves_function_frame_layout_metadata(void) {
         const TZrUInt32 expectedStructSize =
                 test_align_offset_u32(offsetB + (TZrUInt32)sizeof(TZrInt64), expectedStructAlign);
         SZrString *sourceName = ZrCore_String_Create(state, "function_frame_layout_roundtrip.zr", 34);
-        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *sourceWrapper;
         SZrFunction *sourceFunction;
+        SZrFunction *sourceConstructor;
         SZrFunction *runtimeWrapper;
         SZrFunction *runtimeFunction;
+        SZrFunction *runtimeConstructor;
+        const SZrCompiledPrototypeInfoView *sourcePrototype;
+        const SZrCompiledMemberInfoView *sourceConstructorMember;
+        const SZrCompiledPrototypeInfoView *runtimePrototype;
+        const SZrCompiledMemberInfoView *runtimeConstructorMember;
         const SZrFunctionFrameSlotLayout *sourceParameterLayout;
+        const SZrFunctionFrameSlotLayout *sourceConstructorReceiverLayout;
         const SZrFunctionFrameSlotLayout *runtimeParameterLayout;
         const SZrFunctionFrameSlotLayout *runtimeLocalLayout;
+        const SZrFunctionFrameSlotLayout *runtimeConstructorReceiverLayout;
         TZrUInt32 expectedFrameByteBaseOffset;
 
-        if (ast == ZR_NULL) {
-            timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Failed to parse function frame layout roundtrip source");
-            destroy_test_state(state);
-            return;
-        }
-
-        sourceWrapper = ZrParser_Compiler_Compile(state, ast);
+        sourceWrapper = ZrParser_Source_Compile(
+                state, source, strlen(source), sourceName);
         if (sourceWrapper == ZR_NULL) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to compile function frame layout roundtrip source");
@@ -2712,13 +2736,41 @@ void test_binary_roundtrip_preserves_function_frame_layout_metadata(void) {
         }
 
         sourceFunction = get_single_compiled_child_function(sourceWrapper);
+        sourcePrototype = find_compiled_prototype_by_name(
+                state, sourceWrapper, "FrameProbe");
+        TEST_ASSERT_NOT_NULL(sourcePrototype);
+        sourceConstructorMember = find_compiled_member_by_name(
+                state, sourceWrapper, sourcePrototype, "constructor");
+        TEST_ASSERT_NOT_NULL(sourceConstructorMember);
+        sourceConstructor = get_function_constant_at(
+                state,
+                sourceWrapper,
+                sourceConstructorMember->functionConstantIndex);
+        TEST_ASSERT_NOT_NULL(sourceConstructor);
         sourceParameterLayout = ZrCore_Function_FindFrameSlotLayout(sourceFunction, 0);
+        sourceConstructorReceiverLayout =
+                ZrCore_Function_FindFrameSlotLayout(sourceConstructor, 0u);
         TEST_ASSERT_NOT_NULL(sourceParameterLayout);
+        TEST_ASSERT_NOT_NULL(sourceConstructorReceiverLayout);
         TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT, sourceParameterLayout->slotKind);
+        TEST_ASSERT_BITS_HIGH(
+                ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP,
+                sourceConstructorReceiverLayout->reserved0);
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, sourceWrapper, binaryPath));
 
         runtimeWrapper = load_runtime_entry_from_binary_file(state, binaryPath);
         runtimeFunction = get_single_compiled_child_function(runtimeWrapper);
+        runtimePrototype = find_compiled_prototype_by_name(
+                state, runtimeWrapper, "FrameProbe");
+        TEST_ASSERT_NOT_NULL(runtimePrototype);
+        runtimeConstructorMember = find_compiled_member_by_name(
+                state, runtimeWrapper, runtimePrototype, "constructor");
+        TEST_ASSERT_NOT_NULL(runtimeConstructorMember);
+        runtimeConstructor = get_function_constant_at(
+                state,
+                runtimeWrapper,
+                runtimeConstructorMember->functionConstantIndex);
+        TEST_ASSERT_NOT_NULL(runtimeConstructor);
         TEST_ASSERT_EQUAL_UINT32(sourceFunction->stackSize, runtimeFunction->stackSize);
         TEST_ASSERT_EQUAL_UINT32(sourceFunction->frameSlotLayoutLength, runtimeFunction->frameSlotLayoutLength);
         TEST_ASSERT_EQUAL_UINT32(sourceFunction->frameByteSize, runtimeFunction->frameByteSize);
@@ -2729,8 +2781,11 @@ void test_binary_roundtrip_preserves_function_frame_layout_metadata(void) {
 
         runtimeParameterLayout = ZrCore_Function_FindFrameSlotLayout(runtimeFunction, 0);
         runtimeLocalLayout = ZrCore_Function_FindFrameSlotLayout(runtimeFunction, 1);
+        runtimeConstructorReceiverLayout =
+                ZrCore_Function_FindFrameSlotLayout(runtimeConstructor, 0u);
         TEST_ASSERT_NOT_NULL(runtimeParameterLayout);
         TEST_ASSERT_NOT_NULL(runtimeLocalLayout);
+        TEST_ASSERT_NOT_NULL(runtimeConstructorReceiverLayout);
         TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT, runtimeParameterLayout->slotKind);
         TEST_ASSERT_TRUE(runtimeParameterLayout->isParameter);
         TEST_ASSERT_EQUAL_UINT32(sourceParameterLayout->byteOffset, runtimeParameterLayout->byteOffset);
@@ -2741,6 +2796,15 @@ void test_binary_roundtrip_preserves_function_frame_layout_metadata(void) {
         TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_SLOT_KIND_VALUE, runtimeLocalLayout->slotKind);
         TEST_ASSERT_EQUAL_UINT32((TZrUInt32)sizeof(SZrTypeValue), runtimeLocalLayout->byteSize);
         TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE, runtimeLocalLayout->typeLayoutId);
+        TEST_ASSERT_EQUAL_UINT32(sourceConstructor->frameByteSize,
+                                 runtimeConstructor->frameByteSize);
+        TEST_ASSERT_EQUAL_UINT32(sourceConstructor->frameByteAlign,
+                                 runtimeConstructor->frameByteAlign);
+        TEST_ASSERT_EQUAL_UINT32(sourceConstructorReceiverLayout->reserved0,
+                                 runtimeConstructorReceiverLayout->reserved0);
+        TEST_ASSERT_BITS_HIGH(
+                ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP,
+                runtimeConstructorReceiverLayout->reserved0);
 
         ZrCore_Function_Free(state, runtimeWrapper);
         ZrCore_Function_Free(state, sourceWrapper);

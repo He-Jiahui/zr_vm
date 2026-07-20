@@ -296,6 +296,12 @@ TZrBool ZrCore_MetadataRuntime_ReadTypeDefLayoutBindingView(
     }
 
     typeLayout = ZrCore_MetadataRuntime_ResolveTypeLayout(runtime, typeDefRow->typeLayoutId);
+    if (typeLayout == ZR_NULL ||
+        (typeLayout->layoutVersion != 0u &&
+         (typeRecord->layoutVersion != typeLayout->layoutVersion ||
+          typeRecord->layoutHash != typeLayout->layoutHash))) {
+        return ZR_FALSE;
+    }
 
     outView->typeDefToken = typeDefToken;
     outView->typeRecord = typeRecord;
@@ -345,7 +351,10 @@ TZrBool ZrCore_MetadataRuntime_ReadTypeSpecLayoutBindingView(
     }
 
     typeLayout = ZrCore_MetadataRuntime_ResolveTypeLayout(runtime, typeSpecRow->typeLayoutId);
-    if (typeLayout == ZR_NULL) {
+    if (typeLayout == ZR_NULL ||
+        (typeLayout->layoutVersion != 0u &&
+         (typeRecord->layoutVersion != typeLayout->layoutVersion ||
+          typeRecord->layoutHash != typeLayout->layoutHash))) {
         return ZR_FALSE;
     }
 

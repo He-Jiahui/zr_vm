@@ -38,6 +38,16 @@ void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node);
 TZrUInt32 compile_primary_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot);
 void compile_prototype_reference_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node);
+void compile_struct_init_expression(SZrCompilerState *cs, SZrAstNode *node);
+TZrUInt32 compile_struct_init_expression_into_slot(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        TZrUInt32 targetSlot);
+TZrUInt32 compile_struct_init_expression_into_slot_and_place(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        TZrUInt32 targetSlot,
+        TZrPlaceId destinationPlaceId);
 void compile_array_literal(SZrCompilerState *cs, SZrAstNode *node);
 void compile_object_literal(SZrCompilerState *cs, SZrAstNode *node);
 void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node);
@@ -154,6 +164,10 @@ TZrUInt32 normalize_top_result_to_slot(SZrCompilerState *cs, TZrUInt32 targetSlo
 void compile_expression_non_tail(SZrCompilerState *cs, SZrAstNode *node);
 TZrUInt32 emit_string_constant(SZrCompilerState *cs, SZrString *value);
 TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot);
+TZrBool note_inline_struct_result_slot(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        SZrString *typeName);
 TZrBool compile_expression_try_get_inline_union_identifier_slot_for_type(SZrCompilerState *cs,
                                                                          SZrAstNode *node,
                                                                          const SZrInferredType *expectedType,

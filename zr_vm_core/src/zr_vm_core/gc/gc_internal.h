@@ -87,6 +87,9 @@ static ZR_FORCE_INLINE TZrSize garbage_collector_get_object_base_size_fast(const
                                    : sizeof(SZrObjectPrototype);
                 }
                 case ZR_OBJECT_INTERNAL_TYPE_ARRAY:
+                    return runtimeObject->inlineArrayObjectByteSize >= sizeof(SZrObject)
+                                   ? runtimeObject->inlineArrayObjectByteSize
+                                   : sizeof(SZrObject);
                 case ZR_OBJECT_INTERNAL_TYPE_STRUCT:
                 case ZR_OBJECT_INTERNAL_TYPE_OBJECT:
                 case ZR_OBJECT_INTERNAL_TYPE_PROTOTYPE_INFO:
@@ -106,7 +109,10 @@ static ZR_FORCE_INLINE TZrSize garbage_collector_get_object_base_size_fast(const
         case ZR_RAW_OBJECT_TYPE_BUFFER:
             return sizeof(SZrArray);
         case ZR_RAW_OBJECT_TYPE_ARRAY:
-            return sizeof(SZrObject);
+            runtimeObject = (const SZrObject *)object;
+            return runtimeObject->inlineArrayObjectByteSize >= sizeof(SZrObject)
+                           ? runtimeObject->inlineArrayObjectByteSize
+                           : sizeof(SZrObject);
         case ZR_RAW_OBJECT_TYPE_CLOSURE:
             if (object->isNative) {
                 const SZrClosureNative *closure = (const SZrClosureNative *)object;

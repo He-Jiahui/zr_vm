@@ -322,3 +322,9 @@ TZrUInt32 allocate_stack_slot(SZrCompilerState *cs) {
     return slot;
 }
 
+void compiler_advance_stack_to_fresh_slot(SZrCompilerState *cs) {
+    if (cs != ZR_NULL && cs->stackSlotCount < cs->maxStackSlotCount) {
+        cs->stackSlotCount = cs->maxStackSlotCount;
+    }
+}
+

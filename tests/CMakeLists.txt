@@ -244,6 +244,10 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/tests/core/test_type_layout_metadata_contracts.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_inline_struct_array_layout_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_inline_struct_array_layout.c
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_aot_gc_root_frame_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_aot_gc_root_frame.c
     )
@@ -328,6 +332,11 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_type_layout_metadata_contracts_test)
+    target_include_directories(zr_vm_inline_struct_array_layout_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_inline_struct_array_layout_test)
     target_include_directories(zr_vm_aot_gc_root_frame_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
@@ -538,6 +547,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_reference_syntax_contract_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_struct_value_init_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_struct_value_init.c
+    )
+    target_include_directories(zr_vm_struct_value_init_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_struct_value_init_test)
 
     zr_vm_add_unity_test_target(
             zr_vm_reference_place_out_flow_test

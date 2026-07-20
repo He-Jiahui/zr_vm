@@ -543,6 +543,22 @@ TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioC
 
         execution_discard_exception_handlers_for_callinfo_fast(state, callInfo);
         state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+        {
+            SZrFunction *unwindFunction =
+                    ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+            TZrStackValuePointer unwindFrameBase =
+                    callInfo->functionBase.valuePointer != ZR_NULL
+                            ? callInfo->functionBase.valuePointer + 1
+                            : ZR_NULL;
+            if (unwindFunction != ZR_NULL && unwindFrameBase != ZR_NULL) {
+                (void)ZrCore_Function_DropInlineFrameValuesOnUnwind(
+                        state,
+                        unwindFunction,
+                        unwindFrameBase,
+                        ZrCore_Function_ResolvePrototypeFrameTypeLayout,
+                        state);
+            }
+        }
         ZrCore_Closure_CloseClosure(state,
                                     callInfo->functionBase.valuePointer + 1,
                                     state->currentExceptionStatus,

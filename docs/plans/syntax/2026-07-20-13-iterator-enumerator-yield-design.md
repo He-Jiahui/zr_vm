@@ -12,7 +12,7 @@
 
 > 状态：设计第一版，等待按里程碑实施。
 >
-> 上游契约：[01 CFG/artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[02 borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md)、[03 ref struct/Span/layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[04 Drop](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md)、[12 Task/Scheduler](./2026-07-20-12-async-task-job-scheduler-design.md)。
+> 上游契约：[01 CFG/artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[02 borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md)、[03 ref struct/Span/layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[04 Drop](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md)、[05 property](./2026-07-18-05-property-unified-ast-design.md)、[12 Task/Scheduler](./2026-07-20-12-async-task-job-scheduler-design.md)。
 
 ## 1. 必要实体与删除项
 

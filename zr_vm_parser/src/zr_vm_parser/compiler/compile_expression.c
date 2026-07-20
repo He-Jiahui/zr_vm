@@ -1056,6 +1056,266 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+typedef enum EZrDirectFieldConstructResult {
+    ZR_DIRECT_FIELD_CONSTRUCT_NOT_APPLICABLE = 0,
+    ZR_DIRECT_FIELD_CONSTRUCT_SUCCESS,
+    ZR_DIRECT_FIELD_CONSTRUCT_ERROR
+} EZrDirectFieldConstructResult;
+
+static EZrDirectFieldConstructResult compile_assignment_try_direct_array_element_construct(
+        SZrCompilerState *cs,
+        SZrPrimaryExpression *primary,
+        SZrAstNode *memberNode,
+        SZrAstNode *right,
+        const SZrInferredType *rightType,
+        SZrFileRange location) {
+    SZrMemberExpression *memberExpression;
+    SZrInferredType arrayType;
+    const SZrInferredType *elementType;
+    TZrUInt32 arraySlot;
+    TZrUInt32 indexSlot;
+    TZrUInt32 functionSlot;
+    TZrUInt32 aliasSlot;
+    TZrPlaceId arrayPlaceId;
+    TZrPlaceId elementPlaceId;
+    TZrBool arrayTypeInitialized = ZR_FALSE;
+    EZrDirectFieldConstructResult result = ZR_DIRECT_FIELD_CONSTRUCT_NOT_APPLICABLE;
+
+    if (cs == ZR_NULL || primary == ZR_NULL || memberNode == ZR_NULL ||
+        right == ZR_NULL || rightType == ZR_NULL ||
+        memberNode->type != ZR_AST_MEMBER_EXPRESSION ||
+        !memberNode->data.memberExpression.computed) {
+        return result;
+    }
+    arraySlot = assignment_target_direct_local_slot(cs, primary->property);
+    memberExpression = &memberNode->data.memberExpression;
+    if (arraySlot == ZR_PARSER_SLOT_NONE || memberExpression->property == ZR_NULL) {
+        return result;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &arrayType, ZR_VALUE_TYPE_OBJECT);
+    arrayTypeInitialized = ZR_TRUE;
+    if (!ZrParser_ExpressionType_Infer(cs, primary->property, &arrayType)) {
+        result = ZR_DIRECT_FIELD_CONSTRUCT_ERROR;
+        goto cleanup;
+    }
+    if (arrayType.baseType != ZR_VALUE_TYPE_ARRAY ||
+        !arrayType.hasArraySizeConstraint ||
+        arrayType.elementTypes.length != 1u) {
+        goto cleanup;
+    }
+    elementType = (const SZrInferredType *)ZrCore_Array_Get(
+            &arrayType.elementTypes, 0u);
+    if (elementType == ZR_NULL ||
+        !compiler_find_inline_type_layout_for_inferred(
+                cs, elementType, ZR_NULL, ZR_NULL, ZR_NULL) ||
+        !ZrParser_ArrayIndexBounds_Check(
+                cs,
+                memberExpression->property,
+                &arrayType,
+                memberNode->location)) {
+        result = cs->hasError
+                         ? ZR_DIRECT_FIELD_CONSTRUCT_ERROR
+                         : ZR_DIRECT_FIELD_CONSTRUCT_NOT_APPLICABLE;
+        goto cleanup;
+    }
+
+    indexSlot = compile_member_key_into_slot(
+            cs, memberExpression, allocate_stack_slot(cs));
+    compiler_advance_stack_to_fresh_slot(cs);
+    functionSlot = allocate_stack_slot(cs);
+    aliasSlot = allocate_stack_slot(cs);
+    if (indexSlot == ZR_PARSER_SLOT_NONE ||
+        functionSlot == ZR_PARSER_SLOT_NONE ||
+        aliasSlot == ZR_PARSER_SLOT_NONE ||
+        aliasSlot != functionSlot + 1u ||
+        !compiler_register_stack_slot_type_hint(cs, aliasSlot, rightType) ||
+        !compiler_register_stack_slot_array_element_alias(
+                cs, aliasSlot, arraySlot)) {
+        ZrParser_Compiler_Error(
+                cs,
+                "Failed to reserve inline struct array element destination",
+                location);
+        result = ZR_DIRECT_FIELD_CONSTRUCT_ERROR;
+        goto cleanup;
+    }
+    emit_instruction(
+            cs,
+            create_instruction_2(
+                    ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE),
+                    (TZrUInt16)aliasSlot,
+                    (TZrUInt16)arraySlot,
+                    (TZrUInt16)indexSlot));
+
+    arrayPlaceId = compiler_semantic_ir_place_for_slot(
+            cs, arraySlot, primary->property->location);
+    elementPlaceId = compiler_semantic_ir_project_index(
+            cs, arrayPlaceId, indexSlot, memberNode->location);
+    if (elementPlaceId == ZR_PLACE_ID_INVALID ||
+        !compiler_semantic_ir_bind_slot_to_place(
+                cs, aliasSlot, elementPlaceId) ||
+        compile_struct_init_expression_into_slot_and_place(
+                cs, right, aliasSlot, elementPlaceId) == ZR_PARSER_SLOT_NONE) {
+        if (!cs->hasError) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Failed to construct inline struct array element destination",
+                    location);
+        }
+        result = ZR_DIRECT_FIELD_CONSTRUCT_ERROR;
+        goto cleanup;
+    }
+    cs->lastExpressionSlot = aliasSlot;
+    result = ZR_DIRECT_FIELD_CONSTRUCT_SUCCESS;
+
+cleanup:
+    if (arrayTypeInitialized) {
+        ZrParser_InferredType_Free(cs->state, &arrayType);
+    }
+    return result;
+}
+
+static EZrDirectFieldConstructResult compile_assignment_try_direct_field_construct(
+        SZrCompilerState *cs,
+        SZrAstNode *left,
+        SZrAstNode *right,
+        const SZrInferredType *rightType,
+        SZrFileRange location) {
+    SZrPrimaryExpression *primary;
+    SZrAstNode *memberNode;
+    SZrMemberExpression *memberExpression;
+    SZrInferredType parentType;
+    SZrString *parentTypeName;
+    SZrString *memberSymbol;
+    SZrTypeMemberInfo *memberInfo;
+    SZrTypeMemberInfo writeContract;
+    TZrUInt32 parentSlot;
+    TZrUInt32 memberEntryIndex;
+    TZrUInt32 functionSlot;
+    TZrUInt32 aliasSlot;
+    TZrPlaceId parentPlaceId;
+    TZrPlaceId fieldPlaceId;
+    TZrBool parentTypeInitialized = ZR_FALSE;
+    EZrDirectFieldConstructResult result =
+            ZR_DIRECT_FIELD_CONSTRUCT_NOT_APPLICABLE;
+
+    if (cs == ZR_NULL || left == ZR_NULL || right == ZR_NULL ||
+        rightType == ZR_NULL ||
+        right->type != ZR_AST_STRUCT_INIT_EXPRESSION ||
+        left->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return result;
+    }
+    primary = &left->data.primaryExpression;
+    if (primary->property == ZR_NULL || primary->members == ZR_NULL ||
+        primary->members->count != 1U) {
+        return result;
+    }
+    parentSlot = assignment_target_direct_local_slot(cs, primary->property);
+    memberNode = primary->members->nodes[0U];
+    if (memberNode != ZR_NULL &&
+        memberNode->type == ZR_AST_MEMBER_EXPRESSION &&
+        memberNode->data.memberExpression.computed) {
+        return compile_assignment_try_direct_array_element_construct(
+                cs,
+                primary,
+                memberNode,
+                right,
+                rightType,
+                location);
+    }
+    if (parentSlot == ZR_PARSER_SLOT_NONE || memberNode == ZR_NULL ||
+        memberNode->type != ZR_AST_MEMBER_EXPRESSION ||
+        memberNode->data.memberExpression.computed) {
+        return result;
+    }
+    memberExpression = &memberNode->data.memberExpression;
+    memberSymbol = resolve_member_expression_symbol(cs, memberExpression);
+    if (memberSymbol == ZR_NULL) {
+        return result;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &parentType, ZR_VALUE_TYPE_OBJECT);
+    parentTypeInitialized = ZR_TRUE;
+    if (!ZrParser_ExpressionType_Infer(cs, primary->property, &parentType)) {
+        result = ZR_DIRECT_FIELD_CONSTRUCT_ERROR;
+        goto cleanup;
+    }
+    parentTypeName = get_type_name_from_inferred_type(cs, &parentType);
+    memberInfo = parentTypeName != ZR_NULL
+                         ? find_compiler_type_member(
+                                   cs, parentTypeName, memberSymbol)
+                         : ZR_NULL;
+    if (memberInfo == ZR_NULL ||
+        (memberInfo->memberType != ZR_AST_STRUCT_FIELD &&
+         memberInfo->memberType != ZR_AST_CLASS_FIELD) ||
+        find_type_member_is_const(cs, parentTypeName, memberSymbol)) {
+        goto cleanup;
+    }
+
+    memset(&writeContract, 0, sizeof(writeContract));
+    writeContract.memberType = memberInfo->memberType;
+    writeContract.receiverEffect = ZR_CANONICAL_RECEIVER_MUTABLE;
+    if (!compiler_validate_receiver_call(
+                cs,
+                primary->property,
+                parentTypeName,
+                parentType.ownershipQualifier,
+                &writeContract,
+                ZR_TRUE,
+                location)) {
+        result = ZR_DIRECT_FIELD_CONSTRUCT_ERROR;
+        goto cleanup;
+    }
+    memberEntryIndex = compiler_get_or_add_member_entry_for_type_member(
+            cs, memberSymbol, memberInfo, 0U);
+    if (memberEntryIndex == ZR_PARSER_MEMBER_ID_NONE) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to register struct field destination", location);
+        result = ZR_DIRECT_FIELD_CONSTRUCT_ERROR;
+        goto cleanup;
+    }
+
+    compiler_advance_stack_to_fresh_slot(cs);
+    functionSlot = allocate_stack_slot(cs);
+    aliasSlot = allocate_stack_slot(cs);
+    if (functionSlot == ZR_PARSER_SLOT_NONE ||
+        aliasSlot == ZR_PARSER_SLOT_NONE || aliasSlot != functionSlot + 1U ||
+        !compiler_register_stack_slot_type_hint(cs, aliasSlot, rightType) ||
+        !compiler_register_stack_slot_field_alias(
+                cs, aliasSlot, parentSlot, memberEntryIndex)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to reserve inline struct field destination", location);
+        result = ZR_DIRECT_FIELD_CONSTRUCT_ERROR;
+        goto cleanup;
+    }
+    parentPlaceId = compiler_semantic_ir_place_for_slot(
+            cs, parentSlot, primary->property->location);
+    fieldPlaceId = compiler_semantic_ir_project_field(
+            cs,
+            parentPlaceId,
+            (TZrSymbolId)memberEntryIndex + 1U,
+            memberNode->location);
+    if (fieldPlaceId == ZR_PLACE_ID_INVALID ||
+        !compiler_semantic_ir_bind_slot_to_place(cs, aliasSlot, fieldPlaceId) ||
+        compile_struct_init_expression_into_slot_and_place(
+                cs, right, aliasSlot, fieldPlaceId) == ZR_PARSER_SLOT_NONE) {
+        if (!cs->hasError) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to construct inline struct field destination", location);
+        }
+        result = ZR_DIRECT_FIELD_CONSTRUCT_ERROR;
+        goto cleanup;
+    }
+    cs->lastExpressionSlot = aliasSlot;
+    result = ZR_DIRECT_FIELD_CONSTRUCT_SUCCESS;
+
+cleanup:
+    if (parentTypeInitialized) {
+        ZrParser_InferredType_Free(cs->state, &parentType);
+    }
+    return result;
+}
+
 // 编译赋值表达式
 static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node) {
     EZrInstructionCode assignmentConversionOpcode = ZR_INSTRUCTION_ENUM(ENUM_MAX);
@@ -1063,6 +1323,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
     SZrInferredType leftType;
     SZrInferredType rightType;
     TZrBool hasIdentifierWriteBinding = ZR_FALSE;
+    TZrBool hasCompatibleSimpleAssignment = ZR_FALSE;
     TZrBool useDirectInlineRightSlot = ZR_FALSE;
     TZrUInt32 directInlineRightSlot = ZR_PARSER_SLOT_NONE;
 
@@ -1099,6 +1360,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                 return;
             }
             assignmentConversionOpcode = ZrParser_InferredType_GetConversionOpcode(&rightType, &leftType);
+            hasCompatibleSimpleAssignment = ZR_TRUE;
             if (assignmentConversionOpcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
                 useDirectInlineRightSlot =
                         compile_expression_try_get_inline_union_identifier_slot_for_type(cs,
@@ -1106,6 +1368,18 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                                                                          &leftType,
                                                                                          &directInlineRightSlot);
             }
+        }
+    }
+    if (hasCompatibleSimpleAssignment &&
+        assignmentConversionOpcode == ZR_INSTRUCTION_ENUM(ENUM_MAX) &&
+        right->type == ZR_AST_STRUCT_INIT_EXPRESSION) {
+        EZrDirectFieldConstructResult directResult =
+                compile_assignment_try_direct_field_construct(
+                        cs, left, right, &rightType, node->location);
+        if (directResult != ZR_DIRECT_FIELD_CONSTRUCT_NOT_APPLICABLE) {
+            ZrParser_InferredType_Free(cs->state, &leftType);
+            ZrParser_InferredType_Free(cs->state, &rightType);
+            return;
         }
     }
     ZrParser_InferredType_Free(cs->state, &leftType);
@@ -1878,6 +2152,10 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
 
         case ZR_AST_CONSTRUCT_EXPRESSION:
             compile_construct_expression(cs, node);
+            break;
+
+        case ZR_AST_STRUCT_INIT_EXPRESSION:
+            compile_struct_init_expression(cs, node);
             break;
 
         case ZR_AST_ARRAY_LITERAL:

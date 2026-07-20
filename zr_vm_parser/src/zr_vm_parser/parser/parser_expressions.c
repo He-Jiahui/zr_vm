@@ -89,6 +89,17 @@ static SZrAstNode *parse_required_right_operand(SZrParserState *ps,
 SZrAstNode *parse_unary_expression(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
+    if (token == ZR_TK_IDENTIFIER &&
+        current_identifier_equals(ps, "init") &&
+        peek_token(ps) != ZR_TK_LPAREN &&
+        peek_token(ps) != ZR_TK_LESS_THAN) {
+        SZrAstNode *node = parse_struct_init_expression(ps);
+        if (node == ZR_NULL) {
+            return ZR_NULL;
+        }
+        return parse_member_access(ps, node);
+    }
+
     // 检查类型转换表达式: <Type> expression
     if (token == ZR_TK_LESS_THAN) {
         SZrParserCursor cursor;

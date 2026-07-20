@@ -9,6 +9,7 @@
 #include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/stack.h"
@@ -21,6 +22,186 @@ void tearDown(void) {}
 static TZrUInt32 test_align_up(TZrUInt32 offset, TZrUInt32 align) {
     TZrUInt32 remainder = align > 0u ? offset % align : 0u;
     return remainder == 0u ? offset : offset + (align - remainder);
+}
+
+typedef struct TestCustomDropRecord {
+    TZrUInt32 callCount;
+    TZrBool observedFieldsBeforeFieldDrop;
+} TestCustomDropRecord;
+
+typedef struct TestNestedDropRecord {
+    TZrUInt32 callCount;
+    TZrUInt32 order[4];
+} TestNestedDropRecord;
+
+typedef struct TestNestedDropContext {
+    TestNestedDropRecord *record;
+    TZrUInt32 fieldId;
+} TestNestedDropContext;
+
+static void test_nested_drop_record(SZrState *state, TZrPtr storage, TZrPtr userData) {
+    TestNestedDropContext *context = (TestNestedDropContext *)userData;
+
+    ZR_UNUSED_PARAMETER(state);
+    ZR_UNUSED_PARAMETER(storage);
+    if (context == ZR_NULL || context->record == ZR_NULL ||
+        context->record->callCount >= ZR_ARRAY_COUNT(context->record->order)) {
+        return;
+    }
+    context->record->order[context->record->callCount++] = context->fieldId;
+}
+
+static void test_custom_drop_before_fields(SZrState *state, TZrPtr storage, TZrPtr userData) {
+    TestCustomDropRecord *record = (TestCustomDropRecord *)userData;
+    SZrTypeValue *values = (SZrTypeValue *)storage;
+
+    ZR_UNUSED_PARAMETER(state);
+    if (record == ZR_NULL || values == ZR_NULL) {
+        return;
+    }
+
+    record->callCount++;
+    record->observedFieldsBeforeFieldDrop =
+            (TZrBool)(values[0].type != ZR_VALUE_TYPE_NULL &&
+                      values[1].type != ZR_VALUE_TYPE_NULL);
+}
+
+static void test_custom_drop_runs_before_reverse_field_teardown(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrTypeLayoutField fields[2];
+    SZrTypeLayoutContract contract;
+    SZrTypeLayout layout;
+    SZrTypeValue storage[2];
+    TestCustomDropRecord record = {0};
+
+    TEST_ASSERT_NOT_NULL(state);
+    memset(fields, 0, sizeof(fields));
+    memset(&contract, 0, sizeof(contract));
+    ZrCore_Value_InitAsInt(state, &storage[0], 11);
+    ZrCore_Value_InitAsInt(state, &storage[1], 22);
+
+    fields[0].byteOffset = 0u;
+    fields[0].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    fields[0].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                      ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE;
+    fields[1].byteOffset = (TZrUInt32)sizeof(SZrTypeValue);
+    fields[1].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    fields[1].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                      ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE;
+
+    contract.customDrop = test_custom_drop_before_fields;
+    contract.customDropUserData = &record;
+    ZrCore_TypeLayout_InitStructWithContract(
+            &layout,
+            (TZrUInt32)sizeof(storage),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_MOVE_ONLY,
+            ZR_TYPE_LAYOUT_DROP_KIND_CUSTOM_THEN_FIELDS,
+            fields,
+            ZR_ARRAY_COUNT(fields),
+            &contract);
+
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&layout));
+    ZrCore_TypeLayout_DropInline(state, &layout, storage);
+
+    TEST_ASSERT_EQUAL_UINT32(1u, record.callCount);
+    TEST_ASSERT_TRUE(record.observedFieldsBeforeFieldDrop);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, storage[0].type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, storage[1].type);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_registry_aware_nested_copy_rejects_move_only_field(void) {
+    SZrTypeLayoutField nestedFields[1] = {0};
+    SZrTypeLayoutField outerFields[1] = {0};
+    SZrTypeLayout nestedLayout;
+    SZrTypeLayout outerLayout;
+    const SZrTypeLayout *layouts[2] = {ZR_NULL, &nestedLayout};
+    SZrTypeLayoutRegistryView registry = {layouts, ZR_ARRAY_COUNT(layouts)};
+    SZrTypeValue source;
+    SZrTypeValue destination;
+
+    nestedFields[0].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    nestedFields[0].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                            ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE;
+    ZrCore_TypeLayout_InitStruct(
+            &nestedLayout,
+            (TZrUInt32)sizeof(SZrTypeValue),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_MOVE_ONLY,
+            ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE,
+            nestedFields,
+            ZR_ARRAY_COUNT(nestedFields));
+
+    outerFields[0].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    outerFields[0].typeLayoutIndex = 1u;
+    outerFields[0].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_NESTED_LAYOUT;
+    ZrCore_TypeLayout_InitStruct(
+            &outerLayout,
+            (TZrUInt32)sizeof(SZrTypeValue),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE,
+            outerFields,
+            ZR_ARRAY_COUNT(outerFields));
+
+    memset(&source, 0x3c, sizeof(source));
+    memset(&destination, 0xa5, sizeof(destination));
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&nestedLayout));
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&outerLayout));
+    TEST_ASSERT_FALSE(ZrCore_TypeLayout_CopyInlineWithRegistry(
+            ZR_NULL, &outerLayout, &registry, &destination, &source));
+}
+
+static void test_partial_drop_uses_initialized_bitmap_in_reverse_field_order(void) {
+    SZrTypeLayoutField outerFields[3] = {0};
+    SZrTypeLayoutContract nestedContracts[3] = {0};
+    SZrTypeLayout nestedLayouts[3];
+    SZrTypeLayout outerLayout;
+    const SZrTypeLayout *layouts[4] = {ZR_NULL, &nestedLayouts[0], &nestedLayouts[1], &nestedLayouts[2]};
+    SZrTypeLayoutRegistryView registry = {layouts, ZR_ARRAY_COUNT(layouts)};
+    TestNestedDropRecord record = {0};
+    TestNestedDropContext contexts[3] = {{&record, 0u}, {&record, 1u}, {&record, 2u}};
+    TZrUInt64 initializedFields[1] = {(TZrUInt64)(1u << 0u) | (TZrUInt64)(1u << 2u)};
+    TZrByte storage[3] = {0};
+
+    for (TZrUInt32 index = 0u; index < ZR_ARRAY_COUNT(nestedLayouts); index++) {
+        nestedContracts[index].customDrop = test_nested_drop_record;
+        nestedContracts[index].customDropUserData = &contexts[index];
+        ZrCore_TypeLayout_InitStructWithContract(
+                &nestedLayouts[index],
+                1u,
+                1u,
+                ZR_TYPE_LAYOUT_COPY_KIND_MOVE_ONLY,
+                ZR_TYPE_LAYOUT_DROP_KIND_CUSTOM_THEN_FIELDS,
+                ZR_NULL,
+                0u,
+                &nestedContracts[index]);
+        outerFields[index].byteOffset = index;
+        outerFields[index].byteSize = 1u;
+        outerFields[index].typeLayoutIndex = index + 1u;
+        outerFields[index].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_NESTED_LAYOUT;
+    }
+    ZrCore_TypeLayout_InitStruct(
+            &outerLayout,
+            (TZrUInt32)sizeof(storage),
+            1u,
+            ZR_TYPE_LAYOUT_COPY_KIND_MOVE_ONLY,
+            ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE,
+            outerFields,
+            ZR_ARRAY_COUNT(outerFields));
+
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_DropPartialInlineWithRegistry(
+            ZR_NULL,
+            &outerLayout,
+            &registry,
+            storage,
+            initializedFields,
+            ZR_ARRAY_COUNT(initializedFields)));
+    TEST_ASSERT_EQUAL_UINT32(2u, record.callCount);
+    TEST_ASSERT_EQUAL_UINT32(2u, record.order[0]);
+    TEST_ASSERT_EQUAL_UINT32(0u, record.order[1]);
 }
 
 static void test_pod_struct_inline_copy_uses_byte_span_and_handles_overlap(void) {
@@ -467,6 +648,11 @@ typedef struct TestFrameLayoutResolver {
     const SZrTypeLayout *layout;
 } TestFrameLayoutResolver;
 
+static const SZrTypeLayout *test_resolve_function_frame_layout(
+        const SZrFunction *function,
+        TZrUInt32 typeLayoutId,
+        TZrPtr userData);
+
 typedef struct TestGcValueVisit {
     TZrUInt32 count;
     SZrTypeValue *value;
@@ -561,6 +747,169 @@ static void test_init_string_constant(SZrState *state, SZrTypeValue *value, cons
     value->type = ZR_VALUE_TYPE_STRING;
 }
 
+static void test_constructor_field_store_marks_runtime_initialization_bitmap(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction function = {0};
+    SZrFunctionFrameSlotLayout receiverLayout = {0};
+    SZrCompiledPrototypeInfo prototype;
+    SZrCompiledMemberInfo member;
+    SZrTypeValue constants[3];
+    union {
+        TZrUInt64 align;
+        TZrByte bytes[sizeof(TZrUInt32) + sizeof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledMemberInfo)];
+    } data;
+    TZrStackValuePointer frameBase;
+    const TZrUInt64 *initializedFieldWords = ZR_NULL;
+    TZrUInt32 initializedFieldWordCount = 0u;
+    TZrUInt32 bitmapOffset;
+
+    TEST_ASSERT_NOT_NULL(state);
+    ZrCore_Value_ResetAsNull(&constants[0]);
+    test_init_string_constant(state, &constants[1], "x");
+    test_init_string_constant(state, &constants[2], "i32");
+
+    test_init_compiled_struct_prototype(
+            &prototype,
+            (TZrUInt32)sizeof(TZrInt32),
+            (TZrUInt32)_Alignof(TZrInt32),
+            1u);
+    memset(&member, 0, sizeof(member));
+    member.memberType = ZR_AST_CONSTANT_STRUCT_FIELD;
+    member.nameStringIndex = 1u;
+    member.fieldTypeNameStringIndex = 2u;
+    member.fieldOffset = 0u;
+    member.fieldSize = (TZrUInt32)sizeof(TZrInt32);
+
+    receiverLayout.stackSlot = 0u;
+    receiverLayout.byteOffset = 64u;
+    receiverLayout.byteSize = (TZrUInt32)sizeof(TZrInt32);
+    receiverLayout.byteAlign = (TZrUInt32)_Alignof(TZrInt32);
+    receiverLayout.typeLayoutId = 0u;
+    receiverLayout.slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    receiverLayout.isParameter = ZR_TRUE;
+    receiverLayout.reserved0 =
+            ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP;
+
+    function.functionName = ZrCore_String_CreateFromNative(state, "constructor");
+    function.stackSize = 2u;
+    function.frameSlotLayouts = &receiverLayout;
+    function.frameSlotLayoutLength = 1u;
+    bitmapOffset = test_align_up(
+            receiverLayout.byteOffset + receiverLayout.byteSize,
+            (TZrUInt32)_Alignof(TZrUInt64));
+    function.frameByteSize = bitmapOffset + (TZrUInt32)sizeof(TZrUInt64);
+    function.frameByteAlign = (TZrUInt32)_Alignof(TZrUInt64);
+    function.constantValueList = constants;
+    function.constantValueLength = ZR_ARRAY_COUNT(constants);
+    function.prototypeData = data.bytes;
+    function.prototypeDataLength = test_write_compiled_prototype_data(
+            data.bytes,
+            (TZrUInt32)sizeof(data.bytes),
+            &prototype,
+            &member,
+            1u);
+    function.prototypeCount = 1u;
+
+    frameBase = state->stackBase.valuePointer + 2u;
+    memset((TZrByte *)frameBase, 0, function.frameByteSize);
+    TEST_ASSERT_TRUE(ZrCore_Function_MarkInlineConstructorFieldInitialized(
+            state,
+            &function,
+            frameBase,
+            0u,
+            ZR_CAST_STRING(state, constants[1].value.object)));
+    TEST_ASSERT_TRUE(ZrCore_Function_GetInlineConstructorInitializedFieldBitmap(
+            state,
+            &function,
+            frameBase,
+            &initializedFieldWords,
+            &initializedFieldWordCount));
+    TEST_ASSERT_EQUAL_UINT32(1u, initializedFieldWordCount);
+    TEST_ASSERT_NOT_NULL(initializedFieldWords);
+    TEST_ASSERT_EQUAL_HEX64(UINT64_C(1), initializedFieldWords[0]);
+
+    ZrCore_Function_FreePrototypeFrameTypeLayoutCache(state, &function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_constructor_unwind_drops_only_initialized_fields_without_custom_drop(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction function = {0};
+    SZrFunctionFrameSlotLayout receiverLayout = {0};
+    SZrTypeLayoutField fields[3] = {0};
+    SZrTypeLayoutContract contract = {0};
+    SZrTypeLayout layout;
+    TestFrameLayoutResolver resolver;
+    TestCustomDropRecord customDrop = {0};
+    TZrStackValuePointer frameBase;
+    SZrTypeValue *storage;
+    TZrUInt64 *initializedFieldWords;
+    TZrUInt32 bitmapOffset;
+
+    TEST_ASSERT_NOT_NULL(state);
+    for (TZrUInt32 index = 0u; index < ZR_ARRAY_COUNT(fields); index++) {
+        fields[index].byteOffset = index * (TZrUInt32)sizeof(SZrTypeValue);
+        fields[index].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+        fields[index].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                              ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE;
+    }
+    contract.customDrop = test_custom_drop_before_fields;
+    contract.customDropUserData = &customDrop;
+    ZrCore_TypeLayout_InitStructWithContract(
+            &layout,
+            (TZrUInt32)(sizeof(SZrTypeValue) * ZR_ARRAY_COUNT(fields)),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_MOVE_ONLY,
+            ZR_TYPE_LAYOUT_DROP_KIND_CUSTOM_THEN_FIELDS,
+            fields,
+            ZR_ARRAY_COUNT(fields),
+            &contract);
+
+    receiverLayout.stackSlot = 0u;
+    receiverLayout.byteOffset = 64u;
+    receiverLayout.byteSize = layout.byteSize;
+    receiverLayout.byteAlign = layout.byteAlign;
+    receiverLayout.typeLayoutId = 41u;
+    receiverLayout.slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    receiverLayout.isParameter = ZR_TRUE;
+    receiverLayout.reserved0 =
+            ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP;
+    bitmapOffset = test_align_up(
+            receiverLayout.byteOffset + receiverLayout.byteSize,
+            (TZrUInt32)_Alignof(TZrUInt64));
+
+    function.functionName = ZrCore_String_CreateFromNative(state, "constructor");
+    function.stackSize = 2u;
+    function.frameSlotLayouts = &receiverLayout;
+    function.frameSlotLayoutLength = 1u;
+    function.frameByteSize = bitmapOffset + (TZrUInt32)sizeof(TZrUInt64);
+    function.frameByteAlign = (TZrUInt32)ZR_ALIGN_SIZE;
+    resolver.typeLayoutId = receiverLayout.typeLayoutId;
+    resolver.layout = &layout;
+
+    frameBase = state->stackBase.valuePointer + 2u;
+    memset((TZrByte *)frameBase, 0, function.frameByteSize);
+    storage = (SZrTypeValue *)((TZrByte *)frameBase + receiverLayout.byteOffset);
+    ZrCore_Value_InitAsInt(state, &storage[0], 10);
+    ZrCore_Value_InitAsInt(state, &storage[1], 20);
+    ZrCore_Value_InitAsInt(state, &storage[2], 30);
+    initializedFieldWords = (TZrUInt64 *)((TZrByte *)frameBase + bitmapOffset);
+    initializedFieldWords[0] = UINT64_C(1) | (UINT64_C(1) << 2u);
+
+    TEST_ASSERT_TRUE(ZrCore_Function_DropInlineFrameValuesOnUnwind(
+            state,
+            &function,
+            frameBase,
+            test_resolve_function_frame_layout,
+            &resolver));
+    TEST_ASSERT_EQUAL_UINT32(0u, customDrop.callCount);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, storage[0].type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, storage[1].type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, storage[2].type);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_install_managed_value_inline_frame_metadata(SZrState *state,
                                                              SZrFunction *function,
                                                              TZrUInt32 stackSlot,
@@ -644,6 +993,237 @@ static void test_visit_gc_value(struct SZrState *state, SZrTypeValue *value, TZr
     visit->value = value;
 }
 
+static void test_count_frame_alias_drop(
+        struct SZrState *state,
+        TZrPtr storage,
+        TZrPtr userData) {
+    TZrUInt32 *count = (TZrUInt32 *)userData;
+    (void)state;
+    (void)storage;
+    if (count != ZR_NULL) {
+        (*count)++;
+    }
+}
+
+static void test_registry_aware_nested_gc_visit_reaches_nested_value_storage(void) {
+    SZrTypeLayoutField nestedField = {0};
+    SZrTypeLayoutField outerField = {0};
+    SZrTypeLayoutContract nestedContract = {0};
+    SZrTypeLayout nestedLayout;
+    SZrTypeLayout outerLayout;
+    const SZrTypeLayout *layouts[2] = {ZR_NULL, &nestedLayout};
+    SZrTypeLayoutRegistryView registry = {layouts, ZR_ARRAY_COUNT(layouts)};
+    TZrUInt32 nestedGcOffset = 0U;
+    SZrTypeValue storage;
+    TestGcValueVisit visit = {0};
+
+    nestedField.byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    nestedField.flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                        ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE;
+    nestedContract.gcScanKind = ZR_TYPE_LAYOUT_GC_SCAN_MAPPED;
+    nestedContract.gcFieldOffsets = &nestedGcOffset;
+    nestedContract.gcFieldCount = 1U;
+    ZrCore_TypeLayout_InitStructWithContract(
+            &nestedLayout,
+            (TZrUInt32)sizeof(SZrTypeValue),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+            &nestedField,
+            1U,
+            &nestedContract);
+
+    outerField.byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    outerField.typeLayoutIndex = 1U;
+    outerField.flags = ZR_TYPE_LAYOUT_FIELD_FLAG_NESTED_LAYOUT;
+    ZrCore_TypeLayout_InitStruct(
+            &outerLayout,
+            (TZrUInt32)sizeof(SZrTypeValue),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+            &outerField,
+            1U);
+    ZrCore_Value_ResetAsNull(&storage);
+
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_VisitGcValuesWithRegistry(
+            ZR_NULL,
+            &outerLayout,
+            &registry,
+            &storage,
+            test_visit_gc_value,
+            &visit));
+    TEST_ASSERT_EQUAL_UINT32(1U, visit.count);
+    TEST_ASSERT_EQUAL_PTR(&storage, visit.value);
+}
+
+static const SZrTypeLayout *test_resolve_metadata_registry_layout(
+        const SZrFunction *function,
+        TZrUInt32 typeLayoutId,
+        TZrPtr userData) {
+    ZR_UNUSED_PARAMETER(userData);
+    return ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(function, typeLayoutId);
+}
+
+static void test_function_frame_uses_metadata_registry_for_nested_gc_and_drop(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction function = {0};
+    SZrFunctionFrameSlotLayout frameSlot = {0};
+    SZrTypeLayoutField nestedField = {0};
+    SZrTypeLayoutField outerField = {0};
+    SZrTypeLayoutContract nestedContract = {0};
+    SZrTypeLayout nestedLayout;
+    SZrTypeLayout outerLayout;
+    const SZrTypeLayout *layouts[2] = {&outerLayout, &nestedLayout};
+    SZrAotCodeRegistration registration = {0};
+    TZrUInt32 nestedGcOffset = 0U;
+    TZrUInt32 dropCount = 0U;
+    TZrStackValuePointer frameBase;
+    SZrTypeValue *nestedValue;
+    TestGcValueVisit visit = {0};
+
+    TEST_ASSERT_NOT_NULL(state);
+    nestedField.byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    nestedField.flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                        ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE;
+    nestedContract.gcScanKind = ZR_TYPE_LAYOUT_GC_SCAN_MAPPED;
+    nestedContract.gcFieldOffsets = &nestedGcOffset;
+    nestedContract.gcFieldCount = 1U;
+    nestedContract.customDrop = test_count_frame_alias_drop;
+    nestedContract.customDropUserData = &dropCount;
+    ZrCore_TypeLayout_InitStructWithContract(
+            &nestedLayout,
+            (TZrUInt32)sizeof(SZrTypeValue),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_CUSTOM_THEN_FIELDS,
+            &nestedField,
+            1U,
+            &nestedContract);
+
+    outerField.byteSize = nestedLayout.byteSize;
+    outerField.typeLayoutIndex = 1U;
+    outerField.flags = ZR_TYPE_LAYOUT_FIELD_FLAG_NESTED_LAYOUT;
+    ZrCore_TypeLayout_InitStruct(
+            &outerLayout,
+            nestedLayout.byteSize,
+            nestedLayout.byteAlign,
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE,
+            &outerField,
+            1U);
+
+    registration.typeLayouts = layouts;
+    registration.typeLayoutCount = ZR_ARRAY_COUNT(layouts);
+    function.metadataCodeRegistration = &registration;
+    function.metadataTypeLayoutCount = ZR_ARRAY_COUNT(layouts);
+    frameSlot.byteOffset = 64U;
+    frameSlot.byteSize = outerLayout.byteSize;
+    frameSlot.byteAlign = outerLayout.byteAlign;
+    frameSlot.typeLayoutId = 0U;
+    frameSlot.slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    function.frameSlotLayouts = &frameSlot;
+    function.frameSlotLayoutLength = 1U;
+    function.frameByteSize = frameSlot.byteOffset + frameSlot.byteSize;
+    function.frameByteAlign = frameSlot.byteAlign;
+    frameBase = state->stackBase.valuePointer + 2U;
+    nestedValue = (SZrTypeValue *)((TZrByte *)frameBase + frameSlot.byteOffset);
+    ZrCore_Value_ResetAsNull(nestedValue);
+
+    TEST_ASSERT_TRUE(ZrCore_Function_VisitInlineFrameGcValues(
+            state,
+            &function,
+            frameBase,
+            test_resolve_metadata_registry_layout,
+            ZR_NULL,
+            test_visit_gc_value,
+            &visit));
+    TEST_ASSERT_EQUAL_UINT32(1U, visit.count);
+    TEST_ASSERT_EQUAL_PTR(nestedValue, visit.value);
+    TEST_ASSERT_TRUE(ZrCore_Function_DropInlineFrameValues(
+            state,
+            &function,
+            frameBase,
+            test_resolve_metadata_registry_layout,
+            ZR_NULL));
+    TEST_ASSERT_EQUAL_UINT32(1U, dropCount);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_function_frame_alias_is_not_scanned_or_dropped_twice(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction function = {0};
+    SZrFunctionFrameSlotLayout layouts[2];
+    SZrTypeLayoutField field;
+    SZrTypeLayoutContract contract;
+    SZrTypeLayout layout;
+    TestFrameLayoutResolver resolver;
+    TestGcValueVisit visit = {0};
+    TZrUInt32 gcOffset = 0U;
+    TZrUInt32 dropCount = 0U;
+    TZrStackValuePointer frameBase;
+
+    TEST_ASSERT_NOT_NULL(state);
+    memset(layouts, 0, sizeof(layouts));
+    memset(&field, 0, sizeof(field));
+    memset(&contract, 0, sizeof(contract));
+    field.byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    field.flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                  ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE;
+    contract.gcScanKind = ZR_TYPE_LAYOUT_GC_SCAN_MAPPED;
+    contract.gcFieldOffsets = &gcOffset;
+    contract.gcFieldCount = 1U;
+    contract.customDrop = test_count_frame_alias_drop;
+    contract.customDropUserData = &dropCount;
+    ZrCore_TypeLayout_InitStructWithContract(
+            &layout,
+            (TZrUInt32)sizeof(SZrTypeValue),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_CUSTOM_THEN_FIELDS,
+            &field,
+            1U,
+            &contract);
+
+    layouts[0].stackSlot = 0U;
+    layouts[0].byteOffset = 64U;
+    layouts[0].byteSize = layout.byteSize;
+    layouts[0].byteAlign = layout.byteAlign;
+    layouts[0].typeLayoutId = 7U;
+    layouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    layouts[1] = layouts[0];
+    layouts[1].stackSlot = 1U;
+    layouts[1].reserved0 = ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS;
+    function.frameSlotLayouts = layouts;
+    function.frameSlotLayoutLength = ZR_ARRAY_COUNT(layouts);
+    function.frameByteSize = layouts[0].byteOffset + layouts[0].byteSize;
+    function.frameByteAlign = layout.byteAlign;
+    frameBase = state->stackBase.valuePointer + 2U;
+    ZrCore_Value_ResetAsNull((SZrTypeValue *)((TZrByte *)frameBase + layouts[0].byteOffset));
+
+    resolver.typeLayoutId = 7U;
+    resolver.layout = &layout;
+    TEST_ASSERT_TRUE(ZrCore_Function_VisitInlineFrameGcValues(
+            state,
+            &function,
+            frameBase,
+            test_resolve_function_frame_layout,
+            &resolver,
+            test_visit_gc_value,
+            &visit));
+    TEST_ASSERT_EQUAL_UINT32(1U, visit.count);
+    TEST_ASSERT_TRUE(ZrCore_Function_DropInlineFrameValues(
+            state,
+            &function,
+            frameBase,
+            test_resolve_function_frame_layout,
+            &resolver));
+    TEST_ASSERT_EQUAL_UINT32(1U, dropCount);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_function_prototype_type_layout_resolver_accepts_pod_struct_metadata(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function = {0};
@@ -716,7 +1296,9 @@ static void test_function_prototype_type_layout_resolver_accepts_primitive_scala
 
     layout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(&function, 0u, state);
     TEST_ASSERT_NOT_NULL(layout);
-    TEST_ASSERT_EQUAL_UINT32(0u, layout->fieldCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, layout->fieldCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, layout->fields[0].byteOffset);
+    TEST_ASSERT_EQUAL_UINT32(sizeof(TZrInt32), layout->fields[0].byteSize);
     TEST_ASSERT_TRUE(ZrCore_TypeLayout_CanRawCopy(layout));
 
     ZrCore_Function_FreePrototypeFrameTypeLayoutCache(state, &function);
@@ -811,7 +1393,7 @@ static void test_function_prototype_type_layout_resolver_builds_gc_value_field_f
     layout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(&function, 0u, state);
     TEST_ASSERT_NOT_NULL(layout);
     TEST_ASSERT_EQUAL_UINT32(ZR_TYPE_LAYOUT_COPY_KIND_FIELD_COPY, layout->copyKind);
-    TEST_ASSERT_EQUAL_UINT32(ZR_TYPE_LAYOUT_DROP_KIND_FIELD_DROP, layout->dropKind);
+    TEST_ASSERT_EQUAL_UINT32(ZR_TYPE_LAYOUT_DROP_KIND_NONE, layout->dropKind);
     TEST_ASSERT_EQUAL_UINT32(1u, layout->fieldCount);
     TEST_ASSERT_EQUAL_UINT32(1u, layout->gcFieldCount);
     TEST_ASSERT_EQUAL_UINT32(0u, layout->ownershipFieldCount);
@@ -973,8 +1555,8 @@ static void test_function_prototype_type_layout_resolver_marks_nested_inline_str
 
     layout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(&function, 0u, state);
     TEST_ASSERT_NOT_NULL(layout);
-    TEST_ASSERT_EQUAL_UINT32(ZR_TYPE_LAYOUT_COPY_KIND_FIELD_COPY, layout->copyKind);
-    TEST_ASSERT_EQUAL_UINT32(ZR_TYPE_LAYOUT_DROP_KIND_FIELD_DROP, layout->dropKind);
+    TEST_ASSERT_EQUAL_UINT32(ZR_TYPE_LAYOUT_COPY_KIND_BITWISE, layout->copyKind);
+    TEST_ASSERT_EQUAL_UINT32(ZR_TYPE_LAYOUT_DROP_KIND_NONE, layout->dropKind);
     TEST_ASSERT_EQUAL_UINT32(1u, layout->fieldCount);
     TEST_ASSERT_EQUAL_UINT32(0u, layout->gcFieldCount);
     TEST_ASSERT_EQUAL_UINT32(0u, layout->ownershipFieldCount);
@@ -984,6 +1566,7 @@ static void test_function_prototype_type_layout_resolver_marks_nested_inline_str
     TEST_ASSERT_FALSE((layout->fields[0].flags & ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT) != 0u);
     TEST_ASSERT_FALSE((layout->fields[0].flags & ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE) != 0u);
     TEST_ASSERT_FALSE((layout->fields[0].flags & ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE) != 0u);
+    TEST_ASSERT_TRUE((layout->fields[0].flags & ZR_TYPE_LAYOUT_FIELD_FLAG_NESTED_LAYOUT) != 0u);
 
     ZrCore_Function_FreePrototypeFrameTypeLayoutCache(state, &function);
     ZrTests_Runtime_State_Destroy(state);
@@ -1899,6 +2482,11 @@ static void test_function_post_call_copies_inline_return_payload_before_frame_dr
 int main(void) {
     UNITY_BEGIN();
 
+    RUN_TEST(test_custom_drop_runs_before_reverse_field_teardown);
+    RUN_TEST(test_registry_aware_nested_copy_rejects_move_only_field);
+    RUN_TEST(test_partial_drop_uses_initialized_bitmap_in_reverse_field_order);
+    RUN_TEST(test_constructor_field_store_marks_runtime_initialization_bitmap);
+    RUN_TEST(test_constructor_unwind_drops_only_initialized_fields_without_custom_drop);
     RUN_TEST(test_pod_struct_inline_copy_uses_byte_span_and_handles_overlap);
     RUN_TEST(test_managed_struct_inline_copy_copies_and_drops_value_fields_by_layout);
     RUN_TEST(test_gc_only_value_field_drop_keeps_non_owned_reference_value);
@@ -1913,6 +2501,9 @@ int main(void) {
     RUN_TEST(test_function_prototype_type_layout_resolver_accepts_primitive_scalar_field_as_pod);
     RUN_TEST(test_function_prototype_type_layout_resolver_builds_managed_value_field_layout);
     RUN_TEST(test_function_prototype_type_layout_resolver_builds_gc_value_field_for_value_sized_reference_type);
+    RUN_TEST(test_registry_aware_nested_gc_visit_reaches_nested_value_storage);
+    RUN_TEST(test_function_frame_uses_metadata_registry_for_nested_gc_and_drop);
+    RUN_TEST(test_function_frame_alias_is_not_scanned_or_dropped_twice);
     RUN_TEST(test_function_prototype_type_layout_resolver_flattens_nested_managed_struct_fields);
     RUN_TEST(test_function_prototype_type_layout_resolver_marks_nested_inline_struct_field);
     RUN_TEST(test_function_prototype_type_layout_resolver_fails_when_managed_field_is_not_value_sized);

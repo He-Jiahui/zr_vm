@@ -3409,6 +3409,113 @@ TZrBool ZrLibrary_AotRuntime_CreateArray(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_AotRuntime_CreateInlineArray(SZrState *state,
+                                               ZrAotGeneratedFrame *frame,
+                                               TZrUInt32 destinationSlot,
+                                               TZrUInt32 elementTypeLayoutId,
+                                               TZrUInt32 length) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    SZrTypeValue *destinationValue;
+    SZrObject *arrayValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || frame == ZR_NULL || frame->function == ZR_NULL ||
+        destinationPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "CREATE_INLINE_ARRAY: invalid destination or function");
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    if (destinationValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "CREATE_INLINE_ARRAY: missing destination value");
+        return ZR_FALSE;
+    }
+
+    arrayValue = ZrCore_Object_NewInlineArray(
+            state, frame->function, elementTypeLayoutId, length);
+    ZrCore_Ownership_ReleaseValue(state, destinationValue);
+    if (arrayValue == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(destinationValue);
+        aot_runtime_fail(state, runtimeState, "CREATE_INLINE_ARRAY: invalid inline array layout");
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(
+            state, destinationValue, ZR_CAST_RAW_OBJECT_AS_SUPER(arrayValue));
+    destinationValue->type = ZR_VALUE_TYPE_ARRAY;
+    {
+        const SZrFunctionFrameSlotLayout *destinationLayout =
+                ZrCore_Function_FindFrameSlotLayout(frame->function, destinationSlot);
+        SZrStackFramePlace destinationPlace;
+
+        if (destinationLayout == ZR_NULL ||
+            destinationLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE ||
+            destinationLayout->byteSize < (TZrUInt32)sizeof(SZrTypeValue) ||
+            !ZrCore_Function_MakeFrameSlotPlace(
+                    state,
+                    frame->function,
+                    frame->slotBase,
+                    destinationSlot,
+                    &destinationPlace)) {
+            ZrCore_Value_ResetAsNull(destinationValue);
+            aot_runtime_fail(state, runtimeState, "CREATE_INLINE_ARRAY: invalid destination frame place");
+            return ZR_FALSE;
+        }
+        if (destinationPlace.address != destinationValue) {
+            SZrTypeValue *frameValue = (SZrTypeValue *)destinationPlace.address;
+            ZrCore_Value_InitAsRawObject(
+                    state, frameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(arrayValue));
+            frameValue->type = ZR_VALUE_TYPE_ARRAY;
+        }
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_BindInlineArrayElementPlace(
+        SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 arraySlot,
+        TZrUInt32 indexSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer indexPointer = aot_runtime_frame_slot(frame, indexSlot);
+    const SZrTypeValue *indexValue;
+    TZrInt64 index;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || frame == ZR_NULL || frame->function == ZR_NULL ||
+        indexPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "BIND_INLINE_ARRAY_ELEMENT_PLACE: invalid frame or index slot");
+        return ZR_FALSE;
+    }
+
+    indexValue = ZrCore_Stack_GetValue(indexPointer);
+    if (indexValue == ZR_NULL || !ZR_VALUE_IS_TYPE_INT(indexValue->type) ||
+        (ZR_VALUE_IS_TYPE_UNSIGNED_INT(indexValue->type) &&
+         indexValue->value.nativeObject.nativeUInt64 > (TZrUInt64)ZR_TYPE_RANGE_INT64_MAX)) {
+        aot_runtime_fail(state, runtimeState, "BIND_INLINE_ARRAY_ELEMENT_PLACE: index must be an integer");
+        return ZR_FALSE;
+    }
+    index = ZR_VALUE_IS_TYPE_UNSIGNED_INT(indexValue->type)
+                    ? (TZrInt64)indexValue->value.nativeObject.nativeUInt64
+                    : indexValue->value.nativeObject.nativeInt64;
+
+    if (!ZrCore_Function_BindFrameSlotInlineArrayElement(
+                state,
+                frame->function,
+                frame->slotBase,
+                destinationSlot,
+                arraySlot,
+                index)) {
+        aot_runtime_fail(state, runtimeState, "BIND_INLINE_ARRAY_ELEMENT_PLACE: invalid inline array element");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_AotRuntime_TypeOf(SZrState *state,
                                     ZrAotGeneratedFrame *frame,
                                     TZrUInt32 destinationSlot,
@@ -6258,6 +6365,15 @@ TZrBool ZrLibrary_AotRuntime_GetMemberSlot(SZrState *state,
         return ZR_FALSE;
     }
 
+    if (ZrCore_Function_GetFrameSlotInlineMember(state,
+                                                 function,
+                                                 frame->slotBase,
+                                                 destinationSlot,
+                                                 receiverSlot,
+                                                 memberSymbol)) {
+        return ZR_TRUE;
+    }
+
     stableReceiver = *ZrCore_Stack_GetValue(receiverPointer);
     if (!ZrCore_Object_GetMember(state, &stableReceiver, memberSymbol, ZrCore_Stack_GetValue(destinationPointer))) {
         aot_runtime_fail(state, runtimeState, "GET_MEMBER_SLOT: missing member");
@@ -6288,6 +6404,15 @@ TZrBool ZrLibrary_AotRuntime_SetMemberSlot(SZrState *state,
                                                   &memberSymbol)) {
         aot_runtime_fail(state, runtimeState, "SET_MEMBER_SLOT: invalid cached member");
         return ZR_FALSE;
+    }
+
+    if (ZrCore_Function_SetFrameSlotInlineMember(state,
+                                                 function,
+                                                 frame->slotBase,
+                                                 sourceSlot,
+                                                 receiverSlot,
+                                                 memberSymbol)) {
+        return ZR_TRUE;
     }
 
     receiverValue = ZrCore_Stack_GetValue(receiverPointer);
@@ -6322,6 +6447,15 @@ TZrBool ZrLibrary_AotRuntime_SetMemberSlotNewOwnerNoWriteBarrier(SZrState *state
                                                   &memberSymbol)) {
         aot_runtime_fail(state, runtimeState, "SET_MEMBER_SLOT: invalid cached member");
         return ZR_FALSE;
+    }
+
+    if (ZrCore_Function_SetFrameSlotInlineMember(state,
+                                                 function,
+                                                 frame->slotBase,
+                                                 sourceSlot,
+                                                 receiverSlot,
+                                                 memberSymbol)) {
+        return ZR_TRUE;
     }
 
     receiverValue = ZrCore_Stack_GetValue(receiverPointer);

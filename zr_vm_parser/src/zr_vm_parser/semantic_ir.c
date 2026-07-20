@@ -33,6 +33,8 @@ static TZrBool semantic_ir_opcode_requires_place(EZrSemanticIrOpcode opcode) {
         case ZR_SEMANTIC_IR_ACTIVATE_LOAN:
         case ZR_SEMANTIC_IR_END_LOAN:
         case ZR_SEMANTIC_IR_DEREFERENCE:
+        case ZR_SEMANTIC_IR_VALUE_CONSTRUCT:
+        case ZR_SEMANTIC_IR_FIELD_INITIALIZE:
         case ZR_SEMANTIC_IR_PROPERTY_GET:
         case ZR_SEMANTIC_IR_PROPERTY_SET:
         case ZR_SEMANTIC_IR_PROPERTY_REF_GET:
@@ -45,7 +47,29 @@ static TZrBool semantic_ir_opcode_requires_place(EZrSemanticIrOpcode opcode) {
 static TZrBool semantic_ir_opcode_requires_input_value(EZrSemanticIrOpcode opcode) {
     return (TZrBool)(opcode == ZR_SEMANTIC_IR_STORE ||
                      opcode == ZR_SEMANTIC_IR_INITIALIZE ||
+                     opcode == ZR_SEMANTIC_IR_FIELD_INITIALIZE ||
                      opcode == ZR_SEMANTIC_IR_PROPERTY_SET);
+}
+
+static TZrBool semantic_ir_field_initialize_place_is_valid(
+        const SZrSemanticIrFunction *function,
+        const SZrSemanticIrInstruction *instruction) {
+    const SZrParserPlace *place;
+    const SZrParserPlaceProjection *projection;
+
+    if (function == ZR_NULL || instruction == ZR_NULL ||
+        instruction->opcode != ZR_SEMANTIC_IR_FIELD_INITIALIZE) {
+        return ZR_TRUE;
+    }
+    place = ZrParser_PlaceGraph_Get(&function->places, instruction->placeId);
+    if (place == ZR_NULL || place->parentId == ZR_PLACE_ID_INVALID ||
+        place->projections.length == 0U) {
+        return ZR_FALSE;
+    }
+    projection = ZrParser_Place_ProjectionAt(
+            place, place->projections.length - 1U);
+    return (TZrBool)(projection != ZR_NULL &&
+                     projection->kind == ZR_PARSER_PLACE_PROJECTION_FIELD);
 }
 
 static TZrBool semantic_ir_opcode_requires_result(EZrSemanticIrOpcode opcode) {
@@ -442,6 +466,7 @@ TZrSemanticInstructionId ZrParser_SemanticIr_Emit(
     instruction.resultValueId = spec->resultValueId;
     instruction.auxiliaryValueId = spec->auxiliaryValueId;
     instruction.symbolId = spec->symbolId;
+    instruction.constructorId = spec->constructorId;
     instruction.ownershipOperation = spec->ownershipOperation;
     instruction.targetBlockId = spec->targetBlockId;
     instruction.loanId = spec->loanId;
@@ -590,9 +615,14 @@ TZrBool ZrParser_SemanticIr_Validate(
              instruction->ownershipOperation == ZR_SEMANTIC_OWNERSHIP_NONE) ||
             (instruction->opcode != ZR_SEMANTIC_IR_OWN_CONSTRUCT &&
              instruction->ownershipOperation != ZR_SEMANTIC_OWNERSHIP_NONE) ||
+            (instruction->opcode == ZR_SEMANTIC_IR_VALUE_CONSTRUCT &&
+             instruction->constructorId == ZR_SEMANTIC_ID_INVALID) ||
+            (instruction->opcode != ZR_SEMANTIC_IR_VALUE_CONSTRUCT &&
+             instruction->constructorId != ZR_SEMANTIC_ID_INVALID) ||
             sourceMapEntry->instructionId != instruction->id ||
             (semantic_ir_opcode_requires_place(instruction->opcode) &&
              !semantic_ir_place_is_valid(function, instruction->placeId)) ||
+            !semantic_ir_field_initialize_place_is_valid(function, instruction) ||
             (instruction->placeId != ZR_PLACE_ID_INVALID &&
              !semantic_ir_place_is_valid(function, instruction->placeId)) ||
             (semantic_ir_opcode_requires_input_value(instruction->opcode) &&

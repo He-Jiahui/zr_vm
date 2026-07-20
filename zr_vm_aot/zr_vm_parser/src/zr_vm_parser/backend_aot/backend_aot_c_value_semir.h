@@ -10,6 +10,9 @@ void backend_aot_write_c_value_semir_for_function(FILE *file,
                                                   const SZrAotExecIrModule *module,
                                                   const SZrAotExecIrFunction *functionIr,
                                                   const SZrAotExecIrFrameLayout *frameLayout);
+TZrBool backend_aot_c_value_semir_needs_skip_drop_slot(
+        const SZrAotExecIrModule *module,
+        const SZrAotExecIrFunction *functionIr);
 TZrBool backend_aot_try_write_c_value_semir_for_exec_instruction(FILE *file,
                                                                  SZrState *state,
                                                                  const SZrAotExecIrModule *module,

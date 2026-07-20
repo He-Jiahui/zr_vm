@@ -927,6 +927,10 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN): fprintf(file, "FUNCTION_RETURN"); break;
             case ZR_INSTRUCTION_ENUM(CREATE_OBJECT): fprintf(file, "CREATE_OBJECT"); break;
             case ZR_INSTRUCTION_ENUM(CREATE_ARRAY): fprintf(file, "CREATE_ARRAY"); break;
+            case ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY): fprintf(file, "CREATE_INLINE_ARRAY"); break;
+            case ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE):
+                fprintf(file, "BIND_INLINE_ARRAY_ELEMENT_PLACE");
+                break;
             case ZR_INSTRUCTION_ENUM(OWN_UNIQUE): fprintf(file, "OWN_UNIQUE"); break;
             case ZR_INSTRUCTION_ENUM(OWN_BORROW): fprintf(file, "OWN_BORROW"); break;
             case ZR_INSTRUCTION_ENUM(OWN_LOAN): fprintf(file, "OWN_LOAN"); break;
@@ -1307,6 +1311,19 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
             case ZR_INSTRUCTION_ENUM(TRY):
             case ZR_INSTRUCTION_ENUM(CATCH):
+                break;
+
+            case ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY):
+                fprintf(file,
+                        ", type_layout=%u, length=%u",
+                        inst->instruction.operand.operand1[0],
+                        inst->instruction.operand.operand1[1]);
+                break;
+            case ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE):
+                fprintf(file,
+                        ", array_slot=%u, index_slot=%u",
+                        inst->instruction.operand.operand1[0],
+                        inst->instruction.operand.operand1[1]);
                 break;
 
             default:
@@ -2048,6 +2065,12 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
                 fprintf(file, "CREATE_ARRAY");
                 break;
+            case ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY):
+                fprintf(file, "CREATE_INLINE_ARRAY");
+                break;
+            case ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE):
+                fprintf(file, "BIND_INLINE_ARRAY_ELEMENT_PLACE");
+                break;
             case ZR_INSTRUCTION_ENUM(OWN_UNIQUE):
                 fprintf(file, "OWN_UNIQUE");
                 break;
@@ -2456,6 +2479,19 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
             case ZR_INSTRUCTION_ENUM(TRY):
             case ZR_INSTRUCTION_ENUM(CATCH):
+                break;
+
+            case ZR_INSTRUCTION_ENUM(CREATE_INLINE_ARRAY):
+                fprintf(file,
+                        ", type_layout=%u, length=%u",
+                        inst->instruction.operand.operand1[0],
+                        inst->instruction.operand.operand1[1]);
+                break;
+            case ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE):
+                fprintf(file,
+                        ", array_slot=%u, index_slot=%u",
+                        inst->instruction.operand.operand1[0],
+                        inst->instruction.operand.operand1[1]);
                 break;
                 
             default:

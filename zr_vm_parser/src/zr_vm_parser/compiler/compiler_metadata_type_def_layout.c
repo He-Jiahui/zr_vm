@@ -1,30 +1,10 @@
 #include "compiler_metadata_type_def_layout.h"
 #include "compiler_metadata_signature.h"
 
-#include "zr_vm_core/hash.h"
+#include "zr_vm_core/type_layout.h"
 
-#define ZR_METADATA_TYPE_DEF_LAYOUT_VERSION 1u
-#define ZR_METADATA_TYPE_DEF_LAYOUT_REFERENCE_SIZE 8u
-#define ZR_METADATA_TYPE_DEF_LAYOUT_MAX_SCALAR_ALIGN 8u
-
-static const TZrByte CZrMetadataTypeDefLayoutHashV1Prefix[] = {
-        'z',
-        'r',
-        '.',
-        'm',
-        'd',
-        '.',
-        'l',
-        'a',
-        'y',
-        'o',
-        'u',
-        't',
-        '.',
-        'v',
-        '1',
-        '\0',
-};
+#define ZR_METADATA_TYPE_DEF_LAYOUT_REFERENCE_SIZE ((TZrUInt32)sizeof(SZrTypeValue))
+#define ZR_METADATA_TYPE_DEF_LAYOUT_MAX_SCALAR_ALIGN ((TZrUInt32)ZR_ALIGN_SIZE)
 
 SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrString *typeName);
 
@@ -265,10 +245,11 @@ TZrBool compiler_metadata_type_def_compute_union_layout_identity(SZrCompilerStat
     TZrUInt32 payloadOffset;
     TZrUInt32 layoutByteAlign;
     TZrUInt32 layoutByteSize;
-    TZrSize bufferSize;
-    TZrByte *buffer;
-    TZrSize offset = 0;
-    TZrUInt64 hash;
+    TZrUInt32 layoutFieldCount = 0u;
+    TZrUInt32 layoutFieldCapacity = 0u;
+    SZrTypeLayoutField *layoutFields = ZR_NULL;
+    SZrTypeLayout layout;
+    EZrTypeLayoutDropKind dropKind = ZR_TYPE_LAYOUT_DROP_KIND_NONE;
 
     if (outLayoutVersion != ZR_NULL) {
         *outLayoutVersion = 0;
@@ -288,38 +269,30 @@ TZrBool compiler_metadata_type_def_compute_union_layout_identity(SZrCompilerStat
     }
 
     tagSize = metadata_type_def_select_union_tag_size(variantCount);
-    bufferSize = sizeof(TZrUInt32) * 7u;
     if (unionDeclaration->data.unionDeclaration.variants != ZR_NULL) {
         for (TZrSize variantIndex = 0; variantIndex < unionDeclaration->data.unionDeclaration.variants->count;
              variantIndex++) {
             SZrAstNode *variantNode = unionDeclaration->data.unionDeclaration.variants->nodes[variantIndex];
-            SZrUnionVariant *variant;
-
-            if (variantNode == ZR_NULL || variantNode->type != ZR_AST_UNION_VARIANT) {
-                continue;
-            }
-
-            variant = &variantNode->data.unionVariant;
-            bufferSize += sizeof(TZrUInt32) * 5u;
-            if (variant->fields != ZR_NULL) {
-                if (variant->fields->count > (TZrSize)ZR_METADATA_TOKEN_RID_MASK) {
+            if (variantNode != ZR_NULL &&
+                variantNode->type == ZR_AST_UNION_VARIANT &&
+                variantNode->data.unionVariant.fields != ZR_NULL) {
+                if (variantNode->data.unionVariant.fields->count > UINT32_MAX - layoutFieldCapacity) {
                     return ZR_FALSE;
                 }
-                bufferSize += variant->fields->count * sizeof(TZrUInt32) * 4u;
+                layoutFieldCapacity += (TZrUInt32)variantNode->data.unionVariant.fields->count;
             }
         }
     }
-
-    buffer = (TZrByte *)ZrCore_Memory_RawMallocWithType(cs->state->global,
-                                                       bufferSize,
-                                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-    if (buffer == ZR_NULL) {
-        return ZR_FALSE;
+    if (layoutFieldCapacity > 0u) {
+        layoutFields = (SZrTypeLayoutField *)ZrCore_Memory_RawMallocWithType(
+                cs->state->global,
+                sizeof(SZrTypeLayoutField) * layoutFieldCapacity,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (layoutFields == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        ZrCore_Memory_RawSet(layoutFields, 0, sizeof(SZrTypeLayoutField) * layoutFieldCapacity);
     }
-
-    metadata_token_write_u32(buffer, &offset, ZR_METADATA_TYPE_DEF_LAYOUT_VERSION);
-    metadata_token_write_u32(buffer, &offset, variantCount);
-    metadata_token_write_u32(buffer, &offset, tagSize);
 
     if (unionDeclaration->data.unionDeclaration.variants != ZR_NULL) {
         for (TZrSize variantIndex = 0; variantIndex < unionDeclaration->data.unionDeclaration.variants->count;
@@ -328,7 +301,6 @@ TZrBool compiler_metadata_type_def_compute_union_layout_identity(SZrCompilerStat
             SZrUnionVariant *variant;
             TZrUInt32 currentOffset = 0;
             TZrUInt32 variantAlign = 1;
-            TZrUInt32 fieldCount = 0;
             TZrUInt32 variantPayloadSize;
 
             if (variantNode == ZR_NULL || variantNode->type != ZR_AST_UNION_VARIANT) {
@@ -336,10 +308,6 @@ TZrBool compiler_metadata_type_def_compute_union_layout_identity(SZrCompilerStat
             }
 
             variant = &variantNode->data.unionVariant;
-            fieldCount = variant->fields != ZR_NULL ? (TZrUInt32)variant->fields->count : 0u;
-            metadata_token_write_u32(buffer, &offset, (TZrUInt32)variantIndex);
-            metadata_token_write_u32(buffer, &offset, (TZrUInt32)variant->kind);
-            metadata_token_write_u32(buffer, &offset, fieldCount);
 
             if (variant->fields != ZR_NULL) {
                 for (TZrSize fieldIndex = 0; fieldIndex < variant->fields->count; fieldIndex++) {
@@ -364,10 +332,19 @@ TZrBool compiler_metadata_type_def_compute_union_layout_identity(SZrCompilerStat
                     }
 
                     currentOffset = align_offset(currentOffset, fieldAlign);
-                    metadata_token_write_u32(buffer, &offset, (TZrUInt32)fieldIndex);
-                    metadata_token_write_u32(buffer, &offset, currentOffset);
-                    metadata_token_write_u32(buffer, &offset, fieldSize);
-                    metadata_token_write_u32(buffer, &offset, fieldAlign);
+                    if (fieldSize >= sizeof(SZrTypeValue)) {
+                        SZrTypeLayoutField *layoutField = &layoutFields[layoutFieldCount++];
+                        layoutField->byteOffset = currentOffset;
+                        layoutField->byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+                        layoutField->typeLayoutIndex = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+                        layoutField->flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                                             ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE;
+                        if (ownershipQualifier != (TZrUInt32)ZR_OWNERSHIP_QUALIFIER_NONE) {
+                            layoutField->flags |= ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE;
+                            dropKind = ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE;
+                        }
+                        layoutField->activeTag = (TZrUInt32)variantIndex;
+                    }
                     currentOffset += fieldSize;
                     if (fieldAlign > variantAlign) {
                         variantAlign = fieldAlign;
@@ -382,41 +359,50 @@ TZrBool compiler_metadata_type_def_compute_union_layout_identity(SZrCompilerStat
             if (variantAlign > maxPayloadAlign) {
                 maxPayloadAlign = variantAlign;
             }
-
-            metadata_token_write_u32(buffer, &offset, variantPayloadSize);
-            metadata_token_write_u32(buffer, &offset, variantAlign);
         }
     }
 
     payloadOffset = maxPayloadSize > 0 ? align_offset(tagSize, maxPayloadAlign) : tagSize;
     layoutByteAlign = tagSize > maxPayloadAlign ? tagSize : maxPayloadAlign;
     layoutByteSize = align_offset(payloadOffset + maxPayloadSize, layoutByteAlign);
-    metadata_token_write_u32(buffer, &offset, payloadOffset);
-    metadata_token_write_u32(buffer, &offset, maxPayloadSize);
-    metadata_token_write_u32(buffer, &offset, layoutByteSize);
-    metadata_token_write_u32(buffer, &offset, layoutByteAlign);
+    for (TZrUInt32 index = 0u; index < layoutFieldCount; index++) {
+        if (layoutFields[index].byteOffset > UINT32_MAX - payloadOffset) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                         layoutFields,
+                                         sizeof(SZrTypeLayoutField) * layoutFieldCapacity,
+                                         ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            return ZR_FALSE;
+        }
+        layoutFields[index].byteOffset += payloadOffset;
+    }
 
-    if (offset != bufferSize) {
+    ZrCore_TypeLayout_InitUnion(&layout,
+                                layoutByteSize,
+                                layoutByteAlign,
+                                0u,
+                                tagSize,
+                                layoutFieldCount > 0u ? ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE
+                                                      : ZR_TYPE_LAYOUT_COPY_KIND_BITWISE,
+                                dropKind,
+                                layoutFields,
+                                layoutFieldCount);
+    if (!ZrCore_TypeLayout_Validate(&layout)) {
+        if (layoutFields != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                         layoutFields,
+                                         sizeof(SZrTypeLayoutField) * layoutFieldCapacity,
+                                         ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        return ZR_FALSE;
+    }
+
+    *outLayoutVersion = layout.layoutVersion;
+    *outLayoutHash = layout.layoutHash;
+    if (layoutFields != ZR_NULL) {
         ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                      buffer,
-                                      bufferSize,
-                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        return ZR_FALSE;
+                                     layoutFields,
+                                     sizeof(SZrTypeLayoutField) * layoutFieldCapacity,
+                                     ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
-
-    hash = ZrCore_Hash_CreateStable64WithPrefix(CZrMetadataTypeDefLayoutHashV1Prefix,
-                                                sizeof(CZrMetadataTypeDefLayoutHashV1Prefix),
-                                                buffer,
-                                                bufferSize);
-    ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                  buffer,
-                                  bufferSize,
-                                  ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-    if (hash == 0) {
-        return ZR_FALSE;
-    }
-
-    *outLayoutVersion = ZR_METADATA_TYPE_DEF_LAYOUT_VERSION;
-    *outLayoutHash = hash;
     return ZR_TRUE;
 }

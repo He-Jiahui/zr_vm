@@ -345,6 +345,9 @@ ZR_CORE_API void ZrCore_MetadataRuntime_AttachFunction(SZrMetadataRuntime *runti
 ZR_CORE_API const SZrTypeLayout *ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(
         const struct SZrFunction *function,
         TZrUInt32 typeLayoutId);
+ZR_CORE_API TZrBool ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(
+        const struct SZrFunction *function,
+        SZrTypeLayoutRegistryView *outRegistry);
 ZR_CORE_API const SZrTypeLayout *ZrCore_MetadataRuntime_ResolveFunctionPrototypeTypeLayout(
         const struct SZrFunction *function,
         const struct SZrObjectPrototype *prototype,
