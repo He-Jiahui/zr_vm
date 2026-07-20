@@ -53,5 +53,6 @@
 - [General rename workspace edit snapshot revalidation](./03-robustness/2026-07-21-general-rename-workspace-edit-snapshot-revalidation.md)
 - [Code action workspace edit snapshot revalidation](./03-robustness/2026-07-21-code-action-workspace-edit-snapshot-revalidation.md)
 - [Semicolon safe-fix convergence](./02-diagnostics/2026-07-21-semicolon-safe-fix-convergence.md)
+- [Condition-close safe-fix convergence](./02-diagnostics/2026-07-21-condition-close-safe-fix-convergence.md)
 
-这些记录只对应L1/L2/L3/L6的部分历史能力；source-file rename、普通`textDocument/rename`和当前code action已共享workspace-edit snapshot重校验，code action还在resolve时拒绝stale edit；semicolon diagnostic safe fix已完成structured fact到apply-edit-rebind闭环，但delimiter、其他diagnostic fix producer、并发race/cancellation、性能与峰值内存报告仍缺失，不改变L3整体、L4-L8及完整L6状态。
+这些记录只对应L1/L2/L3/L6的部分历史能力；source-file rename、普通`textDocument/rename`和当前code action已共享workspace-edit snapshot重校验，code action还在resolve时拒绝stale edit；semicolon与condition-close local insertion已完成structured fact到apply-edit-rebind闭环，但其他delimiter family/replacement、其他diagnostic fix producer、并发race/cancellation、性能与峰值内存报告仍缺失，不改变L3整体、L4-L8及完整L6状态。

@@ -621,6 +621,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionClose(SZrState *state,
     const TZrChar *kind = statementKind != ZR_NULL ? statementKind : "control";
     TZrChar message[128];
     TZrChar cause[224];
+    SZrFileRange fixLocation = location;
 
     snprintf(message,
              sizeof(message),
@@ -631,15 +632,30 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionClose(SZrState *state,
              "The '%s' condition started with '(', but the parser reached the block before a closing ')' appeared.",
              kind);
 
-    return ZrParser_DiagnosticBuilder_Build(
-            state,
-            out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
-            location,
-            "missing_condition_close",
-            message,
-            cause,
-            "Insert ')' after the condition expression before the block.");
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "missing_condition_close",
+                message,
+                cause,
+                "Insert ')' after the condition expression before the block.")) {
+        return ZR_FALSE;
+    }
+
+    fixLocation.end = fixLocation.start;
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Insert missing ')'",
+                fixLocation,
+                ")",
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingMemberName(SZrState *state,

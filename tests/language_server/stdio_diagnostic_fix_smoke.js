@@ -43,6 +43,7 @@ assert(serverPath, 'Expected stdio server executable path');
 
 const documentUri = 'file:///zr-diagnostic-fix-smoke.zr';
 const semicolonDocumentUri = 'file:///zr-diagnostic-semicolon-fix-smoke.zr';
+const conditionDocumentUri = 'file:///zr-diagnostic-condition-close-fix-smoke.zr';
 const documentText = [
     'func choose(flag: bool): int {',
     '    var seed: int;',
@@ -54,6 +55,7 @@ const documentText = [
     '',
 ].join('\n');
 const semicolonDocumentText = 'var answer = 42';
+const conditionDocumentText = 'if (ready { return 1; }\n';
 
 const payload = Buffer.concat([
     createMessage({
@@ -112,7 +114,39 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: semicolonDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 5, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: conditionDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: conditionDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: conditionDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didChange',
+        params: {
+            textDocument: { uri: conditionDocumentUri, version: 2 },
+            contentChanges: [{ text: 'if (ready) { return 1; }\n' }],
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 6,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: conditionDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 7, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -194,3 +228,44 @@ assert(fixedSemicolonPublication &&
     !fixedSemicolonPublication.params.diagnostics.some((entry) =>
         entry.code === 'missing_statement_semicolon'),
     'Expected the applied semicolon fix to clear the diagnostic');
+
+const conditionPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === conditionDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'missing_condition_close'));
+assert(conditionPublication,
+    'Expected missing_condition_close publication');
+
+const conditionDiagnostic = conditionPublication.params.diagnostics.find((entry) =>
+    entry.code === 'missing_condition_close');
+assert(conditionDiagnostic.data &&
+    Array.isArray(conditionDiagnostic.data.fixes) &&
+    conditionDiagnostic.data.fixes.length === 1,
+    'Expected one serialized condition-close diagnostic fix');
+
+const conditionFix = conditionDiagnostic.data.fixes[0];
+assert(conditionFix.title === "Insert missing ')'" &&
+    conditionFix.applicability === 1 &&
+    conditionFix.edit &&
+    conditionFix.edit.newText === ')',
+    'Expected a machine-applicable serialized condition-close edit');
+assert(conditionFix.edit.range.start.line === 0 &&
+    conditionFix.edit.range.start.character === 10 &&
+    conditionFix.edit.range.end.line === 0 &&
+    conditionFix.edit.range.end.character === 10,
+    'Expected the condition-close edit before the block opener');
+
+const fixedConditionPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === conditionDocumentUri &&
+    message.params.version === 2 &&
+    Array.isArray(message.params.diagnostics));
+assert(fixedConditionPublication &&
+    !fixedConditionPublication.params.diagnostics.some((entry) =>
+        entry.code === 'missing_condition_close'),
+    'Expected the applied condition-close fix to clear the diagnostic');

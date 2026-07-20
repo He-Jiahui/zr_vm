@@ -38,11 +38,13 @@ Parser/compiler diagnostics own fix applicability, title, edit text and source r
 
 Ordinary variable declarations now report `missing_statement_semicolon` at EOF as well as before a following statement. For-header declarations keep their existing `reportMissingSemicolon=false` boundary.
 
+`ZrParser_DiagnosticBuilder_BuildMissingConditionClose` preserves the parser's primary range on the block opener and publishes a separate zero-width `)` insertion at that range's start. The producer marks the edit machine-applicable; the LSP does not infer the token from `missing_condition_close`, the statement kind or the English suggestion.
+
 ## LSP Projection
 
 `lsp_code_actions.c` calls `ZrLanguageServer_Lsp_GetDiagnostics` and publishes only fixes with `ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE`. It copies the structured title, range and text into a preferred quickfix. Placeholder and maybe-incorrect fixes remain diagnostic data and are not promoted to automatic code actions.
 
-A caret request selects structured diagnostics/fixes on the same requested line or with an intersecting range. This preserves line-start code-action requests without reading source text. A block comment containing statement-like text has no parser fact and therefore produces no semicolon action.
+A caret request selects structured diagnostics/fixes on the same requested line or with an intersecting range. This preserves line-start code-action requests without reading source text. A block comment containing statement-like text has no parser fact and therefore produces no semicolon action. A missing condition close action copies the parser-owned `)` edit before the exact block opener.
 
 `ZrLanguageServer_Lsp_FreeDiagnostics` is the public owner cleanup for arrays returned by `GetDiagnostics`; stdio and in-process code-action consumers share it.
 
@@ -56,10 +58,10 @@ The safe fix uses the existing code-action workspace-edit fingerprint. The initi
 - Parser/LSP diagnostics include an EOF variable declaration case.
 - Advanced-editor tests cover EOF, line-comment insertion, block-comment absence, structured machine fix consumption and placeholder rejection.
 - Main stdio smoke checks captured versions 1/2, exact `{line: 0, character: 15}` insertion, stale resolve rejection and version 3 apply/rebind cleanup.
-- Diagnostic-fix smoke checks JSON `Diagnostic.data.fixes` for both placeholder and machine-applicable fixes.
+- Diagnostic-fix smoke checks JSON `Diagnostic.data.fixes` for placeholder, semicolon and condition-close machine fixes, including the version 2 diagnostic-clear boundary.
 
-The detailed three-toolchain acceptance evidence is recorded in `docs/plans/lsp/02-diagnostics/2026-07-21-semicolon-safe-fix-convergence.md`.
+Detailed three-toolchain acceptance evidence is recorded in `docs/plans/lsp/02-diagnostics/2026-07-21-semicolon-safe-fix-convergence.md` and `docs/plans/lsp/02-diagnostics/2026-07-21-condition-close-safe-fix-convergence.md`.
 
 ## Open Boundaries
 
-This contract covers local semicolon insertion only. Delimiter replacement, migration edits, multi-document fixes, registry-wide applicability audits, cancellation/race stress and performance/peak-memory budgets remain open.
+This contract covers local semicolon insertion and the missing control-condition `)` insertion. Other delimiter families, delimiter replacement, migration edits, multi-document fixes, registry-wide applicability audits, cancellation/race stress and performance/peak-memory budgets remain open.

@@ -64,6 +64,8 @@
 
 [2026-07-21 semicolon safe-fix convergence](./02-diagnostics/2026-07-21-semicolon-safe-fix-convergence.md) 让semicolon code action只消费parser发布的structured machine fix，不再扫描`var`/`return`等源码前缀；EOF、无尾随分号、line comment前插入和block-comment负边界都由parser token identity决定。action继续复用snapshot fingerprint，旧version resolve会disabled；其他diagnostic fix producer、并发race/cancellation与性能内存预算仍待后续。
 
+[2026-07-21 condition-close safe-fix convergence](./02-diagnostics/2026-07-21-condition-close-safe-fix-convergence.md) 让`missing_condition_close`复用同一通用structured-fix consumer与code-action snapshot，不新增code/message/source fallback；`)` edit由parser绑定到block opener前，stdio apply后的新version清除诊断。其他delimiter producer、并发race/cancellation与性能内存预算仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。
