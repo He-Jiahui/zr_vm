@@ -2167,7 +2167,7 @@ static void test_semantic_analyzer_generic_function_symbols_surface_signature_de
             "}\n"
             "func use(): void {\n"
             "    var slot: int = 1;\n"
-            "    swap<int>(slot);\n"
+            "    swap<int>(ref slot);\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "generic_signature_hover_test.zr", 30);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
@@ -3951,15 +3951,17 @@ static void test_semantic_analyzer_resolves_overloads_for_call_compatibility(SZr
             return;
         }
 
-        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 9);
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "compiler_error", 9);
         if (diagnostic == ZR_NULL ||
             diagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
-            count_diagnostics_with_code(analyzer, "type_mismatch") != 1) {
+            !diagnostic_message_contains(diagnostic, "No matching overload") ||
+            count_diagnostics_with_code(analyzer, "compiler_error") != 1 ||
+            analyzer->diagnostics.length != 1U) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
                       "Semantic Analyzer Resolves Overloads For Call Compatibility",
-                      "Expected exactly one type_mismatch diagnostic for the overload call with no compatible candidate");
+                      "Expected exactly one canonical compiler_error for the overload call with no compatible candidate");
             return;
         }
 

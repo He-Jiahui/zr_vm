@@ -14,6 +14,11 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_canonical_signature_help.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_canonical_signature_help.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_scope_cache.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_super_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_decorator_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c
@@ -38,6 +43,9 @@ related_code:
   - tests/language_server/test_semantic_analyzer.c
   - tests/parser/test_parser.c
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_reference_callable_consumer_cases.h
+  - tests/language_server/test_lsp_local_semantic_query.c
+  - tests/language_server/test_lsp_local_semantic_receiver_dependency_cases.h
   - tests/language_server/test_lsp_project_features.c
   - tests/language_server/stdio_smoke.js
   - tests/parser/test_parser_extern.c
@@ -55,6 +63,10 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_canonical_signature_help.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_scope_cache.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_super_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_decorator_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c
@@ -84,6 +96,8 @@ tests:
   - tests/language_server/test_semantic_analyzer.c
   - tests/parser/test_parser.c
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_reference_callable_consumer_cases.h
+  - tests/language_server/test_lsp_local_semantic_query.c
   - tests/language_server/test_lsp_project_features.c
   - tests/language_server/descriptor_plugin_fixture_int.c
   - tests/language_server/descriptor_plugin_fixture_float.c
@@ -115,6 +129,22 @@ Regression coverage lives in `tests/parser/test_parser.c`:
 - `test_parser_call_callee_locations_cover_identifier_text`
 
 Those parser tests protect the lower-layer ranges that `tests/language_server/test_semantic_analyzer.c` then consumes for scoped local hover, callable hover, generic callable signatures, and reference lookup.
+
+## Resolved Callable Canonical Consumers
+
+Source callable hover and signature help now share the parser semantic-query contract instead of rebuilding a method signature from a member name. `lsp_canonical_signature_help.c` calls `ZrParser_SemanticQuery_CallAt`, formats the whole label through `ZrParser_SemanticQuery_FormatCall`, and reads ordered parameter metadata from the returned canonical function `TypeId`.
+
+This preserves three details that were previously easy to lose in an LSP-local formatter:
+
+- receiver effects remain visible as `const fn` or `fn`;
+- function-scoped reference parameters retain `scoped ref` / `scoped ref readonly` in parameter information;
+- source generic clauses remain attached to the declaration while parameter and return types use the closed canonical instantiation, for example `fn shape<const N: int>(value: Matrix<int, 4>): Matrix<int, 4>`.
+
+Receiver hover is only selected for a resolved reference with `hasResolvedTarget` and a non-`NONE` canonical receiver effect. Receiver-base hover therefore continues to show the receiver value type, while the callee reference shows the same canonical call text as signature help.
+
+The same target identity also closes the first receiver dependency boundary in `semantic_analyzer_scope_cache.c`. Class and struct method references compare the parser-published declaration range, not the member spelling. A changed inferred-return method invalidates a resolved direct caller, an unrelated cached scope is preserved, and unresolved/poisoned facts continue through conservative invalidation.
+
+Named-call compatibility failures preserve the parser compiler diagnostic until `ZrParser_Compiler_PublishCurrentDiagnostic` has copied it into persistent semantic query facts. `semantic_analyzer_query_diagnostics.c` then projects that fact into LSP and removes only the same-range `cannot_infer_exact_type` placeholder, preventing one root call error from becoming two primary diagnostics.
 
 ## 隐式接收者符号
 

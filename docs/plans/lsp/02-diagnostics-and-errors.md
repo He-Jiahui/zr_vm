@@ -42,7 +42,9 @@ parser recovery产生poisoned/unknown facts并限制级联；后续diagnostic标
 
 ## 完成记录
 
-[2026-07-19 structured diagnostic baseline](./02-diagnostics/2026-07-19-structured-diagnostic-baseline.md) 记录registry/JSON/fix基础；上述新语法和跨文件fix仍需逐contract加入。
+[2026-07-19 structured diagnostic baseline](./02-diagnostics/2026-07-19-structured-diagnostic-baseline.md) 记录registry/JSON/fix基础。
+
+[2026-07-20 resolved callable consumer convergence](./03-robustness/2026-07-20-resolved-callable-consumer-convergence.md) 完成source named-call compiler current diagnostic到persistent semantic query fact再到LSP的投影，并移除同call range的`cannot_infer_exact_type`占位级联；registry完整性、safe fix和binary/native同原因链仍需后续覆盖。
 
 ## Diagnostic Registry 与验收
 

@@ -1712,9 +1712,11 @@ int main(void) {
     TEST_DIVIDER();
     test_poisoned_scope_invalidates_conservatively_on_signature_edit(state);
     TEST_DIVIDER();
-    test_receiver_signature_edit_invalidates_conservatively_without_target_fact(state);
+    test_receiver_signature_edit_preserves_unrelated_scope_with_target_fact(state);
     TEST_DIVIDER();
-    test_inferred_method_body_edit_invalidates_conservatively(state);
+    test_inferred_method_body_edit_preserves_unrelated_scope(state);
+    TEST_DIVIDER();
+    test_inferred_method_body_edit_invalidates_resolved_direct_caller(state);
     TEST_DIVIDER();
     test_completion_fallback_reuses_scoped_query_analyzer_cache(state);
     TEST_DIVIDER();

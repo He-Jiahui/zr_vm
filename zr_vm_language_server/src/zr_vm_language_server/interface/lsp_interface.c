@@ -3,6 +3,7 @@
 //
 
 #include "interface/lsp_interface_internal.h"
+#include "lsp_canonical_signature_help.h"
 #include "lsp_virtual_documents.h"
 #include "project/lsp_project_internal.h"
 #include "semantic/lsp_local_semantic_query.h"
@@ -1581,6 +1582,7 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
     SZrSemanticAnalyzer *analyzer;
     SZrFilePosition filePos;
     SZrFileRange fileRange;
+    SZrFileRange signatureHoverRange;
     SZrFileVersion *fileVersion;
     SZrFileVersionContentSnapshot contentSnapshot = {0};
     SZrSymbol *symbol;
@@ -1631,6 +1633,24 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
         return ZR_FALSE;
     }
 
+    if (ZrLanguageServer_LspCanonicalSignatureHelp_ResolveReceiverHover(
+                state,
+                context,
+                analyzer,
+                uri,
+                fileRange,
+                result)) {
+        if (hasLocalQuery &&
+            localQuery.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT) {
+            ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(
+                    state,
+                    &localQuery,
+                    *result);
+        }
+        ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
+        return ZR_TRUE;
+    }
+
     {
         SZrLspSemanticQuery semanticQuery;
 
@@ -1670,7 +1690,15 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
 
             ZrCore_Array_Init(state, &lspHover->contents, sizeof(SZrString *), 1);
             ZrCore_Array_Push(state, &lspHover->contents, &content);
-            lspHover->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, fileRange);
+            signatureHoverRange = fileRange;
+            (void)ZrLanguageServer_LspCanonicalSignatureHelp_TryGetResolvedCallReferenceRange(
+                    analyzer,
+                    fileRange,
+                    &signatureHoverRange);
+            lspHover->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
+                    context,
+                    uri,
+                    signatureHoverRange);
             *result = lspHover;
             ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
             return ZR_TRUE;

@@ -5,6 +5,7 @@
 #include "project/lsp_project_internal.h"
 
 #include "zr_vm_library/file.h"
+#include "zr_vm_parser/semantic_query.h"
 #include "zr_vm_parser/type_inference.h"
 
 #include <ctype.h>
@@ -569,6 +570,31 @@ static TZrBool semantic_query_create_hover_from_content(SZrState *state,
     hover->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
     *result = hover;
     return ZR_TRUE;
+}
+
+static SZrFileRange semantic_query_local_hover_range(
+        const SZrLspSemanticQuery *query) {
+    SZrParserSemanticCallQuery callQuery;
+
+    if (query != ZR_NULL && query->analyzer != ZR_NULL &&
+        query->analyzer->semanticContext != ZR_NULL &&
+        ZrParser_SemanticQuery_CallAt(
+                query->analyzer->semanticContext,
+                query->queryRange,
+                ZR_NULL,
+                &callQuery) &&
+        callQuery.hasResolvedTarget && callQuery.reference != ZR_NULL &&
+        callQuery.reference->isResolved &&
+        query->queryRange.start.offset >=
+                callQuery.reference->range.start.offset &&
+        query->queryRange.end.offset <=
+                callQuery.reference->range.end.offset) {
+        return callQuery.reference->range;
+    }
+    if (query != ZR_NULL && query->symbol != ZR_NULL) {
+        return ZrLanguageServer_Lsp_GetSymbolLookupRange(query->symbol);
+    }
+    return query != ZR_NULL ? query->queryRange : (SZrFileRange){0};
 }
 
 static TZrBool semantic_query_append_local_symbol_references(SZrState *state,
@@ -2855,9 +2881,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
                                                         context,
                                                         query->uri,
                                                         content,
-                                                        query->symbol != ZR_NULL
-                                                            ? ZrLanguageServer_Lsp_GetSymbolLookupRange(query->symbol)
-                                                            : query->queryRange,
+                                                        semantic_query_local_hover_range(query),
                                                         result);
     }
 

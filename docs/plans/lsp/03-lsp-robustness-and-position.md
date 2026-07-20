@@ -46,6 +46,8 @@
 
 [2026-07-20 canonical source public-contract hash](./03-robustness/2026-07-20-canonical-source-public-contract-hash.md) 完成source module public-contract hash v1和reverse-dependency match/change/unavailable分类；private variable变化可保留importer，public callable contract变化传播，unsupported public surface保守传播；public type/layout、provider/artifact parity和receiver target identity仍待后续。
 
+[2026-07-20 resolved callable consumer convergence](./03-robustness/2026-07-20-resolved-callable-consumer-convergence.md) 完成source receiver callable的resolved `SymbolId + declarationRange`消费、direct-caller失效、canonical signature/hover/parameter projection和query-backed compiler diagnostic；property/constructor/meta/imported/native target与provider parity仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

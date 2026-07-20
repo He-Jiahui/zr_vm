@@ -7232,6 +7232,7 @@ static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZ
 }
 
 #include "test_lsp_snapshot_cache_cases.h"
+#include "test_lsp_reference_callable_consumer_cases.h"
 
 // 主测试函数
 int main(void) {
@@ -7518,6 +7519,15 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_container_matrix_project_infers_bucket_and_foreach_types(state);
+    TEST_DIVIDER();
+
+    test_lsp_reference_callable_hover_and_signature_use_canonical_contract(state);
+    TEST_DIVIDER();
+
+    test_lsp_receiver_call_consumers_use_resolved_canonical_target(state);
+    TEST_DIVIDER();
+
+    test_lsp_reference_call_diagnostic_is_published_from_query_facts(state);
     TEST_DIVIDER();
 
     // 清理

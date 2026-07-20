@@ -32,23 +32,60 @@ static TZrBool scoped_cache_range_contains(const SZrFileRange *container,
            range->end.offset <= container->end.offset;
 }
 
-static SZrAstNode *scoped_cache_changed_function(
+static TZrBool scoped_cache_is_supported_callable_type(EZrAstNodeType type) {
+    return type == ZR_AST_FUNCTION_DECLARATION ||
+           type == ZR_AST_CLASS_METHOD ||
+           type == ZR_AST_STRUCT_METHOD;
+}
+
+static SZrAstNode *scoped_cache_changed_callable(
         SZrAstNode *currentAst,
         const SZrFileChangeInfo *changeInfo) {
     SZrAstNode *changedRoot;
 
     if (currentAst == ZR_NULL || changeInfo == ZR_NULL ||
         !changeInfo->hasDeclaration ||
-        changeInfo->declarationType != ZR_AST_FUNCTION_DECLARATION) {
+        !scoped_cache_is_supported_callable_type(changeInfo->declarationType)) {
         return ZR_NULL;
     }
     changedRoot = ZrLanguageServer_SemanticAnalyzer_FindAnalysisRootAtPosition(
             currentAst,
             changeInfo->oldRange);
     return changedRoot != ZR_NULL &&
-                   changedRoot->type == ZR_AST_FUNCTION_DECLARATION
+                   changedRoot->type == changeInfo->declarationType
                ? changedRoot
                : ZR_NULL;
+}
+
+static const SZrFileRange *scoped_cache_callable_declaration_range(
+        const SZrAstNode *callable) {
+    if (callable == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (callable->type == ZR_AST_FUNCTION_DECLARATION) {
+        return &callable->data.functionDeclaration.nameLocation;
+    }
+    return callable->type == ZR_AST_CLASS_METHOD ||
+                           callable->type == ZR_AST_STRUCT_METHOD
+                   ? &callable->location
+                   : ZR_NULL;
+}
+
+static const SZrType *scoped_cache_callable_return_type(
+        const SZrAstNode *callable) {
+    if (callable == ZR_NULL) {
+        return ZR_NULL;
+    }
+    switch (callable->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            return callable->data.functionDeclaration.returnType;
+        case ZR_AST_CLASS_METHOD:
+            return callable->data.classMethod.returnType;
+        case ZR_AST_STRUCT_METHOD:
+            return callable->data.structMethod.returnType;
+        default:
+            return ZR_NULL;
+    }
 }
 
 typedef enum EZrScopedCacheDependency {
@@ -64,10 +101,10 @@ typedef enum EZrScopedCacheChangeDecision {
     ZR_SCOPED_CACHE_CHANGE_INVALIDATE_CONSERVATIVE
 } EZrScopedCacheChangeDecision;
 
-static EZrScopedCacheDependency scoped_cache_dependency_to_function(
+static EZrScopedCacheDependency scoped_cache_dependency_to_callable(
         const SZrSemanticAnalyzer *scopedAnalyzer,
-        const SZrAstNode *changedFunction) {
-    const SZrFileRange *changedNameRange;
+        const SZrAstNode *changedCallable) {
+    const SZrFileRange *changedDeclarationRange;
     TZrSize index;
 
     if (scopedAnalyzer == ZR_NULL || scopedAnalyzer->cache == ZR_NULL ||
@@ -78,12 +115,16 @@ static EZrScopedCacheDependency scoped_cache_dependency_to_function(
         !scopedAnalyzer->diagnostics.isValid ||
         scopedAnalyzer->semanticContext->queryDiagnostics.length > 0 ||
         scopedAnalyzer->diagnostics.length > 0 ||
-        changedFunction == ZR_NULL ||
-        changedFunction->type != ZR_AST_FUNCTION_DECLARATION) {
+        changedCallable == ZR_NULL ||
+        !scoped_cache_is_supported_callable_type(changedCallable->type)) {
         return ZR_SCOPED_CACHE_DEPENDENCY_UNKNOWN;
     }
 
-    changedNameRange = &changedFunction->data.functionDeclaration.nameLocation;
+    changedDeclarationRange =
+            scoped_cache_callable_declaration_range(changedCallable);
+    if (changedDeclarationRange == ZR_NULL) {
+        return ZR_SCOPED_CACHE_DEPENDENCY_UNKNOWN;
+    }
     for (index = 0;
          index < scopedAnalyzer->semanticContext->referenceFacts.length;
          index++) {
@@ -104,7 +145,7 @@ static EZrScopedCacheDependency scoped_cache_dependency_to_function(
         }
         if (fact->isResolved && scoped_cache_ranges_equal(
                     &fact->declarationRange,
-                    changedNameRange)) {
+                    changedDeclarationRange)) {
             return ZR_SCOPED_CACHE_DEPENDENCY_DIRECT;
         }
     }
@@ -168,7 +209,7 @@ static EZrScopedCacheChangeDecision scoped_cache_change_decision(
         const SZrSemanticAnalyzer *scopedAnalyzer,
         SZrAstNode *currentAst,
         const SZrFileChangeInfo *changeInfo) {
-    SZrAstNode *changedFunction;
+    SZrAstNode *changedCallable;
 
     if (scopedAnalyzer == ZR_NULL || changeInfo == ZR_NULL ||
         !scopedAnalyzer->enableCache || scopedAnalyzer->cache == ZR_NULL ||
@@ -185,30 +226,30 @@ static EZrScopedCacheChangeDecision scoped_cache_change_decision(
     }
 
     if (changeInfo->impact == ZR_FILE_CHANGE_IMPACT_DECLARATION_BODY) {
-        changedFunction = scoped_cache_changed_function(currentAst, changeInfo);
-        if (changedFunction == ZR_NULL) {
+        changedCallable = scoped_cache_changed_callable(currentAst, changeInfo);
+        if (changedCallable == ZR_NULL) {
             return ZR_SCOPED_CACHE_CHANGE_INVALIDATE_CONSERVATIVE;
         }
-        if (changedFunction->data.functionDeclaration.returnType != ZR_NULL) {
+        if (scoped_cache_callable_return_type(changedCallable) != ZR_NULL) {
             return ZR_SCOPED_CACHE_CHANGE_PRESERVE;
         }
         return scoped_cache_dependency_decision(
-                scoped_cache_dependency_to_function(
+                scoped_cache_dependency_to_callable(
                         scopedAnalyzer,
-                        changedFunction));
+                        changedCallable));
     }
 
     if (changeInfo->impact != ZR_FILE_CHANGE_IMPACT_DECLARATION_SIGNATURE) {
         return ZR_SCOPED_CACHE_CHANGE_INVALIDATE_CONSERVATIVE;
     }
-    changedFunction = scoped_cache_changed_function(currentAst, changeInfo);
-    if (changedFunction == ZR_NULL) {
+    changedCallable = scoped_cache_changed_callable(currentAst, changeInfo);
+    if (changedCallable == ZR_NULL) {
         return ZR_SCOPED_CACHE_CHANGE_INVALIDATE_CONSERVATIVE;
     }
     return scoped_cache_dependency_decision(
-            scoped_cache_dependency_to_function(
+            scoped_cache_dependency_to_callable(
                     scopedAnalyzer,
-                    changedFunction));
+                    changedCallable));
 }
 
 SZrSemanticAnalyzer *

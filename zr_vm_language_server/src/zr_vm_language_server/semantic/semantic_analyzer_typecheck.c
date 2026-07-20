@@ -1221,6 +1221,26 @@ static void semantic_clear_compiler_error(SZrSemanticAnalyzer *analyzer) {
     }
 }
 
+static TZrBool semantic_publish_current_compiler_diagnostic(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrFileRange callRange) {
+    TZrBool published;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL ||
+        analyzer->compilerState == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    published =
+            ZrLanguageServer_SemanticAnalyzer_PublishCurrentCompilerQueryDiagnostic(
+                    state,
+                    analyzer,
+                    callRange);
+    semantic_clear_compiler_error(analyzer);
+    return published;
+}
+
 static TZrBool semantic_emit_ownership_diagnostic(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -1984,8 +2004,6 @@ static TZrBool semantic_resolve_named_function_call_in_env(SZrState *state,
                                                location,
                                                &resolvedFunction,
                                                &resolvedSignature)) {
-        compilerState->hasError = ZR_FALSE;
-        ZrParser_Compiler_ClearStructuredError(compilerState);
         free_resolved_call_signature(state, &resolvedSignature);
         return ZR_FALSE;
     }
@@ -1997,8 +2015,10 @@ static TZrBool semantic_resolve_named_function_call_in_env(SZrState *state,
                                                           resolvedFunction,
                                                           &resolvedSignature,
                                                           location);
-    compilerState->hasError = ZR_FALSE;
-    ZrParser_Compiler_ClearStructuredError(compilerState);
+    if (compatible) {
+        compilerState->hasError = ZR_FALSE;
+        ZrParser_Compiler_ClearStructuredError(compilerState);
+    }
     free_resolved_call_signature(state, &resolvedSignature);
     return compatible;
 }
@@ -2042,6 +2062,10 @@ static void semantic_check_named_function_call(SZrState *state,
             semantic_emit_ownership_diagnostic(state, analyzer, &ownershipDiagnostic)) {
             return;
         }
+        if (semantic_publish_current_compiler_diagnostic(
+                    state, analyzer, location)) {
+            return;
+        }
         semantic_add_type_mismatch_diagnostic(state, analyzer, location, "Type mismatch in function call");
         return;
     }
@@ -2063,6 +2087,10 @@ static void semantic_check_named_function_call(SZrState *state,
                                                            call,
                                                            &ownershipDiagnostic) &&
             semantic_emit_ownership_diagnostic(state, analyzer, &ownershipDiagnostic)) {
+            return;
+        }
+        if (semantic_publish_current_compiler_diagnostic(
+                    state, analyzer, location)) {
             return;
         }
         semantic_add_type_mismatch_diagnostic(state, analyzer, location, "Type mismatch in function call");

@@ -21,6 +21,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_canonical_signature_help.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_definition_query.h
@@ -29,6 +31,7 @@ related_code:
   - tests/parser/test_compiler_semantic_query_diagnostics.c
   - tests/parser/test_semantic_query.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
+  - tests/language_server/test_lsp_reference_callable_consumer_cases.h
   - tests/language_server/test_lsp_reaching_definition_navigation.c
   - tests/CMakeLists.txt
 implementation_files:
@@ -103,6 +106,10 @@ Computed array member inference records parser-owned expression diagnostic facts
 
 `ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics` runs after normal LSP semantic type checking. It runs the CFG-backed definite-assignment resolver when the analyzer AST is available and otherwise falls back to the straight-line resolver, then asks `ZrParser_SemanticQuery_Diagnostics` for module-scope structured diagnostics, converts each item with `ZrLanguageServer_Diagnostic_FromStructured` while preserving related information, and appends only diagnostics whose source range is not already reported by the existing analyzer diagnostics. The regular `ZrLanguageServer_Lsp_GetDiagnostics` path then publishes those diagnostics through the existing LSP conversion flow.
 
+Named-call compatibility failures now use the same query channel. The semantic analyzer keeps the parser compiler current error alive until `ZrParser_Compiler_PublishCurrentDiagnostic` has deep-copied it into persistent diagnostic facts, then clears the transient compiler error. When publication succeeds, the LSP analyzer removes the same-call-range `cannot_infer_exact_type` placeholder before `AppendSemanticQueryDiagnostics` projects the canonical `compiler_error`; it does not classify the error by message text or rebuild a receiver/member diagnostic locally.
+
+Resolved callable consumers also use `ZrParser_SemanticQuery_CallAt` and `ZrParser_SemanticQuery_FormatCall` directly. `hasResolvedTarget`, `targetSymbolId`, and `targetDeclarationRange` are consumed only when the target is resolved; signature help and receiver hover do not infer a target from the member spelling.
+
 `ZrLanguageServer_LspSemanticDefinitionQuery_AppendReachingDefinition` bridges parser definition query results into LSP locations for local symbol definition requests. The local-symbol path runs the straight-line reaching-definition resolver and, when the analyzer AST is available, the CFG-backed reaching-definition resolver before querying `DefinitionsOf`. A read after a single reaching write navigates to the write token. A read after divergent branch writes now returns both branch write locations when the CFG-backed producer can enumerate them; otherwise it still falls back through the query layer to a declaration location.
 
 `ZrParser_Compiler_PublishSemanticQueryDiagnostics` is the compiler-side bridge. `compile_script` calls it after statement compilation and script typed metadata generation succeed. The bridge runs the straight-line definite-assignment resolver, the straight-line reaching-definition resolver, and, when the script AST is available, the CFG-backed definite-assignment and reaching-definition resolvers before querying module-scope `ZrParser_SemanticQuery_Diagnostics`; it leaves the resulting structured diagnostics in `SZrSemanticContext.queryDiagnostics`. Because the reaching-definition payload is resolved on the same context, compiler-side callers can also ask `ZrParser_SemanticQuery_DefinitionOf` on the compiled semantic context and get a unique write definition when one reaches a read. The bridge does not route warnings through `ZrParser_Compiler_Error`, so semantic query warnings such as `unreachable_code` or `possibly_uninitialized_read` do not set `hasError` or `hasStructuredError`. This is currently context-cache publication only; binary metadata, CLI output, or another external compiler diagnostic channel still needs a later serialization path.
@@ -128,6 +135,7 @@ The same compiler diagnostic target covers semantic query diagnostics for existi
 - `Diagnostics` maps scope-filtered definite-assignment read facts to `uninitialized_read` / `possibly_uninitialized_read` while ignoring initialized or out-of-scope read facts, and it attaches declaration relatedInformation when a declaration range is present.
 - `Diagnostics` consumes linear definite-assignment resolver output, reporting the read before a write while ignoring the read after the write.
 - `tests/language_server/test_lsp_semantic_query_diagnostics.c` covers LSP publishing of semantic query diagnostics by opening a constant ternary branch fixture and requiring `GetDiagnostics` to include `unreachable_code`; it also covers `numeric_overflow`, array bounds errors/warnings, known non-integer array index errors, min-only array negative-interval warnings, and a branch-join `possibly_uninitialized_read` with one declaration relatedInformation entry through the same LSP diagnostic path.
+- `tests/language_server/test_lsp_reference_callable_consumer_cases.h` covers resolved callable `CallAt/FormatCall` parity across signature help and hover, scoped reference parameter information, exact receiver target identity, and one persistent `%ref` call-marker `compiler_error` without an inference cascade.
 - `tests/language_server/test_lsp_reaching_definition_navigation.c` covers LSP definition navigation through parser reaching-definition facts by requiring `return seed` after `seed = 3` to jump to the write token instead of the declaration token. It also covers divergent branch writes by requiring `return seed` after an `if/else` pair of writes to return both branch write locations and not the declaration.
 
 The parser test targets are `zr_vm_compiler_semantic_query_diagnostics_test` and `zr_vm_semantic_query_test`; the LSP publication targets are `zr_vm_language_server_semantic_query_diagnostics_test` and `zr_vm_language_server_reaching_definition_navigation_test`. They are registered in `tests/CMakeLists.txt`.

@@ -3,6 +3,8 @@
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
 
+#include <string.h>
+
 static TZrBool query_diagnostic_same_source(SZrString *left, SZrString *right) {
     if (left == ZR_NULL || right == ZR_NULL || left == right) {
         return ZR_TRUE;
@@ -40,6 +42,87 @@ static TZrBool query_diagnostic_same_code(SZrString *left, SZrString *right) {
     }
 
     return ZrCore_String_Equal(left, right);
+}
+
+static TZrBool query_diagnostic_has_code(
+        const SZrDiagnostic *diagnostic,
+        const TZrChar *expectedCode) {
+    const TZrChar *code = diagnostic != ZR_NULL
+                                  ? semantic_string_native(diagnostic->code)
+                                  : ZR_NULL;
+
+    return code != ZR_NULL && expectedCode != ZR_NULL &&
+           strcmp(code, expectedCode) == 0;
+}
+
+static void query_diagnostic_remove_shadowed_inference(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrFileRange publishedCallRange) {
+    TZrSize index;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL ||
+        !analyzer->diagnostics.isValid) {
+        return;
+    }
+
+    for (index = 0U; index < analyzer->diagnostics.length; index++) {
+        SZrDiagnostic **diagnosticPtr = (SZrDiagnostic **)ZrCore_Array_Get(
+                &analyzer->diagnostics,
+                index);
+        SZrDiagnostic *diagnostic = diagnosticPtr != ZR_NULL
+                                            ? *diagnosticPtr
+                                            : ZR_NULL;
+        TZrSize moveIndex;
+
+        if (!query_diagnostic_has_code(
+                    diagnostic,
+                    "cannot_infer_exact_type") ||
+            !query_diagnostic_same_range(
+                    &diagnostic->location,
+                    &publishedCallRange)) {
+            continue;
+        }
+
+        ZrLanguageServer_Diagnostic_Free(state, diagnostic);
+        for (moveIndex = index + 1U;
+             moveIndex < analyzer->diagnostics.length;
+             moveIndex++) {
+            SZrDiagnostic **nextPtr = (SZrDiagnostic **)ZrCore_Array_Get(
+                    &analyzer->diagnostics,
+                    moveIndex);
+            if (nextPtr != ZR_NULL) {
+                ZrCore_Array_Set(
+                        &analyzer->diagnostics,
+                        moveIndex - 1U,
+                        nextPtr);
+            }
+        }
+        analyzer->diagnostics.length--;
+        return;
+    }
+}
+
+TZrBool ZrLanguageServer_SemanticAnalyzer_PublishCurrentCompilerQueryDiagnostic(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrFileRange shadowedInferenceRange) {
+    TZrBool published;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL ||
+        analyzer->compilerState == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    published = ZrParser_Compiler_PublishCurrentDiagnostic(
+            analyzer->compilerState);
+    if (published) {
+        query_diagnostic_remove_shadowed_inference(
+                state,
+                analyzer,
+                shadowedInferenceRange);
+    }
+    return published;
 }
 
 static SZrDiagnostic *query_diagnostic_find_reported(

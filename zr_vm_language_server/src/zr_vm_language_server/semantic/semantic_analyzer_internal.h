@@ -148,6 +148,10 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
                                                                 SZrAstNode *node);
 
 void ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(SZrState *state,
-                                                                      SZrSemanticAnalyzer *analyzer);
+                                                                     SZrSemanticAnalyzer *analyzer);
+TZrBool ZrLanguageServer_SemanticAnalyzer_PublishCurrentCompilerQueryDiagnostic(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrFileRange shadowedInferenceRange);
 
 #endif
