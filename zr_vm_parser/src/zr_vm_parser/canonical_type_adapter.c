@@ -547,3 +547,118 @@ TZrTypeId ZrParser_CanonicalType_FromFunctionSignatureWithGenericBindings(
     ZrCore_Array_Free(context->state, &contracts);
     return functionTypeId;
 }
+
+static TZrTypeId canonical_type_rebind_outer_ref(
+        SZrSemanticContext *context,
+        TZrTypeId templateTypeId,
+        TZrTypeId resolvedTypeId) {
+    const SZrCanonicalTypeNode *templateType =
+            ZrParser_CanonicalType_Find(context, templateTypeId);
+    const SZrCanonicalTypeNode *resolvedType =
+            ZrParser_CanonicalType_Find(context, resolvedTypeId);
+
+    if (templateType != ZR_NULL && resolvedType != ZR_NULL &&
+        templateType->kind == ZR_CANONICAL_TYPE_REF &&
+        resolvedType->kind == ZR_CANONICAL_TYPE_REF) {
+        return ZrParser_CanonicalType_InternRef(
+                context,
+                resolvedType->data.refType.pointeeTypeId,
+                templateType->data.refType.access);
+    }
+    return resolvedTypeId;
+}
+
+TZrTypeId ZrParser_CanonicalType_RebindFunctionSignature(
+        SZrSemanticContext *context,
+        TZrTypeId templateFunctionTypeId,
+        TZrTypeId resolvedFunctionTypeId) {
+    const SZrCanonicalTypeNode *templateType;
+    const SZrCanonicalTypeNode *resolvedType;
+    SZrArray contracts;
+    TZrSize parameterCount;
+    TZrTypeId templateReturnTypeId;
+    TZrTypeId resolvedReturnTypeId;
+    EZrCanonicalReceiverEffect receiverEffect;
+    TZrUInt32 effectFlags;
+    TZrTypeId returnTypeId;
+    TZrTypeId result;
+    TZrSize index;
+
+    if (context == ZR_NULL) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    templateType = ZrParser_CanonicalType_Find(context, templateFunctionTypeId);
+    resolvedType = ZrParser_CanonicalType_Find(context, resolvedFunctionTypeId);
+    if (templateType == ZR_NULL || resolvedType == ZR_NULL ||
+        templateType->kind != ZR_CANONICAL_TYPE_FUNCTION ||
+        resolvedType->kind != ZR_CANONICAL_TYPE_FUNCTION ||
+        templateType->data.function.parameterContracts.length !=
+                resolvedType->data.function.parameterContracts.length) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    parameterCount = templateType->data.function.parameterContracts.length;
+    templateReturnTypeId = templateType->data.function.returnTypeId;
+    resolvedReturnTypeId = resolvedType->data.function.returnTypeId;
+    receiverEffect = templateType->data.function.receiverEffect;
+    effectFlags = templateType->data.function.effectFlags;
+
+    ZrCore_Array_Init(
+            context->state,
+            &contracts,
+            sizeof(SZrCanonicalParameterContract),
+            parameterCount > 0U
+                    ? parameterCount
+                    : ZR_PARSER_INITIAL_CAPACITY_TINY);
+    for (index = 0U; index < parameterCount; index++) {
+        const SZrCanonicalParameterContract *templateContract =
+                ZR_NULL;
+        const SZrCanonicalParameterContract *resolvedContract =
+                ZR_NULL;
+        SZrCanonicalParameterContract templateContractValue;
+        SZrCanonicalParameterContract resolvedContractValue;
+        SZrCanonicalParameterContract reboundContract;
+
+        templateType = ZrParser_CanonicalType_Find(context, templateFunctionTypeId);
+        resolvedType = ZrParser_CanonicalType_Find(context, resolvedFunctionTypeId);
+        if (templateType != ZR_NULL && resolvedType != ZR_NULL) {
+            templateContract =
+                    (const SZrCanonicalParameterContract *)ZrCore_Array_Get(
+                            (SZrArray *)&templateType->data.function.parameterContracts,
+                            index);
+            resolvedContract =
+                    (const SZrCanonicalParameterContract *)ZrCore_Array_Get(
+                            (SZrArray *)&resolvedType->data.function.parameterContracts,
+                            index);
+        }
+        if (templateContract == ZR_NULL || resolvedContract == ZR_NULL) {
+            ZrCore_Array_Free(context->state, &contracts);
+            return ZR_SEMANTIC_ID_INVALID;
+        }
+        templateContractValue = *templateContract;
+        resolvedContractValue = *resolvedContract;
+        reboundContract = templateContractValue;
+        reboundContract.typeId = canonical_type_rebind_outer_ref(
+                context,
+                templateContractValue.typeId,
+                resolvedContractValue.typeId);
+        if (reboundContract.typeId == ZR_SEMANTIC_ID_INVALID) {
+            ZrCore_Array_Free(context->state, &contracts);
+            return ZR_SEMANTIC_ID_INVALID;
+        }
+        ZrCore_Array_Push(context->state, &contracts, &reboundContract);
+    }
+
+    returnTypeId = canonical_type_rebind_outer_ref(
+            context,
+            templateReturnTypeId,
+            resolvedReturnTypeId);
+    result = ZrParser_CanonicalType_InternFunction(
+            context,
+            (const SZrCanonicalParameterContract *)contracts.head,
+            contracts.length,
+            returnTypeId,
+            receiverEffect,
+            effectFlags);
+    ZrCore_Array_Free(context->state, &contracts);
+    return result;
+}

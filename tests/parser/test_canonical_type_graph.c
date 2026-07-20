@@ -497,6 +497,112 @@ static void test_function_identity_uses_complete_callable_contract(void) {
                     ZR_CANONICAL_CALLABLE_EFFECT_THROWS));
 }
 
+static void test_function_rebind_preserves_source_contract_across_type_graph_growth(void) {
+    const SZrCanonicalTypeNode *reboundNode;
+    const SZrCanonicalParameterContract *firstParameter;
+    const SZrCanonicalParameterContract *secondParameter;
+    SZrCanonicalParameterContract templateParameters[2];
+    SZrCanonicalParameterContract resolvedParameters[2];
+    TZrTypeId intType = ZrParser_CanonicalType_InternPrimitive(
+            g_context, ZR_VALUE_TYPE_INT64);
+    TZrTypeId boolType = ZrParser_CanonicalType_InternPrimitive(
+            g_context, ZR_VALUE_TYPE_BOOL);
+    TZrTypeId readonlyIntRef = ZrParser_CanonicalType_InternRef(
+            g_context, intType, ZR_CANONICAL_REF_READONLY);
+    TZrTypeId writableIntRef = ZrParser_CanonicalType_InternRef(
+            g_context, intType, ZR_CANONICAL_REF_WRITABLE);
+    TZrTypeId writableBoolRef = ZrParser_CanonicalType_InternRef(
+            g_context, boolType, ZR_CANONICAL_REF_WRITABLE);
+    TZrTypeId templateFunction;
+    TZrTypeId resolvedFunction;
+    TZrTypeId reboundFunction;
+    TZrTypeId fillerType = intType;
+
+    memset(templateParameters, 0, sizeof(templateParameters));
+    templateParameters[0].typeId = readonlyIntRef;
+    templateParameters[0].passingForm = ZR_CANONICAL_PASSING_REF_READONLY;
+    templateParameters[0].escapeUpperBound = ZR_CANONICAL_ESCAPE_FUNCTION;
+    templateParameters[0].entryInitialization = ZR_CANONICAL_ENTRY_INITIALIZED;
+    templateParameters[0].exitInitialization = ZR_CANONICAL_EXIT_UNCHANGED;
+    templateParameters[0].callSiteMarker = ZR_CANONICAL_CALL_SITE_REF;
+    templateParameters[1].typeId = writableIntRef;
+    templateParameters[1].passingForm = ZR_CANONICAL_PASSING_OUT;
+    templateParameters[1].escapeUpperBound = ZR_CANONICAL_ESCAPE_FUNCTION;
+    templateParameters[1].entryInitialization = ZR_CANONICAL_ENTRY_UNINITIALIZED;
+    templateParameters[1].exitInitialization =
+            ZR_CANONICAL_EXIT_DEFINITELY_INITIALIZED;
+    templateParameters[1].callSiteMarker = ZR_CANONICAL_CALL_SITE_OUT;
+
+    resolvedParameters[0] = templateParameters[0];
+    resolvedParameters[0].typeId = writableBoolRef;
+    resolvedParameters[0].passingForm = ZR_CANONICAL_PASSING_REF;
+    resolvedParameters[1] = templateParameters[1];
+    resolvedParameters[1].typeId = writableBoolRef;
+
+    templateFunction = ZrParser_CanonicalType_InternFunction(
+            g_context,
+            templateParameters,
+            2U,
+            readonlyIntRef,
+            ZR_CANONICAL_RECEIVER_READONLY,
+            ZR_CANONICAL_CALLABLE_EFFECT_THROWS);
+    resolvedFunction = ZrParser_CanonicalType_InternFunction(
+            g_context,
+            resolvedParameters,
+            2U,
+            writableBoolRef,
+            ZR_CANONICAL_RECEIVER_NONE,
+            ZR_CANONICAL_CALLABLE_EFFECT_NONE);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, templateFunction);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, resolvedFunction);
+
+    while (g_context->canonicalTypes.length < g_context->canonicalTypes.capacity) {
+        fillerType = ZrParser_CanonicalType_InternNullable(g_context, fillerType);
+        TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, fillerType);
+    }
+    reboundFunction = ZrParser_CanonicalType_RebindFunctionSignature(
+            g_context, templateFunction, resolvedFunction);
+
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, reboundFunction);
+    reboundNode = ZrParser_CanonicalType_Find(g_context, reboundFunction);
+    TEST_ASSERT_NOT_NULL(reboundNode);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_FUNCTION, reboundNode->kind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_CANONICAL_RECEIVER_READONLY,
+            reboundNode->data.function.receiverEffect);
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_CANONICAL_CALLABLE_EFFECT_THROWS,
+            reboundNode->data.function.effectFlags);
+    TEST_ASSERT_EQUAL_UINT32(
+            2U,
+            (TZrUInt32)reboundNode->data.function.parameterContracts.length);
+
+    firstParameter = (const SZrCanonicalParameterContract *)ZrCore_Array_Get(
+            (SZrArray *)&reboundNode->data.function.parameterContracts, 0U);
+    secondParameter = (const SZrCanonicalParameterContract *)ZrCore_Array_Get(
+            (SZrArray *)&reboundNode->data.function.parameterContracts, 1U);
+    TEST_ASSERT_NOT_NULL(firstParameter);
+    TEST_ASSERT_NOT_NULL(secondParameter);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_CANONICAL_PASSING_REF_READONLY, firstParameter->passingForm);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_CANONICAL_ESCAPE_FUNCTION, firstParameter->escapeUpperBound);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_PASSING_OUT, secondParameter->passingForm);
+    TEST_ASSERT_EQUAL_UINT32(
+            boolType,
+            ZrParser_CanonicalType_Find(g_context, firstParameter->typeId)
+                    ->data.refType.pointeeTypeId);
+    TEST_ASSERT_EQUAL_UINT32(
+            boolType,
+            ZrParser_CanonicalType_Find(g_context, secondParameter->typeId)
+                    ->data.refType.pointeeTypeId);
+    TEST_ASSERT_EQUAL_UINT32(
+            boolType,
+            ZrParser_CanonicalType_Find(
+                    g_context, reboundNode->data.function.returnTypeId)
+                    ->data.refType.pointeeTypeId);
+}
+
 static void test_value_construction_requires_capability_and_public_constructor_contract(void) {
     TZrTypeId intType = ZrParser_CanonicalType_InternPrimitive(g_context, ZR_VALUE_TYPE_INT64);
     TZrTypeId boolType = ZrParser_CanonicalType_InternPrimitive(g_context, ZR_VALUE_TYPE_BOOL);
@@ -927,6 +1033,7 @@ int main(void) {
     RUN_TEST(test_invalid_enum_and_effect_values_are_rejected);
     RUN_TEST(test_reference_owner_and_wrapper_shapes_are_distinct);
     RUN_TEST(test_function_identity_uses_complete_callable_contract);
+    RUN_TEST(test_function_rebind_preserves_source_contract_across_type_graph_growth);
     RUN_TEST(test_value_construction_requires_capability_and_public_constructor_contract);
     RUN_TEST(test_formatter_renders_every_current_canonical_type_shape);
     RUN_TEST(test_legacy_inferred_types_project_to_structural_type_ids);

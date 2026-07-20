@@ -129,6 +129,12 @@ TZrBool ZrParser_SemanticQuery_CallAt(
     outQuery->callableTypeId = bestReference->typeId;
     outQuery->expression = best;
     outQuery->reference = bestReference;
+    if (bestReference->isResolved &&
+        bestReference->symbolId != ZR_SEMANTIC_ID_INVALID) {
+        outQuery->hasResolvedTarget = ZR_TRUE;
+        outQuery->targetSymbolId = bestReference->symbolId;
+        outQuery->targetDeclarationRange = bestReference->declarationRange;
+    }
     return ZR_TRUE;
 }
 

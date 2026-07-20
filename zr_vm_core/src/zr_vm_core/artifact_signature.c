@@ -1,5 +1,7 @@
 #include "zr_vm_core/artifact_schema.h"
 
+#include <string.h>
+
 #include "artifact_schema_internal.h"
 
 typedef struct SZrArtifactSignatureReader {
@@ -251,6 +253,96 @@ EZrArtifactStatus ZrCore_Artifact_ValidateSignature(const TZrByte *signature,
     }
     if (reader.offset != reader.length) {
         return artifact_signature_invalid(&reader);
+    }
+    return ZR_ARTIFACT_STATUS_OK;
+}
+
+EZrArtifactStatus ZrCore_Artifact_ReadCallableSignatureSummary(
+        const TZrByte *signature,
+        TZrSize signatureLength,
+        SZrArtifactCallableSignatureSummary *outSummary,
+        SZrArtifactDiagnostic *diagnostic) {
+    SZrArtifactSignatureReader reader;
+    TZrUInt8 node = 0U;
+    TZrUInt8 receiver = 0U;
+    TZrUInt8 refExport = 0U;
+    TZrUInt8 effectFlags = 0U;
+    TZrUInt32 parameterCount = 0U;
+    TZrUInt32 index;
+    EZrArtifactStatus status;
+
+    if (outSummary != ZR_NULL) {
+        memset(outSummary, 0, sizeof(*outSummary));
+    }
+    if (outSummary == ZR_NULL) {
+        return zr_artifact_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_ARGUMENT,
+                ZR_ARTIFACT_SECTION_SIGNATURE_HEAP,
+                0U,
+                0U);
+    }
+    status = ZrCore_Artifact_ValidateSignature(
+            signature, signatureLength, diagnostic);
+    if (status != ZR_ARTIFACT_STATUS_OK) {
+        return status;
+    }
+
+    reader.bytes = signature;
+    reader.length = signatureLength;
+    reader.offset = 0U;
+    reader.diagnostic = diagnostic;
+    status = artifact_signature_read_u8(&reader, &node);
+    if (status != ZR_ARTIFACT_STATUS_OK) {
+        return status;
+    }
+    if (node != ZR_ARTIFACT_SIGNATURE_NODE_FUNCTION) {
+        return artifact_signature_invalid(&reader);
+    }
+    status = artifact_signature_read_u8(&reader, &receiver);
+    if (status == ZR_ARTIFACT_STATUS_OK)
+        status = artifact_signature_read_u8(&reader, &refExport);
+    if (status == ZR_ARTIFACT_STATUS_OK)
+        status = artifact_signature_read_u8(&reader, &effectFlags);
+    if (status == ZR_ARTIFACT_STATUS_OK)
+        status = artifact_signature_read_u32(&reader, &parameterCount);
+    if (status == ZR_ARTIFACT_STATUS_OK)
+        status = artifact_signature_validate_node(&reader, 1U);
+    if (status != ZR_ARTIFACT_STATUS_OK) {
+        return status;
+    }
+
+    outSummary->receiverEffect = (EZrArtifactReceiverEffect)receiver;
+    outSummary->refExportEffect = (EZrArtifactRefExportEffect)refExport;
+    outSummary->effectFlags = effectFlags;
+    outSummary->parameterCount = parameterCount;
+    for (index = 0U; index < parameterCount; index++) {
+        TZrUInt8 passing = 0U;
+        TZrUInt8 escape = 0U;
+        TZrUInt8 ignored = 0U;
+
+        status = artifact_signature_read_u8(&reader, &passing);
+        if (status == ZR_ARTIFACT_STATUS_OK)
+            status = artifact_signature_read_u8(&reader, &escape);
+        if (status == ZR_ARTIFACT_STATUS_OK)
+            status = artifact_signature_read_u8(&reader, &ignored);
+        if (status == ZR_ARTIFACT_STATUS_OK)
+            status = artifact_signature_read_u8(&reader, &ignored);
+        if (status == ZR_ARTIFACT_STATUS_OK)
+            status = artifact_signature_read_u8(&reader, &ignored);
+        if (status == ZR_ARTIFACT_STATUS_OK)
+            status = artifact_signature_read_u8(&reader, &ignored);
+        if (status == ZR_ARTIFACT_STATUS_OK)
+            status = artifact_signature_validate_node(&reader, 1U);
+        if (status != ZR_ARTIFACT_STATUS_OK) {
+            memset(outSummary, 0, sizeof(*outSummary));
+            return status;
+        }
+        if ((passing == ZR_ARTIFACT_PASSING_REF ||
+             passing == ZR_ARTIFACT_PASSING_REF_READONLY) &&
+            escape == ZR_ARTIFACT_ESCAPE_FUNCTION) {
+            outSummary->hasScopedParameter = ZR_TRUE;
+        }
     }
     return ZR_ARTIFACT_STATUS_OK;
 }

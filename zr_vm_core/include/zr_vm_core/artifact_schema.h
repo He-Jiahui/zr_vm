@@ -153,6 +153,14 @@ typedef enum EZrArtifactRefExportEffect {
     ZR_ARTIFACT_REF_EXPORT_WRITABLE = 2
 } EZrArtifactRefExportEffect;
 
+typedef struct SZrArtifactCallableSignatureSummary {
+    EZrArtifactReceiverEffect receiverEffect;
+    EZrArtifactRefExportEffect refExportEffect;
+    TZrUInt32 effectFlags;
+    TZrUInt32 parameterCount;
+    TZrBool hasScopedParameter;
+} SZrArtifactCallableSignatureSummary;
+
 typedef enum EZrArtifactGcScanKind {
     ZR_ARTIFACT_GC_SCAN_FREE = 0,
     ZR_ARTIFACT_GC_SCAN_MAPPED = 1,
@@ -396,6 +404,12 @@ ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ValidatePublicIdentity(
 ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ValidateSignature(
         const TZrByte *signature,
         TZrSize signatureLength,
+        SZrArtifactDiagnostic *diagnostic);
+
+ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadCallableSignatureSummary(
+        const TZrByte *signature,
+        TZrSize signatureLength,
+        SZrArtifactCallableSignatureSummary *outSummary,
         SZrArtifactDiagnostic *diagnostic);
 
 ZR_CORE_API TZrUInt64 ZrCore_Artifact_HashBytes(const TZrByte *bytes, TZrSize byteLength);

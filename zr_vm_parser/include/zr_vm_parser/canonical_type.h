@@ -368,6 +368,11 @@ ZR_PARSER_API TZrTypeId ZrParser_CanonicalType_FromFunctionSignatureWithGenericB
         const SZrCanonicalGenericBinding *genericBindings,
         TZrSize genericBindingCount);
 
+ZR_PARSER_API TZrTypeId ZrParser_CanonicalType_RebindFunctionSignature(
+        struct SZrSemanticContext *context,
+        TZrTypeId templateFunctionTypeId,
+        TZrTypeId resolvedFunctionTypeId);
+
 ZR_PARSER_API TZrBool ZrParser_CanonicalType_RegisterDefinition(
         struct SZrSemanticContext *context,
         TZrTypeId typeId,

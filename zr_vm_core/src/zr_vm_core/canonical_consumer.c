@@ -79,6 +79,42 @@ static TZrBool canonical_consumer_find_contract(
     return ZR_FALSE;
 }
 
+static EZrArtifactStatus canonical_consumer_validate_callable_contract(
+        const SZrCanonicalTypeProjection *type,
+        SZrArtifactDiagnostic *diagnostic) {
+    const TZrUInt32 effectMask = ZR_ARTIFACT_CONTRACT_FLAG_THROWS |
+                                 ZR_ARTIFACT_CONTRACT_FLAG_ASYNC |
+                                 ZR_ARTIFACT_CONTRACT_FLAG_GENERATOR;
+    SZrArtifactCallableSignatureSummary summary;
+    EZrArtifactStatus status;
+
+    if (type == ZR_NULL || !type->hasContract || type->signatureLength == 0U ||
+        type->signatureData[0] != ZR_ARTIFACT_SIGNATURE_NODE_FUNCTION) {
+        return ZR_ARTIFACT_STATUS_OK;
+    }
+    status = ZrCore_Artifact_ReadCallableSignatureSummary(
+            type->signatureData,
+            type->signatureLength,
+            &summary,
+            diagnostic);
+    if (status != ZR_ARTIFACT_STATUS_OK) {
+        return status;
+    }
+    if (type->contract.receiverEffect != (TZrUInt32)summary.receiverEffect ||
+        type->contract.refExportEffect != (TZrUInt32)summary.refExportEffect ||
+        (type->contract.flags & effectMask) != summary.effectFlags ||
+        ((type->contract.flags & ZR_ARTIFACT_CONTRACT_FLAG_SCOPED) != 0U) !=
+                (summary.hasScopedParameter != ZR_FALSE) ||
+        type->contract.parameterCount != summary.parameterCount) {
+        return canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_SIGNATURE,
+                ZR_ARTIFACT_SECTION_CONTRACT_TABLE,
+                0U);
+    }
+    return ZR_ARTIFACT_STATUS_OK;
+}
+
 static EZrArtifactStatus canonical_consumer_project_identity_row(
         const SZrCanonicalConsumerProjection *projection,
         const SZrArtifactSectionView *section,
@@ -325,5 +361,6 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_Open(
         return canonical_consumer_fail(diagnostic, ZR_ARTIFACT_STATUS_INVALID_SECTION, 0u, 0u);
     }
     outProjection->rootType.hasContract = ZR_TRUE;
-    return ZR_ARTIFACT_STATUS_OK;
+    return canonical_consumer_validate_callable_contract(
+            &outProjection->rootType, diagnostic);
 }

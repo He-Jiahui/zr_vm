@@ -72,8 +72,22 @@ static EZrArtifactStatus artifact_type_write_u64(SZrArtifactTypeWriter *writer, 
 }
 
 static EZrArtifactStatus artifact_type_write_node(SZrArtifactTypeWriter *writer,
-                                                  TZrTypeId typeId,
-                                                  TZrUInt32 depth);
+                                                   TZrTypeId typeId,
+                                                   TZrUInt32 depth);
+
+static TZrUInt8 artifact_type_ref_export_effect(
+        const SZrSemanticContext *context,
+        TZrTypeId returnTypeId) {
+    const SZrCanonicalTypeNode *returnType =
+            ZrParser_CanonicalType_Find(context, returnTypeId);
+
+    if (returnType == ZR_NULL || returnType->kind != ZR_CANONICAL_TYPE_REF) {
+        return (TZrUInt8)ZR_ARTIFACT_REF_EXPORT_NONE;
+    }
+    return returnType->data.refType.access == ZR_CANONICAL_REF_READONLY
+                   ? (TZrUInt8)ZR_ARTIFACT_REF_EXPORT_READONLY
+                   : (TZrUInt8)ZR_ARTIFACT_REF_EXPORT_WRITABLE;
+}
 
 static EZrArtifactStatus artifact_type_write_type_id_array(SZrArtifactTypeWriter *writer,
                                                            const SZrArray *typeIds,
@@ -146,6 +160,7 @@ static EZrArtifactStatus artifact_type_write_function(SZrArtifactTypeWriter *wri
     TZrSize index;
     EZrArtifactStatus status;
     TZrUInt8 artifactEffectFlags = 0u;
+    TZrUInt8 refExportEffect;
 
     if ((function->effectFlags & ZR_CANONICAL_CALLABLE_EFFECT_THROWS) != 0u)
         artifactEffectFlags |= (TZrUInt8)ZR_ARTIFACT_CONTRACT_FLAG_THROWS;
@@ -153,9 +168,12 @@ static EZrArtifactStatus artifact_type_write_function(SZrArtifactTypeWriter *wri
         artifactEffectFlags |= (TZrUInt8)ZR_ARTIFACT_CONTRACT_FLAG_ASYNC;
     if ((function->effectFlags & ZR_CANONICAL_CALLABLE_EFFECT_GENERATOR) != 0u)
         artifactEffectFlags |= (TZrUInt8)ZR_ARTIFACT_CONTRACT_FLAG_GENERATOR;
+    refExportEffect = artifact_type_ref_export_effect(
+            writer->context, function->returnTypeId);
 
     status = artifact_type_write_u8(writer, (TZrUInt8)function->receiverEffect);
-    if (status == ZR_ARTIFACT_STATUS_OK) status = artifact_type_write_u8(writer, ZR_ARTIFACT_REF_EXPORT_NONE);
+    if (status == ZR_ARTIFACT_STATUS_OK)
+        status = artifact_type_write_u8(writer, refExportEffect);
     if (status == ZR_ARTIFACT_STATUS_OK) status = artifact_type_write_u8(writer, artifactEffectFlags);
     if (status == ZR_ARTIFACT_STATUS_OK)
         status = artifact_type_write_u32(writer, (TZrUInt32)function->parameterContracts.length);
@@ -432,7 +450,8 @@ static EZrArtifactStatus artifact_type_read_function(SZrArtifactTypeReader *read
     if (status == ZR_ARTIFACT_STATUS_OK) status = artifact_type_read_u32(reader, &parameterCount);
     if (status == ZR_ARTIFACT_STATUS_OK) status = artifact_type_read_node(reader, &returnTypeId, depth + 1u);
     if (status != ZR_ARTIFACT_STATUS_OK) return status;
-    if (refExport != ZR_ARTIFACT_REF_EXPORT_NONE || parameterCount > ZR_ARTIFACT_SIGNATURE_MAX_CHILD_COUNT) {
+    if (refExport != artifact_type_ref_export_effect(reader->context, returnTypeId) ||
+        parameterCount > ZR_ARTIFACT_SIGNATURE_MAX_CHILD_COUNT) {
         return artifact_projection_fail(reader->diagnostic,
                                         ZR_ARTIFACT_STATUS_INVALID_SIGNATURE,
                                         reader->offset);

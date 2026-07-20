@@ -20,4 +20,9 @@ ZR_PARSER_API TZrTypeId ZrParser_SyntaxCallable_Intern(
         EZrCanonicalReceiverEffect receiverEffect,
         TZrUInt32 effectFlags);
 
+ZR_PARSER_API TZrTypeId ZrParser_SyntaxCallable_RefineFromDeclaration(
+        struct SZrSemanticContext *context,
+        const SZrAstNode *declaration,
+        TZrTypeId callableTypeId);
+
 #endif

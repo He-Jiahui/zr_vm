@@ -39,6 +39,9 @@ typedef struct SZrParserSemanticCallQuery {
     TZrTypeId callableTypeId;
     const SZrSemanticExpressionFact *expression;
     const SZrSemanticReferenceFact *reference;
+    TZrBool hasResolvedTarget;
+    TZrSymbolId targetSymbolId;
+    SZrFileRange targetDeclarationRange;
 } SZrParserSemanticCallQuery;
 
 typedef struct SZrParserSemanticPublicContractQuery {

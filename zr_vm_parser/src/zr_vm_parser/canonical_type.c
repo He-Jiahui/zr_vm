@@ -197,7 +197,8 @@ static TZrBool canonical_parameter_contract_is_valid(
                    contract->callSiteMarker == ZR_CANONICAL_CALL_SITE_NONE;
         case ZR_CANONICAL_PASSING_REF:
         case ZR_CANONICAL_PASSING_REF_READONLY:
-            return contract->escapeUpperBound == ZR_CANONICAL_ESCAPE_CALLER &&
+            return (contract->escapeUpperBound == ZR_CANONICAL_ESCAPE_FUNCTION ||
+                    contract->escapeUpperBound == ZR_CANONICAL_ESCAPE_CALLER) &&
                    contract->entryInitialization == ZR_CANONICAL_ENTRY_INITIALIZED &&
                    contract->exitInitialization == ZR_CANONICAL_EXIT_UNCHANGED &&
                    contract->acceptsTemporary == ZR_FALSE &&

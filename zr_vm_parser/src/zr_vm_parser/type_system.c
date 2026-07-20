@@ -5,6 +5,7 @@
 #include "zr_vm_parser/type_system.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/semantic.h"
+#include "zr_vm_parser/syntax_contract.h"
 #include "type_inference_internal.h"
 
 #include "zr_vm_core/array.h"
@@ -1543,6 +1544,8 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *state,
                 effectFlags,
                 (const SZrCanonicalGenericBinding *)genericBindings.head,
                 genericBindings.length);
+        typeId = ZrParser_SyntaxCallable_RefineFromDeclaration(
+                env->semanticContext, declarationNode, typeId);
         if (genericBindings.isValid) {
             ZrCore_Array_Free(state, &genericBindings);
         }

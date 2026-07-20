@@ -520,6 +520,7 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_add_unity_test_target(
             zr_vm_canonical_consumers_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_canonical_consumers.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_reference_callable_consumers.c
     )
     target_include_directories(zr_vm_canonical_consumers_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include

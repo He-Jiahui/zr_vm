@@ -141,6 +141,15 @@ static void test_parameter_source_forms_normalize_to_canonical_contracts(void) {
             ZR_CANONICAL_PASSING_REF_READONLY,
             ZR_CANONICAL_PASSING_OUT,
     };
+    const EZrCanonicalEscapeUpperBound expectedEscapeBounds[] = {
+            ZR_CANONICAL_ESCAPE_FUNCTION,
+            ZR_CANONICAL_ESCAPE_FUNCTION,
+            ZR_CANONICAL_ESCAPE_CALLER,
+            ZR_CANONICAL_ESCAPE_CALLER,
+            ZR_CANONICAL_ESCAPE_FUNCTION,
+            ZR_CANONICAL_ESCAPE_FUNCTION,
+            ZR_CANONICAL_ESCAPE_FUNCTION,
+    };
     SZrAstNode *script = parse_source(source);
     SZrFunctionDeclaration *function = &script_statement(script, 0u)->data.functionDeclaration;
     TZrTypeId dataType = ZrParser_CanonicalType_InternNominal(
@@ -159,6 +168,8 @@ static void test_parameter_source_forms_normalize_to_canonical_contracts(void) {
         TEST_ASSERT_TRUE(ZrParser_SyntaxParameter_Normalize(
                 g_context, parameter, dataType, &contract));
         TEST_ASSERT_EQUAL_INT(expectedPassing[index], contract.passingForm);
+        TEST_ASSERT_EQUAL_INT(
+                expectedEscapeBounds[index], contract.escapeUpperBound);
         contractType = ZrParser_CanonicalType_Find(g_context, contract.typeId);
         if (index == 0u) {
             TEST_ASSERT_EQUAL_UINT32(dataType, contract.typeId);

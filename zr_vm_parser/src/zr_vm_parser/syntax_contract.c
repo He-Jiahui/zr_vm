@@ -47,14 +47,14 @@ TZrBool ZrParser_SyntaxParameter_Normalize(
             break;
         case ZR_PARAMETER_SOURCE_SCOPED_REF:
             outContract->passingForm = ZR_CANONICAL_PASSING_REF;
-            outContract->escapeUpperBound = ZR_CANONICAL_ESCAPE_BLOCK;
+            outContract->escapeUpperBound = ZR_CANONICAL_ESCAPE_FUNCTION;
             outContract->acceptsTemporary = ZR_FALSE;
             outContract->callSiteMarker = ZR_CANONICAL_CALL_SITE_REF;
             break;
         case ZR_PARAMETER_SOURCE_SCOPED_REF_READONLY:
             access = ZR_CANONICAL_REF_READONLY;
             outContract->passingForm = ZR_CANONICAL_PASSING_REF_READONLY;
-            outContract->escapeUpperBound = ZR_CANONICAL_ESCAPE_BLOCK;
+            outContract->escapeUpperBound = ZR_CANONICAL_ESCAPE_FUNCTION;
             outContract->acceptsTemporary = ZR_FALSE;
             outContract->callSiteMarker = ZR_CANONICAL_CALL_SITE_REF;
             break;
@@ -112,5 +112,120 @@ TZrTypeId ZrParser_SyntaxCallable_Intern(
             receiverEffect,
             effectFlags);
     ZrCore_Array_Free(context->state, &contracts);
+    return result;
+}
+
+static const SZrAstNodeArray *syntax_callable_parameters(
+        const SZrAstNode *declaration,
+        TZrBool *outRecognized) {
+    if (outRecognized != ZR_NULL) {
+        *outRecognized = ZR_TRUE;
+    }
+    if (declaration == ZR_NULL) {
+        if (outRecognized != ZR_NULL) {
+            *outRecognized = ZR_FALSE;
+        }
+        return ZR_NULL;
+    }
+
+    switch (declaration->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            return declaration->data.functionDeclaration.params;
+        case ZR_AST_LAMBDA_EXPRESSION:
+            return declaration->data.lambdaExpression.params;
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+            return declaration->data.externFunctionDeclaration.params;
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+            return declaration->data.externDelegateDeclaration.params;
+        case ZR_AST_CLASS_METHOD:
+            return declaration->data.classMethod.params;
+        case ZR_AST_STRUCT_METHOD:
+            return declaration->data.structMethod.params;
+        case ZR_AST_CLASS_META_FUNCTION:
+            return declaration->data.classMetaFunction.params;
+        case ZR_AST_STRUCT_META_FUNCTION:
+            return declaration->data.structMetaFunction.params;
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            return declaration->data.interfaceMethodSignature.params;
+        case ZR_AST_INTERFACE_META_SIGNATURE:
+            return declaration->data.interfaceMetaSignature.params;
+        default:
+            if (outRecognized != ZR_NULL) {
+                *outRecognized = ZR_FALSE;
+            }
+            return ZR_NULL;
+    }
+}
+
+TZrTypeId ZrParser_SyntaxCallable_RefineFromDeclaration(
+        SZrSemanticContext *context,
+        const SZrAstNode *declaration,
+        TZrTypeId callableTypeId) {
+    const SZrCanonicalTypeNode *callableType;
+    const SZrAstNodeArray *parameters;
+    SZrArray valueTypeIds;
+    TZrTypeId result;
+    TZrBool recognized = ZR_FALSE;
+    TZrSize index;
+
+    if (context == ZR_NULL) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    callableType = ZrParser_CanonicalType_Find(context, callableTypeId);
+    if (callableType == ZR_NULL || callableType->kind != ZR_CANONICAL_TYPE_FUNCTION) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    parameters = syntax_callable_parameters(declaration, &recognized);
+    if (!recognized) {
+        return callableTypeId;
+    }
+    if (parameters == ZR_NULL) {
+        return callableType->data.function.parameterContracts.length == 0U
+                       ? callableTypeId
+                       : ZR_SEMANTIC_ID_INVALID;
+    }
+    if (parameters->count != callableType->data.function.parameterContracts.length) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+
+    ZrCore_Array_Init(
+            context->state,
+            &valueTypeIds,
+            sizeof(TZrTypeId),
+            parameters->count > 0U ? parameters->count : ZR_PARSER_INITIAL_CAPACITY_TINY);
+    for (index = 0U; index < parameters->count; index++) {
+        const SZrCanonicalParameterContract *contract =
+                (const SZrCanonicalParameterContract *)ZrCore_Array_Get(
+                        (SZrArray *)&callableType->data.function.parameterContracts,
+                        index);
+        const SZrCanonicalTypeNode *contractType;
+        const SZrAstNode *parameterNode = parameters->nodes[index];
+        TZrTypeId valueTypeId;
+
+        if (contract == ZR_NULL || parameterNode == ZR_NULL ||
+            parameterNode->type != ZR_AST_PARAMETER) {
+            ZrCore_Array_Free(context->state, &valueTypeIds);
+            return ZR_SEMANTIC_ID_INVALID;
+        }
+        valueTypeId = contract->typeId;
+        if (parameterNode->data.parameter.sourcePassingForm != ZR_PARAMETER_SOURCE_VALUE) {
+            contractType = ZrParser_CanonicalType_Find(context, contract->typeId);
+            if (contractType == ZR_NULL || contractType->kind != ZR_CANONICAL_TYPE_REF) {
+                ZrCore_Array_Free(context->state, &valueTypeIds);
+                return ZR_SEMANTIC_ID_INVALID;
+            }
+            valueTypeId = contractType->data.refType.pointeeTypeId;
+        }
+        ZrCore_Array_Push(context->state, &valueTypeIds, &valueTypeId);
+    }
+
+    result = ZrParser_SyntaxCallable_Intern(
+            context,
+            parameters,
+            (const TZrTypeId *)valueTypeIds.head,
+            callableType->data.function.returnTypeId,
+            callableType->data.function.receiverEffect,
+            callableType->data.function.effectFlags);
+    ZrCore_Array_Free(context->state, &valueTypeIds);
     return result;
 }

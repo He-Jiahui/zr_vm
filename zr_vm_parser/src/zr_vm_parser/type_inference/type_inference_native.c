@@ -3324,6 +3324,11 @@ infer_regular_member_access:
                                                        &resolvedMemberSignature,
                                                        &nextType);
                     }
+                    type_inference_record_member_call_reference_fact(
+                            cs,
+                            memberNode,
+                            memberInfo,
+                            &resolvedMemberSignature);
                     free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                     i++;
                     nextIsPrototypeReference = ZR_FALSE;

@@ -3,6 +3,8 @@
 #include <string.h>
 
 #include "zr_vm_parser/canonical_type.h"
+#include "zr_vm_parser/semantic.h"
+#include "zr_vm_parser/syntax_contract.h"
 #include "zr_vm_parser/type_inference.h"
 
 static SZrAstNode *type_inference_call_target(const SZrPrimaryExpression *primary,
@@ -43,48 +45,86 @@ static TZrBool type_inference_call_label_append(TZrChar *buffer,
     return ZR_TRUE;
 }
 
-static const TZrChar *type_inference_call_passing_prefix(EZrCanonicalPassingForm passingForm) {
-    switch (passingForm) {
+static const SZrAstNodeArray *type_inference_call_parameters(
+        const SZrAstNode *declaration) {
+    if (declaration == ZR_NULL) {
+        return ZR_NULL;
+    }
+    switch (declaration->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            return declaration->data.functionDeclaration.params;
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+            return declaration->data.externFunctionDeclaration.params;
+        case ZR_AST_CLASS_METHOD:
+            return declaration->data.classMethod.params;
+        case ZR_AST_STRUCT_METHOD:
+            return declaration->data.structMethod.params;
+        case ZR_AST_CLASS_META_FUNCTION:
+            return declaration->data.classMetaFunction.params;
+        case ZR_AST_STRUCT_META_FUNCTION:
+            return declaration->data.structMetaFunction.params;
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            return declaration->data.interfaceMethodSignature.params;
+        case ZR_AST_INTERFACE_META_SIGNATURE:
+            return declaration->data.interfaceMetaSignature.params;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static const TZrChar *type_inference_call_passing_prefix(
+        const SZrCanonicalParameterContract *contract) {
+    if (contract == ZR_NULL) {
+        return ZR_NULL;
+    }
+    switch (contract->passingForm) {
         case ZR_CANONICAL_PASSING_IN: return "in ";
-        case ZR_CANONICAL_PASSING_REF: return "ref ";
-        case ZR_CANONICAL_PASSING_REF_READONLY: return "ref readonly ";
+        case ZR_CANONICAL_PASSING_REF:
+            return contract->escapeUpperBound == ZR_CANONICAL_ESCAPE_FUNCTION
+                           ? "scoped ref "
+                           : "ref ";
+        case ZR_CANONICAL_PASSING_REF_READONLY:
+            return contract->escapeUpperBound == ZR_CANONICAL_ESCAPE_FUNCTION
+                           ? "scoped ref readonly "
+                           : "ref readonly ";
         case ZR_CANONICAL_PASSING_OUT: return "out ";
         case ZR_CANONICAL_PASSING_VALUE:
         default: return "";
     }
 }
 
-static SZrString *type_inference_call_signature_display(
+static SZrString *type_inference_callable_signature_display(
         SZrCompilerState *cs,
-        const SZrFunctionTypeInfo *functionInfo,
+        SZrString *name,
+        const SZrAstNodeArray *parameters,
         TZrTypeId callTypeId) {
     const SZrCanonicalTypeNode *functionType;
-    SZrAstNodeArray *parameters = ZR_NULL;
     TZrChar buffer[1024];
     TZrChar typeBuffer[256];
+    const TZrChar *receiverPrefix = "";
     TZrSize offset = 0u;
     TZrSize index;
 
-    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || functionInfo == ZR_NULL ||
-        functionInfo->name == ZR_NULL || callTypeId == ZR_SEMANTIC_ID_INVALID) {
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        name == ZR_NULL || callTypeId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_NULL;
     }
     functionType = ZrParser_CanonicalType_Find(cs->semanticContext, callTypeId);
     if (functionType == ZR_NULL || functionType->kind != ZR_CANONICAL_TYPE_FUNCTION) {
         return ZR_NULL;
     }
-    if (functionInfo->declarationNode != ZR_NULL &&
-        functionInfo->declarationNode->type == ZR_AST_FUNCTION_DECLARATION) {
-        parameters = functionInfo->declarationNode->data.functionDeclaration.params;
-    } else if (functionInfo->declarationNode != ZR_NULL &&
-               functionInfo->declarationNode->type ==
-                       ZR_AST_EXTERN_FUNCTION_DECLARATION) {
-        parameters =
-                functionInfo->declarationNode->data.externFunctionDeclaration.params;
+    if (functionType->data.function.receiverEffect ==
+        ZR_CANONICAL_RECEIVER_READONLY) {
+        receiverPrefix = "const fn ";
+    } else if (functionType->data.function.receiverEffect ==
+               ZR_CANONICAL_RECEIVER_MUTABLE) {
+        receiverPrefix = "fn ";
     }
     buffer[0] = '\0';
-    if (!type_inference_call_label_append(buffer, sizeof(buffer), &offset,
-                                          ZrCore_String_GetNativeString(functionInfo->name)) ||
+    if (!type_inference_call_label_append(
+                buffer, sizeof(buffer), &offset, receiverPrefix) ||
+        !type_inference_call_label_append(buffer, sizeof(buffer), &offset,
+                                          ZrCore_String_GetNativeString(name)) ||
         !type_inference_call_label_append(buffer, sizeof(buffer), &offset, "(")) {
         return ZR_NULL;
     }
@@ -92,10 +132,24 @@ static SZrString *type_inference_call_signature_display(
         const SZrCanonicalParameterContract *contract =
                 (const SZrCanonicalParameterContract *)ZrCore_Array_Get(
                         (SZrArray *)&functionType->data.function.parameterContracts, index);
+        const SZrCanonicalTypeNode *contractType;
         const TZrChar *parameterName = ZR_NULL;
-        if (contract == ZR_NULL ||
-            !ZrParser_CanonicalType_Format(
-                    cs->semanticContext, contract->typeId, typeBuffer, sizeof(typeBuffer))) {
+        TZrTypeId displayTypeId;
+
+        if (contract == ZR_NULL) {
+            return ZR_NULL;
+        }
+        displayTypeId = contract->typeId;
+        if (contract->passingForm != ZR_CANONICAL_PASSING_VALUE) {
+            contractType = ZrParser_CanonicalType_Find(
+                    cs->semanticContext, contract->typeId);
+            if (contractType == ZR_NULL || contractType->kind != ZR_CANONICAL_TYPE_REF) {
+                return ZR_NULL;
+            }
+            displayTypeId = contractType->data.refType.pointeeTypeId;
+        }
+        if (!ZrParser_CanonicalType_Format(
+                    cs->semanticContext, displayTypeId, typeBuffer, sizeof(typeBuffer))) {
             return ZR_NULL;
         }
         if (parameters != ZR_NULL && index < parameters->count &&
@@ -106,11 +160,8 @@ static SZrString *type_inference_call_signature_display(
             parameterName = ZrCore_String_GetNativeString(
                     parameters->nodes[index]->data.parameter.name->name);
         }
-        if ((index > 0u && !type_inference_call_label_append(
-                                  buffer, sizeof(buffer), &offset, ", ")) ||
-            !type_inference_call_label_append(
-                    buffer, sizeof(buffer), &offset,
-                    type_inference_call_passing_prefix(contract->passingForm))) {
+        if (index > 0u && !type_inference_call_label_append(
+                                  buffer, sizeof(buffer), &offset, ", ")) {
             return ZR_NULL;
         }
         if (parameterName != ZR_NULL && parameterName[0] != '\0') {
@@ -119,7 +170,13 @@ static SZrString *type_inference_call_signature_display(
                 return ZR_NULL;
             }
         }
-        if (!type_inference_call_label_append(buffer, sizeof(buffer), &offset, typeBuffer)) {
+        if (!type_inference_call_label_append(
+                    buffer,
+                    sizeof(buffer),
+                    &offset,
+                    type_inference_call_passing_prefix(contract)) ||
+            !type_inference_call_label_append(
+                    buffer, sizeof(buffer), &offset, typeBuffer)) {
             return ZR_NULL;
         }
     }
@@ -134,6 +191,20 @@ static SZrString *type_inference_call_signature_display(
     return ZrCore_String_Create(cs->state, buffer, offset);
 }
 
+static SZrString *type_inference_call_signature_display(
+        SZrCompilerState *cs,
+        const SZrFunctionTypeInfo *functionInfo,
+        TZrTypeId callTypeId) {
+    if (functionInfo == ZR_NULL) {
+        return ZR_NULL;
+    }
+    return type_inference_callable_signature_display(
+            cs,
+            functionInfo->name,
+            type_inference_call_parameters(functionInfo->declarationNode),
+            callTypeId);
+}
+
 static TZrTypeId type_inference_resolved_call_type_id(
         SZrCompilerState *cs,
         const SZrFunctionTypeInfo *functionInfo,
@@ -141,6 +212,7 @@ static TZrTypeId type_inference_resolved_call_type_id(
     const SZrCanonicalTypeNode *declaredFunction;
     EZrCanonicalReceiverEffect receiverEffect = ZR_CANONICAL_RECEIVER_NONE;
     TZrUInt32 effectFlags = ZR_CANONICAL_CALLABLE_EFFECT_NONE;
+    TZrTypeId resolvedTypeId;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || functionInfo == ZR_NULL ||
         resolvedSignature == ZR_NULL) {
@@ -151,13 +223,25 @@ static TZrTypeId type_inference_resolved_call_type_id(
         receiverEffect = declaredFunction->data.function.receiverEffect;
         effectFlags = declaredFunction->data.function.effectFlags;
     }
-    return ZrParser_CanonicalType_FromFunctionSignature(
+    resolvedTypeId = ZrParser_CanonicalType_FromFunctionSignature(
             cs->semanticContext,
             &resolvedSignature->parameterTypes,
             &resolvedSignature->parameterPassingModes,
             &resolvedSignature->returnType,
             receiverEffect,
             effectFlags);
+    if (resolvedTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return resolvedTypeId;
+    }
+    if (declaredFunction == ZR_NULL ||
+        declaredFunction->kind != ZR_CANONICAL_TYPE_FUNCTION) {
+        return ZrParser_SyntaxCallable_RefineFromDeclaration(
+                cs->semanticContext,
+                functionInfo->declarationNode,
+                resolvedTypeId);
+    }
+    return ZrParser_CanonicalType_RebindFunctionSignature(
+            cs->semanticContext, functionInfo->typeId, resolvedTypeId);
 }
 
 void type_inference_record_primary_call_reference_fact(
@@ -195,5 +279,101 @@ void type_inference_record_primary_call_reference_fact(
     fact.name = funcTypeInfo->name;
     fact.signatureDisplay = type_inference_call_signature_display(cs, funcTypeInfo, callTypeId);
     fact.isResolved = ZR_TRUE;
+    ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
+}
+
+static TZrTypeId type_inference_resolved_member_call_type_id(
+        SZrCompilerState *cs,
+        const SZrTypeMemberInfo *memberInfo,
+        const SZrResolvedCallSignature *resolvedSignature) {
+    TZrTypeId resolvedTypeId;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberInfo == ZR_NULL ||
+        resolvedSignature == ZR_NULL) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    resolvedTypeId = ZrParser_CanonicalType_FromFunctionSignature(
+            cs->semanticContext,
+            &resolvedSignature->parameterTypes,
+            &resolvedSignature->parameterPassingModes,
+            &resolvedSignature->returnType,
+            memberInfo->receiverEffect,
+            ZR_CANONICAL_CALLABLE_EFFECT_NONE);
+    if (resolvedTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return resolvedTypeId;
+    }
+    return ZrParser_SyntaxCallable_RefineFromDeclaration(
+            cs->semanticContext, memberInfo->declarationNode, resolvedTypeId);
+}
+
+static TZrSymbolId type_inference_member_symbol_id(
+        SZrCompilerState *cs,
+        const SZrTypeMemberInfo *memberInfo,
+        TZrTypeId callTypeId) {
+    TZrSize index;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberInfo == ZR_NULL ||
+        memberInfo->name == ZR_NULL || memberInfo->declarationNode == ZR_NULL) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    for (index = 0U; index < cs->semanticContext->symbols.length; index++) {
+        const SZrSemanticSymbolRecord *symbol =
+                (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
+                        &cs->semanticContext->symbols, index);
+        if (symbol != ZR_NULL &&
+            symbol->kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION &&
+            symbol->astNode == memberInfo->declarationNode) {
+            return symbol->id;
+        }
+    }
+    return ZrParser_Semantic_RegisterSymbol(
+            cs->semanticContext,
+            memberInfo->name,
+            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+            callTypeId,
+            ZR_SEMANTIC_ID_INVALID,
+            memberInfo->declarationNode,
+            memberInfo->declarationNode->location);
+}
+
+void type_inference_record_member_call_reference_fact(
+        SZrCompilerState *cs,
+        SZrAstNode *memberNode,
+        const SZrTypeMemberInfo *memberInfo,
+        const SZrResolvedCallSignature *resolvedSignature) {
+    SZrSemanticReferenceFact fact;
+    SZrAstNode *target;
+    TZrTypeId callTypeId;
+    TZrSymbolId symbolId;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberNode == ZR_NULL ||
+        memberNode->type != ZR_AST_MEMBER_EXPRESSION || memberInfo == ZR_NULL ||
+        memberInfo->name == ZR_NULL || resolvedSignature == ZR_NULL) {
+        return;
+    }
+    target = memberNode->data.memberExpression.property;
+    callTypeId = type_inference_resolved_member_call_type_id(
+            cs, memberInfo, resolvedSignature);
+    if (callTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return;
+    }
+    symbolId = type_inference_member_symbol_id(cs, memberInfo, callTypeId);
+
+    memset(&fact, 0, sizeof(fact));
+    fact.node = target != ZR_NULL ? target : memberNode;
+    fact.range = fact.node->location;
+    fact.declarationRange = memberInfo->declarationNode != ZR_NULL
+                                    ? memberInfo->declarationNode->location
+                                    : fact.range;
+    fact.kind = ZR_SEMANTIC_REFERENCE_CALL;
+    fact.symbolId = symbolId;
+    fact.typeId = callTypeId;
+    fact.name = memberInfo->name;
+    fact.signatureDisplay = type_inference_callable_signature_display(
+            cs,
+            memberInfo->name,
+            type_inference_call_parameters(memberInfo->declarationNode),
+            callTypeId);
+    fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID;
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
