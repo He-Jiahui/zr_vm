@@ -46,6 +46,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
@@ -106,6 +107,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
@@ -153,6 +155,8 @@ tests:
   - tests/language_server/stdio_smoke.js
   - tests/acceptance/2026-06-03-semantic-inference-fact-layer.md
   - tests/language_server/test_lsp_project_features.c
+  - tests/language_server/test_lsp_project_utf16_ranges.c
+  - tests/language_server/test_lsp_source_contracts.c
   - tests/parser/test_compiler_features.c
   - tests/module/test_module_system.c
   - tests/parser/test_union.c
@@ -296,6 +300,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - `%import("zr.math")` 如何在语义分析阶段预热 native metadata，支撑 `$math.Vector3(...).y`
   - imported type 只允许 `module.Type` 或 `var {Type} = %import(...)` 两种显式绑定路径
   - nested native module lookup 与 compile-only imported stub 如何避免递归和 runtime prototype 污染
+- `lsp-binary-metadata-coordinate-projection.md`
+  - binary typed-export 的 one-based byte line/column 与 LSP UTF-16 range 之间的窄转换合同
+  - 有 source snapshot 时按 byte offset 精确转换；无 snapshot 时保留 artifact structural coordinates
+  - definition/references/documentHighlight 从 source usage 与 `.zro` declaration 双向命中同一 declaration fact
 - `union-types.md`
   - Rust-like `union` 声明、unit/tuple/struct variant AST 和泛型声明解析
   - `Shape.Circle(...)` / `Option<int>.Some(...)` 构造器解析、类型推断和 object carrier lowering
@@ -317,11 +325,12 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 12. 再看 `semantic-query-api-foundation.md`，了解 Stage 1 公共语义查询面骨架和当前限制。
 13. 再看 `union-types.md`，了解 union 前端 slice、构造器 lowering 和后续模式匹配边界。
 14. 最后看 `lsp-semantic-resolution-and-native-imports.md`，了解 language server 如何消费 parser/native import metadata 并稳定命中局部语义引用。
-15. 再看 `place-cfg-graph.md`，了解 session-local Place identity、typed CFG edge 与 cleanup routing。
-16. 再看 `pre-semantic-ir-flow.md`，了解前置 Semantic IR、compiler bridge、flow facts 与 execution sidecar 边界。
-17. 再看 `reference-loan-nll.md`，了解 LoanId 传播、NLL、reborrow 与 Place overlap 冲突。
-18. 再看 `receiver-readonly-call-boundary.md`，了解 receiver effect、owner auto-deref 与
+15. 接着看 `lsp-binary-metadata-coordinate-projection.md`，了解 binary declaration identity 如何跨 artifact byte coordinates 与 LSP UTF-16 边界保持一致。
+16. 再看 `place-cfg-graph.md`，了解 session-local Place identity、typed CFG edge 与 cleanup routing。
+17. 再看 `pre-semantic-ir-flow.md`，了解前置 Semantic IR、compiler bridge、flow facts 与 execution sidecar 边界。
+18. 再看 `reference-loan-nll.md`，了解 LoanId 传播、NLL、reborrow 与 Place overlap 冲突。
+19. 再看 `receiver-readonly-call-boundary.md`，了解 receiver effect、owner auto-deref 与
     two-phase method call loan。
-19. 再看 `reference-escape-closure-suspension.md`，了解 ref escape lattice、closure capture
+20. 再看 `reference-escape-closure-suspension.md`，了解 ref escape lattice、closure capture
     和 suspension 静态边界。
-20. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+21. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

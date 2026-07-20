@@ -128,6 +128,14 @@ SZrLspPosition ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(SZrLspCo
 SZrLspRange ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(SZrLspContext *context,
                                                                SZrString *uri,
                                                                SZrFileRange range);
+TZrBool ZrLanguageServer_Lsp_TryRangeFromBinaryMetadataCoordinates(SZrLspContext *context,
+                                                                   SZrString *uri,
+                                                                   SZrFileRange range,
+                                                                   SZrLspRange *outRange);
+TZrBool ZrLanguageServer_Lsp_TryFilePositionFromBinaryMetadataCoordinates(SZrLspContext *context,
+                                                                          SZrString *uri,
+                                                                          SZrLspPosition position,
+                                                                          SZrFilePosition *outPosition);
 
 typedef struct SZrLspProjectFileRecord {
     SZrString *uri;

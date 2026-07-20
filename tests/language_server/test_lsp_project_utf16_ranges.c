@@ -376,6 +376,7 @@ static TZrBool test_binary_metadata_declaration_after_utf8_prefix_uses_utf16_col
     SZrString *projectUri;
     SZrString *binaryUri;
     SZrLspSemanticQuery query;
+    SZrArray definitions = {0};
     TZrBool resolved;
 
     if (!prepare_binary_metadata_utf16_project(state,
@@ -420,7 +421,11 @@ static TZrBool test_binary_metadata_declaration_after_utf8_prefix_uses_utf16_col
         strcmp(test_string_text(query.memberName), "binarySeed") != 0 ||
         !query.resolvedMember.hasDeclaration ||
         query.resolvedMember.declarationUri == ZR_NULL ||
-        strcmp(test_string_text(query.resolvedMember.declarationUri), test_string_text(binaryUri)) != 0) {
+        strcmp(test_string_text(query.resolvedMember.declarationUri), test_string_text(binaryUri)) != 0 ||
+        query.resolvedMember.declarationRange.start.line != 1 ||
+        query.resolvedMember.declarationRange.start.column != 18 ||
+        query.resolvedMember.declarationRange.end.line != 1 ||
+        query.resolvedMember.declarationRange.end.column != 28) {
         printf("FAIL: Project UTF-16 binary metadata declaration expected binarySeed member but got resolved=%d kind=%d member=%s",
                (int)resolved,
                (int)query.kind,
@@ -431,6 +436,20 @@ static TZrBool test_binary_metadata_declaration_after_utf8_prefix_uses_utf16_col
         return ZR_FALSE;
     }
 
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 2);
+    if (!ZrLanguageServer_LspSemanticQuery_AppendDefinitions(state, context, &query, &definitions) ||
+        !location_array_contains_uri_and_range(&definitions, binaryUri, 0, 16, 0, 26)) {
+        printf("FAIL: Project UTF-16 binary metadata declaration expected 0:16-0:26 but got count=%llu",
+               (unsigned long long)definitions.length);
+        describe_first_location(&definitions);
+        printf("\n");
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Free(state, &definitions);
     ZrLanguageServer_LspSemanticQuery_Free(state, &query);
     ZrLanguageServer_LspContext_Free(state, context);
     printf("PASS: Project UTF-16 binary metadata declaration uses UTF-16 columns\n");

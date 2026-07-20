@@ -26,6 +26,7 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
   - zr_vm_language_server/stdio/stdio_requests.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_state.c
@@ -73,6 +74,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/lsp_token_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
   - zr_vm_language_server/stdio/stdio_requests.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h
@@ -99,6 +101,8 @@ tests:
   - tests/language_server/test_lsp_reference_callable_consumer_cases.h
   - tests/language_server/test_lsp_local_semantic_query.c
   - tests/language_server/test_lsp_project_features.c
+  - tests/language_server/test_lsp_project_utf16_ranges.c
+  - tests/language_server/test_lsp_source_contracts.c
   - tests/language_server/descriptor_plugin_fixture_int.c
   - tests/language_server/descriptor_plugin_fixture_float.c
   - tests/language_server/stdio_smoke.js
@@ -145,6 +149,12 @@ Receiver hover is only selected for a resolved reference with `hasResolvedTarget
 The same target identity also closes the first receiver dependency boundary in `semantic_analyzer_scope_cache.c`. Class and struct method references compare the parser-published declaration range, not the member spelling. A changed inferred-return method invalidates a resolved direct caller, an unrelated cached scope is preserved, and unresolved/poisoned facts continue through conservative invalidation.
 
 Named-call compatibility failures preserve the parser compiler diagnostic until `ZrParser_Compiler_PublishCurrentDiagnostic` has copied it into persistent semantic query facts. `semantic_analyzer_query_diagnostics.c` then projects that fact into LSP and removes only the same-range `cannot_infer_exact_type` placeholder, preventing one root call error from becoming two primary diagnostics.
+
+## Binary Metadata Declaration Identity
+
+Binary-only imported members now keep the typed-export declaration range through the unified semantic query and into definition, references and document highlights. `lsp_semantic_query.c` and project navigation only select the specialized coordinate projection when `sourceKind` is `ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA`; no member-name or displayed-signature fallback is introduced.
+
+The artifact range is one-based and byte-column based. `lsp_binary_metadata_coordinates.c` reconstructs byte offsets and uses the normal UTF-16 codec when a source snapshot is available. Without source text it preserves the artifact's structural line/column coordinates instead of returning a fabricated `0:0`. The inverse helper lets requests that begin on a `.zro` declaration resolve the same canonical export fact. Full behavior, limitations and tests are documented in [LSP Binary Metadata Coordinate Projection](./lsp-binary-metadata-coordinate-projection.md).
 
 ## 隐式接收者符号
 

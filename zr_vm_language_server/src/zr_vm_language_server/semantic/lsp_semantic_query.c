@@ -280,7 +280,8 @@ static TZrBool semantic_query_append_location(SZrState *state,
                                               SZrLspContext *context,
                                               SZrArray *result,
                                               SZrString *uri,
-                                              SZrFileRange range) {
+                                              SZrFileRange range,
+                                              EZrLspImportedModuleSourceKind sourceKind) {
     SZrLspLocation *location;
 
     if (state == ZR_NULL || result == ZR_NULL || uri == ZR_NULL) {
@@ -297,7 +298,17 @@ static TZrBool semantic_query_append_location(SZrState *state,
     }
 
     location->uri = uri;
-    location->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
+    if (sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA) {
+        if (!ZrLanguageServer_Lsp_TryRangeFromBinaryMetadataCoordinates(context,
+                                                                        uri,
+                                                                        range,
+                                                                        &location->range)) {
+            ZrCore_Memory_RawFree(state->global, location, sizeof(SZrLspLocation));
+            return ZR_FALSE;
+        }
+    } else {
+        location->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
+    }
     ZrCore_Array_Push(state, result, &location);
     return ZR_TRUE;
 }
@@ -614,7 +625,8 @@ static TZrBool semantic_query_append_local_symbol_references(SZrState *state,
                                         context,
                                         result,
                                         query->symbol->location.source,
-                                        semantic_query_symbol_lookup_range(ZR_NULL, query->symbol))) {
+                                        semantic_query_symbol_lookup_range(ZR_NULL, query->symbol),
+                                        ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED)) {
         return ZR_FALSE;
     }
 
@@ -640,7 +652,8 @@ static TZrBool semantic_query_append_local_symbol_references(SZrState *state,
                                             context,
                                             result,
                                             referenceRange.source,
-                                            referenceRange)) {
+                                            referenceRange,
+                                            ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED)) {
             ZrCore_Array_Free(state, &references);
             return ZR_FALSE;
         }
@@ -1196,7 +1209,12 @@ static TZrBool semantic_query_try_append_primary_external_type_member_locations(
                                                                      cursorOffset,
                                                                      resolvedName != ZR_NULL ? strlen(resolvedName) : 0,
                                                                      uri);
-            if (semantic_query_append_location(state, context, result, uri, location)) {
+            if (semantic_query_append_location(state,
+                                               context,
+                                               result,
+                                               uri,
+                                               location,
+                                               ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED)) {
                 appended = ZR_TRUE;
             }
         }
@@ -3103,7 +3121,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDefinitio
                                                   context,
                                                   result,
                                                   query->resolvedMember.declarationUri,
-                                                  query->resolvedMember.declarationRange);
+                                                  query->resolvedMember.declarationRange,
+                                                  query->sourceKind);
         }
         return ZR_FALSE;
     }
@@ -3115,7 +3134,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDefinitio
                                               context,
                                               result,
                                               query->resolvedMember.declarationUri,
-                                              query->resolvedMember.declarationRange);
+                                              query->resolvedMember.declarationRange,
+                                              query->sourceKind);
     }
 
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_TYPE_MEMBER) {
@@ -3125,7 +3145,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDefinitio
                                               context,
                                               result,
                                               query->resolvedMember.declarationUri,
-                                              query->resolvedMember.declarationRange);
+                                              query->resolvedMember.declarationRange,
+                                              query->sourceKind);
     }
 
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL) {
@@ -3141,7 +3162,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDefinitio
                                               context,
                                               result,
                                               query->symbol->location.source,
-                                              semantic_query_symbol_lookup_range(context, query->symbol));
+                                              semantic_query_symbol_lookup_range(context, query->symbol),
+                                              ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED);
     }
 
     return ZR_FALSE;
@@ -3167,7 +3189,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
                                             context,
                                             result,
                                             query->resolvedMember.declarationUri,
-                                            query->resolvedMember.declarationRange)) {
+                                            query->resolvedMember.declarationRange,
+                                            query->sourceKind)) {
             return ZR_FALSE;
         }
 
@@ -3224,7 +3247,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
                                                 context,
                                                 result,
                                                 query->resolvedMember.declarationUri,
-                                                query->resolvedMember.declarationRange)) {
+                                                query->resolvedMember.declarationRange,
+                                                query->sourceKind)) {
                 return ZR_FALSE;
             }
 
@@ -3239,7 +3263,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
         resolved.declarationUri = query->resolvedMember.declarationUri;
         resolved.declarationRange = query->resolvedMember.declarationRange;
         resolved.hasDeclaration = query->resolvedMember.hasDeclaration;
-        resolved.sourceKind = query->resolvedModule.sourceKind;
+        resolved.sourceKind = query->sourceKind;
         return ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationReferences(state,
                                                                                        context,
                                                                                        &resolved,
@@ -3256,7 +3280,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
                                             context,
                                             result,
                                             query->resolvedMember.declarationUri,
-                                            query->resolvedMember.declarationRange)) {
+                                            query->resolvedMember.declarationRange,
+                                            query->sourceKind)) {
             return ZR_FALSE;
         }
 
@@ -3318,7 +3343,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDocumentH
         resolved.declarationUri = query->resolvedMember.declarationUri;
         resolved.declarationRange = query->resolvedMember.declarationRange;
         resolved.hasDeclaration = query->resolvedMember.hasDeclaration;
-        resolved.sourceKind = query->resolvedModule.sourceKind;
+        resolved.sourceKind = query->sourceKind;
         return ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationHighlights(state,
                                                                                        context,
                                                                                        &resolved,

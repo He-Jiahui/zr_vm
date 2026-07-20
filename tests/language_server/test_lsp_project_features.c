@@ -3179,6 +3179,7 @@ static void test_lsp_binary_import_metadata_surfaces_hover_and_completion(SZrSta
     SZrArray completions;
     SZrArray definitions;
     SZrLspHover *hover = ZR_NULL;
+    TZrChar reason[1024];
 
     TEST_START("LSP Binary Import Metadata Surfaces Hover And Completion");
     TEST_INFO("Binary import metadata",
@@ -3236,12 +3237,13 @@ static void test_lsp_binary_import_metadata_surfaces_hover_and_completion(SZrSta
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, mainUri, definitionPosition, &definitions) ||
         !location_array_contains_binary_seed_declaration(&definitions, binaryUri)) {
+        describe_first_location(&definitions, reason, sizeof(reason));
         free(mainContent);
         ZrCore_Array_Free(state, &definitions);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Binary Import Metadata Surfaces Hover And Completion",
-                  "Definition on binary-only imported members should navigate to the binary export declaration span");
+                  reason);
         return;
     }
     ZrCore_Array_Free(state, &definitions);
@@ -3315,6 +3317,7 @@ static void test_lsp_binary_import_references_surface_metadata_and_usages(SZrSta
     SZrLspPosition firstUsagePosition;
     SZrLspPosition secondUsagePosition;
     SZrArray references;
+    TZrChar reason[1024];
 
     TEST_START("LSP Binary Import References Surface Metadata And Usages");
     TEST_INFO("Binary import references",
@@ -3368,11 +3371,12 @@ static void test_lsp_binary_import_references_surface_metadata_and_usages(SZrSta
                                                secondUsagePosition.line,
                                                secondUsagePosition.character + 10) ||
         !location_array_contains_binary_seed_declaration(&references, binaryUri)) {
+        describe_first_location(&references, reason, sizeof(reason));
         ZrCore_Array_Free(state, &references);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Binary Import References Surface Metadata And Usages",
-                  "Binary imported member references should include both local usages and the binary export declaration when includeDeclaration=true");
+                  reason);
         return;
     }
     ZrCore_Array_Free(state, &references);
@@ -4142,6 +4146,7 @@ static void test_lsp_binary_import_document_highlights_cover_all_local_usages(SZ
     SZrLspPosition firstUsagePosition;
     SZrLspPosition secondUsagePosition;
     SZrArray highlights;
+    TZrChar reason[1024];
 
     TEST_START("LSP Binary Import Document Highlights Cover All Local Usages");
     TEST_INFO("Binary import document highlights",
@@ -4207,11 +4212,12 @@ static void test_lsp_binary_import_document_highlights_cover_all_local_usages(SZ
                                                     binary_seed_declaration_position(),
                                                     &highlights) ||
         !highlight_array_contains_binary_seed_declaration(&highlights)) {
+        describe_first_highlight(&highlights, reason, sizeof(reason));
         ZrCore_Array_Free(state, &highlights);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Binary Import Document Highlights Cover All Local Usages",
-                  "Document highlights on a binary export declaration should stay on the same declaration span");
+                  reason);
         return;
     }
 
