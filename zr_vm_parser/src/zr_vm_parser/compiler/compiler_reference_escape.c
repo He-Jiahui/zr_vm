@@ -44,6 +44,7 @@ TZrBool reference_escape_context_init(
     context->parent = parent;
     context->captureEscapeBound = ZR_SEMANTIC_ESCAPE_HEAP_STATIC;
     if (parent != ZR_NULL) {
+        context->refStructTypes = parent->refStructTypes;
         context->suspensionEpoch = parent->suspensionEpoch;
         context->suspensionRange = parent->suspensionRange;
         context->suspensionName = parent->suspensionName;
@@ -234,14 +235,24 @@ TZrBool reference_escape_type_is_reference(const SZrType *type) {
            type->referenceAccess != ZR_REFERENCE_ACCESS_NONE;
 }
 
+TZrBool reference_escape_type_is_ref_like(
+        const SZrReferenceEscapeContext *context,
+        const SZrType *type) {
+    return context != ZR_NULL && context->refStructTypes != ZR_NULL &&
+           compiler_ref_struct_type_is_ref_like(context->refStructTypes, type);
+}
+
 static TZrBool reference_escape_parameter_is_reference(
+        const SZrReferenceEscapeContext *context,
         const SZrParameter *parameter) {
     return parameter != ZR_NULL &&
            (parameter->sourcePassingForm != ZR_PARAMETER_SOURCE_VALUE ||
-            reference_escape_type_is_reference(parameter->typeInfo));
+            reference_escape_type_is_reference(parameter->typeInfo) ||
+            reference_escape_type_is_ref_like(context, parameter->typeInfo));
 }
 
 static EZrSemanticEscapeState reference_escape_parameter_bound(
+        const SZrReferenceEscapeContext *context,
         const SZrParameter *parameter) {
     if (parameter == ZR_NULL) {
         return ZR_SEMANTIC_ESCAPE_FUNCTION;
@@ -251,6 +262,10 @@ static EZrSemanticEscapeState reference_escape_parameter_bound(
         case ZR_PARAMETER_SOURCE_REF_READONLY:
             return ZR_SEMANTIC_ESCAPE_CALLER;
         case ZR_PARAMETER_SOURCE_VALUE:
+            if (reference_escape_type_is_ref_like(
+                        context, parameter->typeInfo)) {
+                return ZR_SEMANTIC_ESCAPE_CALLER;
+            }
             return parameter->typeInfo != ZR_NULL &&
                            reference_escape_type_is_reference(parameter->typeInfo) &&
                            !parameter->typeInfo->isScopedReference
@@ -310,11 +325,15 @@ void reference_escape_register_parameters(
             memset(&binding, 0, sizeof(binding));
             binding.name = parameter->name->name;
             binding.scopeDepth = context->scopeDepth;
-            binding.isReference = reference_escape_parameter_is_reference(parameter);
+            binding.isRefLike = reference_escape_type_is_ref_like(
+                    context, parameter->typeInfo);
+            binding.isReference = reference_escape_parameter_is_reference(
+                    context, parameter);
             binding.isScoped = reference_escape_parameter_is_scoped(parameter);
             binding.isOut = parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_OUT;
             binding.isWritable = reference_escape_parameter_is_writable(parameter);
-            binding.escapeBound = reference_escape_parameter_bound(parameter);
+            binding.escapeBound = reference_escape_parameter_bound(
+                    context, parameter);
             binding.originRange = node->location;
             binding.declarationSuspensionEpoch = context->suspensionEpoch;
             reference_escape_push_binding(context, &binding);
@@ -325,11 +344,14 @@ void reference_escape_register_parameters(
         memset(&binding, 0, sizeof(binding));
         binding.name = vararg->name->name;
         binding.scopeDepth = context->scopeDepth;
-        binding.isReference = reference_escape_parameter_is_reference(vararg);
+        binding.isRefLike = reference_escape_type_is_ref_like(
+                context, vararg->typeInfo);
+        binding.isReference = reference_escape_parameter_is_reference(
+                context, vararg);
         binding.isScoped = reference_escape_parameter_is_scoped(vararg);
         binding.isOut = vararg->sourcePassingForm == ZR_PARAMETER_SOURCE_OUT;
         binding.isWritable = reference_escape_parameter_is_writable(vararg);
-        binding.escapeBound = reference_escape_parameter_bound(vararg);
+        binding.escapeBound = reference_escape_parameter_bound(context, vararg);
         binding.originRange = vararg->nameLocation;
         binding.declarationSuspensionEpoch = context->suspensionEpoch;
         reference_escape_push_binding(context, &binding);
@@ -582,13 +604,14 @@ static TZrBool reference_escape_check_identifier(
             context->captureEscapeBound = binding->escapeBound;
             context->captureOriginRange = binding->originRange;
         }
-        if (binding->isScoped || binding->isOut) {
+        if (binding->isScoped || binding->isOut || binding->isRefLike) {
             TZrChar message[256];
             TZrNativeString name = ZrCore_String_GetNativeString(binding->name);
             context->hasScopedCapture = ZR_TRUE;
             snprintf(message,
                      sizeof(message),
-                     "Scoped reference cannot be captured by a closure: '%s'",
+                     "%s cannot be captured by a closure: '%s'",
+                     binding->isRefLike ? "Ref struct value" : "Scoped reference",
                      name != ZR_NULL ? name : "<reference>");
             return reference_escape_report(
                     context,
@@ -606,6 +629,7 @@ static TZrBool reference_escape_check_identifier(
     }
     if (binding->isReference || wantReference) {
         provenance->isReference = ZR_TRUE;
+        provenance->isRefLike = binding->isRefLike;
         provenance->isScoped = binding->isScoped;
         provenance->isOut = binding->isOut;
         provenance->isWritable = binding->isWritable;
@@ -746,6 +770,39 @@ static void reference_escape_merge_provenance(
     }
 }
 
+static TZrBool reference_escape_analyze_ref_like_arguments(
+        SZrReferenceEscapeContext *context,
+        SZrAstNodeArray *nodes,
+        SZrArray *argumentMarkers,
+        SZrReferenceEscapeProvenance *provenance) {
+    TZrSize index;
+
+    if (nodes == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    for (index = 0U; index < nodes->count; index++) {
+        SZrReferenceEscapeProvenance argument;
+        TZrBool wantsReference = ZR_FALSE;
+        if (argumentMarkers != ZR_NULL &&
+            index < argumentMarkers->length) {
+            const SZrCallArgumentSyntax *syntax =
+                    (const SZrCallArgumentSyntax *)ZrCore_Array_Get(
+                            argumentMarkers, index);
+            wantsReference = syntax != ZR_NULL &&
+                             syntax->marker != ZR_CALL_ARGUMENT_MARKER_NONE;
+        }
+        if (!reference_escape_analyze_expression(
+                    context,
+                    nodes->nodes[index],
+                    wantsReference,
+                    &argument)) {
+            return ZR_FALSE;
+        }
+        reference_escape_merge_provenance(provenance, &argument);
+    }
+    return ZR_TRUE;
+}
+
 TZrBool reference_escape_analyze_expression(
         SZrReferenceEscapeContext *context,
         SZrAstNode *node,
@@ -859,11 +916,27 @@ TZrBool reference_escape_analyze_expression(
                     wantReference,
                     provenance);
         case ZR_AST_TYPE_CAST_EXPRESSION:
-            return reference_escape_analyze_expression(
-                    context,
-                    node->data.typeCastExpression.expression,
-                    wantReference,
-                    provenance);
+            if (!reference_escape_analyze_expression(
+                        context,
+                        node->data.typeCastExpression.expression,
+                        wantReference,
+                        provenance)) {
+                return ZR_FALSE;
+            }
+            if (provenance->isRefLike &&
+                compiler_ref_struct_type_is_boxing_target(
+                        context->refStructTypes,
+                        node->data.typeCastExpression.targetType)) {
+                return reference_escape_report(
+                        context,
+                        provenance->originRange,
+                        node->location,
+                        "ref_struct_boxing",
+                        "A ref struct cannot be boxed as object, dynamic, or interface",
+                        "Ref-like storage cannot move into a GC heap box",
+                        "Keep the value in ref-like storage and expose an explicit safe view");
+            }
+            return ZR_TRUE;
         case ZR_AST_ARRAY_LITERAL:
             if (node->data.arrayLiteral.elements != ZR_NULL) {
                 for (index = 0U; index < node->data.arrayLiteral.elements->count; index++) {
@@ -871,8 +944,20 @@ TZrBool reference_escape_analyze_expression(
                                 context,
                                 node->data.arrayLiteral.elements->nodes[index],
                                 ZR_FALSE,
-                                &left) ||
-                        !reference_escape_validate_target(
+                                &left)) {
+                        return ZR_FALSE;
+                    }
+                    if (left.isRefLike) {
+                        return reference_escape_report(
+                                context,
+                                left.originRange,
+                                node->location,
+                                "ref_struct_array_storage",
+                                "A ref struct cannot be stored in an array",
+                                "Ref-like values cannot enter GC array element storage",
+                                "Keep the value in local/ref-like storage");
+                    }
+                    if (!reference_escape_validate_target(
                                 context,
                                 &left,
                                 ZR_SEMANTIC_ESCAPE_HEAP_STATIC,
@@ -930,6 +1015,26 @@ TZrBool reference_escape_analyze_expression(
             }
             return reference_escape_analyze_expression_array(
                     context, node->data.constructExpression.args);
+        case ZR_AST_STRUCT_INIT_EXPRESSION:
+            if (!reference_escape_analyze_ref_like_arguments(
+                        context,
+                        node->data.structInitExpression.args,
+                        node->data.structInitExpression.argumentMarkers,
+                        provenance)) {
+                return ZR_FALSE;
+            }
+            if (reference_escape_type_is_ref_like(
+                        context, node->data.structInitExpression.typeInfo)) {
+                TZrBool hasReferenceOrigin = provenance->isReference;
+                provenance->isReference = ZR_TRUE;
+                provenance->isRefLike = ZR_TRUE;
+                provenance->isWritable = ZR_TRUE;
+                if (!hasReferenceOrigin) {
+                    provenance->escapeBound = ZR_SEMANTIC_ESCAPE_HEAP_STATIC;
+                    provenance->originRange = node->location;
+                }
+            }
+            return ZR_TRUE;
         case ZR_AST_IF_EXPRESSION:
             return reference_escape_analyze_node(
                            context, node->data.ifExpression.condition) &&

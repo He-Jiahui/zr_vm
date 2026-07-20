@@ -252,6 +252,13 @@ static TZrBool function_type_layout_member_requires_value_lifecycle(const SZrCom
                       member->callsDestructor != 0u));
 }
 
+static TZrBool function_type_layout_member_is_ref_field(
+        const SZrCompiledMemberInfo *member) {
+    return (TZrBool)(function_type_layout_member_is_field(member) &&
+                     (member->modifierFlags &
+                      ZR_COMPILED_MEMBER_MODIFIER_REF_FIELD) != 0u);
+}
+
 static TZrBool function_type_layout_member_field_is_within_prototype(const SZrCompiledPrototypeInfo *prototype,
                                                                      const SZrCompiledMemberInfo *member) {
     TZrUInt32 fieldEnd;
@@ -1196,6 +1203,16 @@ static TZrBool function_type_layout_build_managed_fields(SZrState *state,
     for (TZrUInt32 index = 0u; index < prototype->membersCount; index++) {
         const SZrCompiledMemberInfo *member = &members[index];
 
+        if (function_type_layout_member_is_ref_field(member)) {
+            if (!function_type_layout_member_value_field_is_safe(
+                        prototype, member) ||
+                !function_type_layout_checked_add_u32(
+                        managedFieldCount, 1u, &managedFieldCount)) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
+
         if (!function_type_layout_member_requires_value_lifecycle(member)) {
             SZrFunctionTypeLayoutResolvedField resolvedField;
 
@@ -1256,6 +1273,18 @@ static TZrBool function_type_layout_build_managed_fields(SZrState *state,
     fieldCursor = 0u;
     for (TZrUInt32 index = 0u; index < prototype->membersCount; index++) {
         const SZrCompiledMemberInfo *member = &members[index];
+
+        if (function_type_layout_member_is_ref_field(member)) {
+            fields[fieldCursor].byteOffset = member->fieldOffset;
+            fields[fieldCursor].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+            fields[fieldCursor].typeLayoutIndex =
+                    ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+            fields[fieldCursor].flags =
+                    ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                    ZR_TYPE_LAYOUT_FIELD_FLAG_REF_VALUE;
+            fieldCursor++;
+            continue;
+        }
 
         if (!function_type_layout_member_requires_value_lifecycle(member)) {
             SZrFunctionTypeLayoutResolvedField resolvedField;

@@ -783,6 +783,28 @@ TZrBool compiler_validate_task_effects(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API TZrBool compiler_validate_reference_escapes(
         SZrCompilerState *cs,
         SZrAstNode *node);
+ZR_PARSER_API TZrBool compiler_validate_ref_struct_rules(
+        SZrCompilerState *cs,
+        SZrAstNode *node);
+
+typedef struct SZrRefStructTypeSet {
+    SZrArray refLikeTypeNames; /* SZrString * */
+    SZrArray interfaceTypeNames; /* SZrString * */
+} SZrRefStructTypeSet;
+
+TZrBool compiler_ref_struct_type_set_init(
+        SZrRefStructTypeSet *typeSet,
+        SZrState *state,
+        SZrAstNode *root);
+void compiler_ref_struct_type_set_free(
+        SZrRefStructTypeSet *typeSet,
+        SZrState *state);
+TZrBool compiler_ref_struct_type_is_ref_like(
+        const SZrRefStructTypeSet *typeSet,
+        const SZrType *type);
+TZrBool compiler_ref_struct_type_is_boxing_target(
+        const SZrRefStructTypeSet *typeSet,
+        const SZrType *type);
 
 SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) ;
 

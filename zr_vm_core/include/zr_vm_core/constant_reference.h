@@ -8,6 +8,7 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_common/zr_ast_constants.h"
 #include "zr_vm_common/zr_contract_conf.h"
 #include "zr_vm_common/zr_type_conf.h"
 
@@ -86,6 +87,7 @@ typedef struct SZrCompiledMemberInfo {
     TZrUInt32 propertyIdentity;             // property identity；无效时为 UINT32_MAX
     TZrUInt32 accessorRole;                 // 0 none, 1 getter, 2 setter
 } SZrCompiledMemberInfo;
+
 #pragma pack(pop)
 
 typedef char ZrCompiledMemberInfoV34LayoutMustRemainStable[

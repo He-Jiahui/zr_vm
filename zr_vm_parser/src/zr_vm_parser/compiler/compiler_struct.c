@@ -3,6 +3,14 @@
 //
 
 #include "compiler_internal.h"
+
+#include "zr_vm_common/zr_ast_constants.h"
+
+typedef char ZrCompilerRefFieldModifierMustMatchCore[
+        ZR_DECLARATION_MODIFIER_REF_FIELD ==
+                        ZR_COMPILED_MEMBER_MODIFIER_REF_FIELD
+                ? 1
+                : -1];
 #include "compile_time_executor_internal.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrString *typeName);
@@ -183,6 +191,10 @@ static TZrBool compiler_struct_register_canonical_definition(
     if (info != ZR_NULL &&
         (info->modifierFlags & ZR_DECLARATION_MODIFIER_READONLY) != 0U) {
         capabilityFlags |= ZR_CANONICAL_TYPE_CAPABILITY_READONLY_TYPE;
+    }
+    if (info != ZR_NULL &&
+        (info->modifierFlags & ZR_DECLARATION_MODIFIER_REF_LIKE) != 0U) {
+        capabilityFlags |= ZR_CANONICAL_TYPE_CAPABILITY_REF_LIKE;
     }
 
     if (info != ZR_NULL && info->genericParameters.length > 0U) {
@@ -999,9 +1011,14 @@ TZrUInt32 calculate_type_size(SZrCompilerState *cs, SZrType *type) {
         return 0;
     }
 
+    if (type->referenceAccess != ZR_REFERENCE_ACCESS_NONE) {
+        return sizeof(SZrTypeValue);
+    }
+
     if (ZrParser_AstType_TryUnwrapOwnershipGeneric(type, &ownershipQualifier, &ownershipInnerType)) {
         ZR_UNUSED_PARAMETER(ownershipQualifier);
-        return calculate_type_size(cs, (SZrType *)ownershipInnerType);
+        ZR_UNUSED_PARAMETER(ownershipInnerType);
+        return sizeof(SZrTypeValue);
     }
     
     // 处理数组类型
@@ -1147,12 +1164,16 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.name = typeName;
     info.type = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
     info.accessModifier = structDecl->accessModifier;
-    info.modifierFlags = structDecl->isReadonly
-                                 ? ZR_DECLARATION_MODIFIER_READONLY
-                                 : ZR_DECLARATION_MODIFIER_NONE;
+    info.modifierFlags = ZR_DECLARATION_MODIFIER_NONE;
+    if (structDecl->isReadonly) {
+        info.modifierFlags |= ZR_DECLARATION_MODIFIER_READONLY;
+    }
+    if (structDecl->isRefLike) {
+        info.modifierFlags |= ZR_DECLARATION_MODIFIER_REF_LIKE;
+    }
     info.isImportedNative = ZR_FALSE;
     info.allowValueConstruction = ZR_TRUE;
-    info.allowBoxedConstruction = ZR_TRUE;
+    info.allowBoxedConstruction = (TZrBool)!structDecl->isRefLike;
     info.hasDecoratorMetadata = ZR_FALSE;
     info.layoutByteSize = 0;
     info.layoutByteAlign = 0;
@@ -1266,6 +1287,11 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         memberInfo.fieldType = field->typeInfo;
                         memberInfo.fieldTypeName = extract_type_name_string(cs, field->typeInfo);
                         memberInfo.ownershipQualifier = field->typeInfo->ownershipQualifier;
+                        if (field->typeInfo->referenceAccess !=
+                            ZR_REFERENCE_ACCESS_NONE) {
+                            memberInfo.modifierFlags |=
+                                    ZR_DECLARATION_MODIFIER_REF_FIELD;
+                        }
                         if (ZrParser_AstType_TryUnwrapOwnershipGeneric(field->typeInfo,
                                                                        &intrinsicOwnershipQualifier,
                                                                        &intrinsicInnerType)) {

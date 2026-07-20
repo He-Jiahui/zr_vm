@@ -7,6 +7,7 @@ typedef struct SZrReferenceEscapeBinding {
     SZrString *name;
     TZrInt32 scopeDepth;
     TZrBool isReference;
+    TZrBool isRefLike;
     TZrBool isScoped;
     TZrBool isOut;
     TZrBool isWritable;
@@ -23,6 +24,7 @@ typedef struct SZrReferenceEscapeBinding {
 
 typedef struct SZrReferenceEscapeProvenance {
     TZrBool isReference;
+    TZrBool isRefLike;
     TZrBool isScoped;
     TZrBool isOut;
     TZrBool isWritable;
@@ -38,6 +40,8 @@ typedef struct SZrReferenceEscapeProvenance {
 typedef struct SZrReferenceEscapeContext {
     SZrCompilerState *compiler;
     struct SZrReferenceEscapeContext *parent;
+    SZrRefStructTypeSet refStructTypeStorage;
+    SZrRefStructTypeSet *refStructTypes;
     SZrArray bindings; /* SZrReferenceEscapeBinding */
     TZrInt32 scopeDepth;
     TZrUInt32 suspensionEpoch;
@@ -79,6 +83,9 @@ TZrBool reference_escape_validate_target(
         SZrFileRange escapeRange,
         const TZrChar *reason);
 TZrBool reference_escape_type_is_reference(const SZrType *type);
+TZrBool reference_escape_type_is_ref_like(
+        const SZrReferenceEscapeContext *context,
+        const SZrType *type);
 void reference_escape_register_parameters(
         SZrReferenceEscapeContext *context,
         SZrAstNodeArray *parameters,

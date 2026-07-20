@@ -599,6 +599,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_reference_escape_closure_suspension_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_ref_struct_restrictions_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ref_struct_restrictions.c
+    )
+    target_include_directories(zr_vm_ref_struct_restrictions_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_ref_struct_restrictions_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_generic_instantiation_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_generic_instantiation.c
     )

@@ -521,6 +521,13 @@ focused matrix 均已通过。
 
 晋级门：全部非法 storage/escape 路径有静态诊断；GC frame map 正确扫描合法 GC fields。
 
+状态：已完成（2026-07-21 05:05 +08:00）。`ref struct` / `readonly ref struct` 已进入
+AST 与 canonical capability；storage/boxing/native 限制和 reference escape 共同覆盖
+field、array、global、generic、closure、await/yield 与返回来源。合法 GC/owner/ref field
+分别进入精确 frame map，并在 GCC、Clang、MSVC 的 9 目标、253 项 focused matrix 中通过。
+
+状态记录：[M3 ref struct restrictions](./03-struct-ref-struct-span-layout/m3-ref-struct-restrictions.md)。
+
 ### M4 Span core
 
 覆盖 array/owner/native 来源、index、slice、readonly conversion、default/empty。

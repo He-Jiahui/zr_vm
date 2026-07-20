@@ -118,7 +118,7 @@
 - `.` - 成员访问
 - `@` - 元函数标识符
 - `#` - 装饰器
-- `$` - 值类型构造
+- `init` - 静态值类型构造
 - `<` - 小于、泛型开始、类型转换
 - `>` - 大于、泛型结束、类型转换
 
@@ -277,7 +277,7 @@ struct Vector3 {
     pub const id: int;
     
     // 静态成员
-    static var ZERO = $Vector3(0, 0, 0);
+    static var ZERO = init Vector3(0, 0, 0);
     static const MAX_SIZE: int = 100;  // 静态 const 字段
     
     // 构造函数
@@ -295,22 +295,30 @@ struct Vector3 {
     
     // 元方法（静态）
     pub static @add(lhs: Vector3, rhs: Vector3): Vector3 {
-        return $Vector3(lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z);
+        return init Vector3(lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z);
     }
     
     // 普通方法
     pub add(rhs: Vector3): Vector3 {
-        return $Vector3(this.x + rhs.x, this.y + rhs.y, this.z + rhs.z);
+        return init Vector3(this.x + rhs.x, this.y + rhs.y, this.z + rhs.z);
     }
 }
 ```
 
 **特点**:
-- **值类型**: 使用 `$TypeName(...)` 创建实例
+- **值类型**: 使用 `init TypeRef(...)` 选择 `@constructor` 并直接初始化目标 Place
 - **不支持继承**: struct 不能继承其他类型
 - **支持静态成员和方法**: static 成员存储在原型
 - **支持元函数**: `@` 开头的特殊函数（如 `@constructor`）
 - **支持访问修饰符**: pub, pri, pro
+
+`ref struct` 和 `readonly ref struct` 是 ref-like inline value。它们可以作为 local、temporary、
+value/scoped parameter、安全返回值或其他 ref struct 的字段，也可以包含语言 `ref`、GC handle
+和 owner 字段。它们不能进入 class/resource class 字段、普通 struct 字段、GC array、
+module/global/static storage、无约束泛型容器、object/interface/dynamic box、escaping closure、
+await/yield frame 或未声明布局的 native ABI。合法 ref/GC/owner 字段分别进入 TypeLayout 的
+ref、GC 和 ownership/drop map；这些限制由类型 capability 和结构化 escape facts 驱动，
+不按 `Span` 等具体类型名特判。
 
 ### 2.5 类 (class)
 
@@ -881,21 +889,19 @@ pub @add(lhs: Type, rhs: Type): Type {
 
 ### 3.2 值类型构造
 
-使用 `$TypeName(...)` 创建值类型实例。
+使用 `init TypeRef(...)` 创建值类型实例。
 
 ```zr
-// TypeName 可以是 struct 原型 Object
-var v = $Vector3(1, 2, 3);
-
-// TypeName 作为表达式，可以是 Object 的原型 Object
-var proto = getStructProto();
-var v2 = $proto(1, 2, 3);
+var v = init Vector3(1, 2, 3);
+var pair = init collections.Pair<int>(1, 2);
 ```
 
 **说明**:
-- `$` 操作符用于值类型构造
-- TypeName 可以是标识符或表达式
-- 表达式必须返回 struct 原型 Object
+- `init` 后必须是可静态绑定的 TypeRef，可以是 qualified、generic 或 alias type。
+- `init` 只绑定 value constructor，不会回退到 ordinary call、GC allocation 或 runtime
+  reflection construction。
+- 运行时 `Type` object 必须显式使用 reflection constructible capability，不能作为
+  `init` target。
 
 ### 3.3 解构赋值
 

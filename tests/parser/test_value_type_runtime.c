@@ -619,6 +619,42 @@ static void test_inline_struct_string_field_survives_gc_frame_scan(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_ref_struct_string_field_survives_gc_frame_scan(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    const char *source =
+            "ref struct Label {\n"
+            "    pub var text: string;\n"
+            "    pub @constructor(text: string) {\n"
+            "        this.text = text;\n"
+            "    }\n"
+            "}\n"
+            "fn probe(): int {\n"
+            "    var original: Label = init Label(\"left\");\n"
+            "    var copied: Label = original;\n"
+            "    copied.text = \"right\";\n"
+            "    return zr.__forceGcAndProbeInlineLabelFrame();\n"
+            "}\n"
+            "return probe();";
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    install_zr_native_probe(
+            state,
+            "__forceGcAndProbeInlineLabelFrame",
+            force_gc_and_probe_inline_label_frame_native);
+    function = compile_source(
+            state, source, "value_type_runtime_ref_struct_string_field_gc.zr");
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_inline_struct_string_field_parameter_is_by_value(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const char *source =
@@ -825,6 +861,7 @@ int main(void) {
     RUN_TEST(test_inline_struct_string_field_copy_and_mutation_are_by_value);
     RUN_TEST(test_inline_struct_string_field_updates_frame_bytes);
     RUN_TEST(test_inline_struct_string_field_survives_gc_frame_scan);
+    RUN_TEST(test_ref_struct_string_field_survives_gc_frame_scan);
     RUN_TEST(test_inline_struct_string_field_parameter_is_by_value);
     RUN_TEST(test_inline_struct_string_field_return_is_by_value);
     RUN_TEST(test_inline_struct_constructor_copies_inline_struct_field_argument);

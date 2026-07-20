@@ -346,6 +346,9 @@ TZrBool parser_struct_declaration_starts_here(SZrParserState *ps) {
     if (current_identifier_equals(ps, "readonly")) {
         ZrParser_Lexer_Next(ps->lexer);
     }
+    if (ps->lexer->t.token == ZR_TK_REF) {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
     result = ps->lexer->t.token == ZR_TK_STRUCT;
     if (decorators != ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
@@ -358,12 +361,17 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNodeArray *decorators = parse_leading_decorators(ps);
     TZrBool isReadonly = ZR_FALSE;
+    TZrBool isRefLike = ZR_FALSE;
 
     // 解析可见性修饰符（可选，默认 private）
     EZrAccessModifier accessModifier = parse_access_modifier(ps);
 
     if (current_identifier_equals(ps, "readonly")) {
         isReadonly = ZR_TRUE;
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+    if (ps->lexer->t.token == ZR_TK_REF) {
+        isRefLike = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     }
 
@@ -562,6 +570,7 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     node->data.structDeclaration.members = members;
     node->data.structDeclaration.decorators = decorators;
     node->data.structDeclaration.isReadonly = isReadonly;
+    node->data.structDeclaration.isRefLike = isRefLike;
     node->data.structDeclaration.accessModifier = accessModifier;
     return node;
 }

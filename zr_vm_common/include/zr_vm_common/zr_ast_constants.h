@@ -39,4 +39,7 @@
 #define ZR_ACCESS_CONSTANT_PRIVATE 1
 #define ZR_ACCESS_CONSTANT_PROTECTED 2
 
+// Compiled member modifier bits shared by parser serialization and core layout readers.
+#define ZR_COMPILED_MEMBER_MODIFIER_REF_FIELD ((TZrUInt32)(1u << 7u))
+
 #endif // ZR_AST_CONSTANTS_H

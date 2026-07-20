@@ -260,6 +260,8 @@ enum EZrDeclarationModifierFlag {
     ZR_DECLARATION_MODIFIER_FINAL = 1 << 3,
     ZR_DECLARATION_MODIFIER_SHADOW = 1 << 4,
     ZR_DECLARATION_MODIFIER_READONLY = 1 << 5,
+    ZR_DECLARATION_MODIFIER_REF_LIKE = 1 << 6,
+    ZR_DECLARATION_MODIFIER_REF_FIELD = 1 << 7,
 };
 
 typedef enum EZrDeclarationModifierFlag EZrDeclarationModifierFlag;
@@ -651,6 +653,7 @@ typedef struct SZrStructDeclaration {
     SZrAstNodeArray *members; // StructField, StructMethod, StructMetaFunction 数组
     SZrAstNodeArray *decorators; // DecoratorExpression 数组
     TZrBool isReadonly; // readonly struct contextual declaration
+    TZrBool isRefLike; // ref struct contextual declaration
     EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrStructDeclaration;
 
