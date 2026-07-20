@@ -41,6 +41,11 @@ typedef struct SZrParserSemanticCallQuery {
     const SZrSemanticReferenceFact *reference;
 } SZrParserSemanticCallQuery;
 
+typedef struct SZrParserSemanticPublicContractQuery {
+    TZrUInt64 hash;
+    TZrSize exportCount;
+} SZrParserSemanticPublicContractQuery;
+
 struct SZrCompilerState;
 typedef struct SZrCompilerState SZrCompilerState;
 
@@ -90,6 +95,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_Diagnostics(
         const SZrSemanticContext *context,
         const SZrParserSemanticQueryScope *scope,
         SZrParserSemanticQueryDiagnostics *outDiagnostics);
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_PublicContract(
+        const SZrSemanticContext *context,
+        const SZrTypeEnvironment *typeEnvironment,
+        const SZrAstNode *moduleRoot,
+        SZrParserSemanticPublicContractQuery *outQuery);
 ZR_PARSER_API SZrAstNode *ZrParser_SemanticQuery_FindUnionDeclarationByTypeName(
         SZrCompilerState *compilerState,
         SZrString *typeName);

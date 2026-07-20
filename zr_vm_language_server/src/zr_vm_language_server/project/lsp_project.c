@@ -1287,6 +1287,9 @@ static SZrLspProjectIndex *project_index_new_from_document(SZrState *state,
     projectIndex->reverseDependencyPreservationCount = 0;
     projectIndex->reverseDependencyReanalysisCount = 0;
     projectIndex->lastReverseDependencyReanalysisCount = 0;
+    projectIndex->publicContractHashMatchCount = 0;
+    projectIndex->publicContractHashChangeCount = 0;
+    projectIndex->publicContractHashUnavailableCount = 0;
     ZrCore_Array_Init(state,
                       &projectIndex->files,
                       sizeof(SZrLspProjectFileRecord *),
@@ -1738,6 +1741,9 @@ static TZrBool project_register_source_record(SZrState *state,
         record->path = pathString;
         record->moduleName = moduleString;
         record->isFfiWrapperSource = isFfiWrapperSource;
+        record->publicContractHash = 0U;
+        record->publicContractExportCount = 0U;
+        record->hasPublicContractHash = ZR_FALSE;
         ZrCore_Array_Push(state, &projectIndex->files, &record);
         return ZR_TRUE;
     }
@@ -1794,6 +1800,11 @@ static TZrBool project_register_loaded_document(SZrState *state,
     }
 
     registered = project_register_source_record(state, projectIndex, uri, pathBuffer, analyzer->ast, content);
+    if (registered) {
+        ZrLanguageServer_LspProject_UpdatePublicContractRecord(
+                ZrLanguageServer_LspProject_FindRecordByUri(projectIndex, uri),
+                analyzer);
+    }
     if (hasSnapshot) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     }
@@ -2416,7 +2427,8 @@ static void project_enqueue_importers_of_module(SZrState *state,
 static TZrBool project_refresh_transitive_importers(SZrState *state,
                                                     SZrLspContext *context,
                                                     SZrLspProjectIndex *projectIndex,
-                                                    SZrString *changedUri) {
+                                                    SZrString *changedUri,
+                                                    SZrString *previousModuleName) {
     SZrArray queue;
     SZrArray discovered;
     SZrLspProjectFileRecord *record;
@@ -2427,7 +2439,8 @@ static TZrBool project_refresh_transitive_importers(SZrState *state,
     }
 
     record = ZrLanguageServer_LspProject_FindRecordByUri(projectIndex, changedUri);
-    if (record == ZR_NULL || record->moduleName == ZR_NULL) {
+    if (previousModuleName == ZR_NULL &&
+        (record == ZR_NULL || record->moduleName == ZR_NULL)) {
         return ZR_TRUE;
     }
 
@@ -2438,7 +2451,9 @@ static TZrBool project_refresh_transitive_importers(SZrState *state,
     project_enqueue_importers_of_module(state,
                                        context,
                                        projectIndex,
-                                       record->moduleName,
+                                       previousModuleName != ZR_NULL
+                                               ? previousModuleName
+                                               : record->moduleName,
                                        changedUri,
                                        &queue,
                                        &discovered);
@@ -2483,27 +2498,6 @@ static TZrBool project_refresh_transitive_importers(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrBool project_change_preserves_module_contract(
-        const SZrFileVersion *fileVersion) {
-    SZrAstNode *scopeRoot;
-
-    if (fileVersion == ZR_NULL || !fileVersion->hasIncrementalInfo ||
-        fileVersion->ast == ZR_NULL ||
-        fileVersion->lastChangeInfo.impact !=
-                ZR_FILE_CHANGE_IMPACT_DECLARATION_BODY ||
-        fileVersion->lastChangeInfo.declarationType !=
-                ZR_AST_FUNCTION_DECLARATION) {
-        return ZR_FALSE;
-    }
-
-    scopeRoot = ZrLanguageServer_SemanticAnalyzer_FindAnalysisRootAtPosition(
-            fileVersion->ast,
-            fileVersion->lastChangeInfo.newRange);
-    return scopeRoot != ZR_NULL &&
-           scopeRoot->type == ZR_AST_FUNCTION_DECLARATION &&
-           scopeRoot->data.functionDeclaration.returnType != ZR_NULL;
-}
-
 TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri,
@@ -2516,6 +2510,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
     TZrBool projectBootstrap;
     SZrFileVersion *updatedFileVersion;
     EZrFileChangeImpact updatedChangeImpact;
+    SZrLspProjectPublicContractSnapshot previousPublicContract;
 
     ZrCore_Array_Construct(&loadedUris);
 
@@ -2580,6 +2575,8 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
     }
 
     projectIndex->lastReverseDependencyReanalysisCount = 0;
+    ZrLanguageServer_LspProject_CapturePublicContract(
+            projectIndex, uri, &previousPublicContract);
     updatedFileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     updatedChangeImpact = updatedFileVersion != ZR_NULL &&
                                   updatedFileVersion->hasIncrementalInfo
@@ -2625,14 +2622,36 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
                 return ZR_FALSE;
             }
         }
-    } else if (project_change_preserves_module_contract(updatedFileVersion)) {
-        projectIndex->reverseDependencyPreservationCount++;
-        lsp_project_trace("[lsp_project] preserve reverse dependencies uri=%s impact=%d\n",
-                          get_string_text(uri),
-                          (int)updatedChangeImpact);
-    } else if (!project_refresh_transitive_importers(state, context, projectIndex, uri)) {
-        ZrCore_Array_Free(state, &loadedUris);
-        return ZR_FALSE;
+    } else {
+        SZrLspProjectFileRecord *currentRecord =
+                ZrLanguageServer_LspProject_FindRecordByUri(projectIndex, uri);
+        EZrLspProjectPublicContractChange contractChange =
+                ZrLanguageServer_LspProject_ClassifyPublicContractChange(
+                        projectIndex, &previousPublicContract, currentRecord);
+
+        if (contractChange == ZR_LSP_PROJECT_PUBLIC_CONTRACT_MATCH) {
+            projectIndex->reverseDependencyPreservationCount++;
+            lsp_project_trace(
+                    "[lsp_project] preserve reverse dependencies uri=%s impact=%d reason=public-contract-match\n",
+                    get_string_text(uri),
+                    (int)updatedChangeImpact);
+        } else if (!project_refresh_transitive_importers(
+                           state,
+                           context,
+                           projectIndex,
+                           uri,
+                           previousPublicContract.moduleName)) {
+            ZrCore_Array_Free(state, &loadedUris);
+            return ZR_FALSE;
+        } else {
+            lsp_project_trace(
+                    "[lsp_project] reanalyze reverse dependencies uri=%s impact=%d reason=%s\n",
+                    get_string_text(uri),
+                    (int)updatedChangeImpact,
+                    contractChange == ZR_LSP_PROJECT_PUBLIC_CONTRACT_CHANGE
+                            ? "public-contract-change"
+                            : "public-contract-unavailable");
+        }
     }
 
     ZrCore_Array_Free(state, &loadedUris);

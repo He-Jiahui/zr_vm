@@ -134,6 +134,9 @@ typedef struct SZrLspProjectFileRecord {
     SZrString *path;
     SZrString *moduleName;
     TZrBool isFfiWrapperSource;
+    TZrUInt64 publicContractHash;
+    TZrSize publicContractExportCount;
+    TZrBool hasPublicContractHash;
 } SZrLspProjectFileRecord;
 
 typedef struct SZrLspProjectIndex {
@@ -147,6 +150,9 @@ typedef struct SZrLspProjectIndex {
     TZrSize reverseDependencyPreservationCount;
     TZrSize reverseDependencyReanalysisCount;
     TZrSize lastReverseDependencyReanalysisCount;
+    TZrSize publicContractHashMatchCount;
+    TZrSize publicContractHashChangeCount;
+    TZrSize publicContractHashUnavailableCount;
     SZrArray files; // SZrLspProjectFileRecord*
 } SZrLspProjectIndex;
 

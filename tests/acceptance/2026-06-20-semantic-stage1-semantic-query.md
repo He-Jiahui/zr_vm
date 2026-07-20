@@ -2021,6 +2021,42 @@
 - Precise receiver direct-caller invalidation remains open until canonical receiver calls publish resolved target `SymbolId` and declaration range. Name-based inference is prohibited.
 - Main-document parse/analysis remains whole-file, only one scoped cache is retained, and cancellation, races, stale responses, provider parity, latency percentiles, and memory budgets remain open.
 
+## Canonical Source Public-Contract Hash Acceptance
+
+### Scope
+
+- Added source-module public-contract hash schema v1 to the parser semantic-query API, with stable export count and explicit unavailable behavior.
+- Normalized declaration order and generic owner identity while hashing canonical callable parameter names, types, passing/escape/init/temporary/call-site contracts, return type, receiver effect, effect flags, and generic flags.
+- Drove project reverse-dependency preservation from old/new module identity, hash, and count; changed or unavailable contracts remain conservative.
+- Kept unsupported public types/layout, named generic constraints, extern/compile-time/intermediate surfaces, decorated/default/variadic callables, diagnostics, owner mismatch, and corrupt facts unavailable rather than partially hashed.
+
+### Baseline And TDD
+
+- Initial RED failed to compile because the public-contract query type and API did not exist. The first implementation reached 21/21.
+- Contract audit produced two failures for missing parameter-name sensitivity and unsupported-surface acceptance; correction reached 23/23.
+- Final negative-boundary RED linked three new tests against the old parser implementation and produced 26 tests with 3 failures. Mismatched semantic owners, named generic constraints, and intermediate artifacts are now rejected, yielding 26/26.
+- Project versions 1..5 prove private variable preservation, public parameter-name and return-type changes, unsupported public-type fallback, and match/change/unavailable counters.
+
+### Code And Test Evidence
+
+- `semantic_query_public_contract.c` owns schema-v1 structural hashing and output clearing. No temporary `TypeId`, pointer, generic owner `SymbolId`, or declaration order enters identity.
+- `lsp_project_public_contract.c` updates records and classifies old/new snapshots. Module-name drift preserves the old traversal seed for importer invalidation.
+- All ordinary top-level functions are currently included because canonical visibility is unavailable; only explicit public mutable variables are variable exports. This is conservative and documented.
+- Tests inspect project/file records through local read-only array traversal, avoiding new language-server DLL exports.
+
+### Tooling And Results
+
+- GCC 11.4, Clang 14, and MSVC 19.44.35228 each pass semantic query 26/26 and the real `LSP Source Module Refresh Uses Canonical Public Contract Hash` project scenario.
+- All three run the same sixteen-target semantic/LSP matrix with 16/16 process exits at zero and pass stdio/CLI smoke. They retain the same existing one `%ref` and four binary/descriptor text-failure markers; full repository GREEN is not claimed.
+- MSVC uses an isolated `HEAD=344cf6a` snapshot plus the ten exact stage paths, SHA-256 matched to the stage and excluding Syntax M6 dirty paths; static build uses `VSCMD_VER=17.14.36`.
+- No latency percentile, peak-memory, cancellation-delay, or 256MiB cache-budget result is claimed.
+
+### Acceptance Decision
+
+- Accepted at `2026-07-20 08:57 +08:00` for canonical source callable/public-mutable-variable contract hashing and hash-driven reverse-dependency classification.
+- Public type/property/layout hashing, import/alias/package edge migration, binary/native/artifact parity, private-function visibility precision, and provider generation remain open.
+- Resolved receiver/member target identity must use canonical `SymbolId` plus declaration range; name-based inference remains prohibited.
+
 ## Stage 3 English Diagnostic Message Catalog Foundation Acceptance
 
 ### Scope

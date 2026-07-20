@@ -932,6 +932,8 @@ static void test_diagnostic_message_table_covers_registry_and_falls_back_to_engl
             "diagnostic.not_registered.title"));
 }
 
+#include "test_semantic_query_public_contract_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_semantic_query_type_at_copies_narrowest_expression_type);
@@ -950,5 +952,15 @@ int main(void) {
     RUN_TEST(test_semantic_query_diagnostics_consumes_linear_definite_assignment_resolution);
     RUN_TEST(test_diagnostic_registry_assigns_stable_descriptors);
     RUN_TEST(test_diagnostic_message_table_covers_registry_and_falls_back_to_english);
+    RUN_TEST(test_semantic_query_public_contract_ignores_private_variable_type_changes);
+    RUN_TEST(test_semantic_query_public_contract_changes_for_public_signatures);
+    RUN_TEST(test_semantic_query_public_contract_is_stable_across_declaration_order);
+    RUN_TEST(test_semantic_query_public_contract_normalizes_generic_owner_ids);
+    RUN_TEST(test_semantic_query_public_contract_hashes_parameter_names);
+    RUN_TEST(test_semantic_query_public_contract_rejects_unnormalized_public_surfaces);
+    RUN_TEST(test_semantic_query_public_contract_rejects_poisoned_or_unsupported_modules);
+    RUN_TEST(test_semantic_query_public_contract_rejects_mismatched_semantic_owners);
+    RUN_TEST(test_semantic_query_public_contract_rejects_noncanonical_generic_constraints);
+    RUN_TEST(test_semantic_query_public_contract_rejects_intermediate_artifacts);
     return UNITY_END();
 }

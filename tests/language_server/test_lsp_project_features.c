@@ -159,6 +159,40 @@ static const TZrChar *test_string_ptr(SZrString *value) {
     return ZrCore_String_GetNativeString(value);
 }
 
+static SZrLspProjectFileRecord *test_find_project_record_by_uri(
+        SZrLspProjectIndex *projectIndex,
+        SZrString *uri) {
+    const TZrChar *expectedUri = test_string_ptr(uri);
+
+    for (TZrSize index = 0;
+         projectIndex != ZR_NULL && index < projectIndex->files.length;
+         index++) {
+        SZrLspProjectFileRecord **recordPtr =
+            (SZrLspProjectFileRecord **)ZrCore_Array_Get(&projectIndex->files, index);
+        if (recordPtr != ZR_NULL && *recordPtr != ZR_NULL &&
+            strcmp(test_string_ptr((*recordPtr)->uri), expectedUri) == 0) {
+            return *recordPtr;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrLspProjectIndex *test_find_project_for_uri(SZrLspContext *context, SZrString *uri) {
+    for (TZrSize index = 0;
+         context != ZR_NULL && index < context->projectIndexes.length;
+         index++) {
+        SZrLspProjectIndex **projectPtr =
+            (SZrLspProjectIndex **)ZrCore_Array_Get(&context->projectIndexes, index);
+        if (projectPtr != ZR_NULL && *projectPtr != ZR_NULL &&
+            test_find_project_record_by_uri(*projectPtr, uri) != ZR_NULL) {
+            return *projectPtr;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static TZrBool build_fixture_native_path(const TZrChar *relativePath,
                                          TZrChar *buffer,
                                          TZrSize bufferSize) {
@@ -5609,7 +5643,7 @@ static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *s
     }
 
     mainAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, mainUri);
-    projectIndex = ZrLanguageServer_LspProject_FindProjectForUri(context, mainUri);
+    projectIndex = test_find_project_for_uri(context, mainUri);
     if (mainAnalyzer == ZR_NULL || projectIndex == ZR_NULL) {
         free(mainContent);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -7555,6 +7589,8 @@ static void test_lsp_native_value_constructor_members_surface_hover_and_completi
     TEST_PASS(timer, "LSP Native Value Constructor Members Surface Hover And Completion");
 }
 
+#include "test_lsp_project_public_contract_cases.h"
+
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;
@@ -7691,6 +7727,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_source_module_refresh_reanalyzes_open_documents(state);
+    TEST_DIVIDER();
+
+    test_lsp_source_module_refresh_uses_canonical_public_contract_hash(state);
     TEST_DIVIDER();
 
     test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(state);

@@ -44,6 +44,8 @@
 
 [2026-07-20 local signature and generic direct-dependency invalidation](./03-robustness/2026-07-20-local-signature-generic-direct-dependency-invalidation.md) 完成顶层普通函数signature/generic和推断返回body变化的canonical declaration-range direct-caller失效，并区分direct与conservative计数；receiver/method在resolved target `SymbolId`与declaration range发布前继续保守失效，禁止按member name推断。
 
+[2026-07-20 canonical source public-contract hash](./03-robustness/2026-07-20-canonical-source-public-contract-hash.md) 完成source module public-contract hash v1和reverse-dependency match/change/unavailable分类；private variable变化可保留importer，public callable contract变化传播，unsupported public surface保守传播；public type/layout、provider/artifact parity和receiver target identity仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

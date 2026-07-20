@@ -47,8 +47,9 @@ SyntaxSnapshot可以增量；SemanticSnapshot按dependency/SymbolId/ModuleIdenti
 
 - [Semantic fact/query baseline](./01-semantic-core/2026-06-20-semantic-fact-query-baseline.md)
 - [Numeric range microcase evidence](./01-semantic-core/2026-07-06-numeric-range-microcase-evidence.md)
+- [Canonical source public-contract hash](./03-robustness/2026-07-20-canonical-source-public-contract-hash.md)
 
-这些记录证明query机制可用，不表示全部Canonical/Place/Module facts已覆盖。
+这些记录证明query机制可用，并完成Q5中source module public-contract hash的首个canonical query；不表示全部Canonical/Place/Module facts或binary/native provider parity已覆盖。
 
 ## Query Schema 实施阶段
 

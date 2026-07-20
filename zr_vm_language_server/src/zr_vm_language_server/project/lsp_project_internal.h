@@ -24,6 +24,19 @@ typedef struct SZrLspProjectResolvedSymbol {
     SZrSymbol *symbol;
 } SZrLspProjectResolvedSymbol;
 
+typedef struct SZrLspProjectPublicContractSnapshot {
+    SZrString *moduleName;
+    TZrUInt64 hash;
+    TZrSize exportCount;
+    TZrBool hasHash;
+} SZrLspProjectPublicContractSnapshot;
+
+typedef enum EZrLspProjectPublicContractChange {
+    ZR_LSP_PROJECT_PUBLIC_CONTRACT_UNAVAILABLE = 0,
+    ZR_LSP_PROJECT_PUBLIC_CONTRACT_MATCH,
+    ZR_LSP_PROJECT_PUBLIC_CONTRACT_CHANGE
+} EZrLspProjectPublicContractChange;
+
 SZrLspProjectFileRecord *ZrLanguageServer_LspProject_FindRecordByUri(SZrLspProjectIndex *projectIndex,
                                                                      SZrString *uri);
 SZrLspProjectFileRecord *ZrLanguageServer_LspProject_FindRecordByModuleName(SZrLspProjectIndex *projectIndex,
@@ -54,6 +67,17 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_RemoveFileRecordByUri
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *state,
                                                                                             SZrLspContext *context,
                                                                                             SZrString *uri);
+void ZrLanguageServer_LspProject_UpdatePublicContractRecord(
+        SZrLspProjectFileRecord *record,
+        const SZrSemanticAnalyzer *analyzer);
+void ZrLanguageServer_LspProject_CapturePublicContract(
+        SZrLspProjectIndex *projectIndex,
+        SZrString *uri,
+        SZrLspProjectPublicContractSnapshot *outSnapshot);
+EZrLspProjectPublicContractChange ZrLanguageServer_LspProject_ClassifyPublicContractChange(
+        SZrLspProjectIndex *projectIndex,
+        const SZrLspProjectPublicContractSnapshot *previous,
+        const SZrLspProjectFileRecord *current);
 
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspProject_FreeImportBindings(SZrState *state, SZrArray *bindings);
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspProject_CollectImportBindings(SZrState *state,
