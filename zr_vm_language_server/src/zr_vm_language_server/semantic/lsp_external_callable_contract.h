@@ -2,10 +2,12 @@
 #define ZR_VM_LANGUAGE_SERVER_LSP_EXTERNAL_CALLABLE_CONTRACT_H
 
 #include "metadata/lsp_metadata_provider.h"
+#include "zr_vm_parser/canonical_type.h"
 
 typedef enum EZrLspExternalCallableKind {
     ZR_LSP_EXTERNAL_CALLABLE_NONE = 0,
-    ZR_LSP_EXTERNAL_CALLABLE_FUNCTION = 1
+    ZR_LSP_EXTERNAL_CALLABLE_FUNCTION = 1,
+    ZR_LSP_EXTERNAL_CALLABLE_METHOD = 2
 } EZrLspExternalCallableKind;
 
 typedef struct SZrLspExternalCallableContract {
@@ -17,10 +19,17 @@ typedef struct SZrLspExternalCallableContract {
     TZrSize parameterCount;
     const ZrLibGenericParameterDescriptor *genericParameters;
     TZrSize genericParameterCount;
+    const SZrSemanticContext *canonicalContext;
+    const SZrCanonicalTypeNode *canonicalFunctionType;
 } SZrLspExternalCallableContract;
 
 TZrBool ZrLanguageServer_LspExternalCallableContract_FromResolvedMember(
         const SZrLspResolvedMetadataMember *member,
+        SZrLspExternalCallableContract *contract);
+TZrBool ZrLanguageServer_LspExternalCallableContract_FromResolvedMethod(
+        const SZrLspResolvedMetadataMember *member,
+        const SZrSemanticContext *canonicalContext,
+        TZrTypeId callableTypeId,
         SZrLspExternalCallableContract *contract);
 TZrBool ZrLanguageServer_LspExternalCallableContract_Format(
         const SZrLspExternalCallableContract *contract,

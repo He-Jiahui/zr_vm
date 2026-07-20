@@ -72,6 +72,20 @@ static const ZrLibMethodDescriptor g_descriptor_plugin_probe_point_methods[] = {
         .genericParameters = ZR_NULL,
         .genericParameterCount = 0,
     },
+    {
+        .name = "incomplete_total",
+        .minArgumentCount = 0,
+        .maxArgumentCount = 0,
+        .callback = ZR_NULL,
+        .returnTypeName = "unknown",
+        .documentation = "Deliberately incomplete receiver callable contract.",
+        .isStatic = ZR_FALSE,
+        .parameters = ZR_NULL,
+        .parameterCount = 0,
+        .contractRole = 0U,
+        .genericParameters = ZR_NULL,
+        .genericParameterCount = 0,
+    },
 };
 
 static const ZrLibTypeDescriptor g_descriptor_plugin_types[] = {

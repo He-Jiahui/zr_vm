@@ -2,6 +2,7 @@
 
 #include "semantic/lsp_external_callable_contract.h"
 #include "semantic/lsp_semantic_query.h"
+#include "zr_vm_parser/semantic_query.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -133,6 +134,7 @@ ZrLanguageServer_LspExternalCallableSignatureHelp_Resolve(
     SZrLspSemanticQuery query;
     SZrLspRange lspRange;
     SZrLspExternalCallableContract contract;
+    SZrParserSemanticCallQuery callQuery;
     TZrChar label[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
     EZrLspExternalCallableSignatureStatus status =
             ZR_LSP_EXTERNAL_CALLABLE_SIGNATURE_NOT_EXTERNAL;
@@ -153,17 +155,44 @@ ZrLanguageServer_LspExternalCallableSignatureHelp_Resolve(
         goto cleanup;
     }
 
-    if ((query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_IMPORTED_MEMBER &&
-         query.kind !=
-                 ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_TYPE_MEMBER) ||
-        query.resolvedMember.memberKind != ZR_LSP_METADATA_MEMBER_FUNCTION) {
+    if (query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_IMPORTED_MEMBER &&
+        query.kind !=
+                ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_TYPE_MEMBER) {
         goto cleanup;
     }
 
     status = ZR_LSP_EXTERNAL_CALLABLE_SIGNATURE_UNAVAILABLE;
-    if (!ZrLanguageServer_LspExternalCallableContract_FromResolvedMember(
-                &query.resolvedMember, &contract) ||
-        !ZrLanguageServer_LspExternalCallableContract_Format(
+    if (query.resolvedMember.memberKind == ZR_LSP_METADATA_MEMBER_FUNCTION) {
+        if (!ZrLanguageServer_LspExternalCallableContract_FromResolvedMember(
+                    &query.resolvedMember, &contract)) {
+            goto cleanup;
+        }
+    } else if (query.resolvedMember.memberKind ==
+                       ZR_LSP_METADATA_MEMBER_METHOD) {
+        if (query.resolvedMember.methodDescriptor != ZR_NULL &&
+            query.resolvedMember.methodDescriptor->isStatic) {
+            status = ZR_LSP_EXTERNAL_CALLABLE_SIGNATURE_NOT_EXTERNAL;
+            goto cleanup;
+        }
+        if (analyzer->semanticContext == ZR_NULL ||
+            !ZrParser_SemanticQuery_CallAt(
+                    analyzer->semanticContext,
+                    calleeRange,
+                    ZR_NULL,
+                    &callQuery) ||
+            !ZrLanguageServer_LspExternalCallableContract_FromResolvedMethod(
+                    &query.resolvedMember,
+                    analyzer->semanticContext,
+                    callQuery.callableTypeId,
+                    &contract)) {
+            goto cleanup;
+        }
+    } else {
+        status = ZR_LSP_EXTERNAL_CALLABLE_SIGNATURE_NOT_EXTERNAL;
+        goto cleanup;
+    }
+
+    if (!ZrLanguageServer_LspExternalCallableContract_Format(
                 &contract, label, sizeof(label)) ||
         !ZrLanguageServer_LspSignatureHelp_PopulateFromLabel(
                 state,

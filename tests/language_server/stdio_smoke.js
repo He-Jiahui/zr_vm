@@ -739,6 +739,9 @@ async function main() {
     const nativeCallableText = [
         'var gc = %import("zr.system.gc");',
         'gc.set_budget(2000);',
+        'var {LinkedList} = %import("zr.container");',
+        'var list: LinkedList<int> = null;',
+        'list.addLast(1);',
         '',
     ].join('\n');
     const noopFormatText = [
@@ -1817,6 +1820,32 @@ async function main() {
         nativeCallableHover.contents.value.includes(nativeCallableLabel) &&
         nativeCallableHover.contents.value.includes('Source: native builtin'),
     'native callable hover should reuse the same structured builtin descriptor contract');
+
+    const nativeReceiverCallableLabel = 'fn addLast(value: int): LinkedNode<int>';
+    const nativeReceiverCallableSignature =
+        await client.request('textDocument/signatureHelp', {
+            textDocument: { uri: nativeCallableUri },
+            position: findPosition(nativeCallableText, 'list.addLast(1)', 0, 13),
+        });
+    assert(nativeReceiverCallableSignature &&
+        nativeReceiverCallableSignature.activeParameter === 0 &&
+        Array.isArray(nativeReceiverCallableSignature.signatures) &&
+        nativeReceiverCallableSignature.signatures.some((signature) =>
+            signature && signature.label === nativeReceiverCallableLabel &&
+            Array.isArray(signature.parameters) &&
+            signature.parameters.length === 1 &&
+            signature.parameters[0].label === 'value: int'),
+    'native receiver signatureHelp should merge descriptor names with canonical closed types');
+
+    const nativeReceiverCallableHover = await client.request('textDocument/hover', {
+        textDocument: { uri: nativeCallableUri },
+        position: findPosition(nativeCallableText, 'list.addLast(1)', 0, 7),
+    });
+    assert(nativeReceiverCallableHover && nativeReceiverCallableHover.contents &&
+        typeof nativeReceiverCallableHover.contents.value === 'string' &&
+        nativeReceiverCallableHover.contents.value.includes(nativeReceiverCallableLabel) &&
+        nativeReceiverCallableHover.contents.value.includes('Source: native builtin'),
+    'native receiver hover should reuse the same canonical closed descriptor contract');
 
     client.notify('textDocument/didClose', {
         textDocument: { uri: nativeCallableUri },

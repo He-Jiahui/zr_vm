@@ -7642,6 +7642,7 @@ static void test_lsp_native_value_constructor_members_surface_hover_and_completi
 #include "test_lsp_project_public_contract_cases.h"
 #include "test_lsp_project_module_identity_edge_cases.h"
 #include "test_lsp_project_native_callable_signature_cases.h"
+#include "test_lsp_project_native_receiver_callable_cases.h"
 #include "test_lsp_project_source_rename_edit_cases.h"
 
 int main(void) {
@@ -7735,6 +7736,12 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_descriptor_plugin_callable_query_hover_and_signature_share_contract(state);
+    TEST_DIVIDER();
+
+    test_lsp_native_receiver_callable_query_hover_and_signature_share_closed_contract(state);
+    TEST_DIVIDER();
+
+    test_lsp_descriptor_plugin_receiver_callable_tracks_provider_generation(state);
     TEST_DIVIDER();
 
     test_lsp_descriptor_plugin_project_local_definition_overrides_stale_registry(state);

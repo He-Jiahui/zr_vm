@@ -5,6 +5,7 @@
 
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
+#include "zr_vm_parser/semantic_query.h"
 #include "zr_vm_parser/type_inference.h"
 
 #include <ctype.h>
@@ -2018,10 +2019,56 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                              : "");
                 break;
             case ZR_LSP_METADATA_MEMBER_METHOD: {
+                SZrParserSemanticCallQuery callQuery;
+                SZrLspExternalCallableContract callableContract;
+                TZrChar signatureBuffer[ZR_LSP_TEXT_BUFFER_LENGTH];
                 TZrChar parameterBuffer[ZR_LSP_TEXT_BUFFER_LENGTH];
                 TZrSize parameterUsed = 0;
                 const TZrChar *documentation = "";
                 parameterBuffer[0] = '\0';
+
+                if (resolvedMember->methodDescriptor != ZR_NULL &&
+                    !resolvedMember->methodDescriptor->isStatic &&
+                    analyzer != ZR_NULL &&
+                    analyzer->semanticContext != ZR_NULL &&
+                    ZrParser_SemanticQuery_CallAt(
+                            analyzer->semanticContext,
+                            range,
+                            ZR_NULL,
+                            &callQuery)) {
+                    if (!ZrLanguageServer_LspExternalCallableContract_FromResolvedMethod(
+                                resolvedMember,
+                                analyzer->semanticContext,
+                                callQuery.callableTypeId,
+                                &callableContract) ||
+                        !ZrLanguageServer_LspExternalCallableContract_Format(
+                                &callableContract,
+                                signatureBuffer,
+                                sizeof(signatureBuffer))) {
+                        return ZR_FALSE;
+                    }
+                    documentation =
+                            resolvedMember->methodDescriptor->documentation !=
+                                    ZR_NULL
+                                    ? resolvedMember->methodDescriptor
+                                              ->documentation
+                                    : "";
+                    snprintf(
+                            buffer,
+                            sizeof(buffer),
+                            "**method** `%s`\n\nSignature: %s\n\nReceiver: %s\n\nSource: %s%s%s",
+                            memberText != ZR_NULL ? memberText : "",
+                            signatureBuffer,
+                            resolvedMember->ownerTypeName != ZR_NULL
+                                    ? metadata_provider_string_text(
+                                              resolvedMember->ownerTypeName)
+                                    : metadata_provider_exact_type_failure_text(),
+                            hoverSourceText != ZR_NULL ? hoverSourceText
+                                                       : "unresolved",
+                            documentation[0] != '\0' ? "\n\n" : "",
+                            documentation);
+                    break;
+                }
 
                 if (resolvedMember->methodDescriptor != ZR_NULL) {
                     for (TZrSize index = 0; index < resolvedMember->methodDescriptor->parameterCount; index++) {
