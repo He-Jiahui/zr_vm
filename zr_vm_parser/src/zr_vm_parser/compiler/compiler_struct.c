@@ -165,7 +165,13 @@ static TZrBool compiler_struct_register_canonical_definition(
         SZrCompilerState *cs,
         SZrString *typeName,
         SZrTypePrototypeInfo *info) {
+    const SZrSemanticSymbolRecord *typeSymbol;
+    SZrArray genericParameterKinds;
+    TZrBool registered;
     TZrTypeId typeId;
+    const TZrUInt32 capabilityFlags =
+            ZR_CANONICAL_TYPE_CAPABILITY_VALUE_TYPE |
+            ZR_CANONICAL_TYPE_CAPABILITY_VALUE_CONSTRUCTIBLE;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || typeName == ZR_NULL) {
         return ZR_FALSE;
@@ -174,12 +180,55 @@ static TZrBool compiler_struct_register_canonical_definition(
     if (typeId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }
-    if (!ZrParser_CanonicalType_RegisterDefinition(
+
+    if (info != ZR_NULL && info->genericParameters.length > 0U) {
+        typeSymbol = ZrParser_Semantic_FindSymbolByNameAndKind(
+                cs->semanticContext,
+                typeName,
+                ZR_SEMANTIC_SYMBOL_KIND_TYPE);
+        if (typeSymbol == ZR_NULL || typeSymbol->id == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_FALSE;
+        }
+        ZrCore_Array_Init(
+                cs->state,
+                &genericParameterKinds,
+                sizeof(EZrCanonicalGenericArgumentKind),
+                info->genericParameters.length);
+        for (TZrSize index = 0U; index < info->genericParameters.length; index++) {
+            const SZrTypeGenericParameterInfo *parameter =
+                    (const SZrTypeGenericParameterInfo *)ZrCore_Array_Get(
+                            &info->genericParameters,
+                            index);
+            EZrCanonicalGenericArgumentKind parameterKind;
+
+            if (parameter == ZR_NULL ||
+                (parameter->genericKind != ZR_GENERIC_PARAMETER_TYPE &&
+                 parameter->genericKind != ZR_GENERIC_PARAMETER_CONST_INT)) {
+                ZrCore_Array_Free(cs->state, &genericParameterKinds);
+                return ZR_FALSE;
+            }
+            parameterKind = parameter->genericKind == ZR_GENERIC_PARAMETER_TYPE
+                                    ? ZR_CANONICAL_GENERIC_ARGUMENT_TYPE
+                                    : ZR_CANONICAL_GENERIC_ARGUMENT_CONST_INT;
+            ZrCore_Array_Push(cs->state, &genericParameterKinds, &parameterKind);
+        }
+        registered = ZrParser_CanonicalType_RegisterGenericDefinitionEx(
                 cs->semanticContext,
                 typeId,
-                ZR_CANONICAL_TYPE_CAPABILITY_VALUE_TYPE |
-                        ZR_CANONICAL_TYPE_CAPABILITY_VALUE_CONSTRUCTIBLE,
-                ZR_CANONICAL_GC_SCAN_FREE)) {
+                typeSymbol->id,
+                (const EZrCanonicalGenericArgumentKind *)genericParameterKinds.head,
+                genericParameterKinds.length,
+                capabilityFlags,
+                ZR_CANONICAL_GC_SCAN_FREE);
+        ZrCore_Array_Free(cs->state, &genericParameterKinds);
+    } else {
+        registered = ZrParser_CanonicalType_RegisterDefinition(
+                cs->semanticContext,
+                typeId,
+                capabilityFlags,
+                ZR_CANONICAL_GC_SCAN_FREE);
+    }
+    if (!registered) {
         return ZR_FALSE;
     }
     if (info == ZR_NULL) {

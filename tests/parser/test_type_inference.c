@@ -4699,9 +4699,9 @@ static void test_type_inference_source_generic_class_member_substitutes_closed_f
     TEST_DIVIDER();
 }
 
-static void test_type_inference_source_generic_struct_boxed_new_returns_closed_registered_type(void) {
+static void test_type_inference_source_generic_struct_value_init_returns_closed_registered_type(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - Source Generic Struct Boxed New Returns Closed Registered Type";
+    const char *testSummary = "Type Inference - Source Generic Struct Value Init Returns Closed Registered Type";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -4711,8 +4711,8 @@ static void test_type_inference_source_generic_struct_boxed_new_returns_closed_r
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "struct Pair<TLeft, TRight> { var left: TLeft; var right: TRight; }\n"
-                "new Pair<int, string>();";
-        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_pair_new_type_test.zr", 36);
+                "init Pair<int, string>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_generic_pair_init_type_test.zr", 37);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         const SZrTypePrototypeInfo *openPrototype;
         const SZrTypePrototypeInfo *closedPrototype;
@@ -8194,7 +8194,7 @@ int main(void) {
     RUN_TEST(test_type_inference_source_generic_class_boxed_new_returns_closed_registered_type);
     RUN_TEST(test_type_inference_source_class_boxed_new_succeeds_without_prior_declaration_compile);
     RUN_TEST(test_type_inference_source_generic_class_member_substitutes_closed_field_type);
-    RUN_TEST(test_type_inference_source_generic_struct_boxed_new_returns_closed_registered_type);
+    RUN_TEST(test_type_inference_source_generic_struct_value_init_returns_closed_registered_type);
     RUN_TEST(test_type_inference_source_const_generic_boxed_new_returns_closed_registered_type);
     RUN_TEST(test_type_inference_source_const_generic_boxed_new_succeeds_without_prior_declaration_compile);
     RUN_TEST(test_type_inference_source_generic_function_supports_explicit_arguments_and_inference);
