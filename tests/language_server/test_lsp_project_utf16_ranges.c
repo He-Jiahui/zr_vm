@@ -15,6 +15,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
 #include "zr_vm_language_server.h"
+#include "interface/lsp_interface_internal.h"
 #include "semantic/lsp_semantic_query.h"
 
 static TZrPtr test_allocator(TZrPtr userData,
@@ -456,6 +457,27 @@ static TZrBool test_binary_metadata_declaration_after_utf8_prefix_uses_utf16_col
     return ZR_TRUE;
 }
 
+static TZrBool test_descriptor_metadata_compact_range_uses_structural_coordinates(void) {
+    SZrFileRange range = ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 2, 9),
+                                                   ZrParser_FilePosition_Create(0, 2, 10),
+                                                   ZR_NULL);
+    SZrFileRange invalidRange = ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 0, 9),
+                                                          ZrParser_FilePosition_Create(0, 2, 10),
+                                                          ZR_NULL);
+    SZrLspRange lspRange;
+
+    if (!ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates(range, &lspRange) ||
+        lspRange.start.line != 1 || lspRange.start.character != 8 ||
+        lspRange.end.line != 1 || lspRange.end.character != 9 ||
+        ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates(invalidRange, &lspRange)) {
+        printf("FAIL: Descriptor metadata compact range expected 1:8-1:9 with invalid ranges rejected\n");
+        return ZR_FALSE;
+    }
+
+    printf("PASS: Descriptor metadata compact range uses structural coordinates\n");
+    return ZR_TRUE;
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;
@@ -474,6 +496,7 @@ int main(void) {
     ZrCore_GlobalState_InitRegistry(global->mainThreadState, global);
     passed = test_module_entry_references_after_utf8_prefix_use_utf16_columns(global->mainThreadState);
     passed = test_binary_metadata_declaration_after_utf8_prefix_uses_utf16_columns(global->mainThreadState) && passed;
+    passed = test_descriptor_metadata_compact_range_uses_structural_coordinates() && passed;
     ZrCore_GlobalState_Free(global);
 
     printf("\n==========\n");

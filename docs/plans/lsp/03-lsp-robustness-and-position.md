@@ -50,6 +50,8 @@
 
 [2026-07-20 binary export declaration identity](./03-robustness/2026-07-20-binary-export-declaration-identity.md) 完成binary typed-export declaration range从artifact fact到definition/references/documentHighlight的双向投影；binary provider有snapshot时转换UTF-16、无snapshot时保留structural coordinates，普通document helper不恢复no-content fallback。无文本非ASCII精确宽度、descriptor-plugin type member、性能与峰值内存报告仍待后续。
 
+[2026-07-20 descriptor plugin type member parity](./03-robustness/2026-07-20-descriptor-plugin-type-member-parity.md) 完成descriptor receiver type member fact对generic import-chain的优先级、compact member declaration坐标的provider-specific投影，以及completion/definition/references/documentHighlight统一消费；valid v1到incomplete v2使用既有last-good AST，不新增name/text推断fallback。property/constructor/meta/imported-native callable parity、性能与峰值内存报告仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

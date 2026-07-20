@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-07-20 14:16 +08:00
+updated_at: 2026-07-20 15:15 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -30,9 +30,10 @@ source_plans:
 | 2026-07-20 08:57 +08:00 | 已完成 | source module canonical public-contract hash v1；声明顺序与generic owner归一化；callable passing/escape/effect contract；hash match/change/unavailable驱动reverse-dependency保留或传播；module identity漂移；三工具链十六目标矩阵、26项query、project与stdio/CLI烟测 | [Canonical source public-contract hash](../03-robustness/2026-07-20-canonical-source-public-contract-hash.md) |
 | 2026-07-20 11:53 +08:00 | 已完成 | resolved callable的canonical signature/hover/parameter consumer与reference fact hover range；receiver SymbolId+declarationRange direct-caller失效；persistent compiler diagnostic query投影与级联去重；closed generic receiver canonical display；三工具链十六目标矩阵与stdio/CLI烟测 | [Resolved callable consumer convergence](../03-robustness/2026-07-20-resolved-callable-consumer-convergence.md) |
 | 2026-07-20 14:16 +08:00 | 已完成 | binary typed-export declaration URI/range通过统一query进入definition/references/documentHighlight；显式binary metadata坐标adapter保留无snapshot structural identity并在有snapshot时转换UTF-16；source与`.zro`双向命中同一fact；三工具链十六目标矩阵与stdio/CLI烟测 | [Binary export declaration identity](../03-robustness/2026-07-20-binary-export-declaration-identity.md) |
+| 2026-07-20 15:15 +08:00 | 已完成 | descriptor-plugin receiver type member fact优先于通用import-chain；显式compact-coordinate adapter保留member declaration identity；completion/definition/references/documentHighlight统一消费；valid v1到incomplete v2 last-good AST边界；三工具链十六目标矩阵与stdio/CLI烟测且marker归零 | [Descriptor plugin type member parity](../03-robustness/2026-07-20-descriptor-plugin-type-member-parity.md) |
 
 ## 当前状态
 
-- 总体目标进行中。当前记录只表示十四个子里程碑完成，不表示L1-L8整体完成。
-- 下一步从descriptor-plugin fact/completion provider关闭剩余type-member marker，再扩展property/constructor/meta/imported callable target identity，并补齐public type/layout、ModuleIdentity edge migration、binary/native/artifact provider contract parity及public import变化的反向依赖传播证据。
+- 总体目标进行中。当前记录只表示十五个子里程碑完成，不表示L1-L8整体完成。
+- 下一步扩展property/constructor/meta/imported/native callable target identity，并补齐public type/layout、ModuleIdentity edge migration、binary/native/artifact provider contract parity及public import变化的反向依赖传播证据。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

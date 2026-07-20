@@ -47,6 +47,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_descriptor_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
@@ -108,6 +109,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_descriptor_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
@@ -132,6 +134,7 @@ plan_sources:
   - docs/superpowers/specs/2026-06-03-zr-vm-semantic-inference-design.md
   - docs/superpowers/plans/2026-06-03-zr-vm-semantic-inference-fact-layer.md
   - docs/plans/lsp/01-semantic-inference-core.md
+  - docs/plans/lsp/03-lsp-robustness-and-position.md
   - docs/plans/lsp/05-implementation-blueprint.md
 tests:
   - tests/parser/test_cfg_reachability.c
@@ -304,6 +307,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - binary typed-export 的 one-based byte line/column 与 LSP UTF-16 range 之间的窄转换合同
   - 有 source snapshot 时按 byte offset 精确转换；无 snapshot 时保留 artifact structural coordinates
   - definition/references/documentHighlight 从 source usage 与 `.zro` declaration 双向命中同一 declaration fact
+- `lsp-descriptor-metadata-coordinate-projection.md`
+  - descriptor-plugin receiver type member fact优先于通用import-chain解释
+  - compact synthetic member coordinates仅由descriptor `sourceKind`显式投影
+  - completion、definition、references和documentHighlight消费同一member identity
 - `union-types.md`
   - Rust-like `union` 声明、unit/tuple/struct variant AST 和泛型声明解析
   - `Shape.Circle(...)` / `Option<int>.Some(...)` 构造器解析、类型推断和 object carrier lowering
@@ -326,11 +333,12 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 13. 再看 `union-types.md`，了解 union 前端 slice、构造器 lowering 和后续模式匹配边界。
 14. 最后看 `lsp-semantic-resolution-and-native-imports.md`，了解 language server 如何消费 parser/native import metadata 并稳定命中局部语义引用。
 15. 接着看 `lsp-binary-metadata-coordinate-projection.md`，了解 binary declaration identity 如何跨 artifact byte coordinates 与 LSP UTF-16 边界保持一致。
-16. 再看 `place-cfg-graph.md`，了解 session-local Place identity、typed CFG edge 与 cleanup routing。
-17. 再看 `pre-semantic-ir-flow.md`，了解前置 Semantic IR、compiler bridge、flow facts 与 execution sidecar 边界。
-18. 再看 `reference-loan-nll.md`，了解 LoanId 传播、NLL、reborrow 与 Place overlap 冲突。
-19. 再看 `receiver-readonly-call-boundary.md`，了解 receiver effect、owner auto-deref 与
+16. 再看 `lsp-descriptor-metadata-coordinate-projection.md`，了解 native descriptor type-member identity 如何跨compact coordinates与LSP consumer保持一致。
+17. 再看 `place-cfg-graph.md`，了解 session-local Place identity、typed CFG edge 与 cleanup routing。
+18. 再看 `pre-semantic-ir-flow.md`，了解前置 Semantic IR、compiler bridge、flow facts 与 execution sidecar 边界。
+19. 再看 `reference-loan-nll.md`，了解 LoanId 传播、NLL、reborrow 与 Place overlap 冲突。
+20. 再看 `receiver-readonly-call-boundary.md`，了解 receiver effect、owner auto-deref 与
     two-phase method call loan。
-20. 再看 `reference-escape-closure-suspension.md`，了解 ref escape lattice、closure capture
+21. 再看 `reference-escape-closure-suspension.md`，了解 ref escape lattice、closure capture
     和 suspension 静态边界。
-21. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+22. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

@@ -306,6 +306,11 @@ static TZrBool semantic_query_append_location(SZrState *state,
             ZrCore_Memory_RawFree(state->global, location, sizeof(SZrLspLocation));
             return ZR_FALSE;
         }
+    } else if (sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN) {
+        if (!ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates(range, &location->range)) {
+            ZrCore_Memory_RawFree(state->global, location, sizeof(SZrLspLocation));
+            return ZR_FALSE;
+        }
     } else {
         location->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, uri, range);
     }
@@ -2616,6 +2621,11 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     }
     query->analyzer = analyzer;
 
+    if (semantic_query_resolve_receiver_type_member_target(state, context, uri, analyzer, query)) {
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+        return ZR_TRUE;
+    }
+
     if (analyzer != ZR_NULL && analyzer->ast != ZR_NULL) {
         ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
         if (ZrLanguageServer_LspSemanticImportChain_ResolveAtRange(state,
@@ -2686,10 +2696,6 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     }
 
     if (semantic_query_resolve_external_metadata_type_member_declaration_target(state, context, uri, position, query)) {
-        return ZR_TRUE;
-    }
-
-    if (semantic_query_resolve_receiver_type_member_target(state, context, uri, analyzer, query)) {
         return ZR_TRUE;
     }
 

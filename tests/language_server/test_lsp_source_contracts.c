@@ -224,6 +224,39 @@ static void test_binary_metadata_coordinate_projection_is_explicitly_scoped(void
     free(projectNavigationSource);
 }
 
+static void test_descriptor_metadata_coordinate_projection_is_explicitly_scoped(void) {
+    char *coordinateSource = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_descriptor_metadata_coordinates.c");
+    char *semanticQuerySource = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
+    char *projectNavigationSource = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c");
+
+    if (coordinateSource == NULL || semanticQuerySource == NULL || projectNavigationSource == NULL) {
+        printf("FAIL: could not read descriptor metadata coordinate projection sources\n");
+        g_failures++;
+        free(coordinateSource);
+        free(semanticQuerySource);
+        free(projectNavigationSource);
+        return;
+    }
+
+    assert_text_contains(coordinateSource, "ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates");
+    assert_text_contains_none(coordinateSource, "TryRangeFromBinaryMetadataCoordinates");
+    assert_text_contains(semanticQuerySource,
+                         "sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN");
+    assert_text_contains(semanticQuerySource,
+                         "ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates");
+    assert_text_contains(projectNavigationSource,
+                         "sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN");
+    assert_text_contains(projectNavigationSource,
+                         "ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates");
+
+    free(coordinateSource);
+    free(semanticQuerySource);
+    free(projectNavigationSource);
+}
+
 static void test_lsp_interface_range_conversion_uses_shared_document_helper(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c");
@@ -980,6 +1013,7 @@ int main(void) {
     test_import_chain_location_conversion_does_not_use_static_append_state();
     test_semantic_query_location_conversion_uses_shared_document_helper();
     test_binary_metadata_coordinate_projection_is_explicitly_scoped();
+    test_descriptor_metadata_coordinate_projection_is_explicitly_scoped();
     test_lsp_interface_range_conversion_uses_shared_document_helper();
     test_lsp_shared_document_helpers_do_not_use_legacy_fallbacks();
     test_lsp_document_file_position_has_no_legacy_fallback();
@@ -1023,6 +1057,7 @@ int main(void) {
     printf("PASS: Import-chain location conversion avoids static append state\n");
     printf("PASS: Semantic query location conversion uses shared document helper\n");
     printf("PASS: Binary metadata coordinate projection is explicitly scoped\n");
+    printf("PASS: Descriptor metadata coordinate projection is explicitly scoped\n");
     printf("PASS: LSP interface range conversion uses shared document helper\n");
     printf("PASS: LSP shared document helpers avoid legacy fallbacks\n");
     printf("PASS: LSP document file position avoids legacy fallback\n");

@@ -27,6 +27,7 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_descriptor_metadata_coordinates.c
   - zr_vm_language_server/stdio/stdio_requests.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_state.c
@@ -75,6 +76,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_descriptor_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
   - zr_vm_language_server/stdio/stdio_requests.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h
@@ -90,6 +92,10 @@ plan_sources:
   - user: 2026-04-04 实现“ZR LSP 语义内核与元信息推断增强计划”
   - user: 2026-04-05 继续把 plugin/native/binary metadata 统一链推进到更细粒度 completion/definition/references/watched refresh 覆盖
   - user: 2026-04-06 继续清理 runtime 残留，并把 imported Pair 显式绑定规则补成 LSP 断言
+  - user: 2026-07-20 严格执行 LSP semantic inference 计划并逐子里程碑记录产出
+  - docs/plans/lsp/01-semantic-inference-core.md
+  - docs/plans/lsp/03-lsp-robustness-and-position.md
+  - docs/plans/lsp/05-implementation-blueprint.md
 tests:
   - tests/language_server/test_lsp_language_feature_matrix.c
   - tests/parser/test_compiler_regressions.c
@@ -155,6 +161,14 @@ Named-call compatibility failures preserve the parser compiler diagnostic until 
 Binary-only imported members now keep the typed-export declaration range through the unified semantic query and into definition, references and document highlights. `lsp_semantic_query.c` and project navigation only select the specialized coordinate projection when `sourceKind` is `ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA`; no member-name or displayed-signature fallback is introduced.
 
 The artifact range is one-based and byte-column based. `lsp_binary_metadata_coordinates.c` reconstructs byte offsets and uses the normal UTF-16 codec when a source snapshot is available. Without source text it preserves the artifact's structural line/column coordinates instead of returning a fabricated `0:0`. The inverse helper lets requests that begin on a `.zro` declaration resolve the same canonical export fact. Full behavior, limitations and tests are documented in [LSP Binary Metadata Coordinate Projection](./lsp-binary-metadata-coordinate-projection.md).
+
+## Descriptor Plugin Type Member Identity
+
+Descriptor-plugin receiver members now resolve before the generic import-chain path. The receiver query consumes the analyzer's inferred receiver type and the metadata provider's exact owner/member fact, so `point.y` remains a field of the resolved descriptor type instead of being accepted early as a generic imported module member. Failure to resolve a receiver still falls through to all existing import and external metadata paths.
+
+Physical plugin files have no source text for their synthetic type declarations. `lsp_virtual_documents.c` already publishes deterministic compact member ranges; `lsp_descriptor_metadata_coordinates.c` converts those one-based structural coordinates only when the resolved source kind is `NATIVE_DESCRIPTOR_PLUGIN`. Definition, references and document highlights from either source usages or the compact declaration therefore keep the same member identity and no longer collapse to the plugin module entry at `0:0`.
+
+Receiver completion is tested first on a valid `point.x` snapshot and then after an incomplete version 2 edit to `point.;`. The second request uses the existing last-good AST contract; the LSP does not recover the receiver by scanning member names or rebuilding type facts from local text. Full behavior and constraints are documented in [LSP Descriptor Metadata Coordinate Projection](./lsp-descriptor-metadata-coordinate-projection.md).
 
 ## 隐式接收者符号
 

@@ -216,6 +216,11 @@ static TZrBool append_lsp_location(SZrState *state,
             ZrCore_Memory_RawFree(state->global, location, sizeof(SZrLspLocation));
             return ZR_FALSE;
         }
+    } else if (sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN) {
+        if (!ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates(range, &location->range)) {
+            ZrCore_Memory_RawFree(state->global, location, sizeof(SZrLspLocation));
+            return ZR_FALSE;
+        }
     } else {
         location->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(context, locationUri, range);
     }
@@ -1220,6 +1225,11 @@ static TZrBool append_document_highlight(SZrState *state,
                                                                         uri,
                                                                         range,
                                                                         &highlight->range)) {
+            ZrCore_Memory_RawFree(state->global, highlight, sizeof(SZrLspDocumentHighlight));
+            return ZR_FALSE;
+        }
+    } else if (sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN) {
+        if (!ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates(range, &highlight->range)) {
             ZrCore_Memory_RawFree(state->global, highlight, sizeof(SZrLspDocumentHighlight));
             return ZR_FALSE;
         }

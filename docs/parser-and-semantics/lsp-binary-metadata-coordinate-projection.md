@@ -78,8 +78,7 @@ The `sourceKind` gate is carried through both `lsp_semantic_query.c` and `lsp_pr
 - A binary export declaration must have positive start/end columns and an ordered range.
 - CRLF and non-ASCII prefixes are exact when a source snapshot is available because conversion is offset based.
 - Without source text, the artifact currently cannot distinguish UTF-8 byte width from UTF-16 code-unit width before a declaration.
-- Native descriptor virtual documents are outside this module and continue to use their rendered virtual-document ranges.
-- The remaining descriptor-plugin receiver completion marker is unrelated to binary coordinate projection.
+- Native descriptor-plugin compact physical-file declarations are outside this module and use their own explicitly gated structural coordinate adapter.
 
 ## Test Coverage
 

@@ -45,5 +45,6 @@
 - [Numeric range microcase evidence](./01-semantic-core/2026-07-06-numeric-range-microcase-evidence.md)
 - [Structured diagnostic baseline](./02-diagnostics/2026-07-19-structured-diagnostic-baseline.md)
 - [Binary export declaration identity](./03-robustness/2026-07-20-binary-export-declaration-identity.md)
+- [Descriptor plugin type member parity](./03-robustness/2026-07-20-descriptor-plugin-type-member-parity.md)
 
-这些记录只对应L1/L2/L3/L6的部分历史能力；binary export记录没有性能、race或峰值内存报告，不改变L4-L8及完整L6状态。
+这些记录只对应L1/L2/L3/L6的部分历史能力；binary export与descriptor-plugin记录没有性能、race或峰值内存报告，不改变L4-L8及完整L6状态。

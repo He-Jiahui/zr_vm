@@ -3597,6 +3597,18 @@ static void test_lsp_descriptor_plugin_type_member_navigation(SZrState *state) {
         "var plugin = %import(\"zr.pluginprobe\");\n"
         "pub func usePlugin() {\n"
         "    var point = plugin.makePoint();\n"
+        "    point.x;\n"
+        "    var first = point.y;\n"
+        "    var second = point.y;\n"
+        "    var pickTotal = () => {\n"
+        "        return point.total();\n"
+        "    };\n"
+        "    return pickTotal() + point.total() + first + second;\n"
+        "}\n";
+    const TZrChar *completionProbeSource =
+        "var plugin = %import(\"zr.pluginprobe\");\n"
+        "pub func usePlugin() {\n"
+        "    var point = plugin.makePoint();\n"
         "    point.;\n"
         "    var first = point.y;\n"
         "    var second = point.y;\n"
@@ -3665,7 +3677,7 @@ static void test_lsp_descriptor_plugin_type_member_navigation(SZrState *state) {
     pluginUri = create_file_uri_from_native_path(state, fixture.pluginPath);
     if (mainUri == ZR_NULL || pluginUri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1) ||
-        !lsp_find_position_for_substring(mainContent, "point.;", 0, 6, &completionPosition) ||
+        !lsp_find_position_for_substring(mainContent, "point.x;", 0, 6, &completionPosition) ||
         !lsp_find_position_for_substring(mainContent, "point.y", 0, 6, &firstFieldUsagePosition) ||
         !lsp_find_position_for_substring(mainContent, "point.y", 1, 6, &secondFieldUsagePosition) ||
         !lsp_find_position_for_substring(mainContent, "point.total()", 0, 6, &firstMethodUsagePosition) ||
@@ -3702,12 +3714,13 @@ static void test_lsp_descriptor_plugin_type_member_navigation(SZrState *state) {
         !completion_array_contains_label(&completions, "x") ||
         !completion_array_contains_label(&completions, "y") ||
         !completion_array_contains_label(&completions, "total")) {
+        describe_completion_labels(&completions, reason, sizeof(reason));
         free(mainContent);
         ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Descriptor Plugin Type Member Navigation",
-                  "Receiver completion on a descriptor-plugin native type should surface field and method members");
+                  reason);
         return;
     }
     ZrCore_Array_Free(state, &completions);
@@ -3720,12 +3733,13 @@ static void test_lsp_descriptor_plugin_type_member_navigation(SZrState *state) {
                                                fieldDeclStartCharacter,
                                                fieldDeclEndLine,
                                                fieldDeclEndCharacter)) {
+        describe_first_location(&definitions, reason, sizeof(reason));
         free(mainContent);
         ZrCore_Array_Free(state, &definitions);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Descriptor Plugin Type Member Navigation",
-                  "Goto definition on a descriptor-plugin native type field should land on the synthetic member declaration target, not only the plugin module entry");
+                  reason);
         return;
     }
     ZrCore_Array_Free(state, &definitions);
@@ -3963,9 +3977,38 @@ static void test_lsp_descriptor_plugin_type_member_navigation(SZrState *state) {
                   "Document highlights on a descriptor-plugin method declaration should stay on the same method-level declaration target");
         return;
     }
+    ZrCore_Array_Free(state, &highlights);
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state,
+                                             context,
+                                             mainUri,
+                                             completionProbeSource,
+                                             strlen(completionProbeSource),
+                                             2) ||
+        !lsp_find_position_for_substring(completionProbeSource, "point.;", 0, 6, &completionPosition)) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Descriptor Plugin Type Member Navigation",
+                  "Failed to switch descriptor-plugin receiver completion to the incomplete version 2 probe");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, mainUri, completionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "x") ||
+        !completion_array_contains_label(&completions, "y") ||
+        !completion_array_contains_label(&completions, "total")) {
+        describe_completion_labels(&completions, reason, sizeof(reason));
+        free(mainContent);
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Descriptor Plugin Type Member Navigation", reason);
+        return;
+    }
 
     free(mainContent);
-    ZrCore_Array_Free(state, &highlights);
+    ZrCore_Array_Free(state, &completions);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Descriptor Plugin Type Member Navigation");
 }

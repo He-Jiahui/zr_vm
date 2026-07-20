@@ -136,6 +136,8 @@ TZrBool ZrLanguageServer_Lsp_TryFilePositionFromBinaryMetadataCoordinates(SZrLsp
                                                                           SZrString *uri,
                                                                           SZrLspPosition position,
                                                                           SZrFilePosition *outPosition);
+TZrBool ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates(SZrFileRange range,
+                                                                       SZrLspRange *outRange);
 
 typedef struct SZrLspProjectFileRecord {
     SZrString *uri;
