@@ -413,7 +413,7 @@ static void test_resolved_generic_call_publishes_closed_canonical_signature(void
     TEST_ASSERT_EQUAL_STRING("fn(int) -> int", typeLabel);
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
             cs.semanticContext, &query, callLabel, sizeof(callLabel)));
-    TEST_ASSERT_EQUAL_STRING("identity(value: int): int", callLabel);
+    TEST_ASSERT_EQUAL_STRING("identity<T>(value: int): int", callLabel);
 
     position = consumer_range((TZrSize)(emptyCall - source + strlen("zero(")),
                               (TZrSize)(emptyCall - source + strlen("zero(")));
@@ -425,6 +425,60 @@ static void test_resolved_generic_call_publishes_closed_canonical_signature(void
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
             cs.semanticContext, &query, callLabel, sizeof(callLabel)));
     TEST_ASSERT_EQUAL_STRING("zero(): int", callLabel);
+
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_resolved_generic_member_call_preserves_declaration_generic_clause(void) {
+    const TZrChar *source =
+            "class Matrix<T, const N: int> { }\n"
+            "class Box<T> {\n"
+            "    pub fn shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
+            "}\n"
+            "var box = new Box<int>();\n"
+            "var value = new Matrix<int, 4>();\n"
+            "box.shape(value);\n";
+    const TZrChar *callExpression = strstr(source, "box.shape(value)");
+    const TZrChar *call = callExpression != ZR_NULL
+                                  ? callExpression + strlen("box.")
+                                  : ZR_NULL;
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFileRange position;
+    SZrParserSemanticCallQuery query;
+    TZrChar callLabel[256];
+
+    TEST_ASSERT_NOT_NULL(call);
+    sourceName = ZrCore_String_Create(
+            g_state, "canonical_generic_member_call.zr", 32u);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+
+    position = consumer_range((TZrSize)(call - source + strlen("shape(")),
+                              (TZrSize)(call - source + strlen("shape(")));
+    position.source = sourceName;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext, position, ZR_NULL, &query));
+    TEST_ASSERT_TRUE(query.hasResolvedTarget);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, query.targetSymbolId);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+            cs.semanticContext, &query, callLabel, sizeof(callLabel)));
+    TEST_ASSERT_EQUAL_STRING(
+            "fn shape<const N: int>(value: Matrix<int, 4>): Matrix<int, 4>",
+            callLabel);
 
     consumer_release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);
@@ -673,6 +727,7 @@ int main(void) {
     RUN_TEST(test_reflection_debug_and_layout_resolve_only_canonical_ids_and_tokens);
     RUN_TEST(test_semantic_query_projects_expression_and_call_types_from_canonical_facts);
     RUN_TEST(test_resolved_generic_call_publishes_closed_canonical_signature);
+    RUN_TEST(test_resolved_generic_member_call_preserves_declaration_generic_clause);
     RUN_TEST(test_resolved_extern_call_preserves_parameter_names_in_canonical_signature);
     RUN_TEST(test_source_scoped_call_preserves_contract_and_target_identity);
     RUN_TEST(test_receiver_call_publishes_resolved_target_identity);

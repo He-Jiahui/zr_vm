@@ -93,10 +93,68 @@ static const TZrChar *type_inference_call_passing_prefix(
     }
 }
 
+static TZrBool type_inference_call_generic_clause_append(
+        TZrChar *buffer,
+        TZrSize bufferSize,
+        TZrSize *offset,
+        const SZrArray *genericParameters) {
+    TZrSize index;
+
+    if (genericParameters == ZR_NULL || genericParameters->length == 0u) {
+        return ZR_TRUE;
+    }
+    if (!genericParameters->isValid ||
+        !type_inference_call_label_append(buffer, bufferSize, offset, "<")) {
+        return ZR_FALSE;
+    }
+    for (index = 0u; index < genericParameters->length; ++index) {
+        const SZrTypeGenericParameterInfo *parameter =
+                (const SZrTypeGenericParameterInfo *)ZrCore_Array_Get(
+                        (SZrArray *)genericParameters, index);
+        const TZrChar *name;
+
+        if (parameter == ZR_NULL || parameter->name == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        name = ZrCore_String_GetNativeString(parameter->name);
+        if (name == ZR_NULL || name[0] == '\0' ||
+            (index > 0u && !type_inference_call_label_append(
+                                   buffer, bufferSize, offset, ", "))) {
+            return ZR_FALSE;
+        }
+        if (parameter->genericKind == ZR_GENERIC_PARAMETER_CONST_INT) {
+            if (!type_inference_call_label_append(
+                        buffer, bufferSize, offset, "const ") ||
+                !type_inference_call_label_append(buffer, bufferSize, offset, name) ||
+                !type_inference_call_label_append(
+                        buffer, bufferSize, offset, ": int")) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
+        if (parameter->genericKind != ZR_GENERIC_PARAMETER_TYPE) {
+            return ZR_FALSE;
+        }
+        if (parameter->variance == ZR_GENERIC_VARIANCE_IN &&
+            !type_inference_call_label_append(buffer, bufferSize, offset, "in ")) {
+            return ZR_FALSE;
+        }
+        if (parameter->variance == ZR_GENERIC_VARIANCE_OUT &&
+            !type_inference_call_label_append(buffer, bufferSize, offset, "out ")) {
+            return ZR_FALSE;
+        }
+        if (!type_inference_call_label_append(buffer, bufferSize, offset, name)) {
+            return ZR_FALSE;
+        }
+    }
+    return type_inference_call_label_append(buffer, bufferSize, offset, ">");
+}
+
 static SZrString *type_inference_callable_signature_display(
         SZrCompilerState *cs,
         SZrString *name,
         const SZrAstNodeArray *parameters,
+        const SZrArray *genericParameters,
         TZrTypeId callTypeId) {
     const SZrCanonicalTypeNode *functionType;
     TZrChar buffer[1024];
@@ -125,6 +183,8 @@ static SZrString *type_inference_callable_signature_display(
                 buffer, sizeof(buffer), &offset, receiverPrefix) ||
         !type_inference_call_label_append(buffer, sizeof(buffer), &offset,
                                           ZrCore_String_GetNativeString(name)) ||
+        !type_inference_call_generic_clause_append(
+                buffer, sizeof(buffer), &offset, genericParameters) ||
         !type_inference_call_label_append(buffer, sizeof(buffer), &offset, "(")) {
         return ZR_NULL;
     }
@@ -202,6 +262,7 @@ static SZrString *type_inference_call_signature_display(
             cs,
             functionInfo->name,
             type_inference_call_parameters(functionInfo->declarationNode),
+            &functionInfo->genericParameters,
             callTypeId);
 }
 
@@ -373,6 +434,7 @@ void type_inference_record_member_call_reference_fact(
             cs,
             memberInfo->name,
             type_inference_call_parameters(memberInfo->declarationNode),
+            &memberInfo->genericParameters,
             callTypeId);
     fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID;
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
