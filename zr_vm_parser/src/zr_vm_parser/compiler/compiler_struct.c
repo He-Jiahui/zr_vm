@@ -167,7 +167,7 @@ static TZrBool compiler_struct_register_canonical_definition(
         SZrTypePrototypeInfo *info) {
     const SZrSemanticSymbolRecord *typeSymbol;
     SZrArray genericParameterKinds;
-    TZrBool registered;
+    TZrBool definitionRegistered;
     TZrTypeId typeId;
     const TZrUInt32 capabilityFlags =
             ZR_CANONICAL_TYPE_CAPABILITY_VALUE_TYPE |
@@ -212,7 +212,7 @@ static TZrBool compiler_struct_register_canonical_definition(
                                     : ZR_CANONICAL_GENERIC_ARGUMENT_CONST_INT;
             ZrCore_Array_Push(cs->state, &genericParameterKinds, &parameterKind);
         }
-        registered = ZrParser_CanonicalType_RegisterGenericDefinitionEx(
+        definitionRegistered = ZrParser_CanonicalType_RegisterGenericDefinitionEx(
                 cs->semanticContext,
                 typeId,
                 typeSymbol->id,
@@ -222,13 +222,13 @@ static TZrBool compiler_struct_register_canonical_definition(
                 ZR_CANONICAL_GC_SCAN_FREE);
         ZrCore_Array_Free(cs->state, &genericParameterKinds);
     } else {
-        registered = ZrParser_CanonicalType_RegisterDefinition(
+        definitionRegistered = ZrParser_CanonicalType_RegisterDefinition(
                 cs->semanticContext,
                 typeId,
                 capabilityFlags,
                 ZR_CANONICAL_GC_SCAN_FREE);
     }
-    if (!registered) {
+    if (!definitionRegistered) {
         return ZR_FALSE;
     }
     if (info == ZR_NULL) {
