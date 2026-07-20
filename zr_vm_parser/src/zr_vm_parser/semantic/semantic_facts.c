@@ -760,10 +760,24 @@ const SZrSemanticNumericFact *ZrParser_SemanticFacts_FindNumericByNode(
     return best;
 }
 
+static TZrInt32 semantic_facts_reachability_priority(EZrSemanticReachabilityCause cause) {
+    switch (cause) {
+        case ZR_SEMANTIC_REACHABILITY_AFTER_RETURN:
+        case ZR_SEMANTIC_REACHABILITY_AFTER_THROW:
+        case ZR_SEMANTIC_REACHABILITY_AFTER_BREAK:
+        case ZR_SEMANTIC_REACHABILITY_AFTER_CONTINUE:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 const SZrSemanticReachabilityFact *ZrParser_SemanticFacts_FindReachabilityAtPosition(
         const SZrSemanticContext *context,
         SZrFileRange position) {
     TZrSize i;
+    const SZrSemanticReachabilityFact *best = ZR_NULL;
+    TZrInt32 bestPriority = 0;
 
     if (context == ZR_NULL || !context->reachabilityFacts.isValid) {
         return ZR_NULL;
@@ -773,10 +787,14 @@ const SZrSemanticReachabilityFact *ZrParser_SemanticFacts_FindReachabilityAtPosi
         const SZrSemanticReachabilityFact *fact =
             (const SZrSemanticReachabilityFact *)ZrCore_Array_Get((SZrArray *)&context->reachabilityFacts, i);
         if (fact != ZR_NULL && semantic_facts_range_contains_position(&fact->range, &position)) {
-            return fact;
+            TZrInt32 priority = semantic_facts_reachability_priority(fact->cause);
+            if (best == ZR_NULL || priority > bestPriority) {
+                best = fact;
+                bestPriority = priority;
+            }
         }
     }
-    return ZR_NULL;
+    return best;
 }
 
 const SZrSemanticLogicalFact *ZrParser_SemanticFacts_FindLogicalByNode(

@@ -269,6 +269,63 @@ static void test_semantic_numeric_fact_by_node_prefers_segmented_range(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_semantic_reachability_position_prefers_direct_exit_cause(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrSemanticReachabilityFact broadFact;
+    SZrSemanticReachabilityFact exactFact;
+    const SZrSemanticReachabilityFact *found;
+
+    TEST_ASSERT_NOT_NULL(context);
+    memset(&broadFact, 0, sizeof(broadFact));
+    broadFact.range = test_range(10, 40);
+    broadFact.state = ZR_SEMANTIC_REACHABILITY_UNREACHABLE;
+    broadFact.cause = ZR_SEMANTIC_REACHABILITY_AFTER_EXHAUSTIVE_BRANCH;
+
+    memset(&exactFact, 0, sizeof(exactFact));
+    exactFact.range = test_range(20, 24);
+    exactFact.state = ZR_SEMANTIC_REACHABILITY_UNREACHABLE;
+    exactFact.cause = ZR_SEMANTIC_REACHABILITY_AFTER_BREAK;
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReachability(context, &broadFact));
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReachability(context, &exactFact));
+
+    found = ZrParser_SemanticFacts_FindReachabilityAtPosition(context, test_range(22, 22));
+    TEST_ASSERT_NOT_NULL(found);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REACHABILITY_AFTER_BREAK, found->cause);
+    TEST_ASSERT_EQUAL_UINT64(20, found->range.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(24, found->range.end.offset);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_semantic_reachability_position_preserves_first_equal_priority_fact(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrSemanticReachabilityFact broadFact;
+    SZrSemanticReachabilityFact narrowFact;
+    const SZrSemanticReachabilityFact *found;
+
+    TEST_ASSERT_NOT_NULL(context);
+    memset(&broadFact, 0, sizeof(broadFact));
+    broadFact.range = test_range(10, 40);
+    broadFact.state = ZR_SEMANTIC_REACHABILITY_UNREACHABLE;
+    broadFact.cause = ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH;
+
+    memset(&narrowFact, 0, sizeof(narrowFact));
+    narrowFact.range = test_range(20, 24);
+    narrowFact.state = ZR_SEMANTIC_REACHABILITY_UNREACHABLE;
+    narrowFact.cause = ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH;
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReachability(context, &broadFact));
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReachability(context, &narrowFact));
+
+    found = ZrParser_SemanticFacts_FindReachabilityAtPosition(context, test_range(22, 22));
+    TEST_ASSERT_NOT_NULL(found);
+    TEST_ASSERT_EQUAL_UINT64(10, found->range.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(40, found->range.end.offset);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_semantic_context_reset_clears_facts(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrSemanticReachabilityFact fact;
@@ -738,6 +795,8 @@ int main(void) {
     RUN_TEST(test_semantic_expression_fact_roundtrip_by_node_and_position);
     RUN_TEST(test_semantic_logical_fact_roundtrip_by_node_and_position);
     RUN_TEST(test_semantic_numeric_fact_by_node_prefers_segmented_range);
+    RUN_TEST(test_semantic_reachability_position_prefers_direct_exit_cause);
+    RUN_TEST(test_semantic_reachability_position_preserves_first_equal_priority_fact);
     RUN_TEST(test_semantic_context_reset_clears_facts);
     RUN_TEST(test_semantic_facts_resolve_linear_definite_assignment_from_reference_order);
     RUN_TEST(test_cfg_definite_assignment_marks_self_initializer_read_uninit);
