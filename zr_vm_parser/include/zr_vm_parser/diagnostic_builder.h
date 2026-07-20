@@ -47,6 +47,10 @@ typedef struct SZrStructuredDiagnostic {
 
 ZR_PARSER_API void ZrParser_StructuredDiagnostic_Init(SZrStructuredDiagnostic *diagnostic);
 ZR_PARSER_API void ZrParser_StructuredDiagnostic_Free(SZrState *state, SZrStructuredDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_StructuredDiagnostic_Copy(
+        SZrState *state,
+        SZrStructuredDiagnostic *outDiagnostic,
+        const SZrStructuredDiagnostic *source);
 ZR_PARSER_API TZrBool ZrParser_StructuredDiagnostic_AddRelatedInformation(SZrState *state,
                                                                           SZrStructuredDiagnostic *diagnostic,
                                                                           SZrFileRange location,

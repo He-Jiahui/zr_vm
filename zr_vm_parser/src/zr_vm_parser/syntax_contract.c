@@ -4,6 +4,68 @@
 
 #include <string.h>
 
+static EZrCanonicalReceiverEffect syntax_callable_receiver_effect_from_contract(
+        EZrMethodReceiverModifier modifier,
+        EZrOwnershipQualifier qualifier) {
+    if (modifier == ZR_METHOD_RECEIVER_CONST ||
+        qualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
+        qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+        qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK) {
+        return ZR_CANONICAL_RECEIVER_READONLY;
+    }
+    return ZR_CANONICAL_RECEIVER_MUTABLE;
+}
+
+EZrCanonicalReceiverEffect
+ZrParser_SyntaxCallable_ReceiverEffectFromDeclaration(
+        const SZrAstNode *declaration) {
+    if (declaration == ZR_NULL) {
+        return ZR_CANONICAL_RECEIVER_NONE;
+    }
+
+    switch (declaration->type) {
+        case ZR_AST_STRUCT_METHOD:
+            if (declaration->data.structMethod.isStatic) {
+                return ZR_CANONICAL_RECEIVER_NONE;
+            }
+            return syntax_callable_receiver_effect_from_contract(
+                    declaration->data.structMethod.receiverModifier,
+                    declaration->data.structMethod.receiverQualifier);
+        case ZR_AST_CLASS_METHOD:
+            if (declaration->data.classMethod.isStatic) {
+                return ZR_CANONICAL_RECEIVER_NONE;
+            }
+            return syntax_callable_receiver_effect_from_contract(
+                    declaration->data.classMethod.receiverModifier,
+                    declaration->data.classMethod.receiverQualifier);
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            return syntax_callable_receiver_effect_from_contract(
+                    declaration->data.interfaceMethodSignature.receiverModifier,
+                    ZR_OWNERSHIP_QUALIFIER_NONE);
+        case ZR_AST_CLASS_PROPERTY:
+            if (declaration->data.classProperty.isStatic) {
+                return ZR_CANONICAL_RECEIVER_NONE;
+            }
+            return declaration->data.classProperty.modifier != ZR_NULL &&
+                           declaration->data.classProperty.modifier->type ==
+                                   ZR_AST_PROPERTY_GET
+                           ? ZR_CANONICAL_RECEIVER_READONLY
+                           : ZR_CANONICAL_RECEIVER_MUTABLE;
+        case ZR_AST_STRUCT_META_FUNCTION:
+            return declaration->data.structMetaFunction.isStatic
+                           ? ZR_CANONICAL_RECEIVER_NONE
+                           : ZR_CANONICAL_RECEIVER_MUTABLE;
+        case ZR_AST_CLASS_META_FUNCTION:
+            return declaration->data.classMetaFunction.isStatic
+                           ? ZR_CANONICAL_RECEIVER_NONE
+                           : ZR_CANONICAL_RECEIVER_MUTABLE;
+        case ZR_AST_INTERFACE_META_SIGNATURE:
+            return ZR_CANONICAL_RECEIVER_MUTABLE;
+        default:
+            return ZR_CANONICAL_RECEIVER_NONE;
+    }
+}
+
 TZrBool ZrParser_SyntaxParameter_Normalize(
         SZrSemanticContext *context,
         const SZrParameter *parameter,
@@ -164,6 +226,7 @@ TZrTypeId ZrParser_SyntaxCallable_RefineFromDeclaration(
     const SZrCanonicalTypeNode *callableType;
     const SZrAstNodeArray *parameters;
     SZrArray valueTypeIds;
+    EZrCanonicalReceiverEffect receiverEffect;
     TZrTypeId result;
     TZrBool recognized = ZR_FALSE;
     TZrSize index;
@@ -179,15 +242,26 @@ TZrTypeId ZrParser_SyntaxCallable_RefineFromDeclaration(
     if (!recognized) {
         return callableTypeId;
     }
+    receiverEffect = ZrParser_SyntaxCallable_ReceiverEffectFromDeclaration(
+            declaration);
     if (parameters == ZR_NULL) {
-        return callableType->data.function.parameterContracts.length == 0U
-                       ? callableTypeId
-                       : ZR_SEMANTIC_ID_INVALID;
+        if (callableType->data.function.parameterContracts.length != 0U) {
+            return ZR_SEMANTIC_ID_INVALID;
+        }
+        if (receiverEffect == callableType->data.function.receiverEffect) {
+            return callableTypeId;
+        }
+        return ZrParser_CanonicalType_InternFunction(
+                context,
+                ZR_NULL,
+                0U,
+                callableType->data.function.returnTypeId,
+                receiverEffect,
+                callableType->data.function.effectFlags);
     }
     if (parameters->count != callableType->data.function.parameterContracts.length) {
         return ZR_SEMANTIC_ID_INVALID;
     }
-
     ZrCore_Array_Init(
             context->state,
             &valueTypeIds,
@@ -224,7 +298,7 @@ TZrTypeId ZrParser_SyntaxCallable_RefineFromDeclaration(
             parameters,
             (const TZrTypeId *)valueTypeIds.head,
             callableType->data.function.returnTypeId,
-            callableType->data.function.receiverEffect,
+            receiverEffect,
             callableType->data.function.effectFlags);
     ZrCore_Array_Free(context->state, &valueTypeIds);
     return result;

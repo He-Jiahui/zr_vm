@@ -471,6 +471,8 @@ ZR_PARSER_API void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *
 ZR_PARSER_API void ZrParser_Compiler_ClearStructuredError(SZrCompilerState *cs);
 ZR_PARSER_API void ZrParser_Compiler_StructuredError(SZrCompilerState *cs,
                                                      const SZrStructuredDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_Compiler_PublishCurrentDiagnostic(
+        SZrCompilerState *cs);
 ZR_PARSER_API void ZrParser_Compiler_PatternShapeMismatch(SZrCompilerState *cs,
                                                           SZrFileRange location,
                                                           const TZrChar *message,

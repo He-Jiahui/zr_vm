@@ -14,6 +14,32 @@ static TZrBool semantic_facts_same_source(SZrString *left, SZrString *right) {
     return ZrCore_String_Equal(left, right);
 }
 
+static TZrBool semantic_facts_same_string(SZrString *left, SZrString *right) {
+    return (TZrBool)(left == right ||
+                     (left != ZR_NULL && right != ZR_NULL &&
+                      ZrCore_String_Equal(left, right)));
+}
+
+static TZrBool semantic_facts_same_range(
+        const SZrFileRange *left,
+        const SZrFileRange *right) {
+    if (left == ZR_NULL || right == ZR_NULL ||
+        !semantic_facts_same_source(left->source, right->source)) {
+        return ZR_FALSE;
+    }
+    if (semantic_facts_has_offset(&left->start) ||
+        semantic_facts_has_offset(&left->end) ||
+        semantic_facts_has_offset(&right->start) ||
+        semantic_facts_has_offset(&right->end)) {
+        return (TZrBool)(left->start.offset == right->start.offset &&
+                         left->end.offset == right->end.offset);
+    }
+    return (TZrBool)(left->start.line == right->start.line &&
+                     left->start.column == right->start.column &&
+                     left->end.line == right->end.line &&
+                     left->end.column == right->end.column);
+}
+
 static TZrBool semantic_facts_range_contains_position(const SZrFileRange *range,
                                                       const SZrFileRange *position) {
     TZrSize queryOffset;
@@ -312,6 +338,7 @@ void ZrParser_SemanticFacts_Init(SZrSemanticContext *context) {
     semantic_facts_init_array(context, &context->reachabilityFacts, sizeof(SZrSemanticReachabilityFact));
     semantic_facts_init_array(context, &context->logicalFacts, sizeof(SZrSemanticLogicalFact));
     semantic_facts_init_array(context, &context->ownershipFacts, sizeof(SZrSemanticOwnershipFact));
+    semantic_facts_init_array(context, &context->diagnosticFacts, sizeof(SZrSemanticDiagnosticFact));
 }
 
 void ZrParser_SemanticFacts_Reset(SZrSemanticContext *context) {
@@ -346,6 +373,18 @@ void ZrParser_SemanticFacts_Reset(SZrSemanticContext *context) {
     if (context->ownershipFacts.isValid) {
         context->ownershipFacts.length = 0;
     }
+    if (context->diagnosticFacts.isValid) {
+        for (index = 0U; index < context->diagnosticFacts.length; index++) {
+            SZrSemanticDiagnosticFact *fact =
+                    (SZrSemanticDiagnosticFact *)ZrCore_Array_Get(
+                            &context->diagnosticFacts, index);
+            if (fact != ZR_NULL) {
+                ZrParser_StructuredDiagnostic_Free(
+                        context->state, &fact->diagnostic);
+            }
+        }
+        context->diagnosticFacts.length = 0;
+    }
 }
 
 void ZrParser_SemanticFacts_Free(SZrSemanticContext *context) {
@@ -360,6 +399,45 @@ void ZrParser_SemanticFacts_Free(SZrSemanticContext *context) {
     ZrCore_Array_Free(context->state, &context->reachabilityFacts);
     ZrCore_Array_Free(context->state, &context->logicalFacts);
     ZrCore_Array_Free(context->state, &context->ownershipFacts);
+    ZrCore_Array_Free(context->state, &context->diagnosticFacts);
+}
+
+TZrBool ZrParser_SemanticFacts_AppendDiagnostic(
+        SZrSemanticContext *context,
+        const SZrSemanticDiagnosticFact *fact) {
+    SZrSemanticDiagnosticFact copy;
+    TZrSize index;
+
+    if (context == ZR_NULL || fact == ZR_NULL ||
+        !context->diagnosticFacts.isValid ||
+        fact->diagnostic.code == ZR_NULL ||
+        fact->diagnostic.message == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < context->diagnosticFacts.length; index++) {
+        const SZrSemanticDiagnosticFact *existing =
+                (const SZrSemanticDiagnosticFact *)ZrCore_Array_Get(
+                        &context->diagnosticFacts, index);
+        if (existing != ZR_NULL &&
+            semantic_facts_same_range(
+                    &existing->diagnostic.location,
+                    &fact->diagnostic.location) &&
+            semantic_facts_same_string(
+                    existing->diagnostic.code, fact->diagnostic.code) &&
+            semantic_facts_same_string(
+                    existing->diagnostic.message, fact->diagnostic.message)) {
+            return ZR_TRUE;
+        }
+    }
+
+    memset(&copy, 0, sizeof(copy));
+    copy.node = fact->node;
+    if (!ZrParser_StructuredDiagnostic_Copy(
+                context->state, &copy.diagnostic, &fact->diagnostic)) {
+        return ZR_FALSE;
+    }
+    ZrCore_Array_Push(context->state, &context->diagnosticFacts, &copy);
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_SemanticFacts_AppendExpression(SZrSemanticContext *context,

@@ -3,6 +3,7 @@
 
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/type_system.h"
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/string.h"
@@ -228,12 +229,20 @@ typedef struct SZrSemanticOwnershipFact {
     SZrString *diagnosticMessage;
 } SZrSemanticOwnershipFact;
 
+typedef struct SZrSemanticDiagnosticFact {
+    SZrAstNode *node;
+    SZrStructuredDiagnostic diagnostic;
+} SZrSemanticDiagnosticFact;
+
 ZR_PARSER_API void ZrParser_SemanticFacts_Init(SZrSemanticContext *context);
 ZR_PARSER_API void ZrParser_SemanticFacts_Reset(SZrSemanticContext *context);
 ZR_PARSER_API void ZrParser_SemanticFacts_Free(SZrSemanticContext *context);
 
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendExpression(SZrSemanticContext *context,
                                                               const SZrSemanticExpressionFact *fact);
+ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendDiagnostic(
+        SZrSemanticContext *context,
+        const SZrSemanticDiagnosticFact *fact);
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendReference(SZrSemanticContext *context,
                                                              const SZrSemanticReferenceFact *fact);
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_ResolveLinearReachingDefinitions(

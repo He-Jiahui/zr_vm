@@ -127,6 +127,7 @@ typedef struct SZrSemanticContext {
     SZrArray reachabilityFacts; // SZrSemanticReachabilityFact
     SZrArray logicalFacts;      // SZrSemanticLogicalFact
     SZrArray ownershipFacts;    // SZrSemanticOwnershipFact
+    SZrArray diagnosticFacts;   // SZrSemanticDiagnosticFact
 } SZrSemanticContext;
 
 typedef struct SZrHirModule {

@@ -635,6 +635,8 @@ TZrBool ZrParser_SemanticQuery_PublicContract(
         moduleRoot->data.script.statements == ZR_NULL ||
         (moduleRoot->data.script.statements->count > 0U &&
          moduleRoot->data.script.statements->nodes == ZR_NULL) ||
+        !context->diagnosticFacts.isValid ||
+        context->diagnosticFacts.length > 0U ||
         !context->queryDiagnostics.isValid ||
         context->queryDiagnostics.length > 0U ||
         !public_contract_array_is_readable(

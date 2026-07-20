@@ -263,6 +263,75 @@ static void test_callable_syntaxes_intern_the_same_canonical_contract(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+static void test_declaration_receiver_effect_refines_callable_contract(void) {
+    const char *source =
+            "class Service {\n"
+            "  pub const fn read(): int { return 1; }\n"
+            "  pub fn write(): int { return 2; }\n"
+            "  pub static fn make(): int { return 3; }\n"
+            "}\n";
+    SZrAstNode *script = parse_source(source);
+    SZrAstNode *classNode = script_statement(script, 0U);
+    SZrAstNode *readonlyMethod;
+    SZrAstNode *mutableMethod;
+    SZrAstNode *staticMethod;
+    const SZrCanonicalTypeNode *refinedType;
+    TZrTypeId intType;
+    TZrTypeId baseType;
+    TZrTypeId refinedTypeId;
+
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, classNode->type);
+    TEST_ASSERT_NOT_NULL(classNode->data.classDeclaration.members);
+    TEST_ASSERT_EQUAL_UINT32(
+            3U, (TZrUInt32)classNode->data.classDeclaration.members->count);
+    readonlyMethod = classNode->data.classDeclaration.members->nodes[0];
+    mutableMethod = classNode->data.classDeclaration.members->nodes[1];
+    staticMethod = classNode->data.classDeclaration.members->nodes[2];
+
+    TEST_ASSERT_EQUAL_INT(
+            ZR_CANONICAL_RECEIVER_READONLY,
+            ZrParser_SyntaxCallable_ReceiverEffectFromDeclaration(readonlyMethod));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_CANONICAL_RECEIVER_MUTABLE,
+            ZrParser_SyntaxCallable_ReceiverEffectFromDeclaration(mutableMethod));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_CANONICAL_RECEIVER_NONE,
+            ZrParser_SyntaxCallable_ReceiverEffectFromDeclaration(staticMethod));
+
+    intType = ZrParser_CanonicalType_InternPrimitive(
+            g_context, ZR_VALUE_TYPE_INT64);
+    baseType = ZrParser_CanonicalType_InternFunction(
+            g_context,
+            ZR_NULL,
+            0U,
+            intType,
+            ZR_CANONICAL_RECEIVER_NONE,
+            ZR_CANONICAL_CALLABLE_EFFECT_NONE);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, baseType);
+
+    refinedTypeId = ZrParser_SyntaxCallable_RefineFromDeclaration(
+            g_context, readonlyMethod, baseType);
+    refinedType = ZrParser_CanonicalType_Find(g_context, refinedTypeId);
+    TEST_ASSERT_NOT_NULL(refinedType);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_CANONICAL_RECEIVER_READONLY,
+            refinedType->data.function.receiverEffect);
+
+    refinedTypeId = ZrParser_SyntaxCallable_RefineFromDeclaration(
+            g_context, mutableMethod, baseType);
+    refinedType = ZrParser_CanonicalType_Find(g_context, refinedTypeId);
+    TEST_ASSERT_NOT_NULL(refinedType);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_CANONICAL_RECEIVER_MUTABLE,
+            refinedType->data.function.receiverEffect);
+
+    refinedTypeId = ZrParser_SyntaxCallable_RefineFromDeclaration(
+            g_context, staticMethod, baseType);
+    TEST_ASSERT_EQUAL_UINT32(baseType, refinedTypeId);
+
+    ZrParser_Ast_Free(g_state, script);
+}
+
 static void test_fn_keyword_applies_to_class_struct_and_interface_methods(void) {
     const char *source =
             "class Service { fn update(value: ref int): void {} }\n"
@@ -344,6 +413,7 @@ int main(void) {
     RUN_TEST(test_parameter_source_forms_normalize_to_canonical_contracts);
     RUN_TEST(test_anonymous_expression_body_and_call_markers_are_preserved);
     RUN_TEST(test_callable_syntaxes_intern_the_same_canonical_contract);
+    RUN_TEST(test_declaration_receiver_effect_refines_callable_contract);
     RUN_TEST(test_fn_keyword_applies_to_class_struct_and_interface_methods);
     RUN_TEST(test_invalid_callable_delimiters_and_modifier_orders_report_exact_token);
     return UNITY_END();

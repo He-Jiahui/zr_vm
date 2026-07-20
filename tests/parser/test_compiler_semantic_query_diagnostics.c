@@ -985,6 +985,163 @@ static void test_compile_script_suppresses_true_loop_break_definite_assignment_d
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_compiler_error_publishes_persistent_semantic_diagnostic_fact(void) {
+    const TZrChar *source =
+            "fn inspect(value: scoped ref readonly int): int { return 1; }\n"
+            "fn use(value: ref readonly int): int { return inspect(value); }\n";
+    const SZrStructuredDiagnostic *diagnostic;
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticQueryDiagnostics diagnostics;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            "compiler_reference_call_diagnostic_test.zr",
+            strlen("compiler_reference_call_diagnostic_test.zr"));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(
+            cs.errorMessage, "%ref parameter requires the 'ref' argument marker"));
+    TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&cs));
+    cs.hasError = ZR_FALSE;
+    ZrParser_Compiler_ClearStructuredError(&cs);
+
+    ZrParser_SemanticQueryScope_Module(&scope);
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
+            cs.semanticContext, &scope, &diagnostics));
+    diagnostic = find_query_diagnostic_by_code(
+            cs.semanticContext, "compiler_error");
+    TEST_ASSERT_NOT_NULL(diagnostic);
+    TEST_ASSERT_NOT_NULL(diagnostic->message);
+    TEST_ASSERT_NOT_NULL(strstr(
+            ZrCore_String_GetNativeString(diagnostic->message),
+            "%ref parameter requires the 'ref' argument marker"));
+
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
+            cs.semanticContext, &scope, &diagnostics));
+    TEST_ASSERT_EQUAL_UINT32(
+            1U,
+            (TZrUInt32)count_query_diagnostics_by_code(
+                    cs.semanticContext, "compiler_error"));
+
+    release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_compiler_structured_error_publisher_deep_copies_diagnostic(void) {
+    SZrCompilerState cs;
+    SZrStructuredDiagnostic sourceDiagnostic;
+    SZrFileRange location;
+    SZrFileRange relatedLocation;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticQueryDiagnostics diagnostics;
+    const SZrStructuredDiagnostic *published;
+    const SZrStructuredDiagnosticRelatedInformation *related;
+    const SZrStructuredDiagnosticFix *fix;
+
+    memset(&cs, 0, sizeof(cs));
+    memset(&location, 0, sizeof(location));
+    memset(&relatedLocation, 0, sizeof(relatedLocation));
+    location.start.offset = 19U;
+    location.end.offset = 27U;
+    relatedLocation.start.offset = 4U;
+    relatedLocation.end.offset = 11U;
+
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_Build(
+            g_state,
+            &sourceDiagnostic,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "uninitialized_read",
+            "Structured compiler diagnostic",
+            "A canonical compiler cause",
+            "Apply the canonical repair"));
+    TEST_ASSERT_TRUE(ZrParser_StructuredDiagnostic_AddRelatedInformation(
+            g_state,
+            &sourceDiagnostic,
+            relatedLocation,
+            "Declaration is here"));
+    TEST_ASSERT_TRUE(ZrParser_StructuredDiagnostic_AddFix(
+            g_state,
+            &sourceDiagnostic,
+            "Initialize value",
+            location,
+            "value = 0",
+            ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE));
+
+    ZrParser_Compiler_StructuredError(&cs, &sourceDiagnostic);
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_TRUE(cs.hasStructuredError);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&cs));
+    ZrParser_Compiler_ClearStructuredError(&cs);
+    cs.hasError = ZR_FALSE;
+
+    ZrParser_SemanticQueryScope_Module(&scope);
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
+            cs.semanticContext, &scope, &diagnostics));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostics.count);
+    published = &diagnostics.items[0];
+    TEST_ASSERT_EQUAL_UINT32(19U, (TZrUInt32)published->location.start.offset);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0U, published->descriptorId);
+    TEST_ASSERT_EQUAL_STRING(
+            "uninitialized_read",
+            ZrCore_String_GetNativeString(published->code));
+    TEST_ASSERT_EQUAL_STRING(
+            "A canonical compiler cause",
+            ZrCore_String_GetNativeString(published->cause));
+    TEST_ASSERT_EQUAL_STRING(
+            "Apply the canonical repair",
+            ZrCore_String_GetNativeString(published->suggestion));
+    TEST_ASSERT_TRUE(published->relatedInformation.isValid);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U, (TZrUInt32)published->relatedInformation.length);
+    TEST_ASSERT_TRUE(published->fixes.isValid);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)published->fixes.length);
+
+    related = (const SZrStructuredDiagnosticRelatedInformation *)ZrCore_Array_Get(
+            (SZrArray *)&published->relatedInformation, 0U);
+    fix = (const SZrStructuredDiagnosticFix *)ZrCore_Array_Get(
+            (SZrArray *)&published->fixes, 0U);
+    TEST_ASSERT_NOT_NULL(related);
+    TEST_ASSERT_EQUAL_UINT32(
+            4U, (TZrUInt32)related->location.start.offset);
+    TEST_ASSERT_EQUAL_STRING(
+            "Declaration is here",
+            ZrCore_String_GetNativeString(related->message));
+    TEST_ASSERT_NOT_NULL(fix);
+    TEST_ASSERT_EQUAL_STRING(
+            "Initialize value",
+            ZrCore_String_GetNativeString(fix->title));
+    TEST_ASSERT_EQUAL_STRING(
+            "value = 0",
+            ZrCore_String_GetNativeString(fix->editText));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE, fix->applicability);
+
+    ZrParser_CompilerState_Free(&cs);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_compile_script_publishes_semantic_query_diagnostics_without_error);
@@ -1003,5 +1160,7 @@ int main(void) {
     RUN_TEST(test_compile_script_cfg_reaching_definitions_rejects_loop_carried_write);
     RUN_TEST(test_compile_script_cfg_reaching_definitions_preserves_true_loop_break_write);
     RUN_TEST(test_compile_script_suppresses_true_loop_break_definite_assignment_diagnostic);
+    RUN_TEST(test_compiler_error_publishes_persistent_semantic_diagnostic_fact);
+    RUN_TEST(test_compiler_structured_error_publisher_deep_copies_diagnostic);
     return UNITY_END();
 }

@@ -1,17 +1,6 @@
 #include "compiler_internal.h"
 #include "zr_vm_parser/receiver_call.h"
-
-static EZrCanonicalReceiverEffect compiler_receiver_effect_from_contract(
-        EZrMethodReceiverModifier modifier,
-        EZrOwnershipQualifier qualifier) {
-    if (modifier == ZR_METHOD_RECEIVER_CONST ||
-        qualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
-        qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
-        qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK) {
-        return ZR_CANONICAL_RECEIVER_READONLY;
-    }
-    return ZR_CANONICAL_RECEIVER_MUTABLE;
-}
+#include "zr_vm_parser/syntax_contract.h"
 
 EZrOwnershipQualifier get_member_receiver_qualifier(SZrAstNode *node) {
     if (node == ZR_NULL) {
@@ -28,49 +17,7 @@ EZrOwnershipQualifier get_member_receiver_qualifier(SZrAstNode *node) {
 }
 
 EZrCanonicalReceiverEffect get_member_receiver_effect(SZrAstNode *node) {
-    if (node == ZR_NULL) {
-        return ZR_CANONICAL_RECEIVER_NONE;
-    }
-    switch (node->type) {
-        case ZR_AST_STRUCT_METHOD:
-            if (node->data.structMethod.isStatic) {
-                return ZR_CANONICAL_RECEIVER_NONE;
-            }
-            return compiler_receiver_effect_from_contract(
-                    node->data.structMethod.receiverModifier,
-                    node->data.structMethod.receiverQualifier);
-        case ZR_AST_CLASS_METHOD:
-            if (node->data.classMethod.isStatic) {
-                return ZR_CANONICAL_RECEIVER_NONE;
-            }
-            return compiler_receiver_effect_from_contract(
-                    node->data.classMethod.receiverModifier,
-                    node->data.classMethod.receiverQualifier);
-        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
-            return compiler_receiver_effect_from_contract(
-                    node->data.interfaceMethodSignature.receiverModifier,
-                    ZR_OWNERSHIP_QUALIFIER_NONE);
-        case ZR_AST_CLASS_PROPERTY:
-            if (node->data.classProperty.isStatic) {
-                return ZR_CANONICAL_RECEIVER_NONE;
-            }
-            return node->data.classProperty.modifier != ZR_NULL &&
-                           node->data.classProperty.modifier->type == ZR_AST_PROPERTY_GET
-                           ? ZR_CANONICAL_RECEIVER_READONLY
-                           : ZR_CANONICAL_RECEIVER_MUTABLE;
-        case ZR_AST_STRUCT_META_FUNCTION:
-            return node->data.structMetaFunction.isStatic
-                           ? ZR_CANONICAL_RECEIVER_NONE
-                           : ZR_CANONICAL_RECEIVER_MUTABLE;
-        case ZR_AST_CLASS_META_FUNCTION:
-            return node->data.classMetaFunction.isStatic
-                           ? ZR_CANONICAL_RECEIVER_NONE
-                           : ZR_CANONICAL_RECEIVER_MUTABLE;
-        case ZR_AST_INTERFACE_META_SIGNATURE:
-            return ZR_CANONICAL_RECEIVER_MUTABLE;
-        default:
-            return ZR_CANONICAL_RECEIVER_NONE;
-    }
+    return ZrParser_SyntaxCallable_ReceiverEffectFromDeclaration(node);
 }
 
 EZrOwnershipQualifier get_implicit_this_ownership_qualifier(

@@ -1,6 +1,7 @@
 #include "zr_vm_parser/semantic_query.h"
 
 #include "semantic_query_ownership_diagnostics.h"
+#include "semantic_query_published_diagnostics.h"
 
 #include <string.h>
 
@@ -905,6 +906,20 @@ TZrBool ZrParser_SemanticQuery_Diagnostics(
 
     mutableContext = (SZrSemanticContext *)context;
     semantic_query_reset_diagnostics(mutableContext);
+
+    if (context->diagnosticFacts.isValid) {
+        for (i = 0U; i < context->diagnosticFacts.length; i++) {
+            const SZrSemanticDiagnosticFact *fact =
+                    (const SZrSemanticDiagnosticFact *)ZrCore_Array_Get(
+                            (SZrArray *)&context->diagnosticFacts, i);
+            if (fact != ZR_NULL &&
+                semantic_query_scope_allows_range(
+                        scope, &fact->diagnostic.location)) {
+                (void)ZrParser_SemanticQueryPublished_AppendDiagnostic(
+                        mutableContext, fact);
+            }
+        }
+    }
 
     if (context->reachabilityFacts.isValid) {
         for (i = 0; i < context->reachabilityFacts.length; i++) {

@@ -389,6 +389,7 @@ static void test_semantic_query_public_contract_rejects_poisoned_or_unsupported_
     SZrSemanticPublicContractFixture fixture;
     SZrParserSemanticPublicContractQuery query;
     SZrStructuredDiagnostic diagnostic;
+    SZrSemanticDiagnosticFact diagnosticFact;
     SZrAstNode publicStruct;
 
     semantic_public_contract_fixture_init(
@@ -404,6 +405,30 @@ static void test_semantic_query_public_contract_rejects_poisoned_or_unsupported_
     TEST_ASSERT_EQUAL_UINT64(0U, query.hash);
     TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)query.exportCount);
     fixture.context->queryDiagnostics.length = 0U;
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_Build(
+            g_state,
+            &diagnostic,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            test_range(17U, 23U),
+            "compiler_error",
+            "Published compiler diagnostic",
+            ZR_NULL,
+            ZR_NULL));
+    memset(&diagnosticFact, 0, sizeof(diagnosticFact));
+    diagnosticFact.diagnostic = diagnostic;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendDiagnostic(
+            fixture.context, &diagnosticFact));
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U, (TZrUInt32)fixture.context->diagnosticFacts.length);
+    query.hash = 99U;
+    query.exportCount = 99U;
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_PublicContract(
+            fixture.context, fixture.environment, &fixture.script, &query));
+    TEST_ASSERT_EQUAL_UINT64(0U, query.hash);
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)query.exportCount);
+    ZrParser_SemanticFacts_Reset(fixture.context);
 
     init_node(&publicStruct, ZR_AST_STRUCT_DECLARATION, 61U, 79U);
     publicStruct.data.structDeclaration.accessModifier = ZR_ACCESS_PUBLIC;
