@@ -697,6 +697,8 @@ wsl bash -lc "cd /mnt/e/Git/zr_vm && cmake --build build/codex-semantic-wsl-clan
 
 RED：新增 `func pick(value: int: int { return value; }` 的 focused parser-diagnostics 断言后，旧 WSL gcc 路径没有 `missing_parameter_list_close` code、具体问题文本和建议。第一次实现后仍只失败该用例；WSL gdb 证明 structured reporter 在 quiet `func` declaration probe 中被调用，但 probe 暂时关闭了 structured callback，导致诊断被丢弃。GREEN：parser 为 top-level function declaration parameter list 增加 `missing_parameter_list_close` builder/reporter，并在 explicit `func name...` quiet probe 失败后用真实 parser path 重跑一次以保留诊断；LSP diagnostics 保留 `missing_parameter_list_close`、`Missing closing ')' in function declaration parameters` 与 `Insert ')' after the parameter list before continuing` 建议。WSL gcc、WSL clang 和 Windows MSVC focused `zr_vm_language_server_parser_diagnostics_test` 均通过；clang/MSVC 仍有当前 dirty tree 中既有 warning noise，本轮仍不声明全仓库绿色。
 
+2026-07-21 safe-fix follow-up让共享`missing_parameter_list_close` builder在unexpected token range起点发布零宽`)` machine fix；`func pick(value: int: int { ... }`因此在第二个`:`前精确插入`)`。Function/method/interface/extern等既有producer无需新增分支，code action与stdio JSON只消费structured fix，修正后的document version清除该code。GCC、Clang、MSVC十八目标矩阵与两套stdio smoke均通过；call/group close、其他delimiter和L3整体仍未完成。
+
 2026-06-07 parser/LSP class method parameter-list close diagnostic 聚焦验证：
 
 ```powershell

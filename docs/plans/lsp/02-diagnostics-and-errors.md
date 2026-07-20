@@ -52,6 +52,8 @@ parser recovery产生poisoned/unknown facts并限制级联；后续diagnostic标
 
 [2026-07-21 index-close safe-fix convergence](./02-diagnostics/2026-07-21-index-close-safe-fix-convergence.md) 完成`missing_index_close`保留opening `[` primary range、在current token起点发布精确`]` machine fix，并由同一通用LSP code-action/stdio consumer完成apply-edit-rebind；不按code/message/source重建delimiter。parameter-list close、其他delimiter family、replacement、registry全覆盖和L3整体仍未完成。
 
+[2026-07-21 parameter-list-close safe-fix convergence](./02-diagnostics/2026-07-21-parameter-list-close-safe-fix-convergence.md) 完成`missing_parameter_list_close`在unexpected token起点发布精确`)` machine fix，并由function/method/interface/extern共享producer和通用LSP/stdio consumer完成apply-edit-rebind；不按declaration kind/code/message/source重建。call/group close、其他delimiter family、replacement、registry全覆盖和L3整体仍未完成。
+
 ## Diagnostic Registry 与验收
 
 每个diagnostic registry entry必须声明：stable code、message id/arguments、severity、producing fact/query、primary role、related role集合、suppression/recovery policy和允许的fix applicability。协议层不得从英文message反推code。

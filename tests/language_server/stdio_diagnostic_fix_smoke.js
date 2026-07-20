@@ -45,6 +45,7 @@ const documentUri = 'file:///zr-diagnostic-fix-smoke.zr';
 const semicolonDocumentUri = 'file:///zr-diagnostic-semicolon-fix-smoke.zr';
 const conditionDocumentUri = 'file:///zr-diagnostic-condition-close-fix-smoke.zr';
 const indexDocumentUri = 'file:///zr-diagnostic-index-close-fix-smoke.zr';
+const parameterListDocumentUri = 'file:///zr-diagnostic-parameter-list-close-fix-smoke.zr';
 const documentText = [
     'func choose(flag: bool): int {',
     '    var seed: int;',
@@ -58,6 +59,7 @@ const documentText = [
 const semicolonDocumentText = 'var answer = 42';
 const conditionDocumentText = 'if (ready { return 1; }\n';
 const indexDocumentText = 'return value[0;\n';
+const parameterListDocumentText = 'func pick(value: int: int { return value; }\n';
 
 const payload = Buffer.concat([
     createMessage({
@@ -180,7 +182,41 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: indexDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 9, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: parameterListDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: parameterListDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 9,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: parameterListDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didChange',
+        params: {
+            textDocument: { uri: parameterListDocumentUri, version: 2 },
+            contentChanges: [{
+                text: 'func pick(value: int): int { return value; }\n',
+            }],
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 10,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: parameterListDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 11, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -344,3 +380,44 @@ assert(fixedIndexPublication &&
     !fixedIndexPublication.params.diagnostics.some((entry) =>
         entry.code === 'missing_index_close'),
     'Expected the applied index-close fix to clear the diagnostic');
+
+const parameterListPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === parameterListDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'missing_parameter_list_close'));
+assert(parameterListPublication,
+    'Expected missing_parameter_list_close publication');
+
+const parameterListDiagnostic = parameterListPublication.params.diagnostics.find(
+    (entry) => entry.code === 'missing_parameter_list_close');
+assert(parameterListDiagnostic.data &&
+    Array.isArray(parameterListDiagnostic.data.fixes) &&
+    parameterListDiagnostic.data.fixes.length === 1,
+    'Expected one serialized parameter-list-close diagnostic fix');
+
+const parameterListFix = parameterListDiagnostic.data.fixes[0];
+assert(parameterListFix.title === "Insert missing ')'" &&
+    parameterListFix.applicability === 1 &&
+    parameterListFix.edit &&
+    parameterListFix.edit.newText === ')',
+    'Expected a machine-applicable serialized parameter-list-close edit');
+assert(parameterListFix.edit.range.start.line === 0 &&
+    parameterListFix.edit.range.start.character === 20 &&
+    parameterListFix.edit.range.end.line === 0 &&
+    parameterListFix.edit.range.end.character === 20,
+    'Expected the parameter-list-close edit before the return-type colon');
+
+const fixedParameterListPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === parameterListDocumentUri &&
+    message.params.version === 2 &&
+    Array.isArray(message.params.diagnostics));
+assert(fixedParameterListPublication &&
+    !fixedParameterListPublication.params.diagnostics.some((entry) =>
+        entry.code === 'missing_parameter_list_close'),
+    'Expected the applied parameter-list-close fix to clear the diagnostic');

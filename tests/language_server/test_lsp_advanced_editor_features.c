@@ -2129,6 +2129,8 @@ int main(void) {
             state, &failures);
     test_lsp_code_action_inserts_missing_condition_close(state, &failures);
     test_lsp_code_action_inserts_missing_index_close(state, &failures);
+    test_lsp_code_action_inserts_missing_parameter_list_close(
+            state, &failures);
     test_lsp_code_action_skips_placeholder_diagnostic_fix(state, &failures);
     test_lsp_code_action_inserts_missing_native_import(state, &failures);
     test_lsp_code_action_uses_requested_range_for_missing_import(state, &failures);
