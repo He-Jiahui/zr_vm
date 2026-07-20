@@ -1047,7 +1047,7 @@ static EZrGenericCallResolveStatus build_substituted_member_signature(
         ZrParser_InferredType_Free(cs->state, &unresolvedReturnType);
     }
 
-    if (signature->returnType.typeName == ZR_NULL) {
+    if (signature->returnType.baseType == ZR_VALUE_TYPE_UNKNOWN) {
         ZrParser_InferredType_Free(cs->state, &signature->returnType);
         return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
     }

@@ -1004,8 +1004,11 @@ static void native_module_info_copy_parameter_types(SZrCompilerState *cs,
     }
 
     ZrCore_Array_Init(cs->state, &memberInfo->parameterTypes, sizeof(SZrInferredType), parameterCount);
+    ZrCore_Array_Init(cs->state, &memberInfo->parameterNames, sizeof(SZrString *), parameterCount);
     for (TZrSize index = 0; index < parameterCount; index++) {
         SZrObject *parameterEntry = native_module_info_array_get_object(cs->state, parametersArray, index);
+        SZrString *parameterName = native_module_info_get_string_field(
+                cs->state, parameterEntry, "name");
         SZrString *typeName = native_module_info_get_string_field(cs->state, parameterEntry, "typeName");
         SZrInferredType parameterType;
 
@@ -1016,6 +1019,7 @@ static void native_module_info_copy_parameter_types(SZrCompilerState *cs,
         }
 
         ZrCore_Array_Push(cs->state, &memberInfo->parameterTypes, &parameterType);
+        ZrCore_Array_Push(cs->state, &memberInfo->parameterNames, &parameterName);
     }
 }
 

@@ -22,9 +22,11 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
+#include "zr_vm_parser/semantic_query.h"
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_library/native_registry.h"
 #include "test_support.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h"
 
 extern void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);
@@ -105,6 +107,18 @@ static const ZrLibParameterDescriptor kProbeConfigureParameters[] = {
         {"mode", "NativeMode", "The mode to apply."},
 };
 
+static const ZrLibGenericParameterDescriptor kProbeEchoGenericParameters[] = {
+        {"T", "The echoed value type.", ZR_NULL, 0},
+};
+
+static const ZrLibParameterDescriptor kProbeEchoParameters[] = {
+        {"value", "T", "The value returned with its inferred type."},
+};
+
+static const ZrLibParameterDescriptor kProbeNamelessEchoParameters[] = {
+        {ZR_NULL, "T", "An intentionally incomplete callable parameter."},
+};
+
 static const ZrLibMethodDescriptor kProbeDeviceMethods[] = {
         {
                 .name = "configure",
@@ -116,6 +130,32 @@ static const ZrLibMethodDescriptor kProbeDeviceMethods[] = {
                 .isStatic = ZR_FALSE,
                 .parameters = kProbeConfigureParameters,
                 .parameterCount = ZR_ARRAY_COUNT(kProbeConfigureParameters),
+        },
+        {
+                .name = "echo",
+                .minArgumentCount = 1,
+                .maxArgumentCount = 1,
+                .callback = ZR_NULL,
+                .returnTypeName = "T",
+                .documentation = "Return a value through an unconstrained method generic.",
+                .isStatic = ZR_FALSE,
+                .parameters = kProbeEchoParameters,
+                .parameterCount = ZR_ARRAY_COUNT(kProbeEchoParameters),
+                .genericParameters = kProbeEchoGenericParameters,
+                .genericParameterCount = ZR_ARRAY_COUNT(kProbeEchoGenericParameters),
+        },
+        {
+                .name = "namelessEcho",
+                .minArgumentCount = 1,
+                .maxArgumentCount = 1,
+                .callback = ZR_NULL,
+                .returnTypeName = "T",
+                .documentation = "Incomplete generic descriptor used to verify unavailable projection.",
+                .isStatic = ZR_FALSE,
+                .parameters = kProbeNamelessEchoParameters,
+                .parameterCount = ZR_ARRAY_COUNT(kProbeNamelessEchoParameters),
+                .genericParameters = kProbeEchoGenericParameters,
+                .genericParameterCount = ZR_ARRAY_COUNT(kProbeEchoGenericParameters),
         },
 };
 
@@ -7138,6 +7178,112 @@ static void test_type_inference_binary_import_function_call_rejects_argument_mis
     TEST_DIVIDER();
 }
 
+static SZrFileRange type_inference_query_position(
+        SZrString *sourceName,
+        TZrSize offset) {
+    SZrFileRange position;
+
+    memset(&position, 0, sizeof(position));
+    position.start.offset = offset;
+    position.end.offset = offset;
+    position.source = sourceName;
+    return position;
+}
+
+static void test_type_inference_native_generic_receiver_call_publishes_closed_contract(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Native Generic Receiver Call Publishes Closed Contract";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var probe = %import(\"probe.native_shapes\");\n"
+                "var device = new probe.NativeDevice();\n"
+                "var inferred = device.echo(1);\n"
+                "var explicit = device.echo<string>(\"value\");\n"
+                "var unavailable = device.namelessEcho(1);\n";
+        const char *inferredCall = strstr(source, "device.echo(1)");
+        const char *explicitCall = strstr(source, "device.echo<string>");
+        const char *unavailableCall = strstr(source, "device.namelessEcho(1)");
+        SZrString *sourceName = ZrCore_String_Create(
+                state, "native_generic_receiver_query_test.zr", 37);
+        SZrAstNode *ast;
+        SZrParserSemanticCallQuery query;
+        SZrFileRange position;
+        TZrChar typeLabel[128];
+        TZrChar callLabel[192];
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        TEST_ASSERT_NOT_NULL(inferredCall);
+        TEST_ASSERT_NOT_NULL(explicitCall);
+        TEST_ASSERT_NOT_NULL(unavailableCall);
+        TEST_ASSERT_TRUE(register_probe_native_module(state));
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        cs->suppressErrorOutput = ZR_TRUE;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        compile_script(cs, ast);
+        TEST_ASSERT_FALSE_MESSAGE(
+                cs->hasError,
+                cs->errorMessage != ZR_NULL ? cs->errorMessage
+                                             : "native generic receiver compile failed");
+        TEST_ASSERT_NOT_NULL(cs->semanticContext);
+
+        position = type_inference_query_position(
+                sourceName,
+                (TZrSize)(inferredCall - source + strlen("device.echo(")));
+        TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+                cs->semanticContext, position, ZR_NULL, &query));
+        TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+                cs->semanticContext,
+                query.callableTypeId,
+                typeLabel,
+                sizeof(typeLabel)));
+        TEST_ASSERT_EQUAL_STRING("fn(int) -> int", typeLabel);
+        TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+                cs->semanticContext, &query, callLabel, sizeof(callLabel)));
+        TEST_ASSERT_EQUAL_STRING("fn echo<T>(value: int): int", callLabel);
+
+        position = type_inference_query_position(
+                sourceName,
+                (TZrSize)(explicitCall - source + strlen("device.echo<string>(")));
+        TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+                cs->semanticContext, position, ZR_NULL, &query));
+        TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+                cs->semanticContext,
+                query.callableTypeId,
+                typeLabel,
+                sizeof(typeLabel)));
+        TEST_ASSERT_EQUAL_STRING("fn(string) -> string", typeLabel);
+        TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+                cs->semanticContext, &query, callLabel, sizeof(callLabel)));
+        TEST_ASSERT_EQUAL_STRING("fn echo<T>(value: string): string", callLabel);
+
+        position = type_inference_query_position(
+                sourceName,
+                (TZrSize)(unavailableCall - source + strlen("device.namelessEcho(")));
+        TEST_ASSERT_FALSE(ZrParser_SemanticQuery_CallAt(
+                cs->semanticContext, position, ZR_NULL, &query));
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_type_inference_native_method_call_rejects_registered_parameter_mismatch(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Method Call Rejects Registered Parameter Mismatch";
@@ -8250,6 +8396,7 @@ int main(void) {
     RUN_TEST(test_type_inference_binary_import_keeps_same_name_signature_candidates);
     RUN_TEST(test_type_inference_binary_import_function_call_rejects_argument_mismatch);
     RUN_TEST(test_type_inference_native_import_function_member_preserves_metadata_signature_identity);
+    RUN_TEST(test_type_inference_native_generic_receiver_call_publishes_closed_contract);
     RUN_TEST(test_type_inference_native_method_call_rejects_registered_parameter_mismatch);
     RUN_TEST(test_type_inference_native_instance_method_uses_registered_return_type);
     RUN_TEST(test_type_inference_native_nested_module_method_call_returns_null);

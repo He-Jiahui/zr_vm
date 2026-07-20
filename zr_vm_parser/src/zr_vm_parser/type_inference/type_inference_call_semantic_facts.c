@@ -154,6 +154,7 @@ static SZrString *type_inference_callable_signature_display(
         SZrCompilerState *cs,
         SZrString *name,
         const SZrAstNodeArray *parameters,
+        const SZrArray *parameterNames,
         const SZrArray *genericParameters,
         TZrTypeId callTypeId) {
     const SZrCanonicalTypeNode *functionType;
@@ -219,6 +220,21 @@ static SZrString *type_inference_callable_signature_display(
             parameters->nodes[index]->data.parameter.name->name != ZR_NULL) {
             parameterName = ZrCore_String_GetNativeString(
                     parameters->nodes[index]->data.parameter.name->name);
+        } else if (parameterNames != ZR_NULL) {
+            SZrString **metadataName;
+
+            if (!parameterNames->isValid || index >= parameterNames->length) {
+                return ZR_NULL;
+            }
+            metadataName = (SZrString **)ZrCore_Array_Get(
+                    (SZrArray *)parameterNames, index);
+            if (metadataName == ZR_NULL || *metadataName == ZR_NULL) {
+                return ZR_NULL;
+            }
+            parameterName = ZrCore_String_GetNativeString(*metadataName);
+            if (parameterName == ZR_NULL || parameterName[0] == '\0') {
+                return ZR_NULL;
+            }
         }
         if (index > 0u && !type_inference_call_label_append(
                                   buffer, sizeof(buffer), &offset, ", ")) {
@@ -262,6 +278,7 @@ static SZrString *type_inference_call_signature_display(
             cs,
             functionInfo->name,
             type_inference_call_parameters(functionInfo->declarationNode),
+            ZR_NULL,
             &functionInfo->genericParameters,
             callTypeId);
 }
@@ -434,8 +451,12 @@ void type_inference_record_member_call_reference_fact(
             cs,
             memberInfo->name,
             type_inference_call_parameters(memberInfo->declarationNode),
+            &memberInfo->parameterNames,
             &memberInfo->genericParameters,
             callTypeId);
+    if (fact.signatureDisplay == ZR_NULL) {
+        return;
+    }
     fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID;
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
