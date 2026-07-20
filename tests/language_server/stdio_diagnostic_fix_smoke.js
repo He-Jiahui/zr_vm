@@ -47,6 +47,7 @@ const conditionDocumentUri = 'file:///zr-diagnostic-condition-close-fix-smoke.zr
 const indexDocumentUri = 'file:///zr-diagnostic-index-close-fix-smoke.zr';
 const parameterListDocumentUri = 'file:///zr-diagnostic-parameter-list-close-fix-smoke.zr';
 const callDocumentUri = 'file:///zr-diagnostic-call-close-fix-smoke.zr';
+const groupDocumentUri = 'file:///zr-diagnostic-group-close-fix-smoke.zr';
 const documentText = [
     'func choose(flag: bool): int {',
     '    var seed: int;',
@@ -66,6 +67,7 @@ const callDocumentText = [
     'return pick(1 + 2;',
     '',
 ].join('\n');
+const groupDocumentText = 'return (1 + 2;\n';
 
 const payload = Buffer.concat([
     createMessage({
@@ -260,7 +262,39 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: callDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 13, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: groupDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: groupDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 13,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: groupDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didChange',
+        params: {
+            textDocument: { uri: groupDocumentUri, version: 2 },
+            contentChanges: [{ text: 'return (1 + 2);\n' }],
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 14,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: groupDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 15, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -511,3 +545,49 @@ assert(fixedCallPublication &&
     !fixedCallPublication.params.diagnostics.some((entry) =>
         entry.code === 'missing_call_close'),
     'Expected the applied call-close fix to clear the diagnostic');
+
+const groupPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === groupDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'missing_group_close'));
+assert(groupPublication,
+    'Expected missing_group_close publication');
+
+const groupDiagnostic = groupPublication.params.diagnostics.find((entry) =>
+    entry.code === 'missing_group_close');
+assert(groupDiagnostic.range.start.line === 0 &&
+    groupDiagnostic.range.start.character === 7 &&
+    groupDiagnostic.range.end.line === 0 &&
+    groupDiagnostic.range.end.character === 8,
+    'Expected the group-close primary range to remain on the opening parenthesis');
+assert(groupDiagnostic.data &&
+    Array.isArray(groupDiagnostic.data.fixes) &&
+    groupDiagnostic.data.fixes.length === 1,
+    'Expected one serialized group-close diagnostic fix');
+
+const groupFix = groupDiagnostic.data.fixes[0];
+assert(groupFix.title === "Insert missing ')'" &&
+    groupFix.applicability === 1 &&
+    groupFix.edit &&
+    groupFix.edit.newText === ')',
+    'Expected a machine-applicable serialized group-close edit');
+assert(groupFix.edit.range.start.line === 0 &&
+    groupFix.edit.range.start.character === 13 &&
+    groupFix.edit.range.end.line === 0 &&
+    groupFix.edit.range.end.character === 13,
+    'Expected the group-close edit before the statement terminator');
+
+const fixedGroupPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === groupDocumentUri &&
+    message.params.version === 2 &&
+    Array.isArray(message.params.diagnostics));
+assert(fixedGroupPublication &&
+    !fixedGroupPublication.params.diagnostics.some((entry) =>
+        entry.code === 'missing_group_close'),
+    'Expected the applied group-close fix to clear the diagnostic');

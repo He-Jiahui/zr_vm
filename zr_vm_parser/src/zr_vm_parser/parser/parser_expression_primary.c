@@ -112,16 +112,7 @@ SZrAstNode *append_primary_member(SZrParserState *ps, SZrAstNode *base, SZrAstNo
 }
 
 TZrBool is_lambda_expression_after_lparen(SZrParserState *ps) {
-    TZrSize savedPos = ps->lexer->currentPos;
-    TZrInt32 savedChar = ps->lexer->currentChar;
-    TZrInt32 savedLine = ps->lexer->lineNumber;
-    TZrInt32 savedLastLine = ps->lexer->lastLine;
-    SZrToken savedToken = ps->lexer->t;
-    SZrToken savedLookahead = ps->lexer->lookahead;
-    TZrSize savedLookaheadPos = ps->lexer->lookaheadPos;
-    TZrInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
-    TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
-    TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
+    SZrParserCursor savedCursor;
     TZrInt32 depth = 0;
     TZrBool isLambda = ZR_FALSE;
 
@@ -129,6 +120,7 @@ TZrBool is_lambda_expression_after_lparen(SZrParserState *ps) {
         return ZR_FALSE;
     }
 
+    save_parser_cursor(ps, &savedCursor);
     ZrParser_Lexer_Next(ps->lexer);
     depth = 1;
     while (depth > 0 && ps->lexer->t.token != ZR_TK_EOS) {
@@ -149,16 +141,7 @@ TZrBool is_lambda_expression_after_lparen(SZrParserState *ps) {
         isLambda = ZR_TRUE;
     }
 
-    ps->lexer->currentPos = savedPos;
-    ps->lexer->currentChar = savedChar;
-    ps->lexer->lineNumber = savedLine;
-    ps->lexer->lastLine = savedLastLine;
-    ps->lexer->t = savedToken;
-    ps->lexer->lookahead = savedLookahead;
-    ps->lexer->lookaheadPos = savedLookaheadPos;
-    ps->lexer->lookaheadChar = savedLookaheadChar;
-    ps->lexer->lookaheadLine = savedLookaheadLine;
-    ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+    restore_parser_cursor(ps, &savedCursor);
     return isLambda;
 }
 

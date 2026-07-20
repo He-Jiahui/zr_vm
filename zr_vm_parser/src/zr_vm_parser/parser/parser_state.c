@@ -1015,12 +1015,18 @@ void report_missing_parameter_list_close(SZrParserState *ps, SZrFileRange locati
 
 void report_missing_group_close(SZrParserState *ps, SZrFileRange location) {
     SZrStructuredDiagnostic diagnostic;
+    SZrFileRange fixLocation;
 
     if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
         return;
     }
 
-    if (!ZrParser_DiagnosticBuilder_BuildMissingGroupClose(ps->state, &diagnostic, location)) {
+    fixLocation = get_current_token_location(ps);
+    if (!ZrParser_DiagnosticBuilder_BuildMissingGroupClose(
+                ps->state,
+                &diagnostic,
+                location,
+                fixLocation)) {
         report_error_with_token(ps, "Missing closing ')' in grouped expression", ps->lexer->t.token);
         return;
     }
