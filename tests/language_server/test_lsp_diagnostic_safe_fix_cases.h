@@ -335,6 +335,83 @@ static void test_lsp_code_action_inserts_missing_parameter_list_close(
     }
 }
 
+static void test_lsp_code_action_inserts_missing_call_close(
+        SZrState *state,
+        int *failures) {
+    const TZrChar *summary =
+            "LSP code action inserts missing call close";
+    const TZrChar *content =
+            "func pick(value: int): int { return value; }\n"
+            "return pick(1 + 2;\n";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri = ZR_NULL;
+    SZrArray diagnostics = {0};
+    SZrArray actions = {0};
+    const SZrLspDiagnostic *diagnostic;
+    const SZrLspDiagnosticFix *fix = ZR_NULL;
+    TZrBool valid = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(
+            state,
+            "file:///tmp/zr_lsp_diagnostic_call_close_fix.zr",
+            content,
+            &uri);
+    ZrCore_Array_Init(
+            state, &diagnostics, sizeof(SZrLspDiagnostic *), 4U);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetDiagnostics(
+                state, context, uri, &diagnostics)) {
+        diagnostic = diagnostic_safe_fix_find_code(
+                &diagnostics, "missing_call_close");
+        if (diagnostic != ZR_NULL && diagnostic->fixes.isValid &&
+            diagnostic->fixes.length == 1U) {
+            fix = (const SZrLspDiagnosticFix *)ZrCore_Array_Get(
+                    (SZrArray *)&diagnostic->fixes, 0U);
+        }
+        if (fix != ZR_NULL &&
+            diagnostic->range.start.line == 1 &&
+            diagnostic->range.start.character == 11 &&
+            diagnostic->range.end.line == 1 &&
+            diagnostic->range.end.character == 12 &&
+            fix->applicability == ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE &&
+            fix->editRange.start.line == 1 &&
+            fix->editRange.start.character == 17 &&
+            fix->editRange.end.line == 1 &&
+            fix->editRange.end.character == 17 &&
+            strcmp(test_string_text(fix->title),
+                   "Insert missing ')'") == 0 &&
+            strcmp(test_string_text(fix->editText), ")") == 0 &&
+            ZrLanguageServer_Lsp_GetCodeActions(
+                    state,
+                    context,
+                    uri,
+                    diagnostic->range,
+                    &actions) &&
+            diagnostic_safe_fix_action_matches(
+                    &actions, "Insert missing ')'", ")")) {
+            valid = ZR_TRUE;
+        }
+    }
+
+    if (!valid) {
+        (*failures)++;
+        TEST_FAIL(
+                timer,
+                summary,
+                "missing call close did not preserve its opener range and drive one exact machine-applicable quick fix");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
 static void test_lsp_code_action_skips_placeholder_diagnostic_fix(
         SZrState *state,
         int *failures) {

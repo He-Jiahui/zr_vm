@@ -109,9 +109,10 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingIndexClose(
         SZrFileRange location,
         SZrFileRange fixLocation);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingCallClose(
-    SZrState *state,
-    SZrStructuredDiagnostic *out,
-    SZrFileRange location);
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location,
+        SZrFileRange fixLocation);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingParameterListClose(
     SZrState *state,
     SZrStructuredDiagnostic *out,

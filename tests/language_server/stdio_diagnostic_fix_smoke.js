@@ -46,6 +46,7 @@ const semicolonDocumentUri = 'file:///zr-diagnostic-semicolon-fix-smoke.zr';
 const conditionDocumentUri = 'file:///zr-diagnostic-condition-close-fix-smoke.zr';
 const indexDocumentUri = 'file:///zr-diagnostic-index-close-fix-smoke.zr';
 const parameterListDocumentUri = 'file:///zr-diagnostic-parameter-list-close-fix-smoke.zr';
+const callDocumentUri = 'file:///zr-diagnostic-call-close-fix-smoke.zr';
 const documentText = [
     'func choose(flag: bool): int {',
     '    var seed: int;',
@@ -60,6 +61,11 @@ const semicolonDocumentText = 'var answer = 42';
 const conditionDocumentText = 'if (ready { return 1; }\n';
 const indexDocumentText = 'return value[0;\n';
 const parameterListDocumentText = 'func pick(value: int: int { return value; }\n';
+const callDocumentText = [
+    'func pick(value: int): int { return value; }',
+    'return pick(1 + 2;',
+    '',
+].join('\n');
 
 const payload = Buffer.concat([
     createMessage({
@@ -216,7 +222,45 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: parameterListDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 11, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: callDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: callDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 11,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: callDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didChange',
+        params: {
+            textDocument: { uri: callDocumentUri, version: 2 },
+            contentChanges: [{
+                text: [
+                    'func pick(value: int): int { return value; }',
+                    'return pick(1 + 2);',
+                    '',
+                ].join('\n'),
+            }],
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 12,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: callDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 13, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -421,3 +465,49 @@ assert(fixedParameterListPublication &&
     !fixedParameterListPublication.params.diagnostics.some((entry) =>
         entry.code === 'missing_parameter_list_close'),
     'Expected the applied parameter-list-close fix to clear the diagnostic');
+
+const callPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === callDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'missing_call_close'));
+assert(callPublication,
+    'Expected missing_call_close publication');
+
+const callDiagnostic = callPublication.params.diagnostics.find((entry) =>
+    entry.code === 'missing_call_close');
+assert(callDiagnostic.range.start.line === 1 &&
+    callDiagnostic.range.start.character === 11 &&
+    callDiagnostic.range.end.line === 1 &&
+    callDiagnostic.range.end.character === 12,
+    'Expected the call-close primary range to remain on the opening parenthesis');
+assert(callDiagnostic.data &&
+    Array.isArray(callDiagnostic.data.fixes) &&
+    callDiagnostic.data.fixes.length === 1,
+    'Expected one serialized call-close diagnostic fix');
+
+const callFix = callDiagnostic.data.fixes[0];
+assert(callFix.title === "Insert missing ')'" &&
+    callFix.applicability === 1 &&
+    callFix.edit &&
+    callFix.edit.newText === ')',
+    'Expected a machine-applicable serialized call-close edit');
+assert(callFix.edit.range.start.line === 1 &&
+    callFix.edit.range.start.character === 17 &&
+    callFix.edit.range.end.line === 1 &&
+    callFix.edit.range.end.character === 17,
+    'Expected the call-close edit before the statement terminator');
+
+const fixedCallPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === callDocumentUri &&
+    message.params.version === 2 &&
+    Array.isArray(message.params.diagnostics));
+assert(fixedCallPublication &&
+    !fixedCallPublication.params.diagnostics.some((entry) =>
+        entry.code === 'missing_call_close'),
+    'Expected the applied call-close fix to clear the diagnostic');

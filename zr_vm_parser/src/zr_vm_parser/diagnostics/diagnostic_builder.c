@@ -704,16 +704,32 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingIndexClose(SZrState *state,
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingCallClose(SZrState *state,
                                                          SZrStructuredDiagnostic *out,
-                                                         SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
-            state,
-            out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
-            location,
-            "missing_call_close",
-            "Missing closing ')' in function call",
-            "The function call started an argument list with '(', but the parser reached another token before a closing ')' appeared.",
-            "Insert ')' after the last argument before continuing.");
+                                                         SZrFileRange location,
+                                                         SZrFileRange fixLocation) {
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "missing_call_close",
+                "Missing closing ')' in function call",
+                "The function call started an argument list with '(', but the parser reached another token before a closing ')' appeared.",
+                "Insert ')' after the last argument before continuing.")) {
+        return ZR_FALSE;
+    }
+
+    fixLocation.end = fixLocation.start;
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Insert missing ')'",
+                fixLocation,
+                ")",
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingParameterListClose(SZrState *state,

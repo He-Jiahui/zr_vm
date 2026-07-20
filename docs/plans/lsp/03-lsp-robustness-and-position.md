@@ -70,6 +70,8 @@
 
 [2026-07-21 parameter-list-close safe-fix convergence](./02-diagnostics/2026-07-21-parameter-list-close-safe-fix-convergence.md) 让`missing_parameter_list_close`复用同一通用structured-fix consumer与code-action snapshot；共享builder把`)` edit绑定到unexpected token起点，stdio apply后的新version清除诊断，不新增declaration-kind/code/message/source fallback。其他delimiter producer、并发race/cancellation与性能内存预算仍待后续。
 
+[2026-07-21 call-close safe-fix convergence](./02-diagnostics/2026-07-21-call-close-safe-fix-convergence.md) 让`missing_call_close`复用同一通用structured-fix consumer与code-action snapshot；opening `(` primary与current-token edit range保持独立，stdio apply后的新version清除诊断，不新增call-AST/code/message/source fallback。其他delimiter producer、并发race/cancellation与性能内存预算仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

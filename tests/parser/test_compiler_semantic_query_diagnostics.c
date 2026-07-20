@@ -1292,6 +1292,46 @@ static void test_missing_parameter_list_close_builder_publishes_machine_fix(void
     ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
 }
 
+static void test_missing_call_close_builder_publishes_machine_fix(void) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrStructuredDiagnosticFix *fix;
+    SZrFileRange location;
+    SZrFileRange fixLocation;
+
+    location = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(11U, 2, 12),
+            ZrParser_FilePosition_Create(12U, 2, 13),
+            ZR_NULL);
+    fixLocation = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(17U, 2, 18),
+            ZrParser_FilePosition_Create(18U, 2, 19),
+            ZR_NULL);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingCallClose(
+            g_state,
+            &diagnostic,
+            location,
+            fixLocation));
+    TEST_ASSERT_EQUAL_UINT64(11U, diagnostic.location.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(12U, diagnostic.location.end.offset);
+    TEST_ASSERT_TRUE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostic.fixes.length);
+
+    fix = (SZrStructuredDiagnosticFix *)ZrCore_Array_Get(
+            &diagnostic.fixes, 0U);
+    TEST_ASSERT_NOT_NULL(fix);
+    TEST_ASSERT_EQUAL_STRING(
+            "Insert missing ')'",
+            ZrCore_String_GetNativeString(fix->title));
+    TEST_ASSERT_EQUAL_STRING(")", ZrCore_String_GetNativeString(fix->editText));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE, fix->applicability);
+    TEST_ASSERT_EQUAL_UINT64(17U, fix->editRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(17U, fix->editRange.end.offset);
+
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_compile_script_publishes_semantic_query_diagnostics_without_error);
@@ -1316,5 +1356,6 @@ int main(void) {
     RUN_TEST(test_missing_condition_close_builder_publishes_machine_fix);
     RUN_TEST(test_missing_index_close_builder_publishes_machine_fix);
     RUN_TEST(test_missing_parameter_list_close_builder_publishes_machine_fix);
+    RUN_TEST(test_missing_call_close_builder_publishes_machine_fix);
     return UNITY_END();
 }

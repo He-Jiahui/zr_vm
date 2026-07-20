@@ -699,6 +699,8 @@ RED：新增 `func pick(value: int: int { return value; }` 的 focused parser-di
 
 2026-07-21 safe-fix follow-up让共享`missing_parameter_list_close` builder在unexpected token range起点发布零宽`)` machine fix；`func pick(value: int: int { ... }`因此在第二个`:`前精确插入`)`。Function/method/interface/extern等既有producer无需新增分支，code action与stdio JSON只消费structured fix，修正后的document version清除该code。GCC、Clang、MSVC十八目标矩阵与两套stdio smoke均通过；call/group close、其他delimiter和L3整体仍未完成。
 
+同日 call-close safe-fix follow-up保留opening `(` diagnostic range，并让parser reporter把current token作为独立fix range传给builder；`return pick(1 + 2;`只在`;`前插入`)`。Code action与stdio JSON继续只消费structured fix，修正后的version清除`missing_call_close`；GCC、Clang、MSVC十八目标矩阵与两套stdio smoke均通过。`missing_group_close`、其他delimiter与L3整体仍未完成。
+
 2026-06-07 parser/LSP class method parameter-list close diagnostic 聚焦验证：
 
 ```powershell
