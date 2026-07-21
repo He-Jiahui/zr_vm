@@ -944,15 +944,30 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectPropertyColon(SZrState *sta
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectPropertySeparator(SZrState *state,
                                                                        SZrStructuredDiagnostic *out,
                                                                        SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
-            state,
-            out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
-            location,
-            "missing_object_property_separator",
-            "Missing separator between object properties",
-            "The object literal has another property key immediately after the previous property's value.",
-            "Insert ',' or ';' between object properties.");
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "missing_object_property_separator",
+                "Missing separator between object properties",
+                "The object literal has another property key immediately after the previous property's value.",
+                "Insert ',' or ';' between object properties.")) {
+        return ZR_FALSE;
+    }
+
+    location.end = location.start;
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Insert missing ','",
+                location,
+                ",",
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalConsequent(SZrState *state,

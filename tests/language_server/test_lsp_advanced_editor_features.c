@@ -2139,6 +2139,8 @@ int main(void) {
             state, &failures);
     test_lsp_code_action_inserts_missing_object_property_colon(
             state, &failures);
+    test_lsp_code_action_inserts_missing_object_property_separator(
+            state, &failures);
     test_lsp_code_action_inserts_missing_using_object_pattern_close(
             state, &failures);
     test_lsp_code_action_skips_placeholder_diagnostic_fix(state, &failures);

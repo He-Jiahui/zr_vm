@@ -54,6 +54,8 @@ const objectComputedKeyDocumentUri =
     'file:///zr-diagnostic-object-computed-key-close-fix-smoke.zr';
 const objectPropertyColonDocumentUri =
     'file:///zr-diagnostic-object-property-colon-fix-smoke.zr';
+const objectPropertySeparatorDocumentUri =
+    'file:///zr-diagnostic-object-property-separator-fix-smoke.zr';
 const documentText = [
     'func choose(flag: bool): int {',
     '    var seed: int;',
@@ -78,6 +80,7 @@ const arrayDocumentText = 'return [1, 2';
 const objectDocumentText = 'return {a: 1';
 const objectComputedKeyDocumentText = 'return {[1: 2};';
 const objectPropertyColonDocumentText = 'return {a 1};';
+const objectPropertySeparatorDocumentText = 'return {a: 1 "b": 2};';
 
 const payload = Buffer.concat([
     createMessage({
@@ -432,7 +435,39 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: objectPropertyColonDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 23, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: objectPropertySeparatorDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: objectPropertySeparatorDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 23,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: objectPropertySeparatorDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didChange',
+        params: {
+            textDocument: { uri: objectPropertySeparatorDocumentUri, version: 2 },
+            contentChanges: [{ text: 'return {a: 1, "b": 2};' }],
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 24,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: objectPropertySeparatorDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 25, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -915,3 +950,51 @@ assert(fixedObjectPropertyColonPublication &&
     !fixedObjectPropertyColonPublication.params.diagnostics.some((entry) =>
         entry.code === 'missing_object_property_colon'),
     'Expected the applied property-colon fix to clear the diagnostic');
+
+const objectPropertySeparatorPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === objectPropertySeparatorDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'missing_object_property_separator'));
+assert(objectPropertySeparatorPublication,
+    'Expected missing_object_property_separator publication');
+
+const objectPropertySeparatorDiagnostic =
+    objectPropertySeparatorPublication.params.diagnostics.find((entry) =>
+        entry.code === 'missing_object_property_separator');
+assert(objectPropertySeparatorDiagnostic.range.start.line === 0 &&
+    objectPropertySeparatorDiagnostic.range.start.character === 13 &&
+    objectPropertySeparatorDiagnostic.range.end.line === 0 &&
+    objectPropertySeparatorDiagnostic.range.end.character === 16,
+    'Expected the property-separator primary range on the next key token');
+assert(objectPropertySeparatorDiagnostic.data &&
+    Array.isArray(objectPropertySeparatorDiagnostic.data.fixes) &&
+    objectPropertySeparatorDiagnostic.data.fixes.length === 1,
+    'Expected one serialized property-separator diagnostic fix');
+
+const objectPropertySeparatorFix =
+    objectPropertySeparatorDiagnostic.data.fixes[0];
+assert(objectPropertySeparatorFix.title === "Insert missing ','" &&
+    objectPropertySeparatorFix.applicability === 1 &&
+    objectPropertySeparatorFix.edit &&
+    objectPropertySeparatorFix.edit.newText === ',',
+    'Expected a machine-applicable serialized property-separator edit');
+assert(objectPropertySeparatorFix.edit.range.start.line === 0 &&
+    objectPropertySeparatorFix.edit.range.start.character === 13 &&
+    objectPropertySeparatorFix.edit.range.end.line === 0 &&
+    objectPropertySeparatorFix.edit.range.end.character === 13,
+    'Expected the property-separator edit before the next key token');
+
+const fixedObjectPropertySeparatorPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === objectPropertySeparatorDocumentUri &&
+    message.params.version === 2 &&
+    Array.isArray(message.params.diagnostics));
+assert(fixedObjectPropertySeparatorPublication &&
+    !fixedObjectPropertySeparatorPublication.params.diagnostics.some((entry) =>
+        entry.code === 'missing_object_property_separator'),
+    'Expected the applied property-separator fix to clear the diagnostic');
