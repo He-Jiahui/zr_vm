@@ -553,7 +553,7 @@ static TZrBool parser_object_literal_token_can_start_property_key(EZrToken token
 // 解析数组字面量
 
 SZrAstNode *parse_array_literal(SZrParserState *ps) {
-    SZrFileRange startLoc = get_current_location(ps);
+    SZrFileRange startLoc = get_current_token_location(ps);
     expect_token(ps, ZR_TK_LBRACKET);
     ZrParser_Lexer_Next(ps->lexer);
 

@@ -74,6 +74,8 @@
 
 [2026-07-21 group-close safe-fix convergence](./02-diagnostics/2026-07-21-group-close-safe-fix-convergence.md) 让`missing_group_close`复用同一通用structured-fix consumer与code-action snapshot；parser完整cursor rollback确保speculative lambda lookahead不污染opening range，current-token edit应用后的新version清除诊断，不新增group-AST/code/message/source fallback。其他delimiter producer、并发race/cancellation与性能内存预算仍待后续。
 
+[2026-07-21 array-close safe-fix convergence](./02-diagnostics/2026-07-21-array-close-safe-fix-convergence.md) 让`missing_array_close`复用同一通用structured-fix consumer与code-action snapshot；parser exact token range修正opening identity，EOF edit应用后的新version清除诊断，不新增array-AST/code/message/source fallback。其他delimiter producer、并发race/cancellation与性能内存预算仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

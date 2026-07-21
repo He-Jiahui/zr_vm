@@ -54,6 +54,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_extern.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_interface.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_literals.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_state.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
 implementation_files:
@@ -704,6 +705,8 @@ RED：新增 `func pick(value: int: int { return value; }` 的 focused parser-di
 同日 call-close safe-fix follow-up保留opening `(` diagnostic range，并让parser reporter把current token作为独立fix range传给builder；`return pick(1 + 2;`只在`;`前插入`)`。Code action与stdio JSON继续只消费structured fix，修正后的version清除`missing_call_close`；GCC、Clang、MSVC十八目标矩阵与两套stdio smoke均通过。`missing_group_close`、其他delimiter与L3整体仍未完成。
 
 同日 group-close safe-fix follow-up让`return (1 + 2;`保留opening `(`的line 0 character 7..8 primary range，并在`;`起点character 13发布零宽`)` machine fix。Support-first RED同时发现failed lambda lookahead只恢复lexer token/current position、没有恢复token-start坐标，导致group primary漂移到character 8的零宽range；改为复用完整parser cursor保存/恢复后，grouped-expression fallback取得精确opener identity。Code action与stdio JSON仍只投影structured fix，version 2应用`)`后清除`missing_group_close`；三工具链十八目标矩阵和两套stdio smoke均通过。Array/object等delimiter、replacement与L3整体仍未完成。
+
+同日 array-close safe-fix follow-up让`return [1, 2`保留opening `[`的line 0 character 7..8 primary range，并在EOF character 12发布零宽`]` machine fix。Support-first RED显示旧producer用lexer current cursor构造出character 9..9 primary；`parse_array_literal`改用exact current-token range后，code action与stdio JSON只消费structured fact/fix，version 2应用`]`并补齐statement semicolon后清除`missing_array_close`。GCC、Clang、MSVC十八目标矩阵和两套stdio smoke均通过；object及其他delimiter、replacement与L3整体仍未完成。
 
 2026-06-07 parser/LSP class method parameter-list close diagnostic 聚焦验证：
 

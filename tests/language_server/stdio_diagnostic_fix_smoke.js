@@ -48,6 +48,7 @@ const indexDocumentUri = 'file:///zr-diagnostic-index-close-fix-smoke.zr';
 const parameterListDocumentUri = 'file:///zr-diagnostic-parameter-list-close-fix-smoke.zr';
 const callDocumentUri = 'file:///zr-diagnostic-call-close-fix-smoke.zr';
 const groupDocumentUri = 'file:///zr-diagnostic-group-close-fix-smoke.zr';
+const arrayDocumentUri = 'file:///zr-diagnostic-array-close-fix-smoke.zr';
 const documentText = [
     'func choose(flag: bool): int {',
     '    var seed: int;',
@@ -68,6 +69,7 @@ const callDocumentText = [
     '',
 ].join('\n');
 const groupDocumentText = 'return (1 + 2;\n';
+const arrayDocumentText = 'return [1, 2';
 
 const payload = Buffer.concat([
     createMessage({
@@ -294,7 +296,39 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: groupDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 15, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: arrayDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: arrayDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 15,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: arrayDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didChange',
+        params: {
+            textDocument: { uri: arrayDocumentUri, version: 2 },
+            contentChanges: [{ text: 'return [1, 2];' }],
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 16,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: arrayDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 17, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -591,3 +625,49 @@ assert(fixedGroupPublication &&
     !fixedGroupPublication.params.diagnostics.some((entry) =>
         entry.code === 'missing_group_close'),
     'Expected the applied group-close fix to clear the diagnostic');
+
+const arrayPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === arrayDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'missing_array_close'));
+assert(arrayPublication,
+    'Expected missing_array_close publication');
+
+const arrayDiagnostic = arrayPublication.params.diagnostics.find((entry) =>
+    entry.code === 'missing_array_close');
+assert(arrayDiagnostic.range.start.line === 0 &&
+    arrayDiagnostic.range.start.character === 7 &&
+    arrayDiagnostic.range.end.line === 0 &&
+    arrayDiagnostic.range.end.character === 8,
+    'Expected the array-close primary range to remain on the opening bracket');
+assert(arrayDiagnostic.data &&
+    Array.isArray(arrayDiagnostic.data.fixes) &&
+    arrayDiagnostic.data.fixes.length === 1,
+    'Expected one serialized array-close diagnostic fix');
+
+const arrayFix = arrayDiagnostic.data.fixes[0];
+assert(arrayFix.title === "Insert missing ']'" &&
+    arrayFix.applicability === 1 &&
+    arrayFix.edit &&
+    arrayFix.edit.newText === ']',
+    'Expected a machine-applicable serialized array-close edit');
+assert(arrayFix.edit.range.start.line === 0 &&
+    arrayFix.edit.range.start.character === 12 &&
+    arrayFix.edit.range.end.line === 0 &&
+    arrayFix.edit.range.end.character === 12,
+    'Expected the array-close edit at end of file');
+
+const fixedArrayPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === arrayDocumentUri &&
+    message.params.version === 2 &&
+    Array.isArray(message.params.diagnostics));
+assert(fixedArrayPublication &&
+    !fixedArrayPublication.params.diagnostics.some((entry) =>
+        entry.code === 'missing_array_close'),
+    'Expected the applied array-close fix to clear the diagnostic');

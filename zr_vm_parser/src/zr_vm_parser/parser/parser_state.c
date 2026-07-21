@@ -1053,12 +1053,18 @@ void report_array_element_assignment(SZrParserState *ps, SZrFileRange location) 
 
 void report_missing_array_close(SZrParserState *ps, SZrFileRange location) {
     SZrStructuredDiagnostic diagnostic;
+    SZrFileRange fixLocation;
 
     if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
         return;
     }
 
-    if (!ZrParser_DiagnosticBuilder_BuildMissingArrayClose(ps->state, &diagnostic, location)) {
+    fixLocation = get_current_token_location(ps);
+    if (!ZrParser_DiagnosticBuilder_BuildMissingArrayClose(
+                ps->state,
+                &diagnostic,
+                location,
+                fixLocation)) {
         report_error_with_token(ps, "Missing closing ']' in array literal", ps->lexer->t.token);
         return;
     }

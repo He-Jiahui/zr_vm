@@ -129,7 +129,8 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildArrayElementAssignment(
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingArrayClose(
     SZrState *state,
     SZrStructuredDiagnostic *out,
-    SZrFileRange location);
+    SZrFileRange location,
+    SZrFileRange fixLocation);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingArrayElementSeparator(
     SZrState *state,
     SZrStructuredDiagnostic *out,
