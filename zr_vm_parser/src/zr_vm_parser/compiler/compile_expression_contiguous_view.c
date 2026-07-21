@@ -361,6 +361,7 @@ contiguous_view_lower_create(
         const SZrTypeMemberInfo *memberInfo,
         SZrString *receiverTypeName,
         TZrUInt32 receiverSlot,
+        TZrPlaceId receiverPlaceId,
         TZrUInt32 resultSlot,
         const SZrInferredType *resultType,
         SZrFileRange location) {
@@ -368,6 +369,7 @@ contiguous_view_lower_create(
     SZrTypeMemberInfo *receiverLength;
     SZrCompilerContiguousViewContract resultContract;
     EZrSemanticContiguousSourceKind sourceKind;
+    TZrPlaceId sourcePlaceId;
     TZrUInt32 receiverLengthMemberId;
     TZrUInt32 zeroSlot;
     TZrUInt32 lengthSlot;
@@ -388,6 +390,10 @@ contiguous_view_lower_create(
                 cs, resultSlot, resultType, &resultContract)) {
         return ZR_COMPILER_CONTIGUOUS_VIEW_ERROR;
     }
+    sourcePlaceId = receiverPlaceId != ZR_PLACE_ID_INVALID
+                            ? receiverPlaceId
+                            : compiler_semantic_ir_place_for_slot(
+                                      cs, receiverSlot, location);
     zeroSlot = contiguous_view_emit_zero(cs, location);
     lengthSlot = allocate_stack_slot(cs);
     if (zeroSlot == ZR_PARSER_SLOT_NONE ||
@@ -409,8 +415,7 @@ contiguous_view_lower_create(
         !compiler_semantic_ir_record_contiguous_view(
                 cs,
                 resultSlot,
-                compiler_semantic_ir_place_for_slot(
-                        cs, receiverSlot, location),
+                sourcePlaceId,
                 zeroSlot,
                 lengthSlot,
                 sourceKind,
@@ -654,6 +659,7 @@ compiler_contiguous_view_lower_member_call(
         const SZrTypeMemberInfo *memberInfo,
         SZrString *receiverTypeName,
         TZrUInt32 receiverSlot,
+        TZrPlaceId receiverPlaceId,
         TZrUInt32 argumentStartSlot,
         TZrUInt32 argumentCount,
         const SZrAstNodeArray *argumentNodes,
@@ -670,6 +676,7 @@ compiler_contiguous_view_lower_member_call(
             memberInfo,
             receiverTypeName,
             receiverSlot,
+            receiverPlaceId,
             resultSlot,
             resultType,
             location);

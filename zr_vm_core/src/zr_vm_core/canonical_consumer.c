@@ -283,6 +283,133 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveLayout(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+EZrArtifactStatus ZrCore_CanonicalConsumer_ValidatePublicRefLikeAbi(
+        const SZrCanonicalConsumerProjection *projection,
+        const SZrCanonicalPublicRefLikeAbiExpectation *expected,
+        SZrArtifactDiagnostic *diagnostic) {
+    SZrCanonicalTypeProjection type;
+    SZrArtifactTypeIdentityRow typeRef;
+    SZrArtifactContractRow contract;
+    EZrArtifactStatus status;
+    TZrBool foundTypeRef = ZR_FALSE;
+
+    canonical_consumer_clear_diagnostic(diagnostic);
+    if (projection == ZR_NULL || expected == ZR_NULL ||
+        expected->typeToken == 0u || expected->callableSignatureToken == 0u ||
+        ZR_METADATA_TOKEN_TABLE(expected->typeToken) != ZR_METADATA_TABLE_TYPE_REF ||
+        expected->typeRefHash == 0u ||
+        expected->layoutVersion == 0u || expected->layoutHash == 0u ||
+        (expected->typeFlags & ZR_ARTIFACT_TYPE_FLAG_REF_LIKE) == 0u ||
+        (expected->typeFlags & ~ZR_ARTIFACT_TYPE_FLAG_KNOWN_MASK) != 0u ||
+        (expected->callableEscapeFlags &
+         ~ZR_ARTIFACT_CALLABLE_ESCAPE_FLAG_KNOWN_MASK) != 0u ||
+        expected->abiLoweringKind <= ZR_ARTIFACT_ABI_LOWERING_NONE ||
+        expected->abiLoweringKind > ZR_ARTIFACT_ABI_LOWERING_NATIVE_DIRECT) {
+        return canonical_consumer_fail(
+                diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, 0u);
+    }
+
+    for (TZrUInt32 index = 0u;
+         index < projection->typeRefs.elementCount;
+         index++) {
+        if (ZrCore_Artifact_ReadTypeIdentityRow(
+                    &projection->typeRefs, index, &typeRef, ZR_NULL) ==
+                    ZR_ARTIFACT_STATUS_OK &&
+            typeRef.token == expected->typeToken) {
+            foundTypeRef = ZR_TRUE;
+            break;
+        }
+    }
+    if (!foundTypeRef) {
+        return canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_SECTION,
+                ZR_ARTIFACT_SECTION_TYPE_REF_TABLE,
+                0u);
+    }
+    if (typeRef.signatureHash != expected->typeRefHash) {
+        canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_TYPE_REF_HASH_MISMATCH,
+                ZR_ARTIFACT_SECTION_TYPE_REF_TABLE,
+                0u);
+        if (diagnostic != ZR_NULL) {
+            diagnostic->expectedHash = expected->typeRefHash;
+            diagnostic->actualHash = typeRef.signatureHash;
+        }
+        return ZR_ARTIFACT_STATUS_TYPE_REF_HASH_MISMATCH;
+    }
+
+    status = ZrCore_CanonicalConsumer_ResolveTypeToken(
+            projection, expected->typeToken, &type, diagnostic);
+    if (status != ZR_ARTIFACT_STATUS_OK) {
+        return status;
+    }
+    if ((type.capabilityFlags & ZR_ARTIFACT_TYPE_FLAG_KNOWN_MASK) !=
+        expected->typeFlags) {
+        return canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_SIGNATURE,
+                ZR_METADATA_TOKEN_TABLE(expected->typeToken) ==
+                                ZR_METADATA_TABLE_TYPE_REF
+                        ? ZR_ARTIFACT_SECTION_TYPE_REF_TABLE
+                        : ZR_ARTIFACT_SECTION_TYPE_SPEC_TABLE,
+                0u);
+    }
+    if (!type.hasLayout) {
+        return canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_SECTION,
+                ZR_ARTIFACT_SECTION_LAYOUT_TABLE,
+                0u);
+    }
+    if (type.layout.version != expected->layoutVersion) {
+        canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_LAYOUT_VERSION_MISMATCH,
+                ZR_ARTIFACT_SECTION_LAYOUT_TABLE,
+                0u);
+        if (diagnostic != ZR_NULL) {
+            diagnostic->expectedVersion = expected->layoutVersion;
+            diagnostic->actualVersion = type.layout.version;
+        }
+        return ZR_ARTIFACT_STATUS_LAYOUT_VERSION_MISMATCH;
+    }
+    if (type.layout.layoutHash != expected->layoutHash) {
+        canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_LAYOUT_HASH_MISMATCH,
+                ZR_ARTIFACT_SECTION_LAYOUT_TABLE,
+                0u);
+        if (diagnostic != ZR_NULL) {
+            diagnostic->expectedHash = expected->layoutHash;
+            diagnostic->actualHash = type.layout.layoutHash;
+        }
+        return ZR_ARTIFACT_STATUS_LAYOUT_HASH_MISMATCH;
+    }
+    if (!canonical_consumer_find_contract(
+                projection,
+                expected->callableSignatureToken,
+                0u,
+                &contract)) {
+        return canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_SECTION,
+                ZR_ARTIFACT_SECTION_CONTRACT_TABLE,
+                0u);
+    }
+    if (contract.escapeFlags != expected->callableEscapeFlags ||
+        contract.abiLoweringKind != expected->abiLoweringKind ||
+        contract.abiLoweringKind == ZR_ARTIFACT_ABI_LOWERING_NATIVE_DIRECT) {
+        return canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_SIGNATURE,
+                ZR_ARTIFACT_SECTION_CONTRACT_TABLE,
+                0u);
+    }
+    return ZR_ARTIFACT_STATUS_OK;
+}
+
 EZrArtifactStatus ZrCore_CanonicalConsumer_Open(
         const TZrByte *buffer,
         TZrSize bufferLength,

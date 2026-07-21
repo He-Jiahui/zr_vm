@@ -3,6 +3,9 @@ related_code:
   - zr_vm_common/include/zr_vm_common/zr_contract_conf.h
   - zr_vm_core/include/zr_vm_core/object.h
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
+  - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
@@ -13,6 +16,9 @@ implementation_files:
   - zr_vm_lib_container/src/zr_vm_lib_container/contiguous_view.c
   - zr_vm_lib_container/src/zr_vm_lib_container/contiguous_view.h
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
+  - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -25,6 +31,7 @@ plan_sources:
 tests:
   - tests/parser/test_span_core.c
   - tests/parser/test_span_semantic_ir_cases.c
+  - tests/parser/test_buffer_pool_ffi.c
   - tests/parser/test_aot_c_value_type_shared_library_smoke.c
 doc_type: module
 ---
@@ -120,9 +127,17 @@ Loan liveness is seeded from the view ValueId, then follows value-to-place and
 load use chains. This gives non-lexical behavior: a source operation conflicts
 only when a later use keeps the view loan live.
 
-M4 freezes these generic source and lifetime facts. Concrete `PoolLease` borrow,
-exception cleanup, pin/unpin implementation, and cross-module native ABI belong
-to M5 and must consume the same facts rather than introducing special cases.
+M4 freezes these generic source and lifetime facts. M5 supplies concrete
+`PoolLease<T>` and `Ptr<u8>` providers. Their descriptors publish the existing
+source protocols and create/length roles; compiler lowering carries the resolved
+receiver Place into the source loan and gives every created or loaded view a fresh
+ValueId. No provider name or member spelling participates in loan selection.
+
+`PoolLease<T>.close()` is rejected while a later view use keeps the mutable owner
+loan live. `Ptr<u8>.close()` is rejected under the equivalent native-pinned shared
+loan. Once the last view use is past, close/return is legal and idempotent. The
+provider-specific storage, generation, pin count, and exception cleanup behavior
+is documented in `zr-pooling-and-pinned-ffi-views.md`.
 
 ## AOT Boundary
 

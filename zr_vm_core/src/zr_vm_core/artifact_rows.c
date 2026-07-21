@@ -60,7 +60,7 @@ static void artifact_write_contract_row(TZrByte *bytes, const SZrArtifactContrac
     zr_artifact_write_u32(bytes + 16u, row->receiverEffect);
     zr_artifact_write_u32(bytes + 20u, row->refExportEffect);
     zr_artifact_write_u32(bytes + 24u, row->escapeFlags);
-    zr_artifact_write_u32(bytes + 28u, 0u);
+    zr_artifact_write_u32(bytes + 28u, (TZrUInt32)row->abiLoweringKind);
     zr_artifact_write_u64(bytes + 32u, row->contractHash);
 }
 
@@ -261,6 +261,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadContractRow(const SZrArtifactSectionView *
     outRow->receiverEffect = zr_artifact_read_u32(bytes + 16u);
     outRow->refExportEffect = zr_artifact_read_u32(bytes + 20u);
     outRow->escapeFlags = zr_artifact_read_u32(bytes + 24u);
+    outRow->abiLoweringKind = (EZrArtifactAbiLoweringKind)zr_artifact_read_u32(bytes + 28u);
     outRow->contractHash = zr_artifact_read_u64(bytes + 32u);
     return ZR_ARTIFACT_STATUS_OK;
 }

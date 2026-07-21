@@ -3223,6 +3223,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         activeCallMemberInfo,
                         pendingContiguousViewReceiverTypeName,
                         pendingReceiverSourceSlot,
+                        pendingReceiverSemanticPlace,
                         argBaseSlot,
                         argCount,
                         argsToCompile,

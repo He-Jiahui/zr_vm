@@ -210,6 +210,8 @@ static EZrArtifactStatus artifact_validate_contract_input(const SZrArtifactSecti
             (row->flags & ~ZR_ARTIFACT_CONTRACT_FLAG_KNOWN_MASK) != 0u ||
             row->receiverEffect > ZR_ARTIFACT_RECEIVER_MUTABLE ||
             row->refExportEffect > ZR_ARTIFACT_REF_EXPORT_WRITABLE ||
+            (row->escapeFlags & ~ZR_ARTIFACT_CALLABLE_ESCAPE_FLAG_KNOWN_MASK) != 0u ||
+            row->abiLoweringKind > ZR_ARTIFACT_ABI_LOWERING_NATIVE_DIRECT ||
             row->contractHash == 0u) {
             return zr_artifact_fail(diagnostic,
                                     ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,

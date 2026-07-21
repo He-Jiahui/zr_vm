@@ -4,6 +4,7 @@
 
 #include "zr_vm_lib_container/module.h"
 #include "contiguous_view.h"
+#include "pooling.h"
 
 #include "zr_vm_common/zr_meta_conf.h"
 #include "zr_vm_core/closure.h"
@@ -4377,6 +4378,10 @@ const ZrLibModuleDescriptor *ZrVmLibContainer_GetModuleDescriptor(void) {
     return &g_container_module_descriptor;
 }
 
+const ZrLibModuleDescriptor *ZrVmLibContainer_GetPoolingModuleDescriptor(void) {
+    return ZrVmLibContainer_Pooling_GetModuleDescriptor();
+}
+
 static TZrBool zr_container_install_basic_array_method(SZrState *state,
                                                        const TZrChar *methodName,
                                                        FZrNativeFunction nativeFunction) {
@@ -4426,6 +4431,8 @@ TZrBool ZrVmLibContainer_Register(SZrGlobalState *global) {
         return ZR_FALSE;
     }
     return ZrLibrary_NativeRegistry_RegisterModule(global, &g_container_module_descriptor) &&
+           ZrLibrary_NativeRegistry_RegisterModule(
+                   global, ZrVmLibContainer_Pooling_GetModuleDescriptor()) &&
            zr_container_install_basic_array_adapter(global);
 }
 

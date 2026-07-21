@@ -33,6 +33,7 @@ typedef struct SZrVmExceptionHandlerState {
     SZrCallInfo *callInfo;
     TZrUInt32 handlerIndex;
     EZrVmExceptionHandlerPhase phase;
+    TZrMemoryOffset toBeClosedBoundaryOffset;
 } SZrVmExceptionHandlerState;
 
 typedef struct SZrVmPendingControl {

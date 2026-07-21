@@ -187,6 +187,7 @@ tests:
   - tests/parser/test_struct_value_init.c
   - tests/parser/test_compiler_integration_main.c
   - tests/parser/test_value_type_runtime.c
+  - tests/parser/test_buffer_pool_ffi.c
   - tests/parser/test_aot_c_type_layout_contracts.c
   - tests/parser/test_aot_c_source_contracts.c
   - tests/parser/test_aot_c_call_contracts.c
@@ -366,6 +367,13 @@ Generic call bytecode that is not proven to be a typed value call now remains vi
 This keeps call lowering in the same two-path shape used elsewhere in the AOT plan: typed calls use `CALL_TYPED`, while unproven dynamic calls stay explicit runtime/deopt boundaries. Direct C call ABI lowering and typed/dynamic bridge execution remain later work.
 
 Call-site quickening must preserve the same slot-shape contract. A `DYN_CALL` whose result slot is lower than its callee slot stays on the generic instruction instead of being rewritten to cached or no-argument superinstructions, because those fast paths assume the return write cannot clobber the staged callable/receiver window.
+
+The VM no-argument dynamic superinstruction uses the same frame-layout-aware
+pre-call helper as ordinary dynamic calls. It allocates the physical call window
+after the complete byte-frame storage and stages the logical callable there;
+using `BASE(functionSlot) + 1` would overlap layout-backed payload bytes even when
+the logical slot numbers appear disjoint. The pool/FFI full-GC stress exercises
+this path through a native zero-argument probe while a Span value remains live.
 
 ## Dynamic Iterator Deopt Boundary
 

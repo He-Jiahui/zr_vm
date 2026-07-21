@@ -3733,6 +3733,14 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_buffer_pool_ffi_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_buffer_pool_ffi.c
+            ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
+    )
+    target_include_directories(zr_vm_buffer_pool_ffi_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_task_runtime_test
             ${CMAKE_SOURCE_DIR}/tests/task/test_task_runtime.c
             ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
@@ -3750,7 +3758,8 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             zr_vm_container_metadata_test
             zr_vm_container_type_inference_test
             zr_vm_container_temp_value_root_test
-            zr_vm_span_core_test)
+            zr_vm_span_core_test
+            zr_vm_buffer_pool_ffi_test)
         target_include_directories(${container_target} PRIVATE
                 ${CMAKE_SOURCE_DIR}/tests/container
                 ${CMAKE_SOURCE_DIR}/zr_vm_parser/include

@@ -12,6 +12,10 @@ related_code:
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
   - zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c
+  - zr_vm_core/include/zr_vm_core/state.h
+  - zr_vm_core/src/zr_vm_core/closure.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_control.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/include/zr_vm_core/io.h
@@ -38,6 +42,10 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
   - zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c
+  - zr_vm_core/include/zr_vm_core/state.h
+  - zr_vm_core/src/zr_vm_core/closure.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_control.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/include/zr_vm_core/io.h
@@ -54,6 +62,7 @@ implementation_files:
 plan_sources:
   - user: 2026-05-16 struct inline stack storage and memcpy parameter passing
   - user: 2026-05-18 real GC/native entry wiring without claiming full ABI completion
+  - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
   - tests/core/test_type_layout_inline_copy.c
   - tests/core/test_tail_reuse_callinfo_reset.c
@@ -62,6 +71,7 @@ tests:
   - tests/gc/gc_tests.c
   - tests/parser/test_compiler_features.c
   - tests/parser/test_compiler_integration_main.c
+  - tests/parser/test_buffer_pool_ffi.c
   - tests/acceptance/2026-05-16-inline-struct-byte-stack.md
   - tests/acceptance/2026-05-18-inline-frame-gc-native-entry.md
 doc_type: category-index
@@ -72,3 +82,6 @@ doc_type: category-index
 Core runtime documents cover VM stack storage, call-frame data movement, ownership-aware inline values, and low-level execution helpers.
 
 - `inline-type-layout-and-byte-stack.md`: type layout descriptors, POD inline copy, field-aware copy/drop, byte-offset stack copy primitives, struct prototype `layoutByteSize/layoutByteAlign`, function frame byte-layout sidecar metadata, runtime prototype layout resolution, VM pre-call and single-result post-call copy for already-inline payloads, conservative tail-reuse fallback for inline parameters, GC/drop traversal, and real native inline-span dispatch context with stack-relocation refresh and span-only inline parameter access for the inline stack migration.
+- `exception-scope-resource-cleanup.md`: exception-handler checkpoints for `%using`
+  registrations, LIFO close before catch/finally, scratch-safe error arguments, and
+  stack-relocation rules for resource cleanup.

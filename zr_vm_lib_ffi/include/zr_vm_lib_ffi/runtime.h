@@ -28,6 +28,9 @@ TZrBool ZrFfi_Callback_Close(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrFfi_Pointer_As(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrFfi_Pointer_Read(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrFfi_Pointer_Close(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool ZrFfi_Pointer_Span(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool ZrFfi_Pointer_GetItem(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool ZrFfi_Pointer_SetItem(ZrLibCallContext *context, SZrTypeValue *result);
 
 TZrBool ZrFfi_Buffer_Allocate(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrFfi_Buffer_Close(ZrLibCallContext *context, SZrTypeValue *result);

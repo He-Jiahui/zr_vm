@@ -18,6 +18,29 @@ static TZrStackValuePointer execution_resolve_meta_scratch_base(TZrStackValuePoi
                                                                 TZrStackValuePointer requestedScratchBase,
                                                                 const SZrCallInfo *savedCallInfo);
 
+static void execution_close_exception_scope_registrations(
+        SZrState *state,
+        const SZrVmExceptionHandlerState *handlerState) {
+    TZrStackValuePointer boundary;
+
+    if (state == ZR_NULL || handlerState == ZR_NULL) {
+        return;
+    }
+    boundary = ZrCore_Stack_LoadOffsetToPointer(
+            state, handlerState->toBeClosedBoundaryOffset);
+    while (state->toBeClosedValueList.valuePointer > boundary) {
+        TZrStackPointer toBeClosed = state->toBeClosedValueList;
+        ZrCore_Closure_CloseStackValue(state, toBeClosed.valuePointer);
+        if (ZrCore_Closure_CloseRegisteredValues(
+                    state,
+                    1U,
+                    state->currentExceptionStatus,
+                    ZR_FALSE) == 0U) {
+            break;
+        }
+    }
+}
+
 TZrSize close_scope_cleanup_registrations(SZrState *state, TZrSize cleanupCount) {
     TZrSize closedCount = ZR_SCOPE_CLEANUP_CLOSED_COUNT_NONE;
     TZrMemoryOffset savedStackTopOffset;
@@ -280,6 +303,9 @@ TZrBool execution_push_exception_handler(SZrState *state, SZrCallInfo *callInfo,
     handlerState->callInfo = callInfo;
     handlerState->handlerIndex = handlerIndex;
     handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_TRY;
+    handlerState->toBeClosedBoundaryOffset =
+            ZrCore_Stack_SavePointerAsOffset(
+                    state, state->toBeClosedValueList.valuePointer);
     return ZR_TRUE;
 }
 
@@ -509,6 +535,8 @@ TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioC
             }
 
             if (handlerState->phase == ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY) {
+                execution_close_exception_scope_registrations(
+                        state, handlerState);
                 execution_pop_exception_handler(state, handlerState);
                 continue;
             }
@@ -518,6 +546,8 @@ TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioC
                     SZrFunctionCatchClauseInfo *catchInfo =
                             &function->catchClauseList[handlerInfo->catchClauseStartIndex + catchIndex];
                     if (ZrCore_Exception_CatchMatchesTypeName(state, &state->currentException, catchInfo->typeName)) {
+                        execution_close_exception_scope_registrations(
+                                state, handlerState);
                         handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_CATCH;
                         state->threadStatus = ZR_THREAD_STATUS_FINE;
                         return execution_jump_to_instruction_offset(state,
@@ -529,6 +559,8 @@ TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioC
             }
 
             if (handlerInfo->hasFinally) {
+                execution_close_exception_scope_registrations(
+                        state, handlerState);
                 handlerState->phase = ZR_VM_EXCEPTION_HANDLER_PHASE_FINALLY;
                 execution_set_pending_exception(state, callInfo);
                 state->threadStatus = ZR_THREAD_STATUS_FINE;
@@ -538,6 +570,8 @@ TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioC
                                                             handlerInfo->finallyTargetInstructionOffset);
             }
 
+            execution_close_exception_scope_registrations(
+                    state, handlerState);
             execution_pop_exception_handler(state, handlerState);
         }
 

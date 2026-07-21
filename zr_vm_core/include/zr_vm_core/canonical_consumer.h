@@ -28,6 +28,17 @@ typedef struct SZrCanonicalConsumerProjection {
     SZrCanonicalTypeProjection rootType;
 } SZrCanonicalConsumerProjection;
 
+typedef struct SZrCanonicalPublicRefLikeAbiExpectation {
+    TZrMetadataToken typeToken;
+    TZrMetadataToken callableSignatureToken;
+    TZrUInt64 typeRefHash;
+    TZrUInt32 typeFlags;
+    TZrUInt32 layoutVersion;
+    TZrUInt64 layoutHash;
+    TZrUInt32 callableEscapeFlags;
+    EZrArtifactAbiLoweringKind abiLoweringKind;
+} SZrCanonicalPublicRefLikeAbiExpectation;
+
 ZR_CORE_API EZrArtifactStatus ZrCore_CanonicalConsumer_Open(
         const TZrByte *buffer,
         TZrSize bufferLength,
@@ -51,6 +62,11 @@ ZR_CORE_API EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveLayout(
         const SZrCanonicalConsumerProjection *projection,
         TZrMetadataToken typeToken,
         SZrArtifactLayoutRow *outLayout,
+        SZrArtifactDiagnostic *diagnostic);
+
+ZR_CORE_API EZrArtifactStatus ZrCore_CanonicalConsumer_ValidatePublicRefLikeAbi(
+        const SZrCanonicalConsumerProjection *projection,
+        const SZrCanonicalPublicRefLikeAbiExpectation *expected,
         SZrArtifactDiagnostic *diagnostic);
 
 #endif /* ZR_VM_CORE_CANONICAL_CONSUMER_H */

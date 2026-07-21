@@ -14,6 +14,9 @@ related_code:
   - zr_vm_library/src/zr_vm_library/task_runtime.c
   - zr_vm_lib_container/src/zr_vm_lib_container/contiguous_view.c
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
+  - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
@@ -30,6 +33,9 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/task_runtime.c
   - zr_vm_lib_container/src/zr_vm_lib_container/contiguous_view.c
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
+  - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
@@ -49,6 +55,7 @@ tests:
   - tests/thread/test_thread_runtime.c
   - tests/parser/test_span_core.c
   - tests/parser/test_span_semantic_ir_cases.c
+  - tests/parser/test_buffer_pool_ffi.c
   - tests/parser/test_aot_c_value_type_shared_library_smoke.c
   - tests/fixtures/projects/native_numeric_pipeline/src/main.zr
   - tests/fixtures/projects/native_math_export_probe/src/main.zr
@@ -84,13 +91,17 @@ doc_type: category-index
 - `zr-container-contiguous-views.md`
   - `Span<T>` / `ReadOnlySpan<T>` 的 protocol/role、inline representation 与 readonly weakening
   - array/owner/native-pinned source 的 SemIR loan、bounds proof 和 VM/AOT 等价边界
+- `zr-pooling-and-pinned-ffi-views.md`
+  - `BufferPool` / `PoolLease<T>` 的 single-return、generation 和异常清理合同
+  - `BufferHandle.pin()` / `Ptr<u8>.span()` 的显式 pin、延迟释放和 moving-GC 地址稳定边界
 
 ## 阅读顺序
 
 1. 先看 `zr-task-runtime.md`，了解 `TaskRunner/Task/defaultScheduler` 这条新的 builtin 任务抽象。
 2. 再看 `zr-coroutine-runtime.md`，了解 isolate 内建协程调度器和手动 pump 路径。
 3. 接着看 `zr-thread-runtime.md`，了解 worker isolate、`Send/Sync` contract、shared control cell 和 mutex/guard 约束。
-4. 连续内存算法和借用边界看 `zr-container-contiguous-views.md`。
-5. 然后看 `../parser-and-semantics/ffi-extern-declarations.md`，了解 source-level FFI 如何接入 `zr.ffi`。
-6. 再看 `zr-system-submodules.md`，了解本仓库当前的 `zr.system` 结构、叶子 API 和元信息约束。
-7. 调试脚本或宿主嵌入 debug 库时，看 `zr-debug-module.md`。
+4. 连续内存算法和通用借用事实看 `zr-container-contiguous-views.md`。
+5. pool lease 与 pinned native provider 的具体生命周期看 `zr-pooling-and-pinned-ffi-views.md`。
+6. 然后看 `../parser-and-semantics/ffi-extern-declarations.md`，了解 source-level FFI 如何接入 `zr.ffi`。
+7. 再看 `zr-system-submodules.md`，了解本仓库当前的 `zr.system` 结构、叶子 API 和元信息约束。
+8. 调试脚本或宿主嵌入 debug 库时，看 `zr-debug-module.md`。

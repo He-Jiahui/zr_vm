@@ -3325,15 +3325,26 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrSize functionSlot__ = A1(instruction);                                                                      \
         TZrSize expectedReturnCount__ = 1;                                                                             \
         SZrCallInfo *nextCallInfo__;                                                                                   \
+        TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in SUPER_DYN_CALL_NO_ARGS");         \
                                                                                                                        \
-        execution_stage_frame_layout_call_values(state, currentFunction, base, (TZrUInt32)functionSlot__, 0u);        \
-        state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
-        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
-                state, BASE(functionSlot__), expectedReturnCount__, BASE(E(instruction)));                            \
+        nextCallInfo__ = execution_pre_call_frame_layout_generic_single_result(                                        \
+                state,                                                                                                 \
+                callInfo,                                                                                              \
+                currentFunction,                                                                                       \
+                &base,                                                                                                 \
+                (TZrUInt32)functionSlot__,                                                                             \
+                0u,                                                                                                    \
+                E(instruction),                                                                                        \
+                &callWindow__,                                                                                         \
+                profileRuntime,                                                                                        \
+                recordHelpers);                                                                                        \
+        if (callWindow__ == ZR_NULL) {                                                                                 \
+            ZrCore_Debug_RunError(state, "SUPER_DYN_CALL_NO_ARGS: failed to prepare call frame");                   \
+        }                                                                                                              \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
         } else {                                                                                                       \

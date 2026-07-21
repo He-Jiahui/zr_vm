@@ -14,6 +14,7 @@ typedef struct ZrVmLibContainerDebugHotMapLookupStats {
 } ZrVmLibContainerDebugHotMapLookupStats;
 
 ZR_VM_LIB_CONTAINER_API const ZrLibModuleDescriptor *ZrVmLibContainer_GetModuleDescriptor(void);
+ZR_VM_LIB_CONTAINER_API const ZrLibModuleDescriptor *ZrVmLibContainer_GetPoolingModuleDescriptor(void);
 ZR_VM_LIB_CONTAINER_API TZrBool ZrVmLibContainer_Register(SZrGlobalState *global);
 ZR_VM_LIB_CONTAINER_API void ZrVmLibContainer_Debug_ResetHotMapLookupStats(void);
 ZR_VM_LIB_CONTAINER_API ZrVmLibContainerDebugHotMapLookupStats ZrVmLibContainer_Debug_GetHotMapLookupStats(void);

@@ -26,11 +26,13 @@ implementation_files:
 plan_sources:
   - docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md
   - docs/plans/syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md
+  - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
   - tests/parser/test_artifact_schema.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
   - tests/parser/test_reference_callable_consumers.c
   - tests/parser/test_canonical_consumers.c
+  - tests/parser/test_buffer_pool_ffi.c
   - tests/acceptance/2026-07-19-syntax-01-m4-artifact-schema.md
   - tests/acceptance/2026-07-20-syntax-02-m6-artifact-lsp-consumers.md
 doc_type: module-detail
@@ -65,6 +67,12 @@ Known mandatory sections must be understood. Unknown optional sections are bound
 
 The schema defines rows for TypeDef, TypeRef, TypeSpec, MemberDef, PropertyDef, Contract, Layout, and relocation bindings. TypeDef rows carry value/GC/resource/readonly/ref-like/drop flags, value-construction capability, and public constructor token/signature/contract. Layout rows carry version, size, alignment, GC scan kind, ownership-map range, layout hash, and optional StableSlotSource contract hash.
 
+Contract rows also carry a bounded callable escape mask and an ABI lowering kind.
+The encoded slot was reserved in schema v1, so old artifacts decode as `NONE` and
+new readers reject unknown values without changing row width. Current lowering
+kinds distinguish ZR value-frame calls, explicit native marshalling, and native
+direct calls.
+
 ## Stable Signatures
 
 Signature bytes encode canonical structure rather than display spelling. Nodes cover primitive, TypeDef, generic parameter/instance, typed const arguments, array, tuple, union, nullable, function, ref, readonly view, exact owner kind, never, and error types.
@@ -92,6 +100,20 @@ Public identity separates:
 The loader reports a distinct status for every mismatch and records expected/actual hash or version values. Internal header-to-table validation also requires the root TypeRef/TypeSpec token, canonical artifact TypeId, signature token, layout, and contract rows to agree. It never falls back to name-based binding.
 
 Metadata tokens are checked for a nonzero RID and the table required by their row. Member/property accessors, constructor tokens, signature tokens, and relocation targets have independent token-shape checks. Relocation code offsets must point inside the CodeTable.
+
+## Public Ref-Like ABI Validation
+
+`ZrCore_CanonicalConsumer_ValidatePublicRefLikeAbi` is the shared VM/AOT gate for
+a public ref-like signature. Its expectation names an exact TypeRef token and
+hash, exact known type flags, layout version/hash, callable signature token,
+escape flags, and target lowering kind. Resolution is token-based; it never uses
+type or member display names.
+
+ZR value-frame lowering and explicit native marshalling are accepted when every
+field matches. Native direct lowering is rejected for ref-like values even when
+the layout matches, because the ZR representation may contain managed base/offset
+or guard state rather than a platform ABI pointer. Callers must publish and
+consume an explicit marshaller contract before crossing that boundary.
 
 ## Source And Binary Type Projection
 

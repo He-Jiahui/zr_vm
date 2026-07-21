@@ -548,6 +548,14 @@ GCC、Clang、MSVC 的 9 目标、每套 322 项矩阵。
 
 晋级门：GC/池压力下无 use-after-return、double-return 或 stale pointer；native 地址稳定契约通过。
 
+状态：已完成（2026-07-21 13:30 +08:00）。`zr.pooling` 已提供结构化
+`BufferPool` / `PoolLease<T>` single-return 与 generation/reuse 合同；真实 owner/native
+provider 共用 M4 的 Place/loan/view facts，异常展开、moving GC、pin/unpin 和动态调用物理
+frame window 均已闭环。公开 ref-like ABI 由 canonical consumer 精确校验 TypeRef hash、
+type flags、layout version/hash、callable escape flags 和 lowering kind，并拒绝 native direct。
+
+状态记录：[M5 Buffer/pool/FFI integration](./03-struct-ref-struct-span-layout/m5-buffer-pool-ffi.md)。
+
 ## 12. 测试矩阵
 
 ### Construction

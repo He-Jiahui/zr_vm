@@ -6,7 +6,26 @@
 
 #include "zr_vm_lib_ffi/runtime.h"
 
+#include "zr_vm_common/zr_contract_conf.h"
+
 static const ZrLibGenericParameterDescriptor kPointerGenericParameters[] = {{"T", ZR_NULL, ZR_NULL, 0}};
+
+static const ZrLibFieldDescriptor g_pinned_pointer_fields[] = {
+        ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT(
+                "length",
+                "int",
+                "Pinned byte length available to contiguous views.",
+                ZR_MEMBER_CONTRACT_ROLE_INDEX_LENGTH),
+};
+
+static const ZrLibParameterDescriptor g_pointer_index_parameters[] = {
+        {"index", "int", "Zero-based byte index."},
+};
+
+static const ZrLibParameterDescriptor g_pointer_index_value_parameters[] = {
+        {"index", "int", "Zero-based byte index."},
+        {"value", "u8", "Replacement byte value."},
+};
 
 static const ZrLibFunctionDescriptor g_ffi_functions[] = {
         {"loadLibrary", 1, 1, ZrFfi_LoadLibrary, "LibraryHandle",
@@ -53,6 +72,50 @@ static const ZrLibMethodDescriptor g_pointer_methods[] = {
                                       ZR_NULL, 0),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("close", 0, 0, ZrFfi_Pointer_Close, "null",
                                       "Release any ownership held by the pointer handle.", ZR_FALSE, ZR_NULL, 0),
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT(
+                "span",
+                0,
+                0,
+                ZrFfi_Pointer_Span,
+                "Span<u8>",
+                "Borrow the explicitly pinned bytes as a contiguous view.",
+                ZR_FALSE,
+                ZR_NULL,
+                0,
+                ZR_MEMBER_CONTRACT_ROLE_CONTIGUOUS_VIEW_CREATE),
+};
+
+static const ZrLibMethodDescriptor g_ptr_methods[] = {
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT(
+                "span",
+                0,
+                0,
+                ZrFfi_Pointer_Span,
+                "Span<T>",
+                "Borrow the explicitly pinned address as a contiguous view.",
+                ZR_FALSE,
+                ZR_NULL,
+                0,
+                ZR_MEMBER_CONTRACT_ROLE_CONTIGUOUS_VIEW_CREATE),
+};
+
+static const ZrLibMetaMethodDescriptor g_pointer_meta_methods[] = {
+        {.metaType = ZR_META_GET_ITEM,
+         .minArgumentCount = 1u,
+         .maxArgumentCount = 1u,
+         .callback = ZrFfi_Pointer_GetItem,
+         .returnTypeName = "u8",
+         .documentation = "Read a pinned byte.",
+         .parameters = g_pointer_index_parameters,
+         .parameterCount = ZR_ARRAY_COUNT(g_pointer_index_parameters)},
+        {.metaType = ZR_META_SET_ITEM,
+         .minArgumentCount = 2u,
+         .maxArgumentCount = 2u,
+         .callback = ZrFfi_Pointer_SetItem,
+         .returnTypeName = "null",
+         .documentation = "Write a pinned byte.",
+         .parameters = g_pointer_index_value_parameters,
+         .parameterCount = ZR_ARRAY_COUNT(g_pointer_index_value_parameters)},
 };
 
 static const ZrLibMethodDescriptor g_buffer_methods[] = {
@@ -85,28 +148,64 @@ static const ZrLibTypeDescriptor g_ffi_types[] = {
                                     "C-callable callback trampoline rooted in the zr VM.", ZR_NULL, ZR_NULL, 0,
                                     ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_TRUE,
                                     "CallbackHandle(signature: object, fn: function)", ZR_NULL, 0),
-        ZR_LIB_TYPE_DESCRIPTOR_FFI_INIT("PointerHandle", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_pointer_methods,
-                                        ZR_ARRAY_COUNT(g_pointer_methods), ZR_NULL, 0,
-                                        "Typed pointer wrapper for native addresses.", ZR_NULL, ZR_NULL, 0, ZR_NULL,
-                                        0, ZR_NULL, ZR_FALSE, ZR_TRUE, "PointerHandle(type: object)", ZR_NULL, 0,
-                                        "pointer", ZR_NULL, ZR_NULL, "borrowed", ZR_NULL),
+        {.name = "PointerHandle",
+         .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+         .fields = g_pinned_pointer_fields,
+         .fieldCount = ZR_ARRAY_COUNT(g_pinned_pointer_fields),
+         .methods = g_pointer_methods,
+         .methodCount = ZR_ARRAY_COUNT(g_pointer_methods),
+         .metaMethods = g_pointer_meta_methods,
+         .metaMethodCount = ZR_ARRAY_COUNT(g_pointer_meta_methods),
+         .documentation = "Typed pointer wrapper for native addresses.",
+         .allowBoxedConstruction = ZR_TRUE,
+         .constructorSignature = "PointerHandle(type: object)",
+         .protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_SOURCE_NATIVE_PINNED),
+         .ffiLoweringKind = "pointer",
+         .ffiOwnerMode = "borrowed"},
         ZR_LIB_TYPE_DESCRIPTOR_FFI_INIT("BufferHandle", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_buffer_methods,
                                         ZR_ARRAY_COUNT(g_buffer_methods), ZR_NULL, 0,
                                         "Managed native byte buffer with pin support.", ZR_NULL, ZR_NULL, 0, ZR_NULL,
                                         0, ZR_NULL, ZR_FALSE, ZR_TRUE, "BufferHandle(size: int)", ZR_NULL, 0,
                                         "pointer", ZR_NULL, ZR_NULL, "owned", ZR_NULL),
-        ZR_LIB_TYPE_DESCRIPTOR_INIT("Ptr", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, 0,
-                                    "Semantic pointer family for ABI-aware FFI handles.", "PointerHandle", ZR_NULL, 0,
-                                    ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, kPointerGenericParameters,
-                                    ZR_ARRAY_COUNT(kPointerGenericParameters)),
-        ZR_LIB_TYPE_DESCRIPTOR_INIT("Ptr32", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, 0,
-                                    "32-bit semantic pointer family for ABI-aware FFI handles.", "PointerHandle",
-                                    ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL,
-                                    kPointerGenericParameters, ZR_ARRAY_COUNT(kPointerGenericParameters)),
-        ZR_LIB_TYPE_DESCRIPTOR_INIT("Ptr64", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, 0,
-                                    "64-bit semantic pointer family for ABI-aware FFI handles.", "PointerHandle",
-                                    ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL,
-                                    kPointerGenericParameters, ZR_ARRAY_COUNT(kPointerGenericParameters)),
+        {.name = "Ptr",
+         .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+         .fields = g_pinned_pointer_fields,
+         .fieldCount = ZR_ARRAY_COUNT(g_pinned_pointer_fields),
+         .methods = g_ptr_methods,
+         .methodCount = ZR_ARRAY_COUNT(g_ptr_methods),
+         .documentation = "Semantic pointer family for ABI-aware FFI handles.",
+         .extendsTypeName = "PointerHandle",
+         .genericParameters = kPointerGenericParameters,
+         .genericParameterCount = ZR_ARRAY_COUNT(kPointerGenericParameters),
+         .protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_SOURCE_NATIVE_PINNED),
+         .ffiLoweringKind = "pointer",
+         .ffiOwnerMode = "borrowed"},
+        {.name = "Ptr32",
+         .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+         .fields = g_pinned_pointer_fields,
+         .fieldCount = ZR_ARRAY_COUNT(g_pinned_pointer_fields),
+         .methods = g_ptr_methods,
+         .methodCount = ZR_ARRAY_COUNT(g_ptr_methods),
+         .documentation = "32-bit semantic pointer family for ABI-aware FFI handles.",
+         .extendsTypeName = "PointerHandle",
+         .genericParameters = kPointerGenericParameters,
+         .genericParameterCount = ZR_ARRAY_COUNT(kPointerGenericParameters),
+         .protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_SOURCE_NATIVE_PINNED),
+         .ffiLoweringKind = "pointer",
+         .ffiOwnerMode = "borrowed"},
+        {.name = "Ptr64",
+         .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+         .fields = g_pinned_pointer_fields,
+         .fieldCount = ZR_ARRAY_COUNT(g_pinned_pointer_fields),
+         .methods = g_ptr_methods,
+         .methodCount = ZR_ARRAY_COUNT(g_ptr_methods),
+         .documentation = "64-bit semantic pointer family for ABI-aware FFI handles.",
+         .extendsTypeName = "PointerHandle",
+         .genericParameters = kPointerGenericParameters,
+         .genericParameterCount = ZR_ARRAY_COUNT(kPointerGenericParameters),
+         .protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_SOURCE_NATIVE_PINNED),
+         .ffiLoweringKind = "pointer",
+         .ffiOwnerMode = "borrowed"},
         ZR_LIB_TYPE_DESCRIPTOR_INIT("Char", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, 0,
                                     "Single-byte ABI character wrapper used by FFI metadata.", ZR_NULL, ZR_NULL, 0,
                                     ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0),
@@ -159,25 +258,28 @@ static const TZrChar g_ffi_type_hints_json[] =
         "  ]\n"
         "}\n";
 
+static const ZrLibModuleLinkDescriptor g_ffi_module_links[] = {
+        {"container", "zr.container", "Explicit pinned Span contracts."},
+};
+
 static const ZrLibModuleDescriptor g_ffi_module_descriptor = {
-        ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
-        "zr.ffi",
-        ZR_NULL,
-        0,
-        g_ffi_functions,
-        ZR_ARRAY_COUNT(g_ffi_functions),
-        g_ffi_types,
-        ZR_ARRAY_COUNT(g_ffi_types),
-        g_ffi_hints,
-        ZR_ARRAY_COUNT(g_ffi_hints),
-        g_ffi_type_hints_json,
-        "General-purpose foreign-function interface backed by libffi when available.",
-        ZR_NULL,
-        0,
-        "1.0.0",
-        ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
-        (TZrUInt64) (ZR_LIB_MODULE_CAPABILITY_TYPE_HINTS | ZR_LIB_MODULE_CAPABILITY_TYPE_METADATA |
-                     ZR_LIB_MODULE_CAPABILITY_SAFE_CALL_HELPERS | ZR_LIB_MODULE_CAPABILITY_FFI_RUNTIME),
+        .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
+        .moduleName = "zr.ffi",
+        .functions = g_ffi_functions,
+        .functionCount = ZR_ARRAY_COUNT(g_ffi_functions),
+        .types = g_ffi_types,
+        .typeCount = ZR_ARRAY_COUNT(g_ffi_types),
+        .typeHints = g_ffi_hints,
+        .typeHintCount = ZR_ARRAY_COUNT(g_ffi_hints),
+        .typeHintsJson = g_ffi_type_hints_json,
+        .documentation = "General-purpose foreign-function interface backed by libffi when available.",
+        .moduleLinks = g_ffi_module_links,
+        .moduleLinkCount = ZR_ARRAY_COUNT(g_ffi_module_links),
+        .moduleVersion = "1.0.0",
+        .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
+        .requiredCapabilities =
+                (TZrUInt64) (ZR_LIB_MODULE_CAPABILITY_TYPE_HINTS | ZR_LIB_MODULE_CAPABILITY_TYPE_METADATA |
+                             ZR_LIB_MODULE_CAPABILITY_SAFE_CALL_HELPERS | ZR_LIB_MODULE_CAPABILITY_FFI_RUNTIME),
 };
 
 const ZrLibModuleDescriptor *ZrVmLibFfiRuntime_GetModuleDescriptor(void) { return &g_ffi_module_descriptor; }

@@ -411,12 +411,6 @@ TZrBool compiler_semantic_ir_record_contiguous_view(
         startSlot == ZR_PARSER_SLOT_NONE || lengthSlot == ZR_PARSER_SLOT_NONE) {
         return ZR_FALSE;
     }
-    view = compiler_semantic_ir_materialize_slot(cs, viewSlot, sourceRange);
-    start = compiler_semantic_ir_materialize_slot(cs, startSlot, sourceRange);
-    length = compiler_semantic_ir_materialize_slot(cs, lengthSlot, sourceRange);
-    if (view == ZR_NULL || start == ZR_NULL || length == ZR_NULL) {
-        return ZR_FALSE;
-    }
     if (sourceKind == ZR_SEMANTIC_CONTIGUOUS_SOURCE_OWNER ||
         sourceKind == ZR_SEMANTIC_CONTIGUOUS_SOURCE_NATIVE_PINNED) {
         for (TZrSize index = cs->preSemanticIr.contiguousViewFacts.length;
@@ -444,6 +438,14 @@ TZrBool compiler_semantic_ir_record_contiguous_view(
                 return ZR_FALSE;
             }
         }
+    }
+
+    view = compiler_semantic_ir_add_temporary_slot(
+            cs, viewSlot, sourceRange);
+    start = compiler_semantic_ir_materialize_slot(cs, startSlot, sourceRange);
+    length = compiler_semantic_ir_materialize_slot(cs, lengthSlot, sourceRange);
+    if (view == ZR_NULL || start == ZR_NULL || length == ZR_NULL) {
+        return ZR_FALSE;
     }
 
     memset(&fact, 0, sizeof(fact));
@@ -532,7 +534,8 @@ static TZrBool compiler_semantic_ir_propagate_contiguous_view(
         SZrCompilerState *cs,
         TZrUInt32 destinationSlot,
         TZrUInt32 sourceSlot,
-        SZrFileRange sourceRange) {
+        SZrFileRange sourceRange,
+        TZrBool destinationIsFreshValue) {
     const SZrSemanticContiguousViewFact *sourceFact;
     SZrCompilerSemanticIrSlot *destination;
     SZrSemanticContiguousViewFact copiedFact;
@@ -542,8 +545,11 @@ static TZrBool compiler_semantic_ir_propagate_contiguous_view(
     if (sourceFact == ZR_NULL) {
         return ZR_TRUE;
     }
-    destination = compiler_semantic_ir_materialize_slot(
-            cs, destinationSlot, sourceRange);
+    destination = destinationIsFreshValue
+                          ? compiler_semantic_ir_add_temporary_slot(
+                                    cs, destinationSlot, sourceRange)
+                          : compiler_semantic_ir_materialize_slot(
+                                    cs, destinationSlot, sourceRange);
     if (destination == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1158,7 +1164,11 @@ TZrBool compiler_semantic_ir_lower_load(SZrCompilerState *cs,
         return ZR_FALSE;
     }
     if (!compiler_semantic_ir_propagate_contiguous_view(
-                cs, resultSlot, stackSlot, sourceRange)) {
+                cs,
+                resultSlot,
+                stackSlot,
+                sourceRange,
+                ZR_TRUE)) {
         return ZR_FALSE;
     }
     emit_instruction(
@@ -1181,7 +1191,11 @@ TZrBool compiler_semantic_ir_lower_store(SZrCompilerState *cs,
         return ZR_FALSE;
     }
     if (!compiler_semantic_ir_propagate_contiguous_view(
-                cs, stackSlot, valueSlot, sourceRange)) {
+                cs,
+                stackSlot,
+                valueSlot,
+                sourceRange,
+                ZR_FALSE)) {
         return ZR_FALSE;
     }
     instruction = compiler_semantic_ir_last_instruction(cs);

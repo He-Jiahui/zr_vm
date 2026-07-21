@@ -22,6 +22,7 @@ compiler_contiguous_view_lower_member_call(
         const SZrTypeMemberInfo *memberInfo,
         SZrString *receiverTypeName,
         TZrUInt32 receiverSlot,
+        TZrPlaceId receiverPlaceId,
         TZrUInt32 argumentStartSlot,
         TZrUInt32 argumentCount,
         const SZrAstNodeArray *argumentNodes,

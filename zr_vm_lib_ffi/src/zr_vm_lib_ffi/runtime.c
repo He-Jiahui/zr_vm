@@ -1,5 +1,18 @@
 #include "ffi_runtime/ffi_runtime_internal.h"
 
+static void zr_ffi_pointer_set_length_field(
+        SZrState *state,
+        SZrObject *pointerObject,
+        TZrSize byteLength) {
+    SZrTypeValue lengthValue;
+
+    if (state == ZR_NULL || pointerObject == ZR_NULL) {
+        return;
+    }
+    ZrLib_Value_SetInt(state, &lengthValue, (TZrInt64)byteLength);
+    ZrLib_Object_SetFieldCString(state, pointerObject, "length", &lengthValue);
+}
+
 TZrBool ZrFfi_LoadLibrary(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrString *pathString = ZR_NULL;
     const char *pathText = ZR_NULL;
@@ -246,6 +259,7 @@ TZrBool ZrFfi_NullPointer(ZrLibCallContext *context, SZrTypeValue *result) {
         zr_ffi_raise_error(context->state, ZR_FFI_ERROR_MARSHAL, "failed to instantiate PointerHandle");
         return ZR_FALSE;
     }
+    zr_ffi_pointer_set_length_field(context->state, pointerObject, 0u);
     ZrLib_Value_SetObject(context->state, result, pointerObject, ZR_VALUE_TYPE_OBJECT);
     return ZR_TRUE;
 }
@@ -326,6 +340,8 @@ TZrBool ZrFfi_Pointer_Close(ZrLibCallContext *context, SZrTypeValue *result) {
     if (!pointerData->closed) {
         pointerData->closed = ZR_TRUE;
         pointerData->address = ZR_NULL;
+        pointerData->byteLength = 0u;
+        zr_ffi_pointer_set_length_field(context->state, selfObject, 0u);
         zr_ffi_pointer_release_owner(context->state, selfObject);
     }
     ZrLib_Value_SetNull(result);
@@ -339,6 +355,7 @@ TZrBool ZrFfi_Pointer_As(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrFfiPointerData *newPointerData;
     SZrObject *pointerObject;
     const SZrTypeValue *ownerValue;
+    ZrFfiBufferData *ownerBufferData = ZR_NULL;
     char errorBuffer[ZR_FFI_ERROR_BUFFER_LENGTH] = {0};
 
     if (selfObject == ZR_NULL || pointerData == ZR_NULL || pointerData->base.kind != ZR_FFI_HANDLE_POINTER) {
@@ -367,6 +384,7 @@ TZrBool ZrFfi_Pointer_As(ZrLibCallContext *context, SZrTypeValue *result) {
     }
     newPointerData->base.kind = ZR_FFI_HANDLE_POINTER;
     newPointerData->address = pointerData->address;
+    newPointerData->byteLength = pointerData->byteLength;
     newPointerData->type = newType;
     ownerValue = zr_ffi_find_field_raw(context->state, selfObject, ZR_FFI_HIDDEN_OWNER_FIELD);
     if (ownerValue != ZR_NULL && ownerValue->type == ZR_VALUE_TYPE_OBJECT && ownerValue->value.object != ZR_NULL) {
@@ -374,16 +392,22 @@ TZrBool ZrFfi_Pointer_As(ZrLibCallContext *context, SZrTypeValue *result) {
         ZrFfiBufferData *bufferData = (ZrFfiBufferData *) zr_ffi_get_handle_data(context->state, ownerObject);
         if (bufferData != ZR_NULL && bufferData->base.kind == ZR_FFI_HANDLE_BUFFER) {
             bufferData->pinCount++;
+            ownerBufferData = bufferData;
         }
     }
     pointerObject = zr_ffi_new_handle_object_with_finalizer(context->state, "PointerHandle", &newPointerData->base,
                                                             ownerValue, ZR_NULL);
     if (pointerObject == ZR_NULL) {
+        if (ownerBufferData != ZR_NULL && ownerBufferData->pinCount > 0u) {
+            ownerBufferData->pinCount--;
+        }
         zr_ffi_destroy_type(newType);
         free(newPointerData);
         zr_ffi_raise_error(context->state, ZR_FFI_ERROR_MARSHAL, "failed to instantiate PointerHandle");
         return ZR_FALSE;
     }
+    zr_ffi_pointer_set_length_field(
+            context->state, pointerObject, newPointerData->byteLength);
     ZrLib_Value_SetObject(context->state, result, pointerObject, ZR_VALUE_TYPE_OBJECT);
     return ZR_TRUE;
 }
@@ -480,6 +504,14 @@ TZrBool ZrFfi_Buffer_Pin(ZrLibCallContext *context, SZrTypeValue *result) {
     if (selfObject == ZR_NULL || bufferData == ZR_NULL || bufferData->base.kind != ZR_FFI_HANDLE_BUFFER) {
         return ZR_FALSE;
     }
+    if (bufferData->closeRequested ||
+        (bufferData->size > 0u && bufferData->bytes == ZR_NULL)) {
+        zr_ffi_raise_error(
+                context->state,
+                ZR_FFI_ERROR_NATIVE_CALL,
+                "cannot pin a closed buffer handle");
+        return ZR_FALSE;
+    }
     u8Type = zr_ffi_make_primitive_type("u8");
     pointerType = zr_ffi_pointer_type_from_target(u8Type);
     zr_ffi_destroy_type(u8Type);
@@ -496,6 +528,7 @@ TZrBool ZrFfi_Buffer_Pin(ZrLibCallContext *context, SZrTypeValue *result) {
     }
     pointerData->base.kind = ZR_FFI_HANDLE_POINTER;
     pointerData->address = bufferData->bytes;
+    pointerData->byteLength = bufferData->size;
     pointerData->type = pointerType;
     bufferData->pinCount++;
     ZrLib_Value_SetObject(context->state, &ownerValue, selfObject, ZR_VALUE_TYPE_OBJECT);
@@ -508,6 +541,8 @@ TZrBool ZrFfi_Buffer_Pin(ZrLibCallContext *context, SZrTypeValue *result) {
         zr_ffi_raise_error(context->state, ZR_FFI_ERROR_MARSHAL, "failed to instantiate PointerHandle");
         return ZR_FALSE;
     }
+    zr_ffi_pointer_set_length_field(
+            context->state, pointerObject, pointerData->byteLength);
     ZrLib_Value_SetObject(context->state, result, pointerObject, ZR_VALUE_TYPE_OBJECT);
     return ZR_TRUE;
 }

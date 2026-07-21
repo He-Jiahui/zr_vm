@@ -365,17 +365,29 @@ static TZrBool closure_value_check_close_meta(struct SZrState *state, TZrStackVa
     return meta != ZR_NULL;
 }
 
-static void closure_value_call_close_meta(SZrState *state, SZrTypeValue *value, SZrTypeValue *error, TZrBool isYield) {
+static void closure_value_call_close_meta(SZrState *state,
+                                          TZrStackPointer stackPointer,
+                                          EZrThreadStatus errorStatus,
+                                          TZrBool isYield) {
     TZrStackPointer top = state->stackTop;
     SZrCallInfo *callInfo = state->callInfoList;
+    TZrMemoryOffset valueOffset = ZrCore_Stack_SavePointerAsOffset(
+            state, stackPointer.valuePointer);
+    SZrTypeValue *value = ZrCore_Stack_GetValue(stackPointer.valuePointer);
     const SZrMeta *meta = ZrCore_Value_GetMeta(state, value, ZR_META_CLOSE);
     if (meta == ZR_NULL || meta->function == ZR_NULL) {
         return;
     }
     top.valuePointer = ZrCore_Function_ReserveScratchSlots(state, 3, top.valuePointer);
+    stackPointer.valuePointer = ZrCore_Stack_LoadOffsetToPointer(state, valueOffset);
+    value = ZrCore_Stack_GetValue(stackPointer.valuePointer);
     ZrCore_Stack_SetRawObjectValue(state, top.valuePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
     ZrCore_Stack_CopyValue(state, top.valuePointer + 1, value);
-    ZrCore_Stack_CopyValue(state, top.valuePointer + 2, error);
+    if (errorStatus == ZR_THREAD_STATUS_INVALID) {
+        ZrCore_Stack_CopyValue(state, top.valuePointer + 2, &state->global->nullValue);
+    } else {
+        ZrCore_Exception_MarkError(state, errorStatus, top.valuePointer + 2);
+    }
     state->stackTop.valuePointer = top.valuePointer + 3;
     if (callInfo != ZR_NULL && callInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
         callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
@@ -389,15 +401,7 @@ static void closure_value_call_close_meta(SZrState *state, SZrTypeValue *value, 
 
 static void closure_value_pre_call_close_meta(SZrState *state, TZrStackPointer stackPointer, EZrThreadStatus errorStatus,
                                            TZrBool isYield) {
-    SZrTypeValue *value = ZrCore_Stack_GetValue(stackPointer.valuePointer);
-    SZrTypeValue *error = ZR_NULL;
-    if (errorStatus == ZR_THREAD_STATUS_INVALID) {
-        error = &state->global->nullValue;
-    } else {
-        error = ZrCore_Stack_GetValue(stackPointer.valuePointer + 1);
-        ZrCore_Exception_MarkError(state, errorStatus, stackPointer.valuePointer + 1);
-    }
-    closure_value_call_close_meta(state, value, error, isYield);
+    closure_value_call_close_meta(state, stackPointer, errorStatus, isYield);
 }
 
 

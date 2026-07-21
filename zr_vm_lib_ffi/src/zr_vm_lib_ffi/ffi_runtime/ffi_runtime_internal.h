@@ -210,6 +210,7 @@ typedef struct ZrFfiCallbackData {
 typedef struct ZrFfiPointerData {
     ZrFfiHandleData base;
     unsigned char *address;
+    TZrSize byteLength;
     ZrFfiTypeLayout *type;
     TZrBool closed;
 } ZrFfiPointerData;

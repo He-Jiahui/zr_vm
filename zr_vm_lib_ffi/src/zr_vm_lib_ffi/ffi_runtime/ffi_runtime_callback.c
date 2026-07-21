@@ -498,7 +498,9 @@ void zr_ffi_handle_finalize(SZrState *state, SZrRawObject *rawObject) {
         }
         case ZR_FFI_HANDLE_POINTER: {
             ZrFfiPointerData *pointerData = (ZrFfiPointerData *) handleData;
-            zr_ffi_pointer_release_owner(state, object);
+            if (!pointerData->closed) {
+                zr_ffi_pointer_release_owner(state, object);
+            }
             zr_ffi_destroy_type(pointerData->type);
             free(pointerData);
             break;
