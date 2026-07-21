@@ -64,6 +64,10 @@ const conditionalAlternateDocumentUri =
     'file:///zr-diagnostic-conditional-alternate-fix-smoke.zr';
 const conditionalWithoutAlternateDocumentUri =
     'file:///zr-diagnostic-conditional-without-alternate-fix-smoke.zr';
+const arrayElementSeparatorDocumentUri =
+    'file:///zr-diagnostic-array-element-separator-fix-smoke.zr';
+const arrayElementAssignmentDocumentUri =
+    'file:///zr-diagnostic-array-element-assignment-fix-smoke.zr';
 const documentText = [
     'func choose(flag: bool): int {',
     '    var seed: int;',
@@ -93,6 +97,8 @@ const conditionalColonDocumentText = 'return true ? 1 2;';
 const conditionalConsequentDocumentText = 'return true ? : 2;';
 const conditionalAlternateDocumentText = 'return true ? 1 : ;';
 const conditionalWithoutAlternateDocumentText = 'return true ? 1;';
+const arrayElementSeparatorDocumentText = 'return [1 2];';
+const arrayElementAssignmentDocumentText = 'return [value = 1];';
 
 const payload = Buffer.concat([
     createMessage({
@@ -565,7 +571,57 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: conditionalWithoutAlternateDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 30, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: arrayElementSeparatorDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: arrayElementSeparatorDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 30,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: arrayElementSeparatorDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didChange',
+        params: {
+            textDocument: { uri: arrayElementSeparatorDocumentUri, version: 2 },
+            contentChanges: [{ text: 'return [1, 2];' }],
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 31,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: arrayElementSeparatorDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: arrayElementAssignmentDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: arrayElementAssignmentDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 32,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: arrayElementAssignmentDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 33, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -1164,3 +1220,69 @@ for (const [uri, code] of [
         branchDiagnostic.data.fixes.length === 0,
         `Expected ${code} to publish no machine-applicable punctuation fix`);
 }
+
+const arrayElementSeparatorPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === arrayElementSeparatorDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'missing_array_element_separator'));
+assert(arrayElementSeparatorPublication,
+    'Expected missing_array_element_separator publication');
+
+const arrayElementSeparatorDiagnostic =
+    arrayElementSeparatorPublication.params.diagnostics.find((entry) =>
+        entry.code === 'missing_array_element_separator');
+assert(arrayElementSeparatorDiagnostic.range.start.line === 0 &&
+    arrayElementSeparatorDiagnostic.range.start.character === 10 &&
+    arrayElementSeparatorDiagnostic.range.end.line === 0 &&
+    arrayElementSeparatorDiagnostic.range.end.character === 11,
+    'Expected the array-element-separator primary range on the next element');
+assert(arrayElementSeparatorDiagnostic.data &&
+    Array.isArray(arrayElementSeparatorDiagnostic.data.fixes) &&
+    arrayElementSeparatorDiagnostic.data.fixes.length === 1,
+    'Expected one serialized array-element-separator diagnostic fix');
+
+const arrayElementSeparatorFix =
+    arrayElementSeparatorDiagnostic.data.fixes[0];
+assert(arrayElementSeparatorFix.title === "Insert missing ','" &&
+    arrayElementSeparatorFix.applicability === 1 &&
+    arrayElementSeparatorFix.edit &&
+    arrayElementSeparatorFix.edit.newText === ',',
+    'Expected a machine-applicable serialized array-element-separator edit');
+assert(arrayElementSeparatorFix.edit.range.start.line === 0 &&
+    arrayElementSeparatorFix.edit.range.start.character === 10 &&
+    arrayElementSeparatorFix.edit.range.end.line === 0 &&
+    arrayElementSeparatorFix.edit.range.end.character === 10,
+    'Expected the array-element-separator edit before the next element');
+
+const fixedArrayElementSeparatorPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === arrayElementSeparatorDocumentUri &&
+    message.params.version === 2 &&
+    Array.isArray(message.params.diagnostics));
+assert(fixedArrayElementSeparatorPublication &&
+    !fixedArrayElementSeparatorPublication.params.diagnostics.some((entry) =>
+        entry.code === 'missing_array_element_separator'),
+    'Expected the applied array-element-separator fix to clear the diagnostic');
+
+const arrayElementAssignmentPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === arrayElementAssignmentDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'array_element_assignment'));
+assert(arrayElementAssignmentPublication,
+    'Expected array_element_assignment publication');
+const arrayElementAssignmentDiagnostic =
+    arrayElementAssignmentPublication.params.diagnostics.find((entry) =>
+        entry.code === 'array_element_assignment');
+assert(!arrayElementAssignmentDiagnostic.data ||
+    !Array.isArray(arrayElementAssignmentDiagnostic.data.fixes) ||
+    arrayElementAssignmentDiagnostic.data.fixes.length === 0,
+    'Expected array_element_assignment to publish no machine-applicable fix');

@@ -718,6 +718,8 @@ RED：新增 `func pick(value: int: int { return value; }` 的 focused parser-di
 
 同日 conditional-colon safe-fix follow-up让`return true ? 1 2;`保留`?` token primary，并在alternate token `2`起点发布零宽`:` machine fix。Parser复用既有expression-start判定传递`hasAlternateExpression`，因此`return true ? 1;`仍报告`missing_conditional_colon`但不发布只插入冒号的无效action；missing consequent/alternate同样无machine fix。Code action与stdio JSON继续只投影structured fix，version 2应用冒号后清除诊断；GCC、Clang、MSVC十八目标矩阵和两套stdio smoke均通过，其他delimiter/replacement与L3整体仍未完成。
 
+同日 array element-separator safe-fix follow-up让`return [1 2];`保留next-element token primary，并在其起点发布规范零宽`,` machine fix。Producer仍只在current token可开始下一元素时报告，code action与stdio JSON只投影structured fix；`return [value = 1];`的`array_element_assignment`不发布标点fix。Version 2应用逗号后清除`missing_array_element_separator`；GCC、Clang、MSVC十八目标矩阵和两套stdio smoke均通过，其他delimiter/replacement与L3整体仍未完成。
+
 2026-06-07 parser/LSP class method parameter-list close diagnostic 聚焦验证：
 
 ```powershell

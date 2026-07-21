@@ -64,5 +64,6 @@
 - [Object property-colon safe-fix convergence](./02-diagnostics/2026-07-21-object-property-colon-safe-fix-convergence.md)
 - [Object property-separator safe-fix convergence](./02-diagnostics/2026-07-21-object-property-separator-safe-fix-convergence.md)
 - [Conditional-colon safe-fix convergence](./02-diagnostics/2026-07-21-conditional-colon-safe-fix-convergence.md)
+- [Array element-separator safe-fix convergence](./02-diagnostics/2026-07-21-array-element-separator-safe-fix-convergence.md)
 
-这些记录只对应L1/L2/L3/L6的部分历史能力；source-file rename、普通`textDocument/rename`和当前code action已共享workspace-edit snapshot重校验，code action还在resolve时拒绝stale edit；semicolon、condition-close、index-close、parameter-list-close、call-close、group-close、array-close、object-close、object-computed-key-close、object-property-colon、reachable object-property-separator与conditional-colon local insertion已完成structured fact到apply-edit-rebind闭环，但其他delimiter family/replacement、其他diagnostic fix producer、并发race/cancellation、性能与峰值内存报告仍缺失，不改变L3整体、L4-L8及完整L6状态。
+这些记录只对应L1/L2/L3/L6的部分历史能力；source-file rename、普通`textDocument/rename`和当前code action已共享workspace-edit snapshot重校验，code action还在resolve时拒绝stale edit；semicolon、condition-close、index-close、parameter-list-close、call-close、group-close、array-close、array-element-separator、object-close、object-computed-key-close、object-property-colon、reachable object-property-separator与conditional-colon local insertion已完成structured fact到apply-edit-rebind闭环，但其他delimiter family/replacement、其他diagnostic fix producer、并发race/cancellation、性能与峰值内存报告仍缺失，不改变L3整体、L4-L8及完整L6状态。

@@ -70,6 +70,8 @@ parser recovery产生poisoned/unknown facts并限制级联；后续diagnostic标
 
 [2026-07-21 conditional-colon safe-fix convergence](./02-diagnostics/2026-07-21-conditional-colon-safe-fix-convergence.md) 完成`missing_conditional_colon`保留`?` token primary，并仅在current token可开始alternate expression时发布精确`:` machine fix；`return true ? 1;`与missing consequent/alternate不发布无效fix，通用LSP/stdio consumer不按conditional AST/code/message/source重建。其他delimiter family、replacement、registry全覆盖和L3整体仍未完成。
 
+[2026-07-21 array element-separator safe-fix convergence](./02-diagnostics/2026-07-21-array-element-separator-safe-fix-convergence.md) 完成`missing_array_element_separator`保留next-element token primary并在同token起点发布规范`,` machine fix；`array_element_assignment`保持无fix，通用LSP/stdio consumer不按array AST/code/message/source重建。其他delimiter family、replacement、registry全覆盖和L3整体仍未完成。
+
 ## Diagnostic Registry 与验收
 
 每个diagnostic registry entry必须声明：stable code、message id/arguments、severity、producing fact/query、primary role、related role集合、suppression/recovery policy和允许的fix applicability。协议层不得从英文message反推code。

@@ -2134,6 +2134,10 @@ int main(void) {
     test_lsp_code_action_inserts_missing_call_close(state, &failures);
     test_lsp_code_action_inserts_missing_group_close(state, &failures);
     test_lsp_code_action_inserts_missing_array_close(state, &failures);
+    test_lsp_code_action_inserts_missing_array_element_separator(
+            state, &failures);
+    test_lsp_code_action_skips_array_element_assignment_fix(
+            state, &failures);
     test_lsp_code_action_inserts_missing_object_close(state, &failures);
     test_lsp_code_action_inserts_missing_object_computed_key_close(
             state, &failures);
