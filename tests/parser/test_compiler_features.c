@@ -1912,7 +1912,7 @@ void test_using_owner_generic_emits_release_cleanup(void) {
 
         TZrInt64 result = 0;
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
-        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to execute using owner generic cleanup source");
@@ -2024,7 +2024,7 @@ void test_using_owner_generic_release_runs_before_return(void) {
         TEST_ASSERT_TRUE(function_opcode_appears_before(func,
                                                         ZR_INSTRUCTION_ENUM(OWN_RELEASE),
                                                         ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)));
-        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to execute using owner generic return cleanup source");
@@ -2089,7 +2089,7 @@ void test_using_owner_generic_release_runs_before_break(void) {
 
         TZrInt64 result = 0;
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
-        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to execute using owner generic break cleanup source");
@@ -2149,7 +2149,7 @@ void test_using_borrow_generic_emits_end_borrow_cleanup(void) {
 
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
-        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
 
         ZrCore_Function_Free(state, func);
     }
@@ -2200,7 +2200,7 @@ void test_using_borrow_generic_end_borrow_runs_before_return(void) {
         TEST_ASSERT_TRUE(function_opcode_appears_before(func,
                                                         ZR_INSTRUCTION_ENUM(OWN_RELEASE),
                                                         ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)));
-        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
 
         ZrCore_Function_Free(state, func);
     }
@@ -2247,7 +2247,7 @@ void test_using_loan_generic_returns_loan_to_source_on_scope_exit(void) {
         TZrInt64 result = 0;
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
-        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to execute using loan generic cleanup source");
@@ -2304,7 +2304,7 @@ void test_using_loan_generic_returns_loan_before_break(void) {
         TZrInt64 result = 0;
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
-        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to execute using loan generic break cleanup source");
@@ -4074,12 +4074,12 @@ void test_ownership_generic_real_fixture_executes_session_lifecycle(void) {
 
 void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Weak Runtime Expires To Null After Last Shared Release";
+    const char *testSummary = "Ownership Weak Runtime Upgrade Is Empty After Last Shared Release";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Ownership runtime weak expiration",
-              "Testing that %weak(owner) becomes null after the last %shared owner is overwritten with null");
+              "Testing that a stable Weak handle remains present while upgrade returns empty after the last Shared owner is released");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -4094,8 +4094,9 @@ void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void)
             "var seed = %unique new Box();\n"
             "var owner = %shared(seed);\n"
             "var watcher = %weak(owner);\n"
-            "owner = null;\n"
-            "if (watcher == null) {\n"
+            "drop(owner);\n"
+            "var after = %upgrade(watcher);\n"
+            "if (after == null) {\n"
             "    return 1;\n"
             "}\n"
             "return 0;\n";
@@ -4122,7 +4123,7 @@ void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void)
         }
         if (result != 1) {
             timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Weak owner did not expire after last shared release");
+            ZR_TEST_FAIL(timer, testSummary, "Weak owner did not remain stable with an empty upgrade result");
             ZrCore_Function_Free(state, func);
             destroy_test_state(state);
             return;

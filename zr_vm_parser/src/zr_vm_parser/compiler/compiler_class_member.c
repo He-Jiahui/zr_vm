@@ -517,8 +517,10 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
                 SZrParameter *param = &paramNode->data.parameter;
                 if (param->name != ZR_NULL && param->name->name != ZR_NULL) {
                     SZrString *paramName = param->name->name;
-                    allocate_local_var(cs, paramName);
+                    TZrUInt32 parameterSlot = allocate_local_var(cs, paramName);
                     parameterCount++;
+                    compiler_register_typed_owner_cleanup_slot(
+                            cs, parameterSlot, param->typeInfo);
 
                     compiler_register_readonly_parameter_name(cs, param, paramName);
 
@@ -540,8 +542,10 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     }
 
     if (manualParamName != ZR_NULL) {
-        allocate_local_var(cs, manualParamName);
+        TZrUInt32 manualParamSlot = allocate_local_var(cs, manualParamName);
         parameterCount++;
+        compiler_register_typed_owner_cleanup_slot(
+                cs, manualParamSlot, manualParamType);
 
         if (cs->typeEnv != ZR_NULL) {
             SZrInferredType paramType;
@@ -583,6 +587,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
 
     if (!cs->hasError) {
         if (cs->instructions.length == 0) {
+            compiler_emit_active_scope_ownership_cleanups(cs);
             TZrUInt32 resultSlot = allocate_stack_slot(cs);
             SZrTypeValue nullValue;
             ZrCore_Value_ResetAsNull(&nullValue);
@@ -598,6 +603,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
                     (TZrInstruction *)ZrCore_Array_Get(&cs->instructions, cs->instructions.length - 1);
             if (lastInst != ZR_NULL &&
                 (EZrInstructionCode)lastInst->instruction.operationCode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
+                compiler_emit_active_scope_ownership_cleanups(cs);
                 TZrUInt32 resultSlot = allocate_stack_slot(cs);
                 SZrTypeValue nullValue;
                 ZrCore_Value_ResetAsNull(&nullValue);

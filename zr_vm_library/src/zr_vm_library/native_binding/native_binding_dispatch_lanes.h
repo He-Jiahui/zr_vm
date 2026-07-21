@@ -22,7 +22,11 @@ static ZR_FORCE_INLINE TZrBool native_binding_value_has_detached_gc_ownership_in
     }
 
     control = value->ownershipControl;
-    return control != ZR_NULL && control->object == object && control->isDetachedFromGc;
+    return control != ZR_NULL &&
+           control->object == object &&
+           control->objectIsAlive &&
+           !control->dropInProgress &&
+           control->ownsGcIgnore;
 }
 
 static ZR_FORCE_INLINE TZrBool native_binding_pin_value_object_inline(SZrState *state,

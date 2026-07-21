@@ -132,6 +132,8 @@ static const SZrDiagnosticDescriptor g_diagnostic_descriptors[] = {
                              ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_OWNERSHIP),
     ZR_DIAGNOSTIC_DESCRIPTOR(4005, "owner_to_plain_escape",
                              ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_OWNERSHIP),
+    ZR_DIAGNOSTIC_DESCRIPTOR(4006, "resource_shared_strong_cycle",
+                             ZR_STRUCTURED_DIAGNOSTIC_WARNING, ZR_LINT_CATEGORY_OWNERSHIP),
 };
 
 TZrSize ZrParser_DiagnosticRegistry_Count(void) {

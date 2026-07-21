@@ -1540,6 +1540,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
+    compiler_class_lint_process_local_shared_cycles(cs, &info);
+
     // 将 prototype 信息添加到数组
     ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
     

@@ -97,8 +97,10 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
                     SZrString *paramName = param->name->name;
                     if (paramName != ZR_NULL) {
                         // 分配参数槽位
-                        allocate_local_var(cs, paramName);
+                        TZrUInt32 parameterSlot = allocate_local_var(cs, paramName);
                         parameterCount++;
+                        compiler_register_typed_owner_cleanup_slot(
+                                cs, parameterSlot, param->typeInfo);
                         
                         compiler_register_readonly_parameter_name(cs, param, paramName);
                         
@@ -140,6 +142,7 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     // 如果没有显式返回，添加隐式返回
     if (!cs->hasError) {
         if (cs->instructions.length == 0) {
+            compiler_emit_active_scope_ownership_cleanups(cs);
             TZrUInt32 resultSlot = allocate_stack_slot(cs);
             SZrTypeValue nullValue;
             ZrCore_Value_ResetAsNull(&nullValue);
@@ -157,6 +160,7 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
                 if (lastInst != ZR_NULL) {
                     EZrInstructionCode lastOpcode = (EZrInstructionCode) lastInst->instruction.operationCode;
                     if (lastOpcode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
+                        compiler_emit_active_scope_ownership_cleanups(cs);
                         TZrUInt32 resultSlot = allocate_stack_slot(cs);
                         SZrTypeValue nullValue;
                         ZrCore_Value_ResetAsNull(&nullValue);

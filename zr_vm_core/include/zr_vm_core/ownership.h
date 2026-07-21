@@ -11,21 +11,18 @@
 struct SZrState;
 struct SZrRawObject;
 
-struct ZR_STRUCT_ALIGN SZrOwnershipWeakRef {
-    SZrTypeValue *slot;
-    TZrMemoryOffset stackSlotOffset;
-    TZrBool usesStackSlotOffset;
-    struct SZrOwnershipControl *control;
-    struct SZrOwnershipWeakRef *next;
-};
-
+struct SZrOwnershipWeakRef;
 typedef struct SZrOwnershipWeakRef SZrOwnershipWeakRef;
 
 struct ZR_STRUCT_ALIGN SZrOwnershipControl {
     struct SZrRawObject *object;
     TZrUInt32 strongRefCount;
-    TZrBool isDetachedFromGc;
-    SZrOwnershipWeakRef *weakRefs;
+    TZrUInt32 weakRefCount;
+    TZrUInt64 isolationDomainId;
+    TZrBool objectIsAlive;
+    TZrBool dropInProgress;
+    TZrBool usesAtomicRefCounts;
+    TZrBool ownsGcIgnore;
 };
 
 typedef struct SZrOwnershipControl SZrOwnershipControl;

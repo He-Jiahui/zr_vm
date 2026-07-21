@@ -2618,6 +2618,70 @@ TZrBool ZrCore_Function_BindAndCopyInlineFrameParametersFromCaller(
             state);
 }
 
+static ZR_FORCE_INLINE void function_release_value_frame_argument_source_owners(
+        SZrState *state,
+        const SZrFunction *calleeFunction,
+        const SZrFunction *sourceFunction,
+        TZrStackValuePointer sourceFrameBase,
+        TZrUInt32 sourceArgumentStartSlot,
+        TZrSize argumentsCount) {
+    if (state == ZR_NULL || calleeFunction == ZR_NULL || sourceFunction == ZR_NULL ||
+        sourceFrameBase == ZR_NULL) {
+        return;
+    }
+
+    for (TZrUInt32 index = 0u; index < calleeFunction->frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *parameterLayout = &calleeFunction->frameSlotLayouts[index];
+        const SZrFunctionFrameSlotLayout *sourceLayout;
+        TZrUInt32 parameterIndex;
+        TZrUInt32 sourceStackSlot;
+        SZrTypeValue *byteSource = ZR_NULL;
+        SZrTypeValue *denseSource;
+
+        if (!parameterLayout->isParameter ||
+            parameterLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE ||
+            parameterLayout->byteSize < (TZrUInt32)sizeof(SZrTypeValue) ||
+            (parameterLayout->reserved0 & ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS) != 0u) {
+            continue;
+        }
+
+        parameterIndex = function_frame_layout_parameter_index_for_stack_slot(
+                calleeFunction, parameterLayout->stackSlot);
+        if (parameterIndex >= argumentsCount || sourceArgumentStartSlot > UINT32_MAX - parameterIndex) {
+            continue;
+        }
+
+        sourceStackSlot = sourceArgumentStartSlot + parameterIndex;
+        sourceLayout = ZrCore_Function_FindFrameSlotLayout(sourceFunction, sourceStackSlot);
+        denseSource = ZrCore_Stack_GetValue(sourceFrameBase + sourceStackSlot);
+        if (sourceLayout != ZR_NULL &&
+            sourceLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
+            sourceLayout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue)) {
+            SZrStackFramePlace sourcePlace;
+
+            if (ZrCore_Function_MakeFrameSlotPlace(state,
+                                                   sourceFunction,
+                                                   sourceFrameBase,
+                                                   sourceStackSlot,
+                                                   &sourcePlace)) {
+                byteSource = (SZrTypeValue *)sourcePlace.address;
+            }
+        }
+
+        if (byteSource != ZR_NULL &&
+            (byteSource->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
+             byteSource->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK)) {
+            ZrCore_Ownership_ReleaseValue(state, byteSource);
+        }
+        if (denseSource != ZR_NULL && denseSource != byteSource &&
+            (byteSource == ZR_NULL || !ZrCore_Value_SlotsOverlapNoProfile(byteSource, denseSource)) &&
+            (denseSource->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
+             denseSource->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK)) {
+            ZrCore_Ownership_ReleaseValue(state, denseSource);
+        }
+    }
+}
+
 static ZR_FORCE_INLINE void function_copy_value_frame_parameters_from_call_window(
         SZrState *state,
         const SZrFunction *calleeFunction,
@@ -2645,6 +2709,13 @@ static ZR_FORCE_INLINE void function_copy_value_frame_parameters_from_call_windo
                                                               callInfo->argumentSourceFrameBase.valuePointer,
                                                               callInfo->argumentSourceStartSlot,
                                                               argumentsCount)) {
+            function_release_value_frame_argument_source_owners(
+                    state,
+                    calleeFunction,
+                    sourceFunction,
+                    callInfo->argumentSourceFrameBase.valuePointer,
+                    callInfo->argumentSourceStartSlot,
+                    argumentsCount);
             return;
         }
     }

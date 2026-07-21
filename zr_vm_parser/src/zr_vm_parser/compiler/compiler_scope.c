@@ -4,6 +4,77 @@
 
 #include "compiler_internal.h"
 
+void compiler_register_scope_cleanup_slot(
+        SZrCompilerState *cs,
+        TZrUInt32 slot,
+        EZrOwnershipBuiltinKind ownershipBuiltinKind,
+        TZrUInt32 sourceSlot) {
+    SZrScope *scope;
+    SZrScopeCleanupRegistration registration;
+
+    if (cs == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    scope = cs->scopeStack.length > 0
+                    ? (SZrScope *)ZrCore_Array_Get(
+                              &cs->scopeStack, cs->scopeStack.length - 1)
+                    : ZR_NULL;
+    if (scope == ZR_NULL) {
+        return;
+    }
+
+    if (ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
+        (ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE &&
+         sourceSlot == slot)) {
+        emit_instruction(cs,
+                         create_instruction_0(
+                                 ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED),
+                                 (TZrUInt16)slot));
+    }
+
+    registration.slot = slot;
+    registration.sourceSlot = sourceSlot;
+    registration.ownershipBuiltinKind = ownershipBuiltinKind;
+    ZrCore_Array_Push(cs->state, &scope->cleanupRegistrations, &registration);
+    scope->cleanupRegistrationCount++;
+}
+
+void compiler_register_owner_cleanup_slot(
+        SZrCompilerState *cs,
+        TZrUInt32 slot,
+        EZrOwnershipQualifier ownershipQualifier) {
+    if (ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_UNIQUE &&
+        ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_SHARED &&
+        ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_WEAK) {
+        return;
+    }
+
+    compiler_register_scope_cleanup_slot(cs,
+                                         slot,
+                                         ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
+                                         slot);
+}
+
+void compiler_register_typed_owner_cleanup_slot(
+        SZrCompilerState *cs,
+        TZrUInt32 slot,
+        const SZrType *typeInfo) {
+    EZrOwnershipQualifier ownershipQualifier;
+    const SZrType *innerType = ZR_NULL;
+
+    if (typeInfo == ZR_NULL) {
+        return;
+    }
+
+    ownershipQualifier = typeInfo->ownershipQualifier;
+    if (ZrParser_AstType_TryUnwrapOwnershipGeneric(
+                typeInfo, &ownershipQualifier, &innerType)) {
+        ZR_UNUSED_PARAMETER(innerType);
+    }
+    compiler_register_owner_cleanup_slot(cs, slot, ownershipQualifier);
+}
+
 static void emit_scope_cleanup_registration(SZrCompilerState *cs,
                                             const SZrScopeCleanupRegistration *registration) {
     if (cs == ZR_NULL || registration == ZR_NULL || cs->hasError) {

@@ -644,6 +644,19 @@ TZrBool compiler_has_scope_ownership_cleanups_above_depth(SZrCompilerState *cs,
 void compiler_emit_scope_ownership_cleanups_above_depth(SZrCompilerState *cs,
                                                         TZrSize targetScopeStackDepth) ;
 
+void compiler_register_scope_cleanup_slot(SZrCompilerState *cs,
+                                          TZrUInt32 slot,
+                                          EZrOwnershipBuiltinKind ownershipBuiltinKind,
+                                          TZrUInt32 sourceSlot) ;
+
+void compiler_register_owner_cleanup_slot(SZrCompilerState *cs,
+                                          TZrUInt32 slot,
+                                          EZrOwnershipQualifier ownershipQualifier) ;
+
+void compiler_register_typed_owner_cleanup_slot(SZrCompilerState *cs,
+                                                TZrUInt32 slot,
+                                                const SZrType *typeInfo) ;
+
 void enter_type_scope(SZrCompilerState *cs) ;
 
 void exit_type_scope(SZrCompilerState *cs) ;
@@ -745,6 +758,8 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
                                                   SZrString **outInferredReturnTypeName) ;
 
 void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
+void compiler_class_lint_process_local_shared_cycles(SZrCompilerState *cs,
+                                                     SZrTypePrototypeInfo *info);
 
 void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
 TZrBool compiler_type_member_capture_structured_return_type(

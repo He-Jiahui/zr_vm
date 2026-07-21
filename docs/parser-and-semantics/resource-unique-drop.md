@@ -155,6 +155,10 @@ M1 establishes resource construction, direct Unique move, deterministic Drop, fi
 partial construction, and exception cleanup. It does not implement the Syntax 04 M2 Shared/Weak
 resource control-block contract, M3 owner borrows, or the Gc/GcBox bridge.
 
+Syntax 04 M2 now supplies the Shared/Weak control-block contract described in
+`resource-shared-weak.md`. The remaining boundary in this section is M3 borrow checking and the
+M4 GC/domain bridge; the direct-Unique representation described above remains unchanged.
+
 The current direct resource object is temporarily kept outside ordinary GC collection through the
 existing ignore registry while owned, then returned to GC after Drop. This is not the final bridge
 model. Syntax 04 M4 must replace it with explicit domain/bridge identity and satisfy the plan's

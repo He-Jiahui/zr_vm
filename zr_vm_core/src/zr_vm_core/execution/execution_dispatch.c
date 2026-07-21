@@ -195,6 +195,65 @@ static ZR_FORCE_INLINE void execution_reset_stack_value_to_null_fast_no_profile(
     ZrCore_Value_ResetAsNullNoProfile(destination);
 }
 
+static ZR_FORCE_INLINE TZrBool execution_value_is_cleanup_owner(const SZrTypeValue *value) {
+    return (TZrBool)(value != ZR_NULL &&
+                     (value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
+                      value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
+                      value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK ||
+                      value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED));
+}
+
+static ZR_FORCE_INLINE void execution_clear_registered_owner_mirror(
+        SZrState *state,
+        TZrStackValuePointer slotBase,
+        const SZrTypeValue *physicalValue) {
+    SZrTypeValue *mirror;
+
+    if (state == ZR_NULL || slotBase == ZR_NULL || slotBase->toBeClosedValueOffset == 0u) {
+        return;
+    }
+
+    mirror = &slotBase->value;
+    if (mirror == physicalValue ||
+        (physicalValue != ZR_NULL && ZrCore_Value_SlotsOverlapNoProfile(mirror, physicalValue))) {
+        return;
+    }
+
+    if (execution_value_is_cleanup_owner(mirror) &&
+        mirror->ownershipControl != ZR_NULL) {
+        ZrCore_Ownership_ReleaseValue(state, mirror);
+    } else {
+        ZrCore_Value_ResetAsNullNoProfile(mirror);
+    }
+}
+
+static ZR_FORCE_INLINE void execution_refresh_registered_owner_mirror(
+        SZrState *state,
+        TZrStackValuePointer slotBase,
+        const SZrTypeValue *physicalValue) {
+    SZrTypeValue *mirror;
+
+    if (state == ZR_NULL || slotBase == ZR_NULL || slotBase->toBeClosedValueOffset == 0u) {
+        return;
+    }
+
+    mirror = &slotBase->value;
+    if (mirror == physicalValue ||
+        (physicalValue != ZR_NULL && ZrCore_Value_SlotsOverlapNoProfile(mirror, physicalValue))) {
+        return;
+    }
+
+    if (execution_value_is_cleanup_owner(physicalValue)) {
+        if (physicalValue->ownershipControl != ZR_NULL) {
+            ZrCore_Value_CopyNoProfile(state, mirror, physicalValue);
+        } else {
+            *mirror = *physicalValue;
+        }
+    } else {
+        ZrCore_Value_ResetAsNullNoProfile(mirror);
+    }
+}
+
 static ZR_FORCE_INLINE void execution_drop_call_info_inline_frame_values_if_available(SZrState *state,
                                                                                       SZrCallInfo *callInfo) {
     SZrFunction *function;
@@ -903,6 +962,42 @@ static ZR_FORCE_INLINE TZrStackValuePointer execution_prepare_frame_layout_call_
             0u);
 }
 
+static ZR_FORCE_INLINE void execution_release_frame_layout_call_argument_owners(
+        SZrState *state,
+        SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 argumentStartSlot,
+        TZrSize argumentCount) {
+    if (state == ZR_NULL || function == ZR_NULL || frameBase == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0u; index < argumentCount; index++) {
+        TZrUInt32 stackSlot;
+        SZrTypeValue *byteValue;
+        SZrTypeValue *denseValue;
+
+        if (index > UINT32_MAX || argumentStartSlot > UINT32_MAX - (TZrUInt32)index) {
+            return;
+        }
+        stackSlot = argumentStartSlot + (TZrUInt32)index;
+        byteValue = execution_inline_frame_get_value_slot(state, function, frameBase, stackSlot);
+        denseValue = ZrCore_Stack_GetValueNoProfile(frameBase + stackSlot);
+
+        if (byteValue != ZR_NULL &&
+            (byteValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
+             byteValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK)) {
+            ZrCore_Ownership_ReleaseValue(state, byteValue);
+        }
+        if (denseValue != ZR_NULL && denseValue != byteValue &&
+            (byteValue == ZR_NULL || !ZrCore_Value_SlotsOverlapNoProfile(byteValue, denseValue)) &&
+            (denseValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
+             denseValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK)) {
+            ZrCore_Ownership_ReleaseValue(state, denseValue);
+        }
+    }
+}
+
 static ZR_FORCE_INLINE TZrStackValuePointer execution_prepare_tail_call_fallback_window(
         SZrState *state,
         SZrCallInfo *callInfo,
@@ -958,6 +1053,7 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_generic_sing
     TZrStackValuePointer callWindow;
     TZrStackValuePointer effectiveReturnDestination;
     SZrFunctionStackAnchor callWindowAnchor;
+    SZrFunctionStackAnchor frameBaseAnchor;
     SZrCallInfo *nextCallInfo;
 
     if (outCallWindow != ZR_NULL) {
@@ -977,8 +1073,16 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_generic_sing
     effectiveReturnDestination = resultSlot != ZR_INSTRUCTION_USE_RET_FLAG ? *ioFrameBase + resultSlot : ZR_NULL;
     state->stackTop.valuePointer = callWindow + parametersCount + 1u;
     ZrCore_Function_StackAnchorInit(state, callWindow, &callWindowAnchor);
+    ZrCore_Function_StackAnchorInit(state, *ioFrameBase, &frameBaseAnchor);
     nextCallInfo = ZrCore_Function_PreCall(state, callWindow, 1u, effectiveReturnDestination);
     callWindow = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor);
+    *ioFrameBase = ZrCore_Function_StackAnchorRestore(state, &frameBaseAnchor);
+    execution_release_frame_layout_call_argument_owners(
+            state,
+            function,
+            *ioFrameBase,
+            functionSlot + 1u,
+            parametersCount);
     if (outCallWindow != ZR_NULL) {
         *outCallWindow = callWindow;
     }
@@ -2505,11 +2609,14 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SET_STACK_BODY()                                                                                       \
     do {                                                                                                               \
+        TZrStackValuePointer destinationBase__ = BASE(E(instruction));                                                 \
+        SZrTypeValue *destinationValue__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         SZrTypeValue *srcValue = FRAME_VALUE_SLOT(A2(instruction));                                                    \
+        execution_clear_registered_owner_mirror(state, destinationBase__, destinationValue__);                        \
         if (!execution_inline_frame_try_copy_stack_slot(state, currentFunction, base, E(instruction), A2(instruction))) { \
-            execution_assign_stack_value_to_stack_fast_no_profile(                                                     \
-                    state, FRAME_VALUE_SLOT(E(instruction)), srcValue);                                                \
+            execution_assign_stack_value_to_stack_fast_no_profile(state, destinationValue__, srcValue);               \
         }                                                                                                              \
+        execution_refresh_registered_owner_mirror(state, destinationBase__, destinationValue__);                      \
     } while (0)
 #define EXECUTE_GET_CONSTANT_BODY()                                                                                    \
     do {                                                                                                               \
@@ -2524,15 +2631,24 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         if (ZR_UNLIKELY(recordHelpers)) {                                                                              \
             profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_RESET_NULL]++;                                        \
         }                                                                                                              \
-        execution_reset_stack_value_to_null_fast_no_profile(state, FRAME_VALUE_SLOT(E(instruction)));                 \
+        TZrStackValuePointer destinationBase__ = BASE(E(instruction));                                                 \
+        SZrTypeValue *destinationValue__ = FRAME_VALUE_SLOT(E(instruction));                                           \
+        execution_clear_registered_owner_mirror(state, destinationBase__, destinationValue__);                        \
+        execution_reset_stack_value_to_null_fast_no_profile(state, destinationValue__);                               \
     } while (0)
 #define EXECUTE_RESET_STACK_NULL2_BODY()                                                                               \
     do {                                                                                                               \
         if (ZR_UNLIKELY(recordHelpers)) {                                                                              \
             profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_RESET_NULL] += 2u;                                   \
         }                                                                                                              \
-        execution_reset_stack_value_to_null_fast_no_profile(state, FRAME_VALUE_SLOT(E(instruction)));                 \
-        execution_reset_stack_value_to_null_fast_no_profile(state, FRAME_VALUE_SLOT(A1(instruction)));                \
+        TZrStackValuePointer firstBase__ = BASE(E(instruction));                                                       \
+        TZrStackValuePointer secondBase__ = BASE(A1(instruction));                                                     \
+        SZrTypeValue *firstValue__ = FRAME_VALUE_SLOT(E(instruction));                                                 \
+        SZrTypeValue *secondValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
+        execution_clear_registered_owner_mirror(state, firstBase__, firstValue__);                                     \
+        execution_clear_registered_owner_mirror(state, secondBase__, secondValue__);                                   \
+        execution_reset_stack_value_to_null_fast_no_profile(state, firstValue__);                                      \
+        execution_reset_stack_value_to_null_fast_no_profile(state, secondValue__);                                     \
     } while (0)
 #define EXECUTE_GET_MEMBER_SLOT_BODY()                                                                                 \
     do {                                                                                                               \
@@ -4158,14 +4274,17 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SET_STACK_BODY_FAST()                                                                                  \
     do {                                                                                                               \
+        TZrStackValuePointer destinationBase__ = BASE(E(instruction));                                                 \
         SZrTypeValue *srcValue = FRAME_VALUE_SLOT(A2(instruction));                                                    \
         SZrTypeValue *stackDestination = FRAME_VALUE_SLOT(E(instruction));                                             \
+        execution_clear_registered_owner_mirror(state, destinationBase__, stackDestination);                          \
         if (ZR_UNLIKELY(recordHelpers)) {                                                                              \
             profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;                                              \
         }                                                                                                              \
         if (!execution_inline_frame_try_copy_stack_slot(state, currentFunction, base, E(instruction), A2(instruction))) { \
             execution_assign_stack_value_to_stack_fast_no_profile(state, stackDestination, srcValue);                 \
         }                                                                                                              \
+        execution_refresh_registered_owner_mirror(state, destinationBase__, stackDestination);                        \
     } while (0)
 #define EXECUTE_GET_CONSTANT_BODY_FAST()                                                                               \
     do {                                                                                                               \
@@ -8778,85 +8897,128 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_UNIQUE) {
                 TZrStackValuePointer sourceBase = BASE(A1(instruction));
-                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                TZrStackValuePointer destinationBase =
+                        E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
+                destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A1(instruction));
+                execution_clear_registered_owner_mirror(state, sourceBase, opA);
+                execution_clear_registered_owner_mirror(state, destinationBase, destination);
                 if (!ZrCore_Ownership_UniqueValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
-                } else if (opA != &sourceBase->value &&
-                           sourceBase->toBeClosedValueOffset > 0u &&
-                           ZR_VALUE_IS_TYPE_NULL(opA->type)) {
-                    ZrCore_Value_ResetAsNullNoProfile(&sourceBase->value);
                 }
+                execution_refresh_registered_owner_mirror(state, sourceBase, opA);
+                execution_refresh_registered_owner_mirror(state, destinationBase, destination);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_BORROW) {
-                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                TZrStackValuePointer destinationBase =
+                        E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
+                destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A1(instruction));
+                execution_clear_registered_owner_mirror(state, destinationBase, destination);
                 if (!ZrCore_Ownership_BorrowValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
                 }
+                execution_refresh_registered_owner_mirror(state, destinationBase, destination);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_LOAN) {
-                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                TZrStackValuePointer sourceBase = BASE(A1(instruction));
+                TZrStackValuePointer destinationBase =
+                        E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
+                destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A1(instruction));
+                execution_clear_registered_owner_mirror(state, sourceBase, opA);
+                execution_clear_registered_owner_mirror(state, destinationBase, destination);
                 if (!ZrCore_Ownership_LoanValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
                 }
+                execution_refresh_registered_owner_mirror(state, sourceBase, opA);
+                execution_refresh_registered_owner_mirror(state, destinationBase, destination);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_SHARE) {
-                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                TZrStackValuePointer sourceBase = BASE(A1(instruction));
+                TZrStackValuePointer destinationBase =
+                        E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
+                destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A1(instruction));
+                execution_clear_registered_owner_mirror(state, sourceBase, opA);
+                execution_clear_registered_owner_mirror(state, destinationBase, destination);
                 if (!ZrCore_Ownership_ShareValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
                 }
+                execution_refresh_registered_owner_mirror(state, sourceBase, opA);
+                execution_refresh_registered_owner_mirror(state, destinationBase, destination);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_WEAK) {
-                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                TZrStackValuePointer destinationBase =
+                        E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
+                destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A1(instruction));
+                execution_clear_registered_owner_mirror(state, destinationBase, destination);
                 if (!ZrCore_Ownership_WeakValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
                 }
+                execution_refresh_registered_owner_mirror(state, destinationBase, destination);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_DETACH) {
-                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                TZrStackValuePointer sourceBase = BASE(A1(instruction));
+                TZrStackValuePointer destinationBase =
+                        E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
+                destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A1(instruction));
+                execution_clear_registered_owner_mirror(state, sourceBase, opA);
+                execution_clear_registered_owner_mirror(state, destinationBase, destination);
                 if (!ZrCore_Ownership_DetachValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
                 }
+                execution_refresh_registered_owner_mirror(state, sourceBase, opA);
+                execution_refresh_registered_owner_mirror(state, destinationBase, destination);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_UPGRADE) {
-                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                TZrStackValuePointer destinationBase =
+                        E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
+                destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A1(instruction));
+                execution_clear_registered_owner_mirror(state, destinationBase, destination);
                 if (!ZrCore_Ownership_UpgradeValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
                 }
+                execution_refresh_registered_owner_mirror(state, destinationBase, destination);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_RELEASE) {
                 TZrStackValuePointer sourceBase = BASE(A1(instruction));
-                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                TZrStackValuePointer destinationBase =
+                        E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
+                destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A1(instruction));
+                execution_clear_registered_owner_mirror(state, sourceBase, opA);
+                execution_clear_registered_owner_mirror(state, destinationBase, destination);
                 ZrCore_Ownership_ReleaseValue(state, opA);
-                if (opA != &sourceBase->value &&
-                    sourceBase->toBeClosedValueOffset > 0u &&
-                    ZR_VALUE_IS_TYPE_NULL(opA->type)) {
-                    ZrCore_Value_ResetAsNullNoProfile(&sourceBase->value);
-                }
                 execution_prepare_destination_for_direct_store_no_profile(state, destination);
                 ZrCore_Value_ResetAsNull(destination);
+                execution_refresh_registered_owner_mirror(state, sourceBase, opA);
+                execution_refresh_registered_owner_mirror(state, destinationBase, destination);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_RETURN_LOAN) {
-                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                TZrStackValuePointer sourceBase = BASE(A1(instruction));
+                TZrStackValuePointer destinationBase =
+                        E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
+                destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A1(instruction));
+                execution_clear_registered_owner_mirror(state, sourceBase, opA);
+                execution_clear_registered_owner_mirror(state, destinationBase, destination);
                 if (!ZrCore_Ownership_ReturnLoanValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
                 }
+                execution_refresh_registered_owner_mirror(state, sourceBase, opA);
+                execution_refresh_registered_owner_mirror(state, destinationBase, destination);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MARK_TO_BE_CLOSED) {

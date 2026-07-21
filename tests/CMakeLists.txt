@@ -619,6 +619,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_resource_unique_drop_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_resource_shared_weak_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_resource_shared_weak.c
+    )
+    target_include_directories(zr_vm_resource_shared_weak_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_resource_shared_weak_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_execbc_aot_pipeline_test
             ${CMAKE_SOURCE_DIR}/zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c
     )

@@ -1120,6 +1120,19 @@ where T: shared
 
 `using` 是当前推荐的资源作用域关键字；`%using` 作为兼容写法保留。当前解析器支持两种形态：
 
+`Shared<T>` 是当前 isolation domain 内的非原子共享 owner；赋值和按值传参会 clone strong
+handle，最后一个 strong handle 被释放时立即执行 resource Drop。`Weak<T>` 只能由
+`Shared<T>.weak()` 创建，不保活目标，也不能直接访问 `T`；目标存活时 `upgrade()` 返回
+Shared handle，目标死亡或正在 Drop 时返回空。Weak handle 自身在目标死亡后仍有效，直到最后
+一个 Weak handle 被释放。Shared 不提供 cycle collector，resource 的长期反向边应使用 Weak；
+compiler 会以 `resource_shared_strong_cycle` warning 提示 process-local self/reciprocal Shared
+field cycle。普通 Shared 不跨 isolation domain，也不动态切换到原子计数；`AtomicShared<T>`
+属于独立后续设计。
+
+当前实现为兼容既有 callable/type ABI，暂以 nullable `Shared<T>` niche 表达 upgrade 的 live/empty
+结果；最终规范目标仍是 `Option<Shared<T>>`。在 built-in Option/prelude carrier 和 VM/AOT
+construction contract 落地前，不应把该兼容表示视作 final public Option surface。
+
 ```zr
 var owned: Unique<Resource>;
 using owned;

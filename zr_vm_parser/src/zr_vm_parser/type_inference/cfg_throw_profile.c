@@ -1,5 +1,7 @@
 #include "cfg_internal.h"
 
+#include "zr_vm_parser/type_system.h"
+
 typedef struct SZrParserCfgThrowTypeProfile {
     TZrUInt32 knownKindMask;
     TZrBool hasUnknownSource;
@@ -169,6 +171,55 @@ static TZrBool cfg_direct_lambda_iife_may_enter_catch(SZrAstNode *node) {
             cfg_node_may_enter_catch(lambdaNode->data.lambdaExpression.block));
 }
 
+static TZrBool cfg_primary_ownership_builtin_may_enter_catch(SZrAstNode *node,
+                                                              TZrBool *outIsBuiltin) {
+    SZrAstNodeArray *members;
+    SZrAstNode *memberNode;
+    SZrAstNode *callNode;
+    EZrOwnershipBuiltinKind builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+    TZrSize index;
+
+    if (outIsBuiltin != ZR_NULL) {
+        *outIsBuiltin = ZR_FALSE;
+    }
+    if (node == ZR_NULL ||
+        node->type != ZR_AST_PRIMARY_EXPRESSION ||
+        outIsBuiltin == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    members = node->data.primaryExpression.members;
+    if (members == ZR_NULL || members->nodes == ZR_NULL || members->count < 2U) {
+        return ZR_FALSE;
+    }
+
+    memberNode = members->nodes[members->count - 2U];
+    callNode = members->nodes[members->count - 1U];
+    if (memberNode == ZR_NULL ||
+        memberNode->type != ZR_AST_MEMBER_EXPRESSION ||
+        memberNode->data.memberExpression.computed ||
+        memberNode->data.memberExpression.property == ZR_NULL ||
+        memberNode->data.memberExpression.property->type != ZR_AST_IDENTIFIER_LITERAL ||
+        callNode == ZR_NULL ||
+        callNode->type != ZR_AST_FUNCTION_CALL ||
+        !ZrParser_OwnershipMemberNameToBuiltinKind(
+                memberNode->data.memberExpression.property->data.identifier.name,
+                &builtinKind)) {
+        return ZR_FALSE;
+    }
+
+    *outIsBuiltin = ZR_TRUE;
+    if (cfg_node_may_enter_catch(node->data.primaryExpression.property) ||
+        cfg_function_call_arguments_may_enter_catch(callNode)) {
+        return ZR_TRUE;
+    }
+    for (index = 0U; index + 2U < members->count; index++) {
+        if (cfg_node_may_enter_catch(members->nodes[index])) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 TZrBool cfg_node_may_enter_catch(SZrAstNode *node) {
     if (node == ZR_NULL) {
         return ZR_FALSE;
@@ -179,7 +230,14 @@ TZrBool cfg_node_may_enter_catch(SZrAstNode *node) {
             return ZR_TRUE;
         case ZR_AST_FUNCTION_CALL:
         case ZR_AST_IMPORT_EXPRESSION:
+            return ZR_TRUE;
         case ZR_AST_CONSTRUCT_EXPRESSION:
+            if (!node->data.constructExpression.isNew &&
+                node->data.constructExpression.builtinKind !=
+                        ZR_OWNERSHIP_BUILTIN_KIND_NONE) {
+                return cfg_node_may_enter_catch(
+                        node->data.constructExpression.target);
+            }
             return ZR_TRUE;
         case ZR_AST_LAMBDA_EXPRESSION:
             return ZR_FALSE;
@@ -254,6 +312,14 @@ TZrBool cfg_node_may_enter_catch(SZrAstNode *node) {
                             node->data.tryCatchFinallyStatement.catchClauses) ||
                     cfg_node_may_enter_catch(node->data.tryCatchFinallyStatement.finallyBlock));
         case ZR_AST_PRIMARY_EXPRESSION:
+            {
+                TZrBool isOwnershipBuiltin = ZR_FALSE;
+                TZrBool mayEnterCatch = cfg_primary_ownership_builtin_may_enter_catch(
+                        node, &isOwnershipBuiltin);
+                if (isOwnershipBuiltin) {
+                    return mayEnterCatch;
+                }
+            }
             if (cfg_primary_expression_single_direct_lambda_iife(
                     node,
                     ZR_NULL,

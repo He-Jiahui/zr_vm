@@ -5756,7 +5756,8 @@ static void test_native_binding_detects_detached_gc_owned_values(void) {
 
     TEST_ASSERT_TRUE(ZrCore_Ownership_UniqueValue(state, &ownedValue, &sourceValue));
     TEST_ASSERT_NOT_NULL(ownedValue.ownershipControl);
-    TEST_ASSERT_TRUE(ownedValue.ownershipControl->isDetachedFromGc);
+    TEST_ASSERT_TRUE(ownedValue.ownershipControl->ownsGcIgnore);
+    TEST_ASSERT_TRUE(ownedValue.ownershipControl->objectIsAlive);
     TEST_ASSERT_EQUAL_PTR(ownedValue.value.object, ownedValue.ownershipControl->object);
 
     TEST_ASSERT_FALSE(native_binding_value_has_detached_gc_ownership_inline(&sourceValue));

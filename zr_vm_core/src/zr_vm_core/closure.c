@@ -363,6 +363,7 @@ static TZrBool closure_value_check_close_meta(struct SZrState *state, TZrStackVa
     if (stackValue != ZR_NULL &&
         (stackValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
          stackValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
+         stackValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK ||
          stackValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED)) {
         return ZR_TRUE;
     }
@@ -383,6 +384,7 @@ static void closure_value_call_close_meta(SZrState *state,
     if (value != ZR_NULL &&
         (value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
          value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
+         value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK ||
          value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED)) {
         ZrCore_Ownership_ReleaseValue(state, value);
         return;

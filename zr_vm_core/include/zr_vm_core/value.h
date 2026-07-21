@@ -135,9 +135,7 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Value_HasReleasableOwnershipNoProfile(cons
             return (TZrBool)(ZrCore_Value_HasOwnershipHeapObjectNoProfile(value) &&
                              value->ownershipControl != ZR_NULL);
         case ZR_OWNERSHIP_VALUE_KIND_WEAK:
-            return (TZrBool)(ZrCore_Value_HasOwnershipHeapObjectNoProfile(value) &&
-                             value->ownershipControl != ZR_NULL &&
-                             value->ownershipWeakRef != ZR_NULL);
+            return value->ownershipControl != ZR_NULL;
         case ZR_OWNERSHIP_VALUE_KIND_BORROWED:
             return ZrCore_Value_HasOwnershipHeapObjectNoProfile(value);
         case ZR_OWNERSHIP_VALUE_KIND_NONE:
@@ -244,16 +242,13 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Value_ShouldTransferMaterializedStackOwner
 
     /*
      * SET_STACK materializes a temporary stack result into its final slot.
-     * Shared results must transfer their wrapper instead of copying, or the
-     * transient slot keeps an extra strong ref alive until frame teardown.
-     *
-     * Weak values are intentionally excluded here because their weak-ref
-     * bookkeeping records the source slot location and therefore must be
-     * re-registered through the slow copy path.
+     * Stable ownership handles transfer their wrapper instead of copying, or
+     * the transient slot keeps an extra strong/weak ref alive until teardown.
      */
     return source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
            source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED ||
-           source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED;
+           source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
+           source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK;
 }
 
 static ZR_FORCE_INLINE void ZrCore_Value_AssignMaterializedStackValueNoProfile(struct SZrState *state,
@@ -290,17 +285,6 @@ static ZR_FORCE_INLINE void ZrCore_Value_AssignMaterializedStackValueNoProfile(s
         ZrCore_Ownership_ReleaseValue(state, destination);
         *destination = *source;
         ZrCore_Value_ResetAsNullNoProfile(source);
-        return;
-    }
-
-    if (source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK) {
-        /*
-         * Weak results must re-register against the destination slot, but the
-         * transient source slot cannot stay tracked once SET_STACK materializes
-         * the final value or later slot reuse will expire unrelated locals.
-         */
-        ZrCore_Value_CopyNoProfile(state, destination, source);
-        ZrCore_Ownership_ReleaseValue(state, source);
         return;
     }
 

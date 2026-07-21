@@ -1023,9 +1023,9 @@ static void test_gc_barrier_unignores_escaped_object(void) {
     TEST_DIVIDER();
 }
 
-static void test_ownership_shared_refcount_and_weak_null_on_release(void) {
+static void test_ownership_shared_refcount_and_stable_weak_after_release(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Shared Refcount And Weak Null On Release";
+    const char *testSummary = "Ownership Shared Refcount And Stable Weak After Release";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -1043,12 +1043,15 @@ static void test_ownership_shared_refcount_and_weak_null_on_release(void) {
         SZrTypeValue sharedValueA;
         SZrTypeValue sharedValueB;
         SZrTypeValue weakValue;
+        SZrTypeValue upgradedValue;
+        SZrOwnershipControl *weakControl;
 
         TEST_ASSERT_NOT_NULL(object);
         ZrCore_Value_ResetAsNull(&uniqueValue);
         ZrCore_Value_ResetAsNull(&sharedValueA);
         ZrCore_Value_ResetAsNull(&sharedValueB);
         ZrCore_Value_ResetAsNull(&weakValue);
+        ZrCore_Value_ResetAsNull(&upgradedValue);
 
         TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(state, &uniqueValue, object));
         TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
@@ -1078,6 +1081,9 @@ static void test_ownership_shared_refcount_and_weak_null_on_release(void) {
 
         TEST_ASSERT_TRUE(ZrCore_Ownership_WeakValue(state, &weakValue, &sharedValueA));
         TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_WEAK, weakValue.ownershipKind);
+        TEST_ASSERT_NOT_NULL(weakValue.ownershipControl);
+        weakControl = weakValue.ownershipControl;
 
         ZrCore_Ownership_ReleaseValue(state, &sharedValueA);
         TEST_ASSERT_EQUAL_UINT32(1, ZrCore_Ownership_GetStrongRefCount(object));
@@ -1086,9 +1092,18 @@ static void test_ownership_shared_refcount_and_weak_null_on_release(void) {
         TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
 
         ZrCore_Ownership_ReleaseValue(state, &sharedValueB);
-        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
+        TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
+        TEST_ASSERT_EQUAL_PTR(weakControl, weakValue.ownershipControl);
+        TEST_ASSERT_FALSE(weakControl->objectIsAlive);
+        TEST_ASSERT_NULL(weakControl->object);
+        TEST_ASSERT_EQUAL_UINT32(0, weakControl->strongRefCount);
+        TEST_ASSERT_EQUAL_UINT32(1, weakControl->weakRefCount);
+        TEST_ASSERT_TRUE(ZrCore_Ownership_UpgradeValue(state, &upgradedValue, &weakValue));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(upgradedValue.type));
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
         TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
+        ZrCore_Ownership_ReleaseValue(state, &weakValue);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
     }
 
     destroyTestState(state);
@@ -1219,17 +1234,22 @@ static void test_ownership_weak_expires_when_returned_object_is_released(void) {
         SZrTypeValue sharedValue;
         SZrTypeValue weakValue;
         SZrTypeValue gcValue;
+        SZrTypeValue upgradedValue;
+        SZrOwnershipControl *weakControl;
 
         TEST_ASSERT_NOT_NULL(object);
         ZrCore_Value_ResetAsNull(&uniqueValue);
         ZrCore_Value_ResetAsNull(&sharedValue);
         ZrCore_Value_ResetAsNull(&weakValue);
         ZrCore_Value_ResetAsNull(&gcValue);
+        ZrCore_Value_ResetAsNull(&upgradedValue);
 
         TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(state, &uniqueValue, object));
         TEST_ASSERT_TRUE(ZrCore_Ownership_ShareValue(state, &sharedValue, &uniqueValue));
         TEST_ASSERT_TRUE(ZrCore_Ownership_WeakValue(state, &weakValue, &sharedValue));
         TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
+        weakControl = weakValue.ownershipControl;
+        TEST_ASSERT_NOT_NULL(weakControl);
         TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
         TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
         TEST_ASSERT_EQUAL_UINT32(1, ZrCore_Ownership_GetStrongRefCount(object));
@@ -1249,6 +1269,15 @@ static void test_ownership_weak_expires_when_returned_object_is_released(void) {
 
         ZrCore_Ownership_NotifyObjectReleased(state, object);
 
+        TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
+        TEST_ASSERT_EQUAL_PTR(weakControl, weakValue.ownershipControl);
+        TEST_ASSERT_FALSE(weakControl->objectIsAlive);
+        TEST_ASSERT_NULL(weakControl->object);
+        TEST_ASSERT_EQUAL_UINT32(0, weakControl->strongRefCount);
+        TEST_ASSERT_EQUAL_UINT32(1, weakControl->weakRefCount);
+        TEST_ASSERT_TRUE(ZrCore_Ownership_UpgradeValue(state, &upgradedValue, &weakValue));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(upgradedValue.type));
+        ZrCore_Ownership_ReleaseValue(state, &weakValue);
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
         ZrCore_Value_ResetAsNull(&gcValue);
     }
@@ -4655,7 +4684,7 @@ int main(void) {
     RUN_TEST(test_gc_string_table_rewrites_forwarded_interned_entry);
     RUN_TEST(test_gc_short_string_list_keeps_interned_entries_reachable_across_minor_then_full_gc);
     RUN_TEST(test_gc_string_table_minor_bucket_flags_rebuild_after_rehash);
-    RUN_TEST(test_ownership_shared_refcount_and_weak_null_on_release);
+    RUN_TEST(test_ownership_shared_refcount_and_stable_weak_after_release);
     RUN_TEST(test_ownership_plain_object_can_be_shared_without_consuming_source);
     RUN_TEST(test_ownership_unique_can_return_to_gc_control);
     RUN_TEST(test_ownership_weak_expires_when_returned_object_is_released);

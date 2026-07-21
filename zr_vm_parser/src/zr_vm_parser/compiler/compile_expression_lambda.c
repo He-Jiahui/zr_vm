@@ -240,8 +240,10 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
                     SZrString *paramName = param->name->name;
                     if (paramName != ZR_NULL) {
                         // 分配参数槽位
-                        allocate_local_var(cs, paramName);
+                        TZrUInt32 parameterSlot = allocate_local_var(cs, paramName);
                         parameterCount++;
+                        compiler_register_typed_owner_cleanup_slot(
+                                cs, parameterSlot, param->typeInfo);
                         compiler_register_readonly_parameter_name(cs, param, paramName);
 
                         if (cs->typeEnv != ZR_NULL) {
@@ -293,6 +295,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     if (!cs->hasError) {
         if (cs->instructions.length == 0) {
             // 如果没有任何指令，添加隐式返回 null
+            compiler_emit_active_scope_ownership_cleanups(cs);
             TZrUInt32 resultSlot = allocate_stack_slot(cs);
             SZrTypeValue nullValue;
             ZrCore_Value_ResetAsNull(&nullValue);
@@ -310,6 +313,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
                     EZrInstructionCode lastOpcode = (EZrInstructionCode)lastInst->instruction.operationCode;
                     if (lastOpcode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
                         // 添加隐式返回 null
+                        compiler_emit_active_scope_ownership_cleanups(cs);
                         TZrUInt32 resultSlot = allocate_stack_slot(cs);
                         SZrTypeValue nullValue;
                         ZrCore_Value_ResetAsNull(&nullValue);

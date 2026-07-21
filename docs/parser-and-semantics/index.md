@@ -259,6 +259,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - `resource class`、`own T(...)`、`drop(owner)` 的 type-directed 生命周期合同
   - direct `Unique<T>` 无 control block 的 move、partial construction 与逆序 Drop
   - VM/AOT cleanup 顺序，以及 M4 移除临时 GC ignore registry 的明确边界
+- `resource-shared-weak.md`
+  - process-local non-atomic `Shared<T>` / stable `Weak<T>` control lifetime
+  - last-strong Drop、implicit weak、drop-time upgrade failure 与 cleanup mirror 同步
+  - structured `resource_shared_strong_cycle` lint，以及 final Option surface 的明确边界
   - `%weak` 使用目标前必须显式 `%upgrade`/check，不能直接流入 `%borrowed`
   - cleanup plan 与 prototype metadata 的传播路径
 - `semantic-fact-layer.md`
@@ -331,19 +335,20 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 7. 再看 `compiler-final-function-assembly.md`，了解 parser orchestration 与 final function assembly 的边界。
 8. 再看 `owned-field-lifecycle.md`，了解 direct owner field 的生命周期语义。
 9. 再看 `resource-unique-drop.md`，了解 resource/Unique 的确定性构造、move、Drop 与 VM/AOT 边界。
-10. 再看 `semantic-fact-layer.md`，了解 parser 侧共享语义事实容器、LSP 局部查询三态结果和查询契约。
-11. 再看 `cfg-reachability-foundation.md`，了解 Stage 1 CFG 可达性事实生产者的当前范围和后续边界。
-12. 再看 `dataflow-engine-foundation.md`，了解 Stage 1 通用 dataflow 引擎骨架和当前验证边界。
-12. 再看 `semantic-query-api-foundation.md`，了解 Stage 1 公共语义查询面骨架和当前限制。
-13. 再看 `union-types.md`，了解 union 前端 slice、构造器 lowering 和后续模式匹配边界。
-14. 最后看 `lsp-semantic-resolution-and-native-imports.md`，了解 language server 如何消费 parser/native import metadata 并稳定命中局部语义引用。
-15. 接着看 `lsp-binary-metadata-coordinate-projection.md`，了解 binary declaration identity 如何跨 artifact byte coordinates 与 LSP UTF-16 边界保持一致。
-16. 再看 `lsp-descriptor-metadata-coordinate-projection.md`，了解 native descriptor type-member identity 如何跨compact coordinates与LSP consumer保持一致。
-17. 再看 `place-cfg-graph.md`，了解 session-local Place identity、typed CFG edge 与 cleanup routing。
-18. 再看 `pre-semantic-ir-flow.md`，了解前置 Semantic IR、compiler bridge、flow facts 与 execution sidecar 边界。
-19. 再看 `reference-loan-nll.md`，了解 LoanId 传播、NLL、reborrow 与 Place overlap 冲突。
-20. 再看 `receiver-readonly-call-boundary.md`，了解 receiver effect、owner auto-deref 与
+10. 再看 `resource-shared-weak.md`，了解 Shared/Weak stable control、last-strong Drop 与强环 lint。
+11. 再看 `semantic-fact-layer.md`，了解 parser 侧共享语义事实容器、LSP 局部查询三态结果和查询契约。
+12. 再看 `cfg-reachability-foundation.md`，了解 Stage 1 CFG 可达性事实生产者的当前范围和后续边界。
+13. 再看 `dataflow-engine-foundation.md`，了解 Stage 1 通用 dataflow 引擎骨架和当前验证边界。
+14. 再看 `semantic-query-api-foundation.md`，了解 Stage 1 公共语义查询面骨架和当前限制。
+15. 再看 `union-types.md`，了解 union 前端 slice、构造器 lowering 和后续模式匹配边界。
+16. 最后看 `lsp-semantic-resolution-and-native-imports.md`，了解 language server 如何消费 parser/native import metadata 并稳定命中局部语义引用。
+17. 接着看 `lsp-binary-metadata-coordinate-projection.md`，了解 binary declaration identity 如何跨 artifact byte coordinates 与 LSP UTF-16 边界保持一致。
+18. 再看 `lsp-descriptor-metadata-coordinate-projection.md`，了解 native descriptor type-member identity 如何跨compact coordinates与LSP consumer保持一致。
+19. 再看 `place-cfg-graph.md`，了解 session-local Place identity、typed CFG edge 与 cleanup routing。
+20. 再看 `pre-semantic-ir-flow.md`，了解前置 Semantic IR、compiler bridge、flow facts 与 execution sidecar 边界。
+21. 再看 `reference-loan-nll.md`，了解 LoanId 传播、NLL、reborrow 与 Place overlap 冲突。
+22. 再看 `receiver-readonly-call-boundary.md`，了解 receiver effect、owner auto-deref 与
     two-phase method call loan。
-21. 再看 `reference-escape-closure-suspension.md`，了解 ref escape lattice、closure capture
+23. 再看 `reference-escape-closure-suspension.md`，了解 ref escape lattice、closure capture
     和 suspension 静态边界。
-22. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+24. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

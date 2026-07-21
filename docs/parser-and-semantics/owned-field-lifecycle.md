@@ -236,6 +236,20 @@ The runtime does not reconstruct this behavior from a field name or source synta
 prototype resource modifier, `ownershipQualifier`, managed-field presence, and declaration order.
 See `resource-unique-drop.md` for the complete construction and VM/AOT contract.
 
+## Stable Shared/Weak resource controls
+
+`Shared<Resource>` and `Weak<Resource>` fields use one stable process-local control block rather
+than linked weak stack slots. Shared field copy increments the strong count, Weak field copy
+increments the explicit weak count, and reverse-order resource field teardown releases each
+stored handle exactly once. Releasing the final strong handle marks the control dead before the
+resource custom Drop body runs, so a Weak back-reference cannot resurrect the resource during
+Drop. Explicit Weak fields keep the dead control alive until their own teardown.
+
+The compiler warns on process-local resource `Shared<Self>` and reciprocal Shared field edges with
+the structured `resource_shared_strong_cycle` diagnostic. A Weak reverse edge is the intended way
+to break the ownership cycle. See `resource-shared-weak.md` for control counts, isolation-domain
+rules, cleanup mirrors, and the current nullable-upgrade compatibility boundary.
+
 ## 当前边界
 
 这轮收敛后的边界是：

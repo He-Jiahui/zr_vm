@@ -1830,14 +1830,6 @@ static TZrSymbolId register_using_resource_symbol(SZrCompilerState *cs, SZrAstNo
                                     resource->location);
 }
 
-static SZrScope *get_current_scope(SZrCompilerState *cs) {
-    if (cs == ZR_NULL || cs->scopeStack.length == 0) {
-        return ZR_NULL;
-    }
-
-    return (SZrScope *)ZrCore_Array_Get(&cs->scopeStack, cs->scopeStack.length - 1);
-}
-
 static SZrString *create_hidden_using_local_name(SZrCompilerState *cs) {
     TZrChar buffer[ZR_PARSER_GENERATED_NAME_BUFFER_LENGTH];
     int length;
@@ -1923,37 +1915,6 @@ static TZrBool compile_using_resource_slot(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-static void register_using_cleanup_slot(SZrCompilerState *cs,
-                                        TZrUInt32 slot,
-                                        EZrOwnershipBuiltinKind ownershipBuiltinKind,
-                                        TZrUInt32 sourceSlot) {
-    SZrScope *scope;
-    SZrScopeCleanupRegistration registration;
-
-    if (cs == ZR_NULL || cs->hasError) {
-        return;
-    }
-
-    scope = get_current_scope(cs);
-    if (scope == ZR_NULL) {
-        return;
-    }
-
-    if (ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
-        (ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE &&
-         sourceSlot == slot)) {
-        emit_instruction(cs,
-                         create_instruction_0(ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED),
-                                              (TZrUInt16)slot));
-    }
-
-    registration.slot = slot;
-    registration.sourceSlot = sourceSlot;
-    registration.ownershipBuiltinKind = ownershipBuiltinKind;
-    ZrCore_Array_Push(cs->state, &scope->cleanupRegistrations, &registration);
-    scope->cleanupRegistrationCount++;
-}
-
 static TZrBool register_plugin_guard_scoped_owner_cleanup(SZrCompilerState *cs,
                                                           TZrUInt32 resourceSlot,
                                                           SZrFileRange location) {
@@ -1980,10 +1941,10 @@ static TZrBool register_plugin_guard_scoped_owner_cleanup(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    register_using_cleanup_slot(cs,
-                                ownerSlot,
-                                ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
-                                ZR_PARSER_SLOT_NONE);
+    compiler_register_scope_cleanup_slot(cs,
+                                         ownerSlot,
+                                         ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
+                                         ZR_PARSER_SLOT_NONE);
     return !cs->hasError;
 }
 
@@ -3121,17 +3082,9 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             compile_statement_trace("var decl runtime alias registration done");
         }
 
-        if (hasResolvedType && resolvedType.typeName != ZR_NULL &&
-            resolvedType.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE) {
-            SZrTypePrototypeInfo *ownerPrototype =
-                    find_compiler_type_prototype(cs, resolvedType.typeName);
-            if (ownerPrototype != ZR_NULL &&
-                (ownerPrototype->modifierFlags & ZR_DECLARATION_MODIFIER_RESOURCE) != 0U) {
-                register_using_cleanup_slot(cs,
-                                            varIndex,
-                                            ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
-                                            varIndex);
-            }
+        if (hasResolvedType) {
+            compiler_register_owner_cleanup_slot(
+                    cs, varIndex, resolvedType.ownershipQualifier);
         }
 
         if (!compile_statement_try_register_imported_compile_time_module_alias(cs, node) ||
@@ -3502,7 +3455,8 @@ static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
         if (!compile_using_resource_slot(cs, stmt->resource, ZR_NULL, &resourceSlot)) {
             return;
         }
-        register_using_cleanup_slot(cs, resourceSlot, cleanupBuiltinKind, cleanupSourceSlot);
+        compiler_register_scope_cleanup_slot(
+                cs, resourceSlot, cleanupBuiltinKind, cleanupSourceSlot);
     }
 
     if (stmt->body != ZR_NULL) {
