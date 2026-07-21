@@ -65,11 +65,32 @@ void report_missing_conditional_consequent(SZrParserState *ps, SZrFileRange loca
                                   "Missing expression after '?' in conditional expression");
 }
 
-void report_missing_conditional_colon(SZrParserState *ps, SZrFileRange location) {
-    report_conditional_diagnostic(ps,
-                                  location,
-                                  ZrParser_DiagnosticBuilder_BuildMissingConditionalColon,
-                                  "Missing ':' in conditional expression");
+void report_missing_conditional_colon(SZrParserState *ps,
+                                      SZrFileRange location,
+                                      TZrBool hasAlternateExpression) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrFileRange fixLocation;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    fixLocation = get_current_token_location(ps);
+    if (!ZrParser_DiagnosticBuilder_BuildMissingConditionalColon(
+                ps->state,
+                &diagnostic,
+                location,
+                fixLocation,
+                hasAlternateExpression)) {
+        report_error_with_token(
+                ps,
+                "Missing ':' in conditional expression",
+                ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
 }
 
 void report_missing_conditional_alternate(SZrParserState *ps, SZrFileRange location) {

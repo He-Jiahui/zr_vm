@@ -862,6 +862,158 @@ static void test_lsp_code_action_inserts_missing_object_property_separator(
     }
 }
 
+static void test_lsp_code_action_inserts_missing_conditional_colon(
+        SZrState *state,
+        int *failures) {
+    const TZrChar *summary =
+            "LSP code action inserts missing conditional colon";
+    const TZrChar *content = "return true ? 1 2;";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri = ZR_NULL;
+    SZrArray diagnostics = {0};
+    SZrArray actions = {0};
+    const SZrLspDiagnostic *diagnostic;
+    const SZrLspDiagnosticFix *fix = ZR_NULL;
+    TZrBool valid = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(
+            state,
+            "file:///tmp/zr_lsp_diagnostic_conditional_colon_fix.zr",
+            content,
+            &uri);
+    ZrCore_Array_Init(
+            state, &diagnostics, sizeof(SZrLspDiagnostic *), 4U);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetDiagnostics(
+                state, context, uri, &diagnostics)) {
+        diagnostic = diagnostic_safe_fix_find_code(
+                &diagnostics, "missing_conditional_colon");
+        if (diagnostic != ZR_NULL && diagnostic->fixes.isValid &&
+            diagnostic->fixes.length == 1U) {
+            fix = (const SZrLspDiagnosticFix *)ZrCore_Array_Get(
+                    (SZrArray *)&diagnostic->fixes, 0U);
+        }
+        if (fix != ZR_NULL &&
+            diagnostic->range.start.line == 0 &&
+            diagnostic->range.start.character == 12 &&
+            diagnostic->range.end.line == 0 &&
+            diagnostic->range.end.character == 13 &&
+            fix->applicability == ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE &&
+            fix->editRange.start.line == 0 &&
+            fix->editRange.start.character == 16 &&
+            fix->editRange.end.line == 0 &&
+            fix->editRange.end.character == 16 &&
+            strcmp(test_string_text(fix->title),
+                   "Insert missing ':'") == 0 &&
+            strcmp(test_string_text(fix->editText), ":") == 0 &&
+            ZrLanguageServer_Lsp_GetCodeActions(
+                    state,
+                    context,
+                    uri,
+                    diagnostic->range,
+                    &actions) &&
+            diagnostic_safe_fix_action_matches(
+                    &actions, "Insert missing ':'", ":")) {
+            valid = ZR_TRUE;
+        }
+    }
+
+    if (!valid) {
+        (*failures)++;
+        TEST_FAIL(
+                timer,
+                summary,
+                "missing conditional colon did not preserve the question-token range and drive one exact machine-applicable quick fix");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_action_skips_conditional_branch_expression_fixes(
+        SZrState *state,
+        int *failures) {
+    static const struct {
+        const TZrChar *uri;
+        const TZrChar *content;
+        const TZrChar *code;
+    } cases[] = {
+        {"file:///tmp/zr_lsp_diagnostic_conditional_consequent_fix.zr",
+         "return true ? : 2;",
+         "missing_conditional_consequent"},
+        {"file:///tmp/zr_lsp_diagnostic_conditional_alternate_fix.zr",
+         "return true ? 1 : ;",
+         "missing_conditional_alternate"},
+        {"file:///tmp/zr_lsp_diagnostic_conditional_without_alternate_fix.zr",
+         "return true ? 1;",
+         "missing_conditional_colon"},
+    };
+    const TZrChar *summary =
+            "LSP code action skips conditional branch expression fixes";
+    SZrTestTimer timer;
+    TZrBool valid = ZR_TRUE;
+
+    TEST_START(summary);
+    for (TZrSize index = 0U;
+         index < sizeof(cases) / sizeof(cases[0]);
+         index++) {
+        SZrLspContext *context;
+        SZrString *uri = ZR_NULL;
+        SZrArray diagnostics = {0};
+        SZrArray actions = {0};
+        const SZrLspDiagnostic *diagnostic = ZR_NULL;
+
+        context = test_open_document(
+                state, cases[index].uri, cases[index].content, &uri);
+        ZrCore_Array_Init(
+                state, &diagnostics, sizeof(SZrLspDiagnostic *), 4U);
+        if (context == ZR_NULL ||
+            !ZrLanguageServer_Lsp_GetDiagnostics(
+                    state, context, uri, &diagnostics)) {
+            valid = ZR_FALSE;
+        } else {
+            diagnostic = diagnostic_safe_fix_find_code(
+                    &diagnostics, cases[index].code);
+            if (diagnostic == ZR_NULL ||
+                (diagnostic->fixes.isValid &&
+                 diagnostic->fixes.length != 0U) ||
+                !ZrLanguageServer_Lsp_GetCodeActions(
+                        state,
+                        context,
+                        uri,
+                        diagnostic->range,
+                        &actions) ||
+                diagnostic_safe_fix_action_matches(
+                        &actions, "Insert missing ':'", ":")) {
+                valid = ZR_FALSE;
+            }
+        }
+
+        ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+        ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+    }
+
+    if (!valid) {
+        (*failures)++;
+        TEST_FAIL(
+                timer,
+                summary,
+                "conditional consequent or alternate expression diagnostics exposed a machine-applicable punctuation fix");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+}
+
 static void test_lsp_code_action_inserts_missing_using_object_pattern_close(
         SZrState *state,
         int *failures) {

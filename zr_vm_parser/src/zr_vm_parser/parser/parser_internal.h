@@ -130,7 +130,9 @@ void report_missing_object_property_separator(SZrParserState *ps, SZrFileRange l
 
 void report_missing_conditional_consequent(SZrParserState *ps, SZrFileRange location);
 
-void report_missing_conditional_colon(SZrParserState *ps, SZrFileRange location);
+void report_missing_conditional_colon(SZrParserState *ps,
+                                      SZrFileRange location,
+                                      TZrBool hasAlternateExpression);
 
 void report_missing_conditional_alternate(SZrParserState *ps, SZrFileRange location);
 

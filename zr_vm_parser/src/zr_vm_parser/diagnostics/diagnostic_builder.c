@@ -985,17 +985,38 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalConsequent(SZrState *s
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalColon(SZrState *state,
-                                                               SZrStructuredDiagnostic *out,
-                                                               SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
-            state,
-            out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
-            location,
-            "missing_conditional_colon",
-            "Missing ':' in conditional expression",
-            "The conditional expression has a condition and consequent branch, but the alternate branch separator is missing.",
-            "Insert ':' between the consequent and alternate expressions.");
+                                                                SZrStructuredDiagnostic *out,
+                                                                SZrFileRange location,
+                                                                SZrFileRange fixLocation,
+                                                                TZrBool hasAlternateExpression) {
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "missing_conditional_colon",
+                "Missing ':' in conditional expression",
+                "The conditional expression has a condition and consequent branch, but the alternate branch separator is missing.",
+                "Insert ':' between the consequent and alternate expressions.")) {
+        return ZR_FALSE;
+    }
+
+    if (!hasAlternateExpression) {
+        return ZR_TRUE;
+    }
+
+    fixLocation.end = fixLocation.start;
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Insert missing ':'",
+                fixLocation,
+                ":",
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalAlternate(SZrState *state,

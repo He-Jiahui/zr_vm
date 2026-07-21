@@ -84,6 +84,8 @@
 
 [2026-07-21 object property-separator safe-fix convergence](./02-diagnostics/2026-07-21-object-property-separator-safe-fix-convergence.md) 让`missing_object_property_separator`复用同一通用structured-fix consumer与code-action snapshot；identifier/string next-key token保留primary，token前逗号edit应用后的新version清除诊断，不新增key-kind/object-AST/code/message/source fallback。其他delimiter producer、并发race/cancellation与性能内存预算仍待后续。
 
+[2026-07-21 conditional-colon safe-fix convergence](./02-diagnostics/2026-07-21-conditional-colon-safe-fix-convergence.md) 让`missing_conditional_colon`复用同一通用structured-fix consumer与code-action snapshot；question token保持primary，alternate token前冒号edit应用后的新version清除诊断，no-alternate边界保留诊断但不发布action，不新增conditional-AST/code/message/source fallback。其他delimiter producer、并发race/cancellation与性能内存预算仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

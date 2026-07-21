@@ -56,6 +56,14 @@ const objectPropertyColonDocumentUri =
     'file:///zr-diagnostic-object-property-colon-fix-smoke.zr';
 const objectPropertySeparatorDocumentUri =
     'file:///zr-diagnostic-object-property-separator-fix-smoke.zr';
+const conditionalColonDocumentUri =
+    'file:///zr-diagnostic-conditional-colon-fix-smoke.zr';
+const conditionalConsequentDocumentUri =
+    'file:///zr-diagnostic-conditional-consequent-fix-smoke.zr';
+const conditionalAlternateDocumentUri =
+    'file:///zr-diagnostic-conditional-alternate-fix-smoke.zr';
+const conditionalWithoutAlternateDocumentUri =
+    'file:///zr-diagnostic-conditional-without-alternate-fix-smoke.zr';
 const documentText = [
     'func choose(flag: bool): int {',
     '    var seed: int;',
@@ -81,6 +89,10 @@ const objectDocumentText = 'return {a: 1';
 const objectComputedKeyDocumentText = 'return {[1: 2};';
 const objectPropertyColonDocumentText = 'return {a 1};';
 const objectPropertySeparatorDocumentText = 'return {a: 1 "b": 2};';
+const conditionalColonDocumentText = 'return true ? 1 2;';
+const conditionalConsequentDocumentText = 'return true ? : 2;';
+const conditionalAlternateDocumentText = 'return true ? 1 : ;';
+const conditionalWithoutAlternateDocumentText = 'return true ? 1;';
 
 const payload = Buffer.concat([
     createMessage({
@@ -467,7 +479,93 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: objectPropertySeparatorDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 25, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: conditionalColonDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: conditionalColonDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 25,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: conditionalColonDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didChange',
+        params: {
+            textDocument: { uri: conditionalColonDocumentUri, version: 2 },
+            contentChanges: [{ text: 'return true ? 1 : 2;' }],
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 26,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: conditionalColonDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: conditionalConsequentDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: conditionalConsequentDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 27,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: conditionalConsequentDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: conditionalAlternateDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: conditionalAlternateDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 28,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: conditionalAlternateDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: conditionalWithoutAlternateDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: conditionalWithoutAlternateDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 29,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: conditionalWithoutAlternateDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 30, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -998,3 +1096,71 @@ assert(fixedObjectPropertySeparatorPublication &&
     !fixedObjectPropertySeparatorPublication.params.diagnostics.some((entry) =>
         entry.code === 'missing_object_property_separator'),
     'Expected the applied property-separator fix to clear the diagnostic');
+
+const conditionalColonPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === conditionalColonDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'missing_conditional_colon'));
+assert(conditionalColonPublication,
+    'Expected missing_conditional_colon publication');
+
+const conditionalColonDiagnostic =
+    conditionalColonPublication.params.diagnostics.find((entry) =>
+        entry.code === 'missing_conditional_colon');
+assert(conditionalColonDiagnostic.range.start.line === 0 &&
+    conditionalColonDiagnostic.range.start.character === 12 &&
+    conditionalColonDiagnostic.range.end.line === 0 &&
+    conditionalColonDiagnostic.range.end.character === 13,
+    'Expected the conditional-colon primary range on the question token');
+assert(conditionalColonDiagnostic.data &&
+    Array.isArray(conditionalColonDiagnostic.data.fixes) &&
+    conditionalColonDiagnostic.data.fixes.length === 1,
+    'Expected one serialized conditional-colon diagnostic fix');
+
+const conditionalColonFix = conditionalColonDiagnostic.data.fixes[0];
+assert(conditionalColonFix.title === "Insert missing ':'" &&
+    conditionalColonFix.applicability === 1 &&
+    conditionalColonFix.edit &&
+    conditionalColonFix.edit.newText === ':',
+    'Expected a machine-applicable serialized conditional-colon edit');
+assert(conditionalColonFix.edit.range.start.line === 0 &&
+    conditionalColonFix.edit.range.start.character === 16 &&
+    conditionalColonFix.edit.range.end.line === 0 &&
+    conditionalColonFix.edit.range.end.character === 16,
+    'Expected the conditional-colon edit before the alternate expression');
+
+const fixedConditionalColonPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === conditionalColonDocumentUri &&
+    message.params.version === 2 &&
+    Array.isArray(message.params.diagnostics));
+assert(fixedConditionalColonPublication &&
+    !fixedConditionalColonPublication.params.diagnostics.some((entry) =>
+        entry.code === 'missing_conditional_colon'),
+    'Expected the applied conditional-colon fix to clear the diagnostic');
+
+for (const [uri, code] of [
+    [conditionalConsequentDocumentUri, 'missing_conditional_consequent'],
+    [conditionalAlternateDocumentUri, 'missing_conditional_alternate'],
+    [conditionalWithoutAlternateDocumentUri, 'missing_conditional_colon'],
+]) {
+    const publication = messages.find((message) =>
+        message.method === 'textDocument/publishDiagnostics' &&
+        message.params &&
+        message.params.uri === uri &&
+        message.params.version === 1 &&
+        Array.isArray(message.params.diagnostics) &&
+        message.params.diagnostics.some((entry) => entry.code === code));
+    assert(publication, `Expected ${code} publication`);
+    const branchDiagnostic = publication.params.diagnostics.find(
+        (entry) => entry.code === code);
+    assert(!branchDiagnostic.data ||
+        !Array.isArray(branchDiagnostic.data.fixes) ||
+        branchDiagnostic.data.fixes.length === 0,
+        `Expected ${code} to publish no machine-applicable punctuation fix`);
+}

@@ -160,7 +160,9 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalConseque
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalColon(
     SZrState *state,
     SZrStructuredDiagnostic *out,
-    SZrFileRange location);
+    SZrFileRange location,
+    SZrFileRange fixLocation,
+    TZrBool hasAlternateExpression);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalAlternate(
     SZrState *state,
     SZrStructuredDiagnostic *out,

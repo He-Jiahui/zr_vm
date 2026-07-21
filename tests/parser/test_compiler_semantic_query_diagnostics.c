@@ -1562,6 +1562,86 @@ static void test_missing_object_property_separator_builder_publishes_machine_fix
     ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
 }
 
+static void test_missing_conditional_colon_builder_publishes_machine_fix(void) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrStructuredDiagnosticFix *fix;
+    SZrFileRange location;
+    SZrFileRange fixLocation;
+
+    location = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(12U, 1, 13),
+            ZrParser_FilePosition_Create(13U, 1, 14),
+            ZR_NULL);
+    fixLocation = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(16U, 1, 17),
+            ZrParser_FilePosition_Create(17U, 1, 18),
+            ZR_NULL);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingConditionalColon(
+            g_state,
+            &diagnostic,
+            location,
+            fixLocation,
+            ZR_TRUE));
+    TEST_ASSERT_EQUAL_UINT64(12U, diagnostic.location.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(13U, diagnostic.location.end.offset);
+    TEST_ASSERT_TRUE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostic.fixes.length);
+
+    fix = (SZrStructuredDiagnosticFix *)ZrCore_Array_Get(
+            &diagnostic.fixes, 0U);
+    TEST_ASSERT_NOT_NULL(fix);
+    TEST_ASSERT_EQUAL_STRING(
+            "Insert missing ':'",
+            ZrCore_String_GetNativeString(fix->title));
+    TEST_ASSERT_EQUAL_STRING(":", ZrCore_String_GetNativeString(fix->editText));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE, fix->applicability);
+    TEST_ASSERT_EQUAL_UINT64(16U, fix->editRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(16U, fix->editRange.end.offset);
+
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+}
+
+static void test_missing_conditional_branch_expression_builders_publish_no_fix(void) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrFileRange location;
+    SZrFileRange fixLocation;
+
+    location = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(12U, 1, 13),
+            ZrParser_FilePosition_Create(13U, 1, 14),
+            ZR_NULL);
+    fixLocation = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(17U, 1, 18),
+            ZrParser_FilePosition_Create(18U, 1, 19),
+            ZR_NULL);
+
+    TEST_ASSERT_TRUE(
+            ZrParser_DiagnosticBuilder_BuildMissingConditionalConsequent(
+                    g_state,
+                    &diagnostic,
+                    location));
+    TEST_ASSERT_FALSE(diagnostic.fixes.isValid);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingConditionalAlternate(
+            g_state,
+            &diagnostic,
+            location));
+    TEST_ASSERT_FALSE(diagnostic.fixes.isValid);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingConditionalColon(
+            g_state,
+            &diagnostic,
+            location,
+            fixLocation,
+            ZR_FALSE));
+    TEST_ASSERT_FALSE(diagnostic.fixes.isValid);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_compile_script_publishes_semantic_query_diagnostics_without_error);
@@ -1593,5 +1673,7 @@ int main(void) {
     RUN_TEST(test_missing_object_computed_key_close_builder_publishes_machine_fix);
     RUN_TEST(test_missing_object_property_colon_builder_publishes_machine_fix);
     RUN_TEST(test_missing_object_property_separator_builder_publishes_machine_fix);
+    RUN_TEST(test_missing_conditional_colon_builder_publishes_machine_fix);
+    RUN_TEST(test_missing_conditional_branch_expression_builders_publish_no_fix);
     return UNITY_END();
 }

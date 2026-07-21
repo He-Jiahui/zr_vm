@@ -623,7 +623,10 @@ SZrAstNode *parse_conditional_expression(SZrParserState *ps) {
         }
 
         if (ps->lexer->t.token != ZR_TK_COLON) {
-            report_missing_conditional_colon(ps, questionLoc);
+            report_missing_conditional_colon(
+                    ps,
+                    questionLoc,
+                    parser_token_can_start_expression(ps->lexer->t.token));
             ZrParser_Ast_Free(ps->state, consequent);
             ZrParser_Ast_Free(ps->state, test);
             return ZR_NULL;
