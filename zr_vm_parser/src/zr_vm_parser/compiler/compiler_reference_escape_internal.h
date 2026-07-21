@@ -5,6 +5,7 @@
 
 typedef struct SZrReferenceEscapeBinding {
     SZrString *name;
+    const SZrType *declaredType;
     TZrInt32 scopeDepth;
     TZrBool isReference;
     TZrBool isRefLike;

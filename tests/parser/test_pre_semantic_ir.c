@@ -626,7 +626,7 @@ static void test_flow_join_keeps_dimensions_separate_and_reports_negative_uses(v
     state = ZrParser_SemanticFlow_PlaceState(joinFacts, movePlace, ZR_TRUE);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_AVAILABILITY_MAYBE_MOVED, state->availability);
     state = ZrParser_SemanticFlow_PlaceState(joinFacts, loanPlace, ZR_TRUE);
-    TEST_ASSERT_EQUAL_UINT64(0U, state->borrowing.sharedLoanIds.length);
+    TEST_ASSERT_EQUAL_UINT64(1U, state->borrowing.sharedLoanIds.length);
     state = ZrParser_SemanticFlow_PlaceState(joinFacts, escapePlace, ZR_TRUE);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_ESCAPE_CALLER, state->escape);
 
@@ -749,6 +749,166 @@ static void test_store_restores_moved_place_and_end_loan_restores_read_access(vo
 
     ZrParser_SemanticFlowResult_Free(g_state, &result);
     ZrParser_SemanticIrFunction_Free(g_state, &function);
+}
+
+static void test_place_load_extends_stored_loan_liveness_across_exclusive_access(void) {
+    static const struct {
+        EZrSemanticIrOpcode exclusiveOpcode;
+        EZrSemanticOwnershipOperation ownershipOperation;
+        TZrBool hasLaterAliasLoad;
+        TZrBool expectsConflict;
+    } cases[] = {
+        { ZR_SEMANTIC_IR_DROP, ZR_SEMANTIC_OWNERSHIP_NONE, ZR_TRUE, ZR_TRUE },
+        { ZR_SEMANTIC_IR_MOVE, ZR_SEMANTIC_OWNERSHIP_NONE, ZR_TRUE, ZR_TRUE },
+        { ZR_SEMANTIC_IR_OWN_CONSTRUCT,
+          ZR_SEMANTIC_OWNERSHIP_SHARE,
+          ZR_TRUE,
+          ZR_TRUE },
+        { ZR_SEMANTIC_IR_DROP, ZR_SEMANTIC_OWNERSHIP_NONE, ZR_FALSE, ZR_FALSE },
+    };
+
+    for (TZrSize caseIndex = 0U;
+         caseIndex < ZR_ARRAY_COUNT(cases);
+         caseIndex++) {
+        SZrSemanticIrFunction function;
+        SZrSemanticFlowResult result;
+        SZrParserPlaceBase base;
+        SZrSemanticIrInstructionSpec spec;
+        SZrParserCfg *cfg;
+        TZrPlaceId ownerPlace;
+        TZrPlaceId aliasPlace;
+        TZrValueId ownerValue;
+        TZrValueId borrowedValue;
+        TZrValueId movedValue;
+        TZrValueId loadValue;
+        TZrRegionId regionId;
+        TZrLoanId loanId;
+        TZrUInt32 entryBlock;
+        TZrUInt32 exitBlock;
+        TZrUInt32 instructionCount =
+                cases[caseIndex].hasLaterAliasLoad ? 5U : 4U;
+
+        ZrParser_SemanticIrFunction_Init(
+                g_state, &function, 51U, (TZrSymbolId)(52U + caseIndex));
+        ZrParser_SemanticFlowResult_Init(g_state, &result);
+        cfg = &function.cfg;
+
+        memset(&base, 0, sizeof(base));
+        base.kind = ZR_PARSER_PLACE_BASE_LOCAL;
+        base.identity = 501U;
+        ownerPlace = ZrParser_SemanticIr_AddLocal(
+                &function, 501U, &base, 5U, empty_range(), ZR_FALSE);
+        base.identity = 502U;
+        aliasPlace = ZrParser_SemanticIr_AddLocal(
+                &function, 502U, &base, 5U, empty_range(), ZR_FALSE);
+        TEST_ASSERT_NOT_EQUAL(ZR_PLACE_ID_INVALID, ownerPlace);
+        TEST_ASSERT_NOT_EQUAL(ZR_PLACE_ID_INVALID, aliasPlace);
+
+        ownerValue = ZrParser_SemanticIr_AddValue(
+                &function, 5U, empty_range());
+        borrowedValue = ZrParser_SemanticIr_AddValue(
+                &function, 5U, empty_range());
+        movedValue = ZrParser_SemanticIr_AddValue(
+                &function, 5U, empty_range());
+        loadValue = ZrParser_SemanticIr_AddValue(
+                &function, 5U, empty_range());
+        regionId = ZrParser_SemanticIr_AddRegion(
+                &function,
+                ZR_SEMANTIC_REGION_ID_INVALID,
+                ZR_SEMANTIC_ESCAPE_FUNCTION,
+                empty_range());
+        loanId = ZrParser_SemanticIr_AddLoan(
+                &function,
+                ownerPlace,
+                ZR_SEMANTIC_LOAN_SHARED,
+                regionId,
+                empty_range(),
+                empty_range(),
+                borrowedValue);
+        TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_LOAN_ID_INVALID, loanId);
+
+        spec = instruction_spec(
+                ZR_SEMANTIC_IR_INITIALIZE,
+                ownerPlace,
+                ownerValue,
+                ZR_VALUE_ID_INVALID,
+                5U);
+        emit_instruction(&function, spec);
+        spec = instruction_spec(
+                ZR_SEMANTIC_IR_BORROW_SHARED,
+                ownerPlace,
+                ZR_VALUE_ID_INVALID,
+                borrowedValue,
+                5U);
+        spec.loanId = loanId;
+        spec.regionId = regionId;
+        emit_instruction(&function, spec);
+        spec = instruction_spec(
+                ZR_SEMANTIC_IR_INITIALIZE,
+                aliasPlace,
+                borrowedValue,
+                ZR_VALUE_ID_INVALID,
+                5U);
+        emit_instruction(&function, spec);
+        spec = instruction_spec(
+                cases[caseIndex].exclusiveOpcode,
+                ownerPlace,
+                ownerValue,
+                (cases[caseIndex].exclusiveOpcode == ZR_SEMANTIC_IR_MOVE ||
+                 cases[caseIndex].exclusiveOpcode == ZR_SEMANTIC_IR_OWN_CONSTRUCT)
+                        ? movedValue
+                        : ZR_VALUE_ID_INVALID,
+                5U);
+        spec.ownershipOperation = cases[caseIndex].ownershipOperation;
+        emit_instruction(&function, spec);
+        if (cases[caseIndex].hasLaterAliasLoad) {
+            spec = instruction_spec(
+                    ZR_SEMANTIC_IR_LOAD,
+                    aliasPlace,
+                    ZR_VALUE_ID_INVALID,
+                    loadValue,
+                    5U);
+            emit_instruction(&function, spec);
+        }
+
+        entryBlock = append_block(cfg, ZR_PARSER_CFG_BLOCK_ENTRY);
+        exitBlock = append_block(cfg, ZR_PARSER_CFG_BLOCK_EXIT);
+        cfg->entryBlockId = entryBlock;
+        cfg->exitBlockId = exitBlock;
+        TEST_ASSERT_TRUE(ZrParser_Cfg_Connect(
+                cfg,
+                entryBlock,
+                exitBlock,
+                ZR_PARSER_CFG_EDGE_RETURN,
+                ZR_NULL));
+        bind_block(
+                &function,
+                cfg,
+                entryBlock,
+                0U,
+                instructionCount,
+                ZR_PARSER_CFG_TERMINATOR_RETURN);
+        bind_block(
+                &function,
+                cfg,
+                exitBlock,
+                instructionCount,
+                0U,
+                ZR_PARSER_CFG_TERMINATOR_EXIT);
+
+        TEST_ASSERT_TRUE(ZrParser_SemanticIr_Validate(&function));
+        TEST_ASSERT_TRUE(ZrParser_SemanticFlow_Analyze(
+                g_state, &function, cfg, &result));
+        TEST_ASSERT_EQUAL_INT(
+                cases[caseIndex].expectsConflict,
+                ZrParser_SemanticFlow_HasDiagnostic(
+                        &result,
+                        ZR_SEMANTIC_FLOW_LOAN_CONFLICT,
+                        ownerPlace));
+
+        ZrParser_SemanticFlowResult_Free(g_state, &result);
+        ZrParser_SemanticIrFunction_Free(g_state, &function);
+    }
 }
 
 static void test_joined_mutable_loans_end_after_conservative_path_conflict(void) {
@@ -941,6 +1101,7 @@ int main(void) {
     RUN_TEST(test_field_initialize_rejects_non_projected_destination);
     RUN_TEST(test_flow_join_keeps_dimensions_separate_and_reports_negative_uses);
     RUN_TEST(test_store_restores_moved_place_and_end_loan_restores_read_access);
+    RUN_TEST(test_place_load_extends_stored_loan_liveness_across_exclusive_access);
     RUN_TEST(test_joined_mutable_loans_end_after_conservative_path_conflict);
     RUN_TEST(test_compiler_ownership_lowering_records_explicit_semantic_operation);
     return UNITY_END();

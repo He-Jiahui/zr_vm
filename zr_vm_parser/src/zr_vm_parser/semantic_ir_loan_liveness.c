@@ -625,6 +625,17 @@ static void loan_build_instruction_uses(SSemanticLoanAnalysis *analysis) {
             continue;
         }
         loan_collect_instruction_inputs(analysis, instruction, uses);
+        if (instruction->placeId != ZR_PLACE_ID_INVALID &&
+            instruction->placeId <= analysis->placeCount &&
+            loan_opcode_propagates_place_to_result(instruction->opcode)) {
+            (void)loan_set_union(
+                    uses,
+                    loan_const_row(
+                            analysis->placeLoans,
+                            (TZrSize)instruction->placeId - 1U,
+                            analysis->loanCount),
+                    analysis->loanCount);
+        }
         if (instruction->opcode == ZR_SEMANTIC_IR_END_LOAN &&
             instruction->loanId != ZR_SEMANTIC_LOAN_ID_INVALID) {
             uses[(TZrSize)instruction->loanId - 1U] = ZR_TRUE;

@@ -129,6 +129,11 @@ TZrBool compiler_semantic_ir_activate_receiver_call(
         SZrCompilerState *cs,
         TZrLoanId loanId,
         SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_project_receiver_call_result(
+        SZrCompilerState *cs,
+        TZrLoanId loanId,
+        TZrUInt32 resultSlot,
+        SZrFileRange sourceRange);
 TZrBool compiler_semantic_ir_end_receiver_call(
         SZrCompilerState *cs,
         TZrLoanId loanId,

@@ -5,7 +5,6 @@
 #include "compile_expression_internal.h"
 
 static TZrBool primary_expression_starts_with_member_call(const SZrPrimaryExpression *primary);
-static TZrBool primary_expression_starts_with_ownership_member_call(const SZrPrimaryExpression *primary);
 static TZrBool primary_expression_resolve_direct_ownership_receiver(
         SZrCompilerState *cs,
         const SZrPrimaryExpression *primary,
@@ -738,31 +737,6 @@ static TZrBool primary_expression_starts_with_member_call(const SZrPrimaryExpres
            primary->members->nodes[1]->type == ZR_AST_FUNCTION_CALL;
 }
 
-static TZrBool primary_expression_starts_with_ownership_member_call(const SZrPrimaryExpression *primary) {
-    SZrAstNode *firstMemberNode;
-    SZrMemberExpression *firstMemberExpr;
-    EZrOwnershipBuiltinKind ownershipMemberKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
-
-    if (!primary_expression_starts_with_member_call(primary)) {
-        return ZR_FALSE;
-    }
-
-    firstMemberNode = primary->members->nodes[0];
-    if (firstMemberNode == ZR_NULL || firstMemberNode->type != ZR_AST_MEMBER_EXPRESSION) {
-        return ZR_FALSE;
-    }
-
-    firstMemberExpr = &firstMemberNode->data.memberExpression;
-    if (firstMemberExpr->computed ||
-        firstMemberExpr->property == ZR_NULL ||
-        firstMemberExpr->property->type != ZR_AST_IDENTIFIER_LITERAL) {
-        return ZR_FALSE;
-    }
-
-    return ZrParser_OwnershipMemberNameToBuiltinKind(firstMemberExpr->property->data.identifier.name,
-                                                     &ownershipMemberKind);
-}
-
 static TZrBool primary_expression_resolve_direct_ownership_receiver(
         SZrCompilerState *cs,
         const SZrPrimaryExpression *primary,
@@ -789,7 +763,7 @@ static TZrBool primary_expression_resolve_direct_ownership_receiver(
     }
 
     if (cs == ZR_NULL || primary == ZR_NULL || primary->property == ZR_NULL || cs->hasError ||
-        !primary_expression_starts_with_ownership_member_call(primary) ||
+        !primary_expression_starts_with_member_call(primary) ||
         compiler_is_super_identifier_node(primary->property) ||
         primary->property->type != ZR_AST_IDENTIFIER_LITERAL ||
         primary->property->data.identifier.name == ZR_NULL) {

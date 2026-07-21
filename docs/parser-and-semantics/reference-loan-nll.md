@@ -15,9 +15,11 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_facts.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md
+  - docs/plans/syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md
 tests:
   - tests/parser/test_reference_loan_nll.c
   - tests/parser/test_pre_semantic_ir.c
+  - tests/parser/test_resource_owner_borrow_receiver.c
   - tests/acceptance/2026-07-20-syntax-02-m3-reference-loan-nll.md
 doc_type: module-detail
 ---
@@ -49,6 +51,10 @@ on only those Places:
 This two-stage calculation prevents a historical assignment from remaining
 attached to every later Load while avoiding a dense all-Place state for Places
 that never carry references.
+
+Place-to-result instructions also consume the currently reaching Place loan set.
+Consequently, a later load or conversion keeps an owner-derived reference loan
+live through its real final use instead of ending it at the intermediate store.
 
 ## NLL and reborrow
 
@@ -87,6 +93,8 @@ Every Place access is compared with live-in loans through
 - shared loans coexist with shared loans and reads;
 - a mutable loan conflicts with another shared or mutable borrow;
 - Store, Initialize, Move and Drop conflict with every overlapping live loan;
+- owner `share` construction consumes the Unique source and is classified as an
+  exclusive access while an overlapping loan is live;
 - direct reads conflict with an overlapping mutable loan;
 - disjoint projections do not conflict;
 - unknown overlap is rejected conservatively and remains distinguishable from
@@ -114,8 +122,9 @@ create diagnostics or contaminate a reachable join.
 
 ## Milestone boundary
 
-M3 consumes canonical loan instructions, Place overlap and owned CFG ranges. It
-does not add a second source passing-mode system. M4 connects readonly receivers,
-owner auto-deref and two-phase receiver borrowing to these facts; see
-`receiver-readonly-call-boundary.md`. M5 owns escape, closure and suspension
-rejection.
+Syntax 02 M3 establishes canonical loan instructions, Place overlap and owned
+CFG ranges without adding a second source passing-mode system. Syntax 02 M4
+connects general readonly receivers and two-phase calls. Syntax 04 M3 now reuses
+those facts for Unique/Shared owner reborrow, owner receiver access, and
+drop/share/move conflicts; see `resource-owner-borrow-receiver.md`. Reference
+escape, closure and suspension remain governed by the dedicated escape pass.

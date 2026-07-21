@@ -205,6 +205,26 @@ static TZrBool type_inference_ownership_flow_shells_match(const SZrInferredType 
     return ZrCore_String_Equal(targetType->typeName, sourceType->typeName);
 }
 
+TZrBool type_inference_in_parameter_accepts_owner_reborrow(
+        EZrParameterPassingMode passingMode,
+        const SZrInferredType *parameterType,
+        const SZrInferredType *argumentType) {
+    SZrInferredType borrowedType;
+
+    if (passingMode != ZR_PARAMETER_PASSING_MODE_IN ||
+        parameterType == ZR_NULL || argumentType == ZR_NULL ||
+        parameterType->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE ||
+        (argumentType->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_UNIQUE &&
+         argumentType->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_SHARED) ||
+        !type_inference_ownership_flow_shells_match(parameterType, argumentType)) {
+        return ZR_FALSE;
+    }
+
+    borrowedType = *argumentType;
+    borrowedType.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    return ZrParser_InferredType_IsCompatible(&borrowedType, parameterType);
+}
+
 const TZrChar *type_inference_ownership_flow_diagnostic_message(const SZrInferredType *targetType,
                                                                 const SZrInferredType *sourceType) {
     const TZrChar *directMessage;
@@ -965,6 +985,8 @@ TZrBool ZrParser_FunctionCallCompatibility_Check(SZrCompilerState *cs,
         }
 
         if (!ZrParser_InferredType_IsCompatible(argType, paramType) &&
+            !type_inference_in_parameter_accepts_owner_reborrow(
+                    passingMode, paramType, argType) &&
             !inferred_type_can_use_named_constraint_fallback(cs, argType, paramType) &&
             !ffi_function_call_argument_is_native_boundary_compatible(cs, funcType, i, argType, paramType)) {
             const TZrChar *ownershipDiagnostic =

@@ -324,6 +324,7 @@ void reference_escape_register_parameters(
             }
             memset(&binding, 0, sizeof(binding));
             binding.name = parameter->name->name;
+            binding.declaredType = parameter->typeInfo;
             binding.scopeDepth = context->scopeDepth;
             binding.isRefLike = reference_escape_type_is_ref_like(
                     context, parameter->typeInfo);
@@ -343,6 +344,7 @@ void reference_escape_register_parameters(
         SZrReferenceEscapeBinding binding;
         memset(&binding, 0, sizeof(binding));
         binding.name = vararg->name->name;
+        binding.declaredType = vararg->typeInfo;
         binding.scopeDepth = context->scopeDepth;
         binding.isRefLike = reference_escape_type_is_ref_like(
                 context, vararg->typeInfo);
@@ -678,6 +680,160 @@ static TZrBool reference_escape_analyze_lambda(
     return ZR_TRUE;
 }
 
+static SZrString *reference_escape_owner_inner_type_name(
+        const SZrType *ownerType) {
+    const SZrGenericType *ownerGeneric;
+    const SZrAstNode *innerNode;
+    const SZrType *innerType;
+
+    if (ownerType == ZR_NULL ||
+        (ownerType->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_UNIQUE &&
+         ownerType->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_SHARED) ||
+        ownerType->name == ZR_NULL ||
+        ownerType->name->type != ZR_AST_GENERIC_TYPE) {
+        return ZR_NULL;
+    }
+    ownerGeneric = &ownerType->name->data.genericType;
+    if (ownerGeneric->params == ZR_NULL ||
+        ownerGeneric->params->count != 1U) {
+        return ZR_NULL;
+    }
+    innerNode = ownerGeneric->params->nodes[0];
+    if (innerNode == ZR_NULL || innerNode->type != ZR_AST_TYPE) {
+        return ZR_NULL;
+    }
+    innerType = &innerNode->data.type;
+    if (innerType->name == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (innerType->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return innerType->name->data.identifier.name;
+    }
+    if (innerType->name->type == ZR_AST_GENERIC_TYPE &&
+        innerType->name->data.genericType.name != ZR_NULL) {
+        return innerType->name->data.genericType.name->name;
+    }
+    return ZR_NULL;
+}
+
+static SZrAstNode *reference_escape_root_script(
+        SZrReferenceEscapeContext *context) {
+    SZrReferenceEscapeContext *root = context;
+
+    while (root != ZR_NULL && root->parent != ZR_NULL) {
+        root = root->parent;
+    }
+    return root != ZR_NULL && root->bodyRoot != ZR_NULL &&
+                   root->bodyRoot->type == ZR_AST_SCRIPT
+                   ? root->bodyRoot
+                   : ZR_NULL;
+}
+
+static SZrAstNode *reference_escape_find_source_type_declaration(
+        SZrReferenceEscapeContext *context,
+        SZrString *typeName) {
+    SZrAstNode *script = reference_escape_root_script(context);
+    SZrAstNodeArray *statements;
+
+    if (script == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    statements = script->data.script.statements;
+    for (TZrSize index = 0U;
+         statements != ZR_NULL && index < statements->count;
+         index++) {
+        SZrAstNode *declaration = statements->nodes[index];
+        SZrIdentifier *declarationName = ZR_NULL;
+
+        if (declaration == ZR_NULL) {
+            continue;
+        }
+        if (declaration->type == ZR_AST_CLASS_DECLARATION) {
+            declarationName = declaration->data.classDeclaration.name;
+        } else if (declaration->type == ZR_AST_STRUCT_DECLARATION) {
+            declarationName = declaration->data.structDeclaration.name;
+        }
+        if (declarationName != ZR_NULL &&
+            reference_escape_string_equals(declarationName->name, typeName)) {
+            return declaration;
+        }
+    }
+    return ZR_NULL;
+}
+
+static const SZrType *reference_escape_find_receiver_method_return_type(
+        SZrAstNode *typeDeclaration,
+        SZrString *methodName) {
+    SZrAstNodeArray *members = ZR_NULL;
+
+    if (typeDeclaration == ZR_NULL || methodName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (typeDeclaration->type == ZR_AST_CLASS_DECLARATION) {
+        members = typeDeclaration->data.classDeclaration.members;
+    } else if (typeDeclaration->type == ZR_AST_STRUCT_DECLARATION) {
+        members = typeDeclaration->data.structDeclaration.members;
+    }
+    for (TZrSize index = 0U;
+         members != ZR_NULL && index < members->count;
+         index++) {
+        SZrAstNode *member = members->nodes[index];
+        SZrIdentifier *name = ZR_NULL;
+        SZrType *returnType = ZR_NULL;
+
+        if (member == ZR_NULL) {
+            continue;
+        }
+        if (member->type == ZR_AST_CLASS_METHOD) {
+            name = member->data.classMethod.name;
+            returnType = member->data.classMethod.returnType;
+        } else if (member->type == ZR_AST_STRUCT_METHOD) {
+            name = member->data.structMethod.name;
+            returnType = member->data.structMethod.returnType;
+        }
+        if (name != ZR_NULL && returnType != ZR_NULL &&
+            returnType->referenceAccess != ZR_REFERENCE_ACCESS_NONE &&
+            reference_escape_string_equals(name->name, methodName)) {
+            return returnType;
+        }
+    }
+    return ZR_NULL;
+}
+
+static const SZrType *reference_escape_direct_owner_call_return_type(
+        SZrReferenceEscapeContext *context,
+        const SZrReferenceEscapeBinding *receiverBinding,
+        const SZrPrimaryExpression *primary) {
+    const SZrAstNode *memberNode;
+    const SZrMemberExpression *memberExpression;
+    SZrString *innerTypeName;
+    SZrAstNode *typeDeclaration;
+
+    if (context == ZR_NULL || receiverBinding == ZR_NULL ||
+        primary == ZR_NULL || primary->members == ZR_NULL ||
+        primary->members->count != 2U ||
+        primary->members->nodes[0] == ZR_NULL ||
+        primary->members->nodes[0]->type != ZR_AST_MEMBER_EXPRESSION ||
+        primary->members->nodes[1] == ZR_NULL ||
+        primary->members->nodes[1]->type != ZR_AST_FUNCTION_CALL) {
+        return ZR_NULL;
+    }
+    memberNode = primary->members->nodes[0];
+    memberExpression = &memberNode->data.memberExpression;
+    if (memberExpression->computed ||
+        memberExpression->property == ZR_NULL ||
+        memberExpression->property->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_NULL;
+    }
+    innerTypeName = reference_escape_owner_inner_type_name(
+            receiverBinding->declaredType);
+    typeDeclaration = reference_escape_find_source_type_declaration(
+            context, innerTypeName);
+    return reference_escape_find_receiver_method_return_type(
+            typeDeclaration,
+            memberExpression->property->data.identifier.name);
+}
+
 static TZrBool reference_escape_analyze_primary(
         SZrReferenceEscapeContext *context,
         SZrAstNode *node,
@@ -686,6 +842,7 @@ static TZrBool reference_escape_analyze_primary(
     SZrPrimaryExpression *primary = &node->data.primaryExpression;
     TZrSize awaitCallIndex = 0U;
     TZrSize index;
+    TZrBool hasReceiverMemberCall = ZR_FALSE;
 
     if (reference_escape_primary_is_await(node, &awaitCallIndex)) {
         SZrAstNode *call = primary->members->nodes[awaitCallIndex];
@@ -713,6 +870,14 @@ static TZrBool reference_escape_analyze_primary(
         if (member->type == ZR_AST_FUNCTION_CALL) {
             SZrFunctionCall *call = &member->data.functionCall;
             TZrSize argumentIndex;
+
+            if (index > 0U) {
+                SZrAstNode *calleeMember =
+                        primary->members->nodes[index - 1U];
+                hasReceiverMemberCall =
+                        calleeMember != ZR_NULL &&
+                        calleeMember->type == ZR_AST_MEMBER_EXPRESSION;
+            }
             for (argumentIndex = 0U;
                  call->args != ZR_NULL && argumentIndex < call->args->count;
                  argumentIndex++) {
@@ -745,6 +910,31 @@ static TZrBool reference_escape_analyze_primary(
                         &ignored)) {
                 return ZR_FALSE;
             }
+        }
+    }
+
+    if (wantReference && hasReceiverMemberCall &&
+        primary->property != ZR_NULL &&
+        primary->property->type == ZR_AST_IDENTIFIER_LITERAL &&
+        primary->property->data.identifier.name != ZR_NULL) {
+        SZrReferenceEscapeBinding *receiverBinding =
+                reference_escape_find_binding(
+                        context,
+                        primary->property->data.identifier.name);
+        const SZrType *returnType =
+                reference_escape_direct_owner_call_return_type(
+                        context, receiverBinding, primary);
+
+        if (returnType != ZR_NULL &&
+            returnType->referenceAccess != ZR_REFERENCE_ACCESS_NONE) {
+            provenance->isReference = ZR_TRUE;
+            provenance->isWritable =
+                    returnType->referenceAccess !=
+                    ZR_REFERENCE_ACCESS_READONLY;
+            provenance->isScoped = receiverBinding->isScoped;
+            provenance->escapeBound = receiverBinding->escapeBound;
+            provenance->originRange = receiverBinding->originRange;
+            provenance->bindingName = receiverBinding->name;
         }
     }
     return ZR_TRUE;

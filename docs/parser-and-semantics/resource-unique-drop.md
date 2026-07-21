@@ -48,6 +48,8 @@ tests:
   - tests/parser/test_compiler_features.c
   - tests/parser/test_compiler_semantic_query_diagnostics.c
   - tests/parser/test_dataflow_engine.c
+  - tests/parser/test_resource_owner_borrow_receiver.c
+  - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_closure_capture_runtime.c
   - tests/exceptions/test_exceptions.c
   - tests/parser/test_aot_c_ownership_contracts.c
@@ -149,15 +151,16 @@ and scope helper calls rather than an unsupported fallback. The focused pipeline
 fixture and inspects the generated C/LLVM sources; the observed explicit/scope Drop log is `21`
 on all three supported toolchains.
 
-## M1 boundary
+## M1 And M3 Boundary
 
 M1 establishes resource construction, direct Unique move, deterministic Drop, field cleanup,
-partial construction, and exception cleanup. It does not implement the Syntax 04 M2 Shared/Weak
-resource control-block contract, M3 owner borrows, or the Gc/GcBox bridge.
+partial construction, and exception cleanup. Syntax 04 M2 now supplies the Shared/Weak
+control-block contract, and M3 supplies compile-time owner reborrow and direct receiver checking;
+see `resource-shared-weak.md` and `resource-owner-borrow-receiver.md`.
 
-Syntax 04 M2 now supplies the Shared/Weak control-block contract described in
-`resource-shared-weak.md`. The remaining boundary in this section is M3 borrow checking and the
-M4 GC/domain bridge; the direct-Unique representation described above remains unchanged.
+The remaining boundary in this section is the M4 GC/domain bridge; the direct-Unique
+representation described above remains unchanged. M3 does not add a runtime borrow table:
+owner move/drop/share conflicts are rejected from canonical Place and LoanId facts.
 
 The current direct resource object is temporarily kept outside ordinary GC collection through the
 existing ignore registry while owned, then returned to GC after Drop. This is not the final bridge

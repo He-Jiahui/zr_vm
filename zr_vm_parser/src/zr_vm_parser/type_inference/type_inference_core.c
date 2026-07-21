@@ -3952,6 +3952,17 @@ static TZrInt32 score_function_overload_candidate(SZrCompilerState *cs,
             SZrInferredType *argType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)argTypes, i);
             SZrInferredType *paramType =
                     (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&resolvedSignature->parameterTypes, i);
+            EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+            EZrParameterPassingMode *passingModePtr =
+                    i < resolvedSignature->parameterPassingModes.length
+                            ? (EZrParameterPassingMode *)ZrCore_Array_Get(
+                                      (SZrArray *)&resolvedSignature->parameterPassingModes,
+                                      i)
+                            : ZR_NULL;
+
+            if (passingModePtr != ZR_NULL) {
+                passingMode = *passingModePtr;
+            }
 
             if (argType == ZR_NULL || paramType == ZR_NULL) {
                 return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
@@ -3962,6 +3973,8 @@ static TZrInt32 score_function_overload_candidate(SZrCompilerState *cs,
             }
 
             if (!ZrParser_InferredType_IsCompatible(argType, paramType) &&
+                !type_inference_in_parameter_accepts_owner_reborrow(
+                        passingMode, paramType, argType) &&
                 !inferred_type_can_use_named_constraint_fallback(cs, argType, paramType) &&
                 !ffi_function_call_argument_is_native_boundary_compatible(cs, funcType, i, argType, paramType)) {
                 if (outOwnershipDiagnostic != ZR_NULL && *outOwnershipDiagnostic == ZR_NULL) {

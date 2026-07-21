@@ -21,8 +21,10 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_internal.h
 plan_sources:
   - docs/plans/syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md
+  - docs/plans/syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md
 tests:
   - tests/parser/test_reference_escape_closure_suspension.c
+  - tests/parser/test_resource_owner_borrow_receiver.c
   - tests/acceptance/2026-07-20-syntax-02-m5-reference-escape-closure-suspension.md
 doc_type: module-detail
 ---
@@ -81,6 +83,13 @@ or conflicting use and whose related range is the reference origin. Calls
 consume the callee closure provenance: a call result does not become an alias of
 the closure unless a later callable-return contract explicitly proves that.
 
+A direct owner receiver call may produce a receiver-tied reference only when its
+declared inner type resolves to a source TypeDef with a direct reference-return
+method of the same spelling. The result inherits the owner Place and escape
+bound, so storing it locally keeps the receiver loan alive and returning it
+beyond the owner is rejected. Mixed overloads are treated conservatively;
+external, inherited, and chained targets remain unavailable.
+
 ## Closure and suspension liveness
 
 A writable capture acts as a mutable loan until the final use of the closure
@@ -109,9 +118,10 @@ ordinary ref ABI implicitly.
 
 ## Milestone boundary
 
-M5 completes caller/function/heap escape, ref return, closure capture and
-suspension rejection for the reference checker. Ref-struct layout and field
-capability rules belong to syntax plan 03. The final `async fn` runtime carrier
-and formal `yield` surface belong to plans 12 and 13. M6 will publish artifact
-and LSP projections from canonical facts; consumers must not reconstruct escape
-or call-target identity from source names.
+Syntax 02 M5 completes caller/function/heap escape, ref return, closure capture
+and suspension rejection for the reference checker. Syntax 04 M3 reuses that
+lattice for direct source owner-receiver reference returns within the narrow
+TypeDef/method-spelling boundary above. Ref-struct layout and field capability rules belong to syntax plan
+03. The final `async fn` runtime carrier and formal `yield` surface belong to
+plans 12 and 13. Artifact and LSP consumers must continue to consume canonical
+facts rather than reconstructing escape or call-target identity from source.

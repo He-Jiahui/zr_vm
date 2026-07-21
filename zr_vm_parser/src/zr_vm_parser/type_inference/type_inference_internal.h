@@ -100,6 +100,10 @@ TZrBool validate_call_argument_passing_modes(SZrCompilerState *cs,
                                              const SZrFunctionTypeInfo *functionType);
 const TZrChar *type_inference_ownership_flow_diagnostic_message(const SZrInferredType *targetType,
                                                                 const SZrInferredType *sourceType);
+TZrBool type_inference_in_parameter_accepts_owner_reborrow(
+        EZrParameterPassingMode passingMode,
+        const SZrInferredType *parameterType,
+        const SZrInferredType *argumentType);
 ZR_PARSER_API void free_resolved_call_signature(SZrState *state, SZrResolvedCallSignature *signature);
 EZrGenericCallResolveStatus resolve_generic_function_call_signature_detailed(
         SZrCompilerState *cs,

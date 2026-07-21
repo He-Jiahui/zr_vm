@@ -46,6 +46,10 @@ static ESemanticLoanInstructionAccess loan_instruction_access(
                        ? SEMANTIC_LOAN_ACCESS_BORROW_MUTABLE
                        : SEMANTIC_LOAN_ACCESS_BORROW_SHARED;
     }
+    if (instruction->opcode == ZR_SEMANTIC_IR_OWN_CONSTRUCT &&
+        instruction->ownershipOperation == ZR_SEMANTIC_OWNERSHIP_SHARE) {
+        return SEMANTIC_LOAN_ACCESS_EXCLUSIVE;
+    }
     switch (instruction->opcode) {
         case ZR_SEMANTIC_IR_LOAD:
         case ZR_SEMANTIC_IR_COPY:

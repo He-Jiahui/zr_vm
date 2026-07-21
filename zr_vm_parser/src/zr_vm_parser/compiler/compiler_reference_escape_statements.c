@@ -29,6 +29,7 @@ static TZrBool reference_escape_analyze_variable(
     }
     memset(&binding, 0, sizeof(binding));
     binding.name = name;
+    binding.declaredType = declaration->typeInfo;
     binding.scopeDepth = context->scopeDepth;
     binding.isReference = (TZrBool)(
             declaredReference || provenance.isRefLike);
