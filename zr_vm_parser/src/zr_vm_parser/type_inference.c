@@ -756,12 +756,70 @@ static TZrBool infer_union_variant_primary_expression_type(SZrCompilerState *cs,
     return inferred_type_from_type_name(cs, typeName, result);
 }
 
+static TZrBool inferred_type_generic_arguments_are_equal(
+        const SZrInferredType *fromType,
+        const SZrInferredType *toType) {
+    if (fromType == ZR_NULL || toType == ZR_NULL ||
+        fromType->elementTypes.length == 0U ||
+        fromType->elementTypes.length != toType->elementTypes.length) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0U; index < fromType->elementTypes.length; index++) {
+        const SZrInferredType *fromArgument =
+                (const SZrInferredType *)ZrCore_Array_Get(
+                        (SZrArray *)&fromType->elementTypes, index);
+        const SZrInferredType *toArgument =
+                (const SZrInferredType *)ZrCore_Array_Get(
+                        (SZrArray *)&toType->elementTypes, index);
+        if (fromArgument == ZR_NULL || toArgument == ZR_NULL ||
+            !ZrParser_InferredType_Equal(fromArgument, toArgument)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool inferred_type_can_weaken_contiguous_view(
+        SZrCompilerState *cs,
+        const SZrInferredType *fromType,
+        const SZrInferredType *toType) {
+    const TZrUInt64 commonMask =
+            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE);
+
+    if (cs == ZR_NULL || fromType == ZR_NULL || toType == ZR_NULL ||
+        fromType->baseType != ZR_VALUE_TYPE_OBJECT ||
+        toType->baseType != ZR_VALUE_TYPE_OBJECT ||
+        (fromType->isNullable && !toType->isNullable) ||
+        fromType->ownershipQualifier != toType->ownershipQualifier ||
+        fromType->referenceAccess != toType->referenceAccess ||
+        !inferred_type_generic_arguments_are_equal(fromType, toType)) {
+        return ZR_FALSE;
+    }
+    return inferred_type_implements_protocol_mask(
+                   cs,
+                   fromType,
+                   commonMask |
+                           ZR_PROTOCOL_BIT(
+                                   ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_MUTABLE)) &&
+           inferred_type_implements_protocol_mask(
+                   cs,
+                   toType,
+                   commonMask |
+                           ZR_PROTOCOL_BIT(
+                                   ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY));
+}
+
 // 检查类型兼容性（用于赋值等场景）
 TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, const SZrInferredType *fromType, const SZrInferredType *toType, SZrFileRange location) {
     if (cs == ZR_NULL || fromType == ZR_NULL || toType == ZR_NULL) {
         return ZR_FALSE;
     }
     if (ZrParser_InferredType_IsCompatible(fromType, toType)) {
+        return ZR_TRUE;
+    }
+
+    if (inferred_type_can_weaken_contiguous_view(cs, fromType, toType)) {
         return ZR_TRUE;
     }
 

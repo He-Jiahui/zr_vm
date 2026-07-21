@@ -10,6 +10,7 @@
 
 #include "harness/path_support.h"
 #include "harness/runtime_support.h"
+#include "container_test_common.h"
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_common/zr_hash_conf.h"
 #include "zr_vm_core/function.h"
@@ -18,6 +19,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/aot_runtime.h"
 #include "zr_vm_library/project.h"
+#include "zr_vm_lib_container/module.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
 
@@ -679,6 +681,164 @@ static void test_aot_c_generated_union_type_layout_emits_ownership_offsets_for_o
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_aot_c_span_artifact_executes_equivalently_to_vm(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C Span shared-library smoke currently validates the Unix toolchain path");
+#else
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var view: container.Span<int>;\n"
+            "var empty = view.slice(0, 0);\n"
+            "var readView = empty.asReadOnly();\n"
+            "return readView.length;\n";
+    const char *projectJson =
+            "{"
+            "\"name\":\"aot-span-equivalence-smoke\","
+            "\"source\":\"src\","
+            "\"binary\":\"bin\","
+            "\"entry\":\"main\""
+            "}";
+    SZrState *state = ZrContainerTests_CreateState();
+    SZrFunction *function;
+    SZrLibrary_Project *project;
+    SZrBinaryWriterOptions binaryOptions;
+    SZrAotWriterOptions aotOptions;
+    SZrTypeValue result;
+    TZrInt64 vmResult = 0;
+    TZrBytePtr embeddedBlob = ZR_NULL;
+    TZrSize embeddedBlobLength = 0U;
+    TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar zroPath[ZR_TESTS_PATH_MAX];
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+    char command[4096];
+
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE(ZrVmLibContainer_Register(state->global));
+    function = compile_source(state, source, "main.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            state, function, &vmResult));
+    TEST_ASSERT_EQUAL_INT64(0, vmResult);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_c_value_type_shared_library",
+            "span_project",
+            "runtime_span_equivalence_smoke",
+            ".zrp",
+            projectPath,
+            sizeof(projectPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_c_value_type_shared_library",
+            "span_project/src",
+            "main",
+            ".zr",
+            sourcePath,
+            sizeof(sourcePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_c_value_type_shared_library",
+            "span_project/bin",
+            "main",
+            ".zro",
+            zroPath,
+            sizeof(zroPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_c_value_type_shared_library",
+            "span_project/bin/aot_c/src",
+            "main",
+            ".c",
+            generatedCPath,
+            sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_c_value_type_shared_library",
+            "span_project/bin/aot_c/lib",
+            "zrvm_aot_main",
+            ".so",
+            sharedLibraryPath,
+            sizeof(sharedLibraryPath)));
+
+    write_text_file_or_fail(projectPath, projectJson);
+    write_text_file_or_fail(sourcePath, source);
+    memset(&binaryOptions, 0, sizeof(binaryOptions));
+    binaryOptions.moduleName = "main";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(
+            state, function, zroPath, &binaryOptions));
+    hash_file_or_fail(zroPath, zroHash, sizeof(zroHash));
+    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(
+            zroPath, &embeddedBlob, &embeddedBlobLength));
+    TEST_ASSERT_NOT_NULL(embeddedBlob);
+    TEST_ASSERT_GREATER_THAN_UINT64(0U, embeddedBlobLength);
+
+    memset(&aotOptions, 0, sizeof(aotOptions));
+    aotOptions.moduleName = "main";
+    aotOptions.inputKind = ZR_AOT_INPUT_KIND_BINARY;
+    aotOptions.inputHash = zroHash;
+    aotOptions.embeddedModuleBlob = embeddedBlob;
+    aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
+    aotOptions.requireExecutableLowering = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &aotOptions));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NULL(strstr(generatedCText, "aot_c lowering unsupported"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_inline_copy"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_field_load"));
+    free(generatedCText);
+
+    snprintf(command,
+             sizeof(command),
+             "\"%s\" -std=c11 -g -O0 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "-I\"%s/zr_vm_common/include\" "
+             "-I\"%s/zr_vm_core/include\" "
+             "-I\"%s/zr_vm_library/include\" "
+             "\"%s\" "
+             "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
+             "-lzr_vm_library -lzr_vm_core -lzr_c_json -lzr_miniz -lzr_tiny_dir "
+             "-lzr_xx_hash -lzr_utf8proc -lm "
+             "-o \"%s\"",
+             ZR_VM_TESTS_C_COMPILER,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             ZR_VM_TESTS_REPO_ROOT,
+             generatedCPath,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             ZR_VM_TESTS_BUILD_LIB_DIR,
+             sharedLibraryPath);
+    TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+
+    project = ZrLibrary_Project_New(
+            state,
+            (TZrNativeString)projectJson,
+            (TZrNativeString)projectPath);
+    TEST_ASSERT_NOT_NULL(project);
+    state->global->userData = project;
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(
+            state->global,
+            ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
+            ZR_TRUE));
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrLibrary_AotRuntime_ExecuteEntry(
+                    state, ZR_AOT_BACKEND_KIND_C, &result),
+            ZrLibrary_AotRuntime_GetLastError(state->global));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+    TEST_ASSERT_EQUAL_INT64(0, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_LIBRARY_EXECUTED_VIA_AOT_C,
+            ZrLibrary_AotRuntime_GetExecutedVia(state->global));
+
+    state->global->userData = ZR_NULL;
+    ZrLibrary_Project_Free(state, project);
+    free(embeddedBlob);
+    ZrCore_Function_Free(state, function);
+    ZrContainerTests_DestroyState(state);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_string_field_value_type_copy_and_return);
@@ -686,5 +846,6 @@ int main(void) {
     RUN_TEST(test_aot_c_generated_type_layout_gc_descriptors_are_ref_exact_and_skip_pod);
     RUN_TEST(test_aot_c_generated_type_layout_emits_ownership_offsets_for_owner_fields);
     RUN_TEST(test_aot_c_generated_union_type_layout_emits_ownership_offsets_for_owner_payloads);
+    RUN_TEST(test_aot_c_span_artifact_executes_equivalently_to_vm);
     return UNITY_END();
 }

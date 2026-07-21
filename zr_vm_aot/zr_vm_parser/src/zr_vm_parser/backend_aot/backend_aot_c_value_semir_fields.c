@@ -1,5 +1,6 @@
 #include "backend_aot_c_value_semir_fields.h"
 
+#include "backend_aot_c_value_semir_field_scalar_locals.h"
 #include "backend_aot_internal.h"
 
 static const SZrAotExecIrFrameSlotLayout *backend_aot_c_value_field_find_frame_slot_layout(
@@ -795,6 +796,11 @@ TZrBool backend_aot_try_write_c_value_semir_field_store_exec(
     fieldTypeName = backend_aot_c_value_field_primitive_c_type(fieldLayout.valueType);
     if (fieldTypeName == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (backend_aot_try_write_c_value_field_scalar_local_store_exec(
+                file, functionIr, destinationLayout, instruction, &fieldLayout, fieldTypeName)) {
+        return ZR_TRUE;
     }
 
     fprintf(file,

@@ -2458,9 +2458,25 @@ static TZrBool generic_instance_type_name_primitive_layout(SZrString *typeName,
     }
 
     typeNameText = ZrCore_String_GetNativeString(typeName);
-    if (typeNameText == ZR_NULL ||
-        !inferred_type_try_map_primitive_name((TZrNativeString)typeNameText, strlen(typeNameText), &baseType)) {
+    if (typeNameText == ZR_NULL) {
         return ZR_FALSE;
+    }
+    if (!inferred_type_try_map_primitive_name(
+                (TZrNativeString)typeNameText,
+                strlen(typeNameText),
+                &baseType)) {
+        if (strcmp(typeNameText, "object") == 0 ||
+            strcmp(typeNameText, "value") == 0 ||
+            strcmp(typeNameText, "any") == 0) {
+            baseType = ZR_VALUE_TYPE_OBJECT;
+        } else if (strcmp(typeNameText, "array") == 0) {
+            baseType = ZR_VALUE_TYPE_ARRAY;
+        } else if (strcmp(typeNameText, "function") == 0 ||
+                   strcmp(typeNameText, "closure") == 0) {
+            baseType = ZR_VALUE_TYPE_CLOSURE;
+        } else {
+            return ZR_FALSE;
+        }
     }
 
     fieldSize = generic_instance_field_size_for_value_type(baseType);
@@ -2488,6 +2504,17 @@ static TZrBool generic_instance_type_name_layout(SZrCompilerState *cs,
     }
 
     prototype = find_compiler_type_prototype_inference_exact(cs, typeName);
+    if (prototype != ZR_NULL &&
+        prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+        prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_UNION) {
+        if (outSize != ZR_NULL) {
+            *outSize = (TZrUInt32)sizeof(SZrTypeValue);
+        }
+        if (outAlign != ZR_NULL) {
+            *outAlign = ZR_ALIGN_SIZE;
+        }
+        return ZR_TRUE;
+    }
     if (prototype != ZR_NULL &&
         prototype->layoutByteSize > 0u &&
         prototype->layoutByteAlign > 0u) {

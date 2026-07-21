@@ -1087,7 +1087,7 @@ static void native_registry_add_protocol_mask(SZrObjectPrototype *prototype, TZr
     }
 
     for (EZrProtocolId protocolId = (EZrProtocolId)(ZR_PROTOCOL_ID_NONE + 1);
-         protocolId <= ZR_PROTOCOL_ID_ARRAY_LIKE;
+         protocolId <= ZR_PROTOCOL_ID_MAX;
          protocolId = (EZrProtocolId)(protocolId + 1)) {
         if ((protocolMask & ZR_PROTOCOL_BIT(protocolId)) != 0) {
             ZrCore_ObjectPrototype_AddProtocol(prototype, protocolId);

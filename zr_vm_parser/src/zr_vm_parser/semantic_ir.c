@@ -163,6 +163,13 @@ void ZrParser_SemanticIrFunction_Init(SZrState *state,
     ZrCore_Array_Init(state, &function->sourceMap, sizeof(SZrSemanticIrSourceMapEntry), 32U);
     ZrCore_Array_Init(state, &function->loanFacts, sizeof(SZrSemanticIrLoanFact), 8U);
     ZrCore_Array_Init(state, &function->escapeFacts, sizeof(SZrSemanticEscapeFact), 8U);
+    ZrCore_Array_Init(
+            state,
+            &function->contiguousViewFacts,
+            sizeof(SZrSemanticContiguousViewFact),
+            8U);
+    ZrCore_Array_Init(
+            state, &function->boundsFacts, sizeof(SZrSemanticBoundsFact), 8U);
 }
 
 void ZrParser_SemanticIrFunction_Free(SZrState *state,
@@ -182,6 +189,8 @@ void ZrParser_SemanticIrFunction_Free(SZrState *state,
     ZrCore_Array_Free(state, &function->sourceMap);
     ZrCore_Array_Free(state, &function->loanFacts);
     ZrCore_Array_Free(state, &function->escapeFacts);
+    ZrCore_Array_Free(state, &function->contiguousViewFacts);
+    ZrCore_Array_Free(state, &function->boundsFacts);
     memset(function, 0, sizeof(*function));
 }
 
@@ -297,6 +306,104 @@ const SZrSemanticEscapeFact *ZrParser_SemanticIr_EscapeFactAt(
     }
     return (const SZrSemanticEscapeFact *)ZrCore_Array_Get(
             (SZrArray *)&function->escapeFacts, index);
+}
+
+TZrUInt32 ZrParser_SemanticIr_AddContiguousViewFact(
+        SZrSemanticIrFunction *function,
+        const SZrSemanticContiguousViewFact *fact) {
+    SZrSemanticContiguousViewFact stored;
+
+    if (!semantic_ir_function_is_valid(function) || fact == ZR_NULL ||
+        !semantic_ir_place_is_valid(function, fact->viewPlaceId) ||
+        ZrParser_SemanticIr_Value(function, fact->viewValueId) == ZR_NULL ||
+        !semantic_ir_place_is_valid(function, fact->sourcePlaceId) ||
+        ZrParser_SemanticIr_Value(function, fact->startValueId) == ZR_NULL ||
+        ZrParser_SemanticIr_Value(function, fact->lengthValueId) == ZR_NULL ||
+        fact->regionId == ZR_SEMANTIC_REGION_ID_INVALID ||
+        fact->regionId > function->regions.length ||
+        (fact->sourceLoanId != ZR_SEMANTIC_LOAN_ID_INVALID &&
+         ZrParser_SemanticIr_Loan(function, fact->sourceLoanId) == ZR_NULL) ||
+        ((fact->sourceKind == ZR_SEMANTIC_CONTIGUOUS_SOURCE_OWNER ||
+          fact->sourceKind == ZR_SEMANTIC_CONTIGUOUS_SOURCE_NATIVE_PINNED) &&
+         fact->sourceLoanId == ZR_SEMANTIC_LOAN_ID_INVALID) ||
+        fact->sourceKind < ZR_SEMANTIC_CONTIGUOUS_SOURCE_ARRAY ||
+        fact->sourceKind > ZR_SEMANTIC_CONTIGUOUS_SOURCE_VIEW) {
+        return ZR_SEMANTIC_CONTIGUOUS_VIEW_FACT_ID_INVALID;
+    }
+
+    stored = *fact;
+    stored.factId = (TZrUInt32)function->contiguousViewFacts.length + 1U;
+    ZrCore_Array_Push(function->state, &function->contiguousViewFacts, &stored);
+    return stored.factId;
+}
+
+const SZrSemanticContiguousViewFact *
+ZrParser_SemanticIr_ContiguousViewFactAt(
+        const SZrSemanticIrFunction *function,
+        TZrSize index) {
+    if (function == ZR_NULL || !function->contiguousViewFacts.isValid ||
+        index >= function->contiguousViewFacts.length) {
+        return ZR_NULL;
+    }
+    return (const SZrSemanticContiguousViewFact *)ZrCore_Array_Get(
+            (SZrArray *)&function->contiguousViewFacts, index);
+}
+
+const SZrSemanticContiguousViewFact *
+ZrParser_SemanticIr_FindContiguousViewFact(
+        const SZrSemanticIrFunction *function,
+        TZrPlaceId viewPlaceId) {
+    TZrSize index;
+
+    if (function == ZR_NULL || viewPlaceId == ZR_PLACE_ID_INVALID) {
+        return ZR_NULL;
+    }
+    for (index = function->contiguousViewFacts.length; index > 0U; index--) {
+        const SZrSemanticContiguousViewFact *fact =
+                ZrParser_SemanticIr_ContiguousViewFactAt(function, index - 1U);
+        if (fact != ZR_NULL && fact->viewPlaceId == viewPlaceId) {
+            return fact;
+        }
+    }
+    return ZR_NULL;
+}
+
+TZrUInt32 ZrParser_SemanticIr_AddBoundsFact(
+        SZrSemanticIrFunction *function,
+        const SZrSemanticBoundsFact *fact) {
+    SZrSemanticBoundsFact stored;
+
+    if (!semantic_ir_function_is_valid(function) || fact == ZR_NULL ||
+        !semantic_ir_place_is_valid(function, fact->viewPlaceId) ||
+        ZrParser_SemanticIr_Value(function, fact->indexValueId) == ZR_NULL ||
+        ZrParser_SemanticIr_Value(function, fact->lengthValueId) == ZR_NULL ||
+        (fact->contiguousViewFactId !=
+                         ZR_SEMANTIC_CONTIGUOUS_VIEW_FACT_ID_INVALID &&
+         fact->contiguousViewFactId > function->contiguousViewFacts.length) ||
+        fact->proofKind < ZR_SEMANTIC_BOUNDS_PROOF_RUNTIME_CHECK ||
+        fact->proofKind > ZR_SEMANTIC_BOUNDS_PROOF_CONSTANT_RANGE ||
+        (fact->checkElided &&
+         (!fact->hasKnownIndex || !fact->hasKnownLength ||
+          !fact->lowerBoundProven || !fact->upperBoundProven ||
+          fact->proofKind != ZR_SEMANTIC_BOUNDS_PROOF_CONSTANT_RANGE))) {
+        return ZR_SEMANTIC_BOUNDS_FACT_ID_INVALID;
+    }
+
+    stored = *fact;
+    stored.factId = (TZrUInt32)function->boundsFacts.length + 1U;
+    ZrCore_Array_Push(function->state, &function->boundsFacts, &stored);
+    return stored.factId;
+}
+
+const SZrSemanticBoundsFact *ZrParser_SemanticIr_BoundsFactAt(
+        const SZrSemanticIrFunction *function,
+        TZrSize index) {
+    if (function == ZR_NULL || !function->boundsFacts.isValid ||
+        index >= function->boundsFacts.length) {
+        return ZR_NULL;
+    }
+    return (const SZrSemanticBoundsFact *)ZrCore_Array_Get(
+            (SZrArray *)&function->boundsFacts, index);
 }
 
 TZrCleanupScopeId ZrParser_SemanticIr_AddCleanupScope(
@@ -593,6 +700,47 @@ TZrBool ZrParser_SemanticIr_Validate(
             fact->sourceEscapeBound > ZR_SEMANTIC_ESCAPE_UNKNOWN ||
             fact->targetEscape < ZR_SEMANTIC_ESCAPE_LOCAL ||
             fact->targetEscape > ZR_SEMANTIC_ESCAPE_HEAP_STATIC) {
+            return ZR_FALSE;
+        }
+    }
+
+    for (index = 0; index < function->contiguousViewFacts.length; index++) {
+        const SZrSemanticContiguousViewFact *fact =
+                ZrParser_SemanticIr_ContiguousViewFactAt(function, index);
+        if (fact == ZR_NULL || fact->factId != (TZrUInt32)index + 1U ||
+            !semantic_ir_place_is_valid(function, fact->viewPlaceId) ||
+            ZrParser_SemanticIr_Value(function, fact->viewValueId) == ZR_NULL ||
+            !semantic_ir_place_is_valid(function, fact->sourcePlaceId) ||
+            ZrParser_SemanticIr_Value(function, fact->startValueId) == ZR_NULL ||
+            ZrParser_SemanticIr_Value(function, fact->lengthValueId) == ZR_NULL ||
+            fact->regionId == ZR_SEMANTIC_REGION_ID_INVALID ||
+            fact->regionId > function->regions.length ||
+            (fact->sourceLoanId != ZR_SEMANTIC_LOAN_ID_INVALID &&
+             ZrParser_SemanticIr_Loan(function, fact->sourceLoanId) == ZR_NULL) ||
+            ((fact->sourceKind == ZR_SEMANTIC_CONTIGUOUS_SOURCE_OWNER ||
+              fact->sourceKind == ZR_SEMANTIC_CONTIGUOUS_SOURCE_NATIVE_PINNED) &&
+             fact->sourceLoanId == ZR_SEMANTIC_LOAN_ID_INVALID) ||
+            fact->sourceKind < ZR_SEMANTIC_CONTIGUOUS_SOURCE_ARRAY ||
+            fact->sourceKind > ZR_SEMANTIC_CONTIGUOUS_SOURCE_VIEW) {
+            return ZR_FALSE;
+        }
+    }
+    for (index = 0; index < function->boundsFacts.length; index++) {
+        const SZrSemanticBoundsFact *fact =
+                ZrParser_SemanticIr_BoundsFactAt(function, index);
+        if (fact == ZR_NULL || fact->factId != (TZrUInt32)index + 1U ||
+            !semantic_ir_place_is_valid(function, fact->viewPlaceId) ||
+            ZrParser_SemanticIr_Value(function, fact->indexValueId) == ZR_NULL ||
+            ZrParser_SemanticIr_Value(function, fact->lengthValueId) == ZR_NULL ||
+            (fact->contiguousViewFactId !=
+                             ZR_SEMANTIC_CONTIGUOUS_VIEW_FACT_ID_INVALID &&
+             fact->contiguousViewFactId > function->contiguousViewFacts.length) ||
+            fact->proofKind < ZR_SEMANTIC_BOUNDS_PROOF_RUNTIME_CHECK ||
+            fact->proofKind > ZR_SEMANTIC_BOUNDS_PROOF_CONSTANT_RANGE ||
+            (fact->checkElided &&
+             (!fact->hasKnownIndex || !fact->hasKnownLength ||
+              !fact->lowerBoundProven || !fact->upperBoundProven ||
+              fact->proofKind != ZR_SEMANTIC_BOUNDS_PROOF_CONSTANT_RANGE))) {
             return ZR_FALSE;
         }
     }

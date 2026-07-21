@@ -1,0 +1,6 @@
+#ifndef ZR_VM_TESTS_PARSER_TEST_SPAN_GC_CASES_H
+#define ZR_VM_TESTS_PARSER_TEST_SPAN_GC_CASES_H
+
+void test_span_array_source_survives_gc_compaction_while_view_is_live(void);
+
+#endif

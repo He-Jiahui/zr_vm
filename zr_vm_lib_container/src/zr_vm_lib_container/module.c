@@ -3,6 +3,7 @@
 //
 
 #include "zr_vm_lib_container/module.h"
+#include "contiguous_view.h"
 
 #include "zr_vm_common/zr_meta_conf.h"
 #include "zr_vm_core/closure.h"
@@ -4054,6 +4055,10 @@ static const ZrLibParameterDescriptor kSetValueParameter[] = {{"value", "T", ZR_
 static const ZrLibParameterDescriptor kPairParameters[] = {{"first", "K", ZR_NULL}, {"second", "V", ZR_NULL}};
 static const ZrLibParameterDescriptor kPairOtherParameter[] = {{"other", "Pair<K,V>", ZR_NULL}};
 static const ZrLibParameterDescriptor kLinkedNodeValueParameter[] = {{"value", "T", ZR_NULL}};
+static const ZrLibParameterDescriptor kSpanSliceParameters[] = {
+        {"start", "int", ZR_NULL},
+        {"length", "int", ZR_NULL},
+};
 
 static const TZrChar *kMapKeyConstraints[] = {"zr.builtin.IHashable", "zr.builtin.IEquatable<K>"};
 static const TZrChar *kSetValueConstraints[] = {"zr.builtin.IHashable", "zr.builtin.IEquatable<T>"};
@@ -4089,7 +4094,9 @@ static const ZrLibMethodDescriptor kIterableMethods[] = {
                                            0, ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
 };
 static const ZrLibFieldDescriptor kArrayLikeFields[] = {
-        ZR_LIB_FIELD_DESCRIPTOR_INIT("length", "int", ZR_NULL),
+        ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT(
+                "length", "int", ZR_NULL,
+                ZR_MEMBER_CONTRACT_ROLE_INDEX_LENGTH),
 };
 static const ZrLibMetaMethodDescriptor kArrayLikeMetaMethods[] = {
         {ZR_META_GET_ITEM, 1, 1, ZR_NULL, "T", ZR_NULL, kArrayIndexParameter,
@@ -4110,10 +4117,15 @@ static const ZrLibMethodDescriptor kHashableMethods[] = {
 };
 
 static const ZrLibFieldDescriptor kArrayFields[] = {
-        ZR_LIB_FIELD_DESCRIPTOR_INIT("length", "int", ZR_NULL),
+        ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT(
+                "length", "int", ZR_NULL,
+                ZR_MEMBER_CONTRACT_ROLE_INDEX_LENGTH),
         ZR_LIB_FIELD_DESCRIPTOR_INIT("capacity", "int", ZR_NULL),
 };
 static const ZrLibMethodDescriptor kArrayMethods[] = {
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("span", 0, 0, ZrVmLibContainer_ContiguousView_FromArray,
+                                           "Span<T>", ZR_NULL, ZR_FALSE, ZR_NULL, 0,
+                                           ZR_MEMBER_CONTRACT_ROLE_CONTIGUOUS_VIEW_CREATE),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("add", 1, 1, zr_container_array_add, "null", ZR_NULL, ZR_FALSE,
                                       kArrayValueParameter, ZR_ARRAY_COUNT(kArrayValueParameter)),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("insert", 2, 2, zr_container_array_insert, "null", ZR_NULL, ZR_FALSE,
@@ -4251,6 +4263,55 @@ static const ZrLibMetaMethodDescriptor kLinkedNodeMetaMethods[] = {
         {ZR_META_CONSTRUCTOR, 0, 1, zr_container_linked_node_constructor, "LinkedNode<T>", ZR_NULL, kLinkedNodeValueParameter, ZR_ARRAY_COUNT(kLinkedNodeValueParameter)},
 };
 
+static const ZrLibFieldDescriptor kSpanFields[] = {
+        ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT("source", "object", ZR_NULL,
+                                          ZR_MEMBER_CONTRACT_ROLE_CONTIGUOUS_VIEW_SOURCE),
+        ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT("start", "int", ZR_NULL,
+                                          ZR_MEMBER_CONTRACT_ROLE_CONTIGUOUS_VIEW_START),
+        ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT("length", "int", ZR_NULL,
+                                          ZR_MEMBER_CONTRACT_ROLE_INDEX_LENGTH),
+};
+
+static const ZrLibMethodDescriptor kSpanMethods[] = {
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("slice", 2, 2, ZrVmLibContainer_ContiguousView_Slice,
+                                           "Span<T>", ZR_NULL, ZR_FALSE,
+                                           kSpanSliceParameters, ZR_ARRAY_COUNT(kSpanSliceParameters),
+                                           ZR_MEMBER_CONTRACT_ROLE_CONTIGUOUS_VIEW_SLICE),
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("asReadOnly", 0, 0,
+                                           ZrVmLibContainer_ContiguousView_AsReadOnly,
+                                           "ReadOnlySpan<T>", ZR_NULL, ZR_FALSE,
+                                           ZR_NULL, 0,
+                                           ZR_MEMBER_CONTRACT_ROLE_READONLY_VIEW_CONVERSION),
+};
+
+static const ZrLibMethodDescriptor kReadOnlySpanMethods[] = {
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("slice", 2, 2, ZrVmLibContainer_ContiguousView_Slice,
+                                           "ReadOnlySpan<T>", ZR_NULL, ZR_FALSE,
+                                           kSpanSliceParameters, ZR_ARRAY_COUNT(kSpanSliceParameters),
+                                           ZR_MEMBER_CONTRACT_ROLE_CONTIGUOUS_VIEW_SLICE),
+};
+
+static const ZrLibMetaMethodDescriptor kSpanMetaMethods[] = {
+        {ZR_META_CONSTRUCTOR, 0, 0, ZrVmLibContainer_ContiguousView_Construct,
+         "Span<T>", ZR_NULL, ZR_NULL, 0},
+        {ZR_META_GET_ITEM, 1, 1, ZrVmLibContainer_ContiguousView_GetItem,
+         "T", ZR_NULL, kArrayIndexParameter,
+         ZR_ARRAY_COUNT(kArrayIndexParameter), ZR_NULL, 0,
+         ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER},
+        {ZR_META_SET_ITEM, 2, 2, ZrVmLibContainer_ContiguousView_SetItem,
+         "T", ZR_NULL, kArrayInsertParameters,
+         ZR_ARRAY_COUNT(kArrayInsertParameters)},
+};
+
+static const ZrLibMetaMethodDescriptor kReadOnlySpanMetaMethods[] = {
+        {ZR_META_CONSTRUCTOR, 0, 0, ZrVmLibContainer_ContiguousView_Construct,
+         "ReadOnlySpan<T>", ZR_NULL, ZR_NULL, 0},
+        {ZR_META_GET_ITEM, 1, 1, ZrVmLibContainer_ContiguousView_GetItem,
+         "T", ZR_NULL, kArrayIndexParameter,
+         ZR_ARRAY_COUNT(kArrayIndexParameter), ZR_NULL, 0,
+         ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER},
+};
+
 static const ZrLibTypeDescriptor g_container_types[] = {
         {"Array", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kArrayFields, ZR_ARRAY_COUNT(kArrayFields), kArrayMethods, ZR_ARRAY_COUNT(kArrayMethods), kArrayMetaMethods, ZR_ARRAY_COUNT(kArrayMetaMethods), ZR_NULL, ZR_NULL, kArrayImplements, ZR_ARRAY_COUNT(kArrayImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Array<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ARRAY_LIKE) | ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)},
         {"Map", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kMapFields, ZR_ARRAY_COUNT(kMapFields), kMapMethods, ZR_ARRAY_COUNT(kMapMethods), kMapMetaMethods, ZR_ARRAY_COUNT(kMapMetaMethods), ZR_NULL, ZR_NULL, kMapImplements, ZR_ARRAY_COUNT(kMapImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Map<K,V>()", kMapGenericParameters, ZR_ARRAY_COUNT(kMapGenericParameters), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)},
@@ -4258,6 +4319,38 @@ static const ZrLibTypeDescriptor g_container_types[] = {
         {"Pair", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, kPairFields, ZR_ARRAY_COUNT(kPairFields), kPairMethods, ZR_ARRAY_COUNT(kPairMethods), kPairMetaMethods, ZR_ARRAY_COUNT(kPairMetaMethods), ZR_NULL, ZR_NULL, kPairImplements, ZR_ARRAY_COUNT(kPairImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "Pair<K,V>(first: K, second: V)", kGenericKV, ZR_ARRAY_COUNT(kGenericKV), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_EQUATABLE) | ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_COMPARABLE) | ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_HASHABLE)},
         {"LinkedList", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kLinkedListFields, ZR_ARRAY_COUNT(kLinkedListFields), kLinkedListMethods, ZR_ARRAY_COUNT(kLinkedListMethods), kLinkedListMetaMethods, ZR_ARRAY_COUNT(kLinkedListMetaMethods), ZR_NULL, ZR_NULL, kLinkedListImplements, ZR_ARRAY_COUNT(kLinkedListImplements), ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "LinkedList<T>()", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)},
         {"LinkedNode", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, kLinkedNodeFields, ZR_ARRAY_COUNT(kLinkedNodeFields), ZR_NULL, 0, kLinkedNodeMetaMethods, ZR_ARRAY_COUNT(kLinkedNodeMetaMethods), ZR_NULL, ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "LinkedNode<T>(value: T)", kSingleGenericT, ZR_ARRAY_COUNT(kSingleGenericT), 0},
+        {.name = "Span",
+         .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
+         .fields = kSpanFields,
+         .fieldCount = ZR_ARRAY_COUNT(kSpanFields),
+         .methods = kSpanMethods,
+         .methodCount = ZR_ARRAY_COUNT(kSpanMethods),
+         .metaMethods = kSpanMetaMethods,
+         .metaMethodCount = ZR_ARRAY_COUNT(kSpanMetaMethods),
+         .documentation = "Mutable non-owning contiguous view.",
+         .allowValueConstruction = ZR_TRUE,
+         .allowBoxedConstruction = ZR_FALSE,
+         .constructorSignature = "Span<T>()",
+         .genericParameters = kSingleGenericT,
+         .genericParameterCount = ZR_ARRAY_COUNT(kSingleGenericT),
+         .protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE) |
+                         ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_MUTABLE)},
+        {.name = "ReadOnlySpan",
+         .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
+         .fields = kSpanFields,
+         .fieldCount = ZR_ARRAY_COUNT(kSpanFields),
+         .methods = kReadOnlySpanMethods,
+         .methodCount = ZR_ARRAY_COUNT(kReadOnlySpanMethods),
+         .metaMethods = kReadOnlySpanMetaMethods,
+         .metaMethodCount = ZR_ARRAY_COUNT(kReadOnlySpanMetaMethods),
+         .documentation = "Read-only non-owning contiguous view.",
+         .allowValueConstruction = ZR_TRUE,
+         .allowBoxedConstruction = ZR_FALSE,
+         .constructorSignature = "ReadOnlySpan<T>()",
+         .genericParameters = kSingleGenericT,
+         .genericParameterCount = ZR_ARRAY_COUNT(kSingleGenericT),
+         .protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE) |
+                         ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY)},
 };
 
 static const ZrLibModuleDescriptor g_container_module_descriptor = {

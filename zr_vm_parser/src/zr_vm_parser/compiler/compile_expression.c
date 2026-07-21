@@ -3,11 +3,26 @@
 //
 
 #include "compile_expression_internal.h"
+#include "compile_expression_contiguous_view.h"
 #include "type_inference_semantic_facts.h"
 
 static TZrBool note_inline_struct_field_result_slot(SZrCompilerState *cs,
                                                     TZrUInt32 stackSlot,
                                                     SZrString *fieldTypeName);
+
+static TZrBool compile_type_has_protocol_mask(
+        SZrCompilerState *cs,
+        SZrString *typeName,
+        TZrUInt64 protocolMask) {
+    SZrTypePrototypeInfo *prototype;
+
+    if (cs == ZR_NULL || typeName == ZR_NULL || protocolMask == 0U) {
+        return ZR_FALSE;
+    }
+    prototype = find_compiler_type_prototype(cs, typeName);
+    return prototype != ZR_NULL &&
+           (prototype->protocolMask & protocolMask) == protocolMask;
+}
 
 static const TZrChar *compound_assignment_base_operator(const TZrChar *op) {
     if (op == ZR_NULL) {
@@ -1652,6 +1667,18 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                         // 处理成员访问链，获取最后一个成员访问的键
                         SZrMemberExpression *memberExpr = &lastMember->data.memberExpression;
                         if (memberExpr->property != ZR_NULL) {
+                            if (memberExpr->computed &&
+                                compile_type_has_protocol_mask(
+                                        cs,
+                                        rootTypeName,
+                                        ZR_PROTOCOL_BIT(
+                                                ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY))) {
+                                ZrParser_Compiler_Error(
+                                        cs,
+                                        "Cannot assign through a read-only contiguous view",
+                                        node->location);
+                                return;
+                            }
                             TZrBool targetsThis = ZR_FALSE;
 
                             if (primary->property != ZR_NULL &&
@@ -1875,8 +1902,34 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                 }
 
                                 if (strcmp(op, "=") == 0) {
-                                    TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX), (TZrUInt16)rightSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
-                                    emit_instruction(cs, setTableInst);
+                                    EZrCompilerContiguousViewLoweringResult loweringResult =
+                                            compiler_contiguous_view_lower_index_set(
+                                                    cs,
+                                                    rootTypeName,
+                                                    objSlot,
+                                                    keySlot,
+                                                    memberExpr->property,
+                                                    rightSlot,
+                                                    node->location);
+                                    if (loweringResult ==
+                                            ZR_COMPILER_CONTIGUOUS_VIEW_ERROR) {
+                                        if (!cs->hasError) {
+                                            ZrParser_Compiler_Error(
+                                                    cs,
+                                                    "Failed to lower contiguous view index assignment",
+                                                    node->location);
+                                        }
+                                        return;
+                                    }
+                                    if (loweringResult ==
+                                            ZR_COMPILER_CONTIGUOUS_VIEW_NOT_APPLICABLE) {
+                                        TZrInstruction setTableInst = create_instruction_2(
+                                                ZR_INSTRUCTION_ENUM(SET_BY_INDEX),
+                                                (TZrUInt16)rightSlot,
+                                                (TZrUInt16)objSlot,
+                                                (TZrUInt16)keySlot);
+                                        emit_instruction(cs, setTableInst);
+                                    }
                                     if (!emit_assignment_inline_struct_writebacks(cs,
                                                                                   inlineWritebacks,
                                                                                   inlineWritebackCount)) {
@@ -1884,19 +1937,73 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                     }
                                 } else {
                                     TZrUInt32 leftValueSlot = allocate_stack_slot(cs);
-                                    TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_BY_INDEX), (TZrUInt16)leftValueSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
-                                    emit_instruction(cs, getTableInst);
+                                    EZrCompilerContiguousViewLoweringResult getLoweringResult =
+                                            compiler_contiguous_view_lower_index_get(
+                                                    cs,
+                                                    rootTypeName,
+                                                    objSlot,
+                                                    keySlot,
+                                                    memberExpr->property,
+                                                    leftValueSlot,
+                                                    node->location);
+                                    if (getLoweringResult ==
+                                            ZR_COMPILER_CONTIGUOUS_VIEW_ERROR) {
+                                        if (!cs->hasError) {
+                                            ZrParser_Compiler_Error(
+                                                    cs,
+                                                    "Failed to lower contiguous view index read",
+                                                    node->location);
+                                        }
+                                        return;
+                                    }
+                                    if (getLoweringResult ==
+                                            ZR_COMPILER_CONTIGUOUS_VIEW_NOT_APPLICABLE) {
+                                        TZrInstruction getTableInst = create_instruction_2(
+                                                ZR_INSTRUCTION_ENUM(GET_BY_INDEX),
+                                                (TZrUInt16)leftValueSlot,
+                                                (TZrUInt16)objSlot,
+                                                (TZrUInt16)keySlot);
+                                        emit_instruction(cs, getTableInst);
+                                    }
                                     
                                     TZrUInt32 resultSlot = allocate_stack_slot(cs);
                                     TZrInstruction opInst = create_instruction_2(
                                             compoundAssignmentOpcode,
                                             ZR_COMPILE_SLOT_U16(resultSlot),
                                             ZR_COMPILE_SLOT_U16(leftValueSlot),
-                                            ZR_COMPILE_SLOT_U16(rightSlot));
+                                        ZR_COMPILE_SLOT_U16(rightSlot));
                                     emit_instruction(cs, opInst);
                                     
-                                    TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX), (TZrUInt16)resultSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
-                                    emit_instruction(cs, setTableInst);
+                                    {
+                                        EZrCompilerContiguousViewLoweringResult setLoweringResult =
+                                                compiler_contiguous_view_lower_index_set(
+                                                        cs,
+                                                        rootTypeName,
+                                                    objSlot,
+                                                    keySlot,
+                                                    memberExpr->property,
+                                                    resultSlot,
+                                                        node->location);
+                                        if (setLoweringResult ==
+                                                ZR_COMPILER_CONTIGUOUS_VIEW_ERROR) {
+                                            if (!cs->hasError) {
+                                                ZrParser_Compiler_Error(
+                                                        cs,
+                                                        "Failed to lower contiguous view compound assignment",
+                                                        node->location);
+                                            }
+                                            return;
+                                        }
+                                        if (setLoweringResult ==
+                                                ZR_COMPILER_CONTIGUOUS_VIEW_NOT_APPLICABLE) {
+                                            TZrInstruction setTableInst = create_instruction_2(
+                                                    ZR_INSTRUCTION_ENUM(SET_BY_INDEX),
+                                                    (TZrUInt16)resultSlot,
+                                                    (TZrUInt16)objSlot,
+                                                    (TZrUInt16)keySlot);
+                                            emit_instruction(cs, setTableInst);
+                                        }
+                                    }
                                     if (!emit_assignment_inline_struct_writebacks(cs,
                                                                                   inlineWritebacks,
                                                                                   inlineWritebackCount)) {

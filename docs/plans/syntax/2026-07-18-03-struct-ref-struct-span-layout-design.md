@@ -534,6 +534,14 @@ field、array、global、generic、closure、await/yield 与返回来源。合�
 
 晋级门：生命周期、bounds、VM/AOT 等价和 check elimination 基准全部通过。
 
+状态：已完成（2026-07-21 10:19 +08:00）。`Span<T>` / `ReadOnlySpan<T>` 已作为
+protocol/role 驱动的普通 ref-like TypeDef 进入 array view、index、slice、readonly weakening
+和 default/empty 路径；structured view/bounds/source-loan facts、moving-GC array source、
+owner/native lifecycle conflict、check elimination 与 strict AOT shared-library 均通过
+GCC、Clang、MSVC 的 9 目标、每套 322 项矩阵。
+
+状态记录：[M4 Span core](./03-struct-ref-struct-span-layout/m4-span-core.md)。
+
 ### M5 Buffer/pool/FFI integration
 
 覆盖 PoolLease borrow、异常清理、pin/unpin、跨模块 ABI。

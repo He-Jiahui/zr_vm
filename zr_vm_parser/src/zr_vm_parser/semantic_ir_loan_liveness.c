@@ -93,6 +93,29 @@ static TZrBool loan_opcode_stores_value(EZrSemanticIrOpcode opcode) {
                      opcode == ZR_SEMANTIC_IR_DESTRUCTURE_LEAF_BIND);
 }
 
+static void loan_seed_contiguous_view_values(
+        SSemanticLoanAnalysis *analysis) {
+    for (TZrSize index = 0U;
+         index < analysis->function->contiguousViewFacts.length;
+         index++) {
+        const SZrSemanticContiguousViewFact *viewFact =
+                ZrParser_SemanticIr_ContiguousViewFactAt(
+                        analysis->function, index);
+        if (viewFact == ZR_NULL ||
+            viewFact->sourceLoanId == ZR_SEMANTIC_LOAN_ID_INVALID ||
+            viewFact->sourceLoanId > analysis->loanCount ||
+            viewFact->viewValueId == ZR_VALUE_ID_INVALID ||
+            viewFact->viewValueId > analysis->valueCount) {
+            continue;
+        }
+        loan_row(
+                analysis->valueLoans,
+                (TZrSize)viewFact->viewValueId - 1U,
+                analysis->loanCount)[
+                (TZrSize)viewFact->sourceLoanId - 1U] = ZR_TRUE;
+    }
+}
+
 static TZrBool loan_seed_and_propagate_values(SSemanticLoanAnalysis *analysis) {
     TZrBool *inputs = (TZrBool *)calloc(
             analysis->loanCount, sizeof(TZrBool));
@@ -115,6 +138,7 @@ static TZrBool loan_seed_and_propagate_values(SSemanticLoanAnalysis *analysis) {
                     analysis->loanCount)[index] = ZR_TRUE;
         }
     }
+    loan_seed_contiguous_view_values(analysis);
 
     do {
         changed = ZR_FALSE;
@@ -191,6 +215,7 @@ static void loan_seed_created_values(SSemanticLoanAnalysis *analysis) {
                     analysis->loanCount)[index] = ZR_TRUE;
         }
     }
+    loan_seed_contiguous_view_values(analysis);
 }
 
 static TZrBool loan_prepare_tracked_places(SSemanticLoanAnalysis *analysis) {

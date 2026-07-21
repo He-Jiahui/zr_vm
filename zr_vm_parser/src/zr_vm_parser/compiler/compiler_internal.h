@@ -82,6 +82,34 @@ TZrBool compiler_semantic_ir_bind_slot_to_place(
         SZrCompilerState *cs,
         TZrUInt32 stackSlot,
         TZrPlaceId placeId);
+const SZrSemanticContiguousViewFact *
+compiler_semantic_ir_contiguous_view_fact_for_slot(
+        SZrCompilerState *cs,
+        TZrUInt32 viewSlot,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_record_contiguous_view(
+        SZrCompilerState *cs,
+        TZrUInt32 viewSlot,
+        TZrPlaceId sourcePlaceId,
+        TZrUInt32 startSlot,
+        TZrUInt32 lengthSlot,
+        EZrSemanticContiguousSourceKind sourceKind,
+        TZrRegionId regionId,
+        TZrBool isReadOnly,
+        TZrBool hasKnownStart,
+        TZrInt64 knownStart,
+        TZrBool hasKnownLength,
+        TZrInt64 knownLength,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_record_bounds_fact(
+        SZrCompilerState *cs,
+        TZrUInt32 viewSlot,
+        TZrUInt32 indexSlot,
+        TZrUInt32 lengthSlot,
+        TZrBool hasKnownIndex,
+        TZrInt64 knownIndex,
+        SZrFileRange sourceRange,
+        TZrBool *outCheckElided);
 TZrPlaceId compiler_semantic_ir_project_field(
         SZrCompilerState *cs,
         TZrPlaceId parentPlaceId,

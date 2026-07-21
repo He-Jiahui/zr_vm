@@ -2375,12 +2375,18 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_add_unity_test_target(
             zr_vm_aot_c_value_type_shared_library_smoke_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_value_type_shared_library_smoke.c
+            ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
     )
     target_include_directories(zr_vm_aot_c_value_type_shared_library_smoke_test PRIVATE
             ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/tests/container
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
     )
     target_compile_definitions(zr_vm_aot_c_value_type_shared_library_smoke_test PRIVATE
             ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
@@ -3720,6 +3726,13 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_span_core_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_span_core.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_span_gc_cases.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_span_semantic_ir_cases.c
+            ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_task_runtime_test
             ${CMAKE_SOURCE_DIR}/tests/task/test_task_runtime.c
             ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
@@ -3736,7 +3749,8 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             zr_vm_container_runtime_test
             zr_vm_container_metadata_test
             zr_vm_container_type_inference_test
-            zr_vm_container_temp_value_root_test)
+            zr_vm_container_temp_value_root_test
+            zr_vm_span_core_test)
         target_include_directories(${container_target} PRIVATE
                 ${CMAKE_SOURCE_DIR}/tests/container
                 ${CMAKE_SOURCE_DIR}/zr_vm_parser/include

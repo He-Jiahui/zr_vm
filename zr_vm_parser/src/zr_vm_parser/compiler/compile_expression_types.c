@@ -3,6 +3,7 @@
 //
 
 #include "compile_expression_internal.h"
+#include "compile_expression_contiguous_view.h"
 #include "type_inference_internal.h"
 
 static SZrTypePrototypeInfo *find_registered_type_prototype_exact_only(SZrCompilerState *cs,
@@ -2298,10 +2299,12 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
     TZrUInt32 pendingDirectMemberCallMemberEntryIndex = ZR_PARSER_MEMBER_ID_NONE;
     TZrUInt32 pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
     SZrString *pendingCallResultTypeName = ZR_NULL;
+    SZrString *pendingContiguousViewReceiverTypeName = ZR_NULL;
     const SZrTypeMemberInfo *pendingCallMemberInfo = ZR_NULL;
     TZrBool pendingReceiverRequiresBinding = ZR_FALSE;
     TZrBool pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
     TZrBool pendingInlineCompiledMemberCall = ZR_FALSE;
+    TZrBool pendingContiguousViewCall = ZR_FALSE;
     TZrBool currentSlotIsArrayElementAlias = ZR_FALSE;
     SZrString *rootTypeName = ioRootTypeName != ZR_NULL ? *ioRootTypeName : ZR_NULL;
     TZrBool rootIsTypeReference = ioRootIsTypeReference != ZR_NULL ? *ioRootIsTypeReference : ZR_FALSE;
@@ -2352,6 +2355,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             pendingReceiverRequiresBinding = ZR_FALSE;
             pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
             pendingInlineCompiledMemberCall = ZR_FALSE;
+            pendingContiguousViewCall = ZR_FALSE;
+            pendingContiguousViewReceiverTypeName = ZR_NULL;
 
             if (!memberExpr->computed && memberExpr->property != ZR_NULL &&
                 memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
@@ -2604,6 +2609,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                             TZrBool canUseDirectKnownMemberCall =
                                     ZR_FALSE;
                             TZrBool canUseInlineCompiledMemberCall = ZR_FALSE;
+                            TZrBool canLowerContiguousViewCall = ZR_FALSE;
                             if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
                                 ZrParser_Compiler_Error(cs,
                                                         "Failed to register member access symbol",
@@ -2644,7 +2650,19 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                     typeMember->compiledFunction->closureValueLength == 0 &&
                                     type_name_is_inline_struct_or_union_prototype(cs, rootTypeName);
 
-                            if (canUseDirectKnownMemberCall) {
+                            canLowerContiguousViewCall =
+                                    nextIsFunctionCall &&
+                                    pendingReceiverRequiresBinding &&
+                                    !memberUsesSuperLookup &&
+                                    compiler_contiguous_view_member_is_structural(typeMember);
+
+                            if (canLowerContiguousViewCall) {
+                                pendingContiguousViewCall = ZR_TRUE;
+                                pendingContiguousViewReceiverTypeName = rootTypeName;
+                                pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
+                                pendingDirectMemberCallMemberEntryIndex =
+                                        ZR_PARSER_MEMBER_ID_NONE;
+                            } else if (canUseDirectKnownMemberCall) {
                                 if (preferredDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE &&
                                     pendingReceiverWritebackSlot == ZR_PARSER_SLOT_NONE &&
                                     pendingReceiverSourceSlot == currentSlot &&
@@ -2873,11 +2891,35 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         }
 
                         if (!computedInlineArrayElement) {
-                            emit_instruction(cs,
-                                             create_instruction_2(ZR_INSTRUCTION_ENUM(GET_BY_INDEX),
-                                                                  (TZrUInt16)currentSlot,
-                                                                  (TZrUInt16)currentSlot,
-                                                                  (TZrUInt16)keySlot));
+                            EZrCompilerContiguousViewLoweringResult loweringResult =
+                                    compiler_contiguous_view_lower_index_get(
+                                            cs,
+                                            rootTypeName,
+                                            currentSlot,
+                                            keySlot,
+                                            memberExpr->property,
+                                            currentSlot,
+                                            member->location);
+                            if (loweringResult ==
+                                    ZR_COMPILER_CONTIGUOUS_VIEW_ERROR) {
+                                if (!cs->hasError) {
+                                    ZrParser_Compiler_Error(
+                                            cs,
+                                            "Failed to lower contiguous view index",
+                                            member->location);
+                                }
+                                return;
+                            }
+                            if (loweringResult ==
+                                    ZR_COMPILER_CONTIGUOUS_VIEW_NOT_APPLICABLE) {
+                                emit_instruction(
+                                        cs,
+                                        create_instruction_2(
+                                                ZR_INSTRUCTION_ENUM(GET_BY_INDEX),
+                                                (TZrUInt16)currentSlot,
+                                                (TZrUInt16)currentSlot,
+                                                (TZrUInt16)keySlot));
+                            }
                             if (pendingReceiverSlot == ZR_PARSER_SLOT_NONE) {
                                 collapse_stack_to_slot(cs, currentSlot);
                             }
@@ -3134,6 +3176,14 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 }
             }
 
+            if (activeCallMemberInfo != ZR_NULL) {
+                hasContractReturnType = infer_member_call_contract_return_type(
+                        cs,
+                        activeCallMemberInfo,
+                        call,
+                        &contractReturnType);
+            }
+
             if (!compiler_semantic_ir_activate_receiver_call(
                         cs, activeReceiverLoanId, member->location)) {
                 ZrParser_Compiler_Error(
@@ -3149,6 +3199,53 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 return;
             }
 
+            if (pendingContiguousViewCall) {
+                const SZrInferredType *loweredResultType =
+                        hasResolvedMemberSignature
+                                ? &resolvedMemberSignature.returnType
+                                : (hasContractReturnType
+                                           ? &contractReturnType
+                                           : ZR_NULL);
+                EZrCompilerContiguousViewLoweringResult loweringResult;
+
+                usePreferredCallResultSlot =
+                        preferredDirectMemberCallResultSlot !=
+                                ZR_PARSER_SLOT_NONE &&
+                        currentSlot ==
+                                preferredDirectMemberCallResultSlot + 1u;
+                if (usePreferredCallResultSlot) {
+                    callResultSlot = preferredDirectMemberCallResultSlot;
+                }
+                compiler_ensure_stack_slot_available(
+                        cs, pendingReceiverSourceSlot);
+                loweringResult = compiler_contiguous_view_lower_member_call(
+                        cs,
+                        activeCallMemberInfo,
+                        pendingContiguousViewReceiverTypeName,
+                        pendingReceiverSourceSlot,
+                        argBaseSlot,
+                        argCount,
+                        argsToCompile,
+                        callResultSlot,
+                        loweredResultType,
+                        member->location);
+                if (loweringResult != ZR_COMPILER_CONTIGUOUS_VIEW_LOWERED) {
+                    if (!cs->hasError) {
+                        ZrParser_Compiler_Error(
+                                cs,
+                                "Failed to lower contiguous view operation",
+                                member->location);
+                    }
+                    if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                        ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
+                    }
+                    free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                    free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                    ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                    return;
+                }
+                currentSlot = callResultSlot;
+            } else {
             {
                 TZrUInt16 directMemberCallCacheIndex = 0;
                 TZrBool useKnownVmDirectMemberCallOpcode = ZR_FALSE;
@@ -3259,6 +3356,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                           (TZrUInt16)argCount));
                 }
             }
+            }
             if (!compiler_semantic_ir_end_receiver_call(
                         cs, activeReceiverLoanId, member->location)) {
                 ZrParser_Compiler_Error(
@@ -3291,7 +3389,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             } else if (usePreferredCallResultSlot) {
                 currentSlot = callResultSlot;
             }
-            if (activeCallMemberInfo != ZR_NULL) {
+            if (activeCallMemberInfo != ZR_NULL && !hasContractReturnType) {
                 hasContractReturnType =
                         infer_member_call_contract_return_type(cs, activeCallMemberInfo, call, &contractReturnType);
             }
@@ -3324,6 +3422,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             pendingReceiverRequiresBinding = ZR_FALSE;
             pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
             pendingInlineCompiledMemberCall = ZR_FALSE;
+            pendingContiguousViewCall = ZR_FALSE;
+            pendingContiguousViewReceiverTypeName = ZR_NULL;
             pendingDirectMemberCallMemberEntryIndex = ZR_PARSER_MEMBER_ID_NONE;
             if (hasResolvedMemberSignature) {
                 rootTypeName = get_type_name_from_inferred_type(cs, &resolvedMemberSignature.returnType);

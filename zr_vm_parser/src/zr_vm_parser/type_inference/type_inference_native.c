@@ -5,6 +5,8 @@
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_parser/receiver_call.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/canonical_type.h"
+#include "zr_vm_parser/semantic.h"
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
 #include "type_inference_constant_eval.h"
@@ -535,6 +537,100 @@ static void native_module_info_init_prototype(SZrState *state,
     info->allowBoxedConstruction =
             type != ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE && type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
     info->constructorSignature = ZR_NULL;
+}
+
+static TZrBool native_module_info_register_canonical_value_definition(
+        SZrCompilerState *cs,
+        const SZrTypePrototypeInfo *info) {
+    const SZrSemanticSymbolRecord *existingSymbol;
+    SZrArray parameterKinds;
+    TZrSymbolId ownerSymbolId;
+    TZrTypeId typeId;
+    TZrUInt32 capabilities;
+    TZrBool registered;
+
+    if (cs == ZR_NULL || info == ZR_NULL ||
+        info->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+        cs->semanticContext == ZR_NULL || info->name == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    typeId = ZrParser_CanonicalType_FromName(
+            cs->semanticContext, info->name);
+    if (typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+
+    existingSymbol = ZrParser_Semantic_FindSymbolByNameAndKind(
+            cs->semanticContext,
+            info->name,
+            ZR_SEMANTIC_SYMBOL_KIND_TYPE);
+    ownerSymbolId = existingSymbol != ZR_NULL
+                            ? existingSymbol->id
+                            : ZrParser_Semantic_RegisterSymbol(
+                                      cs->semanticContext,
+                                      info->name,
+                                      ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                                      typeId,
+                                      ZR_SEMANTIC_ID_INVALID,
+                                      ZR_NULL,
+                                      (SZrFileRange){0});
+    if (ownerSymbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+
+    capabilities = ZR_CANONICAL_TYPE_CAPABILITY_VALUE_TYPE |
+                   ZR_CANONICAL_TYPE_CAPABILITY_HAS_GC_REFERENCES;
+    if (info->allowValueConstruction) {
+        capabilities |= ZR_CANONICAL_TYPE_CAPABILITY_VALUE_CONSTRUCTIBLE;
+    }
+    if ((info->modifierFlags & ZR_DECLARATION_MODIFIER_READONLY) != 0U) {
+        capabilities |= ZR_CANONICAL_TYPE_CAPABILITY_READONLY_TYPE;
+    }
+    if ((info->modifierFlags & ZR_DECLARATION_MODIFIER_REF_LIKE) != 0U) {
+        capabilities |= ZR_CANONICAL_TYPE_CAPABILITY_REF_LIKE;
+    }
+
+    if (info->genericParameters.length == 0U) {
+        return ZrParser_CanonicalType_RegisterDefinition(
+                cs->semanticContext,
+                typeId,
+                capabilities,
+                ZR_CANONICAL_GC_SCAN_BARRIERED);
+    }
+
+    ZrCore_Array_Init(
+            cs->state,
+            &parameterKinds,
+            sizeof(EZrCanonicalGenericArgumentKind),
+            info->genericParameters.length);
+    for (TZrSize index = 0U; index < info->genericParameters.length; index++) {
+        const SZrTypeGenericParameterInfo *parameter =
+                (const SZrTypeGenericParameterInfo *)ZrCore_Array_Get(
+                        (SZrArray *)&info->genericParameters, index);
+        EZrCanonicalGenericArgumentKind kind;
+
+        if (parameter == ZR_NULL ||
+            (parameter->genericKind != ZR_GENERIC_PARAMETER_TYPE &&
+             parameter->genericKind != ZR_GENERIC_PARAMETER_CONST_INT)) {
+            ZrCore_Array_Free(cs->state, &parameterKinds);
+            return ZR_FALSE;
+        }
+        kind = parameter->genericKind == ZR_GENERIC_PARAMETER_TYPE
+                       ? ZR_CANONICAL_GENERIC_ARGUMENT_TYPE
+                       : ZR_CANONICAL_GENERIC_ARGUMENT_CONST_INT;
+        ZrCore_Array_Push(cs->state, &parameterKinds, &kind);
+    }
+    registered = ZrParser_CanonicalType_RegisterGenericDefinitionEx(
+            cs->semanticContext,
+            typeId,
+            ownerSymbolId,
+            (const EZrCanonicalGenericArgumentKind *)parameterKinds.head,
+            parameterKinds.length,
+            capabilities,
+            ZR_CANONICAL_GC_SCAN_BARRIERED);
+    ZrCore_Array_Free(cs->state, &parameterKinds);
+    return registered;
 }
 
 static SZrString *type_inference_builtin_reflection_string(SZrCompilerState *cs, const TZrChar *text);
@@ -2585,6 +2681,16 @@ translate_module_info:
                                           (EZrObjectPrototypeType)prototypeTypeValue);
         native_module_info_copy_type_metadata(cs, &typePrototype, entry);
         typePrototype.protocolMask = protocolMask;
+        if ((protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE)) != 0) {
+            typePrototype.modifierFlags |= ZR_DECLARATION_MODIFIER_REF_LIKE;
+            if (typePrototype.type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+                typePrototype.isImportedNative = ZR_FALSE;
+            }
+        }
+        if ((protocolMask &
+             ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY)) != 0) {
+            typePrototype.modifierFlags |= ZR_DECLARATION_MODIFIER_READONLY;
+        }
         typePrototype.extendsTypeName = extendsTypeName;
         typePrototype.enumValueTypeName = enumValueTypeName;
         typePrototype.allowValueConstruction = allowValueConstruction;
@@ -2713,6 +2819,10 @@ translate_module_info:
             }
         }
 
+        if (!native_module_info_register_canonical_value_definition(
+                    cs, &typePrototype)) {
+            goto cleanup;
+        }
         ZrCore_Array_Push(cs->state, &cs->typePrototypes, &typePrototype);
     }
 

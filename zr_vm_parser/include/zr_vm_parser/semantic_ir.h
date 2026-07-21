@@ -15,6 +15,8 @@ typedef TZrUInt32 TZrCleanupScopeId;
 #define ZR_SEMANTIC_LOAN_ID_MULTIPLE ((TZrLoanId)0xffffffffU)
 #define ZR_SEMANTIC_REGION_ID_INVALID ((TZrRegionId)0U)
 #define ZR_SEMANTIC_CLEANUP_SCOPE_ID_INVALID ((TZrCleanupScopeId)0U)
+#define ZR_SEMANTIC_CONTIGUOUS_VIEW_FACT_ID_INVALID ((TZrUInt32)0U)
+#define ZR_SEMANTIC_BOUNDS_FACT_ID_INVALID ((TZrUInt32)0U)
 
 typedef enum EZrSemanticIrOpcode {
     ZR_SEMANTIC_IR_INVALID = 0,
@@ -109,6 +111,53 @@ typedef struct SZrSemanticEscapeFact {
     SZrFileRange originRange;
     SZrFileRange escapeRange;
 } SZrSemanticEscapeFact;
+
+typedef enum EZrSemanticContiguousSourceKind {
+    ZR_SEMANTIC_CONTIGUOUS_SOURCE_ARRAY = 0,
+    ZR_SEMANTIC_CONTIGUOUS_SOURCE_OWNER,
+    ZR_SEMANTIC_CONTIGUOUS_SOURCE_NATIVE_PINNED,
+    ZR_SEMANTIC_CONTIGUOUS_SOURCE_VIEW
+} EZrSemanticContiguousSourceKind;
+
+typedef struct SZrSemanticContiguousViewFact {
+    TZrUInt32 factId;
+    TZrPlaceId viewPlaceId;
+    TZrValueId viewValueId;
+    TZrPlaceId sourcePlaceId;
+    TZrValueId startValueId;
+    TZrValueId lengthValueId;
+    TZrRegionId regionId;
+    TZrLoanId sourceLoanId;
+    EZrSemanticContiguousSourceKind sourceKind;
+    TZrBool isReadOnly;
+    TZrBool hasKnownStart;
+    TZrBool hasKnownLength;
+    TZrInt64 knownStart;
+    TZrInt64 knownLength;
+    SZrFileRange sourceRange;
+} SZrSemanticContiguousViewFact;
+
+typedef enum EZrSemanticBoundsProofKind {
+    ZR_SEMANTIC_BOUNDS_PROOF_RUNTIME_CHECK = 0,
+    ZR_SEMANTIC_BOUNDS_PROOF_CONSTANT_RANGE
+} EZrSemanticBoundsProofKind;
+
+typedef struct SZrSemanticBoundsFact {
+    TZrUInt32 factId;
+    TZrUInt32 contiguousViewFactId;
+    TZrPlaceId viewPlaceId;
+    TZrValueId indexValueId;
+    TZrValueId lengthValueId;
+    EZrSemanticBoundsProofKind proofKind;
+    TZrBool hasKnownIndex;
+    TZrBool hasKnownLength;
+    TZrBool lowerBoundProven;
+    TZrBool upperBoundProven;
+    TZrBool checkElided;
+    TZrInt64 knownIndex;
+    TZrInt64 knownLength;
+    SZrFileRange sourceRange;
+} SZrSemanticBoundsFact;
 
 typedef struct SZrSemanticIrValue {
     TZrValueId id;
@@ -211,6 +260,8 @@ typedef struct SZrSemanticIrFunction {
     SZrArray sourceMap; /* SZrSemanticIrSourceMapEntry */
     SZrArray loanFacts; /* SZrSemanticIrLoanFact */
     SZrArray escapeFacts; /* SZrSemanticEscapeFact */
+    SZrArray contiguousViewFacts; /* SZrSemanticContiguousViewFact */
+    SZrArray boundsFacts; /* SZrSemanticBoundsFact */
 } SZrSemanticIrFunction;
 
 typedef enum EZrSemanticInitializationState {
@@ -337,6 +388,23 @@ ZR_PARSER_API TZrUInt32 ZrParser_SemanticIr_AddEscapeFact(
         EZrSemanticEscapeState targetEscape,
         SZrFileRange escapeRange);
 ZR_PARSER_API const SZrSemanticEscapeFact *ZrParser_SemanticIr_EscapeFactAt(
+        const SZrSemanticIrFunction *function,
+        TZrSize index);
+ZR_PARSER_API TZrUInt32 ZrParser_SemanticIr_AddContiguousViewFact(
+        SZrSemanticIrFunction *function,
+        const SZrSemanticContiguousViewFact *fact);
+ZR_PARSER_API const SZrSemanticContiguousViewFact *
+ZrParser_SemanticIr_ContiguousViewFactAt(
+        const SZrSemanticIrFunction *function,
+        TZrSize index);
+ZR_PARSER_API const SZrSemanticContiguousViewFact *
+ZrParser_SemanticIr_FindContiguousViewFact(
+        const SZrSemanticIrFunction *function,
+        TZrPlaceId viewPlaceId);
+ZR_PARSER_API TZrUInt32 ZrParser_SemanticIr_AddBoundsFact(
+        SZrSemanticIrFunction *function,
+        const SZrSemanticBoundsFact *fact);
+ZR_PARSER_API const SZrSemanticBoundsFact *ZrParser_SemanticIr_BoundsFactAt(
         const SZrSemanticIrFunction *function,
         TZrSize index);
 ZR_PARSER_API TZrCleanupScopeId ZrParser_SemanticIr_AddCleanupScope(
