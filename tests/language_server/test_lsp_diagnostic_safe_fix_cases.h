@@ -712,6 +712,81 @@ static void test_lsp_code_action_inserts_missing_object_computed_key_close(
     }
 }
 
+static void test_lsp_code_action_inserts_missing_object_property_colon(
+        SZrState *state,
+        int *failures) {
+    const TZrChar *summary =
+            "LSP code action inserts missing object property colon";
+    const TZrChar *content = "return {a: 0, b 1};";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri = ZR_NULL;
+    SZrArray diagnostics = {0};
+    SZrArray actions = {0};
+    const SZrLspDiagnostic *diagnostic;
+    const SZrLspDiagnosticFix *fix = ZR_NULL;
+    TZrBool valid = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(
+            state,
+            "file:///tmp/zr_lsp_diagnostic_object_property_colon_fix.zr",
+            content,
+            &uri);
+    ZrCore_Array_Init(
+            state, &diagnostics, sizeof(SZrLspDiagnostic *), 4U);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetDiagnostics(
+                state, context, uri, &diagnostics)) {
+        diagnostic = diagnostic_safe_fix_find_code(
+                &diagnostics, "missing_object_property_colon");
+        if (diagnostic != ZR_NULL && diagnostic->fixes.isValid &&
+            diagnostic->fixes.length == 1U) {
+            fix = (const SZrLspDiagnosticFix *)ZrCore_Array_Get(
+                    (SZrArray *)&diagnostic->fixes, 0U);
+        }
+        if (fix != ZR_NULL &&
+            diagnostic->range.start.line == 0 &&
+            diagnostic->range.start.character == 16 &&
+            diagnostic->range.end.line == 0 &&
+            diagnostic->range.end.character == 17 &&
+            fix->applicability == ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE &&
+            fix->editRange.start.line == 0 &&
+            fix->editRange.start.character == 16 &&
+            fix->editRange.end.line == 0 &&
+            fix->editRange.end.character == 16 &&
+            strcmp(test_string_text(fix->title),
+                   "Insert missing ':'") == 0 &&
+            strcmp(test_string_text(fix->editText), ":") == 0 &&
+            ZrLanguageServer_Lsp_GetCodeActions(
+                    state,
+                    context,
+                    uri,
+                    diagnostic->range,
+                    &actions) &&
+            diagnostic_safe_fix_action_matches(
+                    &actions, "Insert missing ':'", ":")) {
+            valid = ZR_TRUE;
+        }
+    }
+
+    if (!valid) {
+        (*failures)++;
+        TEST_FAIL(
+                timer,
+                summary,
+                "missing object property colon did not preserve the value-token range and drive one exact machine-applicable quick fix");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
 static void test_lsp_code_action_inserts_missing_using_object_pattern_close(
         SZrState *state,
         int *failures) {

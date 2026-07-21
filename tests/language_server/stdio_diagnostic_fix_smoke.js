@@ -52,6 +52,8 @@ const arrayDocumentUri = 'file:///zr-diagnostic-array-close-fix-smoke.zr';
 const objectDocumentUri = 'file:///zr-diagnostic-object-close-fix-smoke.zr';
 const objectComputedKeyDocumentUri =
     'file:///zr-diagnostic-object-computed-key-close-fix-smoke.zr';
+const objectPropertyColonDocumentUri =
+    'file:///zr-diagnostic-object-property-colon-fix-smoke.zr';
 const documentText = [
     'func choose(flag: bool): int {',
     '    var seed: int;',
@@ -75,6 +77,7 @@ const groupDocumentText = 'return (1 + 2;\n';
 const arrayDocumentText = 'return [1, 2';
 const objectDocumentText = 'return {a: 1';
 const objectComputedKeyDocumentText = 'return {[1: 2};';
+const objectPropertyColonDocumentText = 'return {a 1};';
 
 const payload = Buffer.concat([
     createMessage({
@@ -397,7 +400,39 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: objectComputedKeyDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 21, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: objectPropertyColonDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: objectPropertyColonDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 21,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: objectPropertyColonDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didChange',
+        params: {
+            textDocument: { uri: objectPropertyColonDocumentUri, version: 2 },
+            contentChanges: [{ text: 'return {a: 1};' }],
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 22,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: objectPropertyColonDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 23, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -833,3 +868,50 @@ assert(fixedObjectComputedKeyPublication &&
     !fixedObjectComputedKeyPublication.params.diagnostics.some((entry) =>
         entry.code === 'missing_object_computed_key_close'),
     'Expected the applied computed-key close fix to clear the diagnostic');
+
+const objectPropertyColonPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === objectPropertyColonDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'missing_object_property_colon'));
+assert(objectPropertyColonPublication,
+    'Expected missing_object_property_colon publication');
+
+const objectPropertyColonDiagnostic =
+    objectPropertyColonPublication.params.diagnostics.find((entry) =>
+        entry.code === 'missing_object_property_colon');
+assert(objectPropertyColonDiagnostic.range.start.line === 0 &&
+    objectPropertyColonDiagnostic.range.start.character === 10 &&
+    objectPropertyColonDiagnostic.range.end.line === 0 &&
+    objectPropertyColonDiagnostic.range.end.character === 11,
+    'Expected the property-colon primary range on the value token');
+assert(objectPropertyColonDiagnostic.data &&
+    Array.isArray(objectPropertyColonDiagnostic.data.fixes) &&
+    objectPropertyColonDiagnostic.data.fixes.length === 1,
+    'Expected one serialized property-colon diagnostic fix');
+
+const objectPropertyColonFix = objectPropertyColonDiagnostic.data.fixes[0];
+assert(objectPropertyColonFix.title === "Insert missing ':'" &&
+    objectPropertyColonFix.applicability === 1 &&
+    objectPropertyColonFix.edit &&
+    objectPropertyColonFix.edit.newText === ':',
+    'Expected a machine-applicable serialized property-colon edit');
+assert(objectPropertyColonFix.edit.range.start.line === 0 &&
+    objectPropertyColonFix.edit.range.start.character === 10 &&
+    objectPropertyColonFix.edit.range.end.line === 0 &&
+    objectPropertyColonFix.edit.range.end.character === 10,
+    'Expected the property-colon edit before the value token');
+
+const fixedObjectPropertyColonPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === objectPropertyColonDocumentUri &&
+    message.params.version === 2 &&
+    Array.isArray(message.params.diagnostics));
+assert(fixedObjectPropertyColonPublication &&
+    !fixedObjectPropertyColonPublication.params.diagnostics.some((entry) =>
+        entry.code === 'missing_object_property_colon'),
+    'Expected the applied property-colon fix to clear the diagnostic');

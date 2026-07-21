@@ -712,6 +712,8 @@ RED：新增 `func pick(value: int: int { return value; }` 的 focused parser-di
 
 同日 object computed-key close safe-fix follow-up让首属性`return {[1: 2};`与后续属性`return {a: 0, [1: 2};`都保留exact opening `[` primary，并在property colon起点发布零宽`]` machine fix。Parser reporter从current token range发布edit，code action与stdio JSON继续只投影structured fact/fix；version 2应用`]`后清除`missing_object_computed_key_close`。GCC、Clang、MSVC十八目标矩阵和两套stdio smoke均通过；其他delimiter、replacement与L3整体仍未完成。
 
+同日 object property-colon safe-fix follow-up让首属性`return {a 1};`与后续属性`return {a: 0, b 1};`都保留unexpected value token primary，并在该token起点发布零宽`:` machine fix。Shared builder直接消费producer range，code action与stdio JSON继续只投影structured fix；version 2应用`:`后清除`missing_object_property_colon`。在Syntax03 M4提交后，以稳定`HEAD=3fc566e`重新配置并重建三工具链，十八目标矩阵和两套stdio smoke均通过；其他delimiter、replacement与L3整体仍未完成。
+
 2026-06-07 parser/LSP class method parameter-list close diagnostic 聚焦验证：
 
 ```powershell

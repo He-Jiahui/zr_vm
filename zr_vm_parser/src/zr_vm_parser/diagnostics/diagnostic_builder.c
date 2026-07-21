@@ -915,15 +915,30 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectComputedKeyClose(SZrState *
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectPropertyColon(SZrState *state,
                                                                    SZrStructuredDiagnostic *out,
                                                                    SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
-            state,
-            out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
-            location,
-            "missing_object_property_colon",
-            "Missing ':' after object property key",
-            "Object literal properties require ':' between the key and the value expression.",
-            "Insert ':' between the property key and value expression.");
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "missing_object_property_colon",
+                "Missing ':' after object property key",
+                "Object literal properties require ':' between the key and the value expression.",
+                "Insert ':' between the property key and value expression.")) {
+        return ZR_FALSE;
+    }
+
+    location.end = location.start;
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Insert missing ':'",
+                location,
+                ":",
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectPropertySeparator(SZrState *state,
