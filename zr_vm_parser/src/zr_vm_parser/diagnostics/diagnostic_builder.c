@@ -884,16 +884,32 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectClose(SZrState *state,
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectComputedKeyClose(SZrState *state,
                                                                       SZrStructuredDiagnostic *out,
-                                                                      SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
-            state,
-            out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
-            location,
-            "missing_object_computed_key_close",
-            "Missing closing ']' in computed object key",
-            "The computed object key started with '[', but the parser reached another token before the key expression closed.",
-            "Insert ']' after the computed key expression before ':'.");
+                                                                      SZrFileRange location,
+                                                                      SZrFileRange fixLocation) {
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "missing_object_computed_key_close",
+                "Missing closing ']' in computed object key",
+                "The computed object key started with '[', but the parser reached another token before the key expression closed.",
+                "Insert ']' after the computed key expression before ':'.")) {
+        return ZR_FALSE;
+    }
+
+    fixLocation.end = fixLocation.start;
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Insert missing ']'",
+                fixLocation,
+                "]",
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectPropertyColon(SZrState *state,

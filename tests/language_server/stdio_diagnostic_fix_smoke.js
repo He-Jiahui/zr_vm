@@ -50,6 +50,8 @@ const callDocumentUri = 'file:///zr-diagnostic-call-close-fix-smoke.zr';
 const groupDocumentUri = 'file:///zr-diagnostic-group-close-fix-smoke.zr';
 const arrayDocumentUri = 'file:///zr-diagnostic-array-close-fix-smoke.zr';
 const objectDocumentUri = 'file:///zr-diagnostic-object-close-fix-smoke.zr';
+const objectComputedKeyDocumentUri =
+    'file:///zr-diagnostic-object-computed-key-close-fix-smoke.zr';
 const documentText = [
     'func choose(flag: bool): int {',
     '    var seed: int;',
@@ -72,6 +74,7 @@ const callDocumentText = [
 const groupDocumentText = 'return (1 + 2;\n';
 const arrayDocumentText = 'return [1, 2';
 const objectDocumentText = 'return {a: 1';
+const objectComputedKeyDocumentText = 'return {[1: 2};';
 
 const payload = Buffer.concat([
     createMessage({
@@ -362,7 +365,39 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: objectDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 19, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: objectComputedKeyDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: objectComputedKeyDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 19,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: objectComputedKeyDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didChange',
+        params: {
+            textDocument: { uri: objectComputedKeyDocumentUri, version: 2 },
+            contentChanges: [{ text: 'return {[1]: 2};' }],
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 20,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: objectComputedKeyDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 21, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -751,3 +786,50 @@ assert(fixedObjectPublication &&
     !fixedObjectPublication.params.diagnostics.some((entry) =>
         entry.code === 'missing_object_close'),
     'Expected the applied object-close fix to clear the diagnostic');
+
+const objectComputedKeyPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === objectComputedKeyDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'missing_object_computed_key_close'));
+assert(objectComputedKeyPublication,
+    'Expected missing_object_computed_key_close publication');
+
+const objectComputedKeyDiagnostic =
+    objectComputedKeyPublication.params.diagnostics.find((entry) =>
+        entry.code === 'missing_object_computed_key_close');
+assert(objectComputedKeyDiagnostic.range.start.line === 0 &&
+    objectComputedKeyDiagnostic.range.start.character === 8 &&
+    objectComputedKeyDiagnostic.range.end.line === 0 &&
+    objectComputedKeyDiagnostic.range.end.character === 9,
+    'Expected the computed-key close primary range on the opening bracket');
+assert(objectComputedKeyDiagnostic.data &&
+    Array.isArray(objectComputedKeyDiagnostic.data.fixes) &&
+    objectComputedKeyDiagnostic.data.fixes.length === 1,
+    'Expected one serialized computed-key close diagnostic fix');
+
+const objectComputedKeyFix = objectComputedKeyDiagnostic.data.fixes[0];
+assert(objectComputedKeyFix.title === "Insert missing ']'" &&
+    objectComputedKeyFix.applicability === 1 &&
+    objectComputedKeyFix.edit &&
+    objectComputedKeyFix.edit.newText === ']',
+    'Expected a machine-applicable serialized computed-key close edit');
+assert(objectComputedKeyFix.edit.range.start.line === 0 &&
+    objectComputedKeyFix.edit.range.start.character === 10 &&
+    objectComputedKeyFix.edit.range.end.line === 0 &&
+    objectComputedKeyFix.edit.range.end.character === 10,
+    'Expected the computed-key close edit before the property colon');
+
+const fixedObjectComputedKeyPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === objectComputedKeyDocumentUri &&
+    message.params.version === 2 &&
+    Array.isArray(message.params.diagnostics));
+assert(fixedObjectComputedKeyPublication &&
+    !fixedObjectComputedKeyPublication.params.diagnostics.some((entry) =>
+        entry.code === 'missing_object_computed_key_close'),
+    'Expected the applied computed-key close fix to clear the diagnostic');

@@ -62,6 +62,8 @@ parser recovery产生poisoned/unknown facts并限制级联；后续diagnostic标
 
 [2026-07-21 object-close safe-fix convergence](./02-diagnostics/2026-07-21-object-close-safe-fix-convergence.md) 完成`missing_object_close`在object literal、using destructuring和switch struct pattern producer间统一exact opening `{` identity，并在current token起点发布精确`}` machine fix；通用LSP/stdio consumer不按object AST/producer/code/message/source重建。computed-key及其他delimiter family、replacement、registry全覆盖和L3整体仍未完成。
 
+[2026-07-21 object computed-key close safe-fix convergence](./02-diagnostics/2026-07-21-object-computed-key-close-safe-fix-convergence.md) 完成`missing_object_computed_key_close`在首属性与后续属性producer间保留exact opening `[`，并在property colon起点发布精确`]` machine fix；通用LSP/stdio consumer不按property位置、object AST、code/message/source重建。其他delimiter family、replacement、registry全覆盖和L3整体仍未完成。
+
 ## Diagnostic Registry 与验收
 
 每个diagnostic registry entry必须声明：stable code、message id/arguments、severity、producing fact/query、primary role、related role集合、suppression/recovery policy和允许的fix applicability。协议层不得从英文message反推code。

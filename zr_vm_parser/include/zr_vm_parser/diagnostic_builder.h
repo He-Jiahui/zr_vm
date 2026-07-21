@@ -143,7 +143,8 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectClose(
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectComputedKeyClose(
     SZrState *state,
     SZrStructuredDiagnostic *out,
-    SZrFileRange location);
+    SZrFileRange location,
+    SZrFileRange fixLocation);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectPropertyColon(
     SZrState *state,
     SZrStructuredDiagnostic *out,
