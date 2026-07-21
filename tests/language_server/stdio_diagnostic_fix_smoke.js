@@ -49,6 +49,7 @@ const parameterListDocumentUri = 'file:///zr-diagnostic-parameter-list-close-fix
 const callDocumentUri = 'file:///zr-diagnostic-call-close-fix-smoke.zr';
 const groupDocumentUri = 'file:///zr-diagnostic-group-close-fix-smoke.zr';
 const arrayDocumentUri = 'file:///zr-diagnostic-array-close-fix-smoke.zr';
+const objectDocumentUri = 'file:///zr-diagnostic-object-close-fix-smoke.zr';
 const documentText = [
     'func choose(flag: bool): int {',
     '    var seed: int;',
@@ -70,6 +71,7 @@ const callDocumentText = [
 ].join('\n');
 const groupDocumentText = 'return (1 + 2;\n';
 const arrayDocumentText = 'return [1, 2';
+const objectDocumentText = 'return {a: 1';
 
 const payload = Buffer.concat([
     createMessage({
@@ -328,7 +330,39 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: arrayDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 17, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: objectDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: objectDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 17,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: objectDocumentUri } },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didChange',
+        params: {
+            textDocument: { uri: objectDocumentUri, version: 2 },
+            contentChanges: [{ text: 'return {a: 1};' }],
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 18,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: objectDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 19, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -671,3 +705,49 @@ assert(fixedArrayPublication &&
     !fixedArrayPublication.params.diagnostics.some((entry) =>
         entry.code === 'missing_array_close'),
     'Expected the applied array-close fix to clear the diagnostic');
+
+const objectPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === objectDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics) &&
+    message.params.diagnostics.some((entry) =>
+        entry.code === 'missing_object_close'));
+assert(objectPublication,
+    'Expected missing_object_close publication');
+
+const objectDiagnostic = objectPublication.params.diagnostics.find((entry) =>
+    entry.code === 'missing_object_close');
+assert(objectDiagnostic.range.start.line === 0 &&
+    objectDiagnostic.range.start.character === 7 &&
+    objectDiagnostic.range.end.line === 0 &&
+    objectDiagnostic.range.end.character === 8,
+    'Expected the object-close primary range to remain on the opening brace');
+assert(objectDiagnostic.data &&
+    Array.isArray(objectDiagnostic.data.fixes) &&
+    objectDiagnostic.data.fixes.length === 1,
+    'Expected one serialized object-close diagnostic fix');
+
+const objectFix = objectDiagnostic.data.fixes[0];
+assert(objectFix.title === "Insert missing '}'" &&
+    objectFix.applicability === 1 &&
+    objectFix.edit &&
+    objectFix.edit.newText === '}',
+    'Expected a machine-applicable serialized object-close edit');
+assert(objectFix.edit.range.start.line === 0 &&
+    objectFix.edit.range.start.character === 12 &&
+    objectFix.edit.range.end.line === 0 &&
+    objectFix.edit.range.end.character === 12,
+    'Expected the object-close edit at end of file');
+
+const fixedObjectPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === objectDocumentUri &&
+    message.params.version === 2 &&
+    Array.isArray(message.params.diagnostics));
+assert(fixedObjectPublication &&
+    !fixedObjectPublication.params.diagnostics.some((entry) =>
+        entry.code === 'missing_object_close'),
+    'Expected the applied object-close fix to clear the diagnostic');

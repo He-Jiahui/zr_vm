@@ -625,7 +625,7 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
 // 解析对象字面量
 
 SZrAstNode *parse_object_literal(SZrParserState *ps) {
-    SZrFileRange startLoc = get_current_location(ps);
+    SZrFileRange startLoc = get_current_token_location(ps);
     expect_token(ps, ZR_TK_LBRACE);
     ZrParser_Lexer_Next(ps->lexer);
 

@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-07-21 08:27 +08:00
+updated_at: 2026-07-21 09:19 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -46,9 +46,10 @@ source_plans:
 | 2026-07-21 07:20 +08:00 | 已完成 | `missing_call_close`保留opening `(` primary range并在current token起点发布零宽`)` machine fix；通用LSP consumer复用snapshot quickfix，stdio应用后新version清除诊断；三工具链十八目标矩阵、stdio/CLI与diagnostic-fix smoke真实exit 0、marker归零 | [Call-close safe-fix convergence](../02-diagnostics/2026-07-21-call-close-safe-fix-convergence.md) |
 | 2026-07-21 07:52 +08:00 | 已完成 | `missing_group_close`保留opening `(` primary range并在current token起点发布零宽`)` machine fix；完整parser cursor rollback消除lambda lookahead对token-start range的污染，通用LSP/stdio consumer完成apply-edit-rebind；三工具链十八目标矩阵、stdio/CLI与diagnostic-fix smoke真实exit 0、marker归零 | [Group-close safe-fix convergence](../02-diagnostics/2026-07-21-group-close-safe-fix-convergence.md) |
 | 2026-07-21 08:27 +08:00 | 已完成 | `missing_array_close`以exact token identity保留opening `[` primary range并在current token起点发布零宽`]` machine fix；通用LSP/stdio consumer完成apply-edit-rebind，不按array AST/code/message/source重建；三工具链十八目标矩阵、stdio/CLI与diagnostic-fix smoke真实exit 0、marker归零 | [Array-close safe-fix convergence](../02-diagnostics/2026-07-21-array-close-safe-fix-convergence.md) |
+| 2026-07-21 09:19 +08:00 | 已完成 | `missing_object_close`统一object literal、using destructuring与switch struct pattern的opening `{` identity并发布current-token零宽`}` machine fix；通用LSP/stdio consumer完成apply-edit-rebind，不按object AST/producer/code/message/source重建；三工具链十八目标矩阵、stdio/CLI与diagnostic-fix smoke真实exit 0、marker归零 | [Object-close safe-fix convergence](../02-diagnostics/2026-07-21-object-close-safe-fix-convergence.md) |
 
 ## 当前状态
 
-- 总体目标进行中。当前记录只表示三十个子里程碑完成，不表示L1-L8整体完成。
-- 下一步扩展property/constructor/meta callable target identity、native generic constraint/effectful method contract，并补齐public type/layout、binary/native/artifact provider contract parity、public import/package alias变化的反向依赖传播、object及其他delimiter family/replacement structured diagnostic safe fix、其他workspace edit producer的snapshot复验和性能/内存预算证据。
+- 总体目标进行中。当前记录只表示三十一个子里程碑完成，不表示L1-L8整体完成。
+- 下一步扩展property/constructor/meta callable target identity、native generic constraint/effectful method contract，并补齐public type/layout、binary/native/artifact provider contract parity、public import/package alias变化的反向依赖传播、computed object key及其他delimiter family/replacement structured diagnostic safe fix、其他workspace edit producer的snapshot复验和性能/内存预算证据。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

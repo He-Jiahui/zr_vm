@@ -708,6 +708,8 @@ RED：新增 `func pick(value: int: int { return value; }` 的 focused parser-di
 
 同日 array-close safe-fix follow-up让`return [1, 2`保留opening `[`的line 0 character 7..8 primary range，并在EOF character 12发布零宽`]` machine fix。Support-first RED显示旧producer用lexer current cursor构造出character 9..9 primary；`parse_array_literal`改用exact current-token range后，code action与stdio JSON只消费structured fact/fix，version 2应用`]`并补齐statement semicolon后清除`missing_array_close`。GCC、Clang、MSVC十八目标矩阵和两套stdio smoke均通过；object及其他delimiter、replacement与L3整体仍未完成。
 
+同日 object-close safe-fix follow-up让`return {a: 1`保留opening `{`的line 0 character 7..8 primary range，并在EOF character 12发布零宽`}` machine fix；无歧义的`using (var {value,` guard pattern也保留characters 11..12并在character 18插入`}`。Object literal与using producer由post-token cursor改为exact token identity，switch struct pattern继续沿用既有exact opener；code action与stdio JSON只投影shared structured fix。No-block `using { ...`在看到完整`=`前仍保留object-expression/pattern歧义，本阶段不改变该选择策略。GCC、Clang、MSVC十八目标矩阵和两套stdio smoke均通过；computed-key及其他delimiter、replacement与L3整体仍未完成。
+
 2026-06-07 parser/LSP class method parameter-list close diagnostic 聚焦验证：
 
 ```powershell

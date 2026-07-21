@@ -76,6 +76,8 @@
 
 [2026-07-21 array-close safe-fix convergence](./02-diagnostics/2026-07-21-array-close-safe-fix-convergence.md) 让`missing_array_close`复用同一通用structured-fix consumer与code-action snapshot；parser exact token range修正opening identity，EOF edit应用后的新version清除诊断，不新增array-AST/code/message/source fallback。其他delimiter producer、并发race/cancellation与性能内存预算仍待后续。
 
+[2026-07-21 object-close safe-fix convergence](./02-diagnostics/2026-07-21-object-close-safe-fix-convergence.md) 让`missing_object_close`复用同一通用structured-fix consumer与code-action snapshot；object literal/using/switch producer统一opening token identity，EOF edit应用后的新version清除诊断，不新增object-AST/producer/code/message/source fallback。其他delimiter producer、并发race/cancellation与性能内存预算仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

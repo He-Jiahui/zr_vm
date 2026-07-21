@@ -1275,7 +1275,7 @@ static SZrAstNode *parse_using_object_destructuring_pattern(SZrParserState *ps) 
         return ZR_NULL;
     }
 
-    startLoc = get_current_location(ps);
+    startLoc = get_current_token_location(ps);
     expect_token(ps, ZR_TK_LBRACE);
     ZrParser_Lexer_Next(ps->lexer);
 
