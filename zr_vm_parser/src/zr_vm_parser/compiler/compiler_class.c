@@ -5,6 +5,7 @@
 #include "compiler_internal.h"
 #include "compile_expression_internal.h"
 #include "compile_time_executor_internal.h"
+#include "cfg_internal.h"
 
 static const TZrChar *compiler_class_builtin_ffi_wrapper_leaf_names[] = {
         "lowering",
@@ -1379,6 +1380,18 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         memberInfo.name = metaFunc->meta->name;
                         memberInfo.metaType = compiler_resolve_meta_type_name(metaFunc->meta->name);
                         memberInfo.isMetaMethod = memberInfo.metaType != ZR_META_ENUM_MAX;
+                    }
+                    if ((classDecl->modifierFlags & ZR_DECLARATION_MODIFIER_RESOURCE) != 0U &&
+                        memberInfo.metaType == ZR_META_DESTRUCTOR &&
+                        cfg_node_may_enter_catch(metaFunc->body)) {
+                        ZrParser_Compiler_Error(
+                                cs,
+                                "Resource Drop body must be non-throwing",
+                                metaFunc->body != ZR_NULL ? metaFunc->body->location : member->location);
+                        cs->currentTypeName = oldTypeName;
+                        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                        cs->currentTypeNode = oldTypeNode;
+                        return;
                     }
                     cs->currentFunctionNode = member;
                     // 处理返回类型信息

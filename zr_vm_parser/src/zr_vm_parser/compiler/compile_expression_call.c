@@ -1155,6 +1155,30 @@ void compile_prototype_reference_expression(SZrCompilerState *cs, SZrAstNode *no
     compile_expression_non_tail(cs, prototypeExpr->target);
 }
 
+static TZrBool finalize_resource_constructed_result(SZrCompilerState *cs,
+                                                     SZrFileRange location) {
+    TZrUInt32 sourceSlot;
+    TZrUInt32 resultSlot;
+
+    if (cs == ZR_NULL || cs->hasError || cs->lastExpressionSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+
+    sourceSlot = cs->lastExpressionSlot;
+    resultSlot = allocate_stack_slot(cs);
+    if (!compiler_semantic_ir_lower_ownership(cs,
+                                              ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE,
+                                              sourceSlot,
+                                              resultSlot,
+                                              location)) {
+        return ZR_FALSE;
+    }
+    emit_instruction(cs,
+                     create_instruction_0(ZR_INSTRUCTION_ENUM(CLOSE_SCOPE), 1u));
+    collapse_stack_to_slot(cs, resultSlot);
+    return ZR_TRUE;
+}
+
 void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node) {
     SZrConstructExpression *constructExpr;
     EZrObjectPrototypeType prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
@@ -1210,7 +1234,13 @@ void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node) {
          constructExpr->isUsing ||
          constructExpr->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE) &&
         constructExpr->isNew) {
-        if (!wrap_constructed_result_with_ownership_builtin(cs, constructExpr, node->location) && !cs->hasError) {
+        TZrBool wrapped =
+                constructExpr->isResourceSurface &&
+                constructExpr->builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE
+                        ? finalize_resource_constructed_result(cs, node->location)
+                        : wrap_constructed_result_with_ownership_builtin(
+                                  cs, constructExpr, node->location);
+        if (!wrapped && !cs->hasError) {
             ZrParser_Compiler_Error(cs, "Failed to wrap ownership-aware construction result", node->location);
         }
     }

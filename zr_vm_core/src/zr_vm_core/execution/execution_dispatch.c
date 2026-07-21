@@ -8777,10 +8777,15 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_UNIQUE) {
+                TZrStackValuePointer sourceBase = BASE(A1(instruction));
                 destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 if (!ZrCore_Ownership_UniqueValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
+                } else if (opA != &sourceBase->value &&
+                           sourceBase->toBeClosedValueOffset > 0u &&
+                           ZR_VALUE_IS_TYPE_NULL(opA->type)) {
+                    ZrCore_Value_ResetAsNullNoProfile(&sourceBase->value);
                 }
             }
             DONE(1);
@@ -8833,9 +8838,15 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_RELEASE) {
+                TZrStackValuePointer sourceBase = BASE(A1(instruction));
                 destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 ZrCore_Ownership_ReleaseValue(state, opA);
+                if (opA != &sourceBase->value &&
+                    sourceBase->toBeClosedValueOffset > 0u &&
+                    ZR_VALUE_IS_TYPE_NULL(opA->type)) {
+                    ZrCore_Value_ResetAsNullNoProfile(&sourceBase->value);
+                }
                 execution_prepare_destination_for_direct_store_no_profile(state, destination);
                 ZrCore_Value_ResetAsNull(destination);
             }

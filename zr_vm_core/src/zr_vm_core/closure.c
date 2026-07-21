@@ -360,6 +360,12 @@ void ZrCore_Closure_PropagateEscapeFromObject(SZrState *state,
 
 static TZrBool closure_value_check_close_meta(struct SZrState *state, TZrStackValuePointer stackPointer) {
     SZrTypeValue *stackValue = ZrCore_Stack_GetValue(stackPointer);
+    if (stackValue != ZR_NULL &&
+        (stackValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
+         stackValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
+         stackValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED)) {
+        return ZR_TRUE;
+    }
     // todo: if it is a basic type
     SZrMeta *meta = ZrCore_Value_GetMeta(state, stackValue, ZR_META_CLOSE);
     return meta != ZR_NULL;
@@ -374,6 +380,13 @@ static void closure_value_call_close_meta(SZrState *state,
     TZrMemoryOffset valueOffset = ZrCore_Stack_SavePointerAsOffset(
             state, stackPointer.valuePointer);
     SZrTypeValue *value = ZrCore_Stack_GetValue(stackPointer.valuePointer);
+    if (value != ZR_NULL &&
+        (value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
+         value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
+         value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED)) {
+        ZrCore_Ownership_ReleaseValue(state, value);
+        return;
+    }
     const SZrMeta *meta = ZrCore_Value_GetMeta(state, value, ZR_META_CLOSE);
     if (meta == ZR_NULL || meta->function == ZR_NULL) {
         return;

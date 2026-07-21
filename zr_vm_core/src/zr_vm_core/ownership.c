@@ -4,6 +4,8 @@
 
 #include "zr_vm_core/ownership.h"
 
+#include "ownership_resource_internal.h"
+
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/gc.h"
@@ -388,6 +390,10 @@ TZrBool ZrCore_Ownership_InitUniqueValue(struct SZrState *state,
         return ZR_FALSE;
     }
 
+    if (ZrCore_OwnershipResource_IsObject(object)) {
+        return ZrCore_OwnershipResource_InitUnique(state, destination, object);
+    }
+
     control = ownership_get_or_create_control(state, object);
     if (control == ZR_NULL) {
         return ZR_FALSE;
@@ -410,9 +416,16 @@ TZrBool ZrCore_Ownership_UniqueValue(struct SZrState *state,
         return ZR_FALSE;
     }
 
+    if (destination == source) {
+        return ZR_TRUE;
+    }
     ownership_prepare_destination(state, destination);
     if (ZR_VALUE_IS_TYPE_NULL(source->type)) {
         return ZR_TRUE;
+    }
+
+    if (ZrCore_OwnershipResource_IsDirectUniqueValue(source)) {
+        return ZrCore_OwnershipResource_MoveUnique(state, destination, source);
     }
 
     if (!ownership_value_has_object(source) || source->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE) {
@@ -742,6 +755,7 @@ TZrBool ZrCore_Ownership_ReturnToGcValue(struct SZrState *state,
 void ZrCore_Ownership_ReleaseValue(struct SZrState *state, SZrTypeValue *value) {
     SZrOwnershipControl *control;
     EZrOwnershipValueKind kind;
+    SZrRawObject *object;
 
     if (state == ZR_NULL || value == ZR_NULL) {
         return;
@@ -760,7 +774,15 @@ void ZrCore_Ownership_ReleaseValue(struct SZrState *state, SZrTypeValue *value) 
 
     control = value->ownershipControl;
     kind = value->ownershipKind;
+    object = ownership_value_has_object(value) ? value->value.object : ZR_NULL;
     ownership_reset_value_storage(value);
+    if (control == ZR_NULL &&
+        (kind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
+         kind == ZR_OWNERSHIP_VALUE_KIND_LOANED) &&
+        ZrCore_OwnershipResource_IsObject(object)) {
+        ZrCore_OwnershipResource_Drop(state, object);
+        return;
+    }
     if (control == ZR_NULL) {
         return;
     }
@@ -858,6 +880,10 @@ void ZrCore_Ownership_AssignValue(struct SZrState *state,
         case ZR_OWNERSHIP_VALUE_KIND_UNIQUE:
         case ZR_OWNERSHIP_VALUE_KIND_LOANED:
             control = source->ownershipControl;
+            if (ZrCore_OwnershipResource_IsDirectUniqueValue(source)) {
+                ZrCore_OwnershipResource_CopyUnique(destination, source);
+                break;
+            }
             if (control != ZR_NULL) {
                 ownership_add_strong_ref(state, control);
             }

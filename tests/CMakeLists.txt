@@ -609,6 +609,32 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_ref_struct_restrictions_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_resource_unique_drop_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_resource_unique_drop.c
+    )
+    target_include_directories(zr_vm_resource_unique_drop_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_resource_unique_drop_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_execbc_aot_pipeline_test
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c
+    )
+    target_include_directories(zr_vm_execbc_aot_pipeline_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_execbc_aot_pipeline_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_generic_instantiation_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_generic_instantiation.c
     )

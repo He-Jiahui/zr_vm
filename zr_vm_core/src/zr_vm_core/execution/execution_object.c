@@ -3,6 +3,7 @@
 //
 
 #include "execution/execution_internal.h"
+#include "zr_vm_core/ownership.h"
 
 #include <string.h>
 
@@ -935,6 +936,15 @@ TZrBool ZrCore_Execution_ToObject(SZrState *state,
             converted = convert_to_enum(state, &stableSource, prototype, destination);
         }
 
+        if (converted && prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS &&
+            (prototype->modifierFlags & ZR_TYPE_MODIFIER_FLAG_RESOURCE) != 0) {
+            SZrRawObject *resourceObject = destination->value.object;
+            converted = ZrCore_Ownership_InitUniqueValue(
+                    state, destination, resourceObject);
+            if (converted) {
+                resourceObject->resourceLifecycleState = ZR_RESOURCE_LIFECYCLE_CONSTRUCTING;
+            }
+        }
         if (!converted) {
             ZrCore_Value_ResetAsNull(destination);
         }

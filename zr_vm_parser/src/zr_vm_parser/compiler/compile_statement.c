@@ -1939,7 +1939,9 @@ static void register_using_cleanup_slot(SZrCompilerState *cs,
         return;
     }
 
-    if (ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE) {
+    if (ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
+        (ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE &&
+         sourceSlot == slot)) {
         emit_instruction(cs,
                          create_instruction_0(ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED),
                                               (TZrUInt16)slot));
@@ -3117,6 +3119,19 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             compiler_register_callable_value_binding(cs, varName, decl->value);
             compile_statement_register_type_value_alias(cs, varName, decl->value);
             compile_statement_trace("var decl runtime alias registration done");
+        }
+
+        if (hasResolvedType && resolvedType.typeName != ZR_NULL &&
+            resolvedType.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE) {
+            SZrTypePrototypeInfo *ownerPrototype =
+                    find_compiler_type_prototype(cs, resolvedType.typeName);
+            if (ownerPrototype != ZR_NULL &&
+                (ownerPrototype->modifierFlags & ZR_DECLARATION_MODIFIER_RESOURCE) != 0U) {
+                register_using_cleanup_slot(cs,
+                                            varIndex,
+                                            ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
+                                            varIndex);
+            }
         }
 
         if (!compile_statement_try_register_imported_compile_time_module_alias(cs, node) ||

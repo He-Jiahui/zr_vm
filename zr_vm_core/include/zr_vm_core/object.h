@@ -157,6 +157,8 @@ ZR_CORE_API TZrBool ZrCore_Object_VisitInlineArrayGcValues(
 ZR_CORE_API TZrBool ZrCore_Object_DropInlineArrayElements(
         struct SZrState *state,
         SZrObject *array);
+ZR_CORE_API void ZrCore_Object_DropManagedFields(struct SZrState *state,
+                                                 SZrObject *object);
 
 typedef struct SZrManagedFieldInfo {
     struct SZrString *name;

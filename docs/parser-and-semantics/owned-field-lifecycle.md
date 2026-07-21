@@ -21,7 +21,6 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_using_plugin_guard_escape_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_using_plugin_guard_escape_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_using_plugin_guard_escape.h
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_closure.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_lambda.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function.c
@@ -29,6 +28,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
   - zr_vm_core/src/zr_vm_core/ownership.c
+  - zr_vm_core/src/zr_vm_core/ownership_resource.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
@@ -49,7 +49,6 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_closure.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_lambda.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function.c
@@ -57,6 +56,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
   - zr_vm_core/src/zr_vm_core/ownership.c
+  - zr_vm_core/src/zr_vm_core/ownership_resource.c
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_core/src/zr_vm_core/module/module_prototype.c
@@ -72,6 +72,7 @@ tests:
   - tests/parser/test_type_inference.c
   - tests/parser/test_parser.c
   - tests/parser/test_compiler_features.c
+  - tests/parser/test_resource_unique_drop.c
   - tests/language_server/test_lsp_interface.c
   - tests/language_server/test_semantic_analyzer.c
   - tests/module/test_module_system.c
@@ -219,6 +220,21 @@ module prototype materialization 恢复 managed field 时，当前以 `ownership
 - owner field override / replace
 - struct value cleanup
 - class instance cleanup
+
+## Resource owner fields
+
+`resource class` fields reuse the canonical managed-field metadata, but Drop is now deterministic
+for direct `Unique<Resource>` owners:
+
+- construction marks only fields that were successfully initialized;
+- partial-construction unwind skips the resource custom destructor;
+- initialized owner fields drop in reverse declaration order;
+- full Drop executes the resource custom destructor first, then fields;
+- the lifecycle state makes reentrant/repeated Drop idempotent.
+
+The runtime does not reconstruct this behavior from a field name or source syntax. It consumes the
+prototype resource modifier, `ownershipQualifier`, managed-field presence, and declaration order.
+See `resource-unique-drop.md` for the complete construction and VM/AOT contract.
 
 ## 当前边界
 

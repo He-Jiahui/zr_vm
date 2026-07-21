@@ -831,9 +831,25 @@ TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, const SZrInferred
     return ZR_FALSE;
 }
 
+static TZrBool inferred_type_has_non_nullable_owner(const SZrInferredType *type) {
+    if (type == ZR_NULL || type->isNullable) {
+        return ZR_FALSE;
+    }
+
+    return type->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+           type->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+           type->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
+}
+
 // 检查赋值兼容性
 TZrBool ZrParser_AssignmentCompatibility_Check(SZrCompilerState *cs, const SZrInferredType *leftType, const SZrInferredType *rightType, SZrFileRange location) {
     if (cs == ZR_NULL || leftType == ZR_NULL || rightType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (rightType->baseType == ZR_VALUE_TYPE_NULL &&
+        inferred_type_has_non_nullable_owner(leftType)) {
+        ZrParser_TypeError_Report(cs, "Non-nullable owner cannot be null", leftType, rightType, location);
         return ZR_FALSE;
     }
 

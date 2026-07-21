@@ -2045,6 +2045,42 @@ void ZrCore_ObjectPrototype_AddManagedField(SZrState *state,
     fieldInfo->declarationOrder = declarationOrder;
 }
 
+static void object_drop_managed_fields_for_prototype(SZrState *state,
+                                                      SZrObject *object,
+                                                      SZrObjectPrototype *prototype) {
+    TZrUInt32 index;
+
+    if (state == ZR_NULL || object == ZR_NULL || prototype == ZR_NULL) {
+        return;
+    }
+
+    index = prototype->managedFieldCount;
+    while (index > 0U) {
+        const SZrManagedFieldInfo *fieldInfo = &prototype->managedFields[--index];
+        SZrTypeValue key;
+        SZrHashKeyValuePair *pair;
+
+        if (fieldInfo->name == ZR_NULL || fieldInfo->ownershipQualifier == 0U) {
+            continue;
+        }
+        object_make_string_key_unchecked(state, fieldInfo->name, &key);
+        pair = ZrCore_HashSet_Find(state, &object->nodeMap, &key);
+        if (pair == ZR_NULL || ZR_VALUE_IS_TYPE_NULL(pair->value.type)) {
+            continue;
+        }
+        ZrCore_Ownership_ReleaseValue(state, &pair->value);
+    }
+
+    object_drop_managed_fields_for_prototype(state, object, prototype->superPrototype);
+}
+
+void ZrCore_Object_DropManagedFields(SZrState *state, SZrObject *object) {
+    if (state == ZR_NULL || object == ZR_NULL) {
+        return;
+    }
+    object_drop_managed_fields_for_prototype(state, object, object->prototype);
+}
+
 const SZrMemberDescriptor *ZrCore_ObjectPrototype_FindMemberDescriptor(SZrObjectPrototype *prototype,
                                                                        SZrString *memberName,
                                                                        TZrBool includeInherited) {

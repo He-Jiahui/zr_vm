@@ -5,6 +5,7 @@
 #ifndef ZR_VM_PARSER_AST_H
 #define ZR_VM_PARSER_AST_H
 
+#include "zr_vm_common/zr_contract_conf.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/conf.h"
@@ -262,6 +263,7 @@ enum EZrDeclarationModifierFlag {
     ZR_DECLARATION_MODIFIER_READONLY = 1 << 5,
     ZR_DECLARATION_MODIFIER_REF_LIKE = 1 << 6,
     ZR_DECLARATION_MODIFIER_REF_FIELD = 1 << 7,
+    ZR_DECLARATION_MODIFIER_RESOURCE = ZR_TYPE_MODIFIER_FLAG_RESOURCE,
 };
 
 typedef enum EZrDeclarationModifierFlag EZrDeclarationModifierFlag;
@@ -515,6 +517,7 @@ typedef struct SZrConstructExpression {
     EZrOwnershipQualifier ownershipQualifier;
     TZrBool isUsing;
     TZrBool isNew;
+    TZrBool isResourceSurface;
     EZrOwnershipBuiltinKind builtinKind;
 } SZrConstructExpression;
 

@@ -1369,6 +1369,7 @@ TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const TZrCha
     TZrBool allowBoxedConstruction = ZR_FALSE;
     TZrBool splitStructValueResult = ZR_FALSE;
     TZrBool preferConstructorResult = ZR_FALSE;
+    TZrBool isResourceConstruction = ZR_FALSE;
     SZrTypeValue typeNameValue;
     TZrUInt32 typeNameConstantIndex;
 
@@ -1381,6 +1382,8 @@ TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const TZrCha
         prototypeType = prototypeInfo->type;
         allowValueConstruction = prototypeInfo->allowValueConstruction;
         allowBoxedConstruction = prototypeInfo->allowBoxedConstruction;
+        isResourceConstruction =
+                (prototypeInfo->modifierFlags & ZR_DECLARATION_MODIFIER_RESOURCE) != 0;
     } else {
         typeDecl = find_type_declaration(cs, typeName);
         if (typeDecl != ZR_NULL) {
@@ -1388,6 +1391,9 @@ TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const TZrCha
                 prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
             } else if (typeDecl->type == ZR_AST_CLASS_DECLARATION) {
                 prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
+                isResourceConstruction =
+                        (typeDecl->data.classDeclaration.modifierFlags &
+                         ZR_DECLARATION_MODIFIER_RESOURCE) != 0;
             }
         }
         allowValueConstruction = prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INVALID &&
@@ -1449,6 +1455,12 @@ TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const TZrCha
 
     if (!emit_construct_seed_instance(cs, destSlot, prototypeType, typeNameConstantIndex, location)) {
         return ZR_PARSER_SLOT_NONE;
+    }
+    if (isResourceConstruction && strcmp(op, "new") == 0) {
+        emit_instruction(cs,
+                         create_instruction_0(
+                                 ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED),
+                                 (TZrUInt16)destSlot));
     }
 
     splitStructValueResult = strcmp(op, "$") == 0 && prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;

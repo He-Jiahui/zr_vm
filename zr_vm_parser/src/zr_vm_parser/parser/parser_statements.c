@@ -1663,6 +1663,29 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
 
 // 解析顶层语句
 
+static SZrAstNode *parse_resource_class_declaration(SZrParserState *ps,
+                                                     EZrAccessModifier accessModifier) {
+    SZrAstNode *node;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_IDENTIFIER ||
+        !current_identifier_equals(ps, "resource")) {
+        return ZR_NULL;
+    }
+
+    ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_CLASS) {
+        report_error(ps, "Expected 'class' after 'resource'");
+        return ZR_NULL;
+    }
+    node = parse_class_declaration(ps);
+    if (node != ZR_NULL && node->type == ZR_AST_CLASS_DECLARATION) {
+        node->data.classDeclaration.isOwned = ZR_TRUE;
+        node->data.classDeclaration.modifierFlags |= ZR_DECLARATION_MODIFIER_RESOURCE;
+        node->data.classDeclaration.accessModifier = accessModifier;
+    }
+    return node;
+}
+
 SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
@@ -1674,10 +1697,29 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
         return parse_reserved_async_function_declaration(ps);
     }
 
+    if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "resource") &&
+        peek_token(ps) == ZR_TK_CLASS) {
+        return parse_resource_class_declaration(ps, ZR_ACCESS_PRIVATE);
+    }
+
     // 检查是否是可见性修饰符（pub/pri/pro），后面应该跟 var/struct/class/interface/enum/union
     if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO) {
         // 使用 peek_token 查看下一个 token，不消费当前 token
         EZrToken nextToken = peek_token(ps);
+
+        if (nextToken == ZR_TK_IDENTIFIER) {
+            SZrParserCursor cursor;
+            EZrAccessModifier accessModifier;
+
+            save_parser_cursor(ps, &cursor);
+            accessModifier = parse_access_modifier(ps);
+            if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+                current_identifier_equals(ps, "resource") &&
+                peek_token(ps) == ZR_TK_CLASS) {
+                return parse_resource_class_declaration(ps, accessModifier);
+            }
+            restore_parser_cursor(ps, &cursor);
+        }
 
         if (nextToken == ZR_TK_PERCENT) {
             SZrAstNode *ownedClass = ZR_NULL;

@@ -17,6 +17,11 @@ static void emit_scope_cleanup_registration(SZrCompilerState *cs,
                                                    (TZrUInt16)registration->slot,
                                                    (TZrUInt16)registration->slot,
                                                    0));
+            if (registration->sourceSlot == registration->slot) {
+                emit_instruction(cs,
+                                 create_instruction_0(
+                                         ZR_INSTRUCTION_ENUM(CLOSE_SCOPE), 1u));
+            }
             break;
         case ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN:
             emit_instruction(cs,

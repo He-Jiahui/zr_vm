@@ -4604,6 +4604,29 @@ static SZrTypeMemberInfo *find_type_constructor_member_inference(SZrCompilerStat
     return ZR_NULL;
 }
 
+static TZrBool type_name_is_resource_declaration_inference(SZrCompilerState *cs,
+                                                            SZrTypePrototypeInfo *prototype,
+                                                            SZrString *typeName) {
+    SZrString *lookupTypeName;
+    SZrAstNode *declarationNode;
+
+    if (prototype != ZR_NULL) {
+        return (TZrBool)((prototype->modifierFlags & ZR_DECLARATION_MODIFIER_RESOURCE) != 0);
+    }
+    if (cs == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    lookupTypeName = resolve_source_declaration_lookup_type_name_inference(cs, typeName);
+    declarationNode = lookupTypeName != ZR_NULL
+                              ? find_type_declaration_inference(cs, lookupTypeName)
+                              : ZR_NULL;
+    return (TZrBool)(declarationNode != ZR_NULL &&
+                     declarationNode->type == ZR_AST_CLASS_DECLARATION &&
+                     (declarationNode->data.classDeclaration.modifierFlags &
+                      ZR_DECLARATION_MODIFIER_RESOURCE) != 0);
+}
+
 TZrBool infer_struct_init_expression_type(SZrCompilerState *cs,
                                           SZrAstNode *node,
                                           SZrInferredType *result) {
@@ -4626,6 +4649,7 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
     EZrObjectPrototypeType resolvedPrototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
     TZrBool allowValueConstruction = ZR_FALSE;
     TZrBool allowBoxedConstruction = ZR_FALSE;
+    TZrBool isResourceType;
 
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL ||
         node->type != ZR_AST_CONSTRUCT_EXPRESSION) {
@@ -4715,6 +4739,25 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
         resolvedPrototypeType = prototype->type;
         allowValueConstruction = prototype->allowValueConstruction;
         allowBoxedConstruction = prototype->allowBoxedConstruction;
+    }
+
+    isResourceType = type_name_is_resource_declaration_inference(cs, prototype, typeName);
+
+    if (construct->isResourceSurface && construct->isNew &&
+        builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE &&
+        !isResourceType) {
+        ZrParser_Compiler_Error(cs,
+                               "'own' requires a resource class target",
+                               node->location);
+        return ZR_FALSE;
+    }
+
+    if (isResourceType &&
+        (!construct->isNew || builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE)) {
+        ZrParser_Compiler_Error(cs,
+                               "Resource classes must be constructed with 'own'",
+                               node->location);
+        return ZR_FALSE;
     }
 
     if (resolvedPrototypeType == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE) {

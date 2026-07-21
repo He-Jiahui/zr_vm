@@ -1716,6 +1716,59 @@ TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, T
     oldTailCallContext = cs->isInTailCallContext;
     cs->isInTailCallContext = ZR_FALSE;
 
+    if (node->type == ZR_AST_IDENTIFIER_LITERAL &&
+        node->data.identifier.name != ZR_NULL) {
+        SZrInferredType sourceType;
+        TZrUInt32 sourceSlot = find_local_var(cs, node->data.identifier.name);
+        TZrBool isDirectResourceOwner = ZR_FALSE;
+
+        ZrParser_InferredType_Init(cs->state, &sourceType, ZR_VALUE_TYPE_OBJECT);
+        if (sourceSlot != ZR_PARSER_SLOT_NONE &&
+            ZrParser_ExpressionType_Infer(cs, node, &sourceType) &&
+            sourceType.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE &&
+            sourceType.typeName != ZR_NULL) {
+            SZrTypePrototypeInfo *prototype = find_compiler_type_prototype(cs, sourceType.typeName);
+            isDirectResourceOwner =
+                    prototype != ZR_NULL &&
+                    (prototype->modifierFlags & ZR_DECLARATION_MODIFIER_RESOURCE) != 0;
+        }
+        if (isDirectResourceOwner) {
+            if (targetSlot == ZR_PARSER_SLOT_NONE) {
+                targetSlot = allocate_stack_slot(cs);
+            }
+            if (targetSlot == sourceSlot) {
+                ZrParser_InferredType_Free(cs->state, &sourceType);
+                cs->isInTailCallContext = oldTailCallContext;
+                return sourceSlot;
+            }
+            if (cs->stackSlotCount <= (TZrSize)targetSlot) {
+                cs->stackSlotCount = (TZrSize)targetSlot + 1u;
+                if (cs->maxStackSlotCount < cs->stackSlotCount) {
+                    cs->maxStackSlotCount = cs->stackSlotCount;
+                }
+            }
+            if (!compiler_register_stack_slot_type_hint(cs, targetSlot, &sourceType) ||
+                !compiler_semantic_ir_lower_ownership(cs,
+                                                      ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE,
+                                                      sourceSlot,
+                                                      targetSlot,
+                                                      node->location)) {
+                ZrParser_InferredType_Free(cs->state, &sourceType);
+                cs->isInTailCallContext = oldTailCallContext;
+                return ZR_PARSER_SLOT_NONE;
+            }
+            ZrParser_InferredType_Free(cs->state, &sourceType);
+            collapse_stack_to_slot(cs, targetSlot);
+            cs->isInTailCallContext = oldTailCallContext;
+            return targetSlot;
+        }
+        ZrParser_InferredType_Free(cs->state, &sourceType);
+        if (cs->hasError) {
+            cs->isInTailCallContext = oldTailCallContext;
+            return ZR_PARSER_SLOT_NONE;
+        }
+    }
+
     if (compile_expression_try_get_inline_union_identifier_slot_for_type(
                 cs,
                 node,

@@ -255,6 +255,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - direct `%unique/%shared` field 的字段生命周期语义
   - legacy field-scoped `%using` 的迁移边界
   - owner 值跨入 plain GC world 必须显式 `%detach` 或 bridge
+- `resource-unique-drop.md`
+  - `resource class`、`own T(...)`、`drop(owner)` 的 type-directed 生命周期合同
+  - direct `Unique<T>` 无 control block 的 move、partial construction 与逆序 Drop
+  - VM/AOT cleanup 顺序，以及 M4 移除临时 GC ignore registry 的明确边界
   - `%weak` 使用目标前必须显式 `%upgrade`/check，不能直接流入 `%borrowed`
   - cleanup plan 与 prototype metadata 的传播路径
 - `semantic-fact-layer.md`
@@ -326,9 +330,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 6. 再看 `csharp-value-type-semir-aot.md`，了解 C#-style struct value-place SemIR 和 AOT 边界。
 7. 再看 `compiler-final-function-assembly.md`，了解 parser orchestration 与 final function assembly 的边界。
 8. 再看 `owned-field-lifecycle.md`，了解 direct owner field 的生命周期语义。
-9. 再看 `semantic-fact-layer.md`，了解 parser 侧共享语义事实容器、LSP 局部查询三态结果和查询契约。
-10. 再看 `cfg-reachability-foundation.md`，了解 Stage 1 CFG 可达性事实生产者的当前范围和后续边界。
-11. 再看 `dataflow-engine-foundation.md`，了解 Stage 1 通用 dataflow 引擎骨架和当前验证边界。
+9. 再看 `resource-unique-drop.md`，了解 resource/Unique 的确定性构造、move、Drop 与 VM/AOT 边界。
+10. 再看 `semantic-fact-layer.md`，了解 parser 侧共享语义事实容器、LSP 局部查询三态结果和查询契约。
+11. 再看 `cfg-reachability-foundation.md`，了解 Stage 1 CFG 可达性事实生产者的当前范围和后续边界。
+12. 再看 `dataflow-engine-foundation.md`，了解 Stage 1 通用 dataflow 引擎骨架和当前验证边界。
 12. 再看 `semantic-query-api-foundation.md`，了解 Stage 1 公共语义查询面骨架和当前限制。
 13. 再看 `union-types.md`，了解 union 前端 slice、构造器 lowering 和后续模式匹配边界。
 14. 最后看 `lsp-semantic-resolution-and-native-imports.md`，了解 language server 如何消费 parser/native import metadata 并稳定命中局部语义引用。

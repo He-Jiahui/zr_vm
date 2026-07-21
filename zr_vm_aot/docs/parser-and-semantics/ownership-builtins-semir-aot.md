@@ -3,6 +3,10 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
@@ -12,11 +16,17 @@ related_code:
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/include/zr_vm_core/ownership.h
   - zr_vm_core/src/zr_vm_core/ownership.c
+  - zr_vm_core/src/zr_vm_core/ownership_resource.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
@@ -26,6 +36,8 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/include/zr_vm_core/ownership.h
   - zr_vm_core/src/zr_vm_core/ownership.c
+  - zr_vm_core/src/zr_vm_core/ownership_resource.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
 plan_sources:
   - user: 2026-04-08 Rust-First Ownership / GC 分层设计
@@ -35,7 +47,8 @@ tests:
   - tests/parser/test_type_inference.c
   - tests/parser/test_compiler_features.c
   - tests/parser/test_semir_pipeline.c
-  - tests/parser/test_execbc_aot_pipeline.c
+  - tests/parser/test_resource_unique_drop.c
+  - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c
   - tests/task/test_task_runtime.c
 doc_type: module-detail
 ---
@@ -147,6 +160,25 @@ runtime ownership helper 目前和 surface 对齐：
   - 只接受 `%unique` 或单 owner `%shared`
 
 legacy ownership native helper `%using` 已从 writer/runtime helper 映射中移除，helper id `5` 仅保留为二进制编号洞位，不再映射到运行时函数。
+
+## Resource / Unique / Drop
+
+Syntax 04 M1 在同一 opcode family 上增加 type-directed resource surface：
+
+- `resource class T` 把 resource modifier 投影到 prototype metadata。
+- `own T(...)` 先构造 direct Unique seed，并在 constructor call 前发出
+  `MARK_TO_BE_CLOSED`。
+- constructor 成功后通过 `OWN_UNIQUE` move 到最终 expression slot，再关闭空 marker。
+- `drop(owner)` 和 scope cleanup 都通过 `OWN_RELEASE`。
+
+direct resource Unique 的 runtime value 不建立 ownership control block。VM 的
+`OWN_UNIQUE`/`OWN_RELEASE` 与 AOT C/LLVM 生成的 ownership helper 使用相同 slot 与顺序；
+focused pipeline 同时断言 function tree、Semantic IR、`.zri` ownership 文本、generated C/LLVM
+helper call，并执行 Drop log `21`。构造抛错时 marker 仍然有效，runtime 只逆序释放已初始化
+managed fields，不调用完整对象的 custom Drop。
+
+M1 仍暂时使用 existing GC ignore registry 保持 direct resource storage；这不是 artifact ABI
+承诺，Syntax 04 M4 必须以显式 GcDomain/bridge identity 替换。
 
 ## Artifact 收口
 

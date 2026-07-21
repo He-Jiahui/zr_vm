@@ -6855,6 +6855,38 @@ static SZrFunction *compile_ownership_upgrade_release_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+static SZrFunction *compile_resource_unique_drop_fixture(SZrState *state) {
+    const char *source =
+            "resource class Tracer {\n"
+            "    pub static var dropLog: int = 0;\n"
+            "    var id: int;\n"
+            "    pub @constructor(id: int) { this.id = id; }\n"
+            "    pub @destructor() { Tracer.dropLog = Tracer.dropLog * 10 + this.id; }\n"
+            "}\n"
+            "run(): int {\n"
+            "    {\n"
+            "        var first: Unique<Tracer> = own Tracer(1);\n"
+            "        var moved: Unique<Tracer> = first;\n"
+            "        var second: Unique<Tracer> = own Tracer(2);\n"
+            "        drop(second);\n"
+            "    }\n"
+            "    return Tracer.dropLog;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZR_STRING_LITERAL(state, "resource_unique_drop_aot_pipeline_test.zr");
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
 static SZrFunction *compile_fixed_array_helper_roundtrip_fixture(SZrState *state) {
     const char *source =
             "labelFor(value: int) {\n"
@@ -8656,6 +8688,95 @@ static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicat
     ZR_TEST_DIVIDER();
 }
 
+static void test_resource_unique_drop_vm_and_aot_preserve_cleanup_order_contract(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Resource Unique Drop VM And AOT Preserve Cleanup Order Contract";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("resource Unique deterministic cleanup",
+                 "Testing resource construction, move, explicit drop, and reverse scope cleanup through canonical ExecBC/SemIR plus true AOT C/LLVM ownership helpers");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *intermediatePath = "resource_unique_drop_aot_pipeline_test.zri";
+        const char *cPath = "resource_unique_drop_aot_pipeline_test.c";
+        const char *llvmPath = "resource_unique_drop_aot_pipeline_test.ll";
+        SZrFunction *function;
+        char *intermediateText;
+        char *cText;
+        char *llvmText;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+        function = compile_resource_unique_drop_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function,
+                                                        ZR_INSTRUCTION_ENUM(OWN_UNIQUE)));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function,
+                                                        ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function,
+                                                        ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function,
+                                                        ZR_INSTRUCTION_ENUM(CLOSE_SCOPE)));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function,
+                                                               ZR_SEMIR_OPCODE_OWN_UNIQUE,
+                                                               ZR_FALSE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function,
+                                                               ZR_SEMIR_OPCODE_OWN_RELEASE,
+                                                               ZR_FALSE));
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state,
+                                                               function,
+                                                               intermediatePath));
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFile(state, function, cPath));
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotLlvmFile(state, function, llvmPath));
+
+        intermediateText = read_text_file_owned(intermediatePath);
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(intermediateText);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_UNIQUE"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_RELEASE"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnUnique"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnRelease"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MarkToBeClosed"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CloseScope"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnUnique("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnRelease("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_MarkToBeClosed("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_CloseScope("));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(
+                llvmText, ZR_INSTRUCTION_ENUM(OWN_UNIQUE)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(
+                llvmText, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(
+                llvmText, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(
+                llvmText, ZR_INSTRUCTION_ENUM(CLOSE_SCOPE)));
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(21, result);
+
+        free(intermediateText);
+        free(cText);
+        free(llvmText);
+        remove(intermediatePath);
+        remove(cPath);
+        remove(llvmPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
 static void test_benchmark_string_build_binary_roundtrip_loads_runtime_entry(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Benchmark String Build Binary Roundtrip Loads Runtime Entry";
@@ -9234,6 +9355,10 @@ void tearDown(void) {}
 
 int main(void) {
     UNITY_BEGIN();
+    if (getenv("ZR_VM_RESOURCE_UNIQUE_DROP_FOCUSED") != ZR_NULL) {
+        RUN_TEST(test_resource_unique_drop_vm_and_aot_preserve_cleanup_order_contract);
+        return UNITY_END();
+    }
     RUN_TEST(test_access_lowering_preserves_explicit_member_and_index_ops);
     RUN_TEST(test_aot_backends_preserve_runtime_contract_artifacts_under_strict_aot_c);
     RUN_TEST(test_aot_c_backend_emits_child_thunks_for_callable_constants);
@@ -9327,6 +9452,7 @@ int main(void) {
     RUN_TEST(test_reference_member_index_fixture_preserves_split_access_artifacts);
     RUN_TEST(test_reference_foreach_fixture_preserves_iter_contract_artifacts);
     RUN_TEST(test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicated_opcodes);
+    RUN_TEST(test_resource_unique_drop_vm_and_aot_preserve_cleanup_order_contract);
     RUN_TEST(test_aot_backends_lower_manual_extended_numeric_opcode_fixture);
     RUN_TEST(test_aot_backends_lower_manual_state_and_scope_opcode_fixture);
     RUN_TEST(test_aot_source_sync_keeps_extended_opcode_surfaces_aligned);

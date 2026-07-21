@@ -263,6 +263,7 @@ SZrAstNode *create_construct_expression_node(SZrParserState *ps, SZrAstNode *tar
     node->data.constructExpression.ownershipQualifier = ownershipQualifier;
     node->data.constructExpression.isUsing = isUsing;
     node->data.constructExpression.isNew = isNew;
+    node->data.constructExpression.isResourceSurface = ZR_FALSE;
     node->data.constructExpression.builtinKind = builtinKind;
     return node;
 }
@@ -603,6 +604,99 @@ SZrAstNode *parse_construct_expression(SZrParserState *ps,
     }
 
     return constructNode;
+}
+
+static SZrAstNode *parse_resource_own_expression(SZrParserState *ps) {
+    SZrFileRange startLoc;
+    SZrAstNode *target;
+    SZrAstNodeArray *args;
+    SZrArray *argNames = ZR_NULL;
+    SZrAstNode *node;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_IDENTIFIER ||
+        !current_identifier_equals(ps, "own")) {
+        return ZR_NULL;
+    }
+
+    startLoc = get_current_token_location(ps);
+    ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && peek_token(ps) == ZR_TK_LESS_THAN) {
+        target = parse_generic_construct_target(ps);
+    } else {
+        target = parse_prototype_path_expression(ps);
+    }
+    if (target == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (!consume_token(ps, ZR_TK_LPAREN)) {
+        report_error(ps, "Expected '(' after resource construction target");
+        ZrParser_Ast_Free(ps->state, target);
+        return ZR_NULL;
+    }
+    args = parse_argument_list(ps, &argNames, ZR_NULL);
+    expect_token(ps, ZR_TK_RPAREN);
+    consume_token(ps, ZR_TK_RPAREN);
+    if (!reject_named_construct_arguments(ps, argNames, startLoc)) {
+        if (args != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, args);
+        }
+        ZrParser_Ast_Free(ps->state, target);
+        return ZR_NULL;
+    }
+
+    node = create_construct_expression_node(
+            ps,
+            target,
+            args,
+            ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+            ZR_FALSE,
+            ZR_TRUE,
+            ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE,
+            ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
+    if (node != ZR_NULL) {
+        node->data.constructExpression.isResourceSurface = ZR_TRUE;
+    }
+    return node;
+}
+
+static SZrAstNode *parse_resource_drop_expression(SZrParserState *ps) {
+    SZrFileRange startLoc;
+    SZrAstNode *target;
+    SZrAstNodeArray *args;
+    SZrAstNode *node;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_IDENTIFIER ||
+        !current_identifier_equals(ps, "drop")) {
+        return ZR_NULL;
+    }
+
+    startLoc = get_current_token_location(ps);
+    ZrParser_Lexer_Next(ps->lexer);
+    if (!consume_token(ps, ZR_TK_LPAREN)) {
+        report_error(ps, "Expected '(' after 'drop'");
+        return ZR_NULL;
+    }
+    target = parse_expression(ps);
+    if (target == ZR_NULL) {
+        return ZR_NULL;
+    }
+    expect_token(ps, ZR_TK_RPAREN);
+    consume_token(ps, ZR_TK_RPAREN);
+    args = create_empty_argument_list(ps);
+    node = create_construct_expression_node(
+            ps,
+            target,
+            args,
+            ZR_OWNERSHIP_QUALIFIER_NONE,
+            ZR_FALSE,
+            ZR_FALSE,
+            ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
+            ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
+    if (node != ZR_NULL) {
+        node->data.constructExpression.isResourceSurface = ZR_TRUE;
+    }
+    return node;
 }
 
 EZrOwnershipQualifier parse_optional_method_receiver_qualifier(SZrParserState *ps) {
@@ -1052,6 +1146,7 @@ SZrAstNode *parse_owned_class_declaration(SZrParserState *ps) {
     node = parse_class_declaration(ps);
     if (node != ZR_NULL && node->type == ZR_AST_CLASS_DECLARATION) {
         node->data.classDeclaration.isOwned = ZR_TRUE;
+        node->data.classDeclaration.modifierFlags |= ZR_DECLARATION_MODIFIER_RESOURCE;
     }
     return node;
 }
@@ -1449,6 +1544,16 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
     ZR_UNUSED_PARAMETER(get_current_location(ps));
     EZrToken token = ps->lexer->t.token;
     SZrAstNode *base = ZR_NULL;
+
+    if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "own") &&
+        peek_token(ps) == ZR_TK_IDENTIFIER) {
+        base = parse_resource_own_expression(ps);
+        return base != ZR_NULL ? parse_member_access(ps, base) : ZR_NULL;
+    }
+    if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "drop")) {
+        base = parse_resource_drop_expression(ps);
+        return base != ZR_NULL ? parse_member_access(ps, base) : ZR_NULL;
+    }
 
     if (token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
         base = try_parse_generic_type_member_root(ps);

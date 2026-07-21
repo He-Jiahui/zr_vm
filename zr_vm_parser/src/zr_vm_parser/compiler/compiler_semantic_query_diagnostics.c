@@ -14,6 +14,28 @@ static TZrBool compiler_diagnostic_range_is_empty(const SZrFileRange *range) {
                       range->end.offset == 0U));
 }
 
+static const SZrSemanticOwnershipFact *compiler_unique_ownership_violation(
+        const SZrSemanticContext *context) {
+    TZrSize index;
+
+    if (context == ZR_NULL || !context->ownershipFacts.isValid) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < context->ownershipFacts.length; index++) {
+        const SZrSemanticOwnershipFact *fact =
+                (const SZrSemanticOwnershipFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->ownershipFacts,
+                        index);
+        if (fact != ZR_NULL &&
+            fact->kind == ZR_SEMANTIC_OWNERSHIP_FACT_ERROR &&
+            fact->qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE &&
+            fact->isViolation) {
+            return fact;
+        }
+    }
+    return ZR_NULL;
+}
+
 TZrBool ZrParser_Compiler_PublishCurrentDiagnostic(SZrCompilerState *cs) {
     SZrSemanticDiagnosticFact fact;
     SZrStructuredDiagnostic diagnostic;
@@ -60,6 +82,7 @@ TZrBool ZrParser_Compiler_PublishCurrentDiagnostic(SZrCompilerState *cs) {
 TZrBool ZrParser_Compiler_PublishSemanticQueryDiagnostics(SZrCompilerState *cs) {
     SZrParserSemanticQueryScope scope;
     SZrParserSemanticQueryDiagnostics diagnostics;
+    const SZrSemanticOwnershipFact *ownershipViolation;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL) {
         return ZR_FALSE;
@@ -81,6 +104,14 @@ TZrBool ZrParser_Compiler_PublishSemanticQueryDiagnostics(SZrCompilerState *cs) 
     }
     if (cs->scriptAst != ZR_NULL &&
         !ZrParser_SemanticFacts_ResolveControlFlowOwnership(cs->semanticContext, cs->scriptAst)) {
+        return ZR_FALSE;
+    }
+
+    ownershipViolation = compiler_unique_ownership_violation(cs->semanticContext);
+    if (ownershipViolation != ZR_NULL) {
+        ZrParser_Compiler_Error(cs,
+                               "Unique value is used after it was moved",
+                               ownershipViolation->range);
         return ZR_FALSE;
     }
 

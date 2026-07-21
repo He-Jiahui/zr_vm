@@ -13,10 +13,19 @@ struct SZrOwnershipControl;
 
 typedef void (*FRawObjectScanMarkGc)(struct SZrState *state, struct SZrRawObject *parentThis);
 
+typedef enum EZrResourceLifecycleState {
+    ZR_RESOURCE_LIFECYCLE_NONE = 0,
+    ZR_RESOURCE_LIFECYCLE_CONSTRUCTING = 1,
+    ZR_RESOURCE_LIFECYCLE_ALIVE = 2,
+    ZR_RESOURCE_LIFECYCLE_DROPPING = 3,
+    ZR_RESOURCE_LIFECYCLE_DROPPED = 4
+} EZrResourceLifecycleState;
+
 struct ZR_STRUCT_ALIGN SZrRawObject {
     struct SZrRawObject *next;
     EZrRawObjectType type;
     TZrBool isNative;
+    TZrUInt8 resourceLifecycleState;
     SZrGarbageCollectionObjectMark garbageCollectMark;
     struct SZrRawObject *gcList;
     FRawObjectScanMarkGc scanMarkGcFunction;
@@ -31,6 +40,7 @@ ZR_FORCE_INLINE void ZrCore_RawObject_Construct(SZrRawObject *super, EZrRawObjec
     super->next = ZR_NULL;
     super->type = type;
     super->isNative = ZR_FALSE;
+    super->resourceLifecycleState = ZR_RESOURCE_LIFECYCLE_NONE;
     super->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
     super->garbageCollectMark.generationalStatus = ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW;
     super->garbageCollectMark.generation = ZR_GARBAGE_COLLECT_GENERATION_INVALID;
