@@ -114,6 +114,64 @@ TZrBool ZrParser_AstType_TryUnwrapOwnershipGeneric(const SZrType *type,
     return ZR_TRUE;
 }
 
+TZrBool ZrParser_GcBridgeGenericNameToKind(SZrString *name,
+                                           EZrGcBridgeKind *kind) {
+    if (kind != ZR_NULL) {
+        *kind = ZR_GC_BRIDGE_NONE;
+    }
+    if (name == ZR_NULL || kind == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (zr_parser_string_equals_cstr(name, "Gc")) {
+        *kind = ZR_GC_BRIDGE_HANDLE;
+        return ZR_TRUE;
+    }
+    if (zr_parser_string_equals_cstr(name, "GcBox")) {
+        *kind = ZR_GC_BRIDGE_BOX;
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
+TZrBool ZrParser_AstType_TryUnwrapGcBridgeGeneric(const SZrType *type,
+                                                   EZrGcBridgeKind *kind,
+                                                   const SZrType **innerType) {
+    SZrGenericType *genericType;
+    SZrAstNode *argumentNode;
+    EZrGcBridgeKind bridgeKind;
+
+    if (kind != ZR_NULL) {
+        *kind = ZR_GC_BRIDGE_NONE;
+    }
+    if (innerType != ZR_NULL) {
+        *innerType = ZR_NULL;
+    }
+    if (type == ZR_NULL || type->name == ZR_NULL ||
+        type->name->type != ZR_AST_GENERIC_TYPE || type->subType != ZR_NULL ||
+        type->dimensions != 0 || type->hasArraySizeConstraint) {
+        return ZR_FALSE;
+    }
+
+    genericType = (SZrGenericType *)&type->name->data.genericType;
+    if (genericType->name == ZR_NULL ||
+        !ZrParser_GcBridgeGenericNameToKind(genericType->name->name, &bridgeKind) ||
+        genericType->params == ZR_NULL || genericType->params->count != 1u) {
+        return ZR_FALSE;
+    }
+    argumentNode = genericType->params->nodes[0];
+    if (argumentNode == ZR_NULL || argumentNode->type != ZR_AST_TYPE) {
+        return ZR_FALSE;
+    }
+
+    if (kind != ZR_NULL) {
+        *kind = bridgeKind;
+    }
+    if (innerType != ZR_NULL) {
+        *innerType = &argumentNode->data.type;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrParser_OwnershipMemberNameToBuiltinKind(SZrString *name,
                                                   EZrOwnershipBuiltinKind *builtinKind) {
     if (builtinKind != ZR_NULL) {
@@ -151,6 +209,10 @@ TZrBool ZrParser_OwnershipMemberNameToBuiltinKind(SZrString *name,
         *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_DETACH;
         return ZR_TRUE;
     }
+    if (zr_parser_string_equals_cstr(name, "intoGc")) {
+        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC;
+        return ZR_TRUE;
+    }
 
     return ZR_FALSE;
 }
@@ -160,6 +222,7 @@ TZrBool ZrParser_OwnershipBuiltinCanApplyToQualifier(EZrOwnershipBuiltinKind bui
     switch (builtinKind) {
         case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
+        case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE;
         case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
@@ -197,6 +260,7 @@ EZrOwnershipQualifier ZrParser_OwnershipBuiltinResultQualifier(EZrOwnershipBuilt
             return ZR_OWNERSHIP_QUALIFIER_SHARED;
         case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
+        case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
             return ZR_OWNERSHIP_QUALIFIER_NONE;
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
         case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
@@ -222,6 +286,8 @@ const TZrChar *ZrParser_OwnershipMemberCallErrorMessage(EZrOwnershipBuiltinKind 
             return "release() requires a Unique<T> or Shared<T> owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
             return "detach() requires a Unique<T> or Shared<T> owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
+            return "intoGc() requires a Unique<T> resource owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
         case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
         case ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN:
@@ -330,6 +396,7 @@ void ZrParser_InferredType_Init(SZrState *state, SZrInferredType *type, EZrValue
     type->baseType = baseType;
     type->isNullable = ZR_FALSE;
     type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    type->gcBridgeKind = ZR_GC_BRIDGE_NONE;
     type->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
     type->isReadonlyView = ZR_FALSE;
     type->typeName = ZR_NULL;
@@ -363,6 +430,7 @@ void ZrParser_InferredType_InitFull(SZrState *state, SZrInferredType *type, EZrV
     type->baseType = baseType;
     type->isNullable = isNullable;
     type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    type->gcBridgeKind = ZR_GC_BRIDGE_NONE;
     type->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
     type->isReadonlyView = ZR_FALSE;
     type->typeName = typeName;
@@ -456,6 +524,7 @@ void ZrParser_InferredType_Copy(SZrState *state, SZrInferredType *dest, const SZ
     dest->baseType = src->baseType;
     dest->isNullable = src->isNullable;
     dest->ownershipQualifier = src->ownershipQualifier;
+    dest->gcBridgeKind = src->gcBridgeKind;
     dest->referenceAccess = src->referenceAccess;
     dest->isReadonlyView = src->isReadonlyView;
     dest->typeName = src->typeName; // 字符串由GC管理，直接复制引用
@@ -524,6 +593,10 @@ TZrBool ZrParser_InferredType_Equal(const SZrInferredType *type1, const SZrInfer
     }
 
     if (type1->ownershipQualifier != type2->ownershipQualifier) {
+        return ZR_FALSE;
+    }
+
+    if (type1->gcBridgeKind != type2->gcBridgeKind) {
         return ZR_FALSE;
     }
 
@@ -930,6 +1003,10 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
         return ZR_FALSE;
     }
 
+    if (fromType->gcBridgeKind != toType->gcBridgeKind) {
+        return ZR_FALSE;
+    }
+
     if (fromType->isReadonlyView && !toType->isReadonlyView) {
         return ZR_FALSE;
     }
@@ -1096,6 +1173,7 @@ EZrInstructionCode ZrParser_InferredType_GetConversionOpcode(const SZrInferredTy
 
     if (fromType->baseType == toType->baseType &&
         fromType->isNullable == toType->isNullable &&
+        fromType->gcBridgeKind == toType->gcBridgeKind &&
         ownership_qualifier_is_compatible(fromType->ownershipQualifier,
                                           toType->ownershipQualifier)) {
         return ZR_INSTRUCTION_ENUM(ENUM_MAX);

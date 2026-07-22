@@ -3,6 +3,7 @@
 //
 
 #include "gc/gc_internal.h"
+#include "gc/gc_domain_internal.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -964,6 +965,10 @@ static ZR_FORCE_INLINE void garbage_collector_free_object_known_size(
         return;
     }
 
+    if (object->isGcBox) {
+        ZrCore_Ownership_NotifyObjectReleased(state, object);
+    }
+
     object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED;
     if (!garbage_collector_try_release_region_allocation_fast(global->garbageCollector,
                                                               object->garbageCollectMark.regionId,
@@ -1040,6 +1045,9 @@ void garbage_collector_free_object(SZrState *state, SZrRawObject *object) {
 }
 
 SZrRawObject *ZrCore_RawObject_New(SZrState *state, EZrValueType type, TZrSize size, TZrBool isNative) {
+    if (state == ZR_NULL || state->global == ZR_NULL || state->gcDomain == ZR_NULL) {
+        return ZR_NULL;
+    }
     SZrGlobalState *global = state->global;
     TZrPtr memory = ZrCore_Memory_GcMalloc(state, ZR_MEMORY_NATIVE_TYPE_OBJECT, size);
     SZrRawObject *object = ZR_CAST_RAW_OBJECT(memory);
@@ -1054,6 +1062,10 @@ SZrRawObject *ZrCore_RawObject_New(SZrState *state, EZrValueType type, TZrSize s
 
     ZrCore_Memory_RawSet(object, 0, size);
     ZrCore_RawObject_Construct(object, (EZrRawObjectType)type);
+    if (!ZrCore_GcDomain_AssignObject(state->gcDomain, object)) {
+        ZrCore_Memory_RawFreeWithType(global, object, size, ZR_MEMORY_NATIVE_TYPE_OBJECT);
+        return ZR_NULL;
+    }
     object->isNative = isNative;
     object->garbageCollectMark.status = global->garbageCollector->gcInitializeObjectStatus;
     object->garbageCollectMark.generation = global->garbageCollector->gcGeneration;
@@ -1088,7 +1100,8 @@ SZrRawObject *garbage_collector_new_raw_object_in_region(SZrState *state,
     TZrPtr memory;
     SZrRawObject *object;
 
-    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL) {
+    if (state == ZR_NULL || state->global == ZR_NULL ||
+        state->global->garbageCollector == ZR_NULL || state->gcDomain == ZR_NULL) {
         return ZR_NULL;
     }
 
@@ -1101,6 +1114,10 @@ SZrRawObject *garbage_collector_new_raw_object_in_region(SZrState *state,
 
     ZrCore_Memory_RawSet(object, 0, size);
     ZrCore_RawObject_Construct(object, (EZrRawObjectType)type);
+    if (!ZrCore_GcDomain_AssignObject(state->gcDomain, object)) {
+        ZrCore_Memory_RawFreeWithType(global, object, size, ZR_MEMORY_NATIVE_TYPE_OBJECT);
+        return ZR_NULL;
+    }
     object->isNative = isNative;
     object->garbageCollectMark.status = global->garbageCollector->gcInitializeObjectStatus;
     object->garbageCollectMark.generation = global->garbageCollector->gcGeneration;
@@ -1183,6 +1200,7 @@ void ZrCore_RawObject_MarkAsPermanent(SZrState *state, SZrRawObject *object) {
     objectSize = garbage_collector_get_object_base_size_fast(object);
     previousRegionId = object->garbageCollectMark.regionId;
     object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT;
+    object->garbageCollectMark.generation = ZR_GC_OTHER_GENERATION(global->garbageCollector);
     ZrCore_RawObject_SetStorageKind(object, ZR_GARBAGE_COLLECT_STORAGE_KIND_LARGE_PERSISTENT);
     ZrCore_RawObject_SetRegionKind(object, ZR_GARBAGE_COLLECT_REGION_KIND_PERMANENT);
     object->garbageCollectMark.regionId = garbage_collector_reassign_region_id_cached(

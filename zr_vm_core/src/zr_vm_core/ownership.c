@@ -6,6 +6,7 @@
 
 #include "ownership_resource_internal.h"
 #include "ownership_shared_internal.h"
+#include "gc/gc_domain_internal.h"
 
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/conversion.h"
@@ -130,6 +131,10 @@ static TZrBool ownership_release_strong_ref(SZrState *state,
 static TZrBool ownership_ignore_object_if_needed(struct SZrState *state, SZrOwnershipControl *control) {
     if (state == ZR_NULL || control == ZR_NULL || control->object == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (ZrCore_OwnershipResource_IsObject(control->object)) {
+        return ZrCore_GcDomain_RegisterOwnershipRoot(state, control->object);
     }
 
     if (!control->ownsGcIgnore) {
@@ -615,6 +620,37 @@ TZrBool ZrCore_Ownership_ReturnToGcValue(struct SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrCore_Ownership_IntoGcBoxValue(struct SZrState *state,
+                                        SZrTypeValue *destination,
+                                        SZrTypeValue *source) {
+    SZrRawObject *object;
+
+    if (state == ZR_NULL || destination == ZR_NULL || source == ZR_NULL ||
+        destination == source ||
+        !ZrCore_OwnershipResource_IsDirectUniqueValue(source)) {
+        return ZR_FALSE;
+    }
+    if (!ownership_prepare_destination(state, destination)) {
+        return ZR_FALSE;
+    }
+
+    object = source->value.object;
+    if (!ZrCore_GcDomain_ObjectBelongsToState(state, object)) {
+        return ZR_FALSE;
+    }
+    ZrCore_GcDomain_UnregisterOwnershipRoot(state, object);
+    object->isGcBox = ZR_TRUE;
+    ownership_reset_value_storage(source);
+    ZrCore_Value_InitAsRawObject(state, destination, object);
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Ownership_IsGcBoxObject(const SZrRawObject *object) {
+    return object != ZR_NULL && object->isGcBox &&
+           ZrCore_OwnershipResource_IsObject(object) &&
+           object->resourceLifecycleState == ZR_RESOURCE_LIFECYCLE_ALIVE;
+}
+
 void ZrCore_Ownership_ReleaseValue(struct SZrState *state, SZrTypeValue *value) {
     SZrOwnershipControl *control;
     EZrOwnershipValueKind kind;
@@ -783,6 +819,14 @@ void ZrCore_Ownership_NotifyObjectReleased(struct SZrState *state, struct SZrRaw
 
     if (state == ZR_NULL || object == ZR_NULL) {
         return;
+    }
+
+    if (object->isGcBox) {
+        object->isGcBox = ZR_FALSE;
+        ZrCore_RawObject_MarkAsInit(state, object);
+        if (ZrCore_GcDomain_RegisterOwnershipRoot(state, object)) {
+            ZrCore_OwnershipResource_Drop(state, object);
+        }
     }
 
     control = object->ownershipControl;

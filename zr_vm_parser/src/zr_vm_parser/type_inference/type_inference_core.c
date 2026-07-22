@@ -4542,6 +4542,8 @@ static const TZrChar *ownership_builtin_operand_error_message(EZrOwnershipBuilti
             return "'%release' requires a %unique or %shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
             return "'%detach' requires a %unique or %shared owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
+            return "intoGc() requires a Unique<T> resource owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
         case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
         case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
@@ -4555,6 +4557,7 @@ static TZrBool ownership_builtin_operand_matches_qualifier(EZrOwnershipBuiltinKi
     switch (builtinKind) {
         case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
+        case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE;
         case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
@@ -4697,6 +4700,7 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
             result->baseType = ZR_VALUE_TYPE_NULL;
             result->isNullable = ZR_FALSE;
             result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+            result->gcBridgeKind = ZR_GC_BRIDGE_NONE;
             result->typeName = ZR_NULL;
             ZrCore_Array_Construct(&result->elementTypes);
             result->minValue = 0;
@@ -4720,6 +4724,10 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
                 break;
             case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
                 result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                break;
+            case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
+                result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                result->gcBridgeKind = ZR_GC_BRIDGE_BOX;
                 break;
             case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
                 result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;

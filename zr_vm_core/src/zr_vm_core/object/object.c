@@ -11,6 +11,7 @@
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/module.h"
@@ -1412,6 +1413,9 @@ static TZrBool object_get_index_length(SZrState *state,
 
 SZrObject *ZrCore_Object_New(SZrState *state, SZrObjectPrototype *prototype) {
     SZrRawObject *rawObject = ZrCore_RawObject_New(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrObject), ZR_FALSE);
+    if (rawObject == ZR_NULL) {
+        return ZR_NULL;
+    }
     SZrObject *object = ZR_CAST_OBJECT(state, rawObject);
     object->prototype = prototype;
     object->internalType = ZR_OBJECT_INTERNAL_TYPE_OBJECT;
@@ -1428,6 +1432,9 @@ SZrObject *ZrCore_Object_NewCustomized(struct SZrState *state, TZrSize size, EZr
         valueType = ZR_VALUE_TYPE_ARRAY;
     }
     SZrRawObject *rawObject = ZrCore_RawObject_New(state, valueType, size, ZR_FALSE);
+    if (rawObject == ZR_NULL) {
+        return ZR_NULL;
+    }
     SZrObject *object = ZR_CAST_OBJECT(state, rawObject);
     object->prototype = (internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY && state != ZR_NULL && state->global != ZR_NULL)
                                 ? state->global->basicTypeObjectPrototype[ZR_VALUE_TYPE_ARRAY]
@@ -1597,6 +1604,12 @@ static void object_set_value_core(SZrState *state,
         ZrCore_Log_Error(state, "attempt to set value with null key");
         return;
     }
+    if (!ZrCore_GcDomain_ValidateValueWrite(
+                state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), key) ||
+        !ZrCore_GcDomain_ValidateValueWrite(
+                state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), value)) {
+        return;
+    }
     if (!object_node_map_is_ready(object)) {
         object_trace("set value nodeMap not ready object=%p state=%p keyType=%d keyObject=%p nodeMap{valid=%d buckets=%p capacity=%llu}",
                      (void *)object,
@@ -1700,6 +1713,11 @@ void ZrCore_Object_SetExistingPairValueUnchecked(SZrState *state,
                                                  SZrHashKeyValuePair *pair,
                                                  const SZrTypeValue *value) {
     if (state == ZR_NULL || object == ZR_NULL || pair == ZR_NULL || value == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrCore_GcDomain_ValidateValueWrite(
+                state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), value)) {
         return;
     }
 
@@ -2628,6 +2646,12 @@ static TZrBool object_set_member_with_key_unchecked_core(struct SZrState *state,
     if (object == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (!ZrCore_GcDomain_ValidateValueWrite(
+                state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), memberKey) ||
+        !ZrCore_GcDomain_ValidateValueWrite(
+                state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), value)) {
+        return ZR_FALSE;
+    }
 
     prototype = object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE
                          ? (SZrObjectPrototype *)object
@@ -3159,7 +3183,6 @@ static ZR_FORCE_INLINE TZrBool object_get_by_index_unchecked_core(SZrState *stat
     if (object == ZR_NULL) {
         return ZR_FALSE;
     }
-
     if (stackOperandsGuaranteed && !ZR_VALUE_IS_TYPE_INT(key->type)) {
         if (object_try_call_hot_cached_known_native_get_by_index_readonly_inline_stack_operands(
                     state,
@@ -3384,6 +3407,12 @@ static ZR_FORCE_INLINE TZrBool object_set_by_index_unchecked_core(SZrState *stat
 
     object = ZR_CAST_OBJECT(state, receiver->value.object);
     if (object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!ZrCore_GcDomain_ValidateValueWrite(
+                state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), key) ||
+        !ZrCore_GcDomain_ValidateValueWrite(
+                state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), value)) {
         return ZR_FALSE;
     }
 

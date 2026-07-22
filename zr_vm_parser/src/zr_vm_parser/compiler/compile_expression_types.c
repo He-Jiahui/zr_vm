@@ -629,12 +629,14 @@ static TZrBool member_name_is_plain_share(SZrString *memberName) {
 
 static TZrBool ownership_member_builtin_consumes_local_source(EZrOwnershipBuiltinKind builtinKind) {
     return (TZrBool)(builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_SHARED ||
-                     builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_LOAN);
+                     builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_LOAN ||
+                     builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC);
 }
 
 static TZrBool ownership_member_builtin_requires_local_source(EZrOwnershipBuiltinKind builtinKind) {
     return (TZrBool)(builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE ||
-                     builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DETACH);
+                     builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DETACH ||
+                     builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC);
 }
 
 static TZrUInt32 ownership_member_direct_local_slot(SZrCompilerState *cs, SZrAstNode *propertyNode) {
@@ -682,7 +684,9 @@ static TZrBool compile_ownership_member_builtin_call(SZrCompilerState *cs,
         ZrParser_Compiler_Error(cs,
                                 builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE
                                         ? "release() currently requires a local identifier binding"
-                                        : "detach() currently requires a local identifier binding",
+                                        : (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC
+                                                   ? "intoGc() currently requires a local identifier binding"
+                                                   : "detach() currently requires a local identifier binding"),
                                 location);
         return ZR_FALSE;
     }

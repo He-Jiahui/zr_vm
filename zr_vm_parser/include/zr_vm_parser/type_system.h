@@ -37,11 +37,18 @@ typedef enum EZrInferredGenericArgumentKind {
     ZR_INFERRED_GENERIC_ARGUMENT_CONST_PARAMETER = 2
 } EZrInferredGenericArgumentKind;
 
+typedef enum EZrGcBridgeKind {
+    ZR_GC_BRIDGE_NONE = 0,
+    ZR_GC_BRIDGE_HANDLE,
+    ZR_GC_BRIDGE_BOX
+} EZrGcBridgeKind;
+
 // 推断的类型结构体
 typedef struct SZrInferredType {
     EZrValueType baseType;           // 基础类型（对应EZrValueType枚举）
     TZrBool isNullable;                // 是否可空
     EZrOwnershipQualifier ownershipQualifier; // 特殊所有权限定
+    EZrGcBridgeKind gcBridgeKind;    // 显式 Gc<T>/GcBox<T> bridge，不属于 ownership qualifier
     EZrReferenceAccess referenceAccess; // canonical ref access, independent of legacy ownership
     TZrBool isReadonlyView;          // readonly receiver/value capability
     SZrArray elementTypes;           // 泛型/数组元素类型（SZrInferredType*），可选
@@ -147,6 +154,13 @@ ZR_PARSER_API TZrBool ZrParser_OwnershipGenericNameToQualifier(SZrString *name,
 
 ZR_PARSER_API TZrBool ZrParser_AstType_TryUnwrapOwnershipGeneric(const SZrType *type,
                                                                  EZrOwnershipQualifier *qualifier,
+                                                                 const SZrType **innerType);
+
+ZR_PARSER_API TZrBool ZrParser_GcBridgeGenericNameToKind(SZrString *name,
+                                                          EZrGcBridgeKind *kind);
+
+ZR_PARSER_API TZrBool ZrParser_AstType_TryUnwrapGcBridgeGeneric(const SZrType *type,
+                                                                 EZrGcBridgeKind *kind,
                                                                  const SZrType **innerType);
 
 ZR_PARSER_API TZrBool ZrParser_OwnershipMemberNameToBuiltinKind(SZrString *name,

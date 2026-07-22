@@ -100,6 +100,15 @@ static void assert_text_contains_none(const char *text, const char *const *needl
     }
 }
 
+static void assert_text_occurs_before(const char *text, const char *first, const char *second) {
+    const char *firstPosition = strstr(text, first);
+    const char *secondPosition = strstr(text, second);
+
+    TEST_ASSERT_NOT_NULL(firstPosition);
+    TEST_ASSERT_NOT_NULL(secondPosition);
+    TEST_ASSERT_TRUE(firstPosition < secondPosition);
+}
+
 static void test_aot_c_source_lowers_ownership_to_boundary_helpers(void) {
     static const char *const headerNeedles[] = {
             "void backend_aot_write_c_direct_own_unique(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);",
@@ -139,8 +148,11 @@ static void test_aot_c_source_lowers_ownership_to_boundary_helpers(void) {
             "return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_ShareValue);",
             "TZrBool ZrLibrary_AotRuntime_OwnWeak(SZrState *state,",
             "return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_WeakValue);",
+            "static TZrBool aot_runtime_into_gc_box_or_detach(",
+            "return ZrCore_Ownership_IntoGcBoxValue(state, destination, source) ||",
+            "ZrCore_Ownership_DetachValue(state, destination, source);",
             "TZrBool ZrLibrary_AotRuntime_OwnDetach(SZrState *state,",
-            "return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_DetachValue);",
+            "aot_runtime_into_gc_box_or_detach);",
             "TZrBool ZrLibrary_AotRuntime_OwnUpgrade(SZrState *state,",
             "return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_UpgradeValue);",
             "TZrBool ZrLibrary_AotRuntime_OwnRelease(SZrState *state,",
@@ -220,6 +232,9 @@ static void test_aot_c_source_lowers_ownership_to_boundary_helpers(void) {
     assert_text_contains_all(emitterText, emitterNeedles, ARRAY_COUNT(emitterNeedles));
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
     assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));
+    assert_text_occurs_before(runtimeSourceText,
+                              "ZrCore_Ownership_IntoGcBoxValue(state, destination, source)",
+                              "ZrCore_Ownership_DetachValue(state, destination, source)");
     assert_text_contains_all(valueLoweringText, valueLoweringNeedles, ARRAY_COUNT(valueLoweringNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
     assert_text_contains_none(valueLoweringText, forbiddenValueLoweringNeedles, ARRAY_COUNT(forbiddenValueLoweringNeedles));

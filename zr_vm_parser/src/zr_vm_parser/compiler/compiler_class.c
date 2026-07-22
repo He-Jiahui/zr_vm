@@ -1146,6 +1146,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             memberInfo.isConst = ZR_FALSE;
             memberInfo.isUsingManaged = ZR_FALSE;
             memberInfo.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+            memberInfo.gcBridgeKind = ZR_GC_BRIDGE_NONE;
             memberInfo.receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
             memberInfo.receiverEffect = ZR_CANONICAL_RECEIVER_NONE;
             memberInfo.callsClose = ZR_FALSE;
@@ -1192,6 +1193,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     if (field->typeInfo != ZR_NULL) {
                         EZrOwnershipQualifier intrinsicOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
                         const SZrType *intrinsicInnerType = ZR_NULL;
+                        EZrGcBridgeKind intrinsicGcBridgeKind = ZR_GC_BRIDGE_NONE;
+                        const SZrType *intrinsicGcBridgeInnerType = ZR_NULL;
                         memberInfo.fieldType = field->typeInfo;
                         memberInfo.fieldTypeName = extract_type_name_string(cs, field->typeInfo);
                         memberInfo.ownershipQualifier = field->typeInfo->ownershipQualifier;
@@ -1201,6 +1204,14 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                             ZR_UNUSED_PARAMETER(intrinsicInnerType);
                             memberInfo.ownershipQualifier = intrinsicOwnershipQualifier;
                         }
+                        if (ZrParser_AstType_TryUnwrapGcBridgeGeneric(
+                                    field->typeInfo,
+                                    &intrinsicGcBridgeKind,
+                                    &intrinsicGcBridgeInnerType)) {
+                            memberInfo.gcBridgeKind = intrinsicGcBridgeKind;
+                            memberInfo.fieldTypeName = extract_type_name_string(
+                                    cs, (SZrType *)intrinsicGcBridgeInnerType);
+                        }
                         memberInfo.fieldSize = calculate_type_size(cs, field->typeInfo);
                     } else if (field->init != ZR_NULL) {
                         // 没有类型注解，从初始值推断类型
@@ -1208,6 +1219,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         if (ZrParser_ExpressionType_Infer(cs, field->init, &inferredType)) {
                             memberInfo.fieldTypeName = get_type_name_from_inferred_type(cs, &inferredType);
                             memberInfo.ownershipQualifier = inferredType.ownershipQualifier;
+                            memberInfo.gcBridgeKind = inferredType.gcBridgeKind;
                             // 根据推断类型计算字段大小
                             switch (inferredType.baseType) {
                                 case ZR_VALUE_TYPE_INT8: memberInfo.fieldSize = sizeof(TZrInt8); break;

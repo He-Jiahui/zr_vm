@@ -8,6 +8,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/gc.h"
+#include "gc/gc_domain_internal.h"
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/memory.h"
@@ -383,6 +384,8 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global->hashSeed = ZrCore_HashSeed_Create(global, uniqueNumber);
     // gc
     ZrCore_GarbageCollector_New(global);
+    global->gcDomain = ZrCore_GcDomain_New(global, global->garbageCollector);
+    ZrCore_GcDomain_AttachState(global->gcDomain, newState);
     ZrCore_Profile_GlobalInit(global);
     ZrCore_Profile_SetCurrentState(newState);
     global_trace("global new gc/profile ready gc=%p profile=%p", (void *)global->garbageCollector, (void *)global->profileRuntime);
@@ -672,6 +675,10 @@ void ZrCore_GlobalState_Free(SZrGlobalState *global) {
 
     ZrCore_GarbageCollector_Free(global, global->garbageCollector);
     global->garbageCollector = ZR_NULL;
+
+    ZrCore_GcDomain_DetachState(global->gcDomain, global->mainThreadState);
+    ZrCore_GcDomain_Free(global->gcDomain);
+    global->gcDomain = ZR_NULL;
 
     ZrCore_StringTable_Free(global, global->stringTable);
     global->stringTable = ZR_NULL;

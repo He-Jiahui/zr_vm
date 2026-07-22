@@ -838,6 +838,8 @@ var shared: Shared<Resource>;
 var weak: Weak<Resource>;
 var view: Borrow<Resource>;
 var slot: Loan<Resource>;
+var root: Gc<Document>;
+var boxed: GcBox<Resource>;
 
 // 嵌套类型
 var name: Outer<Inner<Type>>;
@@ -865,7 +867,7 @@ var callback: F = (x: int)->{
 **说明**:
 - 类型位统一按“前缀 `%` 保留字修饰 + 主类型 + 后缀修饰”解析。
 - `%func(...) -> ReturnType` 是正式函数类型写法；`=>` 仅作兼容输入。
-- `Unique<T>` / `Shared<T>` / `Weak<T>` / `Borrow<T>` / `Loan<T>` 是内建所有权泛型；旧 `%unique T` / `%shared T` / `%weak T` / `%borrow T` / `%loan T` 过渡期作为等价语法糖保留。
+- `Unique<T>` / `Shared<T>` / `Weak<T>` / `Borrow<T>` / `Loan<T>` 是内建所有权泛型；旧 `%unique T` / `%shared T` / `%weak T` / `%borrow T` / `%loan T` 过渡期作为等价语法糖保留。`Gc<T>` / `GcBox<T>` 是独立 GC bridge 泛型，不属于 ownership qualifier。
 - 任意编译期可折叠且冻结的 `Type` 值都可进入类型位置，因此 `var F = %func(int)->int; var c: F = ...;` 合法。
 - `%type(...)` 同时接受 `TypeExpr` 与普通表达式；`%type(%func(int)->int)` 返回 callable reflection。
 
@@ -1132,6 +1134,14 @@ field cycle。普通 Shared 不跨 isolation domain，也不动态切换到原�
 当前实现为兼容既有 callable/type ABI，暂以 nullable `Shared<T>` niche 表达 upgrade 的 live/empty
 结果；最终规范目标仍是 `Option<Shared<T>>`。在 built-in Option/prelude carrier 和 VM/AOT
 construction contract 落地前，不应把该兼容表示视作 final public Option surface。
+
+`Gc<T>` 保存普通 GC class 的显式 root-handle contract；`GcBox<T>` 保存已移入 GC world 的
+resource。二者在 canonical type 中具有不同 bridge kind：`Gc<Resource>` 与
+`GcBox<ordinary class>` 均不合法。当前 source bridge 是 consuming
+`Unique<Resource>.intoGc(): GcBox<Resource>`；它使 source owner 进入 moved 状态，Shared 或
+active borrow 输入被拒绝。当前 M4 只完成单 mutator domain identity、C runtime root handle、
+explicit ownership roots 和 GcBox source bridge，不宣称通用 source `Gc<T>` constructor、
+多 mutator STW 或跨 domain transport。
 
 ```zr
 var owned: Unique<Resource>;

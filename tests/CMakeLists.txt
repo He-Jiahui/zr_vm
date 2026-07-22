@@ -1608,6 +1608,15 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
                 ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
         )
     endif ()
+
+    zr_vm_add_unity_test_target(
+            zr_vm_gc_domain_bridge_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_gc_domain_bridge.c
+    )
+    target_include_directories(zr_vm_gc_domain_bridge_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_gc_domain_bridge_test)
     zr_vm_link_parser_core(zr_vm_aot_reachability_test)
 
     zr_vm_add_unity_test_target(

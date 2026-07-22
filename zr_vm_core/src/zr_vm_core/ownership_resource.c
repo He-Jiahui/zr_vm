@@ -2,6 +2,7 @@
 
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/gc.h"
+#include "gc/gc_domain_internal.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
@@ -62,7 +63,7 @@ TZrBool ZrCore_OwnershipResource_InitUnique(SZrState *state,
         !ZrCore_OwnershipResource_IsObject(object)) {
         return ZR_FALSE;
     }
-    if (!ZrCore_GarbageCollector_IgnoreObject(state, object)) {
+    if (!ZrCore_GcDomain_RegisterOwnershipRoot(state, object)) {
         return ZR_FALSE;
     }
 
@@ -127,8 +128,5 @@ void ZrCore_OwnershipResource_Drop(SZrState *state, SZrRawObject *object) {
     }
     ZrCore_Object_DropManagedFields(state, (SZrObject *)object);
     object->resourceLifecycleState = ZR_RESOURCE_LIFECYCLE_DROPPED;
-    if (state->global != ZR_NULL &&
-        ZrCore_GarbageCollector_IsObjectIgnored(state->global, object)) {
-        (void)ZrCore_GarbageCollector_UnignoreObject(state->global, object);
-    }
+    ZrCore_GcDomain_UnregisterOwnershipRoot(state, object);
 }

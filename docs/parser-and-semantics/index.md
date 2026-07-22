@@ -259,7 +259,7 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 - `resource-unique-drop.md`
   - `resource class`、`own T(...)`、`drop(owner)` 的 type-directed 生命周期合同
   - direct `Unique<T>` 无 control block 的 move、partial construction 与逆序 Drop
-  - VM/AOT cleanup 顺序，以及 M4 移除临时 GC ignore registry 的明确边界
+  - VM/AOT cleanup 顺序、M4 explicit domain roots 与 `Unique<Resource>.intoGc()` bridge
 - `resource-shared-weak.md`
   - process-local non-atomic `Shared<T>` / stable `Weak<T>` control lifetime
   - last-strong Drop、implicit weak、drop-time upgrade failure 与 cleanup mirror 同步
@@ -271,6 +271,7 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - `in T` owner reborrow、two-phase receiver loan 与 last-use NLL
   - active ref 对 drop/share/move 的 canonical Place/LoanId 冲突门禁
   - receiver-tied ref return provenance 与 direct source TypeDef 保守边界
+  - M4 `INTO_GC_BOX` 对同一 Place/LoanId exclusive-consumption facts 的复用
 - `semantic-fact-layer.md`
   - `SZrSemanticContext` 统一持有表达式、引用、数值、可达性、逻辑和所有权事实
   - 事实层提供 append-by-copy、reset/free 和按节点/位置查询契约

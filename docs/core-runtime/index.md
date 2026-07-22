@@ -85,3 +85,6 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
 - `exception-scope-resource-cleanup.md`: exception-handler checkpoints for `%using`
   registrations, LIFO close before catch/finally, scratch-safe error arguments, and
   stack-relocation rules for resource cleanup.
+- `gc-domain-single-mutator-bridge.md`: single-mutator `GcDomain` identity, generation-checked
+  root handles, explicit ownership roots, cross-domain write rejection, permanent-parent major
+  scanning, and the `Unique<Resource>.intoGc()` / GcBox runtime bridge.

@@ -338,6 +338,7 @@ typedef struct SZrTypeMemberInfo {
     TZrBool isConst;                      // 是否为 const 字段
     TZrBool isUsingManaged;               // legacy field-scoped `%using` 元数据位
     EZrOwnershipQualifier ownershipQualifier; // 字段所有权限定符
+    EZrGcBridgeKind gcBridgeKind;          // 字段显式 Gc<T>/GcBox<T> bridge kind
     EZrOwnershipQualifier receiverQualifier;  // 方法 receiver 所有权限定符
     EZrCanonicalReceiverEffect receiverEffect; // canonical readonly/writable receiver contract
     TZrBool callsClose;                   // 生命周期结束时是否需要先调用 @close

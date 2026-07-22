@@ -31,6 +31,7 @@ struct SZrProfileRuntime;
 
 // from gc.h
 struct SZrGarbageCollector;
+struct SZrGcDomain;
 
 // from string.h
 struct SZrString;
@@ -91,6 +92,7 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
 
     // GC
     struct SZrGarbageCollector *garbageCollector;
+    struct SZrGcDomain *gcDomain;
 
     // Logger
     FZrLog logFunction;

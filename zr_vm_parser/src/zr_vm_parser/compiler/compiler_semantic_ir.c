@@ -134,6 +134,8 @@ static EZrInstructionCode compiler_semantic_ir_exec_opcode(
                     return ZR_INSTRUCTION_ENUM(OWN_WEAK);
                 case ZR_SEMANTIC_OWNERSHIP_UPGRADE:
                     return ZR_INSTRUCTION_ENUM(OWN_UPGRADE);
+                case ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX:
+                    return ZR_INSTRUCTION_ENUM(OWN_DETACH);
                 case ZR_SEMANTIC_OWNERSHIP_NONE:
                 case ZR_SEMANTIC_OWNERSHIP_ENUM_MAX:
                 default:
@@ -1212,6 +1214,14 @@ static TZrBool compiler_semantic_ir_emit_ownership(
             resultValueId = ZrParser_SemanticIr_AddValue(
                     &cs->preSemanticIr, slot->typeId, sourceRange);
             spec.resultValueId = resultValueId;
+            break;
+        case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
+            spec.opcode = ZR_SEMANTIC_IR_OWN_CONSTRUCT;
+            spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX;
+            resultValueId = ZrParser_SemanticIr_AddValue(
+                    &cs->preSemanticIr, slot->typeId, sourceRange);
+            spec.resultValueId = resultValueId;
+            slot->valueId = ZR_VALUE_ID_INVALID;
             break;
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
         case ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN:

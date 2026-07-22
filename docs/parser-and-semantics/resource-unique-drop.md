@@ -151,19 +151,27 @@ and scope helper calls rather than an unsupported fallback. The focused pipeline
 fixture and inspects the generated C/LLVM sources; the observed explicit/scope Drop log is `21`
 on all three supported toolchains.
 
-## M1 And M3 Boundary
+## M1-M4 Boundary
 
 M1 establishes resource construction, direct Unique move, deterministic Drop, field cleanup,
 partial construction, and exception cleanup. Syntax 04 M2 now supplies the Shared/Weak
 control-block contract, and M3 supplies compile-time owner reborrow and direct receiver checking;
 see `resource-shared-weak.md` and `resource-owner-borrow-receiver.md`.
 
-The remaining boundary in this section is the M4 GC/domain bridge; the direct-Unique
-representation described above remains unchanged. M3 does not add a runtime borrow table:
-owner move/drop/share conflicts are rejected from canonical Place and LoanId facts.
+Syntax 04 M4 now supplies the explicit GC-domain bridge while preserving the direct-Unique
+representation above. A live resource owner registers its object in the domain's structured
+ownership-root table; final release removes the root. The former ignored-object registry is no
+longer a correctness dependency.
 
-The current direct resource object is temporarily kept outside ordinary GC collection through the
-existing ignore registry while owned, then returned to GC after Drop. This is not the final bridge
-model. Syntax 04 M4 must replace it with explicit domain/bridge identity and satisfy the plan's
-"no hidden ignore registry" promotion gate. M1 claims only the narrower gate: the ordinary direct
-Unique path has no hidden refcount/control block, and VM/AOT Drop order agrees.
+`Unique<Resource>.intoGc()` consumes the owner, emits the canonical `INTO_GC_BOX` ownership
+operation with its source Place, and returns `GcBox<Resource>`. Shared input and a Unique source
+with an active loan are rejected. Collection of the resulting box runs resource Drop exactly
+once, including when Drop allocates or reaches a safepoint. VM and AOT use the same
+`ZrCore_Ownership_IntoGcBoxValue` runtime helper; AOT attempts that helper before its legacy
+detach fallback.
+
+`Gc<T>` and `GcBox<T>` are distinct canonical bridge kinds rather than owner qualifiers. The
+first targets an ordinary GC class and is represented at the C runtime boundary by a
+generation-checked `SZrGcRootHandle`; the second targets a resource and has the explicit
+`intoGc()` source bridge. M4 does not claim multi-mutator collection or cross-domain transport;
+those remain later milestones.

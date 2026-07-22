@@ -491,6 +491,7 @@ EZrInstructionCode compiler_ownership_builtin_opcode_from_kind(EZrOwnershipBuilt
         case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
             return ZR_INSTRUCTION_ENUM(OWN_WEAK);
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
+        case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
             return ZR_INSTRUCTION_ENUM(OWN_DETACH);
         case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
             return ZR_INSTRUCTION_ENUM(OWN_UPGRADE);
@@ -516,6 +517,8 @@ static const TZrChar *compile_ownership_builtin_operand_error_message(EZrOwnersh
             return "'%release' requires a %unique or %shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
             return "'%detach' requires a %unique or %shared owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
+            return "intoGc() requires a Unique<T> resource owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
         case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
         case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
@@ -529,6 +532,7 @@ static TZrBool compile_ownership_builtin_operand_matches_qualifier(EZrOwnershipB
     switch (builtinKind) {
         case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
+        case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE;
         case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;

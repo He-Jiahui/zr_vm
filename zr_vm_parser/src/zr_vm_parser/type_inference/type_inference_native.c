@@ -1683,6 +1683,7 @@ static TZrBool inferred_type_from_member_access(SZrCompilerState *cs,
                 return ZR_FALSE;
             }
             result->ownershipQualifier = memberInfo->ownershipQualifier;
+            result->gcBridgeKind = memberInfo->gcBridgeKind;
             return ZR_TRUE;
         case ZR_AST_STRUCT_METHOD:
         case ZR_AST_CLASS_METHOD:
@@ -3197,6 +3198,23 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                             ZrParser_InferredType_Free(cs->state, &currentType);
                             return ZR_FALSE;
                         }
+                        if (ownershipMemberKind == ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC) {
+                            SZrTypePrototypeInfo *resourcePrototype =
+                                    currentType.typeName != ZR_NULL
+                                            ? find_compiler_type_prototype_inference(
+                                                      cs, currentType.typeName)
+                                            : ZR_NULL;
+                            if (resourcePrototype == ZR_NULL ||
+                                (resourcePrototype->modifierFlags &
+                                 ZR_DECLARATION_MODIFIER_RESOURCE) == 0u) {
+                                ZrParser_Compiler_Error(
+                                        cs,
+                                        "intoGc() requires a Unique<T> resource owner",
+                                        memberNode->location);
+                                ZrParser_InferredType_Free(cs->state, &currentType);
+                                return ZR_FALSE;
+                            }
+                        }
 
                         ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_OBJECT);
                         ZrParser_InferredType_Copy(cs->state, &nextType, &currentType);
@@ -3207,6 +3225,9 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                             nextType.isNullable = ZR_TRUE;
                         } else {
                             nextType.isNullable = currentType.isNullable;
+                        }
+                        if (ownershipMemberKind == ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC) {
+                            nextType.gcBridgeKind = ZR_GC_BRIDGE_BOX;
                         }
                         nextType.ownershipQualifier =
                                 ZrParser_OwnershipBuiltinResultQualifier(ownershipMemberKind,
@@ -3721,6 +3742,7 @@ static TZrBool type_name_string_append_type(SZrState *state,
                                             TZrSize *writeIndex) {
     TZrChar nestedBuffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
     const TZrChar *ownershipPrefix;
+    const TZrChar *gcBridgePrefix = "";
     const TZrChar *baseName;
 
     if (state == ZR_NULL || type == ZR_NULL || buffer == ZR_NULL || writeIndex == ZR_NULL) {
@@ -3728,12 +3750,22 @@ static TZrBool type_name_string_append_type(SZrState *state,
     }
 
     ownershipPrefix = type_name_string_get_ownership_prefix(type->ownershipQualifier);
+    if (type->gcBridgeKind == ZR_GC_BRIDGE_HANDLE) {
+        gcBridgePrefix = "Gc<";
+    } else if (type->gcBridgeKind == ZR_GC_BRIDGE_BOX) {
+        gcBridgePrefix = "GcBox<";
+    } else if (type->gcBridgeKind != ZR_GC_BRIDGE_NONE) {
+        return ZR_FALSE;
+    }
     baseName = type_name_string_get_base_or_named_type(type);
     if (type->isReadonlyView &&
         !type_name_string_append(buffer, bufferSize, writeIndex, "readonly ")) {
         return ZR_FALSE;
     }
     if (!type_name_string_append(buffer, bufferSize, writeIndex, ownershipPrefix)) {
+        return ZR_FALSE;
+    }
+    if (!type_name_string_append(buffer, bufferSize, writeIndex, gcBridgePrefix)) {
         return ZR_FALSE;
     }
 
@@ -3750,6 +3782,11 @@ static TZrBool type_name_string_append_type(SZrState *state,
             !type_name_string_append(buffer, bufferSize, writeIndex, ">")) {
             return ZR_FALSE;
         }
+    }
+
+    if (type->gcBridgeKind != ZR_GC_BRIDGE_NONE &&
+        !type_name_string_append(buffer, bufferSize, writeIndex, ">")) {
+        return ZR_FALSE;
     }
 
     if (type->isNullable) {

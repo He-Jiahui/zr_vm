@@ -107,10 +107,15 @@ modifier, field ownership qualifier, and canonical inner type identity; it does 
 names or source text. The warning is stored as a persistent semantic diagnostic fact for normal
 query consumers.
 
-## M2 boundary
+## M2-M4 boundary
 
 M2 covers non-atomic process-local Shared/Weak control lifetime, last-strong Drop, many surviving
 Weak handles, repeated upgrades, drop-time upgrade failure, nested owner fields, exception cleanup,
-value parameters, and the first strong-cycle lint. M3 owns compile-time owner borrow/receiver
-rules. M4 owns explicit GC-domain identity, `Gc<T>`/`GcBox<T>`, and removal of the temporary GC
-ignore-registry bridge used to keep resource storage alive.
+value parameters, and the first strong-cycle lint. M3 supplies compile-time owner
+borrow/receiver rules.
+
+M4 binds the control's live resource object to the current `GcDomain` and keeps it alive through
+the same explicit ownership-root table used by direct Unique. Last-strong release clears the
+control and unregisters that root before Drop cleanup. Shared cannot enter the consuming
+`Unique<Resource>.intoGc()` bridge, and Weak remains an observation handle rather than a GC root
+handle. Multi-mutator atomic ownership and cross-domain transfer remain outside this milestone.

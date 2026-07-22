@@ -11,6 +11,7 @@
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/object.h"
@@ -34,6 +35,9 @@ static TZrBool value_has_barrier_object(const SZrTypeValue *value) {
 
 void ZrCore_Value_Barrier(struct SZrState *state, SZrRawObject *object, SZrTypeValue *value) {
     if (!value_has_barrier_object(value)) {
+        return;
+    }
+    if (!ZrCore_GcDomain_ValidateWrite(state, object, value->value.object)) {
         return;
     }
     ZrCore_RawObject_Barrier(state, object, value->value.object);

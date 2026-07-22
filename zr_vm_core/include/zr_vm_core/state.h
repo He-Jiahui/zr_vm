@@ -14,6 +14,7 @@
 struct SZrGlobalState;
 struct SZrFunction;
 struct SZrAotGcRootMap;
+struct SZrGcDomain;
 
 typedef enum EZrVmExceptionHandlerPhase {
     ZR_VM_EXCEPTION_HANDLER_PHASE_TRY = 0,
@@ -55,6 +56,7 @@ struct ZR_STRUCT_ALIGN SZrState {
     SZrRawObject super;
     // reverse pointer to global
     struct SZrGlobalState *global;
+    struct SZrGcDomain *gcDomain;
 
     // SZrRawObject *gcList;
     // thread management

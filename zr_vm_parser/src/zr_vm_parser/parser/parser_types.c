@@ -190,6 +190,12 @@ static TZrBool type_identifier_is_implicit_builtin(SZrString *name) {
     return zr_string_equals_literal(name, "Module");
 }
 
+static TZrBool type_generic_is_gc_bridge_builtin(SZrString *name) {
+    return name != ZR_NULL &&
+           (zr_string_equals_literal(name, "Gc") ||
+            zr_string_equals_literal(name, "GcBox"));
+}
+
 static SZrAstNode *create_task_wrapper_identifier(SZrParserState *ps,
                                                   const TZrChar *name,
                                                   SZrFileRange location) {
@@ -982,6 +988,10 @@ static SZrType *parse_type_internal(SZrParserState *ps, TZrBool noGeneric) {
                         try_get_ownership_generic_qualifier(genericNode->data.genericType.name->name,
                                                             &ownershipQualifier)) {
                         type->ownershipQualifier = ownershipQualifier;
+                        type->isImplicitBuiltinType = ZR_TRUE;
+                    } else if (genericNode->data.genericType.name != ZR_NULL &&
+                               type_generic_is_gc_bridge_builtin(
+                                       genericNode->data.genericType.name->name)) {
                         type->isImplicitBuiltinType = ZR_TRUE;
                     }
                 } else {

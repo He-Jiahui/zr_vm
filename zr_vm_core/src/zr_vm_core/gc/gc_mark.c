@@ -3,6 +3,7 @@
 //
 
 #include "gc/gc_internal.h"
+#include "gc/gc_domain_internal.h"
 
 #include "zr_vm_common/zr_aot_abi.h"
 
@@ -451,6 +452,31 @@ TZrSize garbage_collector_mark_ignored_roots(SZrState *state) {
         work++;
     }
 
+    return work;
+}
+
+TZrSize garbage_collector_mark_domain_roots(SZrState *state) {
+    SZrGcDomain *domain;
+    TZrSize work = 0u;
+
+    if (state == ZR_NULL || state->gcDomain == ZR_NULL) {
+        return 0u;
+    }
+    domain = state->gcDomain;
+    for (TZrSize index = 0u; index < domain->rootLength; index++) {
+        SZrGcDomainRootSlot *slot = &domain->roots[index];
+        SZrRawObject *object = slot->target;
+
+        if (slot->kind == ZR_GC_DOMAIN_ROOT_KIND_FREE ||
+            slot->retainCount == 0u ||
+            !garbage_collector_object_is_markable_root_fast(object) ||
+            object->gcDomainId != domain->identity.id ||
+            object->gcDomainGeneration != domain->identity.generation) {
+            continue;
+        }
+        garbage_collector_mark_object(state, object);
+        work++;
+    }
     return work;
 }
 
@@ -1387,6 +1413,7 @@ ZR_CORE_API TZrSize ZrGarbageCollectorPropagateAll(SZrState *state) {
 
 ZR_CORE_API void ZrGarbageCollectorRestartCollection(SZrState *state) {
     SZrGlobalState *global;
+    SZrRawObject *object;
     SZrRawObject *stateObject;
 
     if (state == ZR_NULL) {
@@ -1401,6 +1428,17 @@ ZR_CORE_API void ZrGarbageCollectorRestartCollection(SZrState *state) {
     global->garbageCollector->waitToScanObjectList = ZR_NULL;
     global->garbageCollector->waitToScanAgainObjectList = ZR_NULL;
     global->garbageCollector->waitToReleaseObjectList = ZR_NULL;
+
+    object = global->garbageCollector->gcObjectList;
+    while (object != ZR_NULL) {
+        SZrRawObject *next = object->next;
+
+        if (object->garbageCollectMark.status ==
+            ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
+            garbage_collector_mark_object(state, object);
+        }
+        object = next;
+    }
 
     stateObject = ZR_CAST_RAW_OBJECT_AS_SUPER(state);
     if (stateObject != ZR_NULL &&
@@ -1425,6 +1463,7 @@ ZR_CORE_API void ZrGarbageCollectorRestartCollection(SZrState *state) {
 
     garbage_collector_mark_string_roots(state);
     garbage_collector_mark_ignored_roots(state);
+    garbage_collector_mark_domain_roots(state);
 
     for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         if (global->basicTypeObjectPrototype[i] != ZR_NULL) {

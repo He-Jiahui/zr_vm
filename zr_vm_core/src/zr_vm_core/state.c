@@ -9,6 +9,7 @@
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/gc.h"
+#include "gc/gc_domain_internal.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/meta.h"
@@ -77,6 +78,10 @@ SZrState *ZrCore_State_New(SZrGlobalState *global) {
 void ZrCore_State_Init(SZrState *state, SZrGlobalState *global) {
     // global
     state->global = global;
+    state->gcDomain = ZR_NULL;
+    if (global != ZR_NULL && global->gcDomain != ZR_NULL) {
+        ZrCore_GcDomain_AttachState(global->gcDomain, state);
+    }
     // stack
     state->stackBase.valuePointer = ZR_NULL;
     state->aotGcRootFrameStack = ZR_NULL;
@@ -185,6 +190,10 @@ void ZrCore_State_Free(SZrGlobalState *global, SZrState *state) {
     // 检查state指针是否在合理范围内（避免访问无效内存）
     if ((TZrPtr)state < (TZrPtr)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND) {
         return;  // 无效指针，不释放
+    }
+
+    if (state->gcDomain != ZR_NULL) {
+        ZrCore_GcDomain_DetachState(state->gcDomain, state);
     }
     
     // 检查stackBase是否有效（在访问之前）

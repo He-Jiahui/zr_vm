@@ -3,6 +3,7 @@
 //
 
 #include "gc/gc_internal.h"
+#include "gc/gc_domain_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1024,6 +1025,7 @@ static TZrSize garbage_collector_restart_minor_collection(SZrState *state) {
 
     work += garbage_collector_mark_string_roots(state);
     work += garbage_collector_mark_ignored_roots(state);
+    work += garbage_collector_mark_domain_roots(state);
 
     for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         work += garbage_collector_mark_minor_root_object(
@@ -1105,6 +1107,28 @@ static TZrSize garbage_collector_rewrite_raw_object_registry(SZrRawObject **item
         }
     }
 
+    return work;
+}
+
+static TZrSize garbage_collector_rewrite_domain_roots(SZrGcDomain *domain) {
+    TZrSize work = 0u;
+
+    if (domain == ZR_NULL || domain->roots == ZR_NULL) {
+        return 0u;
+    }
+    for (TZrSize index = 0u; index < domain->rootLength; index++) {
+        SZrGcDomainRootSlot *slot = &domain->roots[index];
+        SZrRawObject *before;
+
+        if (slot->kind == ZR_GC_DOMAIN_ROOT_KIND_FREE || slot->target == ZR_NULL) {
+            continue;
+        }
+        before = slot->target;
+        garbage_collector_rewrite_raw_object_slot(&slot->target);
+        if (slot->target != before) {
+            work++;
+        }
+    }
     return work;
 }
 
@@ -1971,6 +1995,7 @@ static TZrSize garbage_collector_rewrite_forwarded_roots(SZrState *state) {
                                                               global->garbageCollector->rememberedObjectCount,
                                                               ZR_FALSE);
     }
+    work += garbage_collector_rewrite_domain_roots(global->gcDomain);
 
     /*
      * The caller immediately runs a full gcObjectList rewrite pass after root-slot
@@ -2682,6 +2707,31 @@ static TZrSize garbage_collector_free_minor_from_space(SZrState *state) {
     return work;
 }
 
+TZrSize garbage_collector_prepare_major_collection(SZrState *state) {
+    SZrGarbageCollector *collector;
+    SZrRawObject *object;
+    TZrSize work = 0u;
+
+    if (state == ZR_NULL || state->global == ZR_NULL ||
+        state->global->garbageCollector == ZR_NULL) {
+        return 0u;
+    }
+    collector = state->global->garbageCollector;
+    garbage_collector_clear_forwarding_metadata(collector);
+    object = collector->gcObjectList;
+    while (object != ZR_NULL) {
+        if (object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED &&
+            object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
+            object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
+            object->garbageCollectMark.generation = collector->gcGeneration;
+            object->gcList = ZR_NULL;
+            work++;
+        }
+        object = object->next;
+    }
+    return work;
+}
+
 static TZrSize garbage_collector_run_generational_major_collection(SZrState *state,
                                                                    TZrBool forceCompact,
                                                                    TZrBool *outDidCompact) {
@@ -2697,6 +2747,8 @@ static TZrSize garbage_collector_run_generational_major_collection(SZrState *sta
     if (outDidCompact != ZR_NULL) {
         *outDidCompact = ZR_FALSE;
     }
+
+    work += garbage_collector_prepare_major_collection(state);
 
     collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
     collector->statsSnapshot.collectionPhase = collector->collectionPhase;
@@ -2818,6 +2870,7 @@ TZrSize garbage_collector_atomic(SZrState *state) {
 
     work += garbage_collector_mark_string_roots(state);
     work += garbage_collector_mark_ignored_roots(state);
+    work += garbage_collector_mark_domain_roots(state);
 
     for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         if (global->basicTypeObjectPrototype[i] != ZR_NULL) {
@@ -2891,6 +2944,8 @@ TZrSize garbage_collector_single_step(SZrState *state) {
         case ZR_GARBAGE_COLLECT_RUNNING_STATUS_BEFORE_ATOMIC:
             work = garbage_collector_atomic(state);
             garbage_collector_enter_sweep(state);
+            global->garbageCollector->gcRunningStatus =
+                    ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS;
             global->garbageCollector->managedMemories = global->garbageCollector->managedMemories;
             break;
         case ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS:
@@ -2936,10 +2991,6 @@ TZrBool garbage_collector_is_generational_mode(SZrGlobalState *global) {
 }
 
 void garbage_collector_full_inc(SZrState *state, SZrGlobalState *global) {
-    if (ZrCore_GarbageCollector_IsInvariant(global)) {
-        garbage_collector_enter_sweep(state);
-    }
-
     garbage_collector_run_until_state(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED);
     garbage_collector_run_until_state(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION);
     global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_BEFORE_ATOMIC;

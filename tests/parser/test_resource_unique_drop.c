@@ -5,13 +5,35 @@
 #include "harness/runtime_support.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/closure.h"
+#include "zr_vm_core/gc.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/ownership.h"
+#include "zr_vm_core/stack.h"
+#include "zr_vm_library/aot_runtime.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/semantic.h"
+#include "zr_vm_parser/type_inference.h"
 
 static SZrState *g_state;
+static TZrUInt32 g_gc_box_drop_count;
+static TZrUInt32 g_gc_box_drop_allocation_count;
+
+static TZrInt64 count_gc_box_drop(SZrState *state) {
+    SZrString *dropAllocation =
+            ZrCore_String_CreateFromNative(state, "gc-box-drop-allocation");
+
+    if (dropAllocation != ZR_NULL) {
+        g_gc_box_drop_allocation_count++;
+    }
+    ZrCore_Gc_SafePoint(state);
+    g_gc_box_drop_count++;
+    return 0;
+}
 
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -182,6 +204,224 @@ static void test_resource_unique_uses_direct_owner_without_control_block(void) {
 
     ZrCore_Ownership_ReleaseValue(g_state, &owner);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(owner.type));
+}
+
+static void test_resource_unique_into_gc_box_consumes_owner_and_defers_drop(void) {
+    SZrString *name = ZrCore_String_CreateFromNative(g_state, "GcBoxResource");
+    SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(
+            g_state, name, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    SZrClosureNative *destructor = ZrCore_ClosureNative_New(g_state, 0u);
+    SZrObject *object;
+    SZrTypeValue unique;
+    SZrTypeValue boxed;
+    SZrGcRootHandle keepAlive;
+
+    TEST_ASSERT_NOT_NULL(prototype);
+    TEST_ASSERT_NOT_NULL(destructor);
+    prototype->modifierFlags |= ZR_TYPE_MODIFIER_FLAG_RESOURCE;
+    destructor->nativeFunction = count_gc_box_drop;
+    ZrCore_RawObject_MarkAsPermanent(
+            g_state, ZR_CAST_RAW_OBJECT_AS_SUPER(destructor));
+    ZrCore_ObjectPrototype_AddMeta(
+            g_state,
+            prototype,
+            ZR_META_DESTRUCTOR,
+            ZR_CAST(SZrFunction *, ZR_CAST_RAW_OBJECT_AS_SUPER(destructor)));
+
+    object = ZrCore_Object_New(g_state, prototype);
+    TEST_ASSERT_NOT_NULL(object);
+    ZrCore_Object_Init(g_state, object);
+    ZrCore_Value_ResetAsNull(&unique);
+    ZrCore_Value_ResetAsNull(&boxed);
+    g_gc_box_drop_count = 0u;
+    g_gc_box_drop_allocation_count = 0u;
+
+    TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(
+            g_state, &unique, ZR_CAST_RAW_OBJECT_AS_SUPER(object)));
+    TEST_ASSERT_TRUE(ZrCore_Ownership_IntoGcBoxValue(g_state, &boxed, &unique));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(unique.type));
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_NONE, boxed.ownershipKind);
+    TEST_ASSERT_TRUE(ZrCore_Ownership_IsGcBoxObject(boxed.value.object));
+    TEST_ASSERT_EQUAL_UINT32(
+            0u, (TZrUInt32)ZrCore_GcDomain_GetOwnershipRootCount(g_state));
+    TEST_ASSERT_TRUE(ZrCore_GcRootHandle_Create(
+            g_state, boxed.value.object, &keepAlive));
+
+    ZrCore_Value_ResetAsNull(&boxed);
+    ZrCore_GarbageCollector_GcFull(g_state, ZR_TRUE);
+    TEST_ASSERT_EQUAL_UINT32(0u, g_gc_box_drop_count);
+
+    ZrCore_GcRootHandle_Release(g_state, &keepAlive);
+    TEST_ASSERT_EQUAL_UINT32(
+            0u, (TZrUInt32)ZrCore_GcDomain_GetRootCount(g_state));
+    ZrCore_GarbageCollector_GcFull(g_state, ZR_TRUE);
+    TEST_ASSERT_EQUAL_UINT32(1u, g_gc_box_drop_count);
+    TEST_ASSERT_EQUAL_UINT32(1u, g_gc_box_drop_allocation_count);
+    ZrCore_GarbageCollector_GcFull(g_state, ZR_TRUE);
+    TEST_ASSERT_EQUAL_UINT32(1u, g_gc_box_drop_count);
+    TEST_ASSERT_EQUAL_UINT32(1u, g_gc_box_drop_allocation_count);
+}
+
+static void test_aot_own_detach_consumes_resource_unique_into_gc_box(void) {
+    SZrString *name = ZrCore_String_CreateFromNative(g_state, "AotGcBoxResource");
+    SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(
+            g_state, name, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    SZrObject *object;
+    SZrFunction function;
+    ZrAotGeneratedFrame frame;
+    TZrStackValuePointer slotBase;
+    SZrTypeValue *destination;
+    SZrTypeValue *source;
+
+    TEST_ASSERT_NOT_NULL(prototype);
+    prototype->modifierFlags |= ZR_TYPE_MODIFIER_FLAG_RESOURCE;
+    object = ZrCore_Object_New(g_state, prototype);
+    TEST_ASSERT_NOT_NULL(object);
+    ZrCore_Object_Init(g_state, object);
+
+    slotBase = ZrCore_Function_CheckStackAndGc(
+            g_state, 2u, g_state->stackTop.valuePointer);
+    TEST_ASSERT_NOT_NULL(slotBase);
+    g_state->stackTop.valuePointer = slotBase + 2u;
+    destination = ZrCore_Stack_GetValue(slotBase);
+    source = ZrCore_Stack_GetValue(slotBase + 1u);
+    TEST_ASSERT_NOT_NULL(destination);
+    TEST_ASSERT_NOT_NULL(source);
+    ZrCore_Value_ResetAsNull(destination);
+    ZrCore_Value_ResetAsNull(source);
+    TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(
+            g_state, source, ZR_CAST_RAW_OBJECT_AS_SUPER(object)));
+
+    memset(&function, 0, sizeof(function));
+    memset(&frame, 0, sizeof(frame));
+    frame.function = &function;
+    frame.slotBase = slotBase;
+    frame.generatedFrameSlotCount = 2u;
+
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_OwnDetach(g_state, &frame, 0u, 1u));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(source->type));
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_NONE, destination->ownershipKind);
+    TEST_ASSERT_TRUE(ZrCore_Ownership_IsGcBoxObject(destination->value.object));
+    TEST_ASSERT_EQUAL_UINT32(
+            0u, (TZrUInt32)ZrCore_GcDomain_GetOwnershipRootCount(g_state));
+}
+
+static void test_gc_bridge_types_preserve_canonical_identity(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrInferredType resourceType;
+    TZrTypeId resourceTypeId;
+    TZrTypeId gcHandleTypeId;
+    TZrTypeId gcBoxTypeId;
+    TZrChar display[128];
+    SZrString *resourceName =
+            ZrCore_String_CreateFromNative(g_state, "BridgeResource");
+
+    TEST_ASSERT_NOT_NULL(context);
+    ZrParser_InferredType_InitFull(
+            g_state,
+            &resourceType,
+            ZR_VALUE_TYPE_OBJECT,
+            ZR_FALSE,
+            resourceName);
+    resourceTypeId = ZrParser_CanonicalType_FromInferred(context, &resourceType);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, resourceTypeId);
+
+    resourceType.gcBridgeKind = ZR_GC_BRIDGE_HANDLE;
+    gcHandleTypeId = ZrParser_CanonicalType_FromInferred(context, &resourceType);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, gcHandleTypeId);
+    TEST_ASSERT_NOT_EQUAL(resourceTypeId, gcHandleTypeId);
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            context, gcHandleTypeId, display, sizeof(display)));
+    TEST_ASSERT_EQUAL_STRING("Gc<BridgeResource>", display);
+
+    resourceType.gcBridgeKind = ZR_GC_BRIDGE_BOX;
+    gcBoxTypeId = ZrParser_CanonicalType_FromInferred(context, &resourceType);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, gcBoxTypeId);
+    TEST_ASSERT_NOT_EQUAL(resourceTypeId, gcBoxTypeId);
+    TEST_ASSERT_NOT_EQUAL(gcHandleTypeId, gcBoxTypeId);
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            context, gcBoxTypeId, display, sizeof(display)));
+    TEST_ASSERT_EQUAL_STRING("GcBox<BridgeResource>", display);
+    TEST_ASSERT_EQUAL_STRING(
+            "GcBox<BridgeResource>",
+            ZrParser_TypeNameString_Get(
+                    g_state, &resourceType, display, sizeof(display)));
+
+    ZrParser_InferredType_Free(g_state, &resourceType);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_gc_bridge_surface_enforces_target_worlds(void) {
+    SZrFunction *gcHandle = compile_source(
+            "class Document {}\n"
+            "resource class Request {\n"
+            "  var document: Gc<Document>;\n"
+            "  pub @constructor(document: Gc<Document>) { this.document = document; }\n"
+            "}\n");
+    SZrFunction *gcRejectsResource = compile_source(
+            "resource class Socket {}\n"
+            "accept(value: Gc<Socket>) {}\n");
+    SZrFunction *gcBoxRejectsOrdinaryClass = compile_source(
+            "class Document {}\n"
+            "accept(value: GcBox<Document>) {}\n");
+
+    TEST_ASSERT_NOT_NULL(gcHandle);
+    TEST_ASSERT_NULL(gcRejectsResource);
+    TEST_ASSERT_NULL(gcBoxRejectsOrdinaryClass);
+    ZrCore_Function_Free(g_state, gcHandle);
+}
+
+static void test_resource_unique_into_gc_surface_consumes_owner(void) {
+    SZrFunction *function = compile_source(
+            "resource class BoxedCounter {\n"
+            "  var value: int;\n"
+            "  pub @constructor(value: int) { this.value = value; }\n"
+            "  pub const fn read(): int { return this.value; }\n"
+            "}\n"
+            "run(): int {\n"
+            "  var owner: Unique<BoxedCounter> = own BoxedCounter(9);\n"
+            "  var boxed: GcBox<BoxedCounter> = owner.intoGc();\n"
+            "  return boxed.read();\n"
+            "}\n"
+            "return run();\n");
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(function_contains_opcode_recursive(
+            function, ZR_INSTRUCTION_ENUM(OWN_DETACH), 0U));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(9, result);
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_resource_into_gc_surface_rejects_shared_and_active_borrow(void) {
+    SZrFunction *shared = compile_source(
+            "resource class BoxedCounter {}\n"
+            "var owner: Unique<BoxedCounter> = own BoxedCounter();\n"
+            "var shared = owner.share();\n"
+            "var boxed = shared.intoGc();\n");
+    SZrFunction *activeBorrow = compile_source(
+            "resource class BoxedCounter {\n"
+            "  var value: int;\n"
+            "  pub fn borrowValue(): ref int { return this.value; }\n"
+            "}\n"
+            "run(): int {\n"
+            "  var owner: Unique<BoxedCounter> = own BoxedCounter();\n"
+            "  var view: ref int = owner.borrowValue();\n"
+            "  var boxed = owner.intoGc();\n"
+            "  return view;\n"
+            "}\n"
+            "return run();\n");
+    SZrFunction *useAfterMove = compile_source(
+            "resource class BoxedCounter {}\n"
+            "var owner: Unique<BoxedCounter> = own BoxedCounter();\n"
+            "var boxed = owner.intoGc();\n"
+            "drop(owner);\n");
+
+    TEST_ASSERT_NULL(shared);
+    TEST_ASSERT_NULL(activeBorrow);
+    TEST_ASSERT_NULL(useAfterMove);
 }
 
 static void test_resource_drop_order_move_and_explicit_drop_execute_once(void) {
@@ -388,6 +628,12 @@ int main(void) {
     RUN_TEST(test_resource_construction_world_is_type_directed);
     RUN_TEST(test_resource_contextual_tokens_preserve_identifier_calls);
     RUN_TEST(test_resource_unique_uses_direct_owner_without_control_block);
+    RUN_TEST(test_resource_unique_into_gc_box_consumes_owner_and_defers_drop);
+    RUN_TEST(test_aot_own_detach_consumes_resource_unique_into_gc_box);
+    RUN_TEST(test_gc_bridge_types_preserve_canonical_identity);
+    RUN_TEST(test_gc_bridge_surface_enforces_target_worlds);
+    RUN_TEST(test_resource_unique_into_gc_surface_consumes_owner);
+    RUN_TEST(test_resource_into_gc_surface_rejects_shared_and_active_borrow);
     RUN_TEST(test_resource_drop_order_move_and_explicit_drop_execute_once);
     RUN_TEST(test_resource_nested_fields_drop_in_reverse_declaration_order);
     RUN_TEST(test_resource_partial_construction_and_throw_cleanup_drop_initialized_fields_only);

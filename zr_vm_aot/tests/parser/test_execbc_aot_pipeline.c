@@ -54,6 +54,7 @@ typedef struct {
     TZrChar *libraryPath;
     void *libraryHandle;
     const ZrAotCompiledModule *descriptor;
+    const SZrAotCodeRegistration *codeRegistration;
     SZrFunction *moduleFunction;
     SZrFunction **functionTable;
     TZrUInt32 functionCount;

@@ -48,7 +48,6 @@ void garbage_collector_enter_sweep(SZrState *state) {
     SZrGlobalState *global = state->global;
 
     global->garbageCollector->gcObjectListSweeper = &global->garbageCollector->gcObjectList;
-    global->garbageCollector->gcGeneration = ZR_GC_OTHER_GENERATION(global->garbageCollector);
 }
 
 TZrSize garbage_collector_run_a_few_finalizers(SZrState *state, int maxCount) {

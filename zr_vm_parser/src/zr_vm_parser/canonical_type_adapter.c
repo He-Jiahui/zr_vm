@@ -249,10 +249,47 @@ static TZrTypeId canonical_type_from_tuple_inferred(
     return result;
 }
 
+static TZrTypeId canonical_type_intern_gc_bridge(
+        SZrSemanticContext *context,
+        TZrTypeId targetTypeId,
+        EZrGcBridgeKind bridgeKind) {
+    const TZrChar *bridgeName;
+    SZrString *definitionName;
+    TZrTypeId definitionTypeId;
+
+    if (context == ZR_NULL || targetTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    switch (bridgeKind) {
+        case ZR_GC_BRIDGE_HANDLE:
+            bridgeName = "Gc";
+            break;
+        case ZR_GC_BRIDGE_BOX:
+            bridgeName = "GcBox";
+            break;
+        case ZR_GC_BRIDGE_NONE:
+        default:
+            return ZR_SEMANTIC_ID_INVALID;
+    }
+    definitionName = ZrCore_String_CreateFromNative(
+            context->state, (TZrNativeString)bridgeName);
+    definitionTypeId = ZrParser_CanonicalType_InternNominal(
+            context, ZR_NULL, definitionName, 0u);
+    if (definitionTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return definitionTypeId;
+    }
+    return ZrParser_CanonicalType_InternGenericInstance(
+            context, definitionTypeId, &targetTypeId, 1u);
+}
+
 static TZrTypeId canonical_type_apply_legacy_qualifiers(
         SZrSemanticContext *context,
         const SZrInferredType *type,
         TZrTypeId typeId) {
+    if (type->gcBridgeKind != ZR_GC_BRIDGE_NONE &&
+        type->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
     switch (type->ownershipQualifier) {
         case ZR_OWNERSHIP_QUALIFIER_NONE:
             break;
@@ -273,6 +310,11 @@ static TZrTypeId canonical_type_apply_legacy_qualifiers(
             break;
         default:
             return ZR_SEMANTIC_ID_INVALID;
+    }
+    if (typeId != ZR_SEMANTIC_ID_INVALID &&
+        type->gcBridgeKind != ZR_GC_BRIDGE_NONE) {
+        typeId = canonical_type_intern_gc_bridge(
+                context, typeId, type->gcBridgeKind);
     }
     if (typeId != ZR_SEMANTIC_ID_INVALID && type->isReadonlyView) {
         typeId = ZrParser_CanonicalType_InternReadonlyView(context, typeId);

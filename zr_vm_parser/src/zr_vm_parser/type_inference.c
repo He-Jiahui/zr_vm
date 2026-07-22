@@ -3130,6 +3130,8 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
         TZrTypeId registeredTypeId;
         EZrOwnershipQualifier ownershipGenericQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
         const SZrType *ownershipGenericInnerType = ZR_NULL;
+        EZrGcBridgeKind gcBridgeKind = ZR_GC_BRIDGE_NONE;
+        const SZrType *gcBridgeInnerType = ZR_NULL;
 
         if (genericType->name == ZR_NULL || genericType->name->name == ZR_NULL) {
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
@@ -3154,6 +3156,51 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
                                                        ZR_SEMANTIC_TYPE_KIND_REFERENCE,
                                                        result->typeName,
                                                        astType->name);
+            }
+            return ZR_TRUE;
+        }
+
+        if (ZrParser_AstType_TryUnwrapGcBridgeGeneric(astType,
+                                                      &gcBridgeKind,
+                                                      &gcBridgeInnerType)) {
+            SZrSemanticContext *savedSemanticContext = cs->semanticContext;
+            SZrTypePrototypeInfo *targetPrototype;
+            TZrBool isResourceTarget;
+
+            cs->semanticContext = ZR_NULL;
+            if (!ZrParser_AstTypeToInferredType_Convert(cs, gcBridgeInnerType, result)) {
+                cs->semanticContext = savedSemanticContext;
+                return ZR_FALSE;
+            }
+            cs->semanticContext = savedSemanticContext;
+            targetPrototype = result->typeName != ZR_NULL
+                                      ? find_compiler_type_prototype_inference(
+                                                cs, result->typeName)
+                                      : ZR_NULL;
+            isResourceTarget = targetPrototype != ZR_NULL &&
+                               (targetPrototype->modifierFlags &
+                                ZR_DECLARATION_MODIFIER_RESOURCE) != 0u;
+            if (targetPrototype == ZR_NULL ||
+                targetPrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_CLASS ||
+                (gcBridgeKind == ZR_GC_BRIDGE_HANDLE && isResourceTarget) ||
+                (gcBridgeKind == ZR_GC_BRIDGE_BOX && !isResourceTarget)) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        gcBridgeKind == ZR_GC_BRIDGE_HANDLE
+                                ? "Gc<T> requires a non-resource GC class target"
+                                : "GcBox<T> requires a resource class target",
+                        astType->name->location);
+                ZrParser_InferredType_Free(cs->state, result);
+                return ZR_FALSE;
+            }
+            result->gcBridgeKind = gcBridgeKind;
+            if (cs->semanticContext != ZR_NULL && result->typeName != ZR_NULL) {
+                ZrParser_Semantic_RegisterInferredType(
+                        cs->semanticContext,
+                        result,
+                        ZR_SEMANTIC_TYPE_KIND_REFERENCE,
+                        result->typeName,
+                        astType->name);
             }
             return ZR_TRUE;
         }

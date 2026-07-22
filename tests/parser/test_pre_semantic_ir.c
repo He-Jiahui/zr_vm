@@ -1092,6 +1092,52 @@ static void test_compiler_ownership_lowering_records_explicit_semantic_operation
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_into_gc_semantic_operation_preserves_source_place_identity(void) {
+    SZrSemanticIrFunction function;
+    SZrParserPlaceBase base;
+    SZrSemanticIrInstructionSpec spec;
+    TZrPlaceId placeId;
+    TZrValueId sourceValueId;
+    TZrValueId resultValueId;
+    TZrSemanticInstructionId instructionId;
+    const SZrSemanticIrInstruction *instruction;
+
+    ZrParser_SemanticIrFunction_Init(g_state, &function, 41u, 42u);
+    memset(&base, 0, sizeof(base));
+    base.kind = ZR_PARSER_PLACE_BASE_LOCAL;
+    base.identity = 701u;
+    placeId = ZrParser_SemanticIr_AddLocal(
+            &function, 701u, &base, 5u, empty_range(), ZR_FALSE);
+    sourceValueId = ZrParser_SemanticIr_AddValue(
+            &function, 5u, empty_range());
+    resultValueId = ZrParser_SemanticIr_AddValue(
+            &function, 5u, empty_range());
+    TEST_ASSERT_NOT_EQUAL(ZR_PLACE_ID_INVALID, placeId);
+    TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, sourceValueId);
+    TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, resultValueId);
+
+    spec = instruction_spec(
+            ZR_SEMANTIC_IR_OWN_CONSTRUCT,
+            placeId,
+            sourceValueId,
+            resultValueId,
+            5u);
+    spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX;
+    instructionId = emit_instruction(&function, spec);
+    TEST_ASSERT_TRUE(ZrParser_SemanticIr_Validate(&function));
+    instruction = ZrParser_SemanticIr_InstructionAt(
+            &function, (TZrSize)instructionId - 1u);
+    TEST_ASSERT_NOT_NULL(instruction);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX,
+            instruction->ownershipOperation);
+    TEST_ASSERT_EQUAL_UINT32(placeId, instruction->placeId);
+    TEST_ASSERT_EQUAL_UINT32(sourceValueId, instruction->valueId);
+    TEST_ASSERT_EQUAL_UINT32(resultValueId, instruction->resultValueId);
+
+    ZrParser_SemanticIrFunction_Free(g_state, &function);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_pre_semantic_ir_opcode_golden_covers_supported_families);
@@ -1104,5 +1150,6 @@ int main(void) {
     RUN_TEST(test_place_load_extends_stored_loan_liveness_across_exclusive_access);
     RUN_TEST(test_joined_mutable_loans_end_after_conservative_path_conflict);
     RUN_TEST(test_compiler_ownership_lowering_records_explicit_semantic_operation);
+    RUN_TEST(test_into_gc_semantic_operation_preserves_source_place_identity);
     return UNITY_END();
 }

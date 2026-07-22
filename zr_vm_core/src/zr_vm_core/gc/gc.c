@@ -634,10 +634,11 @@ void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
     ZR_ASSERT(!collector->isImmediateGcFlag);
     collector->isImmediateGcFlag = isImmediate;
     if (collector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL) {
-        work = garbage_collector_run_generational_full(state);
+        work += garbage_collector_run_generational_full(state);
     } else {
+        work += garbage_collector_prepare_major_collection(state);
         garbage_collector_full_inc(state, global);
-        work = collector->gcLastStepWork;
+        work += collector->gcLastStepWork;
     }
     collector->isImmediateGcFlag = ZR_FALSE;
     collector->scheduledCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
@@ -913,7 +914,8 @@ void ZrCore_GarbageCollector_CheckGc(SZrState *state) {
         ZrCore_GarbageCollector_GcStep(state);
     }
 #if defined(ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST)
-    if (collector->gcStatus == ZR_GARBAGE_COLLECT_STATUS_RUNNING) {
+    if (collector->gcStatus == ZR_GARBAGE_COLLECT_STATUS_RUNNING &&
+        !collector->isImmediateGcFlag) {
         ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
     }
 #endif

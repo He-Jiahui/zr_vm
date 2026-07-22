@@ -149,6 +149,23 @@ static void test_resource_share_creates_one_non_atomic_control_block(void) {
     ZrCore_Ownership_ReleaseValue(g_state, &shared);
 }
 
+static void test_resource_shared_cannot_be_converted_into_gc_box(void) {
+    SZrObject *object = create_resource_object();
+    SZrTypeValue unique;
+    SZrTypeValue shared;
+    SZrTypeValue boxed;
+
+    init_direct_unique(object, &unique);
+    ZrCore_Value_ResetAsNull(&shared);
+    ZrCore_Value_ResetAsNull(&boxed);
+    TEST_ASSERT_TRUE(ZrCore_Ownership_ShareValue(g_state, &shared, &unique));
+    TEST_ASSERT_FALSE(ZrCore_Ownership_IntoGcBoxValue(g_state, &boxed, &shared));
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_SHARED, shared.ownershipKind);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(boxed.type));
+
+    ZrCore_Ownership_ReleaseValue(g_state, &shared);
+}
+
 static void test_shared_clone_and_repeated_upgrade_account_strong_refs(void) {
     SZrObject *object = create_resource_object();
     SZrTypeValue unique;
@@ -457,6 +474,7 @@ static void test_resource_shared_field_cycles_publish_process_local_lints(void) 
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_resource_share_creates_one_non_atomic_control_block);
+    RUN_TEST(test_resource_shared_cannot_be_converted_into_gc_box);
     RUN_TEST(test_shared_clone_and_repeated_upgrade_account_strong_refs);
     RUN_TEST(test_many_weak_handles_survive_final_strong_and_upgrade_to_none);
     RUN_TEST(test_shared_and_weak_reject_a_different_isolation_domain);

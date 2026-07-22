@@ -387,7 +387,8 @@ ZR_FORCE_INLINE TZrBool ZrCore_RawObject_IsReleased(SZrRawObject *object) {
 }
 
 ZR_FORCE_INLINE TZrBool ZrCore_Gc_RawObjectIsDead(struct SZrGlobalState *global, SZrRawObject *object) {
-    return global->garbageCollector->gcGeneration != object->garbageCollectMark.generation;
+    return object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED &&
+           global->garbageCollector->gcGeneration != object->garbageCollectMark.generation;
 }
 
 ZR_FORCE_INLINE TZrBool ZrCore_RawObject_IsGenerationalThroughBarrier(SZrRawObject *object) {

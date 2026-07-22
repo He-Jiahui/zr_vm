@@ -466,11 +466,13 @@ TZrBool garbage_collector_is_generational_mode(SZrGlobalState *global);
 void garbage_collector_full_inc(SZrState *state, SZrGlobalState *global);
 TZrBool gcrunning(SZrGlobalState *global);
 void garbage_collector_run_generational_step(SZrState *state);
+TZrSize garbage_collector_prepare_major_collection(SZrState *state);
 
 void garbage_collector_mark_object(SZrState *state, SZrRawObject *object);
 void garbage_collector_mark_value(SZrState *state, SZrTypeValue *value);
 TZrSize garbage_collector_mark_string_roots(SZrState *state);
 TZrSize garbage_collector_mark_ignored_roots(SZrState *state);
+TZrSize garbage_collector_mark_domain_roots(SZrState *state);
 void garbage_collector_link_to_gray_list(SZrRawObject *object, SZrRawObject **list);
 void garbage_collector_to_gc_list_and_mark_wait_to_scan(SZrRawObject *object, SZrRawObject **list);
 
@@ -571,6 +573,28 @@ static ZR_FORCE_INLINE TZrBool garbage_collector_try_mark_object_during_minor_fa
     return ZR_TRUE;
 }
 
+static ZR_FORCE_INLINE TZrBool garbage_collector_try_mark_permanent_object_fast(
+        SZrGarbageCollector *collector,
+        TZrBool minorActive,
+        SZrRawObject *object) {
+    if (minorActive ||
+        collector == ZR_NULL ||
+        object == ZR_NULL ||
+        object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
+        return ZR_FALSE;
+    }
+    if (object->garbageCollectMark.generation == collector->gcGeneration) {
+        return ZR_TRUE;
+    }
+
+    object->garbageCollectMark.generation = collector->gcGeneration;
+    if (object->type != ZR_RAW_OBJECT_TYPE_STRING) {
+        object->gcList = collector->waitToScanObjectList;
+        collector->waitToScanObjectList = object;
+    }
+    return ZR_TRUE;
+}
+
 static ZR_FORCE_INLINE void garbage_collector_mark_raw_object_internal(
         SZrState *state,
         SZrRawObject *object,
@@ -588,6 +612,9 @@ static ZR_FORCE_INLINE void garbage_collector_mark_raw_object_internal(
         return;
     }
     if (garbage_collector_try_mark_object_during_minor_fast(collector, minorActive, object)) {
+        return;
+    }
+    if (garbage_collector_try_mark_permanent_object_fast(collector, minorActive, object)) {
         return;
     }
     if (stampYoungMinorEpoch &&

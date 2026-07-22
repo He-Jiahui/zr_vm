@@ -24,6 +24,20 @@
 
 允许消除配对retain/release、证明无逃逸的短生命周期分配、冗余barrier和bounds check，但证明必须来自共享facts并在debug verifier中可关闭。Weak upgrade、external native pointer和动态cast不能凭惯例删除检查。
 
+## Syntax 04 M4 已落地基线
+
+- `Gc<T>` / `GcBox<T>` 使用独立 canonical bridge kind，不复用 ownership qualifier。
+- `Unique<Resource>.intoGc()` 在 SemIR 中保留 source Place，并以
+  `ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX` 表示消费；active loan 和 Shared 输入在 frontend
+  被拒绝。
+- ExecBC 继续使用稳定 `OWN_DETACH` 槽，但 VM helper 优先执行
+  `ZrCore_Ownership_IntoGcBoxValue`。C/LLVM AOT 共用的 OwnDetach runtime helper按同一顺序先
+  尝试 IntoGcBox，再进入 legacy Detach；合同测试精确验证 helper 定义、调用与顺序。
+- 单 mutator runtime 通过 domain root slot 追踪 host `SZrGcRootHandle` 与 ownership roots，
+  minor/major/compact rewrite 更新 slot target。AOT 不得把它降级为 hidden ignore set。
+- 当前不宣称完整 source `Gc<T>` constructor、AOT stack-map schema、多 mutator safepoint
+  handshake 或跨 domain transport；这些仍由后续里程碑提供。
+
 ## 验收
 
 压力测试覆盖branch/loop/throw中的owner、partial construction、shared cycle policy、GC compaction、pin/unpin、pool deferred reuse和callback异常。profile分别报告allocation、scan bytes、barrier、retain/release与Drop，不混成单一“内存性能”。

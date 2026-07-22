@@ -25,11 +25,16 @@ struct ZR_STRUCT_ALIGN SZrRawObject {
     struct SZrRawObject *next;
     EZrRawObjectType type;
     TZrBool isNative;
+    TZrBool isGcBox;
     TZrUInt8 resourceLifecycleState;
     SZrGarbageCollectionObjectMark garbageCollectMark;
     struct SZrRawObject *gcList;
     FRawObjectScanMarkGc scanMarkGcFunction;
     struct SZrOwnershipControl *ownershipControl;
+    TZrUInt64 gcDomainId;
+    TZrUInt32 gcDomainGeneration;
+    TZrUInt32 ownershipRootIndex;
+    TZrUInt32 ownershipRootGeneration;
     // default hash value is the address of the object
     TZrUInt64 hash;
 };
@@ -40,6 +45,7 @@ ZR_FORCE_INLINE void ZrCore_RawObject_Construct(SZrRawObject *super, EZrRawObjec
     super->next = ZR_NULL;
     super->type = type;
     super->isNative = ZR_FALSE;
+    super->isGcBox = ZR_FALSE;
     super->resourceLifecycleState = ZR_RESOURCE_LIFECYCLE_NONE;
     super->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
     super->garbageCollectMark.generationalStatus = ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW;
@@ -62,6 +68,10 @@ ZR_FORCE_INLINE void ZrCore_RawObject_Construct(SZrRawObject *super, EZrRawObjec
     super->gcList = ZR_NULL;
     super->scanMarkGcFunction = ZR_NULL;
     super->ownershipControl = ZR_NULL;
+    super->gcDomainId = 0u;
+    super->gcDomainGeneration = 0u;
+    super->ownershipRootIndex = ~(TZrUInt32)0u;
+    super->ownershipRootGeneration = 0u;
     // because of the alignment, the hash value should be address / ZR_ALIGN_SIZE
     super->hash = ((TZrUInt64) &super) / ZR_ALIGN_SIZE;
 }

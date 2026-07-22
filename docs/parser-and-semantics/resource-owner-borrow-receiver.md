@@ -120,5 +120,12 @@ conflicts, and the no-later-use boundary.
 ## Milestone Boundary
 
 M3 completes compile-time owner reborrow and direct receiver enforcement. It does
-not introduce `GcDomain`, `Gc<T>`, `GcBox<T>`, cross-domain write rules, or the
-no-hidden-ignore-registry bridge. Those remain Syntax 04 M4 and later work.
+not add a runtime borrow table. Syntax 04 M4 consumes its canonical Place/LoanId
+facts for `Unique<Resource>.intoGc()`: the operation is an exclusive owner
+consumption, is rejected while an overlapping loan is live, and leaves the source
+Place moved.
+
+M4 also adds `GcDomain`, canonical `Gc<T>` / `GcBox<T>` bridge kinds, explicit
+ownership roots, and cross-domain write rejection. It does not widen the M3
+receiver proof or infer a bridge from member spelling. Multi-mutator handoff and
+cross-domain transport remain M5/M6 work.

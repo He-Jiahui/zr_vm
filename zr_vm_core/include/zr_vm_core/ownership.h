@@ -71,6 +71,12 @@ ZR_CORE_API TZrBool ZrCore_Ownership_ReturnToGcValue(struct SZrState *state,
                                                      SZrTypeValue *destination,
                                                      SZrTypeValue *source);
 
+ZR_CORE_API TZrBool ZrCore_Ownership_IntoGcBoxValue(struct SZrState *state,
+                                                    SZrTypeValue *destination,
+                                                    SZrTypeValue *source);
+
+ZR_CORE_API TZrBool ZrCore_Ownership_IsGcBoxObject(const struct SZrRawObject *object);
+
 ZR_CORE_API void ZrCore_Ownership_ReleaseValue(struct SZrState *state, SZrTypeValue *value);
 
 ZR_CORE_API TZrUInt32 ZrCore_Ownership_GetStrongRefCount(struct SZrRawObject *object);
