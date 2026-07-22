@@ -868,6 +868,126 @@ static void test_source_canonical_type_and_binary_import_share_type_id_and_publi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_domain_transfer_contract_roundtrips_as_independent_artifact_schema(void) {
+    SZrArtifactTestFixture fixture;
+    SZrArtifactDomainTransferRow rows[5];
+    SZrArtifactDomainTransferRow decoded;
+    SZrArtifactSectionInput sections[9];
+    SZrArtifactView view;
+    SZrArtifactSectionView section;
+    SZrArtifactDiagnostic diagnostic;
+    TZrByte buffer[4096];
+    TZrSize writtenSize = 0u;
+
+    init_fixture(&fixture, ZR_ARTIFACT_KIND_ZRO);
+    memset(rows, 0, sizeof(rows));
+    rows[0].typeToken = ZR_METADATA_TOKEN_MAKE(
+            ZR_METADATA_TABLE_TYPE_DEF, 1u);
+    rows[0].kind = ZR_ARTIFACT_DOMAIN_TRANSFER_FORBIDDEN;
+    rows[1].typeToken = ZR_METADATA_TOKEN_MAKE(
+            ZR_METADATA_TABLE_TYPE_DEF, 2u);
+    rows[1].kind = ZR_ARTIFACT_DOMAIN_TRANSFER_VALUE_COPY;
+    rows[1].schemaVersion = 2u;
+    rows[1].schemaHash = UINT64_C(0x0102030405060708);
+    rows[2].typeToken = ZR_METADATA_TOKEN_MAKE(
+            ZR_METADATA_TABLE_TYPE_DEF, 3u);
+    rows[2].kind = ZR_ARTIFACT_DOMAIN_TRANSFER_STRUCTURED_CLONE;
+    rows[2].schemaVersion = 3u;
+    rows[2].flags = ZR_ARTIFACT_DOMAIN_TRANSFER_FLAG_DROP_ON_FAILURE;
+    rows[2].schemaOffset = 0u;
+    rows[2].schemaLength = fixture.signatureLength;
+    rows[2].schemaHash = UINT64_C(0x1020304050607080);
+    rows[3].typeToken = ZR_METADATA_TOKEN_MAKE(
+            ZR_METADATA_TABLE_TYPE_DEF, 4u);
+    rows[3].kind = ZR_ARTIFACT_DOMAIN_TRANSFER_IMMUTABLE_HANDLE;
+    rows[3].schemaVersion = 1u;
+    rows[3].schemaHash = UINT64_C(0x1111222233334444);
+    rows[3].providerToken = TEST_MEMBER_TOKEN;
+    rows[3].providerContractHash = UINT64_C(0x5555666677778888);
+    rows[4].typeToken = ZR_METADATA_TOKEN_MAKE(
+            ZR_METADATA_TABLE_TYPE_DEF, 5u);
+    rows[4].kind = ZR_ARTIFACT_DOMAIN_TRANSFER_RESOURCE_MOVE;
+    rows[4].schemaVersion = 1u;
+    rows[4].flags = ZR_ARTIFACT_DOMAIN_TRANSFER_FLAG_DROP_ON_FAILURE;
+    rows[4].schemaHash = UINT64_C(0x9999aaaabbbbcccc);
+    rows[4].providerToken = TEST_CONSTRUCTOR_TOKEN;
+    rows[4].providerContractHash = UINT64_C(0xddddeeeeffff0001);
+
+    memcpy(sections,
+           fixture.document.sections,
+           fixture.document.sectionCount * sizeof(sections[0]));
+    sections[fixture.document.sectionCount] = (SZrArtifactSectionInput){
+            ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE,
+            ZR_ARTIFACT_SECTION_FLAG_MANDATORY,
+            (TZrUInt32)ZR_ARRAY_COUNT(rows),
+            rows};
+    fixture.document.sections = sections;
+    fixture.document.sectionCount++;
+
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_Write(
+                    &fixture.document,
+                    buffer,
+                    sizeof(buffer),
+                    &writtenSize,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_Read(buffer, writtenSize, &view, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_FindSection(
+                    &view,
+                    ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE,
+                    &section,
+                    &diagnostic));
+    for (TZrUInt32 index = 0u; index < ZR_ARRAY_COUNT(rows); index++) {
+        TEST_ASSERT_EQUAL_INT(
+                ZR_ARTIFACT_STATUS_OK,
+                ZrCore_Artifact_ReadDomainTransferRow(
+                        &section, index, &decoded, &diagnostic));
+        TEST_ASSERT_EQUAL_UINT32(rows[index].typeToken, decoded.typeToken);
+        TEST_ASSERT_EQUAL_INT(rows[index].kind, decoded.kind);
+        TEST_ASSERT_EQUAL_UINT32(
+                rows[index].schemaVersion, decoded.schemaVersion);
+        TEST_ASSERT_EQUAL_UINT32(rows[index].flags, decoded.flags);
+        TEST_ASSERT_EQUAL_UINT32(
+                rows[index].schemaOffset, decoded.schemaOffset);
+        TEST_ASSERT_EQUAL_UINT32(
+                rows[index].schemaLength, decoded.schemaLength);
+        TEST_ASSERT_EQUAL_UINT64(rows[index].schemaHash, decoded.schemaHash);
+        TEST_ASSERT_EQUAL_UINT32(
+                rows[index].providerToken, decoded.providerToken);
+        TEST_ASSERT_EQUAL_UINT64(
+                rows[index].providerContractHash,
+                decoded.providerContractHash);
+    }
+
+    rows[4].typeToken = rows[3].typeToken;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+            ZrCore_Artifact_GetEncodedSize(
+                    &fixture.document, &writtenSize, &diagnostic));
+    rows[4].typeToken = ZR_METADATA_TOKEN_MAKE(
+            ZR_METADATA_TABLE_TYPE_DEF, 5u);
+    rows[4].providerToken = 0u;
+    rows[4].providerContractHash = 0u;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+            ZrCore_Artifact_GetEncodedSize(
+                    &fixture.document, &writtenSize, &diagnostic));
+    rows[4].kind = ZR_ARTIFACT_DOMAIN_TRANSFER_VALUE_COPY;
+    rows[4].schemaVersion = 1u;
+    rows[4].schemaHash = UINT64_C(0x9999aaaabbbbcccc);
+    rows[4].schemaOffset = fixture.signatureLength + 1u;
+    rows[4].schemaLength = 0u;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+            ZrCore_Artifact_GetEncodedSize(
+                    &fixture.document, &writtenSize, &diagnostic));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_zro_roundtrips_fixed_width_public_contract_sections);
@@ -883,5 +1003,6 @@ int main(void) {
     RUN_TEST(test_member_property_and_relocation_contracts_validate_tokens_and_code_bounds);
     RUN_TEST(test_source_canonical_type_and_binary_import_share_type_id_and_public_contract);
     RUN_TEST(test_real_source_compile_and_binary_signature_import_are_identical);
+    RUN_TEST(test_domain_transfer_contract_roundtrips_as_independent_artifact_schema);
     return UNITY_END();
 }

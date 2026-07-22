@@ -12,7 +12,7 @@
 
 struct SZrState;
 
-#define ZR_TYPE_LAYOUT_SCHEMA_VERSION ((TZrUInt32)1u)
+#define ZR_TYPE_LAYOUT_SCHEMA_VERSION ((TZrUInt32)2u)
 
 typedef enum EZrTypeLayoutKind {
     ZR_TYPE_LAYOUT_KIND_VALUE = 0,
@@ -40,6 +40,14 @@ typedef enum EZrTypeLayoutGcScanKind {
     ZR_TYPE_LAYOUT_GC_SCAN_MAPPED = 1,
     ZR_TYPE_LAYOUT_GC_SCAN_BARRIERED = 2
 } EZrTypeLayoutGcScanKind;
+
+typedef enum EZrDomainTransferKind {
+    ZR_DOMAIN_TRANSFER_KIND_FORBIDDEN = 0,
+    ZR_DOMAIN_TRANSFER_KIND_VALUE_COPY = 1,
+    ZR_DOMAIN_TRANSFER_KIND_STRUCTURED_CLONE = 2,
+    ZR_DOMAIN_TRANSFER_KIND_IMMUTABLE_HANDLE = 3,
+    ZR_DOMAIN_TRANSFER_KIND_RESOURCE_MOVE = 4
+} EZrDomainTransferKind;
 
 typedef enum EZrTypeLayoutFieldFlags {
     ZR_TYPE_LAYOUT_FIELD_FLAG_NONE = 0,
@@ -77,6 +85,12 @@ typedef struct SZrTypeLayoutContract {
     TZrUInt32 ownershipFieldCount;
     const TZrUInt32 *refFieldOffsets;
     TZrUInt32 refFieldCount;
+    TZrBool hasDomainTransferContract;
+    EZrDomainTransferKind domainTransferKind;
+    TZrUInt32 domainTransferSchemaVersion;
+    TZrUInt64 domainTransferSchemaHash;
+    TZrUInt32 domainTransferProviderToken;
+    TZrUInt64 domainTransferProviderContractHash;
     FZrTypeLayoutCustomDrop customDrop;
     TZrPtr customDropUserData;
 } SZrTypeLayoutContract;
@@ -96,12 +110,16 @@ typedef struct SZrTypeLayout {
     TZrUInt32 tagOffset;
     TZrUInt32 tagSize;
     TZrBool blittable;
-    TZrUInt8 reserved1;
+    TZrUInt8 domainTransferKind;
     TZrUInt8 reserved2;
     TZrUInt8 reserved3;
     TZrUInt32 cTypeId;
     TZrUInt32 layoutVersion;
+    TZrUInt32 domainTransferSchemaVersion;
+    TZrUInt32 domainTransferProviderToken;
     TZrUInt64 layoutHash;
+    TZrUInt64 domainTransferSchemaHash;
+    TZrUInt64 domainTransferProviderContractHash;
     const TZrUInt32 *gcFieldOffsets;
     const TZrUInt32 *ownershipFieldOffsets;
     const TZrUInt32 *refFieldOffsets;

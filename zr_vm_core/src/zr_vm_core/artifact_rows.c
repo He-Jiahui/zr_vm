@@ -77,6 +77,21 @@ static void artifact_write_layout_row(TZrByte *bytes, const SZrArtifactLayoutRow
     zr_artifact_write_u64(bytes + 40u, row->stableSlotContractHash);
 }
 
+static void artifact_write_domain_transfer_row(
+        TZrByte *bytes,
+        const SZrArtifactDomainTransferRow *row) {
+    zr_artifact_write_u32(bytes + 0u, row->typeToken);
+    zr_artifact_write_u32(bytes + 4u, (TZrUInt32)row->kind);
+    zr_artifact_write_u32(bytes + 8u, row->schemaVersion);
+    zr_artifact_write_u32(bytes + 12u, row->flags);
+    zr_artifact_write_u32(bytes + 16u, row->schemaOffset);
+    zr_artifact_write_u32(bytes + 20u, row->schemaLength);
+    zr_artifact_write_u32(bytes + 24u, row->providerToken);
+    zr_artifact_write_u32(bytes + 28u, 0u);
+    zr_artifact_write_u64(bytes + 32u, row->schemaHash);
+    zr_artifact_write_u64(bytes + 40u, row->providerContractHash);
+}
+
 static void artifact_write_relocation_row(TZrByte *bytes, const SZrArtifactRelocationRow *row) {
     zr_artifact_write_u32(bytes + 0u, row->codeOffset);
     zr_artifact_write_u32(bytes + 4u, row->kind);
@@ -122,6 +137,12 @@ void zr_artifact_write_section_payload(TZrByte *bytes, const SZrArtifactSectionI
             for (index = 0u; index < section->elementCount; ++index)
                 artifact_write_layout_row(bytes + (TZrSize)index * elementSize,
                                           &((const SZrArtifactLayoutRow *)section->data)[index]);
+            break;
+        case ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE:
+            for (index = 0u; index < section->elementCount; ++index)
+                artifact_write_domain_transfer_row(
+                        bytes + (TZrSize)index * elementSize,
+                        &((const SZrArtifactDomainTransferRow *)section->data)[index]);
             break;
         case ZR_ARTIFACT_SECTION_RELOCATION_BINDING_TABLE:
             for (index = 0u; index < section->elementCount; ++index)
@@ -288,6 +309,44 @@ EZrArtifactStatus ZrCore_Artifact_ReadLayoutRow(const SZrArtifactSectionView *se
     outRow->ownershipMapLength = zr_artifact_read_u32(bytes + 28u);
     outRow->layoutHash = zr_artifact_read_u64(bytes + 32u);
     outRow->stableSlotContractHash = zr_artifact_read_u64(bytes + 40u);
+    return ZR_ARTIFACT_STATUS_OK;
+}
+
+EZrArtifactStatus ZrCore_Artifact_ReadDomainTransferRow(
+        const SZrArtifactSectionView *section,
+        TZrUInt32 rowIndex,
+        SZrArtifactDomainTransferRow *outRow,
+        SZrArtifactDiagnostic *diagnostic) {
+    const TZrByte *bytes;
+    EZrArtifactStatus status;
+
+    if (outRow == ZR_NULL) {
+        return zr_artifact_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_ARGUMENT,
+                0u,
+                rowIndex,
+                0u);
+    }
+    status = artifact_get_row_bytes(
+            section,
+            rowIndex,
+            ZR_ARTIFACT_DOMAIN_TRANSFER_ROW_ENCODED_SIZE,
+            &bytes,
+            diagnostic);
+    if (status != ZR_ARTIFACT_STATUS_OK) {
+        return status;
+    }
+    memset(outRow, 0, sizeof(*outRow));
+    outRow->typeToken = zr_artifact_read_u32(bytes + 0u);
+    outRow->kind = (EZrArtifactDomainTransferKind)zr_artifact_read_u32(bytes + 4u);
+    outRow->schemaVersion = zr_artifact_read_u32(bytes + 8u);
+    outRow->flags = zr_artifact_read_u32(bytes + 12u);
+    outRow->schemaOffset = zr_artifact_read_u32(bytes + 16u);
+    outRow->schemaLength = zr_artifact_read_u32(bytes + 20u);
+    outRow->providerToken = zr_artifact_read_u32(bytes + 24u);
+    outRow->schemaHash = zr_artifact_read_u64(bytes + 32u);
+    outRow->providerContractHash = zr_artifact_read_u64(bytes + 40u);
     return ZR_ARTIFACT_STATUS_OK;
 }
 

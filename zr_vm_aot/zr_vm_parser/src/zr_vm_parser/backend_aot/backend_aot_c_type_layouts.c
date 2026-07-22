@@ -1000,11 +1000,13 @@ static void backend_aot_c_type_layout_write_runtime_descriptor(FILE *file,
             "    .tagOffset = %uu,\n"
             "    .tagSize = %uu,\n"
             "    .blittable = %s,\n"
-            "    .reserved1 = %uu,\n"
+            "    .domainTransferKind = %uu,\n"
             "    .reserved2 = %uu,\n"
             "    .reserved3 = %uu,\n"
             "    .cTypeId = %uu,\n"
             "    .layoutVersion = %uu,\n"
+            "    .domainTransferSchemaVersion = %uu,\n"
+            "    .domainTransferProviderToken = %uu,\n"
             "    .layoutHash = %lluULL,\n",
             (unsigned)typeLayout->fieldCount,
             (unsigned)typeLayout->gcFieldCount,
@@ -1013,12 +1015,19 @@ static void backend_aot_c_type_layout_write_runtime_descriptor(FILE *file,
             (unsigned)typeLayout->tagOffset,
             (unsigned)typeLayout->tagSize,
             typeLayout->blittable ? "ZR_TRUE" : "ZR_FALSE",
-            (unsigned)typeLayout->reserved1,
+            (unsigned)typeLayout->domainTransferKind,
             (unsigned)typeLayout->reserved2,
             (unsigned)typeLayout->reserved3,
             (unsigned)typeLayoutId,
             (unsigned)typeLayout->layoutVersion,
+            (unsigned)typeLayout->domainTransferSchemaVersion,
+            (unsigned)typeLayout->domainTransferProviderToken,
             (unsigned long long)typeLayout->layoutHash);
+    fprintf(file,
+            "    .domainTransferSchemaHash = %lluULL,\n"
+            "    .domainTransferProviderContractHash = %lluULL,\n",
+            (unsigned long long)typeLayout->domainTransferSchemaHash,
+            (unsigned long long)typeLayout->domainTransferProviderContractHash);
     if (backend_aot_c_type_layout_can_emit_gc_descriptor(typeLayout)) {
         fprintf(file, "    .gcFieldOffsets = ZrGcOffsets_%u,\n", (unsigned)typeLayoutId);
     } else {

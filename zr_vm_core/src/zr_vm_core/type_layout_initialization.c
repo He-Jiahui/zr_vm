@@ -39,6 +39,8 @@ static TZrBool type_layout_is_blittable(EZrTypeLayoutCopyKind copyKind,
 
 static void type_layout_apply_contract(SZrTypeLayout *layout,
                                        const SZrTypeLayoutContract *contract) {
+    TZrBool hasExplicitDomainTransfer;
+
     if (layout == ZR_NULL) {
         return;
     }
@@ -53,6 +55,32 @@ static void type_layout_apply_contract(SZrTypeLayout *layout,
     layout->gcFieldOffsets = contract != ZR_NULL ? contract->gcFieldOffsets : ZR_NULL;
     layout->ownershipFieldOffsets = contract != ZR_NULL ? contract->ownershipFieldOffsets : ZR_NULL;
     layout->refFieldOffsets = contract != ZR_NULL ? contract->refFieldOffsets : ZR_NULL;
+    hasExplicitDomainTransfer = (TZrBool)(
+            contract != ZR_NULL && contract->hasDomainTransferContract);
+    if (hasExplicitDomainTransfer) {
+        layout->domainTransferKind = (TZrUInt8)contract->domainTransferKind;
+        layout->domainTransferSchemaVersion =
+                contract->domainTransferSchemaVersion;
+        layout->domainTransferSchemaHash = contract->domainTransferSchemaHash;
+        layout->domainTransferProviderToken =
+                contract->domainTransferProviderToken;
+        layout->domainTransferProviderContractHash =
+                contract->domainTransferProviderContractHash;
+    } else if (layout->blittable) {
+        layout->domainTransferKind =
+                (TZrUInt8)ZR_DOMAIN_TRANSFER_KIND_VALUE_COPY;
+        layout->domainTransferSchemaVersion = ZR_TYPE_LAYOUT_SCHEMA_VERSION;
+        layout->domainTransferSchemaHash = 0u;
+        layout->domainTransferProviderToken = 0u;
+        layout->domainTransferProviderContractHash = 0u;
+    } else {
+        layout->domainTransferKind =
+                (TZrUInt8)ZR_DOMAIN_TRANSFER_KIND_FORBIDDEN;
+        layout->domainTransferSchemaVersion = 0u;
+        layout->domainTransferSchemaHash = 0u;
+        layout->domainTransferProviderToken = 0u;
+        layout->domainTransferProviderContractHash = 0u;
+    }
     layout->customDrop = contract != ZR_NULL ? contract->customDrop : ZR_NULL;
     layout->customDropUserData = contract != ZR_NULL ? contract->customDropUserData : ZR_NULL;
 }
@@ -161,11 +189,15 @@ void ZrCore_TypeLayout_InitValue(SZrTypeLayout *layout) {
     layout->tagOffset = 0u;
     layout->tagSize = 0u;
     layout->blittable = ZR_FALSE;
-    layout->reserved1 = 0u;
+    layout->domainTransferKind = (TZrUInt8)ZR_DOMAIN_TRANSFER_KIND_FORBIDDEN;
     layout->reserved2 = 0u;
     layout->reserved3 = 0u;
     layout->cTypeId = 0u;
     layout->layoutVersion = ZR_TYPE_LAYOUT_SCHEMA_VERSION;
+    layout->domainTransferSchemaVersion = 0u;
+    layout->domainTransferProviderToken = 0u;
+    layout->domainTransferSchemaHash = 0u;
+    layout->domainTransferProviderContractHash = 0u;
     layout->gcFieldOffsets = ZR_NULL;
     layout->ownershipFieldOffsets = ZR_NULL;
     layout->refFieldOffsets = ZR_NULL;
@@ -283,11 +315,19 @@ void ZrCore_TypeLayout_InitStructWithContract(SZrTypeLayout *layout,
                                                  gcFieldCount,
                                                  ownershipFieldCount,
                                                  refFieldCount);
-    layout->reserved1 = 0u;
+    layout->domainTransferKind = (TZrUInt8)ZR_DOMAIN_TRANSFER_KIND_FORBIDDEN;
     layout->reserved2 = 0u;
     layout->reserved3 = 0u;
     layout->layoutVersion = ZR_TYPE_LAYOUT_SCHEMA_VERSION;
     type_layout_apply_contract(layout, contract);
+    if (layout->domainTransferKind ==
+                (TZrUInt8)ZR_DOMAIN_TRANSFER_KIND_VALUE_COPY &&
+        layout->domainTransferSchemaHash == 0u) {
+        layout->domainTransferSchemaHash = ZrCore_TypeLayout_ComputeHash(layout);
+        if (layout->domainTransferSchemaHash == 0u) {
+            layout->domainTransferSchemaHash = 1u;
+        }
+    }
     layout->layoutHash = ZrCore_TypeLayout_ComputeHash(layout);
 }
 
@@ -322,6 +362,8 @@ void ZrCore_TypeLayout_InitUnionWithContract(SZrTypeLayout *layout,
                                              const SZrTypeLayoutField *fields,
                                              TZrUInt32 fieldCount,
                                              const SZrTypeLayoutContract *contract) {
+    TZrBool hasExplicitDomainTransfer;
+
     ZrCore_TypeLayout_InitStructWithContract(layout,
                                              byteSize,
                                              byteAlign,
@@ -342,5 +384,16 @@ void ZrCore_TypeLayout_InitUnionWithContract(SZrTypeLayout *layout,
                                                  layout->gcFieldCount,
                                                  layout->ownershipFieldCount,
                                                  layout->refFieldCount);
+    hasExplicitDomainTransfer = (TZrBool)(
+            contract != ZR_NULL && contract->hasDomainTransferContract);
+    if (!hasExplicitDomainTransfer &&
+        layout->domainTransferKind ==
+                (TZrUInt8)ZR_DOMAIN_TRANSFER_KIND_VALUE_COPY) {
+        layout->domainTransferSchemaHash = 0u;
+        layout->domainTransferSchemaHash = ZrCore_TypeLayout_ComputeHash(layout);
+        if (layout->domainTransferSchemaHash == 0u) {
+            layout->domainTransferSchemaHash = 1u;
+        }
+    }
     layout->layoutHash = ZrCore_TypeLayout_ComputeHash(layout);
 }

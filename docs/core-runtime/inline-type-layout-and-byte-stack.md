@@ -77,6 +77,7 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c
   - tests/core/test_type_layout_inline_copy.c
+  - tests/core/test_type_layout_metadata_contracts.c
   - tests/core/test_inline_struct_array_layout.c
   - tests/core/test_precall_frame_slot_reset.c
   - tests/core/test_tail_reuse_callinfo_reset.c
@@ -172,6 +173,7 @@ plan_sources:
   - docs/plans/aot/06-implementation-blueprint.md
 tests:
   - tests/core/test_type_layout_inline_copy.c
+  - tests/core/test_type_layout_metadata_contracts.c
   - tests/core/test_inline_struct_array_layout.c
   - tests/core/test_precall_frame_slot_reset.c
   - tests/core/test_tail_reuse_callinfo_reset.c
@@ -317,6 +319,12 @@ That failure mode is intentional. Callers must treat a `ZR_NULL` layout as "inli
 The AOT C backend now emits a declaration layer for proven inline struct layouts before function bodies are emitted. `backend_aot_c_type_layouts.c` scans the `SZrAotFunctionTable` for inline struct frame slots, resolves each unique `typeLayoutId` through `ZrCore_Function_ResolvePrototypeFrameTypeLayout`, and walks fields through `ZrCore_Function_VisitPrototypeFrameFieldLayouts`.
 
 For each resolved struct layout the generated file contains a `ZrLayout_<typeLayoutId>` C type, explicit padding members, generated field members, and static assertions for `sizeof`, `_Alignof`, and every field `offsetof`. The generated `ZR_AOT_C_LAYOUT_STRUCT` macro carries metadata alignment into the C type so a layout whose runtime `byteAlign` is larger than the natural alignment of its current fields still fails or passes by the same metadata rule as the interpreter/runtime resolver.
+
+TypeLayout schema v2 also emits the canonical cross-domain transfer kind, schema version/hash,
+and provider token/hash into the generated runtime descriptor. The C backend does not infer these
+values from a generated type name or field shape. A provider-backed layout containing GC,
+ownership, or reference fields is rejected by the same runtime validation used by the VM; a
+blittable GcFree layout may use the explicit or default `ValueCopy` contract.
 
 This layer is a drift detector and type-shape anchor for later pure C lowering. It does not yet make struct operations themselves pure C: value SemIR field loads/stores and struct copy/call lowering still need their own slices before the full value-type shared-library smoke can execute without the existing `unsupported AOT value SemIR field` fallback.
 

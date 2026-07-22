@@ -60,6 +60,60 @@ static TZrBool artifact_relocation_row_is_valid(const SZrArtifactRelocationRow *
                      row->expectedModuleHash != 0u);
 }
 
+static TZrBool artifact_domain_transfer_row_is_valid(
+        const SZrArtifactDomainTransferRow *row,
+        TZrBool hasSchemaHeap,
+        TZrUInt32 schemaHeapLength) {
+    TZrUInt64 schemaEnd;
+
+    if (row == ZR_NULL ||
+        !artifact_type_token_is_valid(row->typeToken) ||
+        row->kind > ZR_ARTIFACT_DOMAIN_TRANSFER_RESOURCE_MOVE ||
+        (row->flags & ~ZR_ARTIFACT_DOMAIN_TRANSFER_FLAG_KNOWN_MASK) != 0u) {
+        return ZR_FALSE;
+    }
+    schemaEnd = (TZrUInt64)row->schemaOffset + row->schemaLength;
+    if (row->schemaLength == 0u && row->schemaOffset != 0u) {
+        return ZR_FALSE;
+    }
+    if (row->schemaLength > 0u &&
+        (!hasSchemaHeap || schemaEnd > schemaHeapLength)) {
+        return ZR_FALSE;
+    }
+    switch (row->kind) {
+        case ZR_ARTIFACT_DOMAIN_TRANSFER_FORBIDDEN:
+            return (TZrBool)(
+                    row->schemaVersion == 0u && row->schemaOffset == 0u &&
+                    row->schemaLength == 0u && row->schemaHash == 0u &&
+                    row->providerToken == 0u &&
+                    row->providerContractHash == 0u && row->flags == 0u);
+        case ZR_ARTIFACT_DOMAIN_TRANSFER_VALUE_COPY:
+            return (TZrBool)(
+                    row->schemaVersion != 0u && row->schemaHash != 0u &&
+                    row->providerToken == 0u &&
+                    row->providerContractHash == 0u);
+        case ZR_ARTIFACT_DOMAIN_TRANSFER_STRUCTURED_CLONE:
+            return (TZrBool)(
+                    row->schemaVersion != 0u && row->schemaLength != 0u &&
+                    row->schemaHash != 0u && row->providerToken == 0u &&
+                    row->providerContractHash == 0u);
+        case ZR_ARTIFACT_DOMAIN_TRANSFER_IMMUTABLE_HANDLE:
+            return (TZrBool)(
+                    row->schemaVersion != 0u && row->schemaHash != 0u &&
+                    artifact_metadata_token_is_valid(row->providerToken) &&
+                    row->providerContractHash != 0u);
+        case ZR_ARTIFACT_DOMAIN_TRANSFER_RESOURCE_MOVE:
+            return (TZrBool)(
+                    row->schemaVersion != 0u && row->schemaHash != 0u &&
+                    artifact_metadata_token_is_valid(row->providerToken) &&
+                    row->providerContractHash != 0u &&
+                    (row->flags &
+                     ZR_ARTIFACT_DOMAIN_TRANSFER_FLAG_DROP_ON_FAILURE) != 0u);
+        default:
+            return ZR_FALSE;
+    }
+}
+
 static EZrArtifactStatus artifact_validate_identity(EZrArtifactKind kind,
                                                     const SZrArtifactPublicIdentity *identity,
                                                     SZrArtifactDiagnostic *diagnostic) {
@@ -240,6 +294,38 @@ static EZrArtifactStatus artifact_validate_layout_input(const SZrArtifactSection
                                     section->kind,
                                     index,
                                     0u);
+        }
+    }
+    return ZR_ARTIFACT_STATUS_OK;
+}
+
+static EZrArtifactStatus artifact_validate_domain_transfer_input(
+        const SZrArtifactSectionInput *section,
+        const SZrArtifactSectionInput *schemaHeap,
+        SZrArtifactDiagnostic *diagnostic) {
+    const SZrArtifactDomainTransferRow *rows =
+            (const SZrArtifactDomainTransferRow *)section->data;
+    TZrUInt32 index;
+
+    for (index = 0u; index < section->elementCount; index++) {
+        if (index > 0u && rows[index - 1u].typeToken >= rows[index].typeToken) {
+            return zr_artifact_fail(
+                    diagnostic,
+                    ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+                    section->kind,
+                    index,
+                    0u);
+        }
+        if (!artifact_domain_transfer_row_is_valid(
+                    &rows[index],
+                    schemaHeap != ZR_NULL,
+                    schemaHeap != ZR_NULL ? schemaHeap->elementCount : 0u)) {
+            return zr_artifact_fail(
+                    diagnostic,
+                    ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+                    section->kind,
+                    index,
+                    rows[index].schemaOffset);
         }
     }
     return ZR_ARTIFACT_STATUS_OK;
@@ -432,6 +518,10 @@ static EZrArtifactStatus artifact_validate_document(const SZrArtifactDocument *d
                 break;
             case ZR_ARTIFACT_SECTION_LAYOUT_TABLE:
                 status = artifact_validate_layout_input(section, diagnostic);
+                break;
+            case ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE:
+                status = artifact_validate_domain_transfer_input(
+                        section, signatureHeap, diagnostic);
                 break;
             case ZR_ARTIFACT_SECTION_MEMBER_DEF_TABLE:
             case ZR_ARTIFACT_SECTION_PROPERTY_DEF_TABLE:
@@ -767,6 +857,41 @@ static EZrArtifactStatus artifact_validate_decoded_rows(const SZrArtifactView *v
                                             section.kind,
                                             rowIndex,
                                             section.byteOffset + rowIndex * section.elementSize);
+                }
+            } else if (section.kind ==
+                       ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE) {
+                SZrArtifactDomainTransferRow row;
+                SZrArtifactDomainTransferRow previousRow;
+                ZrCore_Artifact_ReadDomainTransferRow(
+                        &section, rowIndex, &row, diagnostic);
+                if (rowIndex > 0u) {
+                    ZrCore_Artifact_ReadDomainTransferRow(
+                            &section,
+                            rowIndex - 1u,
+                            &previousRow,
+                            diagnostic);
+                    if (previousRow.typeToken >= row.typeToken) {
+                        return zr_artifact_fail(
+                                diagnostic,
+                                ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+                                section.kind,
+                                rowIndex,
+                                section.byteOffset +
+                                        rowIndex * section.elementSize);
+                    }
+                }
+                if (!artifact_domain_transfer_row_is_valid(
+                            &row,
+                            hasSignatureHeap,
+                            hasSignatureHeap
+                                    ? signatureHeap.byteLength
+                                    : 0u)) {
+                    return zr_artifact_fail(
+                            diagnostic,
+                            ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+                            section.kind,
+                            rowIndex,
+                            row.schemaOffset);
                 }
             } else if (section.kind == ZR_ARTIFACT_SECTION_MEMBER_DEF_TABLE) {
                 SZrArtifactMemberDefRow row;

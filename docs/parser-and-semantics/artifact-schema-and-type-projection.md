@@ -7,6 +7,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/artifact_identity.c
   - zr_vm_core/src/zr_vm_core/artifact_rows.c
   - zr_vm_core/src/zr_vm_core/artifact_schema.c
+  - zr_vm_core/include/zr_vm_core/type_layout.h
+  - zr_vm_core/src/zr_vm_core/type_layout.c
   - zr_vm_core/src/zr_vm_core/artifact_signature.c
   - zr_vm_core/src/zr_vm_core/artifact_text.c
   - zr_vm_core/src/zr_vm_core/canonical_consumer.c
@@ -19,6 +21,8 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/artifact_identity.c
   - zr_vm_core/src/zr_vm_core/artifact_rows.c
   - zr_vm_core/src/zr_vm_core/artifact_schema.c
+  - zr_vm_core/include/zr_vm_core/type_layout.h
+  - zr_vm_core/src/zr_vm_core/type_layout.c
   - zr_vm_core/src/zr_vm_core/artifact_signature.c
   - zr_vm_core/src/zr_vm_core/artifact_text.c
   - zr_vm_core/src/zr_vm_core/canonical_consumer.c
@@ -33,6 +37,8 @@ tests:
   - tests/parser/test_reference_callable_consumers.c
   - tests/parser/test_canonical_consumers.c
   - tests/parser/test_buffer_pool_ffi.c
+  - tests/core/test_type_layout_metadata_contracts.c
+  - tests/core/test_resource_cross_domain_transfer.c
   - tests/acceptance/2026-07-19-syntax-01-m4-artifact-schema.md
   - tests/acceptance/2026-07-20-syntax-02-m6-artifact-lsp-consumers.md
 doc_type: module-detail
@@ -65,7 +71,18 @@ The binary envelope uses fixed-width little-endian fields:
 
 Known mandatory sections must be understood. Unknown optional sections are bounds-checked and skipped. Known sections are unique and kind-specific: `.zrs`, `.zri`, and `.zro` reject projections outside their responsibility. Section payloads cannot overlap the header, directory, another non-empty payload, or the declared artifact length.
 
-The schema defines rows for TypeDef, TypeRef, TypeSpec, MemberDef, PropertyDef, Contract, Layout, and relocation bindings. TypeDef rows carry value/GC/resource/readonly/ref-like/drop flags, value-construction capability, and public constructor token/signature/contract. Layout rows carry version, size, alignment, GC scan kind, ownership-map range, layout hash, and optional StableSlotSource contract hash.
+The schema defines rows for TypeDef, TypeRef, TypeSpec, MemberDef, PropertyDef, Contract, Layout,
+relocation bindings, and domain transfer contracts. TypeDef rows carry
+value/GC/resource/readonly/ref-like/drop flags, value-construction capability, and public
+constructor token/signature/contract. Layout rows carry version, size, alignment, GC scan kind,
+ownership-map range, layout hash, and optional StableSlotSource contract hash.
+
+Schema v2 adds the known fixed-width `DOMAIN_TRANSFER_TABLE`. Each row is keyed by an exact
+TypeDef token and encodes `Forbidden`, `ValueCopy`, `StructuredClone`, `ImmutableHandle`, or
+`ResourceMove`, plus schema identity, provider identity, and DropOnFailure flags. Rows are strictly
+ordered and unique. A missing table or TypeDef row means no cross-domain capability (`Forbidden`),
+not an invalid artifact. VM and AOT TypeLayout v2 consume the same identity; provider-backed
+layouts with GC, ownership, or ref fields are rejected instead of allowing a source-domain edge.
 
 Contract rows also carry a bounded callable escape mask and an ABI lowering kind.
 The encoded slot was reserved in schema v1, so old artifacts decode as `NONE` and

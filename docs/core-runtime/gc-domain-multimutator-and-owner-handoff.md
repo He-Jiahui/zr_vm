@@ -11,6 +11,9 @@ related_code:
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/exception.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_cross_domain.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_lifecycle.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_value_copy.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_cached.c
@@ -28,6 +31,8 @@ plan_sources:
 tests:
   - tests/core/test_gc_domain_multimutator.c
   - tests/core/test_resource_same_domain_handoff.c
+  - tests/core/test_resource_cross_domain_transfer.c
+  - tests/core/test_resource_cross_domain_transfer_races.c
   - tests/core/test_object_call_known_native_fast_path.c
   - tests/library/test_native_binding_direct_call.c
 doc_type: module
@@ -132,8 +137,9 @@ Drop。因此queue close、claim race和commit/abort race中，source保持Moved
 ## 当前边界
 
 - 本阶段没有接入 `zr.thread`/Task scheduler，也不声明 `Send/Sync` public projection。
-- envelope只支持same-domain direct resource Unique；`ValueCopy`、`StructuredClone`、
-  `ImmutableHandle`、跨域 `ResourceMove` 与 stale transport generation属于M6。
+- same-domain direct resource Unique继续走O(1) owner handoff；M6的跨域`ValueCopy`、
+  `StructuredClone`、`ImmutableHandle`、`ResourceMove`、quota与stale generation合同见
+  `cross-domain-transfer-contracts.md`。两条路径共享envelope状态机但不会互相降级。
 - envelope当前从runtime manager分配；未来scheduler可共分配或池化，但不得改变transfer identity
   或复制payload。
 - `BlockingDetached`要求native在进入前已发布/固定其roots；`NoSafepointCritical`要求短时且禁止

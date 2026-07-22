@@ -104,6 +104,14 @@ static TZrUInt64 type_layout_hash_u32(TZrUInt64 hash, TZrUInt32 value) {
     return hash;
 }
 
+static TZrUInt64 type_layout_hash_u64(TZrUInt64 hash, TZrUInt64 value) {
+    for (TZrUInt32 shift = 0u; shift < 64u; shift += 8u) {
+        hash = type_layout_hash_byte(
+                hash, (TZrUInt8)((value >> shift) & UINT64_C(0xff)));
+    }
+    return hash;
+}
+
 static TZrBool type_layout_try_get_flagged_field_offset(const SZrTypeLayout *layout,
                                                         TZrUInt32 flag,
                                                         TZrUInt32 mapIndex,
@@ -212,6 +220,12 @@ TZrUInt64 ZrCore_TypeLayout_ComputeHash(const SZrTypeLayout *layout) {
     hash = type_layout_hash_u32(hash, layout->tagOffset);
     hash = type_layout_hash_u32(hash, layout->tagSize);
     hash = type_layout_hash_u32(hash, layout->blittable ? 1u : 0u);
+    hash = type_layout_hash_u32(hash, layout->domainTransferKind);
+    hash = type_layout_hash_u32(hash, layout->domainTransferSchemaVersion);
+    hash = type_layout_hash_u64(hash, layout->domainTransferSchemaHash);
+    hash = type_layout_hash_u32(hash, layout->domainTransferProviderToken);
+    hash = type_layout_hash_u64(
+            hash, layout->domainTransferProviderContractHash);
 
     for (TZrUInt32 index = 0u; layout->fields != ZR_NULL && index < layout->fieldCount; index++) {
         const SZrTypeLayoutField *field = &layout->fields[index];
@@ -283,8 +297,52 @@ TZrBool ZrCore_TypeLayout_Validate(const SZrTypeLayout *layout) {
         layout->copyKind > (TZrUInt8)ZR_TYPE_LAYOUT_COPY_KIND_MOVE_ONLY ||
         layout->dropKind > (TZrUInt8)ZR_TYPE_LAYOUT_DROP_KIND_CUSTOM_THEN_FIELDS ||
         layout->gcScanKind > (TZrUInt8)ZR_TYPE_LAYOUT_GC_SCAN_BARRIERED ||
+        layout->domainTransferKind >
+                (TZrUInt8)ZR_DOMAIN_TRANSFER_KIND_RESOURCE_MOVE ||
         (layout->fieldCount > 0u && layout->fields == ZR_NULL)) {
         return ZR_FALSE;
+    }
+
+    switch ((EZrDomainTransferKind)layout->domainTransferKind) {
+        case ZR_DOMAIN_TRANSFER_KIND_FORBIDDEN:
+            if (layout->domainTransferSchemaVersion != 0u ||
+                layout->domainTransferSchemaHash != 0u ||
+                layout->domainTransferProviderToken != 0u ||
+                layout->domainTransferProviderContractHash != 0u) {
+                return ZR_FALSE;
+            }
+            break;
+        case ZR_DOMAIN_TRANSFER_KIND_VALUE_COPY:
+            if (!layout->blittable ||
+                layout->domainTransferSchemaVersion == 0u ||
+                layout->domainTransferSchemaHash == 0u ||
+                layout->domainTransferProviderToken != 0u ||
+                layout->domainTransferProviderContractHash != 0u) {
+                return ZR_FALSE;
+            }
+            break;
+        case ZR_DOMAIN_TRANSFER_KIND_STRUCTURED_CLONE:
+            if (layout->domainTransferSchemaVersion == 0u ||
+                layout->domainTransferSchemaHash == 0u ||
+                layout->domainTransferProviderToken != 0u ||
+                layout->domainTransferProviderContractHash != 0u) {
+                return ZR_FALSE;
+            }
+            break;
+        case ZR_DOMAIN_TRANSFER_KIND_IMMUTABLE_HANDLE:
+        case ZR_DOMAIN_TRANSFER_KIND_RESOURCE_MOVE:
+            if (layout->domainTransferSchemaVersion == 0u ||
+                layout->domainTransferSchemaHash == 0u ||
+                layout->domainTransferProviderToken == 0u ||
+                layout->domainTransferProviderContractHash == 0u ||
+                layout->gcFieldCount != 0u ||
+                layout->ownershipFieldCount != 0u ||
+                layout->refFieldCount != 0u) {
+                return ZR_FALSE;
+            }
+            break;
+        default:
+            return ZR_FALSE;
     }
 
     if ((layout->dropKind == (TZrUInt8)ZR_TYPE_LAYOUT_DROP_KIND_CUSTOM_THEN_FIELDS) !=

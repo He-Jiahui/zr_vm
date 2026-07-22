@@ -4,7 +4,7 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/metadata_token.h"
 
-#define ZR_ARTIFACT_SCHEMA_VERSION ((TZrUInt16)1u)
+#define ZR_ARTIFACT_SCHEMA_VERSION ((TZrUInt16)2u)
 #define ZR_ARTIFACT_HEADER_ENCODED_SIZE ((TZrUInt32)112u)
 #define ZR_ARTIFACT_SECTION_DIRECTORY_ENTRY_ENCODED_SIZE ((TZrUInt32)24u)
 #define ZR_ARTIFACT_HEADER_SECTION_COUNT_OFFSET ((TZrUInt32)16u)
@@ -21,6 +21,7 @@
 #define ZR_ARTIFACT_CONTRACT_ROW_ENCODED_SIZE ((TZrUInt32)40u)
 #define ZR_ARTIFACT_LAYOUT_ROW_ENCODED_SIZE ((TZrUInt32)48u)
 #define ZR_ARTIFACT_RELOCATION_ROW_ENCODED_SIZE ((TZrUInt32)40u)
+#define ZR_ARTIFACT_DOMAIN_TRANSFER_ROW_ENCODED_SIZE ((TZrUInt32)48u)
 
 typedef enum EZrArtifactKind {
     ZR_ARTIFACT_KIND_ZRS = 1,
@@ -43,7 +44,8 @@ typedef enum EZrArtifactSectionKind {
     ZR_ARTIFACT_SECTION_RELOCATION_BINDING_TABLE = 11,
     ZR_ARTIFACT_SECTION_DEBUG_MAP = 12,
     ZR_ARTIFACT_SECTION_SYNTAX_TREE = 13,
-    ZR_ARTIFACT_SECTION_SEMANTIC_IR = 14
+    ZR_ARTIFACT_SECTION_SEMANTIC_IR = 14,
+    ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE = 15
 } EZrArtifactSectionKind;
 
 #define ZR_ARTIFACT_SECTION_FLAG_MANDATORY ((TZrUInt32)0u)
@@ -166,6 +168,18 @@ typedef enum EZrArtifactGcScanKind {
     ZR_ARTIFACT_GC_SCAN_MAPPED = 1,
     ZR_ARTIFACT_GC_SCAN_BARRIERED = 2
 } EZrArtifactGcScanKind;
+
+typedef enum EZrArtifactDomainTransferKind {
+    ZR_ARTIFACT_DOMAIN_TRANSFER_FORBIDDEN = 0,
+    ZR_ARTIFACT_DOMAIN_TRANSFER_VALUE_COPY = 1,
+    ZR_ARTIFACT_DOMAIN_TRANSFER_STRUCTURED_CLONE = 2,
+    ZR_ARTIFACT_DOMAIN_TRANSFER_IMMUTABLE_HANDLE = 3,
+    ZR_ARTIFACT_DOMAIN_TRANSFER_RESOURCE_MOVE = 4
+} EZrArtifactDomainTransferKind;
+
+#define ZR_ARTIFACT_DOMAIN_TRANSFER_FLAG_DROP_ON_FAILURE ((TZrUInt32)1u << 0u)
+#define ZR_ARTIFACT_DOMAIN_TRANSFER_FLAG_KNOWN_MASK \
+    ZR_ARTIFACT_DOMAIN_TRANSFER_FLAG_DROP_ON_FAILURE
 
 #define ZR_ARTIFACT_TYPE_FLAG_VALUE ((TZrUInt32)1u << 0u)
 #define ZR_ARTIFACT_TYPE_FLAG_GC ((TZrUInt32)1u << 1u)
@@ -299,6 +313,19 @@ typedef struct SZrArtifactLayoutRow {
     TZrUInt64 stableSlotContractHash;
 } SZrArtifactLayoutRow;
 
+typedef struct SZrArtifactDomainTransferRow {
+    TZrMetadataToken typeToken;
+    EZrArtifactDomainTransferKind kind;
+    TZrUInt32 schemaVersion;
+    TZrUInt32 flags;
+    TZrUInt32 schemaOffset;
+    TZrUInt32 schemaLength;
+    TZrMetadataToken providerToken;
+    TZrUInt32 reserved0;
+    TZrUInt64 schemaHash;
+    TZrUInt64 providerContractHash;
+} SZrArtifactDomainTransferRow;
+
 typedef struct SZrArtifactRelocationRow {
     TZrUInt32 codeOffset;
     TZrUInt32 kind;
@@ -401,6 +428,12 @@ ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadLayoutRow(
         const SZrArtifactSectionView *section,
         TZrUInt32 rowIndex,
         SZrArtifactLayoutRow *outRow,
+        SZrArtifactDiagnostic *diagnostic);
+
+ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadDomainTransferRow(
+        const SZrArtifactSectionView *section,
+        TZrUInt32 rowIndex,
+        SZrArtifactDomainTransferRow *outRow,
         SZrArtifactDiagnostic *diagnostic);
 
 ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadRelocationRow(

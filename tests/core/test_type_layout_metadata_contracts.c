@@ -306,6 +306,175 @@ static void test_layout_validation_rejects_invalid_spans_maps_and_identity(void)
     TEST_ASSERT_FALSE(ZrCore_TypeLayout_Validate(&layout));
 }
 
+static void test_domain_transfer_kind_is_canonical_layout_identity(void) {
+    SZrTypeLayout plainLayout;
+    SZrTypeLayout forbiddenLayout;
+    SZrTypeLayoutField gcField;
+    SZrTypeLayoutContract forbiddenContract;
+    SZrTypeLayoutContract cloneContract;
+    SZrTypeLayout cloneLayout;
+    SZrTypeLayout driftedLayout;
+    SZrTypeLayout providerLayout;
+    SZrTypeLayout invalidProviderLayout;
+
+    ZrCore_TypeLayout_InitStruct(
+            &plainLayout,
+            16u,
+            8u,
+            ZR_TYPE_LAYOUT_COPY_KIND_BITWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+            ZR_NULL,
+            0u);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DOMAIN_TRANSFER_KIND_VALUE_COPY,
+            plainLayout.domainTransferKind);
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_TYPE_LAYOUT_SCHEMA_VERSION,
+            plainLayout.domainTransferSchemaVersion);
+    TEST_ASSERT_NOT_EQUAL(0u, plainLayout.domainTransferSchemaHash);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&plainLayout));
+
+    memset(&forbiddenContract, 0, sizeof(forbiddenContract));
+    forbiddenContract.hasDomainTransferContract = ZR_TRUE;
+    forbiddenContract.domainTransferKind = ZR_DOMAIN_TRANSFER_KIND_FORBIDDEN;
+    ZrCore_TypeLayout_InitStructWithContract(
+            &forbiddenLayout,
+            16u,
+            8u,
+            ZR_TYPE_LAYOUT_COPY_KIND_BITWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+            ZR_NULL,
+            0u,
+            &forbiddenContract);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DOMAIN_TRANSFER_KIND_FORBIDDEN,
+            forbiddenLayout.domainTransferKind);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&forbiddenLayout));
+
+    memset(&gcField, 0, sizeof(gcField));
+    gcField.byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    gcField.flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                    ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE;
+    ZrCore_TypeLayout_InitStruct(
+            &cloneLayout,
+            (TZrUInt32)sizeof(SZrTypeValue),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE,
+            &gcField,
+            1u);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DOMAIN_TRANSFER_KIND_FORBIDDEN,
+            cloneLayout.domainTransferKind);
+
+    memset(&cloneContract, 0, sizeof(cloneContract));
+    cloneContract.hasDomainTransferContract = ZR_TRUE;
+    cloneContract.domainTransferKind = ZR_DOMAIN_TRANSFER_KIND_STRUCTURED_CLONE;
+    cloneContract.domainTransferSchemaVersion = 3u;
+    cloneContract.domainTransferSchemaHash = UINT64_C(0x123456789abcdef0);
+    ZrCore_TypeLayout_InitStructWithContract(
+            &cloneLayout,
+            (TZrUInt32)sizeof(SZrTypeValue),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE,
+            &gcField,
+            1u,
+            &cloneContract);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DOMAIN_TRANSFER_KIND_STRUCTURED_CLONE,
+            cloneLayout.domainTransferKind);
+    TEST_ASSERT_EQUAL_UINT32(3u, cloneLayout.domainTransferSchemaVersion);
+    TEST_ASSERT_EQUAL_UINT64(
+            UINT64_C(0x123456789abcdef0),
+            cloneLayout.domainTransferSchemaHash);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&cloneLayout));
+
+    cloneContract.domainTransferSchemaHash ^= 1u;
+    ZrCore_TypeLayout_InitStructWithContract(
+            &driftedLayout,
+            (TZrUInt32)sizeof(SZrTypeValue),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE,
+            &gcField,
+            1u,
+            &cloneContract);
+    TEST_ASSERT_NOT_EQUAL(cloneLayout.layoutHash, driftedLayout.layoutHash);
+
+    memset(&cloneContract, 0, sizeof(cloneContract));
+    cloneContract.hasDomainTransferContract = ZR_TRUE;
+    cloneContract.domainTransferKind =
+            ZR_DOMAIN_TRANSFER_KIND_IMMUTABLE_HANDLE;
+    cloneContract.domainTransferSchemaVersion = 1u;
+    cloneContract.domainTransferSchemaHash = UINT64_C(0x2233445566778899);
+    cloneContract.domainTransferProviderToken = 0x06000001u;
+    cloneContract.domainTransferProviderContractHash =
+            UINT64_C(0xaabbccddeeff0011);
+    ZrCore_TypeLayout_InitStructWithContract(
+            &providerLayout,
+            16u,
+            8u,
+            ZR_TYPE_LAYOUT_COPY_KIND_BITWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+            ZR_NULL,
+            0u,
+            &cloneContract);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DOMAIN_TRANSFER_KIND_IMMUTABLE_HANDLE,
+            providerLayout.domainTransferKind);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&providerLayout));
+
+    cloneContract.domainTransferKind = ZR_DOMAIN_TRANSFER_KIND_RESOURCE_MOVE;
+    cloneContract.domainTransferProviderToken = 0x06000002u;
+    cloneContract.domainTransferProviderContractHash =
+            UINT64_C(0x1122334455667788);
+    ZrCore_TypeLayout_InitStructWithContract(
+            &providerLayout,
+            16u,
+            8u,
+            ZR_TYPE_LAYOUT_COPY_KIND_BITWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+            ZR_NULL,
+            0u,
+            &cloneContract);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DOMAIN_TRANSFER_KIND_RESOURCE_MOVE,
+            providerLayout.domainTransferKind);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&providerLayout));
+
+    ZrCore_TypeLayout_InitStructWithContract(
+            &invalidProviderLayout,
+            (TZrUInt32)sizeof(SZrTypeValue),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE,
+            &gcField,
+            1u,
+            &cloneContract);
+    TEST_ASSERT_FALSE(ZrCore_TypeLayout_Validate(&invalidProviderLayout));
+
+    gcField.flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                    ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE;
+    ZrCore_TypeLayout_InitStructWithContract(
+            &invalidProviderLayout,
+            (TZrUInt32)sizeof(SZrTypeValue),
+            (TZrUInt32)ZR_ALIGN_SIZE,
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE,
+            &gcField,
+            1u,
+            &cloneContract);
+    TEST_ASSERT_FALSE(ZrCore_TypeLayout_Validate(&invalidProviderLayout));
+
+    providerLayout.domainTransferProviderToken = 0u;
+    providerLayout.layoutHash = ZrCore_TypeLayout_ComputeHash(&providerLayout);
+    TEST_ASSERT_FALSE(ZrCore_TypeLayout_Validate(&providerLayout));
+
+    driftedLayout.domainTransferKind = (TZrUInt8)99u;
+    TEST_ASSERT_FALSE(ZrCore_TypeLayout_Validate(&driftedLayout));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_pod_layout_records_blittable_and_c_type_metadata);
@@ -316,5 +485,6 @@ int main(void) {
     RUN_TEST(test_layout_contract_records_gc_ownership_and_ref_maps);
     RUN_TEST(test_layout_hash_is_stable_and_tracks_structural_drift);
     RUN_TEST(test_layout_validation_rejects_invalid_spans_maps_and_identity);
+    RUN_TEST(test_domain_transfer_kind_is_canonical_layout_identity);
     return UNITY_END();
 }

@@ -22,6 +22,9 @@ related_code:
   - zr_vm_core/include/zr_vm_core/ownership_transfer.h
   - zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_cross_domain.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_lifecycle.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_value_copy.c
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
@@ -56,6 +59,9 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/ownership_transfer.h
   - zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_cross_domain.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_lifecycle.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_value_copy.c
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
@@ -77,6 +83,8 @@ tests:
   - tests/core/test_object_call_known_native_fast_path.c
   - tests/core/test_gc_domain_multimutator.c
   - tests/core/test_resource_same_domain_handoff.c
+  - tests/core/test_resource_cross_domain_transfer.c
+  - tests/core/test_resource_cross_domain_transfer_races.c
   - tests/core/test_native_inline_span_dispatch.c
   - tests/gc/gc_tests.c
   - tests/parser/test_compiler_features.c
@@ -101,3 +109,6 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
 - `gc-domain-multimutator-and-owner-handoff.md`: domain-local STW epoch/handshake, registered
   VM/AOT roots, native safepoint modes, interpreter poll/reload, and the same-domain
   `Unique<Resource>` TransferEnvelope state machine.
+- `cross-domain-transfer-contracts.md`: artifact-reproducible cross-domain transfer kinds,
+  layout/provider identity, ValueCopy and StructuredClone payloads, ResourceMove
+  DropOnFailure, quotas, stale generation, shutdown, and release/acquire race contracts.

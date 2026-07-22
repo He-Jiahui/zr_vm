@@ -1635,6 +1635,24 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     )
     zr_vm_link_core(zr_vm_resource_same_domain_handoff_test)
     target_link_libraries(zr_vm_resource_same_domain_handoff_test PRIVATE Threads::Threads)
+    zr_vm_add_unity_test_target(
+            zr_vm_resource_cross_domain_transfer_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_resource_cross_domain_transfer.c
+    )
+    target_include_directories(zr_vm_resource_cross_domain_transfer_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_resource_cross_domain_transfer_test)
+    zr_vm_add_unity_test_target(
+            zr_vm_resource_cross_domain_transfer_race_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_resource_cross_domain_transfer_races.c
+    )
+    target_include_directories(zr_vm_resource_cross_domain_transfer_race_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_resource_cross_domain_transfer_race_test)
+    target_link_libraries(zr_vm_resource_cross_domain_transfer_race_test PRIVATE Threads::Threads)
     zr_vm_link_parser_core(zr_vm_aot_reachability_test)
 
     zr_vm_add_unity_test_target(
