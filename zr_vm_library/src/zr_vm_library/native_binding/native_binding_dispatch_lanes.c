@@ -35,16 +35,20 @@ void native_binding_release_stable_value(SZrState *state, ZrLibStableValueCopy *
 #define native_binding_release_stable_value native_binding_release_stable_value_inline
 #define native_binding_pin_stable_value_if_needed native_binding_pin_stable_value_if_needed_inline
 #define native_binding_entry_callback native_binding_entry_callback_inline
+#define native_binding_invoke_callback native_binding_invoke_callback_inline
+#define native_binding_invoke_entry_callback native_binding_invoke_entry_callback_inline
 #define native_binding_context_enable_stack_layout_anchor native_binding_context_enable_stack_layout_anchor_inline
 #define native_binding_context_adopt_stack_layout_anchor native_binding_context_adopt_stack_layout_anchor_inline
 #define native_binding_context_adopt_inline_frame_anchor native_binding_context_adopt_inline_frame_anchor_inline
 #define native_binding_sync_self_to_stack_slot native_binding_sync_self_to_stack_slot_inline
 
-TZrBool native_binding_dispatch_stack_root_callback_lane(SZrState *state,
-                                                         FZrLibBoundCallback callback,
-                                                         ZrLibCallContext *context,
-                                                         const SZrFunctionStackAnchor *functionBaseAnchor,
-                                                         SZrTypeValue *result) {
+static TZrBool native_binding_dispatch_stack_root_callback_lane_with_flags(
+        SZrState *state,
+        FZrLibBoundCallback callback,
+        TZrUInt32 dispatchFlags,
+        ZrLibCallContext *context,
+        const SZrFunctionStackAnchor *functionBaseAnchor,
+        SZrTypeValue *result) {
     SZrTypeValue *selfValueBefore;
     TZrStackValuePointer stackBaseBefore;
     TZrStackValuePointer stackTailBefore;
@@ -60,12 +64,28 @@ TZrBool native_binding_dispatch_stack_root_callback_lane(SZrState *state,
     selfValueBefore = context->selfValue;
     stackBaseBefore = state->stackBase.valuePointer;
     stackTailBefore = state->stackTail.valuePointer;
-    success = callback(context, result);
+    success = native_binding_invoke_callback(
+            state, callback, dispatchFlags, context, result);
     if (success && (context->selfValue != selfValueBefore || state->stackBase.valuePointer != stackBaseBefore)) {
         native_binding_sync_self_to_stack_slot(state, functionBaseAnchor, context, stackBaseBefore, stackTailBefore);
     }
 
     return state->threadStatus == ZR_THREAD_STATUS_FINE && success;
+}
+
+TZrBool native_binding_dispatch_stack_root_callback_lane(
+        SZrState *state,
+        FZrLibBoundCallback callback,
+        ZrLibCallContext *context,
+        const SZrFunctionStackAnchor *functionBaseAnchor,
+        SZrTypeValue *result) {
+    return native_binding_dispatch_stack_root_callback_lane_with_flags(
+            state,
+            callback,
+            (TZrUInt32)ZR_LIB_NATIVE_DISPATCH_FLAG_GC_AWARE,
+            context,
+            functionBaseAnchor,
+            result);
 }
 
 TZrBool native_binding_dispatch_stack_root_lane(SZrState *state,
@@ -83,7 +103,13 @@ TZrBool native_binding_dispatch_stack_root_lane(SZrState *state,
 
     callback = native_binding_entry_callback(entry);
     ZR_ASSERT(callback != ZR_NULL);
-    return native_binding_dispatch_stack_root_callback_lane(state, callback, context, functionBaseAnchor, result);
+    return native_binding_dispatch_stack_root_callback_lane_with_flags(
+            state,
+            callback,
+            native_binding_entry_dispatch_flags_inline(entry),
+            context,
+            functionBaseAnchor,
+            result);
 }
 
 TZrBool native_binding_dispatch_fast_lane(SZrState *state,
@@ -122,7 +148,8 @@ TZrBool native_binding_dispatch_fast_lane(SZrState *state,
     stackBaseBefore = state->stackBase.valuePointer;
     stackTailBefore = state->stackTail.valuePointer;
     native_binding_context_adopt_inline_frame_anchor(context, functionBaseAnchor);
-    success = callback(context, result);
+    success = native_binding_invoke_entry_callback(
+            state, entry, context, result);
     if (success) {
         native_binding_sync_self_to_stack_slot(state, functionBaseAnchor, context, stackBaseBefore, stackTailBefore);
     }
@@ -188,7 +215,8 @@ static TZrBool native_binding_dispatch_inline_pinned_lane_one_argument(
     stackBaseBefore = state->stackBase.valuePointer;
     stackTailBefore = state->stackTail.valuePointer;
     native_binding_context_adopt_inline_frame_anchor(context, functionBaseAnchor);
-    success = callback(context, result);
+    success = native_binding_invoke_entry_callback(
+            state, entry, context, result);
     if (success) {
         native_binding_sync_self_to_stack_slot(state, functionBaseAnchor, context, stackBaseBefore, stackTailBefore);
     }
@@ -270,7 +298,8 @@ static TZrBool native_binding_dispatch_inline_pinned_lane_two_arguments(
     stackBaseBefore = state->stackBase.valuePointer;
     stackTailBefore = state->stackTail.valuePointer;
     native_binding_context_adopt_inline_frame_anchor(context, functionBaseAnchor);
-    success = callback(context, result);
+    success = native_binding_invoke_entry_callback(
+            state, entry, context, result);
     if (success) {
         native_binding_sync_self_to_stack_slot(state, functionBaseAnchor, context, stackBaseBefore, stackTailBefore);
     }
@@ -364,7 +393,8 @@ static TZrBool native_binding_dispatch_inline_pinned_lane_generic(SZrState *stat
     stackBaseBefore = state->stackBase.valuePointer;
     stackTailBefore = state->stackTail.valuePointer;
     native_binding_context_adopt_inline_frame_anchor(context, functionBaseAnchor);
-    success = callback(context, result);
+    success = native_binding_invoke_entry_callback(
+            state, entry, context, result);
     if (success) {
         native_binding_sync_self_to_stack_slot(state, functionBaseAnchor, context, stackBaseBefore, stackTailBefore);
     }

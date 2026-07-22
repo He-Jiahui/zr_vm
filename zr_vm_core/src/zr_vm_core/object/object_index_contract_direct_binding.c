@@ -4,6 +4,7 @@
 
 #include "object/object_call_internal.h"
 
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/native_binding.h"
@@ -21,6 +22,49 @@ enum {
             ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT |
             ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_RESULT_OPTIONAL
 };
+
+static ZR_FORCE_INLINE TZrUInt32 object_index_contract_dispatch_flags(
+        const SZrObjectKnownNativeDirectDispatch *dispatch) {
+    if (dispatch == ZR_NULL) {
+        return 0u;
+    }
+    if (dispatch->functionDescriptor != ZR_NULL) {
+        return ((const ZrLibFunctionDescriptor *)dispatch->functionDescriptor)
+                ->dispatchFlags;
+    }
+    if (dispatch->methodDescriptor != ZR_NULL) {
+        return ((const ZrLibMethodDescriptor *)dispatch->methodDescriptor)
+                ->dispatchFlags;
+    }
+    if (dispatch->metaMethodDescriptor != ZR_NULL) {
+        return ((const ZrLibMetaMethodDescriptor *)
+                        dispatch->metaMethodDescriptor)
+                ->dispatchFlags;
+    }
+    return 0u;
+}
+
+static ZR_FORCE_INLINE TZrBool object_index_contract_native_enter(
+        SZrState *state,
+        const SZrObjectKnownNativeDirectDispatch *dispatch) {
+    TZrUInt32 modeFlags = object_index_contract_dispatch_flags(dispatch) &
+                          (TZrUInt32)
+                                  ZR_LIB_NATIVE_DISPATCH_FLAG_SAFEPOINT_MODE_MASK;
+    EZrGcNativeSafepointMode mode;
+
+    if (modeFlags == 0u) {
+        mode = ZR_GC_NATIVE_SAFEPOINT_MODE_GC_AWARE;
+    } else if (modeFlags ==
+               (TZrUInt32)ZR_LIB_NATIVE_DISPATCH_FLAG_BLOCKING_DETACHED) {
+        mode = ZR_GC_NATIVE_SAFEPOINT_MODE_BLOCKING_DETACHED;
+    } else if (modeFlags ==
+               (TZrUInt32)ZR_LIB_NATIVE_DISPATCH_FLAG_NO_SAFEPOINT_CRITICAL) {
+        mode = ZR_GC_NATIVE_SAFEPOINT_MODE_NO_SAFEPOINT_CRITICAL;
+    } else {
+        return ZR_FALSE;
+    }
+    return ZrCore_GcDomain_NativeEnter(state, mode);
+}
 
 static ZR_FORCE_INLINE TZrBool object_index_contract_value_resides_on_vm_stack(const SZrState *state,
                                                                                 const SZrTypeValue *value) {
@@ -118,9 +162,13 @@ TZrBool ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineOneArgument
         !object_index_contract_value_resides_on_vm_stack(state, argument0)) {
         return ZR_FALSE;
     }
+    if (!object_index_contract_native_enter(state, directBindingDispatch)) {
+        return ZR_FALSE;
+    }
 
     if (directBindingDispatch->readonlyInlineGetFastCallback != ZR_NULL) {
         success = directBindingDispatch->readonlyInlineGetFastCallback(state, receiver, argument0, result);
+        ZrCore_GcDomain_NativeLeave(state);
         if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
             ZrCore_Value_ResetAsNullNoProfile(result);
             success = ZR_TRUE;
@@ -135,6 +183,7 @@ TZrBool ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineOneArgument
                                                                    (SZrTypeValue *)argument0,
                                                                    1u);
     success = directBindingDispatch->callback(&context, result);
+    ZrCore_GcDomain_NativeLeave(state);
     if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
         ZrCore_Value_ResetAsNullNoProfile(result);
         success = ZR_TRUE;
@@ -163,9 +212,13 @@ TZrBool ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineTwoArgument
         !object_index_contract_value_resides_on_vm_stack(state, argument1)) {
         return ZR_FALSE;
     }
+    if (!object_index_contract_native_enter(state, directBindingDispatch)) {
+        return ZR_FALSE;
+    }
 
     if (directBindingDispatch->readonlyInlineSetNoResultFastCallback != ZR_NULL) {
         success = directBindingDispatch->readonlyInlineSetNoResultFastCallback(state, receiver, argument0, argument1);
+        ZrCore_GcDomain_NativeLeave(state);
         if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
             success = ZR_TRUE;
         }
@@ -190,6 +243,7 @@ TZrBool ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineTwoArgument
                                                                                2u);
     }
     success = directBindingDispatch->callback(&context, ZR_NULL);
+    ZrCore_GcDomain_NativeLeave(state);
     if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
         success = ZR_TRUE;
     }

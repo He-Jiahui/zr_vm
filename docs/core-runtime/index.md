@@ -18,6 +18,10 @@ related_code:
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/include/zr_vm_core/gc_domain.h
+  - zr_vm_core/include/zr_vm_core/ownership_transfer.h
+  - zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer.c
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
@@ -48,6 +52,10 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/include/zr_vm_core/gc_domain.h
+  - zr_vm_core/include/zr_vm_core/ownership_transfer.h
+  - zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer.c
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
@@ -67,6 +75,8 @@ tests:
   - tests/core/test_type_layout_inline_copy.c
   - tests/core/test_tail_reuse_callinfo_reset.c
   - tests/core/test_object_call_known_native_fast_path.c
+  - tests/core/test_gc_domain_multimutator.c
+  - tests/core/test_resource_same_domain_handoff.c
   - tests/core/test_native_inline_span_dispatch.c
   - tests/gc/gc_tests.c
   - tests/parser/test_compiler_features.c
@@ -88,3 +98,6 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
 - `gc-domain-single-mutator-bridge.md`: single-mutator `GcDomain` identity, generation-checked
   root handles, explicit ownership roots, cross-domain write rejection, permanent-parent major
   scanning, and the `Unique<Resource>.intoGc()` / GcBox runtime bridge.
+- `gc-domain-multimutator-and-owner-handoff.md`: domain-local STW epoch/handshake, registered
+  VM/AOT roots, native safepoint modes, interpreter poll/reload, and the same-domain
+  `Unique<Resource>` TransferEnvelope state machine.

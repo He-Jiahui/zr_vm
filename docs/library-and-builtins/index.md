@@ -11,6 +11,9 @@ related_code:
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_cached.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.c
   - zr_vm_library/src/zr_vm_library/task_runtime.c
   - zr_vm_lib_container/src/zr_vm_lib_container/contiguous_view.c
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
@@ -30,6 +33,9 @@ implementation_files:
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_cached.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.c
   - zr_vm_library/src/zr_vm_library/task_runtime.c
   - zr_vm_lib_container/src/zr_vm_lib_container/contiguous_view.c
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
@@ -46,6 +52,7 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
   - tests/library/test_debug_library.c
+  - tests/library/test_native_binding_direct_call.c
   - tests/debug/test_debug_traceback.c
   - tests/debug/test_debug_hook_core.c
   - tests/debug/test_debug_introspection.c
@@ -94,6 +101,9 @@ doc_type: category-index
 - `zr-pooling-and-pinned-ffi-views.md`
   - `BufferPool` / `PoolLease<T>` 的 single-return、generation 和异常清理合同
   - `BufferHandle.pin()` / `Ptr<u8>.span()` 的显式 pin、延迟释放和 moving-GC 地址稳定边界
+- `../core-runtime/gc-domain-multimutator-and-owner-handoff.md`
+  - native descriptor 的 `GcAware` / `BlockingDetached` / `NoSafepointCritical` mode
+  - generic、cached、known-native direct与readonly index-contract callback的统一enter/leave合同
 
 ## 阅读顺序
 

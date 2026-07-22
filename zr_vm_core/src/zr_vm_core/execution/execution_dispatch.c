@@ -8,10 +8,13 @@
 #include "object/object_super_array_internal.h"
 
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/profile.h"
 
 #include <stdarg.h>
 #include <stdlib.h>
+
+#define ZR_EXECUTION_SAFEPOINT_POLL_INSTRUCTION_BUDGET 256u
 
 static ZR_FORCE_INLINE SZrRawObject *execution_refresh_forwarded_raw_object(SZrRawObject *rawObject);
 static ZR_FORCE_INLINE SZrFunction *execution_refresh_forwarded_function(SZrFunction *function);
@@ -2153,6 +2156,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     SZrFunction *profilePreviousFrameFunction = ZR_NULL;
     SZrTypeValue *opA;
     SZrTypeValue *opB;
+    TZrUInt32 mutatorPollBudget = 0u;
     /*
      * registers macros
      */
@@ -2160,6 +2164,10 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     /*
      *
      */
+    if (!ZrCore_GcDomain_MutatorEnter(state)) {
+        return;
+    }
+
     ZR_INSTRUCTION_DISPATCH_TABLE
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
     static void *const fastDispatchTable[ZR_INSTRUCTION_ENUM(ENUM_MAX)] = {
@@ -2378,6 +2386,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define FAST_PREPARE_STACK_DESTINATION() FAST_PREPARE_STACK_DESTINATION_FROM_OFFSET(E(instruction))
 #define FETCH_PREPARE_FAST_ONLY(N)                                                                                      \
     do {                                                                                                               \
+        EXECUTION_MUTATOR_POLL_BEFORE_FETCH(N);                                                                        \
         if ((N) == 1) {                                                                                                \
             instruction = *++programCounter;                                                                           \
         } else {                                                                                                       \
@@ -2390,6 +2399,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define FETCH_PREPARE_SHARED(N)                                                                                        \
     do {                                                                                                               \
+        EXECUTION_MUTATOR_POLL_BEFORE_FETCH(N);                                                                        \
         if (ZR_LIKELY(fastDispatchMode)) {                                                                             \
             if ((N) == 1) {                                                                                            \
                 instruction = *++programCounter;                                                                       \
@@ -5478,6 +5488,17 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         UPDATE_BASE(CALL_INFO);                                                                                        \
     }
 #define SAVE_PC(STATE, CALL_INFO) ((CALL_INFO)->context.context.programCounter = programCounter)
+#define EXECUTION_MUTATOR_POLL_BEFORE_FETCH(N)                                                                         \
+    do {                                                                                                               \
+        if (ZR_UNLIKELY(++mutatorPollBudget >= ZR_EXECUTION_SAFEPOINT_POLL_INSTRUCTION_BUDGET)) {                     \
+            mutatorPollBudget = 0u;                                                                                    \
+            (callInfo)->context.context.programCounter = programCounter + (N);                                        \
+            (state)->stackTop.valuePointer = (callInfo)->functionTop.valuePointer;                                    \
+            if (ZrCore_GcDomain_MutatorPoll(state)) {                                                                  \
+                goto LZrReturning;                                                                                     \
+            }                                                                                                          \
+        }                                                                                                              \
+    } while (0)
 #define SAVE_STATE(STATE, CALL_INFO)                                                                                   \
     (SAVE_PC(STATE, CALL_INFO), ((STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer))
     // MODIFIABLE: ERROR & STACK & HOOK
@@ -8037,7 +8058,7 @@ LZrFastInstruction_FUNCTION_RETURN: {
         LZrReturn: {
             // return from vm
             if (callInfo->callStatus & ZR_CALL_STATUS_CREATE_FRAME) {
-                return;
+                goto LZrExecutionDone;
             } else {
                 callInfo = callInfo->previous;
                 goto LZrReturning;
@@ -9226,7 +9247,7 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
     }
 
 LZrExecutionDone:
-    ;
+    ZrCore_GcDomain_MutatorLeave(state);
 
 #undef DONE
 #undef DONE_FAST
@@ -9234,6 +9255,7 @@ LZrExecutionDone:
 #undef FETCH_PREPARE_FAST_ONLY
 #undef FETCH_PREPARE_SHARED
 #undef FETCH_DEBUG_BASE_SYNC
+#undef EXECUTION_MUTATOR_POLL_BEFORE_FETCH
 #undef FAST_PREPARE_DESTINATION_FROM_OFFSET
 #undef FAST_PREPARE_DESTINATION
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED

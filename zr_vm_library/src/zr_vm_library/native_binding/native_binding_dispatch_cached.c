@@ -2,6 +2,8 @@
 
 #include "native_binding/native_binding_dispatch_lanes.h"
 
+#include <string.h>
+
 /*
  * Cached known-native stack-root thunks stay on the same hot path profile
  * rules as the generic dispatcher: keep stack slot access/copy off helper
@@ -36,7 +38,7 @@ static ZR_FORCE_INLINE TZrBool native_binding_prepare_cached_stack_root_dispatch
         SZrState *state,
         TZrSize expectedArgumentCount,
         SZrFunctionStackAnchor *outFunctionBaseAnchor,
-        FZrLibBoundCallback *outCallback,
+        ZrLibBindingEntry *outEntry,
         ZrLibCallContext *outContext) {
     TZrStackValuePointer functionBase;
     SZrTypeValue *closureValue;
@@ -45,11 +47,11 @@ static ZR_FORCE_INLINE TZrBool native_binding_prepare_cached_stack_root_dispatch
     TZrBool usesReceiver;
     TZrSize expectedRawArgumentCount;
 
-    if (outCallback != ZR_NULL) {
-        *outCallback = ZR_NULL;
+    if (outEntry != ZR_NULL) {
+        memset(outEntry, 0, sizeof(*outEntry));
     }
 
-    if (state == ZR_NULL || outFunctionBaseAnchor == ZR_NULL || outCallback == ZR_NULL ||
+    if (state == ZR_NULL || outFunctionBaseAnchor == ZR_NULL || outEntry == ZR_NULL ||
         outContext == ZR_NULL || state->global == ZR_NULL || state->callInfoList == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -66,7 +68,7 @@ static ZR_FORCE_INLINE TZrBool native_binding_prepare_cached_stack_root_dispatch
     }
 
     closure = ZR_CAST_NATIVE_CLOSURE(state, closureValue->value.object);
-    if (!native_binding_closure_try_get_cached_callback(closure, outCallback) ||
+    if (!native_binding_closure_try_build_cached_entry(closure, outEntry) ||
         closure == ZR_NULL ||
         closure->nativeBindingModuleDescriptor == ZR_NULL) {
         return ZR_FALSE;
@@ -89,20 +91,21 @@ static ZR_FORCE_INLINE TZrInt64 native_binding_dispatch_cached_stack_root_fixed_
         TZrSize expectedArgumentCount) {
     SZrFunctionStackAnchor functionBaseAnchor;
     ZrLibCallContext context;
+    ZrLibBindingEntry entry;
     SZrTypeValue result;
-    FZrLibBoundCallback callback;
     TZrBool success;
 
     if (!native_binding_prepare_cached_stack_root_dispatch(state,
                                                            expectedArgumentCount,
                                                            &functionBaseAnchor,
-                                                           &callback,
+                                                           &entry,
                                                            &context)) {
         return native_binding_dispatcher(state);
     }
 
     ZrLib_Value_SetNull(&result);
-    success = native_binding_dispatch_stack_root_callback_lane(state, callback, &context, &functionBaseAnchor, &result);
+    success = native_binding_dispatch_stack_root_lane(
+            state, &entry, &context, &functionBaseAnchor, &result);
     if (!success) {
         if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
             return 0;

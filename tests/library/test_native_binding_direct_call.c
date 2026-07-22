@@ -5,6 +5,7 @@
 #include "harness/module_fixture_support.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
@@ -83,6 +84,58 @@ static TZrBool host_demo_bump_callback(ZrLibCallContext *context, SZrTypeValue *
     return ZR_TRUE;
 }
 
+static TZrBool host_demo_native_mode_callback(
+        ZrLibCallContext *context,
+        SZrTypeValue *result) {
+    SZrGcDomainMutatorSnapshot snapshot;
+    SZrGcDomainPauseDiagnostic diagnostic;
+    const TZrChar *name;
+    TZrInt64 modeValue;
+
+    if (context == ZR_NULL || context->state == ZR_NULL ||
+        context->functionDescriptor == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    name = context->functionDescriptor->name;
+    ZrCore_GcDomain_GetMutatorSnapshot(context->state, &snapshot);
+    if (strcmp(name, "gcAware") == 0) {
+        if (snapshot.runningMutatorCount != 1u ||
+            snapshot.blockingDetachedMutatorCount != 0u ||
+            snapshot.noSafepointCriticalMutatorCount != 0u) {
+            return ZR_FALSE;
+        }
+        modeValue = 1;
+    } else if (strcmp(name, "blockingDetached") == 0) {
+        if (snapshot.runningMutatorCount != 0u ||
+            snapshot.blockingDetachedMutatorCount != 1u ||
+            snapshot.noSafepointCriticalMutatorCount != 0u) {
+            return ZR_FALSE;
+        }
+        modeValue = 2;
+    } else if (strcmp(name, "noSafepointCritical") == 0) {
+        if (snapshot.runningMutatorCount != 0u ||
+            snapshot.blockingDetachedMutatorCount != 0u ||
+            snapshot.noSafepointCriticalMutatorCount != 1u) {
+            return ZR_FALSE;
+        }
+        memset(&diagnostic, 0, sizeof(diagnostic));
+        if (ZrCore_GcDomain_StopTheWorldBegin(
+                    context->state, 20u, &diagnostic) ||
+            !diagnostic.timedOut ||
+            diagnostic.blockingNativeMode !=
+                    ZR_GC_NATIVE_SAFEPOINT_MODE_NO_SAFEPOINT_CRITICAL ||
+            diagnostic.blockingState != context->state ||
+            diagnostic.blockingNativeFrame != context->state->callInfoList) {
+            return ZR_FALSE;
+        }
+        modeValue = 3;
+    } else {
+        return ZR_FALSE;
+    }
+    ZrLib_Value_SetInt(context->state, result, modeValue);
+    return ZR_TRUE;
+}
+
 static const ZrLibParameterDescriptor kHostDemoBumpParameters[] = {
         {"left", "int", "left operand"},
         {"right", "int", "right operand"},
@@ -98,6 +151,24 @@ static const ZrLibFunctionDescriptor kHostDemoFunctions[] = {
                 .documentation = "Adds two values.",
                 .parameters = kHostDemoBumpParameters,
                 .parameterCount = sizeof(kHostDemoBumpParameters) / sizeof(kHostDemoBumpParameters[0]),
+        },
+        {
+                .name = "gcAware",
+                .callback = host_demo_native_mode_callback,
+                .returnTypeName = "int",
+                .dispatchFlags = ZR_LIB_NATIVE_DISPATCH_FLAG_GC_AWARE,
+        },
+        {
+                .name = "blockingDetached",
+                .callback = host_demo_native_mode_callback,
+                .returnTypeName = "int",
+                .dispatchFlags = ZR_LIB_NATIVE_DISPATCH_FLAG_BLOCKING_DETACHED,
+        },
+        {
+                .name = "noSafepointCritical",
+                .callback = host_demo_native_mode_callback,
+                .returnTypeName = "int",
+                .dispatchFlags = ZR_LIB_NATIVE_DISPATCH_FLAG_NO_SAFEPOINT_CRITICAL,
         },
 };
 
@@ -274,6 +345,42 @@ static void test_direct_module_export_preserves_imported_native_module_captures(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_native_descriptor_modes_enter_exact_domain_scope(void) {
+    static const ZrTestsModuleFixtureSource kFixtures[] = {
+            MODULE_FIXTURE_SOURCE_TEXT(
+                    "native_mode_probe",
+                    "var host = %import(\"host_demo\");\n"
+                    "\n"
+                    "pub probe(): int {\n"
+                    "    return host.gcAware() + host.blockingDetached() + host.noSafepointCritical();\n"
+                    "}\n"
+                    "\n"
+                    "return 0;\n")
+    };
+    SZrState *state = create_test_state();
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_RegisterModule(
+            state->global, &kHostDemoModuleDescriptor));
+    g_module_fixture_sources = kFixtures;
+    g_module_fixture_source_count = sizeof(kFixtures) / sizeof(kFixtures[0]);
+    state->global->sourceLoader = module_fixture_source_loader;
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrLib_CallModuleExport(
+                    state, "native_mode_probe", "probe", ZR_NULL, 0, &result),
+            current_exception_message(state));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(6, result.value.nativeObject.nativeInt64);
+
+    state->global->sourceLoader = ZR_NULL;
+    g_module_fixture_sources = ZR_NULL;
+    g_module_fixture_source_count = 0;
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -281,6 +388,7 @@ int main(void) {
     RUN_TEST(test_direct_module_export_runtime_error_returns_false_instead_of_aborting);
     RUN_TEST(test_direct_module_export_preserves_scalar_captures_after_tail_called_entry);
     RUN_TEST(test_direct_module_export_preserves_imported_native_module_captures);
+    RUN_TEST(test_native_descriptor_modes_enter_exact_domain_scope);
 
     return UNITY_END();
 }

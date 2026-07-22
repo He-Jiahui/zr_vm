@@ -1617,6 +1617,24 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_gc_domain_bridge_test)
+    zr_vm_add_unity_test_target(
+            zr_vm_gc_domain_multimutator_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_gc_domain_multimutator.c
+    )
+    target_include_directories(zr_vm_gc_domain_multimutator_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_gc_domain_multimutator_test)
+    target_link_libraries(zr_vm_gc_domain_multimutator_test PRIVATE Threads::Threads)
+    zr_vm_add_unity_test_target(
+            zr_vm_resource_same_domain_handoff_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_resource_same_domain_handoff.c
+    )
+    target_include_directories(zr_vm_resource_same_domain_handoff_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_resource_same_domain_handoff_test)
+    target_link_libraries(zr_vm_resource_same_domain_handoff_test PRIVATE Threads::Threads)
     zr_vm_link_parser_core(zr_vm_aot_reachability_test)
 
     zr_vm_add_unity_test_target(

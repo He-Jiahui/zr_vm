@@ -3,6 +3,12 @@
 
 #include "zr_vm_core/gc_domain.h"
 
+#if defined(ZR_PLATFORM_WIN)
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
+
 struct SZrGarbageCollector;
 struct SZrGlobalState;
 struct SZrRawObject;
@@ -21,6 +27,25 @@ typedef struct SZrGcDomainRootSlot {
     EZrGcDomainRootKind kind;
 } SZrGcDomainRootSlot;
 
+typedef enum EZrGcDomainMutatorStatus {
+    ZR_GC_DOMAIN_MUTATOR_STATUS_ATTACHED_INACTIVE = 0,
+    ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING,
+    ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED,
+    ZR_GC_DOMAIN_MUTATOR_STATUS_BLOCKING_DETACHED,
+    ZR_GC_DOMAIN_MUTATOR_STATUS_NO_SAFEPOINT_CRITICAL
+} EZrGcDomainMutatorStatus;
+
+typedef struct SZrGcDomainMutatorRecord {
+    struct SZrState *state;
+    TZrUInt64 mutatorId;
+    TZrUInt64 observedEpoch;
+    TZrUInt32 executionDepth;
+    TZrUInt32 nativeDepth;
+    EZrGcNativeSafepointMode nativeMode;
+    EZrGcDomainMutatorStatus status;
+    TZrBool nativeEnteredFromInactive;
+} SZrGcDomainMutatorRecord;
+
 typedef struct SZrGcDomain {
     struct SZrGlobalState *global;
     struct SZrGarbageCollector *collector;
@@ -31,6 +56,22 @@ typedef struct SZrGcDomain {
     TZrSize rootCapacity;
     TZrSize activeRootCount;
     TZrSize ownershipRootCount;
+    SZrGcDomainMutatorRecord *mutators;
+    TZrSize mutatorLength;
+    TZrSize mutatorCapacity;
+    TZrUInt64 nextMutatorId;
+    TZrUInt64 safepointEpoch;
+    struct SZrState *collectorState;
+    TZrUInt32 pauseDepth;
+    TZrBool pauseRequested;
+#if defined(ZR_PLATFORM_WIN)
+    CRITICAL_SECTION coordinationLock;
+    CONDITION_VARIABLE coordinationCondition;
+#else
+    pthread_mutex_t coordinationLock;
+    pthread_cond_t coordinationCondition;
+#endif
+    TZrBool coordinationInitialized;
     TZrBool active;
 } SZrGcDomain;
 
@@ -40,6 +81,17 @@ SZrGcDomain *ZrCore_GcDomain_New(
 void ZrCore_GcDomain_Free(SZrGcDomain *domain);
 void ZrCore_GcDomain_AttachState(SZrGcDomain *domain, struct SZrState *state);
 void ZrCore_GcDomain_DetachState(SZrGcDomain *domain, struct SZrState *state);
+TZrBool ZrCore_GcDomain_CoordinationInit(SZrGcDomain *domain);
+void ZrCore_GcDomain_CoordinationFree(SZrGcDomain *domain);
+void ZrCore_GcDomain_Lock(SZrGcDomain *domain);
+void ZrCore_GcDomain_Unlock(SZrGcDomain *domain);
+void ZrCore_GcDomain_Broadcast(SZrGcDomain *domain);
+TZrBool ZrCore_GcDomain_RegisterMutator(
+        SZrGcDomain *domain,
+        struct SZrState *state);
+void ZrCore_GcDomain_UnregisterMutator(
+        SZrGcDomain *domain,
+        struct SZrState *state);
 TZrBool ZrCore_GcDomain_AssignObject(SZrGcDomain *domain, struct SZrRawObject *object);
 TZrBool ZrCore_GcDomain_RegisterOwnershipRoot(
         struct SZrState *state,

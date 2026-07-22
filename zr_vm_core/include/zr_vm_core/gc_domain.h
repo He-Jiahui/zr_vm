@@ -4,6 +4,7 @@
 #include "zr_vm_core/conf.h"
 
 struct SZrRawObject;
+struct SZrCallInfo;
 struct SZrState;
 struct SZrTypeValue;
 
@@ -17,6 +18,31 @@ typedef struct SZrGcRootHandle {
     TZrUInt32 slotIndex;
     TZrUInt32 slotGeneration;
 } SZrGcRootHandle;
+
+typedef enum EZrGcNativeSafepointMode {
+    ZR_GC_NATIVE_SAFEPOINT_MODE_GC_AWARE = 0,
+    ZR_GC_NATIVE_SAFEPOINT_MODE_BLOCKING_DETACHED = 1,
+    ZR_GC_NATIVE_SAFEPOINT_MODE_NO_SAFEPOINT_CRITICAL = 2
+} EZrGcNativeSafepointMode;
+
+typedef struct SZrGcDomainPauseDiagnostic {
+    TZrBool timedOut;
+    TZrUInt64 safepointEpoch;
+    TZrUInt64 blockingMutatorId;
+    EZrGcNativeSafepointMode blockingNativeMode;
+    const struct SZrState *blockingState;
+    const struct SZrCallInfo *blockingNativeFrame;
+} SZrGcDomainPauseDiagnostic;
+
+typedef struct SZrGcDomainMutatorSnapshot {
+    TZrUInt64 safepointEpoch;
+    TZrUInt32 registeredMutatorCount;
+    TZrUInt32 runningMutatorCount;
+    TZrUInt32 parkedMutatorCount;
+    TZrUInt32 blockingDetachedMutatorCount;
+    TZrUInt32 noSafepointCriticalMutatorCount;
+    TZrBool pauseRequested;
+} SZrGcDomainMutatorSnapshot;
 
 ZR_CORE_API SZrGcDomainIdentity ZrCore_GcDomain_GetIdentity(
         const struct SZrState *state);
@@ -40,6 +66,32 @@ ZR_CORE_API TZrBool ZrCore_GcDomain_ValidateValueWrite(
         const struct SZrState *state,
         const struct SZrRawObject *owner,
         const struct SZrTypeValue *value);
+
+ZR_CORE_API TZrBool ZrCore_GcDomain_MutatorEnter(struct SZrState *state);
+ZR_CORE_API void ZrCore_GcDomain_MutatorLeave(struct SZrState *state);
+ZR_CORE_API void ZrCore_GcDomain_MutatorUnwindScopes(
+        struct SZrState *state);
+ZR_CORE_API TZrBool ZrCore_GcDomain_MutatorPoll(struct SZrState *state);
+ZR_CORE_API TZrBool ZrCore_GcDomain_MutatorAttach(
+        struct SZrState *ownerState,
+        struct SZrState *mutatorState);
+ZR_CORE_API void ZrCore_GcDomain_MutatorDetach(
+        struct SZrState *mutatorState);
+ZR_CORE_API TZrUInt64 ZrCore_GcDomain_GetMutatorId(
+        const struct SZrState *state);
+ZR_CORE_API TZrBool ZrCore_GcDomain_NativeEnter(
+        struct SZrState *state,
+        EZrGcNativeSafepointMode mode);
+ZR_CORE_API void ZrCore_GcDomain_NativeLeave(struct SZrState *state);
+ZR_CORE_API TZrBool ZrCore_GcDomain_StopTheWorldBegin(
+        struct SZrState *state,
+        TZrUInt32 timeoutMilliseconds,
+        SZrGcDomainPauseDiagnostic *outDiagnostic);
+ZR_CORE_API void ZrCore_GcDomain_StopTheWorldEnd(struct SZrState *state);
+ZR_CORE_API void ZrCore_GcDomain_GetMutatorSnapshot(
+        const struct SZrState *state,
+        SZrGcDomainMutatorSnapshot *outSnapshot);
+ZR_CORE_API void ZrCore_GcDomain_WakeMutators(struct SZrState *state);
 
 ZR_CORE_API TZrBool ZrCore_GcRootHandle_Create(
         struct SZrState *state,

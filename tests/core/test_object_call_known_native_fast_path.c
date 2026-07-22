@@ -7,6 +7,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/profile.h"
@@ -80,6 +81,52 @@ static TZrUInt64 gBoundContextSelfStackGetDelta = 0;
 static TZrUInt64 gBoundContextArgumentStackGetDelta = 0;
 static TZrBool gObservedInlineSpanResult = ZR_FALSE;
 static ZrLibInlineSpan gObservedInlineSpan;
+static TZrBool gObservedDirectNoSafepointMode = ZR_FALSE;
+static TZrBool gObservedReadonlyBlockingDetachedMode = ZR_FALSE;
+
+static TZrBool test_direct_no_safepoint_mode_callback(
+        ZrLibCallContext *context,
+        SZrTypeValue *result) {
+    SZrGcDomainMutatorSnapshot snapshot;
+    SZrGcDomainPauseDiagnostic diagnostic;
+
+    if (context == ZR_NULL || context->state == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_GcDomain_GetMutatorSnapshot(context->state, &snapshot);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    gObservedDirectNoSafepointMode =
+            snapshot.runningMutatorCount == 0u &&
+            snapshot.blockingDetachedMutatorCount == 0u &&
+            snapshot.noSafepointCriticalMutatorCount == 1u &&
+            !ZrCore_GcDomain_StopTheWorldBegin(
+                    context->state, 20u, &diagnostic) &&
+            diagnostic.timedOut &&
+            diagnostic.blockingNativeMode ==
+                    ZR_GC_NATIVE_SAFEPOINT_MODE_NO_SAFEPOINT_CRITICAL;
+    ZrLib_Value_SetInt(context->state, result, 71);
+    return ZR_TRUE;
+}
+
+static TZrBool test_readonly_blocking_detached_fast_callback(
+        SZrState *state,
+        const SZrTypeValue *selfValue,
+        const SZrTypeValue *argument0,
+        SZrTypeValue *result) {
+    SZrGcDomainMutatorSnapshot snapshot;
+
+    if (state == ZR_NULL || selfValue == ZR_NULL ||
+        argument0 == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_GcDomain_GetMutatorSnapshot(state, &snapshot);
+    gObservedReadonlyBlockingDetachedMode =
+            snapshot.runningMutatorCount == 0u &&
+            snapshot.blockingDetachedMutatorCount == 1u &&
+            snapshot.noSafepointCriticalMutatorCount == 0u;
+    ZrCore_Value_InitAsInt(state, result, 72);
+    return ZR_TRUE;
+}
 
 static TZrBool test_binding_cache_callback(ZrLibCallContext *context, SZrTypeValue *result) {
     TEST_ASSERT_NOT_NULL(context);
@@ -6118,6 +6165,104 @@ static void test_native_dispatch_callback_inline_argument_span_uses_current_fram
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_direct_binding_callback_uses_descriptor_no_safepoint_mode(void) {
+    static const ZrLibMethodDescriptor kDescriptor = {
+            .name = "critical",
+            .minArgumentCount = 1u,
+            .maxArgumentCount = 1u,
+            .callback = test_direct_no_safepoint_mode_callback,
+            .returnTypeName = "int",
+            .isStatic = ZR_FALSE,
+            .dispatchFlags =
+                    ZR_LIB_NATIVE_DISPATCH_FLAG_NO_SAFEPOINT_CRITICAL};
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrObjectKnownNativeDirectDispatch dispatch;
+    SZrTypeValue receiver;
+    SZrTypeValue argument;
+    SZrTypeValue result;
+    SZrGcDomainMutatorSnapshot after;
+
+    TEST_ASSERT_NOT_NULL(state);
+    memset(&dispatch, 0, sizeof(dispatch));
+    dispatch.callback = kDescriptor.callback;
+    dispatch.methodDescriptor = &kDescriptor;
+    dispatch.rawArgumentCount = 2u;
+    dispatch.usesReceiver = ZR_TRUE;
+    ZrCore_Value_InitAsInt(state, &receiver, 1);
+    ZrCore_Value_InitAsInt(state, &argument, 2);
+    ZrCore_Value_ResetAsNull(&result);
+    gObservedDirectNoSafepointMode = ZR_FALSE;
+
+    TEST_ASSERT_TRUE(ZrCore_Object_CallDirectBindingFastOneArgument(
+            state, &dispatch, &receiver, &argument, &result));
+    TEST_ASSERT_TRUE(gObservedDirectNoSafepointMode);
+    TEST_ASSERT_EQUAL_INT64(71, result.value.nativeObject.nativeInt64);
+    ZrCore_GcDomain_GetMutatorSnapshot(state, &after);
+    TEST_ASSERT_EQUAL_UINT32(0u, after.runningMutatorCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, after.noSafepointCriticalMutatorCount);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_readonly_direct_fast_callback_uses_descriptor_blocking_mode(void) {
+    static const ZrLibMetaMethodDescriptor kDescriptor = {
+            .metaType = ZR_META_GET_ITEM,
+            .minArgumentCount = 1u,
+            .maxArgumentCount = 1u,
+            .callback = test_binding_cache_callback,
+            .returnTypeName = "int",
+            .dispatchFlags =
+                    ZR_LIB_NATIVE_DISPATCH_FLAG_STACK_ROOT_CONTEXT |
+                    ZR_LIB_NATIVE_DISPATCH_FLAG_NO_SELF_REBIND |
+                    ZR_LIB_NATIVE_DISPATCH_FLAG_INLINE_VALUE_CONTEXT |
+                    ZR_LIB_NATIVE_DISPATCH_FLAG_RESULT_ALWAYS_WRITTEN |
+                    ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT |
+                    ZR_LIB_NATIVE_DISPATCH_FLAG_BLOCKING_DETACHED,
+            .readonlyInlineGetFastCallback =
+                    test_readonly_blocking_detached_fast_callback};
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrObjectKnownNativeDirectDispatch dispatch;
+    TZrStackValuePointer base;
+    SZrTypeValue *receiver;
+    SZrTypeValue *argument;
+    SZrTypeValue result;
+    SZrGcDomainMutatorSnapshot after;
+
+    TEST_ASSERT_NOT_NULL(state);
+    base = state->stackBase.valuePointer + 8u;
+    receiver = ZrCore_Stack_GetValue(base);
+    argument = ZrCore_Stack_GetValue(base + 1u);
+    TEST_ASSERT_NOT_NULL(receiver);
+    TEST_ASSERT_NOT_NULL(argument);
+    ZrCore_Value_InitAsInt(state, receiver, 3);
+    ZrCore_Value_InitAsInt(state, argument, 4);
+    ZrCore_Value_ResetAsNull(&result);
+    memset(&dispatch, 0, sizeof(dispatch));
+    dispatch.callback = kDescriptor.callback;
+    dispatch.metaMethodDescriptor = &kDescriptor;
+    dispatch.readonlyInlineGetFastCallback =
+            kDescriptor.readonlyInlineGetFastCallback;
+    dispatch.rawArgumentCount = 2u;
+    dispatch.usesReceiver = ZR_TRUE;
+    dispatch.reserved0 =
+            (TZrUInt8)(ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_NO_SELF_REBIND |
+                       ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_INLINE_VALUE_CONTEXT |
+                       ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_RESULT_ALWAYS_WRITTEN |
+                       ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT);
+    gObservedReadonlyBlockingDetachedMode = ZR_FALSE;
+
+    TEST_ASSERT_TRUE(
+            ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineOneArgumentStack(
+                    state, &dispatch, receiver, argument, &result));
+    TEST_ASSERT_TRUE(gObservedReadonlyBlockingDetachedMode);
+    TEST_ASSERT_EQUAL_INT64(72, result.value.nativeObject.nativeInt64);
+    ZrCore_GcDomain_GetMutatorSnapshot(state, &after);
+    TEST_ASSERT_EQUAL_UINT32(0u, after.runningMutatorCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, after.blockingDetachedMutatorCount);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -6180,6 +6325,8 @@ int main(void) {
     RUN_TEST(test_native_registry_find_binding_promotes_hot_closures_into_two_slot_cache);
     RUN_TEST(test_native_call_context_inline_argument_span_points_at_frame_payload);
     RUN_TEST(test_native_dispatch_callback_inline_argument_span_uses_current_frame_metadata);
+    RUN_TEST(test_direct_binding_callback_uses_descriptor_no_safepoint_mode);
+    RUN_TEST(test_readonly_direct_fast_callback_uses_descriptor_blocking_mode);
 
     return UNITY_END();
 }

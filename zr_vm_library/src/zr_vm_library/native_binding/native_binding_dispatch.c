@@ -595,16 +595,10 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
         }
     }
     success = ZR_FALSE;
-    if (context.functionDescriptor != ZR_NULL && context.functionDescriptor->callback != ZR_NULL) {
-        native_binding_context_adopt_inline_frame_anchor(&context, &functionBaseAnchor);
-        success = context.functionDescriptor->callback(&context, &result);
-    } else if (context.methodDescriptor != ZR_NULL && context.methodDescriptor->callback != ZR_NULL) {
-        native_binding_context_adopt_inline_frame_anchor(&context, &functionBaseAnchor);
-        success = context.methodDescriptor->callback(&context, &result);
-    } else if (context.metaMethodDescriptor != ZR_NULL && context.metaMethodDescriptor->callback != ZR_NULL) {
-        native_binding_context_adopt_inline_frame_anchor(&context, &functionBaseAnchor);
-        success = context.metaMethodDescriptor->callback(&context, &result);
-    }
+    native_binding_context_adopt_inline_frame_anchor(
+            &context, &functionBaseAnchor);
+    success = native_binding_invoke_entry_callback_inline(
+            state, entryView, &context, &result);
 
     if (!success) {
         if (state->threadStatus != ZR_THREAD_STATUS_FINE) {

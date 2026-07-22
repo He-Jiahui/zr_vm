@@ -1116,6 +1116,7 @@ static TZrSize garbage_collector_rewrite_domain_roots(SZrGcDomain *domain) {
     if (domain == ZR_NULL || domain->roots == ZR_NULL) {
         return 0u;
     }
+    ZrCore_GcDomain_Lock(domain);
     for (TZrSize index = 0u; index < domain->rootLength; index++) {
         SZrGcDomainRootSlot *slot = &domain->roots[index];
         SZrRawObject *before;
@@ -1129,6 +1130,34 @@ static TZrSize garbage_collector_rewrite_domain_roots(SZrGcDomain *domain) {
             work++;
         }
     }
+    ZrCore_GcDomain_Unlock(domain);
+    return work;
+}
+
+static TZrSize garbage_collector_rewrite_domain_mutators(SZrGcDomain *domain) {
+    TZrSize work = 0u;
+
+    if (domain == ZR_NULL) {
+        return 0u;
+    }
+    ZrCore_GcDomain_Lock(domain);
+    if (domain->attachedState != ZR_NULL) {
+        SZrState *before = domain->attachedState;
+        garbage_collector_rewrite_raw_object_slot(
+                (SZrRawObject **)&domain->attachedState);
+        if (before != domain->attachedState) {
+            work++;
+        }
+    }
+    for (TZrSize index = 0u; index < domain->mutatorLength; index++) {
+        SZrState *before = domain->mutators[index].state;
+        garbage_collector_rewrite_raw_object_slot(
+                (SZrRawObject **)&domain->mutators[index].state);
+        if (before != domain->mutators[index].state) {
+            work++;
+        }
+    }
+    ZrCore_GcDomain_Unlock(domain);
     return work;
 }
 
@@ -1934,6 +1963,39 @@ static TZrSize garbage_collector_rewrite_object_graph(SZrState *state, SZrRawObj
     return work;
 }
 
+static TZrSize garbage_collector_rewrite_domain_mutator_frames(
+        SZrState *state,
+        SZrGcDomain *domain) {
+    TZrSize work = 0u;
+
+    if (state == ZR_NULL || domain == ZR_NULL) {
+        return 0u;
+    }
+    ZrCore_GcDomain_Lock(domain);
+    for (TZrSize index = 0u; index < domain->mutatorLength; index++) {
+        SZrState *threadState = domain->mutators[index].state;
+
+        if (threadState == ZR_NULL) {
+            continue;
+        }
+        work += garbage_collector_rewrite_thread_frame_slots(threadState);
+        work += garbage_collector_rewrite_aot_root_frames(threadState);
+        work += garbage_collector_rewrite_call_info_functions(state, threadState);
+        if (threadState->hasCurrentException &&
+            garbage_collector_rewrite_value_if_forwarded(
+                    &threadState->currentException)) {
+            work++;
+        }
+        if (threadState->pendingControl.hasValue &&
+            garbage_collector_rewrite_value_if_forwarded(
+                    &threadState->pendingControl.value)) {
+            work++;
+        }
+    }
+    ZrCore_GcDomain_Unlock(domain);
+    return work;
+}
+
 static TZrSize garbage_collector_rewrite_forwarded_roots(SZrState *state) {
     SZrGlobalState *global;
     TZrSize work = 0;
@@ -1996,12 +2058,9 @@ static TZrSize garbage_collector_rewrite_forwarded_roots(SZrState *state) {
                                                               ZR_FALSE);
     }
     work += garbage_collector_rewrite_domain_roots(global->gcDomain);
-
-    /*
-     * The caller immediately runs a full gcObjectList rewrite pass after root-slot
-     * forwarding. Both the current state and the main thread live on that list, so
-     * rewriting their interior graphs here just duplicates the thread-frame walk.
-     */
+    work += garbage_collector_rewrite_domain_mutators(global->gcDomain);
+    work += garbage_collector_rewrite_domain_mutator_frames(
+            state, global->gcDomain);
 
     return work;
 }

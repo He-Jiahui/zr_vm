@@ -171,6 +171,11 @@ SZrGcDomain *ZrCore_GcDomain_New(
     domain->identity.id = global->cacheIdentity != 0u ? global->cacheIdentity : 1u;
     domain->identity.generation = 1u;
     domain->active = ZR_TRUE;
+    if (!ZrCore_GcDomain_CoordinationInit(domain)) {
+        ZrCore_Memory_RawFreeWithType(
+                global, domain, sizeof(SZrGcDomain), ZR_MEMORY_NATIVE_TYPE_MANAGER);
+        return ZR_NULL;
+    }
     return domain;
 }
 
@@ -181,8 +186,14 @@ void ZrCore_GcDomain_Free(SZrGcDomain *domain) {
         return;
     }
     global = domain->global;
+    ZrCore_GcDomain_Lock(domain);
     domain->active = ZR_FALSE;
     domain->identity.generation++;
+    domain->pauseRequested = ZR_FALSE;
+    domain->collectorState = ZR_NULL;
+    domain->pauseDepth = 0u;
+    ZrCore_GcDomain_Broadcast(domain);
+    ZrCore_GcDomain_Unlock(domain);
     if (domain->roots != ZR_NULL && domain->rootCapacity > 0u) {
         ZrCore_Memory_RawFreeWithType(
                 global,
@@ -190,6 +201,14 @@ void ZrCore_GcDomain_Free(SZrGcDomain *domain) {
                 domain->rootCapacity * sizeof(SZrGcDomainRootSlot),
                 ZR_MEMORY_NATIVE_TYPE_ARRAY);
     }
+    if (domain->mutators != ZR_NULL && domain->mutatorCapacity > 0u) {
+        ZrCore_Memory_RawFreeWithType(
+                global,
+                domain->mutators,
+                domain->mutatorCapacity * sizeof(SZrGcDomainMutatorRecord),
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    ZrCore_GcDomain_CoordinationFree(domain);
     ZrCore_Memory_RawFreeWithType(
             global, domain, sizeof(SZrGcDomain), ZR_MEMORY_NATIVE_TYPE_MANAGER);
 }
@@ -198,10 +217,15 @@ void ZrCore_GcDomain_AttachState(SZrGcDomain *domain, SZrState *state) {
     if (domain == ZR_NULL || state == ZR_NULL || !domain->active) {
         return;
     }
+    if (!ZrCore_GcDomain_RegisterMutator(domain, state)) {
+        return;
+    }
     state->gcDomain = domain;
+    ZrCore_GcDomain_Lock(domain);
     if (domain->attachedState == ZR_NULL) {
         domain->attachedState = state;
     }
+    ZrCore_GcDomain_Unlock(domain);
     (void)ZrCore_GcDomain_AssignObject(domain, &state->super);
 }
 
@@ -209,9 +233,14 @@ void ZrCore_GcDomain_DetachState(SZrGcDomain *domain, SZrState *state) {
     if (domain == ZR_NULL || state == ZR_NULL) {
         return;
     }
+    ZrCore_GcDomain_UnregisterMutator(domain, state);
+    ZrCore_GcDomain_Lock(domain);
     if (domain->attachedState == state) {
-        domain->attachedState = ZR_NULL;
+        domain->attachedState = domain->mutatorLength > 0u
+                                        ? domain->mutators[0].state
+                                        : ZR_NULL;
     }
+    ZrCore_GcDomain_Unlock(domain);
     if (state->gcDomain == domain) {
         state->gcDomain = ZR_NULL;
     }
@@ -305,15 +334,20 @@ TZrBool ZrCore_GcRootHandle_Create(
         return ZR_FALSE;
     }
     gc_domain_reset_handle(outHandle);
-    if (state == ZR_NULL || state->gcDomain == ZR_NULL ||
-        !gc_domain_allocate_root(state->gcDomain, target,
+    if (state == ZR_NULL || state->gcDomain == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_GcDomain_Lock(state->gcDomain);
+    if (!gc_domain_allocate_root(state->gcDomain, target,
                                  ZR_GC_DOMAIN_ROOT_KIND_HANDLE,
                                  &index, &generation)) {
+        ZrCore_GcDomain_Unlock(state->gcDomain);
         return ZR_FALSE;
     }
     outHandle->domain = state->gcDomain->identity;
     outHandle->slotIndex = index;
     outHandle->slotGeneration = generation;
+    ZrCore_GcDomain_Unlock(state->gcDomain);
     return ZR_TRUE;
 }
 
@@ -326,13 +360,20 @@ TZrBool ZrCore_GcRootHandle_Clone(
     if (source == ZR_NULL || outHandle == ZR_NULL || outHandle == source) {
         return ZR_FALSE;
     }
+    if (state == ZR_NULL || state->gcDomain == ZR_NULL) {
+        gc_domain_reset_handle(outHandle);
+        return ZR_FALSE;
+    }
+    ZrCore_GcDomain_Lock(state->gcDomain);
     slot = gc_domain_resolve_slot(state, source, ZR_GC_DOMAIN_ROOT_KIND_HANDLE);
     if (slot == ZR_NULL || slot->retainCount == ~(TZrUInt32)0u) {
+        ZrCore_GcDomain_Unlock(state->gcDomain);
         gc_domain_reset_handle(outHandle);
         return ZR_FALSE;
     }
     slot->retainCount++;
     *outHandle = *source;
+    ZrCore_GcDomain_Unlock(state->gcDomain);
     return ZR_TRUE;
 }
 
@@ -341,29 +382,41 @@ TZrBool ZrCore_GcRootHandle_Update(
         SZrGcRootHandle *handle,
         SZrRawObject *target) {
     SZrGcDomain *domain;
-    SZrGcDomainRootSlot *slot = gc_domain_resolve_slot(
-            state, handle, ZR_GC_DOMAIN_ROOT_KIND_HANDLE);
-    if (slot == ZR_NULL || !gc_domain_object_matches(state->gcDomain, target)) {
+    SZrGcDomainRootSlot *slot;
+    TZrUInt32 oldIndex;
+
+    if (state == ZR_NULL || state->gcDomain == ZR_NULL) {
         return ZR_FALSE;
     }
     domain = state->gcDomain;
+    ZrCore_GcDomain_Lock(domain);
+    slot = gc_domain_resolve_slot(
+            state, handle, ZR_GC_DOMAIN_ROOT_KIND_HANDLE);
+    if (slot == ZR_NULL || !gc_domain_object_matches(domain, target)) {
+        ZrCore_GcDomain_Unlock(domain);
+        return ZR_FALSE;
+    }
     if (slot->retainCount > 1u) {
         TZrUInt32 index;
         TZrUInt32 generation;
 
+        oldIndex = handle->slotIndex;
         if (!gc_domain_allocate_root(domain,
                                      target,
                                      ZR_GC_DOMAIN_ROOT_KIND_HANDLE,
                                      &index,
                                      &generation)) {
+            ZrCore_GcDomain_Unlock(domain);
             return ZR_FALSE;
         }
-        slot->retainCount--;
+        domain->roots[oldIndex].retainCount--;
         handle->slotIndex = index;
         handle->slotGeneration = generation;
+        ZrCore_GcDomain_Unlock(domain);
         return ZR_TRUE;
     }
     slot->target = target;
+    ZrCore_GcDomain_Unlock(domain);
     return ZR_TRUE;
 }
 
@@ -378,33 +431,54 @@ TZrBool ZrCore_GcRootHandle_Resolve(
     if (outTarget == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (state == ZR_NULL || state->gcDomain == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_GcDomain_Lock(state->gcDomain);
     slot = gc_domain_resolve_slot(state, handle, ZR_GC_DOMAIN_ROOT_KIND_HANDLE);
     if (slot == ZR_NULL || !gc_domain_object_matches(state->gcDomain, slot->target)) {
+        ZrCore_GcDomain_Unlock(state->gcDomain);
         return ZR_FALSE;
     }
     *outTarget = slot->target;
+    ZrCore_GcDomain_Unlock(state->gcDomain);
     return ZR_TRUE;
 }
 
 void ZrCore_GcRootHandle_Release(SZrState *state, SZrGcRootHandle *handle) {
-    SZrGcDomainRootSlot *slot = gc_domain_resolve_slot(
-            state, handle, ZR_GC_DOMAIN_ROOT_KIND_HANDLE);
+    SZrGcDomainRootSlot *slot = ZR_NULL;
+    if (state != ZR_NULL && state->gcDomain != ZR_NULL) {
+        ZrCore_GcDomain_Lock(state->gcDomain);
+        slot = gc_domain_resolve_slot(
+                state, handle, ZR_GC_DOMAIN_ROOT_KIND_HANDLE);
+    }
     if (slot != ZR_NULL) {
         gc_domain_release_slot(state->gcDomain, slot);
+    }
+    if (state != ZR_NULL && state->gcDomain != ZR_NULL) {
+        ZrCore_GcDomain_Unlock(state->gcDomain);
     }
     gc_domain_reset_handle(handle);
 }
 
 TZrSize ZrCore_GcDomain_GetRootCount(const SZrState *state) {
-    return state != ZR_NULL && state->gcDomain != ZR_NULL
-                   ? state->gcDomain->activeRootCount
-                   : 0u;
+    TZrSize count = 0u;
+    if (state != ZR_NULL && state->gcDomain != ZR_NULL) {
+        ZrCore_GcDomain_Lock(state->gcDomain);
+        count = state->gcDomain->activeRootCount;
+        ZrCore_GcDomain_Unlock(state->gcDomain);
+    }
+    return count;
 }
 
 TZrSize ZrCore_GcDomain_GetOwnershipRootCount(const SZrState *state) {
-    return state != ZR_NULL && state->gcDomain != ZR_NULL
-                   ? state->gcDomain->ownershipRootCount
-                   : 0u;
+    TZrSize count = 0u;
+    if (state != ZR_NULL && state->gcDomain != ZR_NULL) {
+        ZrCore_GcDomain_Lock(state->gcDomain);
+        count = state->gcDomain->ownershipRootCount;
+        ZrCore_GcDomain_Unlock(state->gcDomain);
+    }
+    return count;
 }
 
 TZrBool ZrCore_GcDomain_RegisterOwnershipRoot(
@@ -418,21 +492,25 @@ TZrBool ZrCore_GcDomain_RegisterOwnershipRoot(
         return ZR_FALSE;
     }
     domain = state->gcDomain;
+    ZrCore_GcDomain_Lock(domain);
     if (object->ownershipRootIndex < domain->rootLength) {
         SZrGcDomainRootSlot *existing = &domain->roots[object->ownershipRootIndex];
         if (existing->kind == ZR_GC_DOMAIN_ROOT_KIND_OWNERSHIP &&
             existing->generation == object->ownershipRootGeneration &&
             existing->target == object) {
+            ZrCore_GcDomain_Unlock(domain);
             return ZR_TRUE;
         }
     }
     if (!gc_domain_allocate_root(domain, object,
                                  ZR_GC_DOMAIN_ROOT_KIND_OWNERSHIP,
                                  &index, &generation)) {
+        ZrCore_GcDomain_Unlock(domain);
         return ZR_FALSE;
     }
     object->ownershipRootIndex = index;
     object->ownershipRootGeneration = generation;
+    ZrCore_GcDomain_Unlock(domain);
     return ZR_TRUE;
 }
 
@@ -446,18 +524,22 @@ void ZrCore_GcDomain_UnregisterOwnershipRoot(
         return;
     }
     domain = state->gcDomain;
+    ZrCore_GcDomain_Lock(domain);
     if (object->ownershipRootIndex >= domain->rootLength) {
+        ZrCore_GcDomain_Unlock(domain);
         return;
     }
     slot = &domain->roots[object->ownershipRootIndex];
     if (slot->kind != ZR_GC_DOMAIN_ROOT_KIND_OWNERSHIP ||
         slot->generation != object->ownershipRootGeneration ||
         slot->target != object) {
+        ZrCore_GcDomain_Unlock(domain);
         return;
     }
     gc_domain_release_slot(domain, slot);
     object->ownershipRootIndex = ZR_GC_DOMAIN_ROOT_NONE;
     object->ownershipRootGeneration = 0u;
+    ZrCore_GcDomain_Unlock(domain);
 }
 
 TZrBool ZrCore_GcDomain_IsOwnershipRoot(
@@ -470,11 +552,17 @@ TZrBool ZrCore_GcDomain_IsOwnershipRoot(
         return ZR_FALSE;
     }
     domain = state->gcDomain;
+    ZrCore_GcDomain_Lock(domain);
     if (object->ownershipRootIndex >= domain->rootLength) {
+        ZrCore_GcDomain_Unlock(domain);
         return ZR_FALSE;
     }
     slot = &domain->roots[object->ownershipRootIndex];
-    return slot->kind == ZR_GC_DOMAIN_ROOT_KIND_OWNERSHIP &&
-           slot->generation == object->ownershipRootGeneration &&
-           slot->target == object && gc_domain_object_matches(domain, object);
+    {
+        TZrBool result = slot->kind == ZR_GC_DOMAIN_ROOT_KIND_OWNERSHIP &&
+                         slot->generation == object->ownershipRootGeneration &&
+                         slot->target == object && gc_domain_object_matches(domain, object);
+        ZrCore_GcDomain_Unlock(domain);
+        return result;
+    }
 }

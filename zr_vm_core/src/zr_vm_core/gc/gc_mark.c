@@ -463,6 +463,7 @@ TZrSize garbage_collector_mark_domain_roots(SZrState *state) {
         return 0u;
     }
     domain = state->gcDomain;
+    ZrCore_GcDomain_Lock(domain);
     for (TZrSize index = 0u; index < domain->rootLength; index++) {
         SZrGcDomainRootSlot *slot = &domain->roots[index];
         SZrRawObject *object = slot->target;
@@ -477,6 +478,22 @@ TZrSize garbage_collector_mark_domain_roots(SZrState *state) {
         garbage_collector_mark_object(state, object);
         work++;
     }
+    for (TZrSize index = 0u; index < domain->mutatorLength; index++) {
+        SZrState *mutatorState = domain->mutators[index].state;
+        SZrRawObject *mutatorObject = mutatorState != ZR_NULL
+                                             ? ZR_CAST_RAW_OBJECT_AS_SUPER(mutatorState)
+                                             : ZR_NULL;
+
+        if (mutatorObject == ZR_NULL ||
+            mutatorObject->type != ZR_RAW_OBJECT_TYPE_THREAD ||
+            mutatorObject->gcDomainId != domain->identity.id ||
+            mutatorObject->gcDomainGeneration != domain->identity.generation) {
+            continue;
+        }
+        garbage_collector_mark_object(state, mutatorObject);
+        work++;
+    }
+    ZrCore_GcDomain_Unlock(domain);
     return work;
 }
 

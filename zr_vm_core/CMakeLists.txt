@@ -1,6 +1,8 @@
 include(${CMAKE_SOURCE_DIR}/zr_vm_common/CommonMacros.cmake)
 set(zr_curr_module_name "zr_vm_core")
 
+find_package(Threads REQUIRED)
+
 add_subdirectory(third_party)
 
 zr_declare_module(${zr_curr_module_name} ON)
@@ -19,6 +21,7 @@ endif ()
 
 zr_link_third_party_for_module(${zr_curr_module_name} "zr_xx_hash")
 zr_link_third_party_for_module(${zr_curr_module_name} "zr_utf8proc")
+zr_link_internal_for_module(${zr_curr_module_name} Threads::Threads)
 
 if (NOT WIN32)
     zr_link_internal_for_module(${zr_curr_module_name} m)

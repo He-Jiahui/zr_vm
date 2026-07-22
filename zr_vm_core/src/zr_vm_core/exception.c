@@ -13,6 +13,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/log.h"
 #include "zr_vm_core/object.h"
@@ -522,6 +523,7 @@ void ZrCore_Exception_Throw(SZrState *state, EZrThreadStatus errorCode) {
         }
         state->threadStatus = errorCode;
         state->exceptionRecoverPoint->status = errorCode;
+        ZrCore_GcDomain_MutatorUnwindScopes(state);
         ZR_EXCEPTION_NATIVE_THROW(state, state->exceptionRecoverPoint);
     }
 

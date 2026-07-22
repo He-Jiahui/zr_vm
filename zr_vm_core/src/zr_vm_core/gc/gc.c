@@ -5,6 +5,9 @@
 #include "gc/gc_internal.h"
 
 #include "zr_vm_common/zr_aot_abi.h"
+#include "zr_vm_core/gc_domain.h"
+
+#define ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS ((TZrUInt32)1000u)
 
 #if defined(ZR_PLATFORM_WIN)
 #define WIN32_LEAN_AND_MEAN
@@ -616,6 +619,10 @@ void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
 
     global = state->global;
     collector = global->garbageCollector;
+    if (!ZrCore_GcDomain_StopTheWorldBegin(
+                state, ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS, ZR_NULL)) {
+        return;
+    }
     startedUs = garbage_collector_now_us();
 
     collector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
@@ -650,6 +657,7 @@ void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
     if (collector->gcRunningStatus == ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED) {
         collector->gcStatus = ZR_GARBAGE_COLLECT_STATUS_STOP_BY_SELF;
     }
+    ZrCore_GcDomain_StopTheWorldEnd(state);
 }
 
 void ZrCore_GarbageCollector_GcStep(SZrState *state) {
@@ -683,6 +691,11 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
             garbage_collector_refresh_cumulative_snapshot(collector);
             return;
         }
+    }
+
+    if (!ZrCore_GcDomain_StopTheWorldBegin(
+                state, ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS, ZR_NULL)) {
+        return;
     }
 
     if (garbage_collector_is_generational_mode(global)) {
@@ -742,6 +755,7 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
     }
     garbage_collector_record_step_telemetry(collector, startedUs);
     collector->gcLastCompletedRunningStatus = collector->gcRunningStatus;
+    ZrCore_GcDomain_StopTheWorldEnd(state);
 }
 
 void ZrCore_GarbageCollector_SetHeapLimitBytes(SZrGlobalState *global, TZrMemoryOffset heapLimitBytes) {
@@ -922,6 +936,7 @@ void ZrCore_GarbageCollector_CheckGc(SZrState *state) {
 }
 
 void ZrCore_Gc_SafePoint(SZrState *state) {
+    ZrCore_GcDomain_MutatorPoll(state);
     ZrCore_GarbageCollector_CheckGc(state);
 }
 

@@ -8,6 +8,7 @@
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/stack.h"
@@ -86,7 +87,9 @@ enum {
     ZR_LIB_NATIVE_DISPATCH_FLAG_INLINE_VALUE_CONTEXT = 1u << 2,
     ZR_LIB_NATIVE_DISPATCH_FLAG_RESULT_ALWAYS_WRITTEN = 1u << 3,
     ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT = 1u << 4,
-    ZR_LIB_NATIVE_DISPATCH_FLAG_RESULT_OPTIONAL = 1u << 5
+    ZR_LIB_NATIVE_DISPATCH_FLAG_RESULT_OPTIONAL = 1u << 5,
+    ZR_LIB_NATIVE_DISPATCH_FLAG_BLOCKING_DETACHED = 1u << 7,
+    ZR_LIB_NATIVE_DISPATCH_FLAG_NO_SAFEPOINT_CRITICAL = 1u << 8
 };
 
 struct ZrLibFunctionDescriptor {
@@ -135,6 +138,72 @@ struct ZrLibMetaMethodDescriptor {
     FZrLibMetaMethodReadonlyInlineGetFastCallback readonlyInlineGetFastCallback;
     FZrLibMetaMethodReadonlyInlineSetNoResultFastCallback readonlyInlineSetNoResultFastCallback;
 };
+
+static ZR_FORCE_INLINE TZrUInt32 object_direct_binding_dispatch_flags(
+        const SZrObjectKnownNativeDirectDispatch *dispatch) {
+    if (dispatch == ZR_NULL) {
+        return 0u;
+    }
+    if (dispatch->functionDescriptor != ZR_NULL) {
+        return ((const ZrLibFunctionDescriptor *)dispatch->functionDescriptor)
+                ->dispatchFlags;
+    }
+    if (dispatch->methodDescriptor != ZR_NULL) {
+        return ((const ZrLibMethodDescriptor *)dispatch->methodDescriptor)
+                ->dispatchFlags;
+    }
+    if (dispatch->metaMethodDescriptor != ZR_NULL) {
+        return ((const ZrLibMetaMethodDescriptor *)
+                        dispatch->metaMethodDescriptor)
+                ->dispatchFlags;
+    }
+    return 0u;
+}
+
+static ZR_FORCE_INLINE TZrBool object_direct_binding_native_mode(
+        const SZrObjectKnownNativeDirectDispatch *dispatch,
+        EZrGcNativeSafepointMode *outMode) {
+    TZrUInt32 modeFlags;
+
+    if (outMode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    modeFlags = object_direct_binding_dispatch_flags(dispatch) &
+                (ZR_LIB_NATIVE_DISPATCH_FLAG_BLOCKING_DETACHED |
+                 ZR_LIB_NATIVE_DISPATCH_FLAG_NO_SAFEPOINT_CRITICAL);
+    if (modeFlags == 0u) {
+        *outMode = ZR_GC_NATIVE_SAFEPOINT_MODE_GC_AWARE;
+        return ZR_TRUE;
+    }
+    if (modeFlags == ZR_LIB_NATIVE_DISPATCH_FLAG_BLOCKING_DETACHED) {
+        *outMode = ZR_GC_NATIVE_SAFEPOINT_MODE_BLOCKING_DETACHED;
+        return ZR_TRUE;
+    }
+    if (modeFlags == ZR_LIB_NATIVE_DISPATCH_FLAG_NO_SAFEPOINT_CRITICAL) {
+        *outMode = ZR_GC_NATIVE_SAFEPOINT_MODE_NO_SAFEPOINT_CRITICAL;
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
+static ZR_FORCE_INLINE TZrBool object_invoke_direct_binding_callback(
+        SZrState *state,
+        const SZrObjectKnownNativeDirectDispatch *dispatch,
+        FZrObjectKnownNativeDirectCallback callback,
+        ZrLibCallContext *context,
+        SZrTypeValue *result) {
+    EZrGcNativeSafepointMode mode;
+    TZrBool success;
+
+    if (state == ZR_NULL || callback == ZR_NULL || context == ZR_NULL ||
+        !object_direct_binding_native_mode(dispatch, &mode) ||
+        !ZrCore_GcDomain_NativeEnter(state, mode)) {
+        return ZR_FALSE;
+    }
+    success = callback(context, result);
+    ZrCore_GcDomain_NativeLeave(state);
+    return success;
+}
 
 static ZR_FORCE_INLINE void object_stack_copy_value_no_profile(struct SZrState *state,
                                                                TZrStackValuePointer destination,
@@ -1266,7 +1335,8 @@ static ZR_FORCE_INLINE TZrBool object_complete_known_native_fast_direct_binding_
     callbackResult = hasResultAnchor ? &callbackResultStorage : result;
     ZrCore_Value_ResetAsNull(callbackResult);
 
-    success = callback(&context, callbackResult);
+    success = object_invoke_direct_binding_callback(
+            state, directBindingDispatch, callback, &context, callbackResult);
     if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
         ZrCore_Value_ResetAsNull(callbackResult);
         success = ZR_TRUE;
@@ -1314,7 +1384,12 @@ static ZR_FORCE_INLINE TZrBool object_call_direct_binding_fast_one_argument_read
                                                     (SZrTypeValue *)receiver,
                                                     (SZrTypeValue *)argument0,
                                                     1u);
-    success = directBindingDispatch->callback(&context, result);
+    success = object_invoke_direct_binding_callback(
+            state,
+            directBindingDispatch,
+            directBindingDispatch->callback,
+            &context,
+            result);
     if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
         ZrCore_Value_ResetAsNull(result);
         success = ZR_TRUE;
@@ -1375,7 +1450,8 @@ static ZR_FORCE_INLINE TZrBool object_call_direct_binding_fast_one_argument_inli
     if (!resultAlwaysWritten) {
         ZrCore_Value_ResetAsNull(result);
     }
-    success = callback(&context, result);
+    success = object_invoke_direct_binding_callback(
+            state, directBindingDispatch, callback, &context, result);
     if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
         ZrCore_Value_ResetAsNull(result);
         success = ZR_TRUE;
@@ -1399,7 +1475,12 @@ static ZR_FORCE_INLINE TZrBool object_call_direct_binding_fast_two_arguments_rea
                                                     (SZrTypeValue *)receiver,
                                                     (SZrTypeValue *)argument0,
                                                     2u);
-    success = directBindingDispatch->callback(&context, result);
+    success = object_invoke_direct_binding_callback(
+            state,
+            directBindingDispatch,
+            directBindingDispatch->callback,
+            &context,
+            result);
     if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
         ZrCore_Value_ResetAsNull(result);
         success = ZR_TRUE;
@@ -1488,7 +1569,8 @@ static ZR_FORCE_INLINE TZrBool object_call_direct_binding_fast_two_arguments_inl
                                                         stableArguments,
                                                         2u);
     }
-    success = callback(&context, ZR_NULL);
+    success = object_invoke_direct_binding_callback(
+            state, directBindingDispatch, callback, &context, ZR_NULL);
     if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
         success = ZR_TRUE;
     }
@@ -1600,7 +1682,8 @@ static ZR_FORCE_INLINE TZrBool object_call_direct_binding_fast_two_arguments_inl
     if (!resultAlwaysWritten) {
         ZrCore_Value_ResetAsNull(result);
     }
-    success = callback(&context, result);
+    success = object_invoke_direct_binding_callback(
+            state, directBindingDispatch, callback, &context, result);
     if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
         ZrCore_Value_ResetAsNull(result);
         success = ZR_TRUE;
@@ -1675,7 +1758,8 @@ static ZR_FORCE_INLINE TZrBool object_complete_known_native_fast_direct_binding_
     selfValueBefore = context.selfValue;
     stackBaseBefore = state->stackBase.valuePointer;
     stackTailBefore = state->stackTail.valuePointer;
-    success = callback(&context, callbackResult);
+    success = object_invoke_direct_binding_callback(
+            state, directBindingDispatch, callback, &context, callbackResult);
     if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
         ZrCore_Value_ResetAsNull(callbackResult);
         success = ZR_TRUE;

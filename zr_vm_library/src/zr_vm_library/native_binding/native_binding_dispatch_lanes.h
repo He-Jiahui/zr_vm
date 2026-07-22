@@ -6,6 +6,7 @@
 #define ZR_VM_LIBRARY_NATIVE_BINDING_DISPATCH_LANES_H
 
 #include "native_binding/native_binding_internal.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/ownership.h"
 
 static ZR_FORCE_INLINE TZrBool native_binding_value_has_detached_gc_ownership_inline(const SZrTypeValue *value) {
@@ -214,6 +215,65 @@ static ZR_FORCE_INLINE TZrUInt32 native_binding_entry_dispatch_flags_inline(cons
         default:
             return 0U;
     }
+}
+
+static ZR_FORCE_INLINE TZrBool native_binding_dispatch_native_mode_inline(
+        TZrUInt32 dispatchFlags,
+        EZrGcNativeSafepointMode *outMode) {
+    TZrUInt32 modeFlags;
+
+    if (outMode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    modeFlags = dispatchFlags &
+                (TZrUInt32)ZR_LIB_NATIVE_DISPATCH_FLAG_SAFEPOINT_MODE_MASK;
+    if (modeFlags == 0u) {
+        *outMode = ZR_GC_NATIVE_SAFEPOINT_MODE_GC_AWARE;
+        return ZR_TRUE;
+    }
+    if (modeFlags ==
+        (TZrUInt32)ZR_LIB_NATIVE_DISPATCH_FLAG_BLOCKING_DETACHED) {
+        *outMode = ZR_GC_NATIVE_SAFEPOINT_MODE_BLOCKING_DETACHED;
+        return ZR_TRUE;
+    }
+    if (modeFlags ==
+        (TZrUInt32)ZR_LIB_NATIVE_DISPATCH_FLAG_NO_SAFEPOINT_CRITICAL) {
+        *outMode = ZR_GC_NATIVE_SAFEPOINT_MODE_NO_SAFEPOINT_CRITICAL;
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
+static ZR_FORCE_INLINE TZrBool native_binding_invoke_callback_inline(
+        SZrState *state,
+        FZrLibBoundCallback callback,
+        TZrUInt32 dispatchFlags,
+        ZrLibCallContext *context,
+        SZrTypeValue *result) {
+    EZrGcNativeSafepointMode mode;
+    TZrBool success;
+
+    if (state == ZR_NULL || callback == ZR_NULL || context == ZR_NULL ||
+        !native_binding_dispatch_native_mode_inline(dispatchFlags, &mode) ||
+        !ZrCore_GcDomain_NativeEnter(state, mode)) {
+        return ZR_FALSE;
+    }
+    success = callback(context, result);
+    ZrCore_GcDomain_NativeLeave(state);
+    return success;
+}
+
+static ZR_FORCE_INLINE TZrBool native_binding_invoke_entry_callback_inline(
+        SZrState *state,
+        const ZrLibBindingEntry *entry,
+        ZrLibCallContext *context,
+        SZrTypeValue *result) {
+    return native_binding_invoke_callback_inline(
+            state,
+            native_binding_entry_callback_inline(entry),
+            native_binding_entry_dispatch_flags_inline(entry),
+            context,
+            result);
 }
 
 static ZR_FORCE_INLINE TZrBool native_binding_entry_fixed_argument_count_inline(const ZrLibBindingEntry *entry,
