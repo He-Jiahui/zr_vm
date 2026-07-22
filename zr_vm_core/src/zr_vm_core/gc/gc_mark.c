@@ -838,6 +838,7 @@ static void garbage_collector_mark_object_prototype_graph(SZrState *state,
         garbage_collector_mark_string_if_present(state, descriptor->baseDefinitionName);
         garbage_collector_mark_function_if_present(state, descriptor->getterFunction, work);
         garbage_collector_mark_function_if_present(state, descriptor->setterFunction, work);
+        garbage_collector_mark_function_if_present(state, descriptor->initializerFunction, work);
         if (work != ZR_NULL) {
             (*work) += descriptor->name != ZR_NULL ? 1u : 0u;
             (*work) += descriptor->ownerTypeName != ZR_NULL ? 1u : 0u;

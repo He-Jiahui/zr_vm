@@ -49,12 +49,9 @@ class MethodTest {
 class PropertyTest {
     pri var _value: int = 0;
     
-pub get value: int {
-        return this._value;
-    }
-    
-    pub set value(v: int) {
-        this._value = v;
+    pub property value: int {
+        get { return this._value; }
+        set { this._value = value; }
     }
 }
 

@@ -3631,6 +3631,8 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
                 node->type == ZR_AST_CLASS_FIELD ||
                 node->type == ZR_AST_CLASS_METHOD ||
                 node->type == ZR_AST_CLASS_PROPERTY ||
+                node->type == ZR_AST_PROPERTY_DECLARATION ||
+                node->type == ZR_AST_PROPERTY_ACCESSOR ||
                 node->type == ZR_AST_CLASS_META_FUNCTION ||
                 node->type == ZR_AST_STRUCT_DECLARATION ||
                 node->type == ZR_AST_CLASS_DECLARATION ||
@@ -3657,6 +3659,8 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
                     case ZR_AST_CLASS_FIELD: typeName = "CLASS_FIELD"; break;
                     case ZR_AST_CLASS_METHOD: typeName = "CLASS_METHOD"; break;
                     case ZR_AST_CLASS_PROPERTY: typeName = "CLASS_PROPERTY"; break;
+                    case ZR_AST_PROPERTY_DECLARATION: typeName = "PROPERTY_DECLARATION"; break;
+                    case ZR_AST_PROPERTY_ACCESSOR: typeName = "PROPERTY_ACCESSOR"; break;
                     case ZR_AST_CLASS_META_FUNCTION: typeName = "CLASS_META_FUNCTION"; break;
                     case ZR_AST_STRUCT_DECLARATION: typeName = "STRUCT_DECLARATION"; break;
                     case ZR_AST_CLASS_DECLARATION: typeName = "CLASS_DECLARATION"; break;

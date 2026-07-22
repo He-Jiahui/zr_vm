@@ -130,7 +130,9 @@ static TZrBool compiler_member_supports_virtual_chain(const SZrTypeMemberInfo *m
         return ZR_FALSE;
     }
 
-    return memberInfo->memberType == ZR_AST_CLASS_METHOD || memberInfo->memberType == ZR_AST_CLASS_META_FUNCTION;
+    return memberInfo->memberType == ZR_AST_CLASS_METHOD ||
+           memberInfo->memberType == ZR_AST_CLASS_META_FUNCTION ||
+           memberInfo->memberType == ZR_AST_PROPERTY_DECLARATION;
 }
 
 static TZrBool compiler_parameter_types_match(const SZrArray *leftTypes, const SZrArray *rightTypes) {
@@ -190,6 +192,20 @@ static TZrBool compiler_member_signatures_match(const SZrTypeMemberInfo *baseMem
 
     if (baseMember->isMetaMethod != currentMember->isMetaMethod) {
         return ZR_FALSE;
+    }
+
+    if (baseMember->memberType == ZR_AST_PROPERTY_DECLARATION ||
+        currentMember->memberType == ZR_AST_PROPERTY_DECLARATION) {
+        if (baseMember->memberType != ZR_AST_PROPERTY_DECLARATION ||
+            currentMember->memberType != ZR_AST_PROPERTY_DECLARATION ||
+            (baseMember->getterAccessorSymbolId != ZR_SEMANTIC_ID_INVALID) !=
+                    (currentMember->getterAccessorSymbolId != ZR_SEMANTIC_ID_INVALID) ||
+            (baseMember->setterAccessorSymbolId != ZR_SEMANTIC_ID_INVALID) !=
+                    (currentMember->setterAccessorSymbolId != ZR_SEMANTIC_ID_INVALID) ||
+            (baseMember->initAccessorSymbolId != ZR_SEMANTIC_ID_INVALID) !=
+                    (currentMember->initAccessorSymbolId != ZR_SEMANTIC_ID_INVALID)) {
+            return ZR_FALSE;
+        }
     }
 
     if (!compiler_strings_equal_or_both_null(baseMember->fieldTypeName, currentMember->fieldTypeName) ||
@@ -285,6 +301,45 @@ static TZrBool compiler_class_member_body_is_present(const SZrTypeMemberInfo *me
                 return memberInfo->declarationNode->data.classProperty.modifier->data.propertySet.body != ZR_NULL;
             }
             return ZR_FALSE;
+        case ZR_AST_PROPERTY_DECLARATION: {
+            const SZrPropertyDeclaration *property =
+                    &memberInfo->declarationNode->data.propertyDeclaration;
+            if (property->accessors == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            if (memberInfo->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
+                for (TZrSize index = 0U; index < property->accessors->count; index++) {
+                    const SZrAstNode *accessorNode = property->accessors->nodes[index];
+                    if (accessorNode != ZR_NULL &&
+                        accessorNode->type == ZR_AST_PROPERTY_ACCESSOR &&
+                        accessorNode->data.propertyAccessor.body != ZR_NULL) {
+                        return ZR_TRUE;
+                    }
+                }
+                return ZR_FALSE;
+            }
+            for (TZrSize index = 0U; index < property->accessors->count; index++) {
+                const SZrAstNode *accessorNode = property->accessors->nodes[index];
+                const SZrPropertyAccessor *accessor;
+                EZrPropertyAccessorRole role;
+
+                if (accessorNode == ZR_NULL ||
+                    accessorNode->type != ZR_AST_PROPERTY_ACCESSOR) {
+                    continue;
+                }
+                accessor = &accessorNode->data.propertyAccessor;
+                role = accessor->kind == ZR_PROPERTY_ACCESSOR_GET
+                               ? ZR_PROPERTY_ACCESSOR_ROLE_GET
+                               : (accessor->kind == ZR_PROPERTY_ACCESSOR_SET
+                                          ? ZR_PROPERTY_ACCESSOR_ROLE_SET
+                                          : ZR_PROPERTY_ACCESSOR_ROLE_INIT);
+                if (role == memberInfo->accessorRole) {
+                    return accessor->body != ZR_NULL &&
+                           accessor->bodyKind != ZR_PROPERTY_ACCESSOR_BODY_BODYLESS;
+                }
+            }
+            return ZR_FALSE;
+        }
         default:
             return ZR_FALSE;
     }
@@ -397,14 +452,33 @@ static TZrBool compiler_class_validate_member_override_semantics(SZrCompilerStat
         memberInfo->virtualSlotIndex = baseMember->virtualSlotIndex;
         memberInfo->interfaceContractSlot = baseMember->interfaceContractSlot;
         if (baseMember->propertyIdentity != compiler_member_property_identity_none()) {
+            TZrUInt32 previousPropertyIdentity = memberInfo->propertyIdentity;
             if (memberInfo->propertyIdentity != compiler_member_property_identity_none() &&
                 memberInfo->propertyIdentity != baseMember->propertyIdentity &&
                 info->nextPropertyIdentity > 0) {
                 info->nextPropertyIdentity--;
             }
             memberInfo->propertyIdentity = baseMember->propertyIdentity;
+            if (memberInfo->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE &&
+                memberInfo->propertySymbolId != ZR_SEMANTIC_ID_INVALID &&
+                previousPropertyIdentity != baseMember->propertyIdentity) {
+                for (TZrSize relatedIndex = 0U;
+                     relatedIndex < info->members.length;
+                     relatedIndex++) {
+                    SZrTypeMemberInfo *relatedMember =
+                            (SZrTypeMemberInfo *)ZrCore_Array_Get(
+                                    &info->members, relatedIndex);
+                    if (relatedMember != ZR_NULL &&
+                        relatedMember->propertySymbolId ==
+                                memberInfo->propertySymbolId) {
+                        relatedMember->propertyIdentity =
+                                baseMember->propertyIdentity;
+                    }
+                }
+            }
         }
-        if (memberInfo->virtualSlotIndex == compiler_member_virtual_slot_none()) {
+        if (memberInfo->memberType != ZR_AST_PROPERTY_DECLARATION &&
+            memberInfo->virtualSlotIndex == compiler_member_virtual_slot_none()) {
             memberInfo->virtualSlotIndex = info->nextVirtualSlotIndex++;
         }
         return ZR_TRUE;
@@ -439,7 +513,8 @@ static TZrBool compiler_class_validate_member_override_semantics(SZrCompilerStat
         return ZR_FALSE;
     }
 
-    if (hasVirtual || hasAbstract) {
+    if ((hasVirtual || hasAbstract) &&
+        memberInfo->memberType != ZR_AST_PROPERTY_DECLARATION) {
         memberInfo->virtualSlotIndex = info->nextVirtualSlotIndex++;
     }
 
@@ -1134,6 +1209,33 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             if (member == ZR_NULL) {
                 continue;
             }
+
+            if (member->type == ZR_AST_PROPERTY_DECLARATION) {
+                if (!compiler_property_bind(
+                            cs,
+                            &info,
+                            member,
+                            typeName,
+                            primarySuperTypeName,
+                            ZR_COMPILER_PROPERTY_CONTAINER_CLASS,
+                            (TZrUInt32)i)) {
+                    cs->currentTypeName = oldTypeName;
+                    cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                    cs->currentTypeNode = oldTypeNode;
+                    return;
+                }
+                continue;
+            }
+            if (member->type == ZR_AST_CLASS_PROPERTY) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "legacy property accessor syntax is not a semantic source",
+                        member->location);
+                cs->currentTypeName = oldTypeName;
+                cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                cs->currentTypeNode = oldTypeNode;
+                return;
+            }
             
             SZrTypeMemberInfo memberInfo;
             memset(&memberInfo, 0, sizeof(memberInfo));
@@ -1310,72 +1412,6 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     }
                     if (memberInfo.returnTypeName == ZR_NULL && inferredReturnTypeName != ZR_NULL) {
                         memberInfo.returnTypeName = inferredReturnTypeName;
-                    }
-                    memberInfo.isMetaMethod = ZR_FALSE;
-                    break;
-                }
-                case ZR_AST_CLASS_PROPERTY: {
-                    SZrClassProperty *property = &member->data.classProperty;
-                    memberInfo.accessModifier = property->access;
-                    memberInfo.isStatic = property->isStatic;
-                    memberInfo.memberType = ZR_AST_CLASS_METHOD;
-                    memberInfo.receiverEffect = get_member_receiver_effect(member);
-                    memberInfo.modifierFlags = property->modifierFlags;
-                    memberInfo.propertyIdentity = info.nextPropertyIdentity++;
-                    if (property->modifier != ZR_NULL) {
-                        TZrUInt32 compiledParameterCount = 0;
-                        if (property->modifier->type == ZR_AST_PROPERTY_GET) {
-                            SZrPropertyGet *getter = &property->modifier->data.propertyGet;
-                            memberInfo.modifierFlags |= getter->modifierFlags;
-                            memberInfo.accessorRole = 1;
-                            if (getter->name != ZR_NULL) {
-                                memberInfo.name =
-                                        compiler_create_hidden_property_accessor_name(cs, getter->name->name, ZR_FALSE);
-                            }
-                            if (getter->targetType != ZR_NULL) {
-                                compiler_type_member_capture_structured_return_type(
-                                        cs,
-                                        &memberInfo,
-                                        getter->targetType);
-                            }
-                        } else if (property->modifier->type == ZR_AST_PROPERTY_SET) {
-                            SZrPropertySet *setter = &property->modifier->data.propertySet;
-                            memberInfo.modifierFlags |= setter->modifierFlags;
-                            memberInfo.accessorRole = 2;
-                            if (setter->name != ZR_NULL) {
-                                memberInfo.name =
-                                        compiler_create_hidden_property_accessor_name(cs, setter->name->name, ZR_TRUE);
-                            }
-                            memberInfo.returnTypeName = ZR_NULL;
-                            ZrCore_Array_Init(cs->state, &memberInfo.parameterTypes, sizeof(SZrInferredType), 1);
-                            compiler_class_append_parameter_type(cs, &memberInfo.parameterTypes, setter->targetType);
-                            if (setter->param != ZR_NULL) {
-                                EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
-                                ZrCore_Array_Init(cs->state,
-                                                  &memberInfo.parameterPassingModes,
-                                                  sizeof(EZrParameterPassingMode),
-                                                  1);
-                                ZrCore_Array_Push(cs->state, &memberInfo.parameterPassingModes, &passingMode);
-                            }
-                        }
-                        memberInfo.parameterCount = (TZrUInt32)memberInfo.parameterTypes.length;
-
-                        SZrFunction *compiledProperty =
-                                compile_class_member_function(cs, member, primarySuperTypeName, !property->isStatic,
-                                                              &compiledParameterCount, ZR_NULL);
-                        if (compiledProperty == ZR_NULL) {
-                            cs->currentTypeName = oldTypeName;
-                            cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
-                            cs->currentTypeNode = oldTypeNode;
-                            return;
-                        }
-
-                        SZrTypeValue functionValue;
-                        ZrCore_Value_InitAsRawObject(cs->state, &functionValue,
-                                               ZR_CAST_RAW_OBJECT_AS_SUPER(compiledProperty));
-                        memberInfo.compiledFunction = compiledProperty;
-                        memberInfo.functionConstantIndex = add_constant(cs, &functionValue);
-                        ZR_UNUSED_PARAMETER(compiledParameterCount);
                     }
                     memberInfo.isMetaMethod = ZR_FALSE;
                     break;
@@ -1599,6 +1635,15 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                             memberName = memberNode->data.classProperty.modifier->data.propertySet.name->name;
                         }
                     }
+                    targetKind = ZR_RUNTIME_DECORATOR_TARGET_KIND_PROPERTY;
+                    break;
+                case ZR_AST_PROPERTY_DECLARATION:
+                    memberDecorators =
+                            memberNode->data.propertyDeclaration.decorators;
+                    memberName =
+                            memberNode->data.propertyDeclaration.name != ZR_NULL
+                                    ? memberNode->data.propertyDeclaration.name->name
+                                    : ZR_NULL;
                     targetKind = ZR_RUNTIME_DECORATOR_TARGET_KIND_PROPERTY;
                     break;
                 default:

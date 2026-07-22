@@ -1225,6 +1225,23 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             if (member == ZR_NULL) {
                 continue;
             }
+
+            if (member->type == ZR_AST_PROPERTY_DECLARATION) {
+                if (!compiler_property_bind(
+                            cs,
+                            &info,
+                            member,
+                            typeName,
+                            ZR_NULL,
+                            ZR_COMPILER_PROPERTY_CONTAINER_STRUCT,
+                            (TZrUInt32)i)) {
+                    cs->currentTypeName = oldTypeName;
+                    cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                    cs->currentTypeNode = oldTypeNode;
+                    return;
+                }
+                continue;
+            }
             
             SZrTypeMemberInfo memberInfo;
             memset(&memberInfo, 0, sizeof(memberInfo));

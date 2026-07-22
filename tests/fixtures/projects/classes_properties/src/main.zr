@@ -5,12 +5,9 @@ class PropertyBox {
         this._value = initial;
     }
 
-    pub get value: int {
-        return this._value;
-    }
-
-    pub set value(v: int) {
-        this._value = v;
+    pub property value: int {
+        get { return this._value; }
+        set { this._value = value; }
     }
 
     pub bump(delta: int): int {
@@ -22,12 +19,9 @@ class PropertyBox {
 class PropertyStatics {
     pri static var _count: int = 0;
 
-    pub static get count: int {
-        return PropertyStatics._count;
-    }
-
-    pub static set count(v: int) {
-        PropertyStatics._count = v;
+    pub static property count: int {
+        get { return PropertyStatics._count; }
+        set { PropertyStatics._count = value; }
     }
 }
 

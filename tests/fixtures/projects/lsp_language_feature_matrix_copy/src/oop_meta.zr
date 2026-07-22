@@ -14,12 +14,9 @@ pub class SignalBox {
         SignalBox.created = SignalBox.created + 1;
     }
 
-    pub get value: int {
-        return this.raw + 1;
-    }
-
-    pub set value(next: int) {
-        this.raw = next;
+    pub property value: int {
+        get { return this.raw + 1; }
+        set { this.raw = value; }
     }
 
     pub bump(delta: int): int {

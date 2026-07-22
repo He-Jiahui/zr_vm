@@ -245,10 +245,15 @@ static TZrBool compiler_member_infer_return_type_name(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *node,
-                                                  SZrString *superTypeName,
-                                                  TZrBool injectThis, TZrUInt32 *outParameterCount,
-                                                  SZrString **outInferredReturnTypeName) {
+static SZrFunction *compile_type_member_function(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        SZrAstNode *propertyAccessorNode,
+        SZrString *superTypeName,
+        TZrBool injectThis,
+        EZrCanonicalReceiverEffect receiverEffectOverride,
+        TZrUInt32 *outParameterCount,
+        SZrString **outInferredReturnTypeName) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return ZR_NULL;
     }
@@ -262,8 +267,36 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     SZrType *declaredReturnType = ZR_NULL;
     SZrStructMethod *structMethod = ZR_NULL;
     SZrStructMetaFunction *structMetaFunc = ZR_NULL;
+    TZrBool isPropertyExpressionBody = ZR_FALSE;
+    EZrCanonicalReceiverEffect receiverEffect = get_member_receiver_effect(node);
 
-    if (node->type == ZR_AST_CLASS_METHOD) {
+    if (propertyAccessorNode != ZR_NULL) {
+        SZrPropertyDeclaration *property;
+        SZrPropertyAccessor *accessor;
+
+        if (node->type != ZR_AST_PROPERTY_DECLARATION ||
+            propertyAccessorNode->type != ZR_AST_PROPERTY_ACCESSOR) {
+            ZrParser_Compiler_Error(
+                    cs, "Expected unified property declaration and accessor", node->location);
+            return ZR_NULL;
+        }
+        property = &node->data.propertyDeclaration;
+        accessor = &propertyAccessorNode->data.propertyAccessor;
+        body = accessor->body;
+        isPropertyExpressionBody =
+                accessor->bodyKind == ZR_PROPERTY_ACCESSOR_BODY_EXPRESSION;
+        functionName = compiler_create_hidden_property_accessor_name(
+                cs,
+                property->name != ZR_NULL ? property->name->name : ZR_NULL,
+                accessor->kind != ZR_PROPERTY_ACCESSOR_GET);
+        receiverEffect = receiverEffectOverride;
+        if (accessor->kind == ZR_PROPERTY_ACCESSOR_GET) {
+            declaredReturnType = property->typeInfo;
+        } else {
+            manualParamName = ZrCore_String_CreateFromNative(cs->state, "value");
+            manualParamType = property->typeInfo;
+        }
+    } else if (node->type == ZR_AST_CLASS_METHOD) {
         SZrClassMethod *method = &node->data.classMethod;
         params = method->params;
         body = method->body;
@@ -357,6 +390,8 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     TZrSize oldChildFunctionNameMapLength = cs->childFunctionNameMap.length;
     TZrBool oldIsInConstructor = cs->isInConstructor;
     SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
+    EZrCanonicalReceiverEffect oldFunctionReceiverEffect =
+            cs->currentFunctionReceiverEffect;
     TZrInstruction *savedParentInstructions = ZR_NULL;
     SZrFunctionLocalVariable *savedParentLocalVars = ZR_NULL;
     SZrTypeValue *savedParentConstants = ZR_NULL;
@@ -435,6 +470,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
 
     cs->isInConstructor = isConstructor ? ZR_TRUE : ZR_FALSE;
     cs->currentFunctionNode = node;
+    cs->currentFunctionReceiverEffect = receiverEffect;
     cs->constLocalVars.length = 0;
     cs->constParameters.length = 0;
     compiler_end_constructor_const_field_tracking(cs);
@@ -447,6 +483,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
         ZrParser_Compiler_Error(cs, "Failed to create class member function object", node->location);
         cs->isInConstructor = oldIsInConstructor;
         cs->currentFunctionNode = oldFunctionNode;
+        cs->currentFunctionReceiverEffect = oldFunctionReceiverEffect;
         compiler_end_constructor_const_field_tracking(cs);
         compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
         return ZR_NULL;
@@ -488,8 +525,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
                 }
                 thisType.ownershipQualifier = thisOwnershipQualifier;
                 thisType.isReadonlyView =
-                        get_member_receiver_effect(node) ==
-                        ZR_CANONICAL_RECEIVER_READONLY;
+                        receiverEffect == ZR_CANONICAL_RECEIVER_READONLY;
                 ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, thisName, &thisType);
                 ZrParser_InferredType_Free(cs->state, &thisType);
             }
@@ -502,8 +538,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
                 ZrParser_InferredType_InitFull(cs->state, &superType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, superTypeName);
                 superType.ownershipQualifier = thisOwnershipQualifier;
                 superType.isReadonlyView =
-                        get_member_receiver_effect(node) ==
-                        ZR_CANONICAL_RECEIVER_READONLY;
+                        receiverEffect == ZR_CANONICAL_RECEIVER_READONLY;
                 ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, superName, &superType);
                 ZrParser_InferredType_Free(cs->state, &superType);
             }
@@ -544,6 +579,9 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     if (manualParamName != ZR_NULL) {
         TZrUInt32 manualParamSlot = allocate_local_var(cs, manualParamName);
         parameterCount++;
+        if (propertyAccessorNode != ZR_NULL) {
+            ZrCore_Array_Push(cs->state, &cs->constParameters, &manualParamName);
+        }
         compiler_register_typed_owner_cleanup_slot(
                 cs, manualParamSlot, manualParamType);
 
@@ -572,7 +610,26 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
         }
     }
 
-    if (body != ZR_NULL) {
+    if (body != ZR_NULL && isPropertyExpressionBody &&
+        propertyAccessorNode != ZR_NULL &&
+        propertyAccessorNode->data.propertyAccessor.kind ==
+                ZR_PROPERTY_ACCESSOR_GET) {
+        SZrAstNode returnNode;
+
+        memset(&returnNode, 0, sizeof(returnNode));
+        returnNode.type = ZR_AST_RETURN_STATEMENT;
+        returnNode.location = body->location;
+        returnNode.data.returnStatement.expr = body;
+        ZrParser_Statement_Compile(cs, &returnNode);
+    } else if (body != ZR_NULL && isPropertyExpressionBody) {
+        SZrAstNode expressionStatement;
+
+        memset(&expressionStatement, 0, sizeof(expressionStatement));
+        expressionStatement.type = ZR_AST_EXPRESSION_STATEMENT;
+        expressionStatement.location = body->location;
+        expressionStatement.data.expressionStatement.expr = body;
+        ZrParser_Statement_Compile(cs, &expressionStatement);
+    } else if (body != ZR_NULL) {
         ZrParser_Statement_Compile(cs, body);
     }
 
@@ -683,6 +740,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
         cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
         cs->isInConstructor = oldIsInConstructor;
         cs->currentFunctionNode = oldFunctionNode;
+        cs->currentFunctionReceiverEffect = oldFunctionReceiverEffect;
         cs->constLocalVars.length = 0;
         cs->constParameters.length = 0;
         compiler_end_constructor_const_field_tracking(cs);
@@ -819,6 +877,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
     cs->isInConstructor = oldIsInConstructor;
     cs->currentFunctionNode = oldFunctionNode;
+    cs->currentFunctionReceiverEffect = oldFunctionReceiverEffect;
     cs->constLocalVars.length = 0;
     cs->constParameters.length = 0;
     compiler_end_constructor_const_field_tracking(cs);
@@ -829,6 +888,43 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     }
 
     return newFunc;
+}
+
+SZrFunction *compile_class_member_function(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        SZrString *superTypeName,
+        TZrBool injectThis,
+        TZrUInt32 *outParameterCount,
+        SZrString **outInferredReturnTypeName) {
+    return compile_type_member_function(
+            cs,
+            node,
+            ZR_NULL,
+            superTypeName,
+            injectThis,
+            ZR_CANONICAL_RECEIVER_NONE,
+            outParameterCount,
+            outInferredReturnTypeName);
+}
+
+SZrFunction *compile_property_accessor_function(
+        SZrCompilerState *cs,
+        SZrAstNode *propertyNode,
+        SZrAstNode *accessorNode,
+        SZrString *superTypeName,
+        TZrBool injectThis,
+        EZrCanonicalReceiverEffect receiverEffect,
+        TZrUInt32 *outParameterCount) {
+    return compile_type_member_function(
+            cs,
+            propertyNode,
+            accessorNode,
+            superTypeName,
+            injectThis,
+            receiverEffect,
+            outParameterCount,
+            ZR_NULL);
 }
 
 // 编译 class 声明

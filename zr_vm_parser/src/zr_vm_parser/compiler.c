@@ -408,6 +408,11 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
             compiledMember->returnTypeNameStringIndex =
                     compiler_add_serialized_string_constant(cs, memberInfo->returnTypeName);
         }
+
+        if (memberInfo->memberType == ZR_AST_PROPERTY_DECLARATION) {
+            compiledMember->fieldTypeNameStringIndex =
+                    compiler_add_serialized_string_constant(cs, memberInfo->fieldTypeName);
+        }
         
         // 方法特定信息
         if (memberInfo->memberType == ZR_AST_STRUCT_METHOD || 

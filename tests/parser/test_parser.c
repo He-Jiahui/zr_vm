@@ -2744,12 +2744,12 @@ static void test_class_abstract_member_and_final_class_parsing(void) {
         const char *source =
                 "abstract class Base {\n"
                 "    pub abstract speak(): int;\n"
-                "    pub abstract get score: int;\n"
+                "    pub abstract property score: int { get; }\n"
                 "    pub abstract @dispose(): int;\n"
                 "}\n"
                 "final class Leaf: Base {\n"
                 "    pub override speak(): int { return super.speak(); }\n"
-                "    pub override get score: int { return super.score; }\n"
+                "    pub override property score: int { get { return super.score; } }\n"
                 "    pub override @dispose(): int { return super.dispose(); }\n"
                 "}";
         SZrString *sourceName = ZrCore_String_Create(state, "class_advanced_oop_parse.zr", 27);
@@ -2787,7 +2787,7 @@ static void test_class_abstract_member_and_final_class_parsing(void) {
         TEST_ASSERT_NOT_NULL(getterMember);
         TEST_ASSERT_NOT_NULL(metaMember);
         TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_METHOD, methodMember->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_PROPERTY, getterMember->type);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_PROPERTY_DECLARATION, getterMember->type);
         TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_META_FUNCTION, metaMember->type);
 
         TEST_ASSERT_NOT_NULL(methodMember->data.classMethod.body);
@@ -2810,10 +2810,20 @@ static void test_class_abstract_member_and_final_class_parsing(void) {
         TEST_ASSERT_EQUAL_INT(ZR_AST_MEMBER_EXPRESSION, returnExpr->data.primaryExpression.members->nodes[0]->type);
         TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_CALL, returnExpr->data.primaryExpression.members->nodes[1]->type);
 
-        TEST_ASSERT_NOT_NULL(getterMember->data.classProperty.modifier);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_PROPERTY_GET, getterMember->data.classProperty.modifier->type);
-        TEST_ASSERT_NOT_NULL(getterMember->data.classProperty.modifier->data.propertyGet.body);
-        returnStmt = getterMember->data.classProperty.modifier->data.propertyGet.body->data.block.body->nodes[0];
+        TEST_ASSERT_NOT_NULL(getterMember->data.propertyDeclaration.accessors);
+        TEST_ASSERT_EQUAL_INT(1, (int)getterMember->data.propertyDeclaration.accessors->count);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_AST_PROPERTY_ACCESSOR,
+                getterMember->data.propertyDeclaration.accessors->nodes[0]->type);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_PROPERTY_ACCESSOR_GET,
+                getterMember->data.propertyDeclaration.accessors->nodes[0]
+                        ->data.propertyAccessor.kind);
+        TEST_ASSERT_NOT_NULL(
+                getterMember->data.propertyDeclaration.accessors->nodes[0]
+                        ->data.propertyAccessor.body);
+        returnStmt = getterMember->data.propertyDeclaration.accessors->nodes[0]
+                             ->data.propertyAccessor.body->data.block.body->nodes[0];
         TEST_ASSERT_NOT_NULL(returnStmt);
         TEST_ASSERT_EQUAL_INT(ZR_AST_RETURN_STATEMENT, returnStmt->type);
         returnExpr = returnStmt->data.returnStatement.expr;
@@ -2854,7 +2864,7 @@ static void test_class_member_modifier_and_super_member_parsing(void) {
                 "}\n"
                 "class Fancy: Base {\n"
                 "    pub override final speak(): int { return super.speak(); }\n"
-                "    override get final score: int { return super.score; }\n"
+                "    override final property score: int { get { return super.score; } }\n"
                 "    shadow ping(): int { return 2; }\n"
                 "}";
         SZrString *sourceName = ZrCore_String_Create(state, "class_modifier_super_member.zr", 30);
@@ -2883,10 +2893,13 @@ static void test_class_member_modifier_and_super_member_parsing(void) {
         TEST_ASSERT_NOT_NULL(getterMember);
         TEST_ASSERT_NOT_NULL(shadowMember);
         TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_METHOD, methodMember->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_PROPERTY, getterMember->type);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_PROPERTY_DECLARATION, getterMember->type);
         TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_METHOD, shadowMember->type);
-        TEST_ASSERT_NOT_NULL(getterMember->data.classProperty.modifier);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_PROPERTY_GET, getterMember->data.classProperty.modifier->type);
+        TEST_ASSERT_NOT_NULL(getterMember->data.propertyDeclaration.accessors);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_PROPERTY_ACCESSOR_GET,
+                getterMember->data.propertyDeclaration.accessors->nodes[0]
+                        ->data.propertyAccessor.kind);
 
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);

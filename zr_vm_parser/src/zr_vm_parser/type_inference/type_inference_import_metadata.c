@@ -1039,6 +1039,11 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                     ZrCore_Array_Construct(&memberInfo.parameterPassingModes);
                     ZrCore_Array_Construct(&memberInfo.decorators);
                     ZrCore_Value_ResetAsNull(&memberInfo.decoratorMetadataValue);
+                    memberInfo.propertySymbolId = ZR_SEMANTIC_ID_INVALID;
+                    memberInfo.propertyValueTypeId = ZR_SEMANTIC_ID_INVALID;
+                    memberInfo.getterAccessorSymbolId = ZR_SEMANTIC_ID_INVALID;
+                    memberInfo.setterAccessorSymbolId = ZR_SEMANTIC_ID_INVALID;
+                    memberInfo.initAccessorSymbolId = ZR_SEMANTIC_ID_INVALID;
                     memberInfo.memberType = (EZrAstNodeType)compiledMember->memberType;
                     memberInfo.name = function_constant_string(cs->state, function, compiledMember->nameStringIndex);
                     memberInfo.accessModifier = (EZrAccessModifier)compiledMember->accessModifier;
@@ -1075,6 +1080,9 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                     memberInfo.callsDestructor = compiledMember->callsDestructor ? ZR_TRUE : ZR_FALSE;
                     memberInfo.declarationOrder = compiledMember->declarationOrder;
                     memberInfo.contractRole = compiledMember->contractRole;
+                    memberInfo.propertyIdentity = compiledMember->propertyIdentity;
+                    memberInfo.accessorRole =
+                            (EZrPropertyAccessorRole)compiledMember->accessorRole;
                     if (compiledMember->hasDecoratorMetadata &&
                         compiledMember->decoratorMetadataConstantIndex < function->constantValueLength) {
                         memberInfo.decoratorMetadataValue =

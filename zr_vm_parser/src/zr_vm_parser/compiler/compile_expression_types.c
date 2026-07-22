@@ -1501,16 +1501,72 @@ TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const TZrCha
 
 SZrTypeMemberInfo *find_hidden_property_accessor_member(SZrCompilerState *cs, SZrString *typeName,
                                                                SZrString *propertyName, TZrBool isSetter) {
+    SZrTypeMemberInfo *propertyMember;
+    EZrPropertyAccessorRole expectedRole = isSetter
+                                                   ? ZR_PROPERTY_ACCESSOR_ROLE_SET
+                                                   : ZR_PROPERTY_ACCESSOR_ROLE_GET;
+
     if (cs == ZR_NULL || typeName == ZR_NULL || propertyName == ZR_NULL) {
         return ZR_NULL;
     }
 
+    propertyMember = find_compiler_type_member(cs, typeName, propertyName);
+    if (propertyMember != ZR_NULL &&
+        propertyMember->memberType == ZR_AST_PROPERTY_DECLARATION &&
+        propertyMember->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
+        TZrSymbolId accessorSymbolId = isSetter
+                                               ? propertyMember->setterAccessorSymbolId
+                                               : propertyMember->getterAccessorSymbolId;
+        SZrString *ownerTypeName = propertyMember->ownerTypeName != ZR_NULL
+                                           ? propertyMember->ownerTypeName
+                                           : typeName;
+        SZrTypePrototypeInfo *ownerPrototype =
+                find_compiler_type_prototype(cs, ownerTypeName);
+
+        if (ownerPrototype == ZR_NULL) {
+            return ZR_NULL;
+        }
+        if (accessorSymbolId != ZR_SEMANTIC_ID_INVALID) {
+            for (TZrSize index = 0U; index < ownerPrototype->members.length; index++) {
+                SZrTypeMemberInfo *candidate = (SZrTypeMemberInfo *)ZrCore_Array_Get(
+                        &ownerPrototype->members, index);
+                if (candidate != ZR_NULL && candidate->symbolId == accessorSymbolId &&
+                    candidate->propertySymbolId == propertyMember->propertySymbolId) {
+                    return candidate;
+                }
+            }
+        }
+
+        /* Imported source prototypes may remap SymbolIds but preserve property identity. */
+        for (TZrSize index = 0U; index < ownerPrototype->members.length; index++) {
+            SZrTypeMemberInfo *candidate = (SZrTypeMemberInfo *)ZrCore_Array_Get(
+                    &ownerPrototype->members, index);
+            if (candidate != ZR_NULL &&
+                candidate->accessorRole == expectedRole &&
+                candidate->propertyIdentity == propertyMember->propertyIdentity) {
+                return candidate;
+            }
+        }
+        return ZR_NULL;
+    }
+
+    /* Imported legacy/native descriptors do not yet carry PropertySymbol links. */
     SZrString *accessorName = create_hidden_property_accessor_name(cs, propertyName, isSetter);
     if (accessorName == ZR_NULL) {
         return ZR_NULL;
     }
 
-    return find_compiler_type_member(cs, typeName, accessorName);
+    {
+        SZrTypeMemberInfo *legacyAccessor =
+                find_compiler_type_member(cs, typeName, accessorName);
+
+        if (legacyAccessor == ZR_NULL ||
+            legacyAccessor->declarationNode != ZR_NULL ||
+            legacyAccessor->accessorRole != expectedRole) {
+            return ZR_NULL;
+        }
+        return legacyAccessor;
+    }
 }
 
 TZrBool can_use_property_accessor(TZrBool rootIsTypeReference, SZrTypeMemberInfo *accessorMember) {
@@ -2656,6 +2712,14 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
                     superLookupActive = ZR_FALSE;
                 } else {
+                    if (!memberExpr->computed && typeMember != ZR_NULL &&
+                        typeMember->memberType == ZR_AST_PROPERTY_DECLARATION) {
+                        ZrParser_Compiler_Error(
+                                cs,
+                                "Property does not declare an accessible getter",
+                                member->location);
+                        return;
+                    }
                     if (nextIsFunctionCall && typeMember != ZR_NULL &&
                         !compiler_validate_receiver_call(
                                 cs,

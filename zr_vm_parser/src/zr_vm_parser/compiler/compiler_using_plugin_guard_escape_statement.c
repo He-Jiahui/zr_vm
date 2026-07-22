@@ -694,6 +694,14 @@ TZrBool plugin_guard_scan_statement(SZrPluginGuardEscapeScan *scan, SZrAstNode *
         case ZR_AST_CLASS_PROPERTY:
             return plugin_guard_scan_decorator_array(scan, node->data.classProperty.decorators) &&
                    plugin_guard_scan_statement(scan, node->data.classProperty.modifier);
+        case ZR_AST_PROPERTY_DECLARATION:
+            return plugin_guard_scan_decorator_array(
+                           scan, node->data.propertyDeclaration.decorators) &&
+                   plugin_guard_scan_statement_array(
+                           scan, node->data.propertyDeclaration.accessors);
+        case ZR_AST_PROPERTY_ACCESSOR:
+            return plugin_guard_scan_statement(
+                    scan, node->data.propertyAccessor.body);
         case ZR_AST_IF_EXPRESSION:
             if (!plugin_guard_scan_expression_boundary(scan, node->data.ifExpression.condition)) {
                 return ZR_FALSE;

@@ -8,12 +8,9 @@ class Meter {
         this.raw = start;
     }
 
-    pub get value: int {
-        return this.raw + 1;
-    }
-
-    pub set value(next: int) {
-        this.raw = next + 2;
+    pub property value: int {
+        get { return this.raw + 1; }
+        set { this.raw = value + 2; }
     }
 
     pub @call(delta: int): int {

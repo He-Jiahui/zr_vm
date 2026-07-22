@@ -242,6 +242,21 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             free_ast_node_array_with_elements(state, parameter->decorators);
             break;
         }
+        case ZR_AST_PROPERTY_DECLARATION: {
+            SZrPropertyDeclaration *property = &node->data.propertyDeclaration;
+            free_ast_node_array_with_elements(state, property->decorators);
+            free_identifier_node_from_ptr(state, property->name);
+            free_owned_type(state, property->typeInfo);
+            free_ast_node_array_with_elements(state, property->accessors);
+            break;
+        }
+        case ZR_AST_PROPERTY_ACCESSOR: {
+            SZrPropertyAccessor *accessor = &node->data.propertyAccessor;
+            if (accessor->body != ZR_NULL) {
+                ZrParser_Ast_Free(state, accessor->body);
+            }
+            break;
+        }
         case ZR_AST_DECORATOR_EXPRESSION: {
             SZrDecoratorExpression *decorator = &node->data.decoratorExpression;
             if (decorator->expr != ZR_NULL) {

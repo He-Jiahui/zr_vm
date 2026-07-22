@@ -806,6 +806,15 @@ TZrBool compiler_resolve_super_member_context(SZrCompilerState *cs,
             }
             break;
 
+        case ZR_AST_PROPERTY_DECLARATION:
+            if (cs->currentFunctionNode->data.propertyDeclaration.isStatic) {
+                ZrParser_Compiler_Error(cs,
+                                        "super.member is not available inside static property accessors",
+                                        location);
+                return ZR_FALSE;
+            }
+            break;
+
         case ZR_AST_CLASS_META_FUNCTION:
             if (cs->currentFunctionNode->data.classMetaFunction.isStatic) {
                 ZrParser_Compiler_Error(cs,

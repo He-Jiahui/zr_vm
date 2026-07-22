@@ -100,6 +100,8 @@ static const TZrChar *get_ast_node_type_name(EZrAstNodeType type) {
         case ZR_AST_ACCESS_MODIFIER: return "ACCESS_MODIFIER";
         case ZR_AST_PROPERTY_GET: return "PROPERTY_GET";
         case ZR_AST_PROPERTY_SET: return "PROPERTY_SET";
+        case ZR_AST_PROPERTY_DECLARATION: return "PROPERTY_DECLARATION";
+        case ZR_AST_PROPERTY_ACCESSOR: return "PROPERTY_ACCESSOR";
         default: return "UNKNOWN";
     }
 }

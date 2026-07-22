@@ -5,8 +5,8 @@ class BaseCounter {
         return this.baseValue + 1;
     }
 
-    pub virtual get score: int {
-        return this.baseValue + 10;
+    pub virtual property score: int {
+        get { return this.baseValue + 10; }
     }
 
     pub virtual @call(): int {
@@ -19,8 +19,8 @@ class DerivedCounter: BaseCounter {
         return super.bump() + 1;
     }
 
-    pub override get score: int {
-        return super.score + 2;
+    pub override property score: int {
+        get { return super.score + 2; }
     }
 
     pub override @call(): int {

@@ -102,6 +102,21 @@ static void assert_member_reflection(SZrState *state,
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, decoratorNameValue->type);
     TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, decoratorNameValue->value.object),
                                            expectedDecoratorName));
+    if (strcmp(expectedKind, "property") == 0) {
+        const SZrTypeValue *parameterCountValue =
+                get_object_field_value(state, memberReflection, "parameterCount");
+        const SZrTypeValue *typeNameValue =
+                get_object_field_value(state, memberReflection, "typeName");
+
+        TEST_ASSERT_NOT_NULL(parameterCountValue);
+        TEST_ASSERT_NOT_NULL(typeNameValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, parameterCountValue->type);
+        TEST_ASSERT_EQUAL_INT64(
+                0, parameterCountValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, typeNameValue->type);
+        TEST_ASSERT_TRUE(string_equals_cstring(
+                ZR_CAST_STRING(state, typeNameValue->value.object), "int"));
+    }
 }
 
 static void assert_parameter_reflection(SZrState *state,
@@ -194,9 +209,14 @@ static const TZrChar *kCompileTimeMemberDecoratorModuleSource =
         "        return v;\n"
         "    }\n"
         "\n"
+        "    pub __get_phantom(): int {\n"
+        "        return 99;\n"
+        "    }\n"
+        "\n"
         "    #MarkProperty#\n"
-        "    pub get value: int {\n"
-        "        return this._value;\n"
+        "    pub property value: int {\n"
+        "        get { return this._value; }\n"
+        "        set { this._value = value; }\n"
         "    }\n"
         "}\n";
 
@@ -205,7 +225,8 @@ static const TZrChar *kCompileTimeMemberDecoratorImportSource =
         "return {\n"
         "    field: %type(decorated.User).members.id[0],\n"
         "    method: %type(decorated.User).members.load[0],\n"
-        "    property: %type(decorated.User).members.value[0]\n"
+        "    property: %type(decorated.User).members.value[0],\n"
+        "    members: %type(decorated.User).members\n"
         "};\n";
 
 static const TZrChar *kCompileTimeParameterDecoratorModuleSource =
@@ -278,6 +299,19 @@ static void test_percent_type_source_member_reflection_exposes_compile_time_memb
         assert_member_reflection(state, resultObject, "field", "field", "compileTimeField", "MarkField");
         assert_member_reflection(state, resultObject, "method", "method", "compileTimeMethod", "MarkMethod");
         assert_member_reflection(state, resultObject, "property", "property", "compileTimeProperty", "MarkProperty");
+        {
+            const SZrTypeValue *membersValue =
+                    get_object_field_value(state, resultObject, "members");
+            SZrObject *membersObject;
+
+            TEST_ASSERT_NOT_NULL(membersValue);
+            TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, membersValue->type);
+            membersObject = ZR_CAST_OBJECT(state, membersValue->value.object);
+            TEST_ASSERT_NOT_NULL(membersObject);
+            TEST_ASSERT_NULL(get_object_field_value(state, membersObject, "phantom"));
+            TEST_ASSERT_NOT_NULL(get_object_field_value(
+                    state, membersObject, "__get_phantom"));
+        }
 
         ZrCore_Function_Free(state, entryFunction);
         state->global->sourceLoader = ZR_NULL;
@@ -350,6 +384,19 @@ static void test_percent_type_binary_member_reflection_exposes_compile_time_memb
         assert_member_reflection(state, resultObject, "field", "field", "compileTimeField", "MarkField");
         assert_member_reflection(state, resultObject, "method", "method", "compileTimeMethod", "MarkMethod");
         assert_member_reflection(state, resultObject, "property", "property", "compileTimeProperty", "MarkProperty");
+        {
+            const SZrTypeValue *membersValue =
+                    get_object_field_value(state, resultObject, "members");
+            SZrObject *membersObject;
+
+            TEST_ASSERT_NOT_NULL(membersValue);
+            TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, membersValue->type);
+            membersObject = ZR_CAST_OBJECT(state, membersValue->value.object);
+            TEST_ASSERT_NOT_NULL(membersObject);
+            TEST_ASSERT_NULL(get_object_field_value(state, membersObject, "phantom"));
+            TEST_ASSERT_NOT_NULL(get_object_field_value(
+                    state, membersObject, "__get_phantom"));
+        }
 
         ZrCore_Function_Free(state, entryFunction);
         state->global->sourceLoader = ZR_NULL;

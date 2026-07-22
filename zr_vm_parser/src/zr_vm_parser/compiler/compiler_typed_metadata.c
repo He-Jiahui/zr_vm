@@ -50,9 +50,15 @@ static const SZrCompilerStackSlotTypeHint *find_stack_slot_type_hint_for_slot(co
 
 static TZrBool typed_metadata_current_function_borrows_receiver(
         const SZrCompilerState *cs) {
-    return (TZrBool)(cs != ZR_NULL && cs->currentFunctionNode != ZR_NULL &&
-                     get_member_receiver_effect(cs->currentFunctionNode) ==
-                             ZR_CANONICAL_RECEIVER_READONLY);
+    EZrCanonicalReceiverEffect effect;
+
+    if (cs == ZR_NULL || cs->currentFunctionNode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    effect = cs->currentFunctionNode->type == ZR_AST_PROPERTY_DECLARATION
+                     ? cs->currentFunctionReceiverEffect
+                     : get_member_receiver_effect(cs->currentFunctionNode);
+    return (TZrBool)(effect == ZR_CANONICAL_RECEIVER_READONLY);
 }
 
 static SZrGenericDeclaration *typed_metadata_current_generic_declaration(SZrCompilerState *cs) {

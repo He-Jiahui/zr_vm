@@ -36,6 +36,12 @@ typedef struct SZrParserCursor {
     const TZrChar *errorMessage;
 } SZrParserCursor;
 
+typedef enum EZrPropertyContainerKind {
+    ZR_PROPERTY_CONTAINER_CLASS = 0,
+    ZR_PROPERTY_CONTAINER_STRUCT,
+    ZR_PROPERTY_CONTAINER_INTERFACE
+} EZrPropertyContainerKind;
+
 void expect_token(SZrParserState *ps, EZrToken expected);
 
 TZrBool consume_token(SZrParserState *ps, EZrToken token);
@@ -483,6 +489,11 @@ SZrAstNode *parse_property_get(SZrParserState *ps);
 SZrAstNode *parse_property_set(SZrParserState *ps);
 
 SZrAstNode *parse_class_property(SZrParserState *ps);
+
+TZrBool parser_property_declaration_starts_here(SZrParserState *ps);
+
+SZrAstNode *parse_property_declaration(SZrParserState *ps,
+                                       EZrPropertyContainerKind containerKind);
 
 SZrAstNode *parse_class_meta_function(SZrParserState *ps);
 

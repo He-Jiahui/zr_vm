@@ -17,6 +17,34 @@ void task_effects_validate_decorators(ZrTaskEffectContext *context, SZrAstNodeAr
     }
 }
 
+static void task_effects_validate_property(
+        ZrTaskEffectContext *context,
+        SZrAstNode *node) {
+    if (context == ZR_NULL || node == ZR_NULL) {
+        return;
+    }
+    if (node->type == ZR_AST_PROPERTY_DECLARATION) {
+        task_effects_validate_decorators(
+                context, node->data.propertyDeclaration.decorators);
+        if (node->data.propertyDeclaration.accessors != ZR_NULL) {
+            for (TZrSize index = 0U;
+                 index < node->data.propertyDeclaration.accessors->count;
+                 index++) {
+                task_effects_validate_property(
+                        context,
+                        node->data.propertyDeclaration.accessors->nodes[index]);
+            }
+        }
+    } else if (node->type == ZR_AST_PROPERTY_ACCESSOR) {
+        task_effects_validate_function_like(
+                context,
+                ZR_FALSE,
+                ZR_NULL,
+                ZR_NULL,
+                node->data.propertyAccessor.body);
+    }
+}
+
 static void task_effects_validate_class_member(ZrTaskEffectContext *context, SZrAstNode *node) {
     if (context == ZR_NULL || node == ZR_NULL) {
         return;
@@ -61,6 +89,10 @@ static void task_effects_validate_class_member(ZrTaskEffectContext *context, SZr
                                                 ZR_NULL,
                                                 node->data.propertySet.body);
             break;
+        case ZR_AST_PROPERTY_DECLARATION:
+        case ZR_AST_PROPERTY_ACCESSOR:
+            task_effects_validate_property(context, node);
+            break;
         default:
             break;
     }
@@ -90,6 +122,10 @@ static void task_effects_validate_struct_member(ZrTaskEffectContext *context, SZ
                                                 node->data.structMetaFunction.params,
                                                 node->data.structMetaFunction.args,
                                                 node->data.structMetaFunction.body);
+            break;
+        case ZR_AST_PROPERTY_DECLARATION:
+        case ZR_AST_PROPERTY_ACCESSOR:
+            task_effects_validate_property(context, node);
             break;
         default:
             break;

@@ -1180,6 +1180,13 @@ static TZrBool ct_member_logical_name_text(SZrAstNode *memberNode,
                 }
             }
             break;
+        case ZR_AST_PROPERTY_DECLARATION:
+            if (memberNode->data.propertyDeclaration.name != ZR_NULL &&
+                memberNode->data.propertyDeclaration.name->name != ZR_NULL) {
+                nameText = ZrCore_String_GetNativeString(
+                        memberNode->data.propertyDeclaration.name->name);
+            }
+            break;
         default:
             break;
     }
@@ -1205,6 +1212,7 @@ static const TZrChar *ct_expected_member_decorator_target_name(SZrAstNode *membe
         case ZR_AST_STRUCT_METHOD:
             return "Method";
         case ZR_AST_CLASS_PROPERTY:
+        case ZR_AST_PROPERTY_DECLARATION:
             return "Property";
         default:
             return ZR_NULL;

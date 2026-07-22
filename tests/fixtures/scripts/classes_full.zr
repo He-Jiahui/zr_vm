@@ -7,12 +7,9 @@ class BaseHero {
         this._hp = seed;
     }
 
-    pub get hp: int {
-        return this._hp;
-    }
-
-    pub set hp(v: int) {
-        this._hp = v;
+    pub property hp: int {
+        get { return this._hp; }
+        set { this._hp = value; }
     }
 
     pub heal(amount: int): int {
@@ -24,12 +21,9 @@ class BaseHero {
 class ScoreBoard {
     pri static var _bonus: int = 5;
 
-    pub static get bonus: int {
-        return ScoreBoard._bonus;
-    }
-
-    pub static set bonus(v: int) {
-        ScoreBoard._bonus = v;
+    pub static property bonus: int {
+        get { return ScoreBoard._bonus; }
+        set { ScoreBoard._bonus = value; }
     }
 }
 

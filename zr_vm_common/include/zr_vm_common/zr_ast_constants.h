@@ -33,6 +33,10 @@
 #define ZR_AST_CONSTANT_UNION_DECLARATION 89
 #define ZR_AST_CONSTANT_UNION_VARIANT 90
 
+// 追加的统一属性节点（保持与 parser EZrAstNodeType 数值一致）
+// ZR_AST_STRUCT_INIT_EXPRESSION=91, ZR_AST_PROPERTY_DECLARATION=92
+#define ZR_AST_CONSTANT_PROPERTY_DECLARATION 92
+
 // 访问修饰符常量（用于序列化数据，避免依赖parser模块）
 // 这些值必须与zr_vm_parser/ast.h中的EZrAccessModifier枚举值保持一致
 #define ZR_ACCESS_CONSTANT_PUBLIC 0

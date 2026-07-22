@@ -959,6 +959,15 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                 continue;
             }
 
+            if (!memberExpr->computed && typeMember != ZR_NULL &&
+                typeMember->memberType == ZR_AST_PROPERTY_DECLARATION) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Property does not declare an accessible getter",
+                        memberNode->location);
+                return ZR_FALSE;
+            }
+
             if (!memberExpr->computed) {
                 SZrString *memberSymbol = resolve_member_expression_symbol(cs, memberExpr);
                 TZrUInt32 memberId = compiler_get_or_add_member_entry_for_type_member(cs,
@@ -1765,6 +1774,22 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                     }
                                     return;
                                 }
+
+
+                                {
+                                    SZrTypeMemberInfo *propertyMember =
+                                            find_compiler_type_member(
+                                                    cs, rootTypeName, fieldName);
+                                    if (propertyMember != ZR_NULL &&
+                                        propertyMember->memberType ==
+                                                ZR_AST_PROPERTY_DECLARATION) {
+                                        ZrParser_Compiler_Error(
+                                                cs,
+                                                "Property does not declare an accessible setter",
+                                                node->location);
+                                        return;
+                                    }
+                                }
                             }
                             
                             if (!memberExpr->computed) {
@@ -2330,6 +2355,8 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
                     case ZR_AST_CLASS_FIELD: typeName = "CLASS_FIELD"; break;
                     case ZR_AST_CLASS_METHOD: typeName = "CLASS_METHOD"; break;
                     case ZR_AST_CLASS_PROPERTY: typeName = "CLASS_PROPERTY"; break;
+                    case ZR_AST_PROPERTY_DECLARATION: typeName = "PROPERTY_DECLARATION"; break;
+                    case ZR_AST_PROPERTY_ACCESSOR: typeName = "PROPERTY_ACCESSOR"; break;
                     case ZR_AST_CLASS_META_FUNCTION: typeName = "CLASS_META_FUNCTION"; break;
                     case ZR_AST_FUNCTION_DECLARATION: typeName = "FUNCTION_DECLARATION"; break;
                     case ZR_AST_STRUCT_DECLARATION: typeName = "STRUCT_DECLARATION"; break;

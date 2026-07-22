@@ -7,6 +7,7 @@
 #include "zr_vm_parser/project_imports.h"
 #include "zr_vm_parser/semantic_ir.h"
 #include "zr_vm_parser/type_inference.h"
+#include "compiler_property.h"
 
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/closure.h"
@@ -301,7 +302,7 @@ typedef struct SZrCompiledMemberInfo {
     TZrUInt32 virtualSlotIndex;
     TZrUInt32 interfaceContractSlot;
     TZrUInt32 propertyIdentity;
-    TZrUInt32 accessorRole;
+    TZrUInt32 accessorRole;                 // EZrPropertyAccessorRole numeric payload
 } SZrCompiledMemberInfo;
 #pragma pack(pop)
 
@@ -761,6 +762,14 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
                                                   SZrString *superTypeName,
                                                   TZrBool injectThis, TZrUInt32 *outParameterCount,
                                                   SZrString **outInferredReturnTypeName) ;
+SZrFunction *compile_property_accessor_function(
+        SZrCompilerState *cs,
+        SZrAstNode *propertyNode,
+        SZrAstNode *accessorNode,
+        SZrString *superTypeName,
+        TZrBool injectThis,
+        EZrCanonicalReceiverEffect receiverEffect,
+        TZrUInt32 *outParameterCount);
 
 void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
 void compiler_class_lint_process_local_shared_cycles(SZrCompilerState *cs,

@@ -151,6 +151,10 @@ enum EZrAstNodeType {
 
     // 值类型构造（追加节点，避免已有 AST 编号漂移）
     ZR_AST_STRUCT_INIT_EXPRESSION,
+
+    // 统一属性语法（追加节点，避免已有 AST 编号漂移）
+    ZR_AST_PROPERTY_DECLARATION,
+    ZR_AST_PROPERTY_ACCESSOR,
 };
 
 typedef enum EZrAstNodeType EZrAstNodeType;
@@ -818,6 +822,39 @@ typedef struct SZrPropertySet {
     SZrAstNode *body; // Block
 } SZrPropertySet;
 
+typedef enum EZrPropertyAccessorKind {
+    ZR_PROPERTY_ACCESSOR_GET = 0,
+    ZR_PROPERTY_ACCESSOR_SET,
+    ZR_PROPERTY_ACCESSOR_INIT
+} EZrPropertyAccessorKind;
+
+typedef enum EZrPropertyAccessorBodyKind {
+    ZR_PROPERTY_ACCESSOR_BODY_BODYLESS = 0,
+    ZR_PROPERTY_ACCESSOR_BODY_EXPRESSION,
+    ZR_PROPERTY_ACCESSOR_BODY_BLOCK
+} EZrPropertyAccessorBodyKind;
+
+// class/struct/resource/interface 共用的 property 声明。
+typedef struct SZrPropertyDeclaration {
+    SZrAstNodeArray *decorators;
+    EZrAccessModifier access;
+    TZrBool isStatic;
+    TZrUInt32 modifierFlags;
+    SZrIdentifier *name;
+    SZrFileRange nameLocation;
+    SZrType *typeInfo;
+    SZrAstNodeArray *accessors;
+} SZrPropertyDeclaration;
+
+typedef struct SZrPropertyAccessor {
+    EZrPropertyAccessorKind kind;
+    EZrAccessModifier access;
+    TZrBool hasAccessOverride;
+    EZrPropertyAccessorBodyKind bodyKind;
+    SZrAstNode *body;
+    SZrFileRange keywordLocation;
+} SZrPropertyAccessor;
+
 // 接口声明
 typedef struct SZrInterfaceDeclaration {
     SZrIdentifier *name;
@@ -1012,6 +1049,8 @@ typedef struct SZrAstNode {
         SZrClassMethod classMethod;
         SZrClassProperty classProperty;
         SZrClassMetaFunction classMetaFunction;
+        SZrPropertyDeclaration propertyDeclaration;
+        SZrPropertyAccessor propertyAccessor;
 
         // 接口成员
         SZrInterfaceFieldDeclaration interfaceFieldDeclaration;

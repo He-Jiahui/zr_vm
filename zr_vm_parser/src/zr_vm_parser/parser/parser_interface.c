@@ -397,10 +397,14 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
     // 解析成员直到遇到右大括号
     while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
         SZrAstNode *member = ZR_NULL;
+        TZrBool rejectedLegacyProperty = ZR_FALSE;
 
         // 检查成员类型
         EZrToken token = ps->lexer->t.token;
-        if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO ||
+        if (parser_property_declaration_starts_here(ps)) {
+            member = parse_property_declaration(
+                    ps, ZR_PROPERTY_CONTAINER_INTERFACE);
+        } else if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO ||
             token == ZR_TK_VAR || token == ZR_TK_CONST) {
             // 向前看以确定成员类型
             TZrSize savedPos = ps->lexer->currentPos;
@@ -452,7 +456,15 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
                 ps->lexer->lookaheadChar = savedLookaheadChar;
                 ps->lexer->lookaheadLine = savedLookaheadLine;
                 ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+                report_error(
+                        ps,
+                        "Legacy getter/setter syntax is unsupported; use 'property name: Type { get; set; }'");
                 member = parse_interface_property_signature(ps);
+                if (member != ZR_NULL) {
+                    ZrParser_Ast_Free(ps->state, member);
+                    member = ZR_NULL;
+                }
+                rejectedLegacyProperty = ZR_TRUE;
             } else if (nextToken == ZR_TK_AT) {
                 // 元函数签名
                 ps->lexer->currentPos = savedPos;
@@ -485,7 +497,15 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
             member = parse_interface_meta_signature(ps);
         } else if (token == ZR_TK_GET || token == ZR_TK_SET) {
             // 属性签名
+            report_error(
+                    ps,
+                    "Legacy getter/setter syntax is unsupported; use 'property name: Type { get; set; }'");
             member = parse_interface_property_signature(ps);
+            if (member != ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, member);
+                member = ZR_NULL;
+            }
+            rejectedLegacyProperty = ZR_TRUE;
         } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_FN) {
             // 方法签名
             member = parse_interface_method_signature(ps);
@@ -495,6 +515,9 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
             break;
         }
 
+        if (rejectedLegacyProperty) {
+            continue;
+        }
         if (member != ZR_NULL) {
             ZrParser_AstNodeArray_Add(ps->state, members, member);
         } else {

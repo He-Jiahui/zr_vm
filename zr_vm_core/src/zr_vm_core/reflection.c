@@ -2630,6 +2630,7 @@ static void reflection_record_property_member(SZrState *state,
     SZrObject *propertyReflection;
     TZrChar qualifiedMemberName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
     SZrString *propertyNameString;
+    TZrBool createdPropertyReflection = ZR_FALSE;
 
     if (state == ZR_NULL || membersObject == ZR_NULL || typeReflection == ZR_NULL || prototype == ZR_NULL ||
         qualifiedTypeName == ZR_NULL || propertyName == ZR_NULL || propertyName[0] == '\0' || member == ZR_NULL) {
@@ -2647,6 +2648,7 @@ static void reflection_record_property_member(SZrState *state,
         if (propertyReflection == ZR_NULL) {
             return;
         }
+        createdPropertyReflection = ZR_TRUE;
 
         reflection_assign_owner_links(state, propertyReflection, typeReflection, moduleReflection);
         reflection_populate_compiled_member_oop_metadata(state, propertyReflection, entryFunction, member);
@@ -2655,15 +2657,38 @@ static void reflection_record_property_member(SZrState *state,
         reflection_add_named_entry(state, membersObject, propertyName, propertyReflection);
     }
 
-    if (memberFunction != ZR_NULL) {
-        reflection_set_field_int(state, propertyReflection, "parameterCount", member->parameterCount);
-        reflection_populate_parameters_from_function(state, propertyReflection, memberFunction, member->parameterCount);
-        reflection_populate_function_metadata(state, propertyReflection, memberFunction);
-    } else if (member->parameterCount > 0) {
-        reflection_set_field_int(state, propertyReflection, "parameterCount", member->parameterCount);
-        reflection_populate_parameters_from_typed_refs(state, propertyReflection, ZR_NULL, member->parameterCount);
+    if (createdPropertyReflection ||
+        member->memberType == ZR_AST_CONSTANT_PROPERTY_DECLARATION) {
+        if (member->memberType == ZR_AST_CONSTANT_PROPERTY_DECLARATION) {
+            reflection_set_field_int(
+                    state, propertyReflection, "parameterCount", 0);
+        }
+        if (memberFunction != ZR_NULL) {
+            reflection_set_field_int(state, propertyReflection, "parameterCount", member->parameterCount);
+            reflection_populate_parameters_from_function(state, propertyReflection, memberFunction, member->parameterCount);
+            reflection_populate_function_metadata(state, propertyReflection, memberFunction);
+        } else if (member->parameterCount > 0) {
+            reflection_set_field_int(state, propertyReflection, "parameterCount", member->parameterCount);
+            reflection_populate_parameters_from_typed_refs(state, propertyReflection, ZR_NULL, member->parameterCount);
+        }
+        if (member->memberType == ZR_AST_CONSTANT_PROPERTY_DECLARATION) {
+            reflection_set_field_string(
+                    state,
+                    propertyReflection,
+                    "typeName",
+                    reflection_string_from_constant(
+                            state, entryFunction, member->fieldTypeNameStringIndex, "any"));
+        } else if (member->accessorRole == 1u) {
+            reflection_set_field_string(
+                    state,
+                    propertyReflection,
+                    "typeName",
+                    reflection_string_from_constant(
+                            state, entryFunction, member->returnTypeNameStringIndex, "any"));
+        }
+        reflection_populate_compiled_member_decorator_metadata(
+                state, propertyReflection, entryFunction, member);
     }
-    reflection_populate_compiled_member_decorator_metadata(state, propertyReflection, entryFunction, member);
 
     propertyNameString = ZrCore_String_Create(state, (TZrNativeString)propertyName, strlen(propertyName));
     if (propertyNameString != ZR_NULL) {
@@ -2766,10 +2791,21 @@ ZR_CORE_API SZrObject *ZrCore_Reflection_BuildDecoratorTargetMemberReflection(SZ
 
             compiledName = ZR_CAST_STRING(state, memberNameValue->value.object);
             compiledNameText = compiledName != ZR_NULL ? ZrCore_String_GetNativeString(compiledName) : ZR_NULL;
-            if (compiledNameText == ZR_NULL ||
-                !reflection_parse_hidden_property_accessor_name(compiledNameText, &propertyName, ZR_NULL) ||
-                propertyName == ZR_NULL ||
-                strcmp(propertyName, memberNameText) != 0) {
+            if (compiledNameText == ZR_NULL) {
+                continue;
+            }
+
+            if (member->memberType == ZR_AST_CONSTANT_PROPERTY_DECLARATION) {
+                if (strcmp(compiledNameText, memberNameText) != 0) {
+                    continue;
+                }
+                propertyName = compiledNameText;
+            } else if (member->accessorRole == 0u ||
+                       member->propertyIdentity == (TZrUInt32)-1 ||
+                       !reflection_parse_hidden_property_accessor_name(
+                               compiledNameText, &propertyName, ZR_NULL) ||
+                       propertyName == ZR_NULL ||
+                       strcmp(propertyName, memberNameText) != 0) {
                 continue;
             }
 
@@ -3089,7 +3125,29 @@ static void reflection_populate_script_members(SZrState *state,
 
         fieldTypeName = reflection_string_from_constant(state, entryFunction, member->fieldTypeNameStringIndex, "any");
         returnTypeName = reflection_string_from_constant(state, entryFunction, member->returnTypeNameStringIndex, "void");
-        isPropertyAccessor = reflection_parse_hidden_property_accessor_name(memberName, &propertyName, ZR_NULL);
+        isPropertyAccessor =
+                member->accessorRole != 0u &&
+                member->propertyIdentity != (TZrUInt32)-1 &&
+                reflection_parse_hidden_property_accessor_name(
+                        memberName, &propertyName, ZR_NULL);
+        if (member->memberType == ZR_AST_CONSTANT_PROPERTY_DECLARATION) {
+            reflection_record_property_member(
+                    state,
+                    membersObject,
+                    typeReflection,
+                    moduleReflection,
+                    prototype,
+                    qualifiedTypeName,
+                    memberName,
+                    member,
+                    entryFunction,
+                    ZR_NULL,
+                    prototype->super.super.hash ^
+                            ((TZrUInt64)memberIndex +
+                             ZR_RUNTIME_REFLECTION_MEMBER_HASH_BASE +
+                             (TZrUInt64)0x1000u));
+            continue;
+        }
         kind = (member->memberType == ZR_AST_CONSTANT_STRUCT_FIELD || member->memberType == ZR_AST_CONSTANT_CLASS_FIELD)
                        ? "field"
                        : "method";

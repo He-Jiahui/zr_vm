@@ -3147,11 +3147,11 @@ void test_advanced_oop_metadata_serializes_override_and_property_chains(void) {
         const char *source =
             "abstract class Base {\n"
             "    pub abstract ping(): int;\n"
-            "    pub abstract get score: int;\n"
+            "    pub abstract property score: int { get; }\n"
             "}\n"
             "final class Derived : Base {\n"
             "    pub override final ping(): int { return 1; }\n"
-            "    pub override get final score: int { return 2; }\n"
+            "    pub override final property score: int { get { return 2; } }\n"
             "}";
         SZrString *sourceName = ZrCore_String_Create(state, "advanced_oop_metadata.zr", 24);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);

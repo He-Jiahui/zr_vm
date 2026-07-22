@@ -688,6 +688,12 @@ static TZrBool semantic_ownership_resolve_node(SZrSemanticOwnershipAnalysis *ana
             return semantic_ownership_run_cfg(analysis, node->data.propertyGet.body);
         case ZR_AST_PROPERTY_SET:
             return semantic_ownership_run_cfg(analysis, node->data.propertySet.body);
+        case ZR_AST_PROPERTY_DECLARATION:
+            return semantic_ownership_resolve_array(
+                    analysis, node->data.propertyDeclaration.accessors);
+        case ZR_AST_PROPERTY_ACCESSOR:
+            return semantic_ownership_run_cfg(
+                    analysis, node->data.propertyAccessor.body);
         case ZR_AST_BLOCK:
             return semantic_ownership_run_cfg(analysis, node);
         default:

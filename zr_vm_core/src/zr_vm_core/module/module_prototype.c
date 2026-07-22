@@ -217,6 +217,7 @@ static void module_prototype_apply_protocol_mask(SZrObjectPrototype *prototype, 
 
 #define ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_GETTER 1u
 #define ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_SETTER 2u
+#define ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_INITIALIZER 3u
 
 static SZrString *module_prototype_public_property_name_from_accessor(SZrState *state,
                                                                       SZrString *accessorName,
@@ -232,7 +233,8 @@ static SZrString *module_prototype_public_property_name_from_accessor(SZrState *
 
     if (accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_GETTER) {
         prefix = "__get_";
-    } else if (accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_SETTER) {
+    } else if (accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_SETTER ||
+               accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_INITIALIZER) {
         prefix = "__set_";
     } else {
         return ZR_NULL;
@@ -301,6 +303,8 @@ static void module_prototype_add_property_accessor_descriptor(SZrState *state,
         } else if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_SETTER) {
             existing->setterFunction = function;
             existing->isWritable = ZR_TRUE;
+        } else if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_INITIALIZER) {
+            existing->initializerFunction = function;
         }
         existing->modifierFlags |= member->modifierFlags;
         existing->contractRole = member->contractRole;
@@ -332,6 +336,8 @@ static void module_prototype_add_property_accessor_descriptor(SZrState *state,
         descriptor.getterFunction = function;
     } else if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_SETTER) {
         descriptor.setterFunction = function;
+    } else if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_INITIALIZER) {
+        descriptor.initializerFunction = function;
     }
 
     (void)ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
@@ -387,6 +393,11 @@ static void module_prototype_add_runtime_descriptor(SZrState *state,
         case ZR_AST_CONSTANT_CLASS_METHOD:
             descriptor.kind = descriptor.isStatic ? ZR_MEMBER_DESCRIPTOR_KIND_STATIC_MEMBER
                                                   : ZR_MEMBER_DESCRIPTOR_KIND_METHOD;
+            break;
+        case ZR_AST_CONSTANT_PROPERTY_DECLARATION:
+            descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY;
+            descriptor.isWritable = ZR_FALSE;
+            descriptor.accessorRole = 0u;
             break;
         default:
             return;

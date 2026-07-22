@@ -1677,6 +1677,14 @@ static TZrBool inferred_type_from_member_access(SZrCompilerState *cs,
     }
 
     switch (memberInfo->memberType) {
+        case ZR_AST_PROPERTY_DECLARATION:
+            if (memberInfo->hasStructuredReturnType) {
+                ZrParser_InferredType_Copy(
+                        cs->state, result, &memberInfo->structuredReturnType);
+                return ZR_TRUE;
+            }
+            return inferred_type_from_type_name(
+                    cs, memberInfo->fieldTypeName, result);
         case ZR_AST_STRUCT_FIELD:
         case ZR_AST_CLASS_FIELD:
             if (!inferred_type_from_type_name(cs, memberInfo->fieldTypeName, result)) {

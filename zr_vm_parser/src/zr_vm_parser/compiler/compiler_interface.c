@@ -162,6 +162,31 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 continue;
             }
 
+            if (member->type == ZR_AST_PROPERTY_DECLARATION) {
+                if (!compiler_property_bind(
+                            cs,
+                            &info,
+                            member,
+                            typeName,
+                            ZR_NULL,
+                            ZR_COMPILER_PROPERTY_CONTAINER_INTERFACE,
+                            (TZrUInt32)index)) {
+                    cs->currentTypeName = oldTypeName;
+                    cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                    return;
+                }
+                continue;
+            }
+            if (member->type == ZR_AST_INTERFACE_PROPERTY_SIGNATURE) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "legacy property accessor syntax is not a semantic source",
+                        member->location);
+                cs->currentTypeName = oldTypeName;
+                cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                return;
+            }
+
             switch (member->type) {
                 case ZR_AST_INTERFACE_FIELD_DECLARATION: {
                     SZrInterfaceFieldDeclaration *field = &member->data.interfaceFieldDeclaration;
@@ -225,78 +250,6 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     cs->currentFunctionNode = previousFunctionNode;
                     if (memberInfo.name != ZR_NULL) {
                         ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
-                    }
-                    break;
-                }
-                case ZR_AST_INTERFACE_PROPERTY_SIGNATURE: {
-                    SZrInterfacePropertySignature *property = &member->data.interfacePropertySignature;
-                    if (property->name == ZR_NULL || property->name->name == ZR_NULL) {
-                        break;
-                    }
-
-                    if (property->hasGet) {
-                        SZrTypeMemberInfo getterInfo;
-                        compiler_interface_init_member_defaults(&getterInfo);
-                        getterInfo.memberType = ZR_AST_CLASS_METHOD;
-                        getterInfo.declarationNode = member;
-                        getterInfo.accessModifier = property->access;
-                        getterInfo.name =
-                                compiler_create_hidden_property_accessor_name(cs, property->name->name, ZR_FALSE);
-                        getterInfo.ownerTypeName = typeName;
-                        getterInfo.baseDefinitionOwnerTypeName = typeName;
-                        getterInfo.baseDefinitionName = getterInfo.name;
-                        getterInfo.propertyIdentity = info.nextPropertyIdentity;
-                        getterInfo.accessorRole = 1;
-                        getterInfo.receiverEffect = ZR_CANONICAL_RECEIVER_READONLY;
-                        getterInfo.virtualSlotIndex = info.nextVirtualSlotIndex++;
-                        getterInfo.interfaceContractSlot = getterInfo.virtualSlotIndex;
-                        if (property->typeInfo != ZR_NULL) {
-                            compiler_type_member_capture_structured_return_type(
-                                    cs,
-                                    &getterInfo,
-                                    property->typeInfo);
-                        } else {
-                            getterInfo.returnTypeName =
-                                    ZrCore_String_CreateFromNative(cs->state, "object");
-                        }
-                        if (getterInfo.name != ZR_NULL) {
-                            ZrCore_Array_Push(cs->state, &info.members, &getterInfo);
-                        }
-                    }
-
-                    if (property->hasSet) {
-                        SZrTypeMemberInfo setterInfo;
-                        compiler_interface_init_member_defaults(&setterInfo);
-                        setterInfo.memberType = ZR_AST_CLASS_METHOD;
-                        setterInfo.declarationNode = member;
-                        setterInfo.accessModifier = property->access;
-                        setterInfo.name =
-                                compiler_create_hidden_property_accessor_name(cs, property->name->name, ZR_TRUE);
-                        setterInfo.ownerTypeName = typeName;
-                        setterInfo.baseDefinitionOwnerTypeName = typeName;
-                        setterInfo.baseDefinitionName = setterInfo.name;
-                        setterInfo.propertyIdentity = info.nextPropertyIdentity;
-                        setterInfo.accessorRole = 2;
-                        setterInfo.receiverEffect = ZR_CANONICAL_RECEIVER_MUTABLE;
-                        setterInfo.virtualSlotIndex = info.nextVirtualSlotIndex++;
-                        setterInfo.interfaceContractSlot = setterInfo.virtualSlotIndex;
-                        ZrCore_Array_Init(cs->state, &setterInfo.parameterTypes, sizeof(SZrInferredType), 1);
-                        compiler_interface_append_parameter_type(cs, &setterInfo.parameterTypes, property->typeInfo);
-                        {
-                            EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
-                            ZrCore_Array_Init(cs->state,
-                                              &setterInfo.parameterPassingModes,
-                                              sizeof(EZrParameterPassingMode),
-                                              1);
-                            ZrCore_Array_Push(cs->state, &setterInfo.parameterPassingModes, &passingMode);
-                        }
-                        setterInfo.parameterCount = (TZrUInt32)setterInfo.parameterTypes.length;
-                        if (setterInfo.name != ZR_NULL) {
-                            ZrCore_Array_Push(cs->state, &info.members, &setterInfo);
-                        }
-                    }
-                    if (property->hasGet || property->hasSet) {
-                        info.nextPropertyIdentity++;
                     }
                     break;
                 }

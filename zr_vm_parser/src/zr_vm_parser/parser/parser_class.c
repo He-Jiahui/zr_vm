@@ -39,7 +39,10 @@ static EZrAstNodeType classify_class_member_from_current(SZrParserState *ps) {
         sawFieldUsingPrefix = ZR_TRUE;
     }
 
-    if (sawFieldUsingPrefix || ps->lexer->t.token == ZR_TK_VAR) {
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+        current_identifier_equals(ps, "property")) {
+        kind = ZR_AST_PROPERTY_DECLARATION;
+    } else if (sawFieldUsingPrefix || ps->lexer->t.token == ZR_TK_VAR) {
         kind = ZR_AST_CLASS_FIELD;
     } else if (ps->lexer->t.token == ZR_TK_CONST) {
         ZrParser_Lexer_Next(ps->lexer);
@@ -171,6 +174,7 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
         SZrAstNode *member = ZR_NULL;
         EZrToken token = ps->lexer->t.token;
+        TZrBool rejectedLegacyProperty = ZR_FALSE;
 
         if (token == ZR_TK_PERCENT || token == ZR_TK_SHARP || token == ZR_TK_PUB || token == ZR_TK_PRI ||
             token == ZR_TK_PRO || token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_USING ||
@@ -179,11 +183,23 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
             token == ZR_TK_GET || token == ZR_TK_SET || token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST ||
             token == ZR_TK_FN) {
             switch (classify_class_member_from_current(ps)) {
+                case ZR_AST_PROPERTY_DECLARATION:
+                    member = parse_property_declaration(
+                            ps, ZR_PROPERTY_CONTAINER_CLASS);
+                    break;
                 case ZR_AST_CLASS_FIELD:
                     member = parse_class_field(ps);
                     break;
                 case ZR_AST_CLASS_PROPERTY:
+                    report_error(
+                            ps,
+                            "Legacy getter/setter syntax is unsupported; use 'property name: Type { get; set; }'");
                     member = parse_class_property(ps);
+                    if (member != ZR_NULL) {
+                        ZrParser_Ast_Free(ps->state, member);
+                        member = ZR_NULL;
+                    }
+                    rejectedLegacyProperty = ZR_TRUE;
                     break;
                 case ZR_AST_CLASS_META_FUNCTION:
                     member = parse_class_meta_function(ps);
@@ -199,6 +215,9 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
             break;
         }
 
+        if (rejectedLegacyProperty) {
+            continue;
+        }
         if (member != ZR_NULL) {
             ZrParser_AstNodeArray_Add(ps->state, members, member);
         } else {

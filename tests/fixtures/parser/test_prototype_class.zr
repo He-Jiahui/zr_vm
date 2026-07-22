@@ -21,12 +21,9 @@ class Dog : Animal {
 class Person {
     pub var _name: string;
     
-    pub get name: string{
-        return this._name;
-    }
-
-    pub set name(v: string){
-        this._name = v;
+    pub property name: string {
+        get { return this._name; }
+        set { this._name = value; }
     }
 }
 

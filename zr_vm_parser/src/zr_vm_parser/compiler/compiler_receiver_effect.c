@@ -2,6 +2,10 @@
 #include "zr_vm_parser/receiver_call.h"
 #include "zr_vm_parser/syntax_contract.h"
 
+SZrTypePrototypeInfo *find_compiler_type_prototype(
+        SZrCompilerState *cs,
+        SZrString *typeName);
+
 EZrOwnershipQualifier get_member_receiver_qualifier(SZrAstNode *node) {
     if (node == ZR_NULL) {
         return ZR_OWNERSHIP_QUALIFIER_NONE;
@@ -47,7 +51,6 @@ static EZrReceiverDispatchKind compiler_receiver_dispatch_kind(
         SZrCompilerState *cs,
         const SZrInferredType *receiverType,
         const SZrTypeMemberInfo *memberInfo) {
-    ZR_UNUSED_PARAMETER(cs);
     if (memberInfo != ZR_NULL &&
         (memberInfo->metadataToken != 0U ||
          memberInfo->signatureToken != 0U)) {
@@ -60,6 +63,16 @@ static EZrReceiverDispatchKind compiler_receiver_dispatch_kind(
     if ((receiverType != ZR_NULL && receiverType->elementTypes.length > 0U) ||
         (memberInfo != ZR_NULL && memberInfo->genericParameters.length > 0U)) {
         return ZR_RECEIVER_DISPATCH_GENERIC;
+    }
+    if (cs != ZR_NULL && memberInfo != ZR_NULL &&
+        memberInfo->accessorRole != ZR_PROPERTY_ACCESSOR_ROLE_NONE &&
+        memberInfo->ownerTypeName != ZR_NULL) {
+        SZrTypePrototypeInfo *ownerPrototype = find_compiler_type_prototype(
+                cs, memberInfo->ownerTypeName);
+        if (ownerPrototype != ZR_NULL &&
+            ownerPrototype->type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE) {
+            return ZR_RECEIVER_DISPATCH_INTERFACE;
+        }
     }
     if (memberInfo != ZR_NULL && memberInfo->declarationNode != ZR_NULL &&
         (memberInfo->declarationNode->type ==

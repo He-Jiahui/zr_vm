@@ -149,6 +149,7 @@ typedef struct SZrCompilerState {
     // 构造函数上下文
     TZrBool isInConstructor;                     // 是否在构造函数中编译
     SZrAstNode *currentFunctionNode;          // 当前编译的函数 AST 节点（用于访问参数信息）
+    EZrCanonicalReceiverEffect currentFunctionReceiverEffect; // 当前 callable 的结构化 receiver effect
     SZrString *currentTypeName;               // 当前编译的类型名称（用于成员字段 const 检查）
     SZrAstNode *currentTypeNode;              // 当前编译的类型声明节点（用于 const 成员初始化检查）
     
@@ -328,6 +329,13 @@ typedef struct SZrTypePrototypeInfo {
 #define ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ((TZrUInt32)-1)
 #endif
 
+typedef enum EZrPropertyAccessorRole {
+    ZR_PROPERTY_ACCESSOR_ROLE_NONE = 0,
+    ZR_PROPERTY_ACCESSOR_ROLE_GET,
+    ZR_PROPERTY_ACCESSOR_ROLE_SET,
+    ZR_PROPERTY_ACCESSOR_ROLE_INIT,
+} EZrPropertyAccessorRole;
+
 // 成员信息（字段、方法、元函数等）
 typedef struct SZrTypeMemberInfo {
     EZrAstNodeType memberType;          // 成员类型（STRUCT_FIELD, STRUCT_METHOD, CLASS_FIELD 等）
@@ -385,8 +393,14 @@ typedef struct SZrTypeMemberInfo {
     SZrString *baseDefinitionName;        // 覆写链根定义名称（属性访问器为隐藏名）
     TZrUInt32 virtualSlotIndex;           // virtual slot；非虚成员为 UINT32_MAX
     TZrUInt32 interfaceContractSlot;      // interface contract slot；当前未绑定为 UINT32_MAX
-    TZrUInt32 propertyIdentity;           // property identity；非属性访问器为 UINT32_MAX
-    TZrUInt32 accessorRole;               // 0 none, 1 getter, 2 setter
+    TZrUInt32 propertyIdentity;           // property identity；非属性成员为 UINT32_MAX
+    EZrPropertyAccessorRole accessorRole; // visible property 为 NONE；访问器为 GET/SET/INIT
+    TZrSymbolId propertySymbolId;         // canonical visible PropertySymbol identity
+    TZrTypeId propertyValueTypeId;        // canonical declared property value type
+    TZrSymbolId getterAccessorSymbolId;   // visible property -> getter symbol
+    TZrSymbolId setterAccessorSymbolId;   // visible property -> setter symbol
+    TZrSymbolId initAccessorSymbolId;     // visible property -> init symbol
+    TZrBool exportsWritableRef;           // 后续 ref-return property 合同；M1 默认 false
 } SZrTypeMemberInfo;
 
 // 编译结果结构体

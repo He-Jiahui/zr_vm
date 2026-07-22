@@ -496,7 +496,35 @@ static TZrBool project_imports_canonicalize_node(SZrState *state,
                                                      currentModuleKey,
                                                      errorBuffer,
                                                      errorBufferSize,
-                                                     outErrorLocation);
+                                                      outErrorLocation);
+
+        case ZR_AST_PROPERTY_DECLARATION:
+            return project_imports_canonicalize_node_array(
+                           state,
+                           node->data.propertyDeclaration.decorators,
+                           project,
+                           currentModuleKey,
+                           errorBuffer,
+                           errorBufferSize,
+                           outErrorLocation) &&
+                   project_imports_canonicalize_node_array(
+                           state,
+                           node->data.propertyDeclaration.accessors,
+                           project,
+                           currentModuleKey,
+                           errorBuffer,
+                           errorBufferSize,
+                           outErrorLocation);
+
+        case ZR_AST_PROPERTY_ACCESSOR:
+            return project_imports_canonicalize_node(
+                    state,
+                    node->data.propertyAccessor.body,
+                    project,
+                    currentModuleKey,
+                    errorBuffer,
+                    errorBufferSize,
+                    outErrorLocation);
 
         case ZR_AST_CLASS_META_FUNCTION:
             return project_imports_canonicalize_node_array(state,

@@ -144,15 +144,13 @@ class Person{
 
     pub @constructor(id: string){
     }
-    pub set address(val:string){
-        this._address = val;
-    }
-    pub get address{
-        return this._address;
+    pub property address: string {
+        set { this._address = value; }
+        get { return this._address; }
     }
 
-    pub static get address2{
-        return Person.telephone2;
+    pub static property address2: string {
+        get { return Person.telephone2; }
     }
 }
 var builtin = %import("zr.builtin");
@@ -187,11 +185,11 @@ class Student:Person, Man{
         
         }
     }
-    pub get a:int{
-        return 0;
-    }
-    pub set a(val: int){
-        // do nothing
+    pub property a: int {
+        get { return 0; }
+        set {
+            // do nothing
+        }
     }
 
 

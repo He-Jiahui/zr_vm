@@ -20,8 +20,8 @@ pub class User {
     }
 
     #markProperty#
-    pub get value: int {
-        return this._value;
+    pub property value: int {
+        get { return this._value; }
     }
 }
 

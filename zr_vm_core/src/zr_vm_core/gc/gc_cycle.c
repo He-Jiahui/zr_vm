@@ -1596,6 +1596,7 @@ static TZrSize garbage_collector_rewrite_object_prototype_graph(SZrState *state,
         work += garbage_collector_rewrite_string_slot(&descriptor->name);
         work += garbage_collector_rewrite_function_entry_slot(state, &descriptor->getterFunction);
         work += garbage_collector_rewrite_function_entry_slot(state, &descriptor->setterFunction);
+        work += garbage_collector_rewrite_function_entry_slot(state, &descriptor->initializerFunction);
         work += garbage_collector_rewrite_string_slot(&descriptor->ownerTypeName);
         work += garbage_collector_rewrite_string_slot(&descriptor->baseDefinitionOwnerTypeName);
         work += garbage_collector_rewrite_string_slot(&descriptor->baseDefinitionName);

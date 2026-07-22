@@ -424,9 +424,16 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
     while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
         SZrAstNode *member = ZR_NULL;
 
+        if (parser_property_declaration_starts_here(ps)) {
+            member = parse_property_declaration(
+                    ps, ZR_PROPERTY_CONTAINER_STRUCT);
+        }
+
         // 检查是否是字段（以 var 开头，可能前面有访问修饰符、static 或 const）
         EZrToken token = ps->lexer->t.token;
-        if (token == ZR_TK_PERCENT || token == ZR_TK_SHARP ||
+        if (member != ZR_NULL) {
+            // 已由共享 property parser 消费。
+        } else if (token == ZR_TK_PERCENT || token == ZR_TK_SHARP ||
             token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO ||
             token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_USING ||
             token == ZR_TK_VAR) {

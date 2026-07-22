@@ -421,6 +421,53 @@ TZrBool compiler_validate_interface_variance_rules(SZrCompilerState *cs,
                 break;
             }
 
+            case ZR_AST_PROPERTY_DECLARATION: {
+                SZrPropertyDeclaration *property =
+                        &member->data.propertyDeclaration;
+                TZrBool hasGet = ZR_FALSE;
+                TZrBool hasWrite = ZR_FALSE;
+                EZrVariancePosition propertyPosition =
+                        ZR_VARIANCE_POSITION_INVARIANT;
+                const TZrChar *context = "property";
+
+                if (property->accessors != ZR_NULL) {
+                    for (TZrSize accessorIndex = 0U;
+                         accessorIndex < property->accessors->count;
+                         accessorIndex++) {
+                        SZrAstNode *accessorNode =
+                                property->accessors->nodes[accessorIndex];
+                        if (accessorNode == ZR_NULL ||
+                            accessorNode->type != ZR_AST_PROPERTY_ACCESSOR) {
+                            continue;
+                        }
+                        if (accessorNode->data.propertyAccessor.kind ==
+                            ZR_PROPERTY_ACCESSOR_GET) {
+                            hasGet = ZR_TRUE;
+                        } else {
+                            hasWrite = ZR_TRUE;
+                        }
+                    }
+                }
+                if (hasGet && !hasWrite) {
+                    propertyPosition = ZR_VARIANCE_POSITION_OUT;
+                    context = "getter";
+                } else if (hasWrite && !hasGet) {
+                    propertyPosition = ZR_VARIANCE_POSITION_IN;
+                    context = "setter";
+                }
+                if (!validate_interface_type_variance(
+                            cs,
+                            interfaceDecl->generic->params,
+                            property->typeInfo,
+                            propertyPosition,
+                            context,
+                            ZR_FALSE,
+                            member->location)) {
+                    return ZR_FALSE;
+                }
+                break;
+            }
+
             case ZR_AST_INTERFACE_META_SIGNATURE:
                 if (member->data.interfaceMetaSignature.params != ZR_NULL) {
                     for (TZrSize paramIndex = 0;

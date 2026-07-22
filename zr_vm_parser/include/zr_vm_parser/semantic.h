@@ -49,6 +49,7 @@ enum EZrSemanticSymbolKind {
     ZR_SEMANTIC_SYMBOL_KIND_TYPE,
     ZR_SEMANTIC_SYMBOL_KIND_PARAMETER,
     ZR_SEMANTIC_SYMBOL_KIND_FIELD,
+    ZR_SEMANTIC_SYMBOL_KIND_PROPERTY,
 };
 
 typedef enum EZrSemanticSymbolKind EZrSemanticSymbolKind;

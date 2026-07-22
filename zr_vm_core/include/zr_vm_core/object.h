@@ -54,6 +54,7 @@ typedef struct SZrMemberDescriptor {
     TZrUInt8 reserved0;
     struct SZrFunction *getterFunction;
     struct SZrFunction *setterFunction;
+    struct SZrFunction *initializerFunction;
     TZrUInt32 contractRole;
     TZrUInt32 modifierFlags;
     struct SZrString *ownerTypeName;
