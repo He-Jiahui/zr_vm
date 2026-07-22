@@ -2,6 +2,7 @@
 
 #include "ownership_resource_internal.h"
 #include "ownership_transfer_internal.h"
+#include "gc/gc_domain_internal.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/ownership.h"
@@ -467,6 +468,12 @@ SZrOwnershipTransferEnvelope *ZrCore_OwnershipTransfer_PrepareCrossDomain(
     ownership_transfer_atomic_store_release(
             &envelope->state,
             (TZrInt32)ZR_OWNERSHIP_TRANSFER_STATE_PREPARED);
+    ZrCore_GcDomain_RecordTransferTelemetry(
+            sourceState->global,
+            sourceDomain,
+            ZR_GC_DOMAIN_TRANSFER_TELEMETRY_OUTBOUND_PREPARE,
+            envelope->serializedObjectCount,
+            envelope->serializedByteCount);
     ownership_transfer_diagnostic_set(
             diagnostic,
             ZR_DOMAIN_TRANSFER_STATUS_OK,
@@ -490,6 +497,14 @@ TZrBool ZrCore_OwnershipTransfer_Publish(
                      (TZrInt32)ZR_OWNERSHIP_TRANSFER_STATE_PREPARED,
                      (TZrInt32)ZR_OWNERSHIP_TRANSFER_STATE_QUEUED);
     ownership_transfer_unlock(envelope);
+    if (result) {
+        ZrCore_GcDomain_RecordTransferTelemetry(
+                envelope->ownerGlobal,
+                envelope->sourceDomain,
+                ZR_GC_DOMAIN_TRANSFER_TELEMETRY_OUTBOUND_PUBLISH,
+                0u,
+                0u);
+    }
     return result;
 }
 
@@ -520,6 +535,14 @@ TZrBool ZrCore_OwnershipTransfer_Claim(
         }
     }
     ownership_transfer_unlock(envelope);
+    if (result) {
+        ZrCore_GcDomain_RecordTransferTelemetry(
+                targetState->global,
+                envelope->targetDomain,
+                ZR_GC_DOMAIN_TRANSFER_TELEMETRY_INBOUND_CLAIM,
+                0u,
+                0u);
+    }
     return result;
 }
 
@@ -584,22 +607,40 @@ TZrBool ZrCore_OwnershipTransfer_CommitCrossDomain(
     }
     if (envelope->kind == ZR_DOMAIN_TRANSFER_KIND_IMMUTABLE_HANDLE ||
         envelope->kind == ZR_DOMAIN_TRANSFER_KIND_RESOURCE_MOVE) {
-        return ZrCore_OwnershipTransfer_InternalCommitProvider(
+        result = ZrCore_OwnershipTransfer_InternalCommitProvider(
                 envelope,
                 targetState,
                 workerId,
                 claimEpoch,
                 target,
                 diagnostic);
+        if (result) {
+            ZrCore_GcDomain_RecordTransferTelemetry(
+                    targetState->global,
+                    envelope->targetDomain,
+                    ZR_GC_DOMAIN_TRANSFER_TELEMETRY_INBOUND_COMMIT,
+                    envelope->serializedObjectCount,
+                    envelope->serializedByteCount);
+        }
+        return result;
     }
     if (envelope->kind == ZR_DOMAIN_TRANSFER_KIND_STRUCTURED_CLONE) {
-        return ZrCore_OwnershipTransfer_InternalCommitGraph(
+        result = ZrCore_OwnershipTransfer_InternalCommitGraph(
                 envelope,
                 targetState,
                 workerId,
                 claimEpoch,
                 target,
                 diagnostic);
+        if (result) {
+            ZrCore_GcDomain_RecordTransferTelemetry(
+                    targetState->global,
+                    envelope->targetDomain,
+                    ZR_GC_DOMAIN_TRANSFER_TELEMETRY_INBOUND_COMMIT,
+                    envelope->serializedObjectCount,
+                    envelope->serializedByteCount);
+        }
+        return result;
     }
 
     ownership_transfer_lock(envelope);
@@ -660,6 +701,14 @@ TZrBool ZrCore_OwnershipTransfer_CommitCrossDomain(
                 0u);
     }
     ownership_transfer_unlock(envelope);
+    if (result) {
+        ZrCore_GcDomain_RecordTransferTelemetry(
+                targetState->global,
+                envelope->targetDomain,
+                ZR_GC_DOMAIN_TRANSFER_TELEMETRY_INBOUND_COMMIT,
+                envelope->serializedObjectCount,
+                envelope->serializedByteCount);
+    }
     return result;
 }
 
@@ -822,5 +871,13 @@ TZrBool ZrCore_OwnershipTransfer_AbortCrossDomain(
             objectCount,
             byteCount,
             0u);
+    ZrCore_GcDomain_RecordTransferTelemetry(
+            state->global,
+            ZrCore_GcDomain_GetIdentity(state),
+            ownership_transfer_state_matches_source_domain(state, envelope)
+                    ? ZR_GC_DOMAIN_TRANSFER_TELEMETRY_OUTBOUND_ABORT
+                    : ZR_GC_DOMAIN_TRANSFER_TELEMETRY_INBOUND_ABORT,
+            objectCount,
+            byteCount);
     return ZR_TRUE;
 }

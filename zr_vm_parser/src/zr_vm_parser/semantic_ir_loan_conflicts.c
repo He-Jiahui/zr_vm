@@ -48,7 +48,8 @@ static ESemanticLoanInstructionAccess loan_instruction_access(
     }
     if (instruction->opcode == ZR_SEMANTIC_IR_OWN_CONSTRUCT &&
         (instruction->ownershipOperation == ZR_SEMANTIC_OWNERSHIP_SHARE ||
-         instruction->ownershipOperation == ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX)) {
+         instruction->ownershipOperation == ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX ||
+         instruction->ownershipOperation == ZR_SEMANTIC_OWNERSHIP_RETURN_TO_GC)) {
         return SEMANTIC_LOAN_ACCESS_EXCLUSIVE;
     }
     switch (instruction->opcode) {

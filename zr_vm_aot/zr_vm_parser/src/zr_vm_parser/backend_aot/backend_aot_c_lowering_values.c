@@ -77,6 +77,26 @@ void backend_aot_write_c_direct_own_detach(FILE *file, TZrUInt32 destinationSlot
             sourceSlot);
 }
 
+void backend_aot_write_c_direct_own_into_gc_box(FILE *file,
+                                                TZrUInt32 destinationSlot,
+                                                TZrUInt32 sourceSlot) {
+    backend_aot_write_c_direct_ownership_helper_call(
+            file,
+            "ZrLibrary_AotRuntime_OwnIntoGcBox",
+            destinationSlot,
+            sourceSlot);
+}
+
+void backend_aot_write_c_direct_own_return_to_gc(FILE *file,
+                                                 TZrUInt32 destinationSlot,
+                                                 TZrUInt32 sourceSlot) {
+    backend_aot_write_c_direct_ownership_helper_call(
+            file,
+            "ZrLibrary_AotRuntime_OwnReturnToGc",
+            destinationSlot,
+            sourceSlot);
+}
+
 void backend_aot_write_c_direct_own_upgrade(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     backend_aot_write_c_direct_ownership_helper_call(
             file,

@@ -5,6 +5,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/gc/gc_domain.c
   - zr_vm_core/src/zr_vm_core/gc/gc_domain_internal.h
   - zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_concurrent_major.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_domain_telemetry.c
   - zr_vm_core/src/zr_vm_core/gc/gc.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
@@ -30,6 +32,7 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md
 tests:
   - tests/core/test_gc_domain_multimutator.c
+  - tests/core/test_gc_concurrent_major.c
   - tests/core/test_resource_same_domain_handoff.c
   - tests/core/test_resource_cross_domain_transfer.c
   - tests/core/test_resource_cross_domain_transfer_races.c
@@ -77,8 +80,10 @@ domain 的 registered mutators：
 exact state 与当时 `callInfoList` frame identity。调用方不能按线程名、native function 名或诊断
 文本重建 blocker。
 
-minor、major remark 和 compact/full 的现有 GC work 都位于这套 domain-local pause 内。
-另一个 `SZrGlobalState/GcDomain` 的 mutator 不属于等待集合，因而可以继续推进。
+minor、major initial snapshot/remark 和 compact/full 的 pause work 都位于这套 domain-local
+handshake 内。M7 的 major mark slices 在两次短 pause 之间与 mutator 并发执行，具体阶段、barrier
+与budget compact合同见`gc-domain-concurrent-major.md`。另一个
+`SZrGlobalState/GcDomain` 的 mutator 不属于等待集合，因而可以继续推进。
 
 ## VM、AOT 与 relocation
 
@@ -144,3 +149,5 @@ Drop。因此queue close、claim race和commit/abort race中，source保持Moved
   或复制payload。
 - `BlockingDetached`要求native在进入前已发布/固定其roots；`NoSafepointCritical`要求短时且禁止
   未pin interior pointer逃逸。本模块只执行descriptor mode与pause合同，不推断native实现行为。
+- major pause、barrier、safepoint和transfer计数按domain identity/generation归因；宿主消费结构化
+  `ZrCore_Gc_GetStats`字段，不按线程名或日志文本统计。

@@ -412,6 +412,14 @@ static const TZrChar *writer_intermediate_semir_opcode_name(TZrUInt32 opcode) {
             return "OWN_RELEASE";
         case ZR_SEMIR_OPCODE_OWN_RETURN_LOAN:
             return "OWN_RETURN_LOAN";
+        case ZR_SEMIR_OPCODE_OWN_VIEW_SHARED:
+            return "OWN_VIEW_SHARED";
+        case ZR_SEMIR_OPCODE_OWN_VIEW_MUT:
+            return "OWN_VIEW_MUT";
+        case ZR_SEMIR_OPCODE_OWN_INTO_GC_BOX:
+            return "OWN_INTO_GC_BOX";
+        case ZR_SEMIR_OPCODE_OWN_RETURN_TO_GC:
+            return "OWN_RETURN_TO_GC";
         case ZR_SEMIR_OPCODE_TYPEOF:
             return "TYPEOF";
         case ZR_SEMIR_OPCODE_DYN_CALL:
@@ -940,6 +948,10 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(OWN_UPGRADE): fprintf(file, "OWN_UPGRADE"); break;
             case ZR_INSTRUCTION_ENUM(OWN_RELEASE): fprintf(file, "OWN_RELEASE"); break;
             case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN): fprintf(file, "OWN_RETURN_LOAN"); break;
+            case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED): fprintf(file, "OWN_VIEW_SHARED"); break;
+            case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT): fprintf(file, "OWN_VIEW_MUT"); break;
+            case ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX): fprintf(file, "OWN_INTO_GC_BOX"); break;
+            case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC): fprintf(file, "OWN_RETURN_TO_GC"); break;
             case ZR_INSTRUCTION_ENUM(TYPEOF): fprintf(file, "TYPEOF"); break;
             case ZR_INSTRUCTION_ENUM(DYN_CALL): fprintf(file, "DYN_CALL"); break;
             case ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL): fprintf(file, "DYN_TAIL_CALL"); break;
@@ -1243,6 +1255,10 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
             case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
             case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
+            case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
+            case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):
+            case ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX):
+            case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC):
             case ZR_INSTRUCTION_ENUM(TYPEOF):
             case ZR_INSTRUCTION_ENUM(DYN_CALL):
             case ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL):
@@ -2098,6 +2114,18 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
                 fprintf(file, "OWN_RETURN_LOAN");
                 break;
+            case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
+                fprintf(file, "OWN_VIEW_SHARED");
+                break;
+            case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):
+                fprintf(file, "OWN_VIEW_MUT");
+                break;
+            case ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX):
+                fprintf(file, "OWN_INTO_GC_BOX");
+                break;
+            case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC):
+                fprintf(file, "OWN_RETURN_TO_GC");
+                break;
             case ZR_INSTRUCTION_ENUM(TYPEOF):
                 fprintf(file, "TYPEOF");
                 break;
@@ -2230,6 +2258,10 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
             case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
             case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
+            case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
+            case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):
+            case ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX):
+            case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC):
                 fprintf(file, ", operand1=%u", inst->instruction.operand.operand1[0]);
                 break;
 

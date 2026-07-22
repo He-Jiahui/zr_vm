@@ -25,6 +25,8 @@
 
 #define ZR_GC_FLAG_EXPLICIT_COLLECTION_REQUEST ((TZrUInt32)1u)
 
+TZrUInt64 garbage_collector_now_us(void);
+
 static ZR_FORCE_INLINE TZrBool garbage_collector_ignore_registry_contains(SZrGarbageCollector *collector,
                                                                           SZrRawObject *object) {
     TZrSize index;
@@ -467,12 +469,21 @@ void garbage_collector_full_inc(SZrState *state, SZrGlobalState *global);
 TZrBool gcrunning(SZrGlobalState *global);
 void garbage_collector_run_generational_step(SZrState *state);
 TZrSize garbage_collector_prepare_major_collection(SZrState *state);
+TZrSize garbage_collector_concurrent_major_begin(SZrState *state, TZrBool forceCompact);
+TZrSize garbage_collector_concurrent_major_mark_slice(SZrState *state, TZrSize objectBudget);
+TZrSize garbage_collector_concurrent_major_finish(SZrState *state, TZrBool *outDidCompact);
+void garbage_collector_concurrent_major_cancel(SZrState *state);
+TZrSize garbage_collector_finish_generational_major_collection(
+        SZrState *state,
+        TZrBool forceCompact,
+        TZrBool *outDidCompact);
 
 void garbage_collector_mark_object(SZrState *state, SZrRawObject *object);
 void garbage_collector_mark_value(SZrState *state, SZrTypeValue *value);
 TZrSize garbage_collector_mark_string_roots(SZrState *state);
 TZrSize garbage_collector_mark_ignored_roots(SZrState *state);
 TZrSize garbage_collector_mark_domain_roots(SZrState *state);
+TZrSize garbage_collector_snapshot_concurrent_thread_roots(SZrState *state);
 void garbage_collector_link_to_gray_list(SZrRawObject *object, SZrRawObject **list);
 void garbage_collector_to_gc_list_and_mark_wait_to_scan(SZrRawObject *object, SZrRawObject **list);
 

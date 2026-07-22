@@ -8931,6 +8931,7 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                 execution_refresh_registered_owner_mirror(state, destinationBase, destination);
             }
             DONE(1);
+            ZR_INSTRUCTION_LABEL(OWN_VIEW_SHARED)
             ZR_INSTRUCTION_LABEL(OWN_BORROW) {
                 TZrStackValuePointer destinationBase =
                         E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
@@ -8943,6 +8944,7 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                 execution_refresh_registered_owner_mirror(state, destinationBase, destination);
             }
             DONE(1);
+            ZR_INSTRUCTION_LABEL(OWN_VIEW_MUT)
             ZR_INSTRUCTION_LABEL(OWN_LOAN) {
                 TZrStackValuePointer sourceBase = BASE(A1(instruction));
                 TZrStackValuePointer destinationBase =
@@ -8995,6 +8997,36 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                 execution_clear_registered_owner_mirror(state, destinationBase, destination);
                 if (!ZrCore_Ownership_IntoGcBoxValue(state, destination, opA) &&
                     !ZrCore_Ownership_DetachValue(state, destination, opA)) {
+                    ZrCore_Value_ResetAsNull(destination);
+                }
+                execution_refresh_registered_owner_mirror(state, sourceBase, opA);
+                execution_refresh_registered_owner_mirror(state, destinationBase, destination);
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(OWN_INTO_GC_BOX) {
+                TZrStackValuePointer sourceBase = BASE(A1(instruction));
+                TZrStackValuePointer destinationBase =
+                        E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
+                destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                execution_clear_registered_owner_mirror(state, sourceBase, opA);
+                execution_clear_registered_owner_mirror(state, destinationBase, destination);
+                if (!ZrCore_Ownership_IntoGcBoxValue(state, destination, opA)) {
+                    ZrCore_Value_ResetAsNull(destination);
+                }
+                execution_refresh_registered_owner_mirror(state, sourceBase, opA);
+                execution_refresh_registered_owner_mirror(state, destinationBase, destination);
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(OWN_RETURN_TO_GC) {
+                TZrStackValuePointer sourceBase = BASE(A1(instruction));
+                TZrStackValuePointer destinationBase =
+                        E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
+                destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                execution_clear_registered_owner_mirror(state, sourceBase, opA);
+                execution_clear_registered_owner_mirror(state, destinationBase, destination);
+                if (!ZrCore_Ownership_DetachValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
                 }
                 execution_refresh_registered_owner_mirror(state, sourceBase, opA);

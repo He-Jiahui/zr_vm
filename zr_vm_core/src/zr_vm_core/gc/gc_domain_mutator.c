@@ -4,6 +4,7 @@
 
 #include "gc/gc_domain_internal.h"
 
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
 
@@ -75,6 +76,29 @@ static TZrUInt64 gc_domain_now_milliseconds(void) {
     return (TZrUInt64)current.tv_sec * 1000u +
            (TZrUInt64)current.tv_nsec / 1000000u;
 #endif
+}
+
+static void gc_domain_record_safepoint_wait(
+        SZrGcDomain *domain,
+        TZrUInt64 startedMilliseconds) {
+    TZrUInt64 finishedMilliseconds;
+    TZrUInt64 durationUs;
+
+    if (domain == ZR_NULL) {
+        return;
+    }
+    finishedMilliseconds = gc_domain_now_milliseconds();
+    durationUs = finishedMilliseconds >= startedMilliseconds
+                         ? (finishedMilliseconds - startedMilliseconds) * 1000u
+                         : 0u;
+    if (durationUs == 0u) {
+        durationUs = 1u;
+    }
+    domain->safepointWaitCount++;
+    domain->safepointWaitTotalUs += durationUs;
+    if (domain->safepointWaitMaxUs < durationUs) {
+        domain->safepointWaitMaxUs = durationUs;
+    }
 }
 
 static void gc_domain_wait_locked(
@@ -157,8 +181,12 @@ TZrBool ZrCore_GcDomain_CoordinationInit(SZrGcDomain *domain) {
     }
 #if defined(ZR_PLATFORM_WIN)
     InitializeCriticalSection(&domain->coordinationLock);
+    InitializeCriticalSection(&domain->mutationLock);
     InitializeConditionVariable(&domain->coordinationCondition);
+    domain->mutationLockInitialized = ZR_TRUE;
 #else
+    pthread_mutexattr_t mutationAttributes;
+
     if (pthread_mutex_init(&domain->coordinationLock, ZR_NULL) != 0) {
         return ZR_FALSE;
     }
@@ -166,6 +194,22 @@ TZrBool ZrCore_GcDomain_CoordinationInit(SZrGcDomain *domain) {
         (void)pthread_mutex_destroy(&domain->coordinationLock);
         return ZR_FALSE;
     }
+    if (pthread_mutexattr_init(&mutationAttributes) != 0) {
+        (void)pthread_cond_destroy(&domain->coordinationCondition);
+        (void)pthread_mutex_destroy(&domain->coordinationLock);
+        return ZR_FALSE;
+    }
+    if (pthread_mutexattr_settype(
+                &mutationAttributes, PTHREAD_MUTEX_RECURSIVE) != 0 ||
+        pthread_mutex_init(
+                &domain->mutationLock, &mutationAttributes) != 0) {
+        (void)pthread_mutexattr_destroy(&mutationAttributes);
+        (void)pthread_cond_destroy(&domain->coordinationCondition);
+        (void)pthread_mutex_destroy(&domain->coordinationLock);
+        return ZR_FALSE;
+    }
+    (void)pthread_mutexattr_destroy(&mutationAttributes);
+    domain->mutationLockInitialized = ZR_TRUE;
 #endif
     domain->coordinationInitialized = ZR_TRUE;
     domain->nextMutatorId = 1u;
@@ -177,11 +221,18 @@ void ZrCore_GcDomain_CoordinationFree(SZrGcDomain *domain) {
         return;
     }
 #if defined(ZR_PLATFORM_WIN)
+    if (domain->mutationLockInitialized) {
+        DeleteCriticalSection(&domain->mutationLock);
+    }
     DeleteCriticalSection(&domain->coordinationLock);
 #else
+    if (domain->mutationLockInitialized) {
+        (void)pthread_mutex_destroy(&domain->mutationLock);
+    }
     (void)pthread_cond_destroy(&domain->coordinationCondition);
     (void)pthread_mutex_destroy(&domain->coordinationLock);
 #endif
+    domain->mutationLockInitialized = ZR_FALSE;
     domain->coordinationInitialized = ZR_FALSE;
 }
 
@@ -216,6 +267,60 @@ void ZrCore_GcDomain_Broadcast(SZrGcDomain *domain) {
 #else
     (void)pthread_cond_broadcast(&domain->coordinationCondition);
 #endif
+}
+
+void ZrCore_GcDomain_MutationLock(SZrGcDomain *domain) {
+    if (domain == ZR_NULL || !domain->mutationLockInitialized) {
+        return;
+    }
+#if defined(ZR_PLATFORM_WIN)
+    EnterCriticalSection(&domain->mutationLock);
+#else
+    (void)pthread_mutex_lock(&domain->mutationLock);
+#endif
+}
+
+void ZrCore_GcDomain_MutationUnlock(SZrGcDomain *domain) {
+    if (domain == ZR_NULL || !domain->mutationLockInitialized) {
+        return;
+    }
+#if defined(ZR_PLATFORM_WIN)
+    LeaveCriticalSection(&domain->mutationLock);
+#else
+    (void)pthread_mutex_unlock(&domain->mutationLock);
+#endif
+}
+
+TZrBool ZrCore_GcDomain_MutationBegin(SZrState *state) {
+    SZrGcDomain *domain;
+    SZrGcDomainMutatorRecord *record;
+    TZrBool concurrentMajorActive;
+
+    if (state == ZR_NULL || state->gcDomain == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    domain = state->gcDomain;
+    ZrCore_GcDomain_Lock(domain);
+    record = gc_domain_find_mutator_locked(domain, state);
+    record = gc_domain_wait_for_entry_boundary_locked(domain, state, record);
+    if (record == ZR_NULL && domain->collectorState != state) {
+        ZrCore_GcDomain_Unlock(domain);
+        return ZR_FALSE;
+    }
+    concurrentMajorActive =
+            domain->collector != ZR_NULL &&
+            domain->collector->concurrentMajorActive;
+    ZrCore_GcDomain_Unlock(domain);
+    if (concurrentMajorActive) {
+        ZrCore_GcDomain_MutationLock(domain);
+    }
+    return concurrentMajorActive;
+}
+
+void ZrCore_GcDomain_MutationEnd(SZrState *state, TZrBool locked) {
+    if (locked && state != ZR_NULL && state->gcDomain != ZR_NULL) {
+        ZrCore_GcDomain_MutationUnlock(state->gcDomain);
+    }
 }
 
 TZrBool ZrCore_GcDomain_RegisterMutator(
@@ -584,6 +689,7 @@ TZrBool ZrCore_GcDomain_StopTheWorldBegin(
         TZrUInt64 elapsed;
 
         if (blocker == ZR_NULL) {
+            gc_domain_record_safepoint_wait(domain, started);
             if (outDiagnostic != ZR_NULL) {
                 outDiagnostic->safepointEpoch = domain->safepointEpoch;
             }

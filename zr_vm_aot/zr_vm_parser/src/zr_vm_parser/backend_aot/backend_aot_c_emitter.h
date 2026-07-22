@@ -450,6 +450,8 @@ void backend_aot_write_c_direct_own_return_loan(FILE *file, TZrUInt32 destinatio
 void backend_aot_write_c_direct_own_share(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_own_weak(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_own_detach(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_own_into_gc_box(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_own_return_to_gc(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_own_upgrade(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_own_release(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_mul_signed(FILE *file,

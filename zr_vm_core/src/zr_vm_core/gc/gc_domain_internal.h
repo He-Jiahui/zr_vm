@@ -46,6 +46,15 @@ typedef struct SZrGcDomainMutatorRecord {
     TZrBool nativeEnteredFromInactive;
 } SZrGcDomainMutatorRecord;
 
+typedef enum EZrGcDomainTransferTelemetryEvent {
+    ZR_GC_DOMAIN_TRANSFER_TELEMETRY_OUTBOUND_PREPARE = 0,
+    ZR_GC_DOMAIN_TRANSFER_TELEMETRY_OUTBOUND_PUBLISH,
+    ZR_GC_DOMAIN_TRANSFER_TELEMETRY_OUTBOUND_ABORT,
+    ZR_GC_DOMAIN_TRANSFER_TELEMETRY_INBOUND_CLAIM,
+    ZR_GC_DOMAIN_TRANSFER_TELEMETRY_INBOUND_COMMIT,
+    ZR_GC_DOMAIN_TRANSFER_TELEMETRY_INBOUND_ABORT
+} EZrGcDomainTransferTelemetryEvent;
+
 typedef struct SZrGcDomain {
     struct SZrGlobalState *global;
     struct SZrGarbageCollector *collector;
@@ -64,14 +73,30 @@ typedef struct SZrGcDomain {
     struct SZrState *collectorState;
     TZrUInt32 pauseDepth;
     TZrBool pauseRequested;
+    TZrUInt64 safepointWaitCount;
+    TZrUInt64 safepointWaitTotalUs;
+    TZrUInt64 safepointWaitMaxUs;
+    TZrUInt64 outboundTransferPrepareCount;
+    TZrUInt64 outboundTransferPublishCount;
+    TZrUInt64 outboundTransferAbortCount;
+    TZrUInt64 outboundTransferObjectCount;
+    TZrUInt64 outboundTransferByteCount;
+    TZrUInt64 inboundTransferClaimCount;
+    TZrUInt64 inboundTransferCommitCount;
+    TZrUInt64 inboundTransferAbortCount;
+    TZrUInt64 inboundTransferObjectCount;
+    TZrUInt64 inboundTransferByteCount;
 #if defined(ZR_PLATFORM_WIN)
     CRITICAL_SECTION coordinationLock;
+    CRITICAL_SECTION mutationLock;
     CONDITION_VARIABLE coordinationCondition;
 #else
     pthread_mutex_t coordinationLock;
+    pthread_mutex_t mutationLock;
     pthread_cond_t coordinationCondition;
 #endif
     TZrBool coordinationInitialized;
+    TZrBool mutationLockInitialized;
     TZrBool active;
 } SZrGcDomain;
 
@@ -86,6 +111,16 @@ void ZrCore_GcDomain_CoordinationFree(SZrGcDomain *domain);
 void ZrCore_GcDomain_Lock(SZrGcDomain *domain);
 void ZrCore_GcDomain_Unlock(SZrGcDomain *domain);
 void ZrCore_GcDomain_Broadcast(SZrGcDomain *domain);
+void ZrCore_GcDomain_MutationLock(SZrGcDomain *domain);
+void ZrCore_GcDomain_MutationUnlock(SZrGcDomain *domain);
+void ZrCore_GcDomain_RecordTransferTelemetry(
+        struct SZrGlobalState *global,
+        SZrGcDomainIdentity identity,
+        EZrGcDomainTransferTelemetryEvent event,
+        TZrUInt32 objectCount,
+        TZrUInt64 byteCount);
+TZrBool ZrCore_GcDomain_MutationBegin(struct SZrState *state);
+void ZrCore_GcDomain_MutationEnd(struct SZrState *state, TZrBool locked);
 TZrBool ZrCore_GcDomain_RegisterMutator(
         SZrGcDomain *domain,
         struct SZrState *state);

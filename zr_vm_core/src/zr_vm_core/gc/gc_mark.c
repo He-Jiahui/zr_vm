@@ -1396,6 +1396,77 @@ TZrSize ZrGarbageCollectorPropagateMark(SZrState *state) {
     return garbage_collector_scan_object(state, object);
 }
 
+static TZrBool garbage_collector_unlink_gray_object(
+        SZrRawObject **head,
+        SZrRawObject *object) {
+    SZrRawObject **cursor;
+
+    if (head == ZR_NULL || object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    cursor = head;
+    while (*cursor != ZR_NULL) {
+        if (*cursor == object) {
+            *cursor = object->gcList;
+            object->gcList = ZR_NULL;
+            return ZR_TRUE;
+        }
+        cursor = &(*cursor)->gcList;
+    }
+    return ZR_FALSE;
+}
+
+static TZrSize garbage_collector_snapshot_thread_root(
+        SZrState *state,
+        SZrRawObject *threadObject) {
+    SZrGarbageCollector *collector;
+
+    if (state == ZR_NULL || state->global == ZR_NULL ||
+        state->global->garbageCollector == ZR_NULL ||
+        threadObject == ZR_NULL ||
+        threadObject->type != ZR_RAW_OBJECT_TYPE_THREAD) {
+        return 0u;
+    }
+
+    collector = state->global->garbageCollector;
+    (void)garbage_collector_unlink_gray_object(
+            &collector->waitToScanObjectList, threadObject);
+    (void)garbage_collector_unlink_gray_object(
+            &collector->waitToScanAgainObjectList, threadObject);
+    if (threadObject->garbageCollectMark.status !=
+        ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
+        ZR_GC_SET_REFERENCED(threadObject);
+    }
+    return garbage_collector_scan_object(state, threadObject);
+}
+
+TZrSize garbage_collector_snapshot_concurrent_thread_roots(SZrState *state) {
+    SZrGcDomain *domain;
+    TZrSize work = 0u;
+
+    if (state == ZR_NULL || state->gcDomain == ZR_NULL) {
+        return 0u;
+    }
+
+    domain = state->gcDomain;
+    ZrCore_GcDomain_Lock(domain);
+    for (TZrSize index = 0u; index < domain->mutatorLength; ++index) {
+        SZrState *mutatorState = domain->mutators[index].state;
+        SZrRawObject *threadObject = mutatorState != ZR_NULL
+                                             ? ZR_CAST_RAW_OBJECT_AS_SUPER(mutatorState)
+                                             : ZR_NULL;
+
+        if (threadObject == ZR_NULL ||
+            threadObject->gcDomainId != domain->identity.id ||
+            threadObject->gcDomainGeneration != domain->identity.generation) {
+            continue;
+        }
+        work += garbage_collector_snapshot_thread_root(state, threadObject);
+    }
+    ZrCore_GcDomain_Unlock(domain);
+    return work;
+}
+
 static ZR_FORCE_INLINE TZrBool garbage_collector_activate_pending_gray_list(SZrGarbageCollector *collector) {
     if (collector == ZR_NULL) {
         return ZR_FALSE;
@@ -1554,6 +1625,7 @@ static void garbage_collector_remember_object(SZrGlobalState *global, SZrRawObje
 void ZrCore_GarbageCollector_Barrier(SZrState *state, SZrRawObject *object, SZrRawObject *valueObject) {
     SZrGlobalState *global;
     TZrBool sourceIsLive;
+    TZrBool mutationLocked;
     TZrUInt32 propagatedEscapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE;
     EZrGarbageCollectPromotionReason promotionReason = ZR_GARBAGE_COLLECT_PROMOTION_REASON_NONE;
 
@@ -1565,6 +1637,10 @@ void ZrCore_GarbageCollector_Barrier(SZrState *state, SZrRawObject *object, SZrR
     if (global == ZR_NULL || global->garbageCollector == ZR_NULL) {
         return;
     }
+    mutationLocked = ZrCore_GcDomain_MutationBegin(state);
+    if (global->garbageCollector->concurrentMajorActive) {
+        global->garbageCollector->statsSnapshot.concurrentBarrierCount++;
+    }
 
     if (valueObject->garbageCollectMark.ignoredRegistryIndex != ZR_MAX_SIZE) {
         ZrCore_GarbageCollector_UnignoreObject(global, valueObject);
@@ -1572,7 +1648,7 @@ void ZrCore_GarbageCollector_Barrier(SZrState *state, SZrRawObject *object, SZrR
 
     if (garbage_collector_object_is_unreferenced_fast(global->garbageCollector, object) ||
         garbage_collector_object_is_unreferenced_fast(global->garbageCollector, valueObject)) {
-        return;
+        goto barrier_done;
     }
 
     /*
@@ -1603,7 +1679,7 @@ void ZrCore_GarbageCollector_Barrier(SZrState *state, SZrRawObject *object, SZrR
 
     sourceIsLive = garbage_collector_object_is_barrier_source_live(object);
     if (!sourceIsLive || !ZrCore_RawObject_IsMarkInited(valueObject)) {
-        return;
+        goto barrier_done;
     }
 
     if (ZrCore_GarbageCollector_IsInvariant(global)) {
@@ -1619,6 +1695,9 @@ void ZrCore_GarbageCollector_Barrier(SZrState *state, SZrRawObject *object, SZrR
                global->garbageCollector->gcMode == ZR_GARBAGE_COLLECT_MODE_INCREMENTAL) {
         ZrCore_RawObject_MarkAsInit(state, valueObject);
     }
+
+barrier_done:
+    ZrCore_GcDomain_MutationEnd(state, mutationLocked);
 }
 
 void ZrCore_GarbageCollector_BarrierBack(SZrState *state, SZrRawObject *object) {

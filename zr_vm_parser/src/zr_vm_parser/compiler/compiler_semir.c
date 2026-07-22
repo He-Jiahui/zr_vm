@@ -1049,8 +1049,20 @@ static TZrBool semir_map_exec_instruction(const TZrInstruction *instruction, SZr
             outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_SHARED;
             outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_BORROW_SHARED;
             return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
+            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_VIEW_SHARED;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
+            outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_SHARED;
+            outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_BORROW_SHARED;
+            return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(OWN_LOAN):
             outMapped->opcode = ZR_SEMIR_OPCODE_OWN_LOAN;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
+            outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_UNIQUE;
+            outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_BORROW_MUT;
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):
+            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_VIEW_MUT;
             outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
             outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_UNIQUE;
             outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_BORROW_MUT;
@@ -1069,6 +1081,18 @@ static TZrBool semir_map_exec_instruction(const TZrInstruction *instruction, SZr
             return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(OWN_DETACH):
             outMapped->opcode = ZR_SEMIR_OPCODE_OWN_DETACH;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
+            outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_SHARED;
+            outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_PLAIN_GC;
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX):
+            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_INTO_GC_BOX;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
+            outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_UNIQUE;
+            outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_PLAIN_GC;
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC):
+            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_RETURN_TO_GC;
             outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
             outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_SHARED;
             outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_PLAIN_GC;

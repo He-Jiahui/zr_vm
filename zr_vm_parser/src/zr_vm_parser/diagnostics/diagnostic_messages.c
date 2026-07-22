@@ -231,6 +231,10 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "owner_to_plain_escape",
             "Owner to plain escape",
             "Owner value cannot escape into a plain reference"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "resource_shared_strong_cycle",
+            "Resource shared strong cycle",
+            "Shared resource fields form a strong ownership cycle"),
 };
 
 TZrSize ZrParser_DiagnosticMessages_Count(void) {

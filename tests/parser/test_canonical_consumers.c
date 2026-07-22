@@ -36,7 +36,8 @@ typedef struct SZrConsumerArtifactFixture {
     SZrArtifactTypeIdentityRow typeSpec;
     SZrArtifactContractRow contract;
     SZrArtifactLayoutRow layout;
-    SZrArtifactSectionInput sections[7];
+    SZrArtifactDomainTransferRow domainTransfer;
+    SZrArtifactSectionInput sections[8];
     SZrArtifactDocument document;
 } SZrConsumerArtifactFixture;
 
@@ -118,6 +119,11 @@ static void consumer_fixture_init(SZrConsumerArtifactFixture *fixture) {
     fixture->layout.gcScanKind = ZR_ARTIFACT_GC_SCAN_FREE;
     fixture->layout.layoutHash = fixture->typeRef.layoutHash;
 
+    fixture->domainTransfer.typeToken = CONSUMER_TYPE_DEF_TOKEN;
+    fixture->domainTransfer.kind = ZR_ARTIFACT_DOMAIN_TRANSFER_VALUE_COPY;
+    fixture->domainTransfer.schemaVersion = 1u;
+    fixture->domainTransfer.schemaHash = 0x6666777788889999ULL;
+
     fixture->sections[sectionCount++] = (SZrArtifactSectionInput){
             ZR_ARTIFACT_SECTION_TYPE_DEF_TABLE, ZR_ARTIFACT_SECTION_FLAG_MANDATORY,
             1u, &fixture->typeDef};
@@ -139,6 +145,11 @@ static void consumer_fixture_init(SZrConsumerArtifactFixture *fixture) {
     fixture->sections[sectionCount++] = (SZrArtifactSectionInput){
             ZR_ARTIFACT_SECTION_CODE_TABLE, ZR_ARTIFACT_SECTION_FLAG_MANDATORY,
             (TZrUInt32)sizeof(code), code};
+    fixture->sections[sectionCount++] = (SZrArtifactSectionInput){
+            ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE,
+            ZR_ARTIFACT_SECTION_FLAG_OPTIONAL,
+            1u,
+            &fixture->domainTransfer};
 
     fixture->document.kind = ZR_ARTIFACT_KIND_ZRO;
     fixture->document.identity.canonicalTypeId = CONSUMER_TYPE_ID;
@@ -207,6 +218,11 @@ static void test_vm_and_aot_consume_the_same_canonical_contract_and_fail_identic
     TEST_ASSERT_EQUAL_MEMORY(&vmProjection.rootType,
                              &aotProjection.rootType,
                              sizeof(vmProjection.rootType));
+    TEST_ASSERT_TRUE(vmProjection.rootType.hasDomainTransfer);
+    TEST_ASSERT_EQUAL_MEMORY(
+            &fixture.domainTransfer,
+            &vmProjection.rootType.domainTransfer,
+            sizeof(fixture.domainTransfer));
 
     consumer_write_u64(buffer + 64u, fixture.document.identity.signatureHash + 1u);
     TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_SIGNATURE_HASH_MISMATCH,
@@ -223,6 +239,52 @@ static void test_vm_and_aot_consume_the_same_canonical_contract_and_fail_identic
                                                               &aotDiagnostic));
     TEST_ASSERT_EQUAL_UINT64(vmDiagnostic.expectedHash, aotDiagnostic.expectedHash);
     TEST_ASSERT_EQUAL_UINT64(vmDiagnostic.actualHash, aotDiagnostic.actualHash);
+}
+
+static void test_canonical_consumer_projects_optional_domain_transfer_contract(void) {
+    SZrConsumerArtifactFixture fixture;
+    SZrCanonicalConsumerProjection projection;
+    SZrArtifactDomainTransferRow contract;
+    SZrArtifactDiagnostic diagnostic;
+    TZrByte buffer[2048];
+    TZrSize length;
+
+    consumer_fixture_init(&fixture);
+    length = consumer_fixture_write(&fixture, buffer, sizeof(buffer));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_CanonicalConsumer_Open(
+                    buffer, length, ZR_NULL, &projection, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_CanonicalConsumer_ResolveDomainTransfer(
+                    &projection,
+                    CONSUMER_TYPE_DEF_TOKEN,
+                    &contract,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_DOMAIN_TRANSFER_VALUE_COPY, contract.kind);
+    TEST_ASSERT_EQUAL_UINT32(1u, contract.schemaVersion);
+    TEST_ASSERT_EQUAL_UINT64(
+            fixture.domainTransfer.schemaHash, contract.schemaHash);
+
+    fixture.document.sectionCount--;
+    length = consumer_fixture_write(&fixture, buffer, sizeof(buffer));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_CanonicalConsumer_Open(
+                    buffer, length, ZR_NULL, &projection, &diagnostic));
+    TEST_ASSERT_FALSE(projection.rootType.hasDomainTransfer);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_INVALID_SECTION,
+            ZrCore_CanonicalConsumer_ResolveDomainTransfer(
+                    &projection,
+                    CONSUMER_TYPE_DEF_TOKEN,
+                    &contract,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE,
+            diagnostic.sectionKind);
 }
 
 static void test_reflection_debug_and_layout_resolve_only_canonical_ids_and_tokens(void) {
@@ -1041,6 +1103,7 @@ static void test_unbound_generic_method_does_not_publish_callable_fact(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_vm_and_aot_consume_the_same_canonical_contract_and_fail_identically);
+    RUN_TEST(test_canonical_consumer_projects_optional_domain_transfer_contract);
     RUN_TEST(test_reflection_debug_and_layout_resolve_only_canonical_ids_and_tokens);
     RUN_TEST(test_semantic_query_projects_expression_and_call_types_from_canonical_facts);
     RUN_TEST(test_resolved_generic_call_publishes_closed_canonical_signature);

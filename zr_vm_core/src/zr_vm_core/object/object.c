@@ -4,6 +4,7 @@
 #include "zr_vm_core/object.h"
 #include "object/object_call_internal.h"
 #include "object/object_super_array_internal.h"
+#include "gc/gc_domain_internal.h"
 
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/closure.h"
@@ -1598,6 +1599,7 @@ static void object_set_value_core(SZrState *state,
     TZrBool objectPinned = ZR_FALSE;
     TZrBool keyPinned = ZR_FALSE;
     TZrBool valuePinned = ZR_FALSE;
+    TZrBool mutationLocked = ZR_FALSE;
 
     ZR_ASSERT(object != ZR_NULL);
     if (key == ZR_NULL) {
@@ -1662,6 +1664,7 @@ static void object_set_value_core(SZrState *state,
         return;
     }
 
+    mutationLocked = ZrCore_GcDomain_MutationBegin(state);
     nodeMap = &object->nodeMap;
     pair = ZrCore_HashSet_Find(state, nodeMap, storageKey);
     if (pair != ZR_NULL) {
@@ -1671,12 +1674,14 @@ static void object_set_value_core(SZrState *state,
             ZrCore_Object_SetExistingPairValueUnchecked(state, object, pair, value);
         }
         object->memberVersion++;
+        ZrCore_GcDomain_MutationEnd(state, mutationLocked);
         object_unpin_value_object(state->global, value, valuePinned);
         object_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
         return;
     }
 
     if (!object_pin_value_object_if_needed(state, storageKey, keyStackRooted, &keyPinned)) {
+        ZrCore_GcDomain_MutationEnd(state, mutationLocked);
         object_unpin_value_object(state->global, value, valuePinned);
         object_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
         ZrCore_Log_Error(state, "failed to pin object storage write operands");
@@ -1685,6 +1690,7 @@ static void object_set_value_core(SZrState *state,
 
     pair = ZrCore_HashSet_Add(state, nodeMap, storageKey);
     if (pair == ZR_NULL) {
+        ZrCore_GcDomain_MutationEnd(state, mutationLocked);
         object_unpin_value_object(state->global, value, valuePinned);
         object_unpin_value_object(state->global, storageKey, keyPinned);
         object_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
@@ -1699,6 +1705,7 @@ static void object_set_value_core(SZrState *state,
     object->memberVersion++;
     object_refresh_cached_string_lookup_pair(object, storageKey, pair);
     object_refresh_hidden_items_object_cache(state, object, storageKey, pair);
+    ZrCore_GcDomain_MutationEnd(state, mutationLocked);
     object_unpin_value_object(state->global, value, valuePinned);
     object_unpin_value_object(state->global, storageKey, keyPinned);
     object_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
@@ -1760,11 +1767,13 @@ static void object_set_existing_pair_value_after_fast_miss_unchecked_core(SZrSta
                                                                           const SZrTypeValue *value,
                                                                           TZrBool skipWriteBarrier) {
     TZrBool shouldRefreshHiddenItemsCache;
+    TZrBool mutationLocked;
 
     if (state == ZR_NULL || object == ZR_NULL || pair == ZR_NULL || value == ZR_NULL) {
         return;
     }
 
+    mutationLocked = ZrCore_GcDomain_MutationBegin(state);
     shouldRefreshHiddenItemsCache =
             object->cachedHiddenItemsPair == pair || object->cachedHiddenItemsObject != ZR_NULL;
 
@@ -1791,6 +1800,7 @@ static void object_set_existing_pair_value_after_fast_miss_unchecked_core(SZrSta
     if (shouldRefreshHiddenItemsCache) {
         object_refresh_hidden_items_object_cache(state, object, &pair->key, pair);
     }
+    ZrCore_GcDomain_MutationEnd(state, mutationLocked);
 }
 
 void ZrCore_Object_SetExistingPairValueAfterFastMissUnchecked(SZrState *state,

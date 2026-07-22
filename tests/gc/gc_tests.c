@@ -27,6 +27,22 @@
 #include "zr_vm_library/native_binding.h"
 #include "zr_vm_lib_system/gc.h"
 
+static void gc_test_finish_concurrent_major(SZrState *state) {
+    TZrUInt32 stepCount = 0u;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+    while (state->global->garbageCollector->concurrentMajorActive &&
+           stepCount < 4096u) {
+        ZrCore_GarbageCollector_GcStep(state);
+        stepCount++;
+    }
+    TEST_ASSERT_LESS_THAN_UINT32(4096u, stepCount);
+    TEST_ASSERT_FALSE(
+            state->global->garbageCollector->concurrentMajorActive);
+}
+
 // 测试时间测量结构
 typedef struct {
     clock_t startTime;
@@ -1510,6 +1526,7 @@ static void test_gc_snapshot_accumulates_collection_counts_and_durations(void) {
         state->stackTop.valuePointer = rootSlot + 1;
         ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR);
         ZrCore_GarbageCollector_CheckGc(state);
+        gc_test_finish_concurrent_major(state);
 
         ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
         ZrCore_GarbageCollector_GetStatsSnapshot(state->global, &snapshot);
@@ -1665,6 +1682,7 @@ static void test_gc_scheduled_collection_check_gc_runs_major_without_forced_comp
         TEST_ASSERT_TRUE(gc->gcDebtSize > 0);
 
         ZrCore_GarbageCollector_CheckGc(state);
+        gc_test_finish_concurrent_major(state);
         rootValue = ZrCore_Stack_GetValue(rootSlot);
 
         TEST_ASSERT_TRUE(gc->gcLastStepWork > 0);
@@ -4155,6 +4173,7 @@ static void test_gc_major_collection_deduplicates_shared_old_region_in_compactio
         TEST_ASSERT_TRUE(gc->gcDebtSize > 0);
 
         ZrCore_GarbageCollector_CheckGc(state);
+        gc_test_finish_concurrent_major(state);
 
         TEST_ASSERT_TRUE(gc->gcLastStepWork > 0);
         rootValue = ZrCore_Stack_GetValue(rootSlot);

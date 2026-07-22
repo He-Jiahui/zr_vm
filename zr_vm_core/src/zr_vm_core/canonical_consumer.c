@@ -79,6 +79,69 @@ static TZrBool canonical_consumer_find_contract(
     return ZR_FALSE;
 }
 
+static TZrBool canonical_consumer_find_domain_transfer(
+        const SZrCanonicalConsumerProjection *projection,
+        TZrMetadataToken typeToken,
+        SZrArtifactDomainTransferRow *outContract) {
+    TZrUInt32 index;
+
+    if (projection == ZR_NULL || outContract == ZR_NULL || typeToken == 0u) {
+        return ZR_FALSE;
+    }
+    for (index = 0u; index < projection->domainTransfers.elementCount; ++index) {
+        SZrArtifactDomainTransferRow row;
+        if (ZrCore_Artifact_ReadDomainTransferRow(
+                    &projection->domainTransfers, index, &row, ZR_NULL) ==
+                    ZR_ARTIFACT_STATUS_OK &&
+            row.typeToken == typeToken) {
+            *outContract = row;
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrMetadataToken canonical_consumer_find_type_def_token_by_id(
+        const SZrCanonicalConsumerProjection *projection,
+        TZrUInt32 canonicalTypeId) {
+    TZrUInt32 index;
+
+    if (projection == ZR_NULL || canonicalTypeId == 0u) {
+        return 0u;
+    }
+    for (index = 0u; index < projection->typeDefs.elementCount; ++index) {
+        SZrArtifactTypeDefRow row;
+        if (ZrCore_Artifact_ReadTypeDefRow(
+                    &projection->typeDefs, index, &row, ZR_NULL) ==
+                    ZR_ARTIFACT_STATUS_OK &&
+            row.canonicalTypeId == canonicalTypeId) {
+            return row.token;
+        }
+    }
+    return 0u;
+}
+
+static void canonical_consumer_project_domain_transfer(
+        const SZrCanonicalConsumerProjection *projection,
+        TZrMetadataToken typeToken,
+        TZrUInt32 canonicalTypeId,
+        SZrCanonicalTypeProjection *outType) {
+    TZrMetadataToken definitionToken;
+
+    outType->hasDomainTransfer = canonical_consumer_find_domain_transfer(
+            projection, typeToken, &outType->domainTransfer);
+    if (outType->hasDomainTransfer ||
+        ZR_METADATA_TOKEN_TABLE(typeToken) == ZR_METADATA_TABLE_TYPE_DEF) {
+        return;
+    }
+    definitionToken = canonical_consumer_find_type_def_token_by_id(
+            projection, canonicalTypeId);
+    if (definitionToken != 0u) {
+        outType->hasDomainTransfer = canonical_consumer_find_domain_transfer(
+                projection, definitionToken, &outType->domainTransfer);
+    }
+}
+
 static EZrArtifactStatus canonical_consumer_validate_callable_contract(
         const SZrCanonicalTypeProjection *type,
         SZrArtifactDiagnostic *diagnostic) {
@@ -159,6 +222,8 @@ static EZrArtifactStatus canonical_consumer_project_identity_row(
     }
     outType->hasContract = canonical_consumer_find_contract(
             projection, row.signatureToken, 0u, &outType->contract);
+    canonical_consumer_project_domain_transfer(
+            projection, row.token, row.canonicalTypeId, outType);
     return ZR_ARTIFACT_STATUS_OK;
 }
 
@@ -186,6 +251,8 @@ static EZrArtifactStatus canonical_consumer_project_type_def(
                 projection, row.constructorSignatureToken, row.constructorContractHash,
                 &outType->contract);
     }
+    canonical_consumer_project_domain_transfer(
+            projection, row.token, row.canonicalTypeId, outType);
     return ZR_ARTIFACT_STATUS_OK;
 }
 
@@ -280,6 +347,36 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveLayout(
         return canonical_consumer_fail(diagnostic, ZR_ARTIFACT_STATUS_INVALID_SECTION,
                                        ZR_ARTIFACT_SECTION_LAYOUT_TABLE, 0u);
     }
+    return ZR_ARTIFACT_STATUS_OK;
+}
+
+EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveDomainTransfer(
+        const SZrCanonicalConsumerProjection *projection,
+        TZrMetadataToken typeToken,
+        SZrArtifactDomainTransferRow *outContract,
+        SZrArtifactDiagnostic *diagnostic) {
+    SZrCanonicalTypeProjection type;
+    EZrArtifactStatus status;
+
+    canonical_consumer_clear_diagnostic(diagnostic);
+    if (projection == ZR_NULL || outContract == ZR_NULL || typeToken == 0u) {
+        return canonical_consumer_fail(
+                diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, 0u);
+    }
+    memset(outContract, 0, sizeof(*outContract));
+    status = ZrCore_CanonicalConsumer_ResolveTypeToken(
+            projection, typeToken, &type, diagnostic);
+    if (status != ZR_ARTIFACT_STATUS_OK) {
+        return status;
+    }
+    if (!type.hasDomainTransfer) {
+        return canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_SECTION,
+                ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE,
+                0u);
+    }
+    *outContract = type.domainTransfer;
     return ZR_ARTIFACT_STATUS_OK;
 }
 
@@ -448,6 +545,15 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_Open(
     ZR_CANONICAL_CONSUMER_SECTION(ZR_ARTIFACT_SECTION_CONTRACT_TABLE, contracts);
     ZR_CANONICAL_CONSUMER_SECTION(ZR_ARTIFACT_SECTION_LAYOUT_TABLE, layouts);
 #undef ZR_CANONICAL_CONSUMER_SECTION
+    status = ZrCore_Artifact_FindSection(
+            &outProjection->artifact,
+            ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE,
+            &outProjection->domainTransfers,
+            ZR_NULL);
+    if (status != ZR_ARTIFACT_STATUS_OK) {
+        memset(&outProjection->domainTransfers, 0,
+               sizeof(outProjection->domainTransfers));
+    }
     status = ZrCore_CanonicalConsumer_ResolveTypeToken(
             outProjection,
             outProjection->artifact.identity.typeSpecToken,

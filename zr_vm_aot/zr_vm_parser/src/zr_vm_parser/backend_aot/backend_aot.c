@@ -182,6 +182,10 @@ static TZrBool backend_aot_c_instruction_supported(const TZrInstruction *instruc
         case ZR_INSTRUCTION_ENUM(OWN_SHARE):
         case ZR_INSTRUCTION_ENUM(OWN_WEAK):
         case ZR_INSTRUCTION_ENUM(OWN_DETACH):
+        case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
+        case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):
+        case ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX):
+        case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC):
         case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
         case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
         case ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED):

@@ -1908,6 +1908,10 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
         case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
         case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
+        case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
+        case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):
+        case ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX):
+        case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC):
             return compiler_instruction_extra_matches_slot(instruction, slot) ||
                    compiler_instruction_const_binary_operand_matches_slot(instruction, slot);
         case ZR_INSTRUCTION_ENUM(ADD):

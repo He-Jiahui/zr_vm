@@ -10,6 +10,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/ownership_transfer_cross_domain.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer_lifecycle.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer_value_copy.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_domain_telemetry.c
   - zr_vm_core/src/zr_vm_core/type_layout.c
   - zr_vm_core/src/zr_vm_core/type_layout_initialization.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c
@@ -34,6 +35,7 @@ tests:
   - tests/core/test_type_layout_metadata_contracts.c
   - tests/parser/test_artifact_schema.c
   - tests/acceptance/2026-07-22-syntax-04-m6-cross-domain-transport.md
+  - tests/acceptance/2026-07-22-syntax-04-m7-concurrent-major-artifact-aot-lsp.md
 doc_type: module
 ---
 
@@ -137,6 +139,13 @@ envelopes before destroying the corresponding domain.
 depth counts. It distinguishes forbidden contract, domain mismatch, source GC edge,
 quota failure, allocation/decode failure, provider prepare/commit failure, stale
 generation, and state conflict.
+
+M7 also records transport progress in each domain's `SZrGcStats`. Source-domain counters own
+prepare, publish, outbound object and byte totals; target-domain counters own claim, commit,
+inbound object and byte totals. Terminal abort is charged to the domain whose transfer side
+executes cleanup. The recorder validates domain identity and generation under the domain lock,
+so stale envelopes cannot charge a reused domain. These counters are observational only and do
+not change the envelope's release/acquire state machine.
 
 M6 provides the runtime transport and artifact contract only. It does not connect
 `zr.thread`/TaskScheduler, publish language-level `Send`/`Sync`, or claim delivery or

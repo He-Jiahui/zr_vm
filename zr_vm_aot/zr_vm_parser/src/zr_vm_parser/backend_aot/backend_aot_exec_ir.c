@@ -68,6 +68,14 @@ const TZrChar *backend_aot_exec_ir_semir_opcode_name(TZrUInt32 opcode) {
             return "OWN_RELEASE";
         case ZR_SEMIR_OPCODE_OWN_RETURN_LOAN:
             return "OWN_RETURN_LOAN";
+        case ZR_SEMIR_OPCODE_OWN_VIEW_SHARED:
+            return "OWN_VIEW_SHARED";
+        case ZR_SEMIR_OPCODE_OWN_VIEW_MUT:
+            return "OWN_VIEW_MUT";
+        case ZR_SEMIR_OPCODE_OWN_INTO_GC_BOX:
+            return "OWN_INTO_GC_BOX";
+        case ZR_SEMIR_OPCODE_OWN_RETURN_TO_GC:
+            return "OWN_RETURN_TO_GC";
         case ZR_SEMIR_OPCODE_TYPEOF:
             return "TYPEOF";
         case ZR_SEMIR_OPCODE_DYN_CALL:
@@ -151,6 +159,13 @@ static TZrUInt32 backend_aot_exec_ir_runtime_contracts_for_opcode(TZrUInt32 opco
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE;
         case ZR_SEMIR_OPCODE_OWN_RETURN_LOAN:
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN;
+        case ZR_SEMIR_OPCODE_OWN_VIEW_SHARED:
+            return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_BORROW;
+        case ZR_SEMIR_OPCODE_OWN_VIEW_MUT:
+            return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_LOAN;
+        case ZR_SEMIR_OPCODE_OWN_INTO_GC_BOX:
+        case ZR_SEMIR_OPCODE_OWN_RETURN_TO_GC:
+            return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DETACH;
         case ZR_SEMIR_OPCODE_VALUE_ADDR:
         case ZR_SEMIR_OPCODE_FIELD_ADDR:
         case ZR_SEMIR_OPCODE_LOAD_VALUE:

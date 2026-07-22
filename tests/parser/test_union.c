@@ -1693,7 +1693,7 @@ static void test_union_using_guard_owner_payload_binding_borrows_by_default(void
     TEST_ASSERT_NOT_NULL(sourceName);
     function = ZrParser_Source_Compile(g_state, source, strlen(source), sourceName);
     TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_TRUE(function_graph_instructions_contain_opcode(function, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+    TEST_ASSERT_TRUE(function_graph_instructions_contain_opcode(function, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
 
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(g_state, function, &result));
     TEST_ASSERT_EQUAL_INT64(0, result);
@@ -1733,7 +1733,7 @@ static void test_union_using_guard_owner_payload_move_binding_allows_release(voi
     TEST_ASSERT_NOT_NULL(sourceName);
     function = ZrParser_Source_Compile(g_state, source, strlen(source), sourceName);
     TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_FALSE(function_graph_instructions_contain_opcode(function, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+    TEST_ASSERT_FALSE(function_graph_instructions_contain_opcode(function, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
 
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(g_state, function, &result));
     TEST_ASSERT_EQUAL_INT64(0, result);
@@ -1773,7 +1773,7 @@ static void test_union_using_guard_struct_owner_payload_move_binding_allows_rele
     TEST_ASSERT_NOT_NULL(sourceName);
     function = ZrParser_Source_Compile(g_state, source, strlen(source), sourceName);
     TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_FALSE(function_graph_instructions_contain_opcode(function, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+    TEST_ASSERT_FALSE(function_graph_instructions_contain_opcode(function, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
 
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(g_state, function, &result));
     TEST_ASSERT_EQUAL_INT64(0, result);
@@ -1816,7 +1816,7 @@ static void test_union_switch_owner_payload_move_binding_allows_release(void) {
     TEST_ASSERT_NOT_NULL(sourceName);
     function = ZrParser_Source_Compile(g_state, source, strlen(source), sourceName);
     TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_FALSE(function_graph_instructions_contain_opcode(function, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+    TEST_ASSERT_FALSE(function_graph_instructions_contain_opcode(function, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
 
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(g_state, function, &result));
     TEST_ASSERT_EQUAL_INT64(0, result);
@@ -1859,7 +1859,7 @@ static void test_union_switch_struct_owner_payload_move_binding_allows_release(v
     TEST_ASSERT_NOT_NULL(sourceName);
     function = ZrParser_Source_Compile(g_state, source, strlen(source), sourceName);
     TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_FALSE(function_graph_instructions_contain_opcode(function, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+    TEST_ASSERT_FALSE(function_graph_instructions_contain_opcode(function, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
 
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(g_state, function, &result));
     TEST_ASSERT_EQUAL_INT64(0, result);

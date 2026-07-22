@@ -242,6 +242,81 @@ static void test_semantic_query_facts_at_collects_matching_facts(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_semantic_query_owner_hover_and_diagnostic_share_canonical_facts(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrString *moduleIdentity = ZrCore_String_CreateFromNative(
+            g_state, "app.resource");
+    SZrString *resourceName = ZrCore_String_CreateFromNative(
+            g_state, "Socket");
+    SZrAstNode movedNode;
+    SZrAstNode useNode;
+    SZrSemanticExpressionFact expressionFact;
+    SZrSemanticOwnershipFact ownershipFact;
+    SZrParserSemanticTypeQuery typeQuery;
+    SZrParserSemanticQueryFacts facts;
+    SZrParserSemanticQueryDiagnostics diagnostics;
+    TZrTypeId resourceType;
+    TZrTypeId uniqueType;
+    TZrChar display[128];
+
+    TEST_ASSERT_NOT_NULL(context);
+    TEST_ASSERT_NOT_NULL(moduleIdentity);
+    TEST_ASSERT_NOT_NULL(resourceName);
+    resourceType = ZrParser_CanonicalType_InternNominal(
+            context, moduleIdentity, resourceName, 0x02000001u);
+    uniqueType = ZrParser_CanonicalType_InternOwner(
+            context, resourceType, ZR_CANONICAL_OWNER_UNIQUE);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, resourceType);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, uniqueType);
+
+    init_node(&movedNode, ZR_AST_IDENTIFIER_LITERAL, 2, 7);
+    init_node(&useNode, ZR_AST_IDENTIFIER_LITERAL, 12, 17);
+    memset(&expressionFact, 0, sizeof(expressionFact));
+    expressionFact.node = &useNode;
+    expressionFact.range = useNode.location;
+    expressionFact.kind = ZR_SEMANTIC_EXPRESSION_FACT_IDENTIFIER;
+    expressionFact.exactness = ZR_SEMANTIC_FACT_EXACT;
+    expressionFact.typeId = uniqueType;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendExpression(
+            context, &expressionFact));
+
+    memset(&ownershipFact, 0, sizeof(ownershipFact));
+    ownershipFact.node = &useNode;
+    ownershipFact.relatedNode = &movedNode;
+    ownershipFact.range = useNode.location;
+    ownershipFact.kind = ZR_SEMANTIC_OWNERSHIP_FACT_ERROR;
+    ownershipFact.qualifier = ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+    ownershipFact.symbolId = 701u;
+    ownershipFact.isViolation = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendOwnership(
+            context, &ownershipFact));
+
+    memset(&typeQuery, 0, sizeof(typeQuery));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CanonicalTypeAt(
+            context, test_range(14, 14), ZR_NULL, &typeQuery));
+    TEST_ASSERT_EQUAL_UINT32(uniqueType, typeQuery.typeId);
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            context, typeQuery.typeId, display, sizeof(display)));
+    TEST_ASSERT_EQUAL_STRING("Unique<app.resource.Socket>", display);
+
+    memset(&facts, 0, sizeof(facts));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FactsAt(
+            context, test_range(14, 14), ZR_NULL, &facts));
+    TEST_ASSERT_NOT_NULL(facts.ownership);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_OWNERSHIP_FACT_ERROR, facts.ownership->kind);
+
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
+            context, ZR_NULL, &diagnostics));
+    TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)diagnostics.count);
+    assert_zr_string_equals("use_after_move", diagnostics.items[0].code);
+    TEST_ASSERT_EQUAL_UINT32(1u,
+                             (TZrUInt32)diagnostics.items[0].relatedInformation.length);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_semantic_query_definition_of_returns_matching_declaration(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrAstNode declarationNode;
@@ -784,7 +859,7 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     TZrSize index;
 
     descriptorCount = ZrParser_DiagnosticRegistry_Count();
-    TEST_ASSERT_EQUAL_UINT32(56, (TZrUInt32)descriptorCount);
+    TEST_ASSERT_EQUAL_UINT32(57, (TZrUInt32)descriptorCount);
 
     possibleUninitialized =
             ZrParser_DiagnosticRegistry_FindByCode("possibly_uninitialized_read");
@@ -938,6 +1013,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_semantic_query_type_at_copies_narrowest_expression_type);
     RUN_TEST(test_semantic_query_facts_at_collects_matching_facts);
+    RUN_TEST(test_semantic_query_owner_hover_and_diagnostic_share_canonical_facts);
     RUN_TEST(test_semantic_query_definition_of_returns_matching_declaration);
     RUN_TEST(test_semantic_query_definition_of_prefers_reaching_write_definition);
     RUN_TEST(test_semantic_query_definitions_of_returns_multiple_reaching_writes);

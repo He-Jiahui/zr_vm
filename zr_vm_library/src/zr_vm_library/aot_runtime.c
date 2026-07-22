@@ -4051,6 +4051,30 @@ TZrBool ZrLibrary_AotRuntime_OwnDetach(SZrState *state,
             aot_runtime_into_gc_box_or_detach);
 }
 
+TZrBool ZrLibrary_AotRuntime_OwnIntoGcBox(SZrState *state,
+                                          ZrAotGeneratedFrame *frame,
+                                          TZrUInt32 destinationSlot,
+                                          TZrUInt32 sourceSlot) {
+    return aot_runtime_own_value(
+            state,
+            frame,
+            destinationSlot,
+            sourceSlot,
+            ZrCore_Ownership_IntoGcBoxValue);
+}
+
+TZrBool ZrLibrary_AotRuntime_OwnReturnToGc(SZrState *state,
+                                           ZrAotGeneratedFrame *frame,
+                                           TZrUInt32 destinationSlot,
+                                           TZrUInt32 sourceSlot) {
+    return aot_runtime_own_value(
+            state,
+            frame,
+            destinationSlot,
+            sourceSlot,
+            ZrCore_Ownership_DetachValue);
+}
+
 TZrBool ZrLibrary_AotRuntime_OwnUpgrade(SZrState *state,
                                         ZrAotGeneratedFrame *frame,
                                         TZrUInt32 destinationSlot,

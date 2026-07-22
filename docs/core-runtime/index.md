@@ -21,6 +21,8 @@ related_code:
   - zr_vm_core/include/zr_vm_core/gc_domain.h
   - zr_vm_core/include/zr_vm_core/ownership_transfer.h
   - zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_concurrent_major.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_domain_telemetry.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer_cross_domain.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer_lifecycle.c
@@ -82,6 +84,7 @@ tests:
   - tests/core/test_tail_reuse_callinfo_reset.c
   - tests/core/test_object_call_known_native_fast_path.c
   - tests/core/test_gc_domain_multimutator.c
+  - tests/core/test_gc_concurrent_major.c
   - tests/core/test_resource_same_domain_handoff.c
   - tests/core/test_resource_cross_domain_transfer.c
   - tests/core/test_resource_cross_domain_transfer_races.c
@@ -109,6 +112,9 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
 - `gc-domain-multimutator-and-owner-handoff.md`: domain-local STW epoch/handshake, registered
   VM/AOT roots, native safepoint modes, interpreter poll/reload, and the same-domain
   `Unique<Resource>` TransferEnvelope state machine.
+- `gc-domain-concurrent-major.md`: incremental/concurrent major snapshot-mark-remark lifecycle,
+  concurrent write-barrier closure, budgeted compaction, full-collection cancellation and
+  per-domain GC/transport telemetry.
 - `cross-domain-transfer-contracts.md`: artifact-reproducible cross-domain transfer kinds,
   layout/provider identity, ValueCopy and StructuredClone payloads, ResourceMove
   DropOnFailure, quotas, stale generation, shutdown, and release/acquire race contracts.

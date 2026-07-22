@@ -548,6 +548,10 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
             case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
             case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
             case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
+            case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
+            case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):
+            case ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX):
+            case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC):
             case ZR_INSTRUCTION_ENUM(TYPEOF):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 function_note_generated_frame_slot(operandA1, &slotCount);

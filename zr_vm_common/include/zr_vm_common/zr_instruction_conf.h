@@ -250,7 +250,11 @@
     Z(ADD_SIGNED_MOD_CONST)                                                                                            \
     Z(OWN_RETURN_LOAN)                                                                                                 \
     Z(CREATE_INLINE_ARRAY)                                                                                             \
-    Z(BIND_INLINE_ARRAY_ELEMENT_PLACE)
+    Z(BIND_INLINE_ARRAY_ELEMENT_PLACE)                                                                                 \
+    Z(OWN_VIEW_SHARED)                                                                                                 \
+    Z(OWN_VIEW_MUT)                                                                                                    \
+    Z(OWN_INTO_GC_BOX)                                                                                                 \
+    Z(OWN_RETURN_TO_GC)
 
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)

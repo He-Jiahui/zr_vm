@@ -388,7 +388,13 @@ static void test_resource_unique_into_gc_surface_consumes_owner(void) {
 
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_TRUE(function_contains_opcode_recursive(
+            function, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX), 0U));
+    TEST_ASSERT_FALSE(function_contains_opcode_recursive(
             function, ZR_INSTRUCTION_ENUM(OWN_DETACH), 0U));
+    TEST_ASSERT_FALSE(function_contains_opcode_recursive(
+            function, ZR_INSTRUCTION_ENUM(OWN_BORROW), 0U));
+    TEST_ASSERT_FALSE(function_contains_opcode_recursive(
+            function, ZR_INSTRUCTION_ENUM(OWN_LOAN), 0U));
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
             g_state, function, &result));
     TEST_ASSERT_EQUAL_INT64(9, result);

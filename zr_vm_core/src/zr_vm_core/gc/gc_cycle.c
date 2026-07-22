@@ -799,21 +799,34 @@ static TZrBool garbage_collector_object_references_live_young(SZrState *state, S
         case ZR_RAW_OBJECT_TYPE_OBJECT:
         case ZR_RAW_OBJECT_TYPE_ARRAY: {
             SZrObject *runtimeObject = ZR_CAST_OBJECT(state, object);
+            SZrRawObject *prototypeObject;
+            SZrRawObject *hiddenItemsObject;
 
             if (runtimeObject == ZR_NULL) {
                 return ZR_FALSE;
             }
-            if (garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeObject->prototype)) ||
-                garbage_collector_raw_object_is_live_young(
-                        ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeObject->cachedHiddenItemsObject)) ||
+            prototypeObject = runtimeObject->prototype != ZR_NULL
+                                      ? ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeObject->prototype)
+                                      : ZR_NULL;
+            hiddenItemsObject = runtimeObject->cachedHiddenItemsObject != ZR_NULL
+                                        ? ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeObject->cachedHiddenItemsObject)
+                                        : ZR_NULL;
+            if (garbage_collector_raw_object_is_live_young(prototypeObject) ||
+                garbage_collector_raw_object_is_live_young(hiddenItemsObject) ||
                 garbage_collector_hash_set_references_live_young(&runtimeObject->nodeMap)) {
                 return ZR_TRUE;
             }
             if (runtimeObject->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
                 SZrObjectModule *module = (SZrObjectModule *)runtimeObject;
+                SZrRawObject *moduleNameObject = module->moduleName != ZR_NULL
+                                                        ? ZR_CAST_RAW_OBJECT_AS_SUPER(module->moduleName)
+                                                        : ZR_NULL;
+                SZrRawObject *fullPathObject = module->fullPath != ZR_NULL
+                                                      ? ZR_CAST_RAW_OBJECT_AS_SUPER(module->fullPath)
+                                                      : ZR_NULL;
 
-                return garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(module->moduleName)) ||
-                       garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(module->fullPath)) ||
+                return garbage_collector_raw_object_is_live_young(moduleNameObject) ||
+                       garbage_collector_raw_object_is_live_young(fullPathObject) ||
                        garbage_collector_hash_set_references_live_young(&module->proNodeMap);
             }
             return ZR_FALSE;
@@ -1531,7 +1544,7 @@ static TZrSize garbage_collector_rewrite_function_entry_slot(SZrState *state, SZ
     TZrSize work;
     SZrRawObject *callableObject;
 
-    if (state == ZR_NULL || slot == ZR_NULL) {
+    if (state == ZR_NULL || slot == ZR_NULL || *slot == ZR_NULL) {
         return 0;
     }
 
@@ -2644,6 +2657,28 @@ static TZrSize garbage_collector_run_old_compaction(SZrState *state) {
     return work;
 }
 
+static TZrSize garbage_collector_estimate_old_compaction_work(
+        SZrState *state) {
+    SZrGarbageCollector *collector;
+    SZrRawObject *object;
+    TZrSize work = 0u;
+
+    if (state == ZR_NULL || state->global == ZR_NULL ||
+        state->global->garbageCollector == ZR_NULL) {
+        return 0u;
+    }
+    collector = state->global->garbageCollector;
+    object = collector->gcObjectList;
+    while (object != ZR_NULL) {
+        if (garbage_collector_object_can_old_compact(
+                    collector, state, object)) {
+            work++;
+        }
+        object = object->next;
+    }
+    return work;
+}
+
 static TZrSize garbage_collector_run_minor_evacuation(SZrState *state) {
     SZrGarbageCollector *collector = state->global->garbageCollector;
     SZrRawObject *object = collector->gcObjectList;
@@ -2791,9 +2826,10 @@ TZrSize garbage_collector_prepare_major_collection(SZrState *state) {
     return work;
 }
 
-static TZrSize garbage_collector_run_generational_major_collection(SZrState *state,
-                                                                   TZrBool forceCompact,
-                                                                   TZrBool *outDidCompact) {
+TZrSize garbage_collector_finish_generational_major_collection(
+        SZrState *state,
+        TZrBool forceCompact,
+        TZrBool *outDidCompact) {
     SZrGlobalState *global = state->global;
     SZrGarbageCollector *collector = global->garbageCollector;
     TZrSize work = 0;
@@ -2802,21 +2838,32 @@ static TZrSize garbage_collector_run_generational_major_collection(SZrState *sta
     SZrRawObject **previousSweeper = ZR_NULL;
     SZrRawObject *object;
     TZrBool didCompact = ZR_FALSE;
+    TZrBool wasConcurrentMajor = collector->concurrentMajorActive;
+    TZrUInt64 phaseStartedUs;
+    TZrUInt64 phaseDurationUs;
 
     if (outDidCompact != ZR_NULL) {
         *outDidCompact = ZR_FALSE;
     }
 
-    work += garbage_collector_prepare_major_collection(state);
-
-    collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
-    collector->statsSnapshot.collectionPhase = collector->collectionPhase;
-    ZrGarbageCollectorRestartCollection(state);
-    work += ZrGarbageCollectorPropagateAll(state);
-
     collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_REMARK;
     collector->statsSnapshot.collectionPhase = collector->collectionPhase;
+    phaseStartedUs = garbage_collector_now_us();
     work += garbage_collector_atomic(state);
+    phaseDurationUs = garbage_collector_now_us() - phaseStartedUs;
+    if (phaseDurationUs == 0u) {
+        phaseDurationUs = 1u;
+    }
+    if (wasConcurrentMajor) {
+        collector->statsSnapshot.concurrentMajorRemarkPauseCount++;
+        collector->statsSnapshot.concurrentMajorRemarkPauseTotalUs +=
+                phaseDurationUs;
+        if (collector->statsSnapshot.concurrentMajorRemarkPauseMaxUs <
+            phaseDurationUs) {
+            collector->statsSnapshot.concurrentMajorRemarkPauseMaxUs =
+                    phaseDurationUs;
+        }
+    }
 
     collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_SWEEP;
     collector->statsSnapshot.collectionPhase = collector->collectionPhase;
@@ -2853,11 +2900,31 @@ static TZrSize garbage_collector_run_generational_major_collection(SZrState *sta
     }
 
     if (garbage_collector_should_compact_old_regions(state, forceCompact)) {
-        collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_COMPACT;
-        collector->statsSnapshot.collectionPhase = collector->collectionPhase;
-        work += garbage_collector_run_old_compaction(state);
-        garbage_collector_check_sizes(state, global);
-        didCompact = ZR_TRUE;
+        TZrSize estimatedWork =
+                garbage_collector_estimate_old_compaction_work(state);
+
+        if (!forceCompact &&
+            (collector->pauseBudgetUs == 0u ||
+             (TZrUInt64)estimatedWork > collector->pauseBudgetUs)) {
+            collector->statsSnapshot.compactDeferredCount++;
+        } else {
+            collector->collectionPhase =
+                    ZR_GARBAGE_COLLECT_COLLECTION_PHASE_COMPACT;
+            collector->statsSnapshot.collectionPhase = collector->collectionPhase;
+            phaseStartedUs = garbage_collector_now_us();
+            work += garbage_collector_run_old_compaction(state);
+            phaseDurationUs = garbage_collector_now_us() - phaseStartedUs;
+            if (phaseDurationUs == 0u) {
+                phaseDurationUs = 1u;
+            }
+            collector->statsSnapshot.compactPauseCount++;
+            collector->statsSnapshot.compactPauseTotalUs += phaseDurationUs;
+            if (collector->statsSnapshot.compactPauseMaxUs < phaseDurationUs) {
+                collector->statsSnapshot.compactPauseMaxUs = phaseDurationUs;
+            }
+            garbage_collector_check_sizes(state, global);
+            didCompact = ZR_TRUE;
+        }
     }
 
     collector->waitToScanObjectList = ZR_NULL;
@@ -2871,6 +2938,32 @@ static TZrSize garbage_collector_run_generational_major_collection(SZrState *sta
         *outDidCompact = didCompact;
     }
 
+    return work;
+}
+
+static TZrSize garbage_collector_run_generational_major_collection(SZrState *state,
+                                                                   TZrBool forceCompact,
+                                                                   TZrBool *outDidCompact) {
+    SZrGarbageCollector *collector;
+    TZrSize work;
+
+    if (state == ZR_NULL || state->global == ZR_NULL ||
+        state->global->garbageCollector == ZR_NULL) {
+        if (outDidCompact != ZR_NULL) {
+            *outDidCompact = ZR_FALSE;
+        }
+        return 0u;
+    }
+
+    collector = state->global->garbageCollector;
+    work = garbage_collector_prepare_major_collection(state);
+    collector->collectionPhase =
+            ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
+    collector->statsSnapshot.collectionPhase = collector->collectionPhase;
+    ZrGarbageCollectorRestartCollection(state);
+    work += ZrGarbageCollectorPropagateAll(state);
+    work += garbage_collector_finish_generational_major_collection(
+            state, forceCompact, outDidCompact);
     return work;
 }
 
@@ -3080,13 +3173,40 @@ void garbage_collector_run_generational_step(SZrState *state) {
     requestMajor = collector->scheduledCollectionKind == ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR ||
                    (!explicitRequest && managedMemories > threshold);
 
-    if (forceFull || requestMajor) {
-        work += garbage_collector_run_generational_major_collection(state, forceFull, &didCompact);
+    if (collector->concurrentMajorActive) {
+        if (forceFull) {
+            collector->concurrentMajorForceCompact = ZR_TRUE;
+        }
+        work += garbage_collector_concurrent_major_mark_slice(
+                state,
+                collector->workerCount > 0u
+                        ? (TZrSize)collector->workerCount * 8u
+                        : 8u);
+        if (collector->concurrentMajorMarkDrained) {
+            work += garbage_collector_concurrent_major_finish(
+                    state, &didCompact);
+            collector->statsSnapshot.lastCollectionKind =
+                    didCompact ? ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL
+                               : ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR;
+        }
+        collector->gcLastStepWork = work > 0u ? work : 1u;
+        return;
+    }
+
+    if (forceFull) {
+        work += garbage_collector_run_generational_major_collection(state, ZR_TRUE, &didCompact);
         collector->scheduledCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
         collector->gcFlags &= ~ZR_GC_FLAG_EXPLICIT_COLLECTION_REQUEST;
         collector->statsSnapshot.lastCollectionKind =
-                (forceFull || didCompact) ? ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL
-                                          : ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR;
+                ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL;
+        collector->gcLastStepWork = work > 0 ? work : 1;
+        return;
+    }
+
+    if (requestMajor) {
+        work += garbage_collector_concurrent_major_begin(state, ZR_FALSE);
+        collector->statsSnapshot.lastCollectionKind =
+                ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR;
         collector->gcLastStepWork = work > 0 ? work : 1;
         return;
     }

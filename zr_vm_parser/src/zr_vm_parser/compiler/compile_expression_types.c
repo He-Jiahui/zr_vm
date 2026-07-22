@@ -1565,7 +1565,7 @@ static TZrBool stage_pending_receiver_binding(SZrCompilerState *cs,
     if (receiverOwnershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
         receiverOwnershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED) {
         emit_instruction(cs,
-                         create_instruction_2(ZR_INSTRUCTION_ENUM(OWN_BORROW),
+                         create_instruction_2(ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED),
                                               (TZrUInt16)receiverSlot,
                                               (TZrUInt16)receiverSourceSlot,
                                               0));
@@ -1767,7 +1767,7 @@ static TZrUInt32 compile_call_argument_into_slot(
         return ZR_PARSER_SLOT_NONE;
     }
     emit_instruction(cs,
-                     create_instruction_2(ZR_INSTRUCTION_ENUM(OWN_BORROW),
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED),
                                           (TZrUInt16)targetSlot,
                                           (TZrUInt16)sourceSlot,
                                           0));

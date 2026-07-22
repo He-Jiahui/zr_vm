@@ -483,16 +483,17 @@ EZrInstructionCode compiler_ownership_builtin_opcode_from_kind(EZrOwnershipBuilt
         case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
             return ZR_INSTRUCTION_ENUM(OWN_UNIQUE);
         case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
-            return ZR_INSTRUCTION_ENUM(OWN_BORROW);
+            return ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED);
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
-            return ZR_INSTRUCTION_ENUM(OWN_LOAN);
+            return ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT);
         case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
             return ZR_INSTRUCTION_ENUM(OWN_SHARE);
         case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
             return ZR_INSTRUCTION_ENUM(OWN_WEAK);
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
+            return ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC);
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
-            return ZR_INSTRUCTION_ENUM(OWN_DETACH);
+            return ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX);
         case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
             return ZR_INSTRUCTION_ENUM(OWN_UPGRADE);
         case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:

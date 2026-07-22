@@ -8617,16 +8617,22 @@ static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicat
         TEST_ASSERT_NOT_NULL(function);
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
         TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_SHARE));
         TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_WEAK));
-        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_BORROW));
-        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_LOAN));
-        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_DETACH));
+        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_VIEW_SHARED));
+        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_VIEW_MUT));
+        TEST_ASSERT_FALSE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_BORROW));
+        TEST_ASSERT_FALSE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_LOAN));
+        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_RETURN_TO_GC));
+        TEST_ASSERT_FALSE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_DETACH));
         TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_UPGRADE));
         TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_RELEASE));
 
@@ -8643,16 +8649,20 @@ static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicat
 
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_SHARE"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_WEAK"));
-        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_BORROW"));
-        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_LOAN"));
-        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_DETACH"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_VIEW_SHARED"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_VIEW_MUT"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "OWN_BORROW"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "OWN_LOAN"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_RETURN_TO_GC"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "OWN_DETACH"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_UPGRADE"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_RELEASE"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnShare"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnWeak"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnBorrow"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnLoan"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnDetach"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnReturnToGc"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnDetach"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnUpgrade"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnRelease"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
@@ -8660,14 +8670,15 @@ static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicat
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnWeak("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnBorrow("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnLoan("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnDetach("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnReturnToGc("));
+        TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnDetach("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnUpgrade("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnRelease("));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
-        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
-        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
-        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
 
@@ -9356,6 +9367,10 @@ void tearDown(void) {}
 
 int main(void) {
     UNITY_BEGIN();
+    if (getenv("ZR_VM_OWNERSHIP_OPCODE_FOCUSED") != ZR_NULL) {
+        RUN_TEST(test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicated_opcodes);
+        return UNITY_END();
+    }
     if (getenv("ZR_VM_RESOURCE_UNIQUE_DROP_FOCUSED") != ZR_NULL) {
         RUN_TEST(test_resource_unique_drop_vm_and_aot_preserve_cleanup_order_contract);
         return UNITY_END();

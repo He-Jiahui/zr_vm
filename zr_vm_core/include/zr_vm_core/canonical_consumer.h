@@ -15,6 +15,8 @@ typedef struct SZrCanonicalTypeProjection {
     SZrArtifactLayoutRow layout;
     TZrBool hasContract;
     SZrArtifactContractRow contract;
+    TZrBool hasDomainTransfer;
+    SZrArtifactDomainTransferRow domainTransfer;
 } SZrCanonicalTypeProjection;
 
 typedef struct SZrCanonicalConsumerProjection {
@@ -25,6 +27,7 @@ typedef struct SZrCanonicalConsumerProjection {
     SZrArtifactSectionView signatures;
     SZrArtifactSectionView contracts;
     SZrArtifactSectionView layouts;
+    SZrArtifactSectionView domainTransfers;
     SZrCanonicalTypeProjection rootType;
 } SZrCanonicalConsumerProjection;
 
@@ -62,6 +65,12 @@ ZR_CORE_API EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveLayout(
         const SZrCanonicalConsumerProjection *projection,
         TZrMetadataToken typeToken,
         SZrArtifactLayoutRow *outLayout,
+        SZrArtifactDiagnostic *diagnostic);
+
+ZR_CORE_API EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveDomainTransfer(
+        const SZrCanonicalConsumerProjection *projection,
+        TZrMetadataToken typeToken,
+        SZrArtifactDomainTransferRow *outContract,
         SZrArtifactDiagnostic *diagnostic);
 
 ZR_CORE_API EZrArtifactStatus ZrCore_CanonicalConsumer_ValidatePublicRefLikeAbi(

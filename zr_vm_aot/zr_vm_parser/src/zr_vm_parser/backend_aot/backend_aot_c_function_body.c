@@ -1909,6 +1909,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(OWN_BORROW):
+            case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
                 backend_aot_write_c_direct_own_borrow(file, destinationSlot, operandA1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
@@ -1916,6 +1917,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(OWN_LOAN):
+            case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):
                 backend_aot_write_c_direct_own_loan(file, destinationSlot, operandA1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
@@ -1992,6 +1994,20 @@ void backend_aot_write_c_function_body(FILE *file,
             {
                 TZrUInt32 deoptId = backend_aot_find_exec_ir_deopt_id(module, functionIr, instructionIndex);
                 backend_aot_write_c_direct_get_member(file, destinationSlot, operandA1, operandB1, deoptId);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX):
+                backend_aot_write_c_direct_own_into_gc_box(file, destinationSlot, operandA1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC):
+                backend_aot_write_c_direct_own_return_to_gc(file, destinationSlot, operandA1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,

@@ -2147,7 +2147,7 @@ void test_using_borrow_generic_emits_end_borrow_cleanup(void) {
             return;
         }
 
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
 
@@ -2196,7 +2196,7 @@ void test_using_borrow_generic_end_borrow_runs_before_return(void) {
             return;
         }
 
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
         TEST_ASSERT_TRUE(function_opcode_appears_before(func,
                                                         ZR_INSTRUCTION_ENUM(OWN_RELEASE),
                                                         ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)));
@@ -2245,7 +2245,7 @@ void test_using_loan_generic_returns_loan_to_source_on_scope_exit(void) {
         }
 
         TZrInt64 result = 0;
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
@@ -2302,7 +2302,7 @@ void test_using_loan_generic_returns_loan_before_break(void) {
         }
 
         TZrInt64 result = 0;
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
@@ -3720,8 +3720,8 @@ void test_intrinsic_ownership_generic_constructors_emit_dedicated_opcodes(void) 
 
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UNIQUE)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
         TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED));
 
         ZrCore_Function_Free(state, func);
@@ -3799,10 +3799,11 @@ void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(vo
         TEST_ASSERT_NOT_NULL(lifecycleFunc);
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC)));
+        TEST_ASSERT_FALSE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
@@ -3823,8 +3824,8 @@ void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void) {
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("Ownership borrow/loan/detach lowering",
-              "Testing that %borrow/%loan/%detach emit dedicated ownership opcodes on top of the Rust-first owner surface");
+    ZR_TEST_INFO("Ownership view/return-to-GC lowering",
+              "Testing that %borrow/%loan/%detach emit canonical view/return opcodes without legacy borrow/loan/detach opcodes");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -3857,9 +3858,12 @@ void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void) {
         }
 
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UNIQUE)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC)));
+        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
 
         ZrCore_Function_Free(state, func);
     }
@@ -3971,9 +3975,10 @@ void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void)
             return;
         }
 
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC)));
+        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
         TEST_ASSERT_EQUAL_INT64(127, result);
 
@@ -4037,10 +4042,11 @@ void test_ownership_generic_real_fixture_executes_session_lifecycle(void) {
         lifecycleFunc = find_single_function_constant_with_opcode(state, func, ZR_INSTRUCTION_ENUM(OWN_UNIQUE));
         TEST_ASSERT_NOT_NULL(lifecycleFunc);
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC)));
+        TEST_ASSERT_FALSE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));

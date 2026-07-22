@@ -19,6 +19,10 @@ related_code:
   - zr_vm_core/src/zr_vm_core/ownership_resource.c
   - zr_vm_core/src/zr_vm_core/object/object.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_library/include/zr_vm_library/aot_runtime.h
+  - zr_vm_library/src/zr_vm_library/aot_runtime.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_ownership.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
@@ -180,6 +184,20 @@ managed fields，不调用完整对象的 custom Drop。
 M1 仍暂时使用 existing GC ignore registry 保持 direct resource storage；这不是 artifact ABI
 承诺，Syntax 04 M4 必须以显式 GcDomain/bridge identity 替换。
 
+## M7 ownership opcode cutover
+
+新source语法、Semantic IR、ExecBC与AOT现在使用一一对应的操作：
+
+- readonly/mutable reborrow分别发出`OWN_VIEW_SHARED`/`OWN_VIEW_MUT`；
+- `Unique<Resource>.intoGc()`发出`OWN_INTO_GC_BOX`；
+- 显式`detach`/return-to-GC发出`OWN_RETURN_TO_GC`。
+
+legacy `OWN_BORROW`、`OWN_LOAN`与`OWN_DETACH`的numeric opcode仍由VM/AOT reader保留，供旧
+artifact兼容，但compiler/writer不再从新source发出它们。`OWN_INTO_GC_BOX`只调用
+`ZrLibrary_AotRuntime_OwnIntoGcBox`，`OWN_RETURN_TO_GC`只调用
+`ZrLibrary_AotRuntime_OwnReturnToGc`；旧`OwnDetach` helper保留旧artifact fallback，不能成为
+新lowering的字符串别名。C与LLVM backend按structured opcode选择helper。
+
 ## Artifact 收口
 
 当前 artifact 侧已经对齐到新语义：
@@ -202,7 +220,9 @@ M1 仍暂时使用 existing GC ignore registry 保持 direct resource storage；
 - task / borrow rules
   - borrowed / loaned binding 不可跨 `await`
 - SemIR / AOT
-  - `OWN_BORROW/OWN_LOAN/OWN_UPGRADE/OWN_RELEASE/OWN_DETACH` 保持一致
+  - `OWN_VIEW_SHARED/OWN_VIEW_MUT/OWN_INTO_GC_BOX/OWN_RETURN_TO_GC`在Semantic IR、
+    ExecBC、AOT C与AOT LLVM保持一致
+  - 新source function tree明确不包含legacy `OWN_BORROW/OWN_LOAN/OWN_DETACH`
   - statement `%using` 继续走 `MARK_TO_BE_CLOSED`
 - runtime lifecycle
   - `%detach` 拒绝 multi-owner shared

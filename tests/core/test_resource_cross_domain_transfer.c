@@ -817,6 +817,85 @@ static void test_claimed_domain_shutdown_aborts_resource_token_from_target(void)
     g_target_state = ZR_NULL;
 }
 
+static void test_transfer_telemetry_is_attributed_to_source_and_target_domains(void) {
+    SZrDomainTransferContract contract = make_contract(
+            ZR_DOMAIN_TRANSFER_KIND_VALUE_COPY, ZR_NULL);
+    SZrDomainTransferDiagnostic diagnostic;
+    SZrOwnershipTransferEnvelope *envelope;
+    SZrGarbageCollectorStatsSnapshot sourceStats;
+    SZrGarbageCollectorStatsSnapshot targetStats;
+    SZrTypeValue source;
+    SZrTypeValue target;
+
+    ZrCore_Value_InitAsInt(g_source_state, &source, 42);
+    ZrCore_Value_ResetAsNull(&target);
+    envelope = ZrCore_OwnershipTransfer_PrepareCrossDomain(
+            g_source_state,
+            ZrCore_GcDomain_GetIdentity(g_target_state),
+            &contract,
+            &source,
+            &diagnostic);
+    TEST_ASSERT_NOT_NULL(envelope);
+    TEST_ASSERT_TRUE(ZrCore_OwnershipTransfer_Publish(envelope));
+    TEST_ASSERT_TRUE(ZrCore_OwnershipTransfer_Claim(
+            envelope, g_target_state, 101u, 103u));
+    TEST_ASSERT_TRUE(ZrCore_OwnershipTransfer_CommitCrossDomain(
+            envelope,
+            g_target_state,
+            101u,
+            103u,
+            &target,
+            &diagnostic));
+    ZrCore_OwnershipTransfer_Free(g_source_state, envelope);
+
+    ZrCore_Value_InitAsInt(g_source_state, &source, 43);
+    envelope = ZrCore_OwnershipTransfer_PrepareCrossDomain(
+            g_source_state,
+            ZrCore_GcDomain_GetIdentity(g_target_state),
+            &contract,
+            &source,
+            &diagnostic);
+    TEST_ASSERT_NOT_NULL(envelope);
+    TEST_ASSERT_TRUE(ZrCore_OwnershipTransfer_Publish(envelope));
+    TEST_ASSERT_TRUE(ZrCore_OwnershipTransfer_AbortCrossDomain(
+            envelope, g_source_state, 0u, 0u, &diagnostic));
+    ZrCore_OwnershipTransfer_Free(g_source_state, envelope);
+
+    ZrCore_Value_InitAsInt(g_source_state, &source, 44);
+    envelope = ZrCore_OwnershipTransfer_PrepareCrossDomain(
+            g_source_state,
+            ZrCore_GcDomain_GetIdentity(g_target_state),
+            &contract,
+            &source,
+            &diagnostic);
+    TEST_ASSERT_NOT_NULL(envelope);
+    TEST_ASSERT_TRUE(ZrCore_OwnershipTransfer_Publish(envelope));
+    TEST_ASSERT_TRUE(ZrCore_OwnershipTransfer_Claim(
+            envelope, g_target_state, 107u, 109u));
+    TEST_ASSERT_TRUE(ZrCore_OwnershipTransfer_AbortCrossDomain(
+            envelope, g_target_state, 107u, 109u, &diagnostic));
+    ZrCore_OwnershipTransfer_Free(g_source_state, envelope);
+
+    memset(&sourceStats, 0, sizeof(sourceStats));
+    memset(&targetStats, 0, sizeof(targetStats));
+    ZrCore_GarbageCollector_GetStatsSnapshot(
+            g_source_state->global, &sourceStats);
+    ZrCore_GarbageCollector_GetStatsSnapshot(
+            g_target_state->global, &targetStats);
+    TEST_ASSERT_EQUAL_UINT64(
+            ZrCore_GcDomain_GetIdentity(g_source_state).id,
+            sourceStats.domainId);
+    TEST_ASSERT_EQUAL_UINT64(
+            ZrCore_GcDomain_GetIdentity(g_target_state).id,
+            targetStats.domainId);
+    TEST_ASSERT_EQUAL_UINT64(3u, sourceStats.outboundTransferPrepareCount);
+    TEST_ASSERT_EQUAL_UINT64(3u, sourceStats.outboundTransferPublishCount);
+    TEST_ASSERT_EQUAL_UINT64(1u, sourceStats.outboundTransferAbortCount);
+    TEST_ASSERT_EQUAL_UINT64(2u, targetStats.inboundTransferClaimCount);
+    TEST_ASSERT_EQUAL_UINT64(1u, targetStats.inboundTransferCommitCount);
+    TEST_ASSERT_EQUAL_UINT64(1u, targetStats.inboundTransferAbortCount);
+}
+
 #include "test_resource_cross_domain_transfer_value_copy_cases.h"
 #include "test_resource_cross_domain_transfer_review_cases.h"
 
@@ -840,6 +919,7 @@ int main(void) {
     RUN_TEST(test_structured_clone_decode_failure_is_abortable_without_target);
     RUN_TEST(test_target_domain_shutdown_aborts_resource_token_from_source);
     RUN_TEST(test_claimed_domain_shutdown_aborts_resource_token_from_target);
+    RUN_TEST(test_transfer_telemetry_is_attributed_to_source_and_target_domains);
     RUN_TEST(test_provider_descriptor_is_snapshotted_by_the_envelope);
     RUN_TEST(test_provider_commit_failure_releases_partial_target_once);
     RUN_TEST(test_provider_commit_can_query_envelope_without_lock_reentry_deadlock);

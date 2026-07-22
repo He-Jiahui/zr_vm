@@ -3,6 +3,7 @@
 //
 
 #include "gc/gc_internal.h"
+#include "gc/gc_domain_internal.h"
 
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_core/gc_domain.h"
@@ -16,7 +17,7 @@
 #include <time.h>
 #endif
 
-static TZrUInt64 garbage_collector_now_us(void) {
+TZrUInt64 garbage_collector_now_us(void) {
 #if defined(ZR_PLATFORM_WIN)
     static LARGE_INTEGER frequency = {0};
     LARGE_INTEGER counter;
@@ -175,6 +176,8 @@ static void garbage_collector_record_step_telemetry(SZrGarbageCollector *collect
 
     kindIndex = (TZrUInt32)collector->statsSnapshot.lastCollectionKind;
     if (kindIndex < ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX &&
+        collector->gcRunningStatus == ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED &&
+        collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE &&
         (collector->gcLastStepWork > 0 || durationUs > 0u)) {
         collector->collectionCounts[kindIndex] += 1u;
         collector->collectionTotalDurationUs[kindIndex] += durationUs;
@@ -400,6 +403,12 @@ void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
     gc->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE;
     gc->minorCollectionEpoch = 0u;
     gc->oldCompactionScanEpoch = 0u;
+    gc->concurrentMajorActive = ZR_FALSE;
+    gc->concurrentMajorForceCompact = ZR_FALSE;
+    gc->concurrentMajorMarkDrained = ZR_FALSE;
+    gc->concurrentMajorCycleId = 0u;
+    gc->concurrentMajorWork = 0u;
+    memset(&gc->statsSnapshot, 0, sizeof(gc->statsSnapshot));
     gc->statsSnapshot.heapLimitBytes = gc->heapLimitBytes;
     gc->statsSnapshot.managedMemoryBytes = 0u;
     gc->statsSnapshot.gcDebtBytes = 0;
@@ -623,6 +632,8 @@ void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
                 state, ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS, ZR_NULL)) {
         return;
     }
+    ZrCore_GcDomain_MutationLock(state->gcDomain);
+    garbage_collector_concurrent_major_cancel(state);
     startedUs = garbage_collector_now_us();
 
     collector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
@@ -657,6 +668,7 @@ void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
     if (collector->gcRunningStatus == ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED) {
         collector->gcStatus = ZR_GARBAGE_COLLECT_STATUS_STOP_BY_SELF;
     }
+    ZrCore_GcDomain_MutationUnlock(state->gcDomain);
     ZrCore_GcDomain_StopTheWorldEnd(state);
 }
 
@@ -668,6 +680,8 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
     TZrSize totalWork = 0;
     TZrSize pauseBudget;
     TZrUInt64 startedUs;
+    TZrBool domainPaused = ZR_FALSE;
+    TZrBool concurrentMarkSlice = ZR_FALSE;
 
     if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL) {
         return;
@@ -693,19 +707,38 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
         }
     }
 
-    if (!ZrCore_GcDomain_StopTheWorldBegin(
-                state, ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS, ZR_NULL)) {
-        return;
+    concurrentMarkSlice =
+            garbage_collector_is_generational_mode(global) &&
+            collector->concurrentMajorActive &&
+            !collector->concurrentMajorMarkDrained;
+    if (!concurrentMarkSlice) {
+        if (!ZrCore_GcDomain_StopTheWorldBegin(
+                    state, ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS, ZR_NULL)) {
+            return;
+        }
+        domainPaused = ZR_TRUE;
     }
 
     if (garbage_collector_is_generational_mode(global)) {
         collector->statsSnapshot.lastCollectionKind = collector->scheduledCollectionKind;
-        collector->collectionPhase = collector->scheduledCollectionKind == ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR
-                                             ? ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_MARK
-                                             : ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
+        if (!concurrentMarkSlice) {
+            collector->collectionPhase =
+                    collector->scheduledCollectionKind ==
+                                    ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR
+                            ? ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_MARK
+                            : ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
+        }
         collector->statsSnapshot.collectionPhase = collector->collectionPhase;
-        garbage_collector_run_generational_step(state);
-        collector->gcLastStepWork = 1;
+        if (concurrentMarkSlice) {
+            collector->gcLastStepWork =
+                    garbage_collector_concurrent_major_mark_slice(
+                            state,
+                            collector->workerCount > 0u
+                                    ? (TZrSize)collector->workerCount * 8u
+                                    : 8u);
+        } else {
+            garbage_collector_run_generational_step(state);
+        }
     } else {
         collector->statsSnapshot.lastCollectionKind = collector->scheduledCollectionKind;
         collector->collectionPhase = collector->scheduledCollectionKind == ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR
@@ -755,7 +788,9 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
     }
     garbage_collector_record_step_telemetry(collector, startedUs);
     collector->gcLastCompletedRunningStatus = collector->gcRunningStatus;
-    ZrCore_GcDomain_StopTheWorldEnd(state);
+    if (domainPaused) {
+        ZrCore_GcDomain_StopTheWorldEnd(state);
+    }
 }
 
 void ZrCore_GarbageCollector_SetHeapLimitBytes(SZrGlobalState *global, TZrMemoryOffset heapLimitBytes) {
@@ -795,6 +830,8 @@ void ZrCore_GarbageCollector_ScheduleCollection(SZrGlobalState *global, EZrGarba
 }
 
 void ZrCore_GarbageCollector_GetStatsSnapshot(SZrGlobalState *global, SZrGarbageCollectorStatsSnapshot *outSnapshot) {
+    SZrGcDomain *domain;
+
     if (global == ZR_NULL || global->garbageCollector == ZR_NULL || outSnapshot == ZR_NULL) {
         return;
     }
@@ -807,6 +844,51 @@ void ZrCore_GarbageCollector_GetStatsSnapshot(SZrGlobalState *global, SZrGarbage
     global->garbageCollector->statsSnapshot.rememberedObjectCount =
             (TZrUInt32)global->garbageCollector->rememberedObjectCount;
     global->garbageCollector->statsSnapshot.lastStepWork = (TZrUInt64)global->garbageCollector->gcLastStepWork;
+    domain = global->gcDomain;
+    if (domain != ZR_NULL) {
+        ZrCore_GcDomain_Lock(domain);
+        global->garbageCollector->statsSnapshot.domainId = domain->identity.id;
+        global->garbageCollector->statsSnapshot.domainGeneration =
+                domain->identity.generation;
+        global->garbageCollector->statsSnapshot.activeMutatorCount = 0u;
+        for (TZrSize index = 0u; index < domain->mutatorLength; ++index) {
+            if (domain->mutators[index].status ==
+                        ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING ||
+                domain->mutators[index].status ==
+                        ZR_GC_DOMAIN_MUTATOR_STATUS_NO_SAFEPOINT_CRITICAL) {
+                global->garbageCollector->statsSnapshot.activeMutatorCount++;
+            }
+        }
+        global->garbageCollector->statsSnapshot.safepointWaitCount =
+                domain->safepointWaitCount;
+        global->garbageCollector->statsSnapshot.safepointWaitTotalUs =
+                domain->safepointWaitTotalUs;
+        global->garbageCollector->statsSnapshot.safepointWaitMaxUs =
+                domain->safepointWaitMaxUs;
+        global->garbageCollector->statsSnapshot.outboundTransferPrepareCount =
+                domain->outboundTransferPrepareCount;
+        global->garbageCollector->statsSnapshot.outboundTransferPublishCount =
+                domain->outboundTransferPublishCount;
+        global->garbageCollector->statsSnapshot.outboundTransferAbortCount =
+                domain->outboundTransferAbortCount;
+        global->garbageCollector->statsSnapshot.outboundTransferObjectCount =
+                domain->outboundTransferObjectCount;
+        global->garbageCollector->statsSnapshot.outboundTransferByteCount =
+                domain->outboundTransferByteCount;
+        global->garbageCollector->statsSnapshot.inboundTransferClaimCount =
+                domain->inboundTransferClaimCount;
+        global->garbageCollector->statsSnapshot.inboundTransferCommitCount =
+                domain->inboundTransferCommitCount;
+        global->garbageCollector->statsSnapshot.inboundTransferAbortCount =
+                domain->inboundTransferAbortCount;
+        global->garbageCollector->statsSnapshot.inboundTransferObjectCount =
+                domain->inboundTransferObjectCount;
+        global->garbageCollector->statsSnapshot.inboundTransferByteCount =
+                domain->inboundTransferByteCount;
+        ZrCore_GcDomain_Unlock(domain);
+    }
+    global->garbageCollector->statsSnapshot.concurrentMajorActive =
+            global->garbageCollector->concurrentMajorActive;
     garbage_collector_refresh_cumulative_snapshot(global->garbageCollector);
     *outSnapshot = global->garbageCollector->statsSnapshot;
 }
@@ -929,7 +1011,8 @@ void ZrCore_GarbageCollector_CheckGc(SZrState *state) {
     }
 #if defined(ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST)
     if (collector->gcStatus == ZR_GARBAGE_COLLECT_STATUS_RUNNING &&
-        !collector->isImmediateGcFlag) {
+        !collector->isImmediateGcFlag &&
+        !collector->concurrentMajorActive) {
         ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
     }
 #endif

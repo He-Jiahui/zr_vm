@@ -95,6 +95,9 @@ typedef struct SZrGarbageCollectRegionDescriptor {
 } SZrGarbageCollectRegionDescriptor;
 
 typedef struct SZrGarbageCollectorStatsSnapshot {
+    TZrUInt64 domainId;
+    TZrUInt32 domainGeneration;
+    TZrUInt32 activeMutatorCount;
     TZrMemoryOffset heapLimitBytes;
     TZrUInt64 managedMemoryBytes;
     TZrInt64 gcDebtBytes;
@@ -136,6 +139,35 @@ typedef struct SZrGarbageCollectorStatsSnapshot {
     TZrUInt64 minorCollectionMaxDurationUs;
     TZrUInt64 majorCollectionMaxDurationUs;
     TZrUInt64 fullCollectionMaxDurationUs;
+    TZrBool concurrentMajorActive;
+    TZrUInt64 concurrentMajorCycleCount;
+    TZrUInt64 concurrentMajorInitialPauseCount;
+    TZrUInt64 concurrentMajorInitialPauseTotalUs;
+    TZrUInt64 concurrentMajorInitialPauseMaxUs;
+    TZrUInt64 concurrentMajorMarkSliceCount;
+    TZrUInt64 concurrentMajorMarkTotalUs;
+    TZrUInt64 concurrentMajorMarkMaxUs;
+    TZrUInt64 concurrentMajorRemarkPauseCount;
+    TZrUInt64 concurrentMajorRemarkPauseTotalUs;
+    TZrUInt64 concurrentMajorRemarkPauseMaxUs;
+    TZrUInt64 compactPauseCount;
+    TZrUInt64 compactPauseTotalUs;
+    TZrUInt64 compactPauseMaxUs;
+    TZrUInt64 compactDeferredCount;
+    TZrUInt64 concurrentBarrierCount;
+    TZrUInt64 safepointWaitCount;
+    TZrUInt64 safepointWaitTotalUs;
+    TZrUInt64 safepointWaitMaxUs;
+    TZrUInt64 outboundTransferPrepareCount;
+    TZrUInt64 outboundTransferPublishCount;
+    TZrUInt64 outboundTransferAbortCount;
+    TZrUInt64 outboundTransferObjectCount;
+    TZrUInt64 outboundTransferByteCount;
+    TZrUInt64 inboundTransferClaimCount;
+    TZrUInt64 inboundTransferCommitCount;
+    TZrUInt64 inboundTransferAbortCount;
+    TZrUInt64 inboundTransferObjectCount;
+    TZrUInt64 inboundTransferByteCount;
 } SZrGarbageCollectorStatsSnapshot;
 
 // generational mode
@@ -207,6 +239,11 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     EZrGarbageCollectCollectionPhase collectionPhase;
     TZrUInt32 minorCollectionEpoch;
     TZrUInt32 oldCompactionScanEpoch;
+    TZrBool concurrentMajorActive;
+    TZrBool concurrentMajorForceCompact;
+    TZrBool concurrentMajorMarkDrained;
+    TZrUInt64 concurrentMajorCycleId;
+    TZrSize concurrentMajorWork;
     SZrGarbageCollectorStatsSnapshot statsSnapshot;
     TZrUInt64 collectionCounts[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX];
     TZrUInt64 collectionTotalDurationUs[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX];

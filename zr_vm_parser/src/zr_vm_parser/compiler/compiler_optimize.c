@@ -227,6 +227,10 @@ static void optimizer_classify_instruction(const SZrFunction *function,
         case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
         case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
         case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
+        case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
+        case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):
+        case ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX):
+        case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC):
             if (opcode == ZR_INSTRUCTION_ENUM(GET_MEMBER) ||
                 opcode == ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT) ||
                 opcode == ZR_INSTRUCTION_ENUM(META_GET) ||
@@ -1096,6 +1100,10 @@ static TZrBool optimizer_opcode_supports_adjacent_get_stack_forwarding(EZrInstru
         case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
         case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
         case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
+        case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
+        case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):
+        case ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX):
+        case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC):
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):

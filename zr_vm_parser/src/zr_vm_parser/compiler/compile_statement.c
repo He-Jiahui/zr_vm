@@ -2229,7 +2229,7 @@ static void compile_using_union_pattern_bindings(SZrCompilerState *cs,
             TZrUInt32 borrowSlot = allocate_stack_slot(cs);
 
             emit_instruction(cs,
-                             create_instruction_2(ZR_INSTRUCTION_ENUM(OWN_BORROW),
+                             create_instruction_2(ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED),
                                                   (TZrUInt16)borrowSlot,
                                                   (TZrUInt16)valueSlot,
                                                   0));

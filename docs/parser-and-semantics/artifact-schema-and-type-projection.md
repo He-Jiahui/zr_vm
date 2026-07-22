@@ -41,6 +41,7 @@ tests:
   - tests/core/test_resource_cross_domain_transfer.c
   - tests/acceptance/2026-07-19-syntax-01-m4-artifact-schema.md
   - tests/acceptance/2026-07-20-syntax-02-m6-artifact-lsp-consumers.md
+  - tests/acceptance/2026-07-22-syntax-04-m7-concurrent-major-artifact-aot-lsp.md
 doc_type: module-detail
 ---
 
@@ -83,6 +84,14 @@ TypeDef token and encodes `Forbidden`, `ValueCopy`, `StructuredClone`, `Immutabl
 ordered and unique. A missing table or TypeDef row means no cross-domain capability (`Forbidden`),
 not an invalid artifact. VM and AOT TypeLayout v2 consume the same identity; provider-backed
 layouts with GC, ownership, or ref fields are rejected instead of allowing a source-domain edge.
+
+The core canonical consumer projects an optional domain-transfer row only after resolving the
+exact TypeDef/TypeSpec identity. `ZrCore_CanonicalConsumer_ResolveDomainTransfer` returns the same
+kind, schema/provider identity and flags to VM and AOT consumers; artifacts without the optional
+table remain valid and explicitly report no contract. It never reconstructs a row from a source
+type name, display text, member name or payload shape. LSP-facing source hover and diagnostics
+continue to consume parser canonical ownership facts; binary/source tools may join them only by
+the same declaration/type identity.
 
 Contract rows also carry a bounded callable escape mask and an ABI lowering kind.
 The encoded slot was reserved in schema v1, so old artifacts decode as `NONE` and

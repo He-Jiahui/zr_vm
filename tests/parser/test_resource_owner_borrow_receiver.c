@@ -124,7 +124,11 @@ static void test_unique_shared_and_in_receivers_use_compile_time_loans(void) {
 
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_TRUE(function_tree_contains_opcode(
+            function, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED), 0U));
+    TEST_ASSERT_FALSE(function_tree_contains_opcode(
             function, ZR_INSTRUCTION_ENUM(OWN_BORROW), 0U));
+    TEST_ASSERT_FALSE(function_tree_contains_opcode(
+            function, ZR_INSTRUCTION_ENUM(OWN_DETACH), 0U));
     assert_no_runtime_loan_enforcement(function);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
             g_state, function, &result));

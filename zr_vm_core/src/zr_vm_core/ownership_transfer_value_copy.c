@@ -1,4 +1,5 @@
 #include "ownership_transfer_internal.h"
+#include "gc/gc_domain_internal.h"
 
 #include <string.h>
 
@@ -89,6 +90,12 @@ ZrCore_OwnershipTransfer_PrepareCrossDomainValueCopy(
     envelope->hasPayload = ZR_TRUE;
     ZrCore_OwnershipTransfer_InternalStateStore(
             envelope, ZR_OWNERSHIP_TRANSFER_STATE_PREPARED);
+    ZrCore_GcDomain_RecordTransferTelemetry(
+            sourceState->global,
+            sourceDomain,
+            ZR_GC_DOMAIN_TRANSFER_TELEMETRY_OUTBOUND_PREPARE,
+            0u,
+            layout->byteSize);
     ZrCore_OwnershipTransfer_InternalDiagnosticSet(
             diagnostic,
             ZR_DOMAIN_TRANSFER_STATUS_OK,
@@ -185,5 +192,11 @@ TZrBool ZrCore_OwnershipTransfer_CommitCrossDomainValueCopy(
             0u,
             byteCount,
             0u);
+    ZrCore_GcDomain_RecordTransferTelemetry(
+            targetState->global,
+            envelope->targetDomain,
+            ZR_GC_DOMAIN_TRANSFER_TELEMETRY_INBOUND_COMMIT,
+            0u,
+            byteCount);
     return ZR_TRUE;
 }
