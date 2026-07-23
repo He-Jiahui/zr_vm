@@ -1,5 +1,9 @@
 ---
 related_code:
+  - zr_vm_common/include/zr_vm_common/zr_io_conf.h
+  - zr_vm_core/include/zr_vm_core/io.h
+  - zr_vm_core/src/zr_vm_core/io.c
+  - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/include/zr_vm_core/artifact_schema.h
   - zr_vm_core/include/zr_vm_core/canonical_consumer.h
   - zr_vm_parser/include/zr_vm_parser/artifact_projection.h
@@ -13,7 +17,12 @@ related_code:
   - zr_vm_core/src/zr_vm_core/artifact_text.c
   - zr_vm_core/src/zr_vm_core/canonical_consumer.c
   - zr_vm_parser/src/zr_vm_parser/artifact_projection.c
+  - zr_vm_parser/src/zr_vm_parser/writer.c
 implementation_files:
+  - zr_vm_common/include/zr_vm_common/zr_io_conf.h
+  - zr_vm_core/include/zr_vm_core/io.h
+  - zr_vm_core/src/zr_vm_core/io.c
+  - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/include/zr_vm_core/artifact_schema.h
   - zr_vm_core/include/zr_vm_core/canonical_consumer.h
   - zr_vm_parser/include/zr_vm_parser/artifact_projection.h
@@ -27,6 +36,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/artifact_text.c
   - zr_vm_core/src/zr_vm_core/canonical_consumer.c
   - zr_vm_parser/src/zr_vm_parser/artifact_projection.c
+  - zr_vm_parser/src/zr_vm_parser/writer.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md
   - docs/plans/syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md
@@ -37,6 +47,7 @@ tests:
   - tests/parser/test_reference_callable_consumers.c
   - tests/parser/test_canonical_consumers.c
   - tests/parser/test_buffer_pool_ffi.c
+  - tests/parser/test_property_access_lowering.c
   - tests/core/test_type_layout_metadata_contracts.c
   - tests/core/test_resource_cross_domain_transfer.c
   - tests/acceptance/2026-07-19-syntax-01-m4-artifact-schema.md
@@ -161,6 +172,21 @@ The reader validates magic, exact schema version, header/directory sizes, total 
 Local Place graphs, block initialization facts, LoanId/origin/last-use state, local ranges, AST pointers, and raw runtime pointers have no `.zro` row. Those values remain `.zri`, debug-sidecar, or compilation-session data.
 
 The existing `SZrIo` execution format remains a compatibility path for consumers not yet migrated. The new schema is the M4 canonical contract. M5 switches VM, AOT, LSP, reflection, debug, CLI, and legacy writers/loaders to this projection; the formal cutover rejects old schema artifacts and requests recompilation rather than supporting permanent dual-format execution.
+
+### Executable function entry stack boundary
+
+The executable `SZrIo` compatibility format advances to source patch 36 and writes
+`vmEntryClearStackSizePlusOne` immediately after each function's `stackSize`. The value is the
+compiler-owned entry clear boundary used by VM pre-call setup; it is not reconstructed from the
+instruction stream, current stack depth, or call-site cache state. Readers for patch 36 load the
+field directly, while older supported patches retain the existing derived/default compatibility
+path.
+
+Property accessor roundtrip depends on this field because getter/setter calls can capture a receiver,
+create operator/RHS temporaries, and then enter another VM function. Preserving the exact clear
+boundary prevents a loaded function from clearing a captured receiver or leaving a stale temporary.
+The M3 roundtrip test compares the source and loaded function's stack size, entry clear boundary,
+member-entry identity, instruction bytes, and execution result before declaring artifact parity.
 
 ## Verification
 

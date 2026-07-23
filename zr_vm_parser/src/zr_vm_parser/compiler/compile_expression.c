@@ -799,6 +799,7 @@ static TZrUInt32 compile_assignment_safe_member_key_target_slot(const SZrCompile
 
 static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                                                        SZrPrimaryExpression *primary,
+                                                       TZrBool captureRootValue,
                                                        TZrUInt32 preservedSlot,
                                                        TZrUInt32 *outObjectSlot,
                                                        SZrString **ioRootTypeName,
@@ -858,10 +859,36 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
         rootIsTypeReference = ZR_FALSE;
         usesSuperLookup = ZR_TRUE;
     } else {
-        TZrUInt32 directLocalSlot = primary->members != ZR_NULL && primary->members->count > 1u
-                                            ? assignment_target_direct_local_slot(cs, primary->property)
-                                            : ZR_PARSER_SLOT_NONE;
-        if (directLocalSlot != ZR_PARSER_SLOT_NONE) {
+        TZrUInt32 directLocalCandidate =
+                assignment_target_direct_local_slot(cs, primary->property);
+        TZrBool directLocalCandidateIsInlineStruct =
+                directLocalCandidate != ZR_PARSER_SLOT_NONE &&
+                assignment_field_type_is_inline_struct(cs, rootTypeName);
+        TZrUInt32 directLocalSlot =
+                (primary->members != ZR_NULL && primary->members->count > 1u) ||
+                                (captureRootValue && directLocalCandidateIsInlineStruct)
+                        ? directLocalCandidate
+                        : ZR_PARSER_SLOT_NONE;
+        EZrOwnershipQualifier directLocalOwnershipQualifier =
+                directLocalSlot != ZR_PARSER_SLOT_NONE
+                        ? infer_expression_ownership_qualifier_local(cs, primary->property)
+                        : ZR_OWNERSHIP_QUALIFIER_NONE;
+        TZrBool directLocalIsInlineStruct =
+                directLocalSlot != ZR_PARSER_SLOT_NONE &&
+                directLocalCandidateIsInlineStruct;
+        if (captureRootValue &&
+            directLocalSlot != ZR_PARSER_SLOT_NONE &&
+            directLocalOwnershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE) {
+            currentSlot = allocate_stack_slot(cs);
+            emit_instruction(
+                    cs,
+                    create_instruction_2(
+                            ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED),
+                            ZR_COMPILE_SLOT_U16(currentSlot),
+                            ZR_COMPILE_SLOT_U16(directLocalSlot),
+                            0));
+        } else if (directLocalSlot != ZR_PARSER_SLOT_NONE &&
+                   (!captureRootValue || directLocalIsInlineStruct)) {
             currentSlot = directLocalSlot;
         } else {
             ZrParser_Expression_Compile(cs, primary->property);
@@ -944,6 +971,7 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                     }
                 } else {
                     if (!emit_property_getter_call(cs,
+                                                   currentSlot,
                                                    currentSlot,
                                                    memberName,
                                                    getterAccessor->isStatic,
@@ -1360,6 +1388,212 @@ cleanup:
     return result;
 }
 
+typedef enum EZrCompoundPropertyAssignmentResult {
+    ZR_COMPOUND_PROPERTY_NOT_APPLICABLE = 0,
+    ZR_COMPOUND_PROPERTY_SUCCESS,
+    ZR_COMPOUND_PROPERTY_ERROR
+} EZrCompoundPropertyAssignmentResult;
+
+static EZrCompoundPropertyAssignmentResult compile_assignment_try_compound_property(
+        SZrCompilerState *cs,
+        SZrAstNode *left,
+        SZrAstNode *right,
+        const TZrChar *op,
+        SZrFileRange location) {
+    SZrPrimaryExpression *primary;
+    SZrAstNode *lastMemberNode;
+    SZrMemberExpression *lastMember;
+    SZrString *propertyName;
+    SZrAstNode prefixNode;
+    SZrAstNodeArray prefixMembers;
+    SZrAstNode *receiverNode;
+    SZrInferredType receiverType;
+    SZrString *receiverTypeName;
+    SZrString *resolvedRootTypeName = ZR_NULL;
+    TZrBool rootIsTypeReference = ZR_FALSE;
+    SZrTypeMemberInfo *propertyMember;
+    SZrTypeMemberInfo *getterAccessor;
+    SZrTypeMemberInfo *setterAccessor;
+    EZrInstructionCode compoundOpcode;
+    TZrUInt32 objectSlot = ZR_PARSER_SLOT_NONE;
+    EZrOwnershipQualifier rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    TZrBool usesSuperLookup = ZR_FALSE;
+    TZrUInt32 superReceiverSlot = ZR_PARSER_SLOT_NONE;
+    SZrAssignmentInlineStructParentWriteback inlineWritebacks[ZR_ASSIGNMENT_INLINE_STRUCT_WRITEBACK_MAX];
+    TZrSize inlineWritebackCount = 0u;
+    TZrUInt32 getterResultSlot;
+    TZrUInt32 rightSlot;
+    TZrUInt32 resultSlot;
+    TZrUInt32 assignmentResultSlot;
+
+    if (cs == ZR_NULL || left == ZR_NULL || right == ZR_NULL || op == ZR_NULL ||
+        strcmp(op, "=") == 0 || left->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_COMPOUND_PROPERTY_NOT_APPLICABLE;
+    }
+    primary = &left->data.primaryExpression;
+    if (primary->property == ZR_NULL || primary->members == ZR_NULL ||
+        primary->members->count == 0u) {
+        return ZR_COMPOUND_PROPERTY_NOT_APPLICABLE;
+    }
+    lastMemberNode = primary->members->nodes[primary->members->count - 1u];
+    if (lastMemberNode == ZR_NULL ||
+        lastMemberNode->type != ZR_AST_MEMBER_EXPRESSION) {
+        return ZR_COMPOUND_PROPERTY_NOT_APPLICABLE;
+    }
+    lastMember = &lastMemberNode->data.memberExpression;
+    if (lastMember->computed || lastMember->property == ZR_NULL ||
+        lastMember->property->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_COMPOUND_PROPERTY_NOT_APPLICABLE;
+    }
+    propertyName = lastMember->property->data.identifier.name;
+    if (propertyName == ZR_NULL) {
+        return ZR_COMPOUND_PROPERTY_NOT_APPLICABLE;
+    }
+
+    prefixNode = *left;
+    prefixMembers = *primary->members;
+    prefixMembers.count--;
+    prefixNode.data.primaryExpression.members = &prefixMembers;
+    receiverNode = prefixMembers.count == 0u ? primary->property : &prefixNode;
+
+    ZrParser_InferredType_Init(cs->state, &receiverType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_ExpressionType_Infer(cs, receiverNode, &receiverType)) {
+        ZrParser_InferredType_Free(cs->state, &receiverType);
+        return cs->hasError ? ZR_COMPOUND_PROPERTY_ERROR
+                            : ZR_COMPOUND_PROPERTY_NOT_APPLICABLE;
+    }
+    receiverTypeName = get_type_name_from_inferred_type(cs, &receiverType);
+    ZrParser_InferredType_Free(cs->state, &receiverType);
+    if (receiverTypeName == ZR_NULL) {
+        return ZR_COMPOUND_PROPERTY_NOT_APPLICABLE;
+    }
+    (void)resolve_expression_root_type(
+            cs, receiverNode, &resolvedRootTypeName, &rootIsTypeReference);
+
+    propertyMember = find_compiler_type_member(cs, receiverTypeName, propertyName);
+    if (propertyMember == ZR_NULL ||
+        propertyMember->memberType != ZR_AST_PROPERTY_DECLARATION) {
+        return ZR_COMPOUND_PROPERTY_NOT_APPLICABLE;
+    }
+    getterAccessor = find_hidden_property_accessor_member(
+            cs, receiverTypeName, propertyName, ZR_PROPERTY_ACCESSOR_ROLE_GET);
+    setterAccessor = find_hidden_property_accessor_member(
+            cs, receiverTypeName, propertyName, ZR_PROPERTY_ACCESSOR_ROLE_SET);
+    if (!can_use_property_accessor(rootIsTypeReference, getterAccessor)) {
+        ZrParser_Compiler_Error(
+                cs, "Property does not declare an accessible getter", location);
+        return ZR_COMPOUND_PROPERTY_ERROR;
+    }
+    if (!can_use_property_accessor(rootIsTypeReference, setterAccessor)) {
+        ZrParser_Compiler_Error(
+                cs, "Property does not declare an accessible setter", location);
+        return ZR_COMPOUND_PROPERTY_ERROR;
+    }
+
+    compoundOpcode = compile_assignment_select_compound_opcode(
+            cs, op, left, right);
+    if (cs->hasError || compoundOpcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
+        return ZR_COMPOUND_PROPERTY_ERROR;
+    }
+    if (!compile_assignment_target_member_prefix(
+                cs,
+                primary,
+                ZR_TRUE,
+                ZR_PARSER_SLOT_NONE,
+                &objectSlot,
+                &receiverTypeName,
+                &rootIsTypeReference,
+                &rootOwnershipQualifier,
+                &usesSuperLookup,
+                &superReceiverSlot,
+                inlineWritebacks,
+                ZR_ARRAY_COUNT(inlineWritebacks),
+                &inlineWritebackCount)) {
+        return ZR_COMPOUND_PROPERTY_ERROR;
+    }
+
+    getterResultSlot = allocate_stack_slot(cs);
+    if (usesSuperLookup) {
+        if (!emit_super_accessor_call_from_prototype(
+                    cs,
+                    getterResultSlot,
+                    superReceiverSlot,
+                    getterAccessor->name,
+                    ZR_NULL,
+                    0u,
+                    location)) {
+            return ZR_COMPOUND_PROPERTY_ERROR;
+        }
+    } else {
+        if (!emit_property_getter_call(
+                    cs,
+                    getterResultSlot,
+                    objectSlot,
+                    propertyName,
+                    getterAccessor->isStatic,
+                    location)) {
+            return ZR_COMPOUND_PROPERTY_ERROR;
+        }
+    }
+
+    ZrParser_Expression_Compile(cs, right);
+    rightSlot = cs->lastExpressionSlot;
+    if (cs->hasError || rightSlot == ZR_PARSER_SLOT_NONE) {
+        if (!cs->hasError) {
+            ZrParser_Compiler_Error(
+                    cs, "Assignment expression did not produce a value", right->location);
+        }
+        return ZR_COMPOUND_PROPERTY_ERROR;
+    }
+
+    resultSlot = allocate_stack_slot(cs);
+    emit_instruction(
+            cs,
+            create_instruction_2(
+                    compoundOpcode,
+                    ZR_COMPILE_SLOT_U16(resultSlot),
+                    ZR_COMPILE_SLOT_U16(getterResultSlot),
+                    ZR_COMPILE_SLOT_U16(rightSlot)));
+    if (usesSuperLookup) {
+        TZrUInt32 setterArgSlot = resultSlot;
+        if (!emit_super_accessor_call_from_prototype(
+                    cs,
+                    objectSlot,
+                    superReceiverSlot,
+                    setterAccessor->name,
+                    &setterArgSlot,
+                    1u,
+                    location)) {
+            return ZR_COMPOUND_PROPERTY_ERROR;
+        }
+        assignmentResultSlot = allocate_stack_slot(cs);
+        emit_instruction(
+                cs,
+                create_instruction_1(
+                        ZR_INSTRUCTION_ENUM(SET_STACK),
+                        ZR_COMPILE_SLOT_U16(assignmentResultSlot),
+                        (TZrInt32)resultSlot));
+    } else {
+        assignmentResultSlot = emit_property_setter_call(
+                cs,
+                objectSlot,
+                propertyName,
+                setterAccessor->isStatic,
+                setterAccessor->accessorRole,
+                resultSlot,
+                location);
+        if (assignmentResultSlot == ZR_PARSER_SLOT_NONE) {
+            return ZR_COMPOUND_PROPERTY_ERROR;
+        }
+    }
+    if (!emit_assignment_inline_struct_writebacks(
+                cs, inlineWritebacks, inlineWritebackCount)) {
+        return ZR_COMPOUND_PROPERTY_ERROR;
+    }
+    cs->lastExpressionSlot = assignmentResultSlot;
+    return ZR_COMPOUND_PROPERTY_SUCCESS;
+}
+
 // 编译赋值表达式
 static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node) {
     EZrInstructionCode assignmentConversionOpcode = ZR_INSTRUCTION_ENUM(ENUM_MAX);
@@ -1429,6 +1663,15 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
     }
     ZrParser_InferredType_Free(cs->state, &leftType);
     ZrParser_InferredType_Free(cs->state, &rightType);
+
+    if (strcmp(op, "=") != 0) {
+        EZrCompoundPropertyAssignmentResult propertyResult =
+                compile_assignment_try_compound_property(
+                        cs, left, right, op, node->location);
+        if (propertyResult != ZR_COMPOUND_PROPERTY_NOT_APPLICABLE) {
+            return;
+        }
+    }
     
     // 编译右值
     EZrInstructionCode compoundAssignmentOpcode = ZR_INSTRUCTION_ENUM(ENUM_MAX);
@@ -1663,6 +1906,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
 
                         if (!compile_assignment_target_member_prefix(cs,
                                                                      primary,
+                                                                     ZR_FALSE,
                                                                      rightSlot,
                                                                      &objSlot,
                                                                      &rootTypeName,

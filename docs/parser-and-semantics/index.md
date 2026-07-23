@@ -204,6 +204,9 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - structured constructor/init-accessor phase and exactly-once immutable-field initialization
   - explicit fields alone own TypeLayout, reflection field rows, and initialization bitmap positions
   - structured property serialization/reflection with legacy artifact reader fallback
+  - typed getter/setter/init lowering through the linked accessor identity
+  - single-evaluation compound assignment with receiver/RHS/exception ordering
+  - inline-struct receiver-source provenance and source/artifact dispatch parity
 
 - `canonical-type-graph.md`
   - immutable structural type nodes and canonical `TypeId` identity

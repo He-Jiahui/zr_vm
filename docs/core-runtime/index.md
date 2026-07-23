@@ -11,6 +11,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_meta_access.c
   - zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/src/zr_vm_core/closure.c
@@ -50,6 +51,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_meta_access.c
   - zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/src/zr_vm_core/closure.c
@@ -83,6 +85,7 @@ tests:
   - tests/core/test_type_layout_inline_copy.c
   - tests/core/test_tail_reuse_callinfo_reset.c
   - tests/core/test_object_call_known_native_fast_path.c
+  - tests/parser/test_property_access_lowering.c
   - tests/core/test_gc_domain_multimutator.c
   - tests/core/test_gc_concurrent_major.c
   - tests/core/test_resource_same_domain_handoff.c
@@ -103,6 +106,9 @@ doc_type: category-index
 Core runtime documents cover VM stack storage, call-frame data movement, ownership-aware inline values, and low-level execution helpers.
 
 - `inline-type-layout-and-byte-stack.md`: type layout descriptors, POD inline copy, field-aware copy/drop, byte-offset stack copy primitives, struct prototype `layoutByteSize/layoutByteAlign`, function frame byte-layout sidecar metadata, runtime prototype layout resolution, VM pre-call and single-result post-call copy for already-inline payloads, conservative tail-reuse fallback for inline parameters, GC/drop traversal, and real native inline-span dispatch context with stack-relocation refresh and span-only inline parameter access for the inline stack migration.
+- `property-accessor-dispatch.md`: descriptor-backed getter/setter dispatch, receiver-source frame/slot
+  provenance for inline structs, cache and exception boundaries, static/virtual/interface behavior,
+  and source/artifact parity for typed compound property access.
 - `exception-scope-resource-cleanup.md`: exception-handler checkpoints for `%using`
   registrations, LIFO close before catch/finally, scratch-safe error arguments, and
   stack-relocation rules for resource cleanup.

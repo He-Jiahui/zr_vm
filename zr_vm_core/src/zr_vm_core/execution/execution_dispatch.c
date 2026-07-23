@@ -5602,6 +5602,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SAVE_PC(STATE, CALL_INFO);                                                                                     \
         (STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer;                                        \
         EXP;                                                                                                           \
+        if ((STATE)->callInfoList != (CALL_INFO)) {                                                                    \
+            goto LZrExecutionDone;                                                                                     \
+        }                                                                                                              \
         UPDATE_BASE(CALL_INFO);                                                                                        \
     } while (0)
 
@@ -8399,18 +8402,37 @@ LZrFastInstruction_SET_MEMBER_SLOT_NULL: {
 
             ZR_INSTRUCTION_LABEL(META_GET) {
                 SZrString *memberName = execution_resolve_function_member_symbol(currentFunction, B1(instruction));
+                TZrBool resolved = ZR_FALSE;
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 if (memberName == ZR_NULL) {
                     ZrCore_Debug_RunError(state, "META_GET: invalid member id");
-                } else if (!execution_meta_get_member(state, opA, memberName, destination)) {
-                    ZrCore_Debug_RunError(state, "META_GET: receiver must define property getter");
+                } else {
+                    PROTECT_E(state, callInfo, {
+                        resolved = execution_meta_get_member(
+                                state, opA, memberName, base, (TZrUInt32)A1(instruction), destination);
+                    });
+                    RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                    if (!resolved && !state->hasCurrentException) {
+                        ZrCore_Debug_RunError(state, "META_GET: receiver must define property getter");
+                    }
                 }
             }
             DONE(1);
 
             ZR_INSTRUCTION_LABEL(SUPER_META_GET_CACHED) {
+                TZrBool resolved = ZR_FALSE;
                 opA = FRAME_VALUE_SLOT(A1(instruction));
-                if (!execution_meta_get_cached_member(state, currentFunction, B1(instruction), opA, destination)) {
+                PROTECT_E(state, callInfo, {
+                    resolved = execution_meta_get_cached_member(state,
+                                                                currentFunction,
+                                                                B1(instruction),
+                                                                opA,
+                                                                base,
+                                                                (TZrUInt32)A1(instruction),
+                                                                destination);
+                });
+                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                if (!resolved && !state->hasCurrentException) {
                     ZrCore_Debug_RunError(state, "SUPER_META_GET_CACHED: receiver must define property getter");
                 }
             }
@@ -8422,41 +8444,86 @@ LZrFastInstruction_SET_MEMBER_SLOT_NULL: {
                         currentFunction,
                         B1(instruction),
                         ZR_FUNCTION_MEMBER_ENTRY_FLAG_PROPERTY_INITIALIZER);
+                TZrBool resolved = ZR_FALSE;
                 opA = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opB = FRAME_VALUE_SLOT(A1(instruction));
                 if (memberName == ZR_NULL) {
                     ZrCore_Debug_RunError(state, "META_SET: invalid member id");
                 } else if (isPropertyInitializer) {
-                    if (!ZrCore_Object_InvokePropertyInitializer(state, opA, memberName, opB)) {
+                    PROTECT_E(state, callInfo, {
+                        resolved = ZrCore_Object_InvokePropertyInitializer(state, opA, memberName, opB);
+                    });
+                    if (!resolved && !state->hasCurrentException) {
                         ZrCore_Debug_RunError(state, "META_SET: receiver must define property initializer");
                     }
-                } else if (!execution_meta_set_member(state, opA, memberName, opB)) {
-                    ZrCore_Debug_RunError(state, "META_SET: receiver must define property setter");
+                } else {
+                    PROTECT_E(state, callInfo, {
+                        resolved = execution_meta_set_member(state,
+                                                             opA,
+                                                             memberName,
+                                                             base,
+                                                             (TZrUInt32)E(instruction),
+                                                             opB);
+                    });
+                    if (!resolved && !state->hasCurrentException) {
+                        ZrCore_Debug_RunError(state, "META_SET: receiver must define property setter");
+                    }
                 }
             }
             DONE(1);
 
             ZR_INSTRUCTION_LABEL(SUPER_META_SET_CACHED) {
+                TZrBool resolved = ZR_FALSE;
                 opA = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opB = FRAME_VALUE_SLOT(A1(instruction));
-                if (!execution_meta_set_cached_member(state, currentFunction, B1(instruction), opA, opB)) {
+                PROTECT_E(state, callInfo, {
+                    resolved = execution_meta_set_cached_member(state,
+                                                                currentFunction,
+                                                                B1(instruction),
+                                                                opA,
+                                                                base,
+                                                                (TZrUInt32)E(instruction),
+                                                                opB);
+                });
+                if (!resolved && !state->hasCurrentException) {
                     ZrCore_Debug_RunError(state, "SUPER_META_SET_CACHED: receiver must define property setter");
                 }
             }
             DONE(1);
 
             ZR_INSTRUCTION_LABEL(SUPER_META_GET_STATIC_CACHED) {
+                TZrBool resolved = ZR_FALSE;
                 opA = FRAME_VALUE_SLOT(A1(instruction));
-                if (!execution_meta_get_cached_static_member(state, currentFunction, B1(instruction), opA, destination)) {
+                PROTECT_E(state, callInfo, {
+                    resolved = execution_meta_get_cached_static_member(state,
+                                                                       currentFunction,
+                                                                       B1(instruction),
+                                                                       opA,
+                                                                       base,
+                                                                       (TZrUInt32)A1(instruction),
+                                                                       destination);
+                });
+                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                if (!resolved && !state->hasCurrentException) {
                     ZrCore_Debug_RunError(state, "SUPER_META_GET_STATIC_CACHED: receiver must define static property getter");
                 }
             }
             DONE(1);
 
             ZR_INSTRUCTION_LABEL(SUPER_META_SET_STATIC_CACHED) {
+                TZrBool resolved = ZR_FALSE;
                 opA = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opB = FRAME_VALUE_SLOT(A1(instruction));
-                if (!execution_meta_set_cached_static_member(state, currentFunction, B1(instruction), opA, opB)) {
+                PROTECT_E(state, callInfo, {
+                    resolved = execution_meta_set_cached_static_member(state,
+                                                                       currentFunction,
+                                                                       B1(instruction),
+                                                                       opA,
+                                                                       base,
+                                                                       (TZrUInt32)E(instruction),
+                                                                       opB);
+                });
+                if (!resolved && !state->hasCurrentException) {
                     ZrCore_Debug_RunError(state, "SUPER_META_SET_STATIC_CACHED: receiver must define static property setter");
                 }
             }

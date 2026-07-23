@@ -13,6 +13,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_member_resolution.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_receiver_effect.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/object/object.c
@@ -33,6 +34,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_member_resolution.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_receiver_effect.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
   - zr_vm_core/src/zr_vm_core/object/object.c
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
@@ -43,9 +45,11 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
   - docs/plans/syntax/05-property-unified-ast/m1-unified-ast-symbol-implementation-plan.md
   - docs/plans/syntax/05-property-unified-ast/m2-explicit-field-init-implementation-plan.md
+  - docs/plans/syntax/05-property-unified-ast/m3-access-lowering-receiver-effect-implementation-plan.md
 tests:
   - tests/parser/test_property_unified_ast.c
   - tests/parser/test_property_explicit_field_init.c
+  - tests/parser/test_property_access_lowering.c
   - tests/parser/test_compiler_features.c
   - tests/parser/test_reference_receiver_call_boundary.c
   - tests/parser/test_semantic_query.c
@@ -152,3 +156,40 @@ M2 establishes explicit field/init-phase rules but does not claim the full M3 lo
 compound accessor evaluation ordering, ref-return Place projection, or source/binary LSP parity.
 Those stages must reuse these SymbolIds, TypeIds, accessor roles, and field definitions and may not
 reconstruct contracts from member text.
+
+## Typed Property Access Lowering
+
+M3 resolves the visible `PropertySymbol` first and selects its linked getter, setter, or initializer
+by structured accessor role. Ordinary reads require `GET`, ordinary writes require `SET`, and the
+M2 construction phase is the only path allowed to select `INIT`. The emitted member entry preserves
+the visible property identity, static mode, and canonical accessor contract; hidden accessor names
+remain payload and are never exposed as source-callable members.
+
+Compound property assignment is one lowering plan rather than a source rewrite. It captures the
+receiver once, calls the getter once, evaluates the right-hand side once, applies the same typed
+operator/conversion used by ordinary compound assignment, and calls the setter once. Getter-only and
+setter-only properties are rejected before partial writes. Getter failure prevents RHS evaluation,
+RHS failure prevents setter invocation, and setter failure preserves the existing exception unwind.
+The assignment result is the computed value, not the receiver returned by the meta-set instruction.
+
+Class and ownership-handle receivers retain one captured value. Inline-struct receivers retain their
+frame slot/Place provenance: the VM may materialize an object-shaped view for descriptor resolution,
+but accessor invocation receives the original frame base and slot so mutable setters write back to
+the same inline storage. Static properties bind no receiver. Getter bodies are compiled with readonly
+receiver capability; setter and init bodies carry mutable/initializing capability, and typed metadata
+marks both readonly and mutable property accessor receivers as borrowed aliases rather than copied
+values.
+
+Virtual, interface, inherited, and static cases consume the descriptor/accessor identity already
+attached to the property contract. Runtime cache entries may accelerate that lookup, but cache heat,
+member spelling, and hidden accessor text do not decide behavior. The focused hierarchy also freezes
+the language's explicit base-constructor rule: a derived constructor calls `super()` when it needs
+base-field initialization; inherited accessor dispatch does not synthesize constructor inheritance.
+
+## M3 Boundary
+
+M3 completes ordinary value-property get/set/init and compound lowering for source and executable
+artifacts. A getter returning `ref T` or `ref readonly T`, direct Place projection, managed interior
+references, and reference-region propagation remain deferred to M4. LSP hover/signature/diagnostic
+parity remains M5 and must consume the same canonical property/accessor facts without adding a text
+fallback.

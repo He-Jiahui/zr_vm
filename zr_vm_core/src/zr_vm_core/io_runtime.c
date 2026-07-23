@@ -756,6 +756,8 @@ static TZrBool io_runtime_populate_function(SZrState *state,
     function->parameterCount = (TZrUInt16)source->parametersLength;
     function->hasVariableArguments = source->hasVarArgs ? ZR_TRUE : ZR_FALSE;
     function->stackSize = source->stackSize;
+    function->vmEntryClearStackSizePlusOne =
+            source->vmEntryClearStackSizePlusOne;
     function->frameByteSize = source->frameByteSize;
     function->frameByteAlign = source->frameByteAlign;
     function->lineInSourceStart = (TZrUInt32)source->startLine;

@@ -55,9 +55,12 @@ static TZrBool typed_metadata_current_function_borrows_receiver(
     if (cs == ZR_NULL || cs->currentFunctionNode == ZR_NULL) {
         return ZR_FALSE;
     }
-    effect = cs->currentFunctionNode->type == ZR_AST_PROPERTY_DECLARATION
-                     ? cs->currentFunctionReceiverEffect
-                     : get_member_receiver_effect(cs->currentFunctionNode);
+    if (cs->currentFunctionNode->type == ZR_AST_PROPERTY_DECLARATION) {
+        effect = cs->currentFunctionReceiverEffect;
+        return (TZrBool)(effect == ZR_CANONICAL_RECEIVER_READONLY ||
+                         effect == ZR_CANONICAL_RECEIVER_MUTABLE);
+    }
+    effect = get_member_receiver_effect(cs->currentFunctionNode);
     return (TZrBool)(effect == ZR_CANONICAL_RECEIVER_READONLY);
 }
 

@@ -309,6 +309,32 @@ ZR_CORE_API TZrBool ZrCore_Object_InvokeResolvedFunction(struct SZrState *state,
                                                          const SZrTypeValue *arguments,
                                                          TZrSize argumentCount,
                                                          SZrTypeValue *result);
+ZR_CORE_API TZrBool ZrCore_Object_InvokeResolvedFunctionWithReceiverSource(
+        struct SZrState *state,
+        struct SZrFunction *function,
+        TZrBool isStatic,
+        SZrTypeValue *receiver,
+        const SZrTypeValue *arguments,
+        TZrSize argumentCount,
+        TZrStackValuePointer receiverSourceFrameBase,
+        TZrUInt32 receiverSourceSlot,
+        SZrTypeValue *result);
+ZR_CORE_API TZrBool ZrCore_Object_TryInvokePropertyGetterWithReceiverSource(
+        struct SZrState *state,
+        SZrTypeValue *receiver,
+        struct SZrString *memberName,
+        TZrStackValuePointer receiverSourceFrameBase,
+        TZrUInt32 receiverSourceSlot,
+        SZrTypeValue *result,
+        TZrBool *outHandled);
+ZR_CORE_API TZrBool ZrCore_Object_TryInvokePropertySetterWithReceiverSource(
+        struct SZrState *state,
+        SZrTypeValue *receiver,
+        struct SZrString *memberName,
+        const SZrTypeValue *value,
+        TZrStackValuePointer receiverSourceFrameBase,
+        TZrUInt32 receiverSourceSlot,
+        TZrBool *outHandled);
 
 ZR_CORE_API TZrBool ZrCore_Object_GetByIndex(struct SZrState *state,
                                              SZrTypeValue *receiver,

@@ -579,6 +579,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_property_explicit_field_init_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_property_access_lowering_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_property_access_lowering.c
+    )
+    target_include_directories(zr_vm_property_access_lowering_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_property_access_lowering_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_reference_place_out_flow_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_reference_place_out_flow.c
     )

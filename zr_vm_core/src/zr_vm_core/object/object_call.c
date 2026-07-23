@@ -2456,6 +2456,8 @@ static TZrBool object_call_value_with_interpreter_generic_contexts(
         TZrSize argumentCount,
         const SZrTypeValue *interpreterGenericContext,
         const SZrTypeValue *interpreterGenericMethodContext,
+        TZrStackValuePointer receiverSourceFrameBase,
+        TZrUInt32 receiverSourceSlot,
         SZrTypeValue *result) {
     SZrTypeValue stableCallable;
     SZrTypeValue stableReceiver;
@@ -2483,12 +2485,14 @@ static TZrBool object_call_value_with_interpreter_generic_contexts(
     SZrFunctionStackAnchor callInfoReturnAnchor;
     SZrFunctionStackAnchor receiverAnchor;
     SZrFunctionStackAnchor resultAnchor;
+    SZrFunctionStackAnchor receiverSourceFrameAnchor;
     TZrBool syncStructReceiver = ZR_FALSE;
     TZrBool hasAnchoredReturnDestination = ZR_FALSE;
     TZrBool hasReceiverAnchor = ZR_FALSE;
     TZrBool hasResultAnchor = ZR_FALSE;
     TZrBool hasCallInfoAnchors = ZR_FALSE;
     TZrBool hasActiveCallInfoTopAnchor = ZR_FALSE;
+    TZrBool hasReceiverSourceFrameAnchor = ZR_FALSE;
     TZrSize index;
 
     if (state == ZR_NULL || callable == ZR_NULL || result == ZR_NULL) {
@@ -2619,6 +2623,10 @@ static TZrBool object_call_value_with_interpreter_generic_contexts(
 
     ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
     ZrCore_Function_StackAnchorInit(state, base, &baseAnchor);
+    if (receiverSourceFrameBase != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(state, receiverSourceFrameBase, &receiverSourceFrameAnchor);
+        hasReceiverSourceFrameAnchor = ZR_TRUE;
+    }
     if (savedCallInfo != ZR_NULL) {
         ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionBase.valuePointer, &callInfoBaseAnchor);
         ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &originalCallInfoTopAnchor);
@@ -2630,6 +2638,9 @@ static TZrBool object_call_value_with_interpreter_generic_contexts(
         if (hasAnchoredReturnDestination) {
             ZrCore_Function_StackAnchorInit(state, savedCallInfo->returnDestination, &callInfoReturnAnchor);
         }
+    }
+    if (hasReceiverSourceFrameAnchor) {
+        receiverSourceFrameBase = ZrCore_Function_StackAnchorRestore(state, &receiverSourceFrameAnchor);
     }
 
     ZrCore_Function_ReserveScratchSlots(state, scratchSlots, base);
@@ -2712,9 +2723,33 @@ static TZrBool object_call_value_with_interpreter_generic_contexts(
                 1u,
                 interpreterGenericContext,
                 interpreterGenericMethodContext);
+    } else if (hasReceiverSourceFrameAnchor && !stableCallable.isNative) {
+        receiverSourceFrameBase = ZrCore_Function_StackAnchorRestore(state, &receiverSourceFrameAnchor);
+        base = ZrCore_Function_CallWithoutYieldKnownVmValueAndRestoreWithReceiverSource(
+                state,
+                base,
+                &stableCallable,
+                1u,
+                receiverSourceFrameBase,
+                receiverSourceSlot);
     } else {
         base = ZrCore_Function_CallWithoutYieldKnownValueAndRestore(
                 state, base, &stableCallable, 1u);
+    }
+    if (savedCallInfo != ZR_NULL && state->callInfoList != savedCallInfo) {
+        if (freeStableArguments) {
+            ZrCore_Memory_RawFreeWithType(state->global,
+                                          stableArguments,
+                                          stableArgumentsBytes,
+                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+        }
+        if (freeArgumentPinAdded) {
+            ZrCore_Memory_RawFreeWithType(state->global,
+                                          argumentPinAdded,
+                                          argumentPinAddedBytes,
+                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+        }
+        return ZR_FALSE;
     }
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
     if (savedCallInfo != ZR_NULL && hasCallInfoAnchors) {
@@ -2810,7 +2845,7 @@ TZrBool ZrCore_Object_CallValue(SZrState *state,
                                 TZrSize argumentCount,
                                 SZrTypeValue *result) {
     return object_call_value_with_interpreter_generic_contexts(
-            state, callable, receiver, arguments, argumentCount, ZR_NULL, ZR_NULL, result);
+            state, callable, receiver, arguments, argumentCount, ZR_NULL, ZR_NULL, ZR_NULL, 0u, result);
 }
 
 TZrBool ZrCore_Object_CallFunctionWithReceiver(SZrState *state,
@@ -2862,6 +2897,35 @@ TZrBool ZrCore_Object_CallFunctionWithReceiver(SZrState *state,
     return ZrCore_Object_CallValue(state, &callableValue, receiver, arguments, argumentCount, result);
 }
 
+TZrBool ZrCore_Object_CallFunctionWithReceiverSource(
+        SZrState *state,
+        SZrFunction *function,
+        SZrTypeValue *receiver,
+        const SZrTypeValue *arguments,
+        TZrSize argumentCount,
+        TZrStackValuePointer receiverSourceFrameBase,
+        TZrUInt32 receiverSourceSlot,
+        SZrTypeValue *result) {
+    SZrTypeValue callableValue;
+
+    if (receiver == ZR_NULL || receiverSourceFrameBase == ZR_NULL ||
+        !object_make_callable_value(state, function, &callableValue)) {
+        return ZR_FALSE;
+    }
+
+    return object_call_value_with_interpreter_generic_contexts(
+            state,
+            &callableValue,
+            receiver,
+            arguments,
+            argumentCount,
+            ZR_NULL,
+            ZR_NULL,
+            receiverSourceFrameBase,
+            receiverSourceSlot,
+            result);
+}
+
 TZrBool ZrCore_Object_CallFunctionWithReceiverAndInterpreterGenericContext(
         SZrState *state,
         SZrFunction *function,
@@ -2887,6 +2951,8 @@ TZrBool ZrCore_Object_CallFunctionWithReceiverAndInterpreterGenericContext(
             argumentCount,
             interpreterGenericContext,
             ZR_NULL,
+            ZR_NULL,
+            0u,
             result);
 }
 
@@ -2921,6 +2987,8 @@ TZrBool ZrCore_Object_CallFunctionWithReceiverAndInterpreterGenericContexts(
             argumentCount,
             interpreterGenericContext,
             interpreterGenericMethodContext,
+            ZR_NULL,
+            0u,
             result);
 }
 

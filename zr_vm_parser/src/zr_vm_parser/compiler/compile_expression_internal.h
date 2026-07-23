@@ -173,7 +173,8 @@ TZrBool compile_expression_try_get_inline_union_identifier_slot_for_type(SZrComp
                                                                          const SZrInferredType *expectedType,
                                                                          TZrUInt32 *outSlot);
 TZrBool emit_property_getter_call(SZrCompilerState *cs,
-                                  TZrUInt32 currentSlot,
+                                  TZrUInt32 resultSlot,
+                                  TZrUInt32 receiverSlot,
                                   SZrString *propertyName,
                                   TZrBool isStatic,
                                   SZrFileRange location);

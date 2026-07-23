@@ -194,6 +194,55 @@ static SZrObjectPrototype *execution_meta_resolve_receiver_prototype(SZrState *s
     return state->global->basicTypeObjectPrototype[receiver->type];
 }
 
+static TZrBool execution_meta_prepare_receiver_value(
+        SZrState *state,
+        const SZrTypeValue *fallbackReceiver,
+        TZrStackValuePointer receiverSourceFrameBase,
+        TZrUInt32 receiverSourceSlot,
+        SZrTypeValue *outReceiver,
+        TZrBool *outSourceIsInlineStruct) {
+    SZrFunction *sourceFunction;
+    const SZrFunctionFrameSlotLayout *sourceLayout;
+
+    if (outSourceIsInlineStruct != ZR_NULL) {
+        *outSourceIsInlineStruct = ZR_FALSE;
+    }
+    if (state == ZR_NULL || outReceiver == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (receiverSourceFrameBase != ZR_NULL && state->callInfoList != ZR_NULL) {
+        sourceFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(
+                state, state->callInfoList);
+        sourceLayout = sourceFunction != ZR_NULL
+                               ? ZrCore_Function_FindFrameSlotLayout(
+                                         sourceFunction, receiverSourceSlot)
+                               : ZR_NULL;
+        if (sourceLayout != ZR_NULL &&
+            sourceLayout->slotKind ==
+                    (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            if (!ZrCore_Function_CopyFrameSlotInlineToObjectValue(
+                        state,
+                        sourceFunction,
+                        receiverSourceFrameBase,
+                        receiverSourceSlot,
+                        outReceiver)) {
+                return ZR_FALSE;
+            }
+            if (outSourceIsInlineStruct != ZR_NULL) {
+                *outSourceIsInlineStruct = ZR_TRUE;
+            }
+            return ZR_TRUE;
+        }
+    }
+
+    if (fallbackReceiver == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *outReceiver = *fallbackReceiver;
+    return ZR_TRUE;
+}
+
 const SZrFunctionCallSiteCacheEntry *execution_get_callsite_cache_entry(SZrFunction *function,
                                                                         TZrUInt16 cacheIndex,
                                                                         EZrFunctionCallSiteCacheKind expectedKind) {
@@ -527,6 +576,8 @@ static TZrBool execution_meta_try_cached_call(SZrState *state,
                                               SZrTypeValue *receiver,
                                               const SZrTypeValue *arguments,
                                               TZrSize argumentCount,
+                                              TZrStackValuePointer receiverSourceFrameBase,
+                                              TZrUInt32 receiverSourceSlot,
                                               SZrTypeValue *result,
                                               TZrBool requireStaticMode,
                                               TZrBool expectedStatic) {
@@ -566,13 +617,24 @@ static TZrBool execution_meta_try_cached_call(SZrState *state,
             execution_meta_clear_cache_entry(function, cacheIndex, entry, "static-mode-mismatch");
             return ZR_FALSE;
         }
-        if (!ZrCore_Object_InvokeResolvedFunction(state,
-                                                  slot->cachedFunction,
-                                                  slot->cachedIsStatic ? ZR_TRUE : ZR_FALSE,
-                                                  receiver,
-                                                  arguments,
-                                                  argumentCount,
-                                                  result)) {
+        if (!(receiverSourceFrameBase != ZR_NULL && !slot->cachedIsStatic
+                      ? ZrCore_Object_InvokeResolvedFunctionWithReceiverSource(
+                                state,
+                                slot->cachedFunction,
+                                ZR_FALSE,
+                                receiver,
+                                arguments,
+                                argumentCount,
+                                receiverSourceFrameBase,
+                                receiverSourceSlot,
+                                result)
+                      : ZrCore_Object_InvokeResolvedFunction(state,
+                                                             slot->cachedFunction,
+                                                             slot->cachedIsStatic ? ZR_TRUE : ZR_FALSE,
+                                                             receiver,
+                                                             arguments,
+                                                             argumentCount,
+                                                             result))) {
             execution_meta_clear_cache_entry(function, cacheIndex, entry, "invoke-resolved-failed");
             return ZR_FALSE;
         }
@@ -609,6 +671,8 @@ static TZrBool execution_meta_try_invoke_member_accessor(SZrState *state,
                                                          SZrString *memberName,
                                                          const SZrTypeValue *arguments,
                                                          TZrSize argumentCount,
+                                                         TZrStackValuePointer receiverSourceFrameBase,
+                                                         TZrUInt32 receiverSourceSlot,
                                                          SZrTypeValue *result) {
     SZrObjectPrototype *ownerPrototype;
     SZrFunction *function;
@@ -625,13 +689,24 @@ static TZrBool execution_meta_try_invoke_member_accessor(SZrState *state,
 
     stableReceiver = *receiver;
     ZR_UNUSED_PARAMETER(ownerPrototype);
-    return ZrCore_Object_InvokeResolvedFunction(state,
-                                                function,
-                                                isStatic,
-                                                &stableReceiver,
-                                                arguments,
-                                                argumentCount,
-                                                result);
+    return receiverSourceFrameBase != ZR_NULL && !isStatic
+                   ? ZrCore_Object_InvokeResolvedFunctionWithReceiverSource(
+                             state,
+                             function,
+                             ZR_FALSE,
+                             &stableReceiver,
+                             arguments,
+                             argumentCount,
+                             receiverSourceFrameBase,
+                             receiverSourceSlot,
+                             result)
+                   : ZrCore_Object_InvokeResolvedFunction(state,
+                                                          function,
+                                                          isStatic,
+                                                          &stableReceiver,
+                                                          arguments,
+                                                          argumentCount,
+                                                          result);
 }
 
 static TZrBool execution_meta_prepare_cached_call_target_internal(SZrState *state,
@@ -745,17 +820,69 @@ TZrBool execution_try_prepare_dyn_call_target_cached(SZrState *state,
 TZrBool execution_meta_get_member(SZrState *state,
                                   SZrTypeValue *receiver,
                                   SZrString *memberName,
+                                  TZrStackValuePointer receiverSourceFrameBase,
+                                  TZrUInt32 receiverSourceSlot,
                                   SZrTypeValue *result) {
     SZrTypeValue stableReceiver;
+    SZrCallInfo *savedCallInfo;
+    TZrBool propertyHandled = ZR_FALSE;
+    TZrBool sourceIsInlineStruct;
     TZrBool ok;
 
     if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    stableReceiver = *receiver;
-    if (execution_meta_try_invoke_member_accessor(state, &stableReceiver, memberName, ZR_NULL, 0, result)) {
+    if (!execution_meta_prepare_receiver_value(state,
+                                               receiver,
+                                               receiverSourceFrameBase,
+                                               receiverSourceSlot,
+                                               &stableReceiver,
+                                               &sourceIsInlineStruct)) {
+        return ZR_FALSE;
+    }
+    savedCallInfo = state->callInfoList;
+    if (ZrCore_Object_TryInvokePropertyGetterWithReceiverSource(state,
+                                                                &stableReceiver,
+                                                                memberName,
+                                                                sourceIsInlineStruct
+                                                                        ? receiverSourceFrameBase
+                                                                        : ZR_NULL,
+                                                                receiverSourceSlot,
+                                                                result,
+                                                                &propertyHandled)) {
         return ZR_TRUE;
+    }
+    if (propertyHandled || state->hasCurrentException ||
+        state->callInfoList != savedCallInfo) {
+        return ZR_FALSE;
+    }
+    if (!sourceIsInlineStruct) {
+        if (execution_meta_try_invoke_member_accessor(state,
+                                                      &stableReceiver,
+                                                      memberName,
+                                                      ZR_NULL,
+                                                      0,
+                                                      ZR_NULL,
+                                                      receiverSourceSlot,
+                                                      result)) {
+            return ZR_TRUE;
+        }
+        return ZrCore_Object_GetMember(
+                state, &stableReceiver, memberName, result);
+    }
+    if (execution_meta_try_invoke_member_accessor(state,
+                                                  &stableReceiver,
+                                                  memberName,
+                                                  ZR_NULL,
+                                                  0,
+                                                  receiverSourceFrameBase,
+                                                  receiverSourceSlot,
+                                                  result)) {
+        return ZR_TRUE;
+    }
+    if (state->hasCurrentException || state->callInfoList != savedCallInfo) {
+        return ZR_FALSE;
     }
 
     ok = ZrCore_Object_GetMember(state, &stableReceiver, memberName, result);
@@ -766,12 +893,16 @@ static TZrBool execution_meta_get_cached_member_internal(SZrState *state,
                                                          SZrFunction *function,
                                                          TZrUInt16 cacheIndex,
                                                          SZrTypeValue *receiver,
+                                                         TZrStackValuePointer receiverSourceFrameBase,
+                                                         TZrUInt32 receiverSourceSlot,
                                                          SZrTypeValue *result,
                                                          EZrFunctionCallSiteCacheKind expectedKind,
                                                          TZrBool expectedStatic) {
     SZrFunctionCallSiteCacheEntry *entry;
     SZrString *memberName;
     SZrTypeValue stableReceiver;
+    SZrCallInfo *savedCallInfo;
+    TZrBool sourceIsInlineStruct;
 
     if (state == ZR_NULL || function == ZR_NULL || receiver == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -782,17 +913,34 @@ static TZrBool execution_meta_get_cached_member_internal(SZrState *state,
         return ZR_FALSE;
     }
 
+    if (!execution_meta_prepare_receiver_value(state,
+                                               receiver,
+                                               receiverSourceFrameBase,
+                                               receiverSourceSlot,
+                                               &stableReceiver,
+                                               &sourceIsInlineStruct)) {
+        return ZR_FALSE;
+    }
+    savedCallInfo = state->callInfoList;
     if (execution_meta_try_cached_call(state,
                                        function,
                                        cacheIndex,
                                        entry,
-                                       receiver,
+                                       &stableReceiver,
                                        ZR_NULL,
                                        0,
+                                       sourceIsInlineStruct
+                                               ? receiverSourceFrameBase
+                                               : ZR_NULL,
+                                       receiverSourceSlot,
                                        result,
                                        ZR_TRUE,
                                        expectedStatic)) {
         return ZR_TRUE;
+    }
+    if (sourceIsInlineStruct &&
+        (state->hasCurrentException || state->callInfoList != savedCallInfo)) {
+        return ZR_FALSE;
     }
 
     memberName = execution_meta_cache_resolve_member_name(function, entry->memberEntryIndex);
@@ -800,9 +948,13 @@ static TZrBool execution_meta_get_cached_member_internal(SZrState *state,
         return ZR_FALSE;
     }
 
-    stableReceiver = *receiver;
     entry->runtimeMissCount++;
-    if (!execution_meta_get_member(state, &stableReceiver, memberName, result)) {
+    if (!execution_meta_get_member(state,
+                                   &stableReceiver,
+                                   memberName,
+                                   receiverSourceFrameBase,
+                                   receiverSourceSlot,
+                                   result)) {
         return ZR_FALSE;
     }
 
@@ -815,11 +967,15 @@ TZrBool execution_meta_get_cached_member(SZrState *state,
                                          SZrFunction *function,
                                          TZrUInt16 cacheIndex,
                                          SZrTypeValue *receiver,
+                                         TZrStackValuePointer receiverSourceFrameBase,
+                                         TZrUInt32 receiverSourceSlot,
                                          SZrTypeValue *result) {
     return execution_meta_get_cached_member_internal(state,
                                                      function,
                                                      cacheIndex,
                                                      receiver,
+                                                     receiverSourceFrameBase,
+                                                     receiverSourceSlot,
                                                      result,
                                                      ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET,
                                                      ZR_FALSE);
@@ -829,11 +985,15 @@ TZrBool execution_meta_get_cached_static_member(SZrState *state,
                                                 SZrFunction *function,
                                                 TZrUInt16 cacheIndex,
                                                 SZrTypeValue *receiver,
+                                                TZrStackValuePointer receiverSourceFrameBase,
+                                                TZrUInt32 receiverSourceSlot,
                                                 SZrTypeValue *result) {
     return execution_meta_get_cached_member_internal(state,
                                                      function,
                                                      cacheIndex,
                                                      receiver,
+                                                     receiverSourceFrameBase,
+                                                     receiverSourceSlot,
                                                      result,
                                                      ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET_STATIC,
                                                      ZR_TRUE);
@@ -842,29 +1002,114 @@ TZrBool execution_meta_get_cached_static_member(SZrState *state,
 TZrBool execution_meta_set_member(SZrState *state,
                                   SZrTypeValue *receiverAndResult,
                                   SZrString *memberName,
+                                  TZrStackValuePointer receiverSourceFrameBase,
+                                  TZrUInt32 receiverSourceSlot,
                                   const SZrTypeValue *assignedValue) {
     SZrTypeValue stableReceiver;
     SZrTypeValue stableAssignedValue;
     SZrFunctionStackAnchor receiverAnchor;
+    SZrCallInfo *savedCallInfo;
     TZrBool hasReceiverAnchor;
+    TZrBool sourceIsInlineStruct;
 
     if (state == ZR_NULL || receiverAndResult == ZR_NULL || memberName == ZR_NULL || assignedValue == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    stableReceiver = *receiverAndResult;
+    if (!execution_meta_prepare_receiver_value(state,
+                                               receiverAndResult,
+                                               receiverSourceFrameBase,
+                                               receiverSourceSlot,
+                                               &stableReceiver,
+                                               &sourceIsInlineStruct)) {
+        return ZR_FALSE;
+    }
     stableAssignedValue = *assignedValue;
-    hasReceiverAnchor = execution_meta_try_anchor_stack_value(state, receiverAndResult, &receiverAnchor);
+    savedCallInfo = state->callInfoList;
+    hasReceiverAnchor = !sourceIsInlineStruct &&
+                        execution_meta_try_anchor_stack_value(
+                                state, receiverAndResult, &receiverAnchor);
     {
-        SZrTypeValue ignoredResult;
-        ZrCore_Value_ResetAsNull(&ignoredResult);
-        if (execution_meta_try_invoke_member_accessor(
-                    state, &stableReceiver, memberName, &stableAssignedValue, 1, &ignoredResult)) {
+        TZrBool propertyHandled = ZR_FALSE;
+        if (ZrCore_Object_TryInvokePropertySetterWithReceiverSource(
+                    state,
+                    &stableReceiver,
+                    memberName,
+                    &stableAssignedValue,
+                    sourceIsInlineStruct ? receiverSourceFrameBase : ZR_NULL,
+                    receiverSourceSlot,
+                    &propertyHandled)) {
             if (hasReceiverAnchor) {
-                receiverAndResult = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
+                receiverAndResult = ZrCore_Stack_GetValue(
+                        ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
+            }
+            if (!sourceIsInlineStruct) {
+                ZrCore_Value_Copy(state, receiverAndResult, &stableAssignedValue);
+            }
+            return ZR_TRUE;
+        }
+        if (propertyHandled || state->hasCurrentException ||
+            state->callInfoList != savedCallInfo) {
+            if (hasReceiverAnchor) {
+                (void)ZrCore_Function_StackAnchorRestore(state, &receiverAnchor);
+            }
+            return ZR_FALSE;
+        }
+    }
+    if (!sourceIsInlineStruct) {
+        SZrTypeValue ignoredResult;
+
+        ZrCore_Value_ResetAsNull(&ignoredResult);
+        if (execution_meta_try_invoke_member_accessor(state,
+                                                      &stableReceiver,
+                                                      memberName,
+                                                      &stableAssignedValue,
+                                                      1,
+                                                      ZR_NULL,
+                                                      receiverSourceSlot,
+                                                      &ignoredResult)) {
+            if (hasReceiverAnchor) {
+                receiverAndResult = ZrCore_Stack_GetValue(
+                        ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
             }
             ZrCore_Value_Copy(state, receiverAndResult, &stableAssignedValue);
             return ZR_TRUE;
+        }
+        if (!ZrCore_Object_SetMember(
+                    state, &stableReceiver, memberName, &stableAssignedValue)) {
+            return ZR_FALSE;
+        }
+        if (hasReceiverAnchor) {
+            receiverAndResult = ZrCore_Stack_GetValue(
+                    ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
+        }
+        ZrCore_Value_Copy(state, receiverAndResult, &stableAssignedValue);
+        return ZR_TRUE;
+    }
+    {
+        SZrTypeValue ignoredResult;
+        ZrCore_Value_ResetAsNull(&ignoredResult);
+            if (execution_meta_try_invoke_member_accessor(state,
+                                                          &stableReceiver,
+                                                          memberName,
+                                                          &stableAssignedValue,
+                                                          1,
+                                                          receiverSourceFrameBase,
+                                                          receiverSourceSlot,
+                                                          &ignoredResult)) {
+            if (hasReceiverAnchor) {
+                receiverAndResult = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
+            }
+            if (!sourceIsInlineStruct) {
+                ZrCore_Value_Copy(state, receiverAndResult, &stableAssignedValue);
+            }
+            return ZR_TRUE;
+        }
+        if (state->hasCurrentException || state->callInfoList != savedCallInfo) {
+            if (hasReceiverAnchor) {
+                (void)ZrCore_Function_StackAnchorRestore(state, &receiverAnchor);
+            }
+            return ZR_FALSE;
         }
     }
 
@@ -875,6 +1120,14 @@ TZrBool execution_meta_set_member(SZrState *state,
     if (hasReceiverAnchor) {
         receiverAndResult = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
     }
+    if (sourceIsInlineStruct) {
+        return ZrCore_Function_CopyObjectValueToFrameSlotInline(state,
+                                                                ZrCore_Closure_GetMetadataFunctionFromCallInfo(
+                                                                        state, state->callInfoList),
+                                                                receiverSourceFrameBase,
+                                                                receiverSourceSlot,
+                                                                &stableReceiver);
+    }
     ZrCore_Value_Copy(state, receiverAndResult, &stableAssignedValue);
     return ZR_TRUE;
 }
@@ -883,6 +1136,8 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
                                                          SZrFunction *function,
                                                          TZrUInt16 cacheIndex,
                                                          SZrTypeValue *receiverAndResult,
+                                                         TZrStackValuePointer receiverSourceFrameBase,
+                                                         TZrUInt32 receiverSourceSlot,
                                                          const SZrTypeValue *assignedValue,
                                                          EZrFunctionCallSiteCacheKind expectedKind,
                                                          TZrBool expectedStatic) {
@@ -892,7 +1147,9 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
     SZrTypeValue stableAssignedValue;
     SZrTypeValue ignoredResult;
     SZrFunctionStackAnchor receiverAnchor;
+    SZrCallInfo *savedCallInfo;
     TZrBool hasReceiverAnchor;
+    TZrBool sourceIsInlineStruct;
 
     if (state == ZR_NULL || function == ZR_NULL || receiverAndResult == ZR_NULL || assignedValue == ZR_NULL) {
         return ZR_FALSE;
@@ -903,9 +1160,19 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
         return ZR_FALSE;
     }
 
-    stableReceiver = *receiverAndResult;
+    if (!execution_meta_prepare_receiver_value(state,
+                                               receiverAndResult,
+                                               receiverSourceFrameBase,
+                                               receiverSourceSlot,
+                                               &stableReceiver,
+                                               &sourceIsInlineStruct)) {
+        return ZR_FALSE;
+    }
     stableAssignedValue = *assignedValue;
-    hasReceiverAnchor = execution_meta_try_anchor_stack_value(state, receiverAndResult, &receiverAnchor);
+    savedCallInfo = state->callInfoList;
+    hasReceiverAnchor = !sourceIsInlineStruct &&
+                        execution_meta_try_anchor_stack_value(
+                                state, receiverAndResult, &receiverAnchor);
     ZrCore_Value_ResetAsNull(&ignoredResult);
     if (execution_meta_try_cached_call(state,
                                        function,
@@ -914,14 +1181,27 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
                                        &stableReceiver,
                                        &stableAssignedValue,
                                        1,
+                                       sourceIsInlineStruct
+                                               ? receiverSourceFrameBase
+                                               : ZR_NULL,
+                                       receiverSourceSlot,
                                        &ignoredResult,
                                        ZR_TRUE,
                                        expectedStatic)) {
         if (hasReceiverAnchor) {
             receiverAndResult = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
         }
-        ZrCore_Value_Copy(state, receiverAndResult, &stableAssignedValue);
+        if (!sourceIsInlineStruct) {
+            ZrCore_Value_Copy(state, receiverAndResult, &stableAssignedValue);
+        }
         return ZR_TRUE;
+    }
+    if (sourceIsInlineStruct &&
+        (state->hasCurrentException || state->callInfoList != savedCallInfo)) {
+        if (hasReceiverAnchor) {
+            (void)ZrCore_Function_StackAnchorRestore(state, &receiverAnchor);
+        }
+        return ZR_FALSE;
     }
 
     memberName = execution_meta_cache_resolve_member_name(function, entry->memberEntryIndex);
@@ -930,7 +1210,12 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
     }
 
     entry->runtimeMissCount++;
-    if (!execution_meta_set_member(state, receiverAndResult, memberName, assignedValue)) {
+    if (!execution_meta_set_member(state,
+                                   receiverAndResult,
+                                   memberName,
+                                   receiverSourceFrameBase,
+                                   receiverSourceSlot,
+                                   assignedValue)) {
         return ZR_FALSE;
     }
 
@@ -943,11 +1228,15 @@ TZrBool execution_meta_set_cached_member(SZrState *state,
                                          SZrFunction *function,
                                          TZrUInt16 cacheIndex,
                                          SZrTypeValue *receiverAndResult,
+                                         TZrStackValuePointer receiverSourceFrameBase,
+                                         TZrUInt32 receiverSourceSlot,
                                          const SZrTypeValue *assignedValue) {
     return execution_meta_set_cached_member_internal(state,
                                                      function,
                                                      cacheIndex,
                                                      receiverAndResult,
+                                                     receiverSourceFrameBase,
+                                                     receiverSourceSlot,
                                                      assignedValue,
                                                      ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET,
                                                      ZR_FALSE);
@@ -957,11 +1246,15 @@ TZrBool execution_meta_set_cached_static_member(SZrState *state,
                                                 SZrFunction *function,
                                                 TZrUInt16 cacheIndex,
                                                 SZrTypeValue *receiverAndResult,
+                                                TZrStackValuePointer receiverSourceFrameBase,
+                                                TZrUInt32 receiverSourceSlot,
                                                 const SZrTypeValue *assignedValue) {
     return execution_meta_set_cached_member_internal(state,
                                                      function,
                                                      cacheIndex,
                                                      receiverAndResult,
+                                                     receiverSourceFrameBase,
+                                                     receiverSourceSlot,
                                                      assignedValue,
                                                      ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET_STATIC,
                                                      ZR_TRUE);

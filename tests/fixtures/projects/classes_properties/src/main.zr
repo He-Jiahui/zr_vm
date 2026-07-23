@@ -17,7 +17,7 @@ class PropertyBox {
     }
 
     pub bump(delta: int): int {
-        this.value = this.value + delta;
+        this.value += delta;
         return this.value;
     }
 }
@@ -32,7 +32,7 @@ class PropertyStatics {
 }
 
 var box = new PropertyBox(10);
-box.value = box.value + 7;
-PropertyStatics.count = box.bump(3);
+box.value += 7;
+PropertyStatics.count += box.bump(3);
 
 return PropertyStatics.count + box.value;

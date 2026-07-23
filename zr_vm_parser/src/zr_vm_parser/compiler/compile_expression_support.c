@@ -1831,13 +1831,19 @@ TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, T
     return normalize_top_result_to_slot(cs, targetSlot);
 }
 
-TZrBool emit_property_getter_call(SZrCompilerState *cs, TZrUInt32 currentSlot, SZrString *propertyName,
-                                       TZrBool isStatic, SZrFileRange location) {
+TZrBool emit_property_getter_call(SZrCompilerState *cs,
+                                  TZrUInt32 resultSlot,
+                                  TZrUInt32 receiverSlot,
+                                  SZrString *propertyName,
+                                  TZrBool isStatic,
+                                  SZrFileRange location) {
     TZrUInt32 memberId;
     TZrInstruction metaGetInst;
     TZrUInt8 memberFlags = isStatic ? ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR : 0;
 
-    if (cs == ZR_NULL || propertyName == ZR_NULL || cs->hasError) {
+    if (cs == ZR_NULL || resultSlot == ZR_PARSER_SLOT_NONE ||
+        receiverSlot == ZR_PARSER_SLOT_NONE || propertyName == ZR_NULL ||
+        cs->hasError) {
         return ZR_FALSE;
     }
 
@@ -1847,11 +1853,11 @@ TZrBool emit_property_getter_call(SZrCompilerState *cs, TZrUInt32 currentSlot, S
         return ZR_FALSE;
     }
     metaGetInst = create_instruction_2(ZR_INSTRUCTION_ENUM(META_GET),
-                                       (TZrUInt16)currentSlot,
-                                       (TZrUInt16)currentSlot,
+                                       (TZrUInt16)resultSlot,
+                                       (TZrUInt16)receiverSlot,
                                        (TZrUInt16)memberId);
     emit_instruction(cs, metaGetInst);
-    collapse_stack_to_slot(cs, currentSlot);
+    collapse_stack_to_slot(cs, resultSlot);
     return ZR_TRUE;
 }
 
@@ -1859,6 +1865,7 @@ TZrUInt32 emit_property_setter_call(SZrCompilerState *cs, TZrUInt32 objectSlot, 
                                     EZrPropertyAccessorRole accessorRole,
                                     TZrUInt32 assignedValueSlot, SZrFileRange location) {
     TZrUInt32 memberId;
+    TZrUInt32 resultSlot;
     TZrInstruction metaSetInst;
     TZrUInt8 memberFlags = isStatic ? ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR : 0;
 
@@ -1881,7 +1888,12 @@ TZrUInt32 emit_property_setter_call(SZrCompilerState *cs, TZrUInt32 objectSlot, 
                                        (TZrUInt16)memberId);
     emit_instruction(cs, metaSetInst);
     collapse_stack_to_slot(cs, objectSlot);
-    return objectSlot;
+    resultSlot = allocate_stack_slot(cs);
+    emit_instruction(cs,
+                     create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                          (TZrUInt16)resultSlot,
+                                          (TZrInt32)assignedValueSlot));
+    return resultSlot;
 }
 
 TZrUInt32 compile_member_key_into_slot(SZrCompilerState *cs, SZrMemberExpression *memberExpr, TZrUInt32 targetSlot) {

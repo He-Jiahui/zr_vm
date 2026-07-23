@@ -3260,6 +3260,180 @@ TZrBool ZrCore_Object_InvokeResolvedFunction(struct SZrState *state,
                                                   result);
 }
 
+TZrBool ZrCore_Object_InvokeResolvedFunctionWithReceiverSource(
+        struct SZrState *state,
+        struct SZrFunction *function,
+        TZrBool isStatic,
+        SZrTypeValue *receiver,
+        const SZrTypeValue *arguments,
+        TZrSize argumentCount,
+        TZrStackValuePointer receiverSourceFrameBase,
+        TZrUInt32 receiverSourceSlot,
+        SZrTypeValue *result) {
+    if (state == ZR_NULL || function == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (isStatic) {
+        return ZrCore_Object_CallFunctionWithReceiver(
+                state, function, ZR_NULL, arguments, argumentCount, result);
+    }
+
+    return ZrCore_Object_CallFunctionWithReceiverSource(
+            state,
+            function,
+            receiver,
+            arguments,
+            argumentCount,
+            receiverSourceFrameBase,
+            receiverSourceSlot,
+            result);
+}
+
+static const SZrMemberDescriptor *object_resolve_property_descriptor_for_receiver(
+        SZrState *state,
+        SZrTypeValue *receiver,
+        SZrString *memberName,
+        TZrBool *outIsPrototypeReceiver) {
+    SZrObject *object;
+    SZrObjectPrototype *prototype;
+    const SZrMemberDescriptor *descriptor;
+
+    if (outIsPrototypeReceiver != ZR_NULL) {
+        *outIsPrototypeReceiver = ZR_FALSE;
+    }
+    if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL ||
+        (receiver->type != ZR_VALUE_TYPE_OBJECT &&
+         receiver->type != ZR_VALUE_TYPE_ARRAY &&
+         receiver->type != ZR_VALUE_TYPE_STRING) ||
+        receiver->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    object = (receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY)
+                     ? ZR_CAST_OBJECT(state, receiver->value.object)
+                     : ZR_NULL;
+    if (outIsPrototypeReceiver != ZR_NULL && object != ZR_NULL &&
+        object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+        *outIsPrototypeReceiver = ZR_TRUE;
+    }
+    prototype = object != ZR_NULL &&
+                                object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE
+                        ? (SZrObjectPrototype *)object
+                        : object_value_resolve_prototype(state, receiver);
+    descriptor = prototype != ZR_NULL
+                         ? ZrCore_ObjectPrototype_FindMemberDescriptor(
+                                   prototype, memberName, ZR_TRUE)
+                         : ZR_NULL;
+    return descriptor != ZR_NULL && descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY
+                   ? descriptor
+                   : ZR_NULL;
+}
+
+TZrBool ZrCore_Object_TryInvokePropertyGetterWithReceiverSource(
+        struct SZrState *state,
+        SZrTypeValue *receiver,
+        struct SZrString *memberName,
+        TZrStackValuePointer receiverSourceFrameBase,
+        TZrUInt32 receiverSourceSlot,
+        SZrTypeValue *result,
+        TZrBool *outHandled) {
+    const SZrMemberDescriptor *descriptor;
+    TZrBool isPrototypeReceiver = ZR_FALSE;
+
+    if (outHandled != ZR_NULL) {
+        *outHandled = ZR_FALSE;
+    }
+    if (result == ZR_NULL || outHandled == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    descriptor = object_resolve_property_descriptor_for_receiver(
+            state, receiver, memberName, &isPrototypeReceiver);
+    if (descriptor == ZR_NULL || descriptor->getterFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outHandled = ZR_TRUE;
+    if (descriptor->isStatic) {
+        return isPrototypeReceiver
+                       ? ZrCore_Object_CallFunctionWithReceiver(
+                                 state, descriptor->getterFunction, ZR_NULL, ZR_NULL, 0u, result)
+                       : ZR_FALSE;
+    }
+    return receiverSourceFrameBase != ZR_NULL
+                   ? ZrCore_Object_CallFunctionWithReceiverSource(
+                             state,
+                             descriptor->getterFunction,
+                             receiver,
+                             ZR_NULL,
+                             0u,
+                             receiverSourceFrameBase,
+                             receiverSourceSlot,
+                             result)
+                   : ZrCore_Object_CallFunctionWithReceiver(
+                             state,
+                             descriptor->getterFunction,
+                             receiver,
+                             ZR_NULL,
+                             0u,
+                             result);
+}
+
+TZrBool ZrCore_Object_TryInvokePropertySetterWithReceiverSource(
+        struct SZrState *state,
+        SZrTypeValue *receiver,
+        struct SZrString *memberName,
+        const SZrTypeValue *value,
+        TZrStackValuePointer receiverSourceFrameBase,
+        TZrUInt32 receiverSourceSlot,
+        TZrBool *outHandled) {
+    const SZrMemberDescriptor *descriptor;
+    SZrTypeValue ignoredResult;
+    TZrBool isPrototypeReceiver = ZR_FALSE;
+
+    if (outHandled != ZR_NULL) {
+        *outHandled = ZR_FALSE;
+    }
+    if (value == ZR_NULL || outHandled == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    descriptor = object_resolve_property_descriptor_for_receiver(
+            state, receiver, memberName, &isPrototypeReceiver);
+    if (descriptor == ZR_NULL || descriptor->setterFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outHandled = ZR_TRUE;
+    ZrCore_Value_ResetAsNull(&ignoredResult);
+    if (descriptor->isStatic) {
+        return isPrototypeReceiver
+                       ? ZrCore_Object_CallFunctionWithReceiver(
+                                 state,
+                                 descriptor->setterFunction,
+                                 ZR_NULL,
+                                 value,
+                                 1u,
+                                 &ignoredResult)
+                       : ZR_FALSE;
+    }
+    return receiverSourceFrameBase != ZR_NULL
+                   ? ZrCore_Object_CallFunctionWithReceiverSource(
+                             state,
+                             descriptor->setterFunction,
+                             receiver,
+                             value,
+                             1u,
+                             receiverSourceFrameBase,
+                             receiverSourceSlot,
+                             &ignoredResult)
+                   : ZrCore_Object_CallFunctionWithReceiver(
+                             state,
+                             descriptor->setterFunction,
+                             receiver,
+                             value,
+                             1u,
+                             &ignoredResult);
+}
+
 static ZR_FORCE_INLINE TZrBool object_get_by_index_unchecked_core(SZrState *state,
                                                                   SZrTypeValue *receiver,
                                                                   const SZrTypeValue *key,

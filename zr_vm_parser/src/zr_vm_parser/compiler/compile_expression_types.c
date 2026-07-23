@@ -2739,7 +2739,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                             return;
                         }
                     } else {
-                        if (!emit_property_getter_call(cs, currentSlot, memberName, getterAccessor->isStatic,
+                        if (!emit_property_getter_call(cs, currentSlot, currentSlot, memberName, getterAccessor->isStatic,
                                                        member->location)) {
                             return;
                         }

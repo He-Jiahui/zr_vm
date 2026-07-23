@@ -1287,6 +1287,12 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         ZR_IO_READ_NATIVE_TYPE(io, function->parametersLength, TZrSize);
         ZR_IO_READ_NATIVE_TYPE(io, function->hasVarArgs, TZrUInt64);
         ZR_IO_READ_NATIVE_TYPE(io, function->stackSize, TZrUInt32);
+        function->vmEntryClearStackSizePlusOne = 0u;
+        if (io->sourceVersionPatch >=
+            ZR_IO_SOURCE_PATCH_HAS_VM_ENTRY_CLEAR_STACK_SIZE) {
+            ZR_IO_READ_NATIVE_TYPE(
+                    io, function->vmEntryClearStackSizePlusOne, TZrUInt32);
+        }
         function->sourceVersionPatch = io->sourceVersionPatch;
         function->frameByteSize = 0;
         function->frameByteAlign = 0;

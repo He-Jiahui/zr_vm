@@ -1526,6 +1526,8 @@ static TZrBool write_io_function_internal(SZrState *state,
         TZrUInt64 parametersLength = function->parameterCount;
         TZrUInt64 hasVarArgs = function->hasVariableArguments ? ZR_TRUE : ZR_FALSE;
         TZrUInt32 stackSize = function->stackSize;
+        TZrUInt32 vmEntryClearStackSizePlusOne =
+                function->vmEntryClearStackSizePlusOne;
         TZrUInt64 instructionsLength = function->instructionsLength;
 
         fwrite(&startLine, sizeof(TZrUInt64), 1, file);
@@ -1533,6 +1535,7 @@ static TZrBool write_io_function_internal(SZrState *state,
         fwrite(&parametersLength, sizeof(TZrUInt64), 1, file);
         fwrite(&hasVarArgs, sizeof(TZrUInt64), 1, file);
         fwrite(&stackSize, sizeof(TZrUInt32), 1, file);
+        fwrite(&vmEntryClearStackSizePlusOne, sizeof(TZrUInt32), 1, file);
         write_function_frame_layout(file, function);
         fwrite(&instructionsLength, sizeof(TZrUInt64), 1, file);
 

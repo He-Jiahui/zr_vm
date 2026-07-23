@@ -930,9 +930,17 @@ ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldAndRestoreWithR
         TZrStackValuePointer returnDestination);
 
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldKnownValueAndRestore(struct SZrState *state,
-                                                                                 TZrStackValuePointer stackPointer,
-                                                                                 const struct SZrTypeValue *callableValue,
-                                                                                 TZrSize resultCount);
+                                                                                  TZrStackValuePointer stackPointer,
+                                                                                  const struct SZrTypeValue *callableValue,
+                                                                                  TZrSize resultCount);
+ZR_CORE_API TZrStackValuePointer
+ZrCore_Function_CallWithoutYieldKnownVmValueAndRestoreWithReceiverSource(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        struct SZrTypeValue *callableValue,
+        TZrSize resultCount,
+        TZrStackValuePointer receiverSourceFrameBase,
+        TZrUInt32 receiverSourceSlot);
 
 ZR_CORE_API TZrStackValuePointer
 ZrCore_Function_CallWithoutYieldKnownValueAndRestoreWithInterpreterGenericContext(
@@ -987,6 +995,14 @@ ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownVmValueWithArgumentS
         TZrStackValuePointer returnDestination,
         TZrStackValuePointer argumentSourceFrameBase,
         TZrUInt32 argumentSourceStartSlot);
+ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownVmValueWithReceiverSource(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        struct SZrTypeValue *callableValue,
+        TZrSize resultCount,
+        TZrStackValuePointer returnDestination,
+        TZrStackValuePointer receiverSourceFrameBase,
+        TZrUInt32 receiverSourceSlot);
 
 ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallResolvedVmFunction(struct SZrState *state,
                                                                      TZrStackValuePointer stackPointer,

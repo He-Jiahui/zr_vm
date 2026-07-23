@@ -16,6 +16,15 @@ ZR_CORE_API TZrBool ZrCore_Object_CallFunctionWithReceiver(SZrState *state,
                                                            const SZrTypeValue *arguments,
                                                            TZrSize argumentCount,
                                                            SZrTypeValue *result);
+ZR_CORE_API TZrBool ZrCore_Object_CallFunctionWithReceiverSource(
+        SZrState *state,
+        struct SZrFunction *function,
+        SZrTypeValue *receiver,
+        const SZrTypeValue *arguments,
+        TZrSize argumentCount,
+        TZrStackValuePointer receiverSourceFrameBase,
+        TZrUInt32 receiverSourceSlot,
+        SZrTypeValue *result);
 
 ZR_CORE_API TZrBool ZrCore_Object_CallFunctionWithReceiverAndInterpreterGenericContext(
         SZrState *state,

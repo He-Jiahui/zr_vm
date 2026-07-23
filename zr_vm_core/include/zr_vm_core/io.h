@@ -383,6 +383,7 @@ struct SZrIoFunction {
     TZrSize parametersLength;
     TZrUInt64 hasVarArgs;
     TZrUInt32 stackSize;
+    TZrUInt32 vmEntryClearStackSizePlusOne;
     TZrUInt32 sourceVersionPatch;
     TZrUInt32 frameByteSize;
     TZrUInt32 frameByteAlign;
