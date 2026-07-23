@@ -40,6 +40,8 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize oldExceptionHandlerInfoLength = cs->exceptionHandlerInfos.length;
     TZrSize oldTryContextLength = cs->tryContextStack.length;
     TZrBool oldIsInConstructor = cs->isInConstructor;
+    EZrCompilerInitializationPhase oldInitializationPhase =
+            cs->initializationPhase;
     SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
     TZrSize oldConstLocalVarLength = cs->constLocalVars.length;
     TZrSize oldConstParameterLength = cs->constParameters.length;
@@ -168,6 +170,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
 
     // 创建新的函数对象
     cs->isInConstructor = ZR_FALSE;
+    cs->initializationPhase = ZR_COMPILER_INITIALIZATION_NONE;
     cs->currentFunctionNode = node;
     cs->constLocalVars.length = 0;
     cs->constParameters.length = 0;
@@ -193,6 +196,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         compiler_release_array_snapshot(cs, &savedParentChildFunctions);
         compiler_release_array_snapshot(cs, &savedParentChildFunctionNameMap);
         cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
         cs->constParameters.length = oldConstParameterLength;
@@ -394,6 +398,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         compiler_restore_array_snapshot(cs, &cs->childFunctions, &savedParentChildFunctions);
         compiler_restore_array_snapshot(cs, &cs->childFunctionNameMap, &savedParentChildFunctionNameMap);
         cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
         cs->constParameters.length = oldConstParameterLength;
@@ -547,6 +552,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     compiler_restore_array_snapshot(cs, &cs->childFunctions, &savedParentChildFunctions);
     compiler_restore_array_snapshot(cs, &cs->childFunctionNameMap, &savedParentChildFunctionNameMap);
     cs->isInConstructor = oldIsInConstructor;
+    cs->initializationPhase = oldInitializationPhase;
     cs->currentFunctionNode = oldFunctionNode;
     cs->constLocalVars.length = oldConstLocalVarLength;
     cs->constParameters.length = oldConstParameterLength;

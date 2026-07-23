@@ -158,14 +158,83 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
             }
             break;
         }
+        case ZR_AST_CLASS_DECLARATION: {
+            SZrAstNodeArray *members = node->data.classDeclaration.members;
+            if (members != ZR_NULL) {
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "members (%zu):\n", members->count);
+                for (TZrSize i = 0; i < members->count; i++) {
+                    print_ast_node(state, file, members->nodes[i], indent + 2);
+                }
+            }
+            break;
+        }
+        case ZR_AST_STRUCT_DECLARATION: {
+            SZrAstNodeArray *members = node->data.structDeclaration.members;
+            if (members != ZR_NULL) {
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "members (%zu):\n", members->count);
+                for (TZrSize i = 0; i < members->count; i++) {
+                    print_ast_node(state, file, members->nodes[i], indent + 2);
+                }
+            }
+            break;
+        }
+        case ZR_AST_INTERFACE_DECLARATION: {
+            SZrAstNodeArray *members = node->data.interfaceDeclaration.members;
+            if (members != ZR_NULL) {
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "members (%zu):\n", members->count);
+                for (TZrSize i = 0; i < members->count; i++) {
+                    print_ast_node(state, file, members->nodes[i], indent + 2);
+                }
+            }
+            break;
+        }
         case ZR_AST_VARIABLE_DECLARATION: {
             SZrVariableDeclaration *var = &node->data.variableDeclaration;
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file, "binding: %s\n", var->isConst ? "let" : "var");
             for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
             fprintf(file, "pattern: ");
             print_ast_node(state, file, var->pattern, indent + 1);
             for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
             fprintf(file, "value: ");
             print_ast_node(state, file, var->value, indent + 1);
+            break;
+        }
+        case ZR_AST_CLASS_FIELD: {
+            SZrClassField *field = &node->data.classField;
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file, "binding: %s\n", field->isConst ? "let" : "var");
+            if (field->name != ZR_NULL && field->name->name != ZR_NULL) {
+                TZrNativeString name = ZrCore_String_GetNativeString(field->name->name);
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "name: \"%s\"\n", name != ZR_NULL ? name : "<null>");
+            }
+            break;
+        }
+        case ZR_AST_STRUCT_FIELD: {
+            SZrStructField *field = &node->data.structField;
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file, "binding: %s\n", field->isConst ? "let" : "var");
+            if (field->name != ZR_NULL && field->name->name != ZR_NULL) {
+                TZrNativeString name = ZrCore_String_GetNativeString(field->name->name);
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "name: \"%s\"\n", name != ZR_NULL ? name : "<null>");
+            }
+            break;
+        }
+        case ZR_AST_INTERFACE_FIELD_DECLARATION: {
+            SZrInterfaceFieldDeclaration *field =
+                    &node->data.interfaceFieldDeclaration;
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file, "binding: %s\n", field->isConst ? "let" : "var");
+            if (field->name != ZR_NULL && field->name->name != ZR_NULL) {
+                TZrNativeString name = ZrCore_String_GetNativeString(field->name->name);
+                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+                fprintf(file, "name: \"%s\"\n", name != ZR_NULL ? name : "<null>");
+            }
             break;
         }
         case ZR_AST_IDENTIFIER_LITERAL: {

@@ -2369,6 +2369,96 @@ TZrBool ZrCore_Object_SetMember(struct SZrState *state,
     return ZrCore_Object_SetMemberWithKeyUnchecked(state, receiver, memberName, &key, value);
 }
 
+TZrBool ZrCore_Object_InitializeMember(struct SZrState *state,
+                                       SZrTypeValue *receiver,
+                                       struct SZrString *memberName,
+                                       const SZrTypeValue *value) {
+    SZrObject *object;
+    SZrObjectPrototype *prototype;
+    const SZrMemberDescriptor *descriptor;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if ((receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
+        receiver->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object = ZR_CAST_OBJECT(state, receiver->value.object);
+    if (object == ZR_NULL ||
+        object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+        return ZR_FALSE;
+    }
+    object_make_string_key_unchecked(state, memberName, &key);
+    if (!ZrCore_GcDomain_ValidateValueWrite(
+                state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &key) ||
+        !ZrCore_GcDomain_ValidateValueWrite(
+                state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), value)) {
+        return ZR_FALSE;
+    }
+
+    prototype = object_value_resolve_prototype(state, receiver);
+    descriptor = prototype != ZR_NULL
+                         ? ZrCore_ObjectPrototype_FindMemberDescriptor(
+                                   prototype, memberName, ZR_TRUE)
+                         : ZR_NULL;
+    if (descriptor == ZR_NULL ||
+        descriptor->kind != ZR_MEMBER_DESCRIPTOR_KIND_FIELD ||
+        descriptor->isStatic || descriptor->isWritable ||
+        object_get_own_pair_unchecked(state, object, &key) != ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object_set_value_core(
+            state, object, &key, value, ZR_FALSE, ZR_FALSE, ZR_FALSE, ZR_FALSE);
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Object_InvokePropertyInitializer(
+        struct SZrState *state,
+        SZrTypeValue *receiver,
+        struct SZrString *memberName,
+        const SZrTypeValue *value) {
+    SZrObject *object;
+    SZrObjectPrototype *prototype;
+
+    if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL || value == ZR_NULL ||
+        (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
+        receiver->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object = ZR_CAST_OBJECT(state, receiver->value.object);
+    if (object == ZR_NULL || object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+        return ZR_FALSE;
+    }
+    prototype = object_value_resolve_prototype(state, receiver);
+    while (prototype != ZR_NULL) {
+        const SZrMemberDescriptor *descriptor =
+                ZrCore_ObjectPrototype_FindMemberDescriptor(
+                        prototype, memberName, ZR_FALSE);
+        if (descriptor != ZR_NULL) {
+            SZrTypeValue ignoredResult;
+            if (descriptor->kind != ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY ||
+                descriptor->isStatic || descriptor->initializerFunction == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            ZrCore_Value_ResetAsNull(&ignoredResult);
+            return ZrCore_Object_CallFunctionWithReceiver(
+                    state,
+                    descriptor->initializerFunction,
+                    receiver,
+                    value,
+                    1u,
+                    &ignoredResult);
+        }
+        prototype = prototype->superPrototype;
+    }
+    return ZR_FALSE;
+}
+
 TZrBool ZrCore_Object_SetMemberAssumeNewOwnerNoWriteBarrier(struct SZrState *state,
                                                             SZrTypeValue *receiver,
                                                             struct SZrString *memberName,
@@ -2747,7 +2837,8 @@ TZrBool ZrCore_Object_SetMemberWithKeyUnchecked(struct SZrState *state,
                                                 struct SZrString *memberName,
                                                 const SZrTypeValue *memberKey,
                                                 const SZrTypeValue *value) {
-    return object_set_member_with_key_unchecked_core(state, receiver, memberName, memberKey, value, ZR_FALSE, ZR_FALSE);
+    return object_set_member_with_key_unchecked_core(
+            state, receiver, memberName, memberKey, value, ZR_FALSE, ZR_FALSE);
 }
 
 TZrBool ZrCore_Object_SetMemberWithKeyUncheckedStackOperands(struct SZrState *state,
@@ -2755,7 +2846,8 @@ TZrBool ZrCore_Object_SetMemberWithKeyUncheckedStackOperands(struct SZrState *st
                                                              struct SZrString *memberName,
                                                              const SZrTypeValue *memberKey,
                                                              const SZrTypeValue *value) {
-    return object_set_member_with_key_unchecked_core(state, receiver, memberName, memberKey, value, ZR_TRUE, ZR_FALSE);
+    return object_set_member_with_key_unchecked_core(
+            state, receiver, memberName, memberKey, value, ZR_TRUE, ZR_FALSE);
 }
 
 static TZrBool object_set_member_cached_descriptor_unchecked_core(struct SZrState *state,

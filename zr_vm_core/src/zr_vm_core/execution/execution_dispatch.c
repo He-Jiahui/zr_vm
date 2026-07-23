@@ -1479,6 +1479,15 @@ static SZrString *execution_resolve_function_member_symbol(SZrFunction *function
     return memberSymbol;
 }
 
+static TZrBool execution_function_member_entry_has_flag(
+        const SZrFunction *function,
+        TZrUInt32 memberEntryIndex,
+        TZrUInt8 flag) {
+    return (TZrBool)(function != ZR_NULL && function->memberEntries != ZR_NULL &&
+                     memberEntryIndex < function->memberEntryLength &&
+                     (function->memberEntries[memberEntryIndex].reserved0 & flag) != 0u);
+}
+
 static SZrString *execution_resolve_cached_member_symbol(SZrFunction *function,
                                                          TZrUInt16 cacheIndex,
                                                          EZrFunctionCallSiteCacheKind expectedKind) {
@@ -2739,9 +2748,33 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_SET_MEMBER_SLOT_BODY()                                                                                 \
     do {                                                                                                               \
         SZrFunctionCallSiteCacheEntry *entry__;                                                                        \
+        SZrFunctionCallSiteCacheEntry *initializationEntry__;                                                          \
         SZrTypeValue materializedAssignedValue__;                                                                      \
         const SZrTypeValue *effectiveAssignedValue__;                                                                  \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
+        initializationEntry__ = execution_member_get_cache_entry_dispatch_fast(                                      \
+                currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET);                        \
+        if (initializationEntry__ != ZR_NULL &&                                                                       \
+            execution_function_member_entry_has_flag(                                                                 \
+                    currentFunction,                                                                                   \
+                    initializationEntry__->memberEntryIndex,                                                           \
+                    ZR_FUNCTION_MEMBER_ENTRY_FLAG_INITIALIZATION_WRITE)) {                                              \
+            SZrString *memberName__ = execution_resolve_function_member_symbol(                                        \
+                    currentFunction, initializationEntry__->memberEntryIndex);                                         \
+            if (memberName__ != ZR_NULL &&                                                                             \
+                execution_inline_frame_try_initialize_member_from_slot(                                                \
+                        state, currentFunction, base, A1(instruction), B1(instruction),                                \
+                        E(instruction), FRAME_VALUE_SLOT(E(instruction)))) {                                            \
+                break;                                                                                                 \
+            }                                                                                                          \
+            effectiveAssignedValue__ = execution_effective_member_store_value(                                         \
+                    state, currentFunction, base, E(instruction), destination, &materializedAssignedValue__);          \
+            if (memberName__ == ZR_NULL ||                                                                             \
+                !ZrCore_Object_InitializeMember(state, opA, memberName__, effectiveAssignedValue__)) {                  \
+                ZrCore_Debug_RunError(state, "SET_MEMBER_SLOT: immutable field initialization failed");              \
+            }                                                                                                          \
+            break;                                                                                                     \
+        }                                                                                                              \
         if (execution_inline_frame_try_set_member_from_slot(                                                           \
                     state, currentFunction, base, A1(instruction), B1(instruction), E(instruction),                    \
                     FRAME_VALUE_SLOT(E(instruction)))) {                                                              \
@@ -2787,9 +2820,20 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_SET_MEMBER_SLOT_BODY_FAST()                                                                            \
     do {                                                                                                               \
         SZrFunctionCallSiteCacheEntry *entry__;                                                                        \
+        SZrFunctionCallSiteCacheEntry *initializationEntry__;                                                          \
         SZrTypeValue materializedAssignedValue__;                                                                      \
         const SZrTypeValue *effectiveAssignedValue__;                                                                  \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
+        initializationEntry__ = execution_member_get_cache_entry_dispatch_fast(                                      \
+                currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET);                        \
+        if (initializationEntry__ != ZR_NULL &&                                                                       \
+            execution_function_member_entry_has_flag(                                                                 \
+                    currentFunction,                                                                                   \
+                    initializationEntry__->memberEntryIndex,                                                           \
+                    ZR_FUNCTION_MEMBER_ENTRY_FLAG_INITIALIZATION_WRITE)) {                                              \
+            EXECUTE_SET_MEMBER_SLOT_BODY();                                                                            \
+            break;                                                                                                     \
+        }                                                                                                              \
         if (execution_inline_frame_try_set_member_from_slot(                                                           \
                     state, currentFunction, base, A1(instruction), B1(instruction), E(instruction), destination)) {    \
             break;                                                                                                     \
@@ -2813,9 +2857,31 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_SET_MEMBER_SLOT_NULL_BODY()                                                                            \
     do {                                                                                                               \
         SZrFunctionCallSiteCacheEntry *entry__;                                                                        \
+        SZrFunctionCallSiteCacheEntry *initializationEntry__;                                                          \
         SZrTypeValue nullValue__;                                                                                      \
         ZrCore_Value_ResetAsNullNoProfile(&nullValue__);                                                               \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
+        initializationEntry__ = execution_member_get_cache_entry_dispatch_fast(                                      \
+                currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET);                        \
+        if (initializationEntry__ != ZR_NULL &&                                                                       \
+            execution_function_member_entry_has_flag(                                                                 \
+                    currentFunction,                                                                                   \
+                    initializationEntry__->memberEntryIndex,                                                           \
+                    ZR_FUNCTION_MEMBER_ENTRY_FLAG_INITIALIZATION_WRITE)) {                                              \
+            SZrString *memberName__ = execution_resolve_function_member_symbol(                                        \
+                    currentFunction, initializationEntry__->memberEntryIndex);                                         \
+            if (memberName__ != ZR_NULL &&                                                                             \
+                execution_inline_frame_try_initialize_member_from_slot(                                                \
+                        state, currentFunction, base, A1(instruction), B1(instruction),                                \
+                        UINT32_MAX, &nullValue__)) {                                                                   \
+                break;                                                                                                 \
+            }                                                                                                          \
+            if (memberName__ == ZR_NULL ||                                                                             \
+                !ZrCore_Object_InitializeMember(state, opA, memberName__, &nullValue__)) {                              \
+                ZrCore_Debug_RunError(state, "SET_MEMBER_SLOT_NULL: immutable field initialization failed");         \
+            }                                                                                                          \
+            break;                                                                                                     \
+        }                                                                                                              \
         if (execution_inline_frame_try_set_member(                                                                     \
                     state, currentFunction, base, A1(instruction), B1(instruction), &nullValue__)) {                   \
             break;                                                                                                     \
@@ -2858,9 +2924,20 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_SET_MEMBER_SLOT_NULL_BODY_FAST()                                                                       \
     do {                                                                                                               \
         SZrFunctionCallSiteCacheEntry *entry__;                                                                        \
+        SZrFunctionCallSiteCacheEntry *initializationEntry__;                                                          \
         SZrTypeValue nullValue__;                                                                                      \
         ZrCore_Value_ResetAsNullNoProfile(&nullValue__);                                                               \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
+        initializationEntry__ = execution_member_get_cache_entry_dispatch_fast(                                      \
+                currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET);                        \
+        if (initializationEntry__ != ZR_NULL &&                                                                       \
+            execution_function_member_entry_has_flag(                                                                 \
+                    currentFunction,                                                                                   \
+                    initializationEntry__->memberEntryIndex,                                                           \
+                    ZR_FUNCTION_MEMBER_ENTRY_FLAG_INITIALIZATION_WRITE)) {                                              \
+            EXECUTE_SET_MEMBER_SLOT_NULL_BODY();                                                                       \
+            break;                                                                                                     \
+        }                                                                                                              \
         if (execution_inline_frame_try_set_member(                                                                     \
                     state, currentFunction, base, A1(instruction), B1(instruction), &nullValue__)) {                   \
             break;                                                                                                     \
@@ -8242,6 +8319,10 @@ LZrFastInstruction_FUNCTION_RETURN: {
 
             ZR_INSTRUCTION_LABEL(SET_MEMBER) {
                 SZrString *memberName = execution_resolve_function_member_symbol(currentFunction, B1(instruction));
+                TZrBool isInitializationWrite = execution_function_member_entry_has_flag(
+                        currentFunction,
+                        B1(instruction),
+                        ZR_FUNCTION_MEMBER_ENTRY_FLAG_INITIALIZATION_WRITE);
                 SZrTypeValue materializedAssignedValue__;
                 const SZrTypeValue *effectiveAssignedValue__;
                 ZrCore_Value_ResetAsNull(&materializedAssignedValue__);
@@ -8250,7 +8331,17 @@ LZrFastInstruction_FUNCTION_RETURN: {
                         state, currentFunction, base, E(instruction), destination, &materializedAssignedValue__);
                 if (memberName == ZR_NULL) {
                     ZrCore_Debug_RunError(state, "SET_MEMBER: invalid member id");
-                } else if (execution_inline_frame_try_set_member_by_name_from_slot(
+                } else if (isInitializationWrite &&
+                           execution_inline_frame_try_initialize_member_by_name_from_slot(
+                                   state,
+                                   currentFunction,
+                                   base,
+                                   A1(instruction),
+                                   memberName,
+                                   E(instruction),
+                                   effectiveAssignedValue__)) {
+                } else if (!isInitializationWrite &&
+                           execution_inline_frame_try_set_member_by_name_from_slot(
                                    state,
                                    currentFunction,
                                    base,
@@ -8260,6 +8351,10 @@ LZrFastInstruction_FUNCTION_RETURN: {
                                    effectiveAssignedValue__)) {
                 } else if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {
                     ZrCore_Debug_RunError(state, "SET_MEMBER: receiver must be a writable object member");
+                } else if (isInitializationWrite) {
+                    if (!ZrCore_Object_InitializeMember(state, opA, memberName, effectiveAssignedValue__)) {
+                        ZrCore_Debug_RunError(state, "SET_MEMBER: immutable field initialization failed");
+                    }
                 } else if (!execution_member_set_by_name(state, programCounter, opA, memberName, effectiveAssignedValue__)) {
                     ZrCore_Debug_RunError(state, "SET_MEMBER: receiver must be a writable object member");
                 }
@@ -8323,10 +8418,18 @@ LZrFastInstruction_SET_MEMBER_SLOT_NULL: {
 
             ZR_INSTRUCTION_LABEL(META_SET) {
                 SZrString *memberName = execution_resolve_function_member_symbol(currentFunction, B1(instruction));
+                TZrBool isPropertyInitializer = execution_function_member_entry_has_flag(
+                        currentFunction,
+                        B1(instruction),
+                        ZR_FUNCTION_MEMBER_ENTRY_FLAG_PROPERTY_INITIALIZER);
                 opA = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opB = FRAME_VALUE_SLOT(A1(instruction));
                 if (memberName == ZR_NULL) {
                     ZrCore_Debug_RunError(state, "META_SET: invalid member id");
+                } else if (isPropertyInitializer) {
+                    if (!ZrCore_Object_InvokePropertyInitializer(state, opA, memberName, opB)) {
+                        ZrCore_Debug_RunError(state, "META_SET: receiver must define property initializer");
+                    }
                 } else if (!execution_meta_set_member(state, opA, memberName, opB)) {
                     ZrCore_Debug_RunError(state, "META_SET: receiver must define property setter");
                 }

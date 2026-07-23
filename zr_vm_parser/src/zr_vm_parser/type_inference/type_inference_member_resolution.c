@@ -422,6 +422,7 @@ static TZrBool member_resolution_scan_direct_members(SZrCompilerState *cs,
 
         if (memberInfo == ZR_NULL ||
             memberInfo->name == ZR_NULL ||
+            memberInfo->accessorRole != ZR_PROPERTY_ACCESSOR_ROLE_NONE ||
             !ZrCore_String_Equal(memberInfo->name, memberName) ||
             !member_resolution_member_is_callable(memberInfo)) {
             continue;
@@ -637,6 +638,10 @@ TZrBool find_compiler_type_member_call_inference(SZrCompilerState *cs,
             return ZR_FALSE;
         }
         bestMember = find_compiler_type_member_inference(cs, typeName, memberName);
+        if (bestMember != ZR_NULL &&
+            bestMember->accessorRole != ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
+            bestMember = ZR_NULL;
+        }
         *outMember = bestMember;
         ZrParser_InferredType_Free(cs->state, &firstExpectedType);
         ZrParser_InferredType_Free(cs->state, &firstActualType);

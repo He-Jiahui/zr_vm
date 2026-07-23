@@ -35,6 +35,8 @@ typedef struct SZrFunctionMemberEntry {
 } SZrFunctionMemberEntry;
 
 #define ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR ((TZrUInt8)0x01)
+#define ZR_FUNCTION_MEMBER_ENTRY_FLAG_INITIALIZATION_WRITE ((TZrUInt8)0x02)
+#define ZR_FUNCTION_MEMBER_ENTRY_FLAG_PROPERTY_INITIALIZER ((TZrUInt8)0x04)
 
 struct ZR_STRUCT_ALIGN SZrFunctionStackAnchor {
     TZrMemoryOffset offset;
@@ -110,6 +112,8 @@ typedef struct SZrFunctionFrameFieldLayout {
     TZrUInt8 isValueSlot;
     TZrUInt16 reserved0;
 } SZrFunctionFrameFieldLayout;
+
+#define ZR_FUNCTION_FRAME_FIELD_FLAG_IMMUTABLE ((TZrUInt16)0x0001)
 
 struct ZR_STRUCT_ALIGN SZrFunctionExecutionLocationInfo {
     TZrMemoryOffset currentInstructionOffset;

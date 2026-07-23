@@ -160,7 +160,7 @@ static TZrBool parser_for_header_should_parse_foreach(SZrParserState *ps) {
     }
 
     ZrParser_Lexer_Next(ps->lexer);
-    if (ps->lexer->t.token != ZR_TK_VAR) {
+    if (ps->lexer->t.token != ZR_TK_VAR && ps->lexer->t.token != ZR_TK_LET) {
         restore_parser_cursor(ps, &cursor);
         return ZR_FALSE;
     }
@@ -1473,6 +1473,7 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
             return parse_return_statement(ps);
 
         case ZR_TK_VAR:
+        case ZR_TK_LET:
             return parse_variable_declaration(ps);
 
         case ZR_TK_USING:
@@ -1793,6 +1794,7 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
         // 根据下一个 token 调用相应的解析函数（它们会自己解析可见性修饰符）
         switch (nextToken) {
             case ZR_TK_VAR:
+            case ZR_TK_LET:
                 return parse_variable_declaration(ps);
             case ZR_TK_STRUCT:
                 return parse_struct_declaration(ps);
@@ -1818,6 +1820,7 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             return ZR_NULL;
 
         case ZR_TK_VAR:
+        case ZR_TK_LET:
             return parse_variable_declaration(ps);
 
         case ZR_TK_USING:

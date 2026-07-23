@@ -27,7 +27,7 @@ SZrAstNode *parse_for_loop(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LPAREN);
     consume_token(ps, ZR_TK_LPAREN);
 
-    if (ps->lexer->t.token == ZR_TK_VAR) {
+    if (ps->lexer->t.token == ZR_TK_VAR || ps->lexer->t.token == ZR_TK_LET) {
         init = parse_variable_declaration_for_header(ps);
         if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
             consume_token(ps, ZR_TK_SEMICOLON);
@@ -104,6 +104,7 @@ SZrAstNode *parse_foreach_loop(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNode *pattern = ZR_NULL;
     SZrType *typeInfo = ZR_NULL;
+    TZrBool isConst = ZR_FALSE;
 
     expect_token(ps, ZR_TK_FOR);
     ZrParser_Lexer_Next(ps->lexer);
@@ -111,8 +112,11 @@ SZrAstNode *parse_foreach_loop(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LPAREN);
     consume_token(ps, ZR_TK_LPAREN);
 
-    expect_token(ps, ZR_TK_VAR);
-    consume_token(ps, ZR_TK_VAR);
+    isConst = ps->lexer->t.token == ZR_TK_LET;
+    if (!isConst && ps->lexer->t.token != ZR_TK_VAR) {
+        expect_token(ps, ZR_TK_VAR);
+    }
+    ZrParser_Lexer_Next(ps->lexer);
 
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
         pattern = parse_identifier(ps);
@@ -185,5 +189,6 @@ SZrAstNode *parse_foreach_loop(SZrParserState *ps) {
     node->data.foreachLoop.expr = expr;
     node->data.foreachLoop.block = block;
     node->data.foreachLoop.isStatement = ZR_TRUE;
+    node->data.foreachLoop.isConst = isConst;
     return node;
 }

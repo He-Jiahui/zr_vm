@@ -268,6 +268,7 @@ static SZrFunction *compile_type_member_function(
     SZrStructMethod *structMethod = ZR_NULL;
     SZrStructMetaFunction *structMetaFunc = ZR_NULL;
     TZrBool isPropertyExpressionBody = ZR_FALSE;
+    TZrBool isPropertyInitializer = ZR_FALSE;
     EZrCanonicalReceiverEffect receiverEffect = get_member_receiver_effect(node);
 
     if (propertyAccessorNode != ZR_NULL) {
@@ -285,6 +286,7 @@ static SZrFunction *compile_type_member_function(
         body = accessor->body;
         isPropertyExpressionBody =
                 accessor->bodyKind == ZR_PROPERTY_ACCESSOR_BODY_EXPRESSION;
+        isPropertyInitializer = accessor->kind == ZR_PROPERTY_ACCESSOR_INIT;
         functionName = compiler_create_hidden_property_accessor_name(
                 cs,
                 property->name != ZR_NULL ? property->name->name : ZR_NULL,
@@ -389,6 +391,8 @@ static SZrFunction *compile_type_member_function(
     TZrSize oldChildFunctionLength = cs->childFunctions.length;
     TZrSize oldChildFunctionNameMapLength = cs->childFunctionNameMap.length;
     TZrBool oldIsInConstructor = cs->isInConstructor;
+    EZrCompilerInitializationPhase oldInitializationPhase =
+            cs->initializationPhase;
     SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
     EZrCanonicalReceiverEffect oldFunctionReceiverEffect =
             cs->currentFunctionReceiverEffect;
@@ -469,6 +473,11 @@ static SZrFunction *compile_type_member_function(
     oldStackSlotTypeHintScopeStart = compiler_enter_stack_slot_type_hint_scope(cs);
 
     cs->isInConstructor = isConstructor ? ZR_TRUE : ZR_FALSE;
+    cs->initializationPhase = isConstructor
+                                      ? ZR_COMPILER_INITIALIZATION_CONSTRUCTOR
+                                      : (isPropertyInitializer
+                                                 ? ZR_COMPILER_INITIALIZATION_PROPERTY_INIT
+                                                 : ZR_COMPILER_INITIALIZATION_NONE);
     cs->currentFunctionNode = node;
     cs->currentFunctionReceiverEffect = receiverEffect;
     cs->constLocalVars.length = 0;
@@ -482,6 +491,7 @@ static SZrFunction *compile_type_member_function(
     if (cs->currentFunction == ZR_NULL) {
         ZrParser_Compiler_Error(cs, "Failed to create class member function object", node->location);
         cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = oldFunctionNode;
         cs->currentFunctionReceiverEffect = oldFunctionReceiverEffect;
         compiler_end_constructor_const_field_tracking(cs);
@@ -636,6 +646,10 @@ static SZrFunction *compile_type_member_function(
     if (!cs->hasError && isConstructor &&
         !compiler_validate_constructor_const_field_initialization(cs, body, node->location)) {
         cs->hasError = ZR_TRUE;
+    } else if (!cs->hasError && isPropertyInitializer &&
+               !compiler_validate_init_accessor_const_field_writes(
+                       cs, body, propertyAccessorNode->location)) {
+        cs->hasError = ZR_TRUE;
     }
 
     if (!cs->hasError && body != ZR_NULL) {
@@ -739,6 +753,7 @@ static SZrFunction *compile_type_member_function(
         cs->childFunctions.length = oldChildFunctionLength;
         cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
         cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = oldFunctionNode;
         cs->currentFunctionReceiverEffect = oldFunctionReceiverEffect;
         cs->constLocalVars.length = 0;
@@ -876,6 +891,7 @@ static SZrFunction *compile_type_member_function(
     cs->childFunctions.length = oldChildFunctionLength;
     cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
     cs->isInConstructor = oldIsInConstructor;
+    cs->initializationPhase = oldInitializationPhase;
     cs->currentFunctionNode = oldFunctionNode;
     cs->currentFunctionReceiverEffect = oldFunctionReceiverEffect;
     cs->constLocalVars.length = 0;

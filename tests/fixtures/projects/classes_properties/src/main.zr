@@ -1,8 +1,14 @@
 class PropertyBox {
+    pri let _seed: int;
     pri var _value: int = 0;
 
     pub @constructor(initial: int) {
-        this._value = initial;
+        this._seed = initial;
+        this.initial = initial;
+    }
+
+    pri property initial: int {
+        init { this._value = value; }
     }
 
     pub property value: int {

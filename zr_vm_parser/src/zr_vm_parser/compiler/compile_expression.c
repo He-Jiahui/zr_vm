@@ -924,7 +924,8 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                                                                           &isStaticMember,
                                                                           &declaredFieldOwnershipQualifier);
 
-                getterAccessor = find_hidden_property_accessor_member(cs, rootTypeName, memberName, ZR_FALSE);
+                getterAccessor = find_hidden_property_accessor_member(
+                        cs, rootTypeName, memberName, ZR_PROPERTY_ACCESSOR_ROLE_GET);
                 if (!can_use_property_accessor(rootIsTypeReference, getterAccessor)) {
                     getterAccessor = ZR_NULL;
                 }
@@ -989,6 +990,25 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                     TZrUInt32 destinationSlot = fieldIsInlineStruct
                                                         ? allocate_fresh_stack_slot_after(cs, parentSlot)
                                                         : currentSlot;
+
+                    if (fieldIsInlineStruct &&
+                        find_type_member_is_const(cs, rootTypeName, memberName)) {
+                        TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
+                        TZrNativeString fieldNameText =
+                                ZrCore_String_GetNativeStringShort(memberName);
+                        if (fieldNameText != ZR_NULL) {
+                            snprintf(errorMsg,
+                                     sizeof(errorMsg),
+                                     "Cannot mutate a subfield of immutable field '%s'",
+                                     fieldNameText);
+                        } else {
+                            snprintf(errorMsg,
+                                     sizeof(errorMsg),
+                                     "Cannot mutate a subfield of an immutable field");
+                        }
+                        ZrParser_Compiler_Error(cs, errorMsg, memberNode->location);
+                        return ZR_FALSE;
+                    }
 
                     if (!emit_member_slot_get(cs, destinationSlot, parentSlot, memberId, memberNode->location)) {
                         return ZR_FALSE;
@@ -1349,6 +1369,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
     TZrBool hasIdentifierWriteBinding = ZR_FALSE;
     TZrBool hasCompatibleSimpleAssignment = ZR_FALSE;
     TZrBool useDirectInlineRightSlot = ZR_FALSE;
+    TZrBool isImmutableFieldInitialization = ZR_FALSE;
     TZrUInt32 directInlineRightSlot = ZR_PARSER_SLOT_NONE;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -1697,6 +1718,10 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                         ZrCore_String_GetNativeStringShort(primary->property->data.identifier.name);
                                 targetsThis = objNameStr != ZR_NULL && strcmp(objNameStr, "this") == 0;
                             }
+                            if (targetsThis && rootTypeName == ZR_NULL &&
+                                cs->currentTypeName != ZR_NULL) {
+                                rootTypeName = cs->currentTypeName;
+                            }
 
                             if (!memberExpr->computed && memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
                                 SZrString *fieldName = memberExpr->property->data.identifier.name;
@@ -1720,16 +1745,18 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                         return;
                                     }
 
-                                    if (!targetsThis || !cs->isInConstructor) {
+                                    if (!targetsThis ||
+                                        cs->initializationPhase ==
+                                                ZR_COMPILER_INITIALIZATION_NONE) {
                                         if (fieldNameStr != ZR_NULL) {
                                             snprintf(errorMsg,
                                                      sizeof(errorMsg),
-                                                     "Cannot assign to const field '%s' outside constructor",
+                                                     "Cannot assign to immutable field '%s' outside initialization",
                                                      fieldNameStr);
                                         } else {
                                             snprintf(errorMsg,
                                                      sizeof(errorMsg),
-                                                     "Cannot assign to const field outside constructor");
+                                                     "Cannot assign to immutable field outside initialization");
                                         }
                                         ZrParser_Compiler_Error(cs, errorMsg, node->location);
                                         return;
@@ -1741,10 +1768,26 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                                                                            node->location)) {
                                         return;
                                     }
+                                    isImmutableFieldInitialization = ZR_TRUE;
                                 }
 
-                                SZrTypeMemberInfo *setterAccessor =
-                                        find_hidden_property_accessor_member(cs, rootTypeName, fieldName, ZR_TRUE);
+                                SZrTypeMemberInfo *setterAccessor = ZR_NULL;
+                                if (!rootIsTypeReference && targetsThis &&
+                                    cs->initializationPhase !=
+                                            ZR_COMPILER_INITIALIZATION_NONE) {
+                                    setterAccessor = find_hidden_property_accessor_member(
+                                            cs,
+                                            rootTypeName,
+                                            fieldName,
+                                            ZR_PROPERTY_ACCESSOR_ROLE_INIT);
+                                }
+                                if (setterAccessor == ZR_NULL) {
+                                    setterAccessor = find_hidden_property_accessor_member(
+                                            cs,
+                                            rootTypeName,
+                                            fieldName,
+                                            ZR_PROPERTY_ACCESSOR_ROLE_SET);
+                                }
                                 if (can_use_property_accessor(rootIsTypeReference, setterAccessor)) {
                                     if (strcmp(op, "=") != 0) {
                                         ZrParser_Compiler_Error(cs,
@@ -1768,6 +1811,7 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                                                          objSlot,
                                                                          fieldName,
                                                                          setterAccessor->isStatic,
+                                                                         setterAccessor->accessorRole,
                                                                          rightSlot,
                                                                          node->location) == ZR_PARSER_SLOT_NONE) {
                                         return;
@@ -1812,7 +1856,9 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                     TZrUInt32 memberId = compiler_get_or_add_member_entry_for_type_member(cs,
                                                                                                           memberSymbol,
                                                                                                           typeMember,
-                                                                                                          0);
+                                                                                                          isImmutableFieldInitialization
+                                                                                                                  ? ZR_FUNCTION_MEMBER_ENTRY_FLAG_INITIALIZATION_WRITE
+                                                                                                                  : 0u);
 
                                     if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
                                         ZrParser_Compiler_Error(cs, "Failed to register assignment member symbol", node->location);

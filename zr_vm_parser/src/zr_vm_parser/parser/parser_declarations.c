@@ -49,12 +49,15 @@ static SZrAstNode *parse_variable_declaration_impl(SZrParserState *ps, TZrBool r
     // 解析可见性修饰符（可选，默认 private）
     EZrAccessModifier accessModifier = parse_access_modifier(ps);
 
-    expect_token(ps, ZR_TK_VAR);
+    startLoc = get_current_token_location(ps);
+    TZrBool isConst = ps->lexer->t.token == ZR_TK_LET;
+    if (ps->lexer->t.token != ZR_TK_VAR && ps->lexer->t.token != ZR_TK_LET) {
+        expect_token(ps, ZR_TK_VAR);
+    }
     ZrParser_Lexer_Next(ps->lexer);
 
-    // 解析 const 关键字（可选）
-    TZrBool isConst = ZR_FALSE;
-    if (ps->lexer->t.token == ZR_TK_CONST) {
+    // Legacy `var const` remains accepted as immutable input.
+    if (!isConst && ps->lexer->t.token == ZR_TK_CONST) {
         isConst = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     }

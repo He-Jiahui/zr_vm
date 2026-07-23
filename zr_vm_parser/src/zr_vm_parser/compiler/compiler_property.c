@@ -7,6 +7,26 @@ typedef struct SZrCompilerPropertyAccessors {
     SZrAstNode *initializer;
 } SZrCompilerPropertyAccessors;
 
+void compiler_type_members_restore_declaration_order(SZrArray *members) {
+    SZrTypeMemberInfo *items;
+
+    if (members == ZR_NULL || members->head == ZR_NULL || members->length < 2u) {
+        return;
+    }
+    items = (SZrTypeMemberInfo *)members->head;
+    for (TZrSize index = 1u; index < members->length; index++) {
+        SZrTypeMemberInfo current = items[index];
+        TZrSize insertion = index;
+
+        while (insertion > 0u &&
+               items[insertion - 1u].declarationOrder > current.declarationOrder) {
+            items[insertion] = items[insertion - 1u];
+            insertion--;
+        }
+        items[insertion] = current;
+    }
+}
+
 static void compiler_property_init_member(
         SZrTypeMemberInfo *member,
         SZrString *ownerTypeName,
@@ -163,6 +183,13 @@ static TZrBool compiler_property_validate(
                 cs,
                 "set and init accessors are mutually exclusive",
                 outAccessors->initializer->location);
+        return ZR_FALSE;
+    }
+    if (property->isStatic && outAccessors->initializer != ZR_NULL) {
+        ZrParser_Compiler_Error(
+                cs,
+                "static property cannot declare an init accessor",
+                outAccessors->initializer->data.propertyAccessor.keywordLocation);
         return ZR_FALSE;
     }
     return ZR_TRUE;

@@ -3138,9 +3138,15 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         if (cs->hasError) {
             return;
         }
+        if (decl->isConst) {
+            compile_statement_register_const_pattern_bindings(cs, decl->pattern);
+        }
     } else if (decl->pattern->type == ZR_AST_DESTRUCTURING_ARRAY) {
         // 处理解构数组赋值：var [elem1, elem2, ...] = value;
         compile_destructuring_array(cs, decl->pattern, decl->value);
+        if (!cs->hasError && decl->isConst) {
+            compile_statement_register_const_pattern_bindings(cs, decl->pattern);
+        }
     } else {
         // 未知的 pattern 类型
         ZrParser_Compiler_Error(cs, "Unknown variable declaration pattern type", node->location);

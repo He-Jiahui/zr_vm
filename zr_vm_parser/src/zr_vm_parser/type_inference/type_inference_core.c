@@ -4366,14 +4366,16 @@ SZrTypeMemberInfo *find_compiler_type_member_inference(SZrCompilerState *cs,
     lookupTypeName = resolvedPrototypeName != ZR_NULL ? resolvedPrototypeName : typeName;
 
     memberInfo = find_compiler_type_member_recursive_inference(cs, lookupTypeName, memberName, 0);
-    if (memberInfo != ZR_NULL) {
+    if (memberInfo != ZR_NULL &&
+        memberInfo->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
         return memberInfo;
     }
 
     accessorName = type_inference_create_hidden_property_accessor_name(cs, memberName, ZR_FALSE);
     if (accessorName != ZR_NULL) {
         memberInfo = find_compiler_type_member_recursive_inference(cs, lookupTypeName, accessorName, 0);
-        if (memberInfo != ZR_NULL) {
+        if (memberInfo != ZR_NULL &&
+            memberInfo->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
             return memberInfo;
         }
     }
@@ -4381,7 +4383,8 @@ SZrTypeMemberInfo *find_compiler_type_member_inference(SZrCompilerState *cs,
     accessorName = type_inference_create_hidden_property_accessor_name(cs, memberName, ZR_TRUE);
     if (accessorName != ZR_NULL) {
         memberInfo = find_compiler_type_member_recursive_inference(cs, lookupTypeName, accessorName, 0);
-        if (memberInfo != ZR_NULL) {
+        if (memberInfo != ZR_NULL &&
+            memberInfo->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
             return memberInfo;
         }
     }

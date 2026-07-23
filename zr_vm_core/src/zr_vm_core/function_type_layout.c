@@ -1424,6 +1424,9 @@ static TZrBool function_type_layout_resolve_record_frame_field_layout(
         if (outFieldLayout != ZR_NULL) {
             outFieldLayout->byteOffset = member->fieldOffset;
             outFieldLayout->byteSize = member->fieldSize;
+            outFieldLayout->reserved0 = member->isConst
+                                                ? ZR_FUNCTION_FRAME_FIELD_FLAG_IMMUTABLE
+                                                : 0u;
         }
         if (member->fieldTypeNameStringIndex == 0u) {
             if (outResolvedConcrete != ZR_NULL) {

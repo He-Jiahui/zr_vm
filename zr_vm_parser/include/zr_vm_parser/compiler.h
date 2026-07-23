@@ -32,6 +32,12 @@ typedef struct SZrCompilerStackSlotTypeHint {
 } SZrCompilerStackSlotTypeHint;
 
 // 编译器状态结构
+typedef enum EZrCompilerInitializationPhase {
+    ZR_COMPILER_INITIALIZATION_NONE = 0,
+    ZR_COMPILER_INITIALIZATION_CONSTRUCTOR,
+    ZR_COMPILER_INITIALIZATION_PROPERTY_INIT
+} EZrCompilerInitializationPhase;
+
 typedef struct SZrCompilerState {
     SZrState *state;                    // VM 状态
     SZrFunction *currentFunction;       // 当前编译的函数
@@ -148,6 +154,7 @@ typedef struct SZrCompilerState {
     
     // 构造函数上下文
     TZrBool isInConstructor;                     // 是否在构造函数中编译
+    EZrCompilerInitializationPhase initializationPhase; // structured constructor/init-accessor phase
     SZrAstNode *currentFunctionNode;          // 当前编译的函数 AST 节点（用于访问参数信息）
     EZrCanonicalReceiverEffect currentFunctionReceiverEffect; // 当前 callable 的结构化 receiver effect
     SZrString *currentTypeName;               // 当前编译的类型名称（用于成员字段 const 检查）

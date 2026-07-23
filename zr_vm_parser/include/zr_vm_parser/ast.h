@@ -579,6 +579,7 @@ typedef struct SZrForeachLoop {
     SZrAstNode *expr;
     SZrAstNode *block;
     TZrBool isStatement;
+    TZrBool isConst; // immutable `let` iteration binding
 } SZrForeachLoop;
 
 // 声明节点结构

@@ -34,6 +34,8 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize oldExceptionHandlerInfoLength = cs->exceptionHandlerInfos.length;
     TZrSize oldTryContextLength = cs->tryContextStack.length;
     TZrBool oldIsInConstructor = cs->isInConstructor;
+    EZrCompilerInitializationPhase oldInitializationPhase =
+            cs->initializationPhase;
     SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
     TZrSize oldConstLocalVarLength = cs->constLocalVars.length;
     TZrSize oldConstParameterLength = cs->constParameters.length;
@@ -113,6 +115,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 
     // 创建新的测试函数对象
     cs->isInConstructor = ZR_FALSE;
+    cs->initializationPhase = ZR_COMPILER_INITIALIZATION_NONE;
     cs->currentFunctionNode = node;
     cs->constLocalVars.length = 0;
     cs->constParameters.length = 0;
@@ -136,6 +139,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                     ZR_MEMORY_NATIVE_TYPE_FUNCTION);
         }
         cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
         cs->constParameters.length = oldConstParameterLength;
@@ -208,6 +212,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
             cs->tryContextStack.length = oldTryContextLength;
             cs->isInConstructor = oldIsInConstructor;
+            cs->initializationPhase = oldInitializationPhase;
             cs->currentFunctionNode = oldFunctionNode;
             cs->constLocalVars.length = oldConstLocalVarLength;
             cs->constParameters.length = oldConstParameterLength;
@@ -361,6 +366,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
         cs->tryContextStack.length = oldTryContextLength;
         cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
         cs->constParameters.length = oldConstParameterLength;
@@ -496,6 +502,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
     cs->tryContextStack.length = oldTryContextLength;
     cs->isInConstructor = oldIsInConstructor;
+    cs->initializationPhase = oldInitializationPhase;
     cs->currentFunctionNode = oldFunctionNode;
     cs->constLocalVars.length = oldConstLocalVarLength;
     cs->constParameters.length = oldConstParameterLength;

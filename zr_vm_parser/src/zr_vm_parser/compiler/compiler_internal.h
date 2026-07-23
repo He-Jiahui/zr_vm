@@ -492,6 +492,12 @@ TZrBool compiler_validate_constructor_const_field_initialization(SZrCompilerStat
                                                                  SZrAstNode *body,
                                                                  SZrFileRange location) ;
 
+TZrBool compiler_validate_init_accessor_const_field_writes(SZrCompilerState *cs,
+                                                            SZrAstNode *body,
+                                                            SZrFileRange location) ;
+
+void compiler_type_members_restore_declaration_order(SZrArray *members) ;
+
 SZrString *compiler_create_hidden_property_accessor_name(SZrCompilerState *cs, SZrString *propertyName,
                                                          TZrBool isSetter) ;
 

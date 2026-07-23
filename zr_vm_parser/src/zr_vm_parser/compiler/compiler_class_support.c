@@ -96,6 +96,11 @@ static TZrBool compiler_track_constructor_const_field(SZrCompilerState *cs, SZrS
 typedef struct SZrTrackedConstructorConstFields {
     SZrString **names;
     TZrSize count;
+    TZrBool requireCompleteAtReturn;
+    TZrBool applyInitPropertyEffects;
+    TZrBool collectNormalReturnEffects;
+    TZrBool *normalReturnEffect;
+    TZrBool *hasNormalReturnEffect;
 } SZrTrackedConstructorConstFields;
 
 static TZrInt32 tracked_constructor_const_field_index(const SZrTrackedConstructorConstFields *tracked,
@@ -177,12 +182,12 @@ static TZrBool report_first_uninitialized_constructor_const_field(SZrCompilerSta
         if (fieldNameText != ZR_NULL) {
             snprintf(errorMsg,
                      sizeof(errorMsg),
-                     "Const field '%s' must be initialized in declaration or constructor",
+                     "Immutable field '%s' must be initialized in declaration or constructor",
                      fieldNameText);
         } else {
             snprintf(errorMsg,
                      sizeof(errorMsg),
-                     "Const field must be initialized in declaration or constructor");
+                     "Immutable field must be initialized in declaration or constructor");
         }
         ZrParser_Compiler_Error(cs, errorMsg, location);
         return ZR_FALSE;
@@ -262,10 +267,10 @@ static TZrBool mark_constructor_const_field_assignment(SZrCompilerState *cs,
         if (fieldNameText != ZR_NULL) {
             snprintf(errorMsg,
                      sizeof(errorMsg),
-                     "Cannot assign to const field '%s' more than once",
+                     "Cannot assign to immutable field '%s' more than once",
                      fieldNameText);
         } else {
-            snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const field more than once");
+            snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to immutable field more than once");
         }
         ZrParser_Compiler_Error(cs, errorMsg, location);
         return ZR_FALSE;
@@ -370,9 +375,39 @@ static TZrBool analyze_constructor_const_field_statement(SZrCompilerState *cs,
         }
 
         case ZR_AST_RETURN_STATEMENT:
-        case ZR_AST_THROW_STATEMENT:
+            if (tracked->collectNormalReturnEffects &&
+                tracked->normalReturnEffect != ZR_NULL &&
+                tracked->hasNormalReturnEffect != ZR_NULL) {
+                if (*tracked->hasNormalReturnEffect) {
+                    intersect_constructor_const_assignment_state(
+                            tracked->normalReturnEffect,
+                            assignedBefore,
+                            tracked->normalReturnEffect,
+                            tracked->count);
+                } else {
+                    copy_constructor_const_assignment_state(
+                            assignedBefore,
+                            tracked->normalReturnEffect,
+                            tracked->count);
+                    *tracked->hasNormalReturnEffect = ZR_TRUE;
+                }
+            }
             *continuesPastNode = ZR_FALSE;
-            return report_first_uninitialized_constructor_const_field(cs, tracked, assignedBefore, node->location);
+            return !tracked->requireCompleteAtReturn ||
+                   report_first_uninitialized_constructor_const_field(
+                           cs, tracked, assignedBefore, node->location);
+
+        case ZR_AST_THROW_STATEMENT:
+            if (node->data.throwStatement.expr != ZR_NULL &&
+                !analyze_constructor_const_field_expression(
+                        cs,
+                        tracked,
+                        node->data.throwStatement.expr,
+                        assignedAfter)) {
+                return ZR_FALSE;
+            }
+            *continuesPastNode = ZR_FALSE;
+            return ZR_TRUE;
 
         case ZR_AST_EXPRESSION_STATEMENT:
             return analyze_constructor_const_field_expression(cs,
@@ -677,6 +712,162 @@ static TZrBool analyze_constructor_const_field_statement(SZrCompilerState *cs,
     }
 }
 
+static SZrAstNode *compiler_find_linked_init_accessor_body(
+        SZrCompilerState *cs,
+        SZrString *propertyName) {
+    SZrTypeMemberInfo *propertyMember = ZR_NULL;
+    SZrAstNodeArray *members;
+    SZrAstNode *propertyNode;
+
+    if (cs == ZR_NULL || propertyName == ZR_NULL ||
+        cs->currentTypePrototypeInfo == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0;
+         index < cs->currentTypePrototypeInfo->members.length;
+         index++) {
+        SZrTypeMemberInfo *candidate = (SZrTypeMemberInfo *)ZrCore_Array_Get(
+                &cs->currentTypePrototypeInfo->members, index);
+        if (candidate != ZR_NULL &&
+            candidate->memberType == ZR_AST_PROPERTY_DECLARATION &&
+            candidate->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE &&
+            !candidate->isStatic &&
+            candidate->name != ZR_NULL &&
+            ZrCore_String_Equal(candidate->name, propertyName) &&
+            candidate->propertySymbolId != ZR_SEMANTIC_ID_INVALID &&
+            candidate->initAccessorSymbolId != ZR_SEMANTIC_ID_INVALID) {
+            propertyMember = candidate;
+            break;
+        }
+    }
+    if (propertyMember == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    members = compiler_get_current_type_members(cs);
+    if (members == ZR_NULL || members->nodes == ZR_NULL ||
+        propertyMember->declarationOrder >= members->count) {
+        return ZR_NULL;
+    }
+
+    propertyNode = members->nodes[propertyMember->declarationOrder];
+    if (propertyNode == ZR_NULL ||
+        propertyNode->type != ZR_AST_PROPERTY_DECLARATION ||
+        propertyNode->data.propertyDeclaration.name == ZR_NULL ||
+        propertyNode->data.propertyDeclaration.name->name == ZR_NULL ||
+        !ZrCore_String_Equal(
+                propertyNode->data.propertyDeclaration.name->name,
+                propertyMember->name) ||
+        propertyNode->data.propertyDeclaration.accessors == ZR_NULL ||
+        propertyNode->data.propertyDeclaration.accessors->nodes == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0;
+         index < propertyNode->data.propertyDeclaration.accessors->count;
+         index++) {
+        SZrAstNode *accessorNode =
+                propertyNode->data.propertyDeclaration.accessors->nodes[index];
+        if (accessorNode != ZR_NULL &&
+            accessorNode->type == ZR_AST_PROPERTY_ACCESSOR &&
+            accessorNode->data.propertyAccessor.kind == ZR_PROPERTY_ACCESSOR_INIT) {
+            return accessorNode->data.propertyAccessor.body;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool compiler_apply_init_property_const_field_effect(
+        SZrCompilerState *cs,
+        const SZrTrackedConstructorConstFields *tracked,
+        SZrString *propertyName,
+        TZrBool *assignedState,
+        SZrFileRange location) {
+    SZrAstNode *accessorBody;
+    SZrTrackedConstructorConstFields effectTracked;
+    TZrBool *effectBefore;
+    TZrBool *effectAfter;
+    TZrBool *returnEffect;
+    TZrBool effectContinues = ZR_TRUE;
+    TZrBool hasReturnEffect = ZR_FALSE;
+
+    if (cs == ZR_NULL || tracked == ZR_NULL || propertyName == ZR_NULL ||
+        assignedState == ZR_NULL || !tracked->applyInitPropertyEffects) {
+        return ZR_TRUE;
+    }
+
+    accessorBody = compiler_find_linked_init_accessor_body(cs, propertyName);
+    if (accessorBody == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    effectBefore = allocate_constructor_const_assignment_state(cs, tracked->count);
+    effectAfter = allocate_constructor_const_assignment_state(cs, tracked->count);
+    returnEffect = allocate_constructor_const_assignment_state(cs, tracked->count);
+    if (effectBefore == ZR_NULL || effectAfter == ZR_NULL || returnEffect == ZR_NULL) {
+        free_constructor_const_assignment_state(cs, effectBefore, tracked->count);
+        free_constructor_const_assignment_state(cs, effectAfter, tracked->count);
+        free_constructor_const_assignment_state(cs, returnEffect, tracked->count);
+        return ZR_FALSE;
+    }
+    memset(effectBefore, 0, sizeof(TZrBool) * tracked->count);
+    memset(effectAfter, 0, sizeof(TZrBool) * tracked->count);
+    memset(returnEffect, 0, sizeof(TZrBool) * tracked->count);
+    effectTracked = *tracked;
+    effectTracked.requireCompleteAtReturn = ZR_FALSE;
+    effectTracked.applyInitPropertyEffects = ZR_FALSE;
+    effectTracked.collectNormalReturnEffects = ZR_TRUE;
+    effectTracked.normalReturnEffect = returnEffect;
+    effectTracked.hasNormalReturnEffect = &hasReturnEffect;
+
+    if (!analyze_constructor_const_field_statement(
+                cs,
+                &effectTracked,
+                accessorBody,
+                effectBefore,
+                effectAfter,
+                &effectContinues)) {
+        free_constructor_const_assignment_state(cs, effectBefore, tracked->count);
+        free_constructor_const_assignment_state(cs, effectAfter, tracked->count);
+        free_constructor_const_assignment_state(cs, returnEffect, tracked->count);
+        return ZR_FALSE;
+    }
+
+    if (hasReturnEffect) {
+        if (effectContinues) {
+            intersect_constructor_const_assignment_state(
+                    effectAfter, returnEffect, effectAfter, tracked->count);
+        } else {
+            copy_constructor_const_assignment_state(
+                    returnEffect, effectAfter, tracked->count);
+        }
+    } else if (!effectContinues) {
+        memset(effectAfter, 0, sizeof(TZrBool) * tracked->count);
+    }
+
+    for (TZrSize index = 0; index < tracked->count; index++) {
+        if (effectAfter[index] &&
+            !mark_constructor_const_field_assignment(
+                    cs,
+                    tracked,
+                    tracked->names[index],
+                    assignedState,
+                    location)) {
+            free_constructor_const_assignment_state(cs, effectBefore, tracked->count);
+            free_constructor_const_assignment_state(cs, effectAfter, tracked->count);
+            free_constructor_const_assignment_state(cs, returnEffect, tracked->count);
+            return ZR_FALSE;
+        }
+    }
+
+    free_constructor_const_assignment_state(cs, effectBefore, tracked->count);
+    free_constructor_const_assignment_state(cs, effectAfter, tracked->count);
+    free_constructor_const_assignment_state(cs, returnEffect, tracked->count);
+    return ZR_TRUE;
+}
+
 static TZrBool analyze_constructor_const_field_expression(SZrCompilerState *cs,
                                                           const SZrTrackedConstructorConstFields *tracked,
                                                           SZrAstNode *node,
@@ -741,6 +932,14 @@ static TZrBool analyze_constructor_const_field_expression(SZrCompilerState *cs,
 
             if (compiler_primary_expression_is_direct_this_field_access(node->data.assignmentExpression.left,
                                                                         &fieldName)) {
+                if (compiler_find_linked_init_accessor_body(cs, fieldName) != ZR_NULL) {
+                    return compiler_apply_init_property_const_field_effect(
+                            cs,
+                            tracked,
+                            fieldName,
+                            assignedState,
+                            node->location);
+                }
                 return mark_constructor_const_field_assignment(cs,
                                                                tracked,
                                                                fieldName,
@@ -1079,10 +1278,10 @@ TZrBool compiler_record_constructor_const_field_assignment(SZrCompilerState *cs,
         if (fieldNameText != ZR_NULL) {
             snprintf(errorMsg,
                      sizeof(errorMsg),
-                     "Const field '%s' can only be initialized with '=' in constructor",
+                     "Immutable field '%s' can only be initialized with '=' during initialization",
                      fieldNameText);
         } else {
-            snprintf(errorMsg, sizeof(errorMsg), "Const field can only be initialized with '=' in constructor");
+            snprintf(errorMsg, sizeof(errorMsg), "Immutable field can only be initialized with '=' during initialization");
         }
         ZrParser_Compiler_Error(cs, errorMsg, location);
         return ZR_FALSE;
@@ -1091,9 +1290,11 @@ TZrBool compiler_record_constructor_const_field_assignment(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-TZrBool compiler_validate_constructor_const_field_initialization(SZrCompilerState *cs,
-                                                                 SZrAstNode *body,
-                                                                 SZrFileRange location) {
+static TZrBool compiler_validate_const_field_initialization_body(
+        SZrCompilerState *cs,
+        SZrAstNode *body,
+        SZrFileRange location,
+        TZrBool requireCompleteInitialization) {
     SZrTrackedConstructorConstFields tracked = {0};
     SZrAstNodeArray *members;
     TZrBool *assignedBefore = ZR_NULL;
@@ -1160,6 +1361,11 @@ TZrBool compiler_validate_constructor_const_field_initialization(SZrCompilerStat
         assignedAfter[tracked.count] = assignedBefore[tracked.count];
         tracked.count++;
     }
+    tracked.requireCompleteAtReturn = requireCompleteInitialization;
+    tracked.applyInitPropertyEffects = requireCompleteInitialization;
+    tracked.collectNormalReturnEffects = ZR_FALSE;
+    tracked.normalReturnEffect = ZR_NULL;
+    tracked.hasNormalReturnEffect = ZR_NULL;
 
     if (body != ZR_NULL &&
         !analyze_constructor_const_field_statement(cs,
@@ -1183,7 +1389,7 @@ TZrBool compiler_validate_constructor_const_field_initialization(SZrCompilerStat
         return ZR_FALSE;
     }
 
-    if (continuesPastBody &&
+    if (requireCompleteInitialization && continuesPastBody &&
         !report_first_uninitialized_constructor_const_field(cs, &tracked, assignedAfter, location)) {
         ZrCore_Memory_RawFreeWithType(cs->state->global,
                                       tracked.names,
@@ -1213,6 +1419,22 @@ TZrBool compiler_validate_constructor_const_field_initialization(SZrCompilerStat
                                   sizeof(TZrBool) * tracked.count,
                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
     return !cs->hasError;
+}
+
+TZrBool compiler_validate_constructor_const_field_initialization(
+        SZrCompilerState *cs,
+        SZrAstNode *body,
+        SZrFileRange location) {
+    return compiler_validate_const_field_initialization_body(
+            cs, body, location, ZR_TRUE);
+}
+
+TZrBool compiler_validate_init_accessor_const_field_writes(
+        SZrCompilerState *cs,
+        SZrAstNode *body,
+        SZrFileRange location) {
+    return compiler_validate_const_field_initialization_body(
+            cs, body, location, ZR_FALSE);
 }
 
 SZrString *compiler_create_hidden_property_accessor_name(SZrCompilerState *cs, SZrString *propertyName,

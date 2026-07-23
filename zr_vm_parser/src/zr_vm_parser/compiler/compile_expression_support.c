@@ -1856,10 +1856,15 @@ TZrBool emit_property_getter_call(SZrCompilerState *cs, TZrUInt32 currentSlot, S
 }
 
 TZrUInt32 emit_property_setter_call(SZrCompilerState *cs, TZrUInt32 objectSlot, SZrString *propertyName, TZrBool isStatic,
-                                         TZrUInt32 assignedValueSlot, SZrFileRange location) {
+                                    EZrPropertyAccessorRole accessorRole,
+                                    TZrUInt32 assignedValueSlot, SZrFileRange location) {
     TZrUInt32 memberId;
     TZrInstruction metaSetInst;
     TZrUInt8 memberFlags = isStatic ? ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR : 0;
+
+    if (accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_INIT) {
+        memberFlags |= ZR_FUNCTION_MEMBER_ENTRY_FLAG_PROPERTY_INITIALIZER;
+    }
 
     if (cs == ZR_NULL || propertyName == ZR_NULL || cs->hasError) {
         return ZR_PARSER_SLOT_NONE;

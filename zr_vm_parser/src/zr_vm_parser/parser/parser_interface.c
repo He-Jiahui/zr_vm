@@ -6,14 +6,18 @@ SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
 
+    startLoc = get_current_token_location(ps);
     // 解析 const 关键字（可选，可以在 var 之前或之后）
-    TZrBool isConst = ZR_FALSE;
+    TZrBool isConst = ps->lexer->t.token == ZR_TK_LET;
+    if (isConst) {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
     if (ps->lexer->t.token == ZR_TK_CONST) {
         isConst = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     }
 
-    if (ps->lexer->t.token == ZR_TK_VAR) {
+    if (!isConst && ps->lexer->t.token == ZR_TK_VAR) {
         ZrParser_Lexer_Next(ps->lexer);
         if (ps->lexer->t.token == ZR_TK_CONST) {
             isConst = ZR_TRUE;
@@ -405,7 +409,7 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
             member = parse_property_declaration(
                     ps, ZR_PROPERTY_CONTAINER_INTERFACE);
         } else if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO ||
-            token == ZR_TK_VAR || token == ZR_TK_CONST) {
+            token == ZR_TK_VAR || token == ZR_TK_LET || token == ZR_TK_CONST) {
             // 向前看以确定成员类型
             TZrSize savedPos = ps->lexer->currentPos;
             TZrInt32 savedChar = ps->lexer->currentChar;
@@ -431,7 +435,7 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
                                     : ZR_TK_CONST;
             }
 
-            if (nextToken == ZR_TK_VAR || nextToken == ZR_TK_CONST) {
+            if (nextToken == ZR_TK_VAR || nextToken == ZR_TK_LET || nextToken == ZR_TK_CONST) {
                 // 字段声明
                 ps->lexer->currentPos = savedPos;
                 ps->lexer->currentChar = savedChar;

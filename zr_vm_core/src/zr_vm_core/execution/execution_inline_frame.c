@@ -1898,13 +1898,62 @@ TZrBool execution_inline_frame_try_set_member_by_name(SZrState *state,
                                                                    assignedValue);
 }
 
-TZrBool execution_inline_frame_try_set_member_by_name_from_slot(SZrState *state,
-                                                                const SZrFunction *function,
-                                                                TZrStackValuePointer frameBase,
-                                                                TZrUInt32 receiverSlot,
-                                                                SZrString *memberName,
-                                                                TZrUInt32 sourceSlot,
-                                                                const SZrTypeValue *assignedValue) {
+static TZrBool execution_inline_frame_constructor_field_is_initialized(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        const SZrFunctionFrameSlotLayout *receiverLayout,
+        const SZrFunctionFrameFieldLayout *fieldLayout,
+        TZrBool *outInitialized) {
+    const TZrUInt64 *initializedWords;
+    TZrUInt32 initializedWordCount;
+    const SZrTypeLayout *receiverTypeLayout;
+
+    if (outInitialized != ZR_NULL) {
+        *outInitialized = ZR_FALSE;
+    }
+    if (state == ZR_NULL || function == ZR_NULL || frameBase == ZR_NULL ||
+        receiverLayout == ZR_NULL || fieldLayout == ZR_NULL ||
+        outInitialized == ZR_NULL || receiverLayout->stackSlot != 0u ||
+        !ZrCore_Function_GetInlineConstructorInitializedFieldBitmap(
+                state,
+                function,
+                frameBase,
+                &initializedWords,
+                &initializedWordCount)) {
+        return ZR_FALSE;
+    }
+    receiverTypeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(
+            function, receiverLayout->typeLayoutId, state);
+    if (receiverTypeLayout == ZR_NULL || receiverTypeLayout->fields == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrUInt32 index = 0u; index < receiverTypeLayout->fieldCount; index++) {
+        const SZrTypeLayoutField *field = &receiverTypeLayout->fields[index];
+        TZrUInt32 wordIndex = index / 64u;
+
+        if (field->byteOffset != fieldLayout->byteOffset ||
+            field->byteSize != fieldLayout->byteSize ||
+            wordIndex >= initializedWordCount) {
+            continue;
+        }
+        *outInitialized = (TZrBool)(
+                (initializedWords[wordIndex] &
+                 (UINT64_C(1) << (index % 64u))) != 0u);
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool execution_inline_frame_try_set_member_by_name_from_slot_core(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 receiverSlot,
+        SZrString *memberName,
+        TZrUInt32 sourceSlot,
+        const SZrTypeValue *assignedValue,
+        TZrBool requireImmutableInitialization) {
     const SZrFunctionFrameSlotLayout *receiverLayout;
     SZrFunctionFrameFieldLayout fieldLayout;
     SZrStackFramePlace receiverPlace;
@@ -1923,14 +1972,15 @@ TZrBool execution_inline_frame_try_set_member_by_name_from_slot(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (execution_inline_frame_try_set_union_member_from_slot(state,
-                                                             function,
-                                                             frameBase,
-                                                             receiverLayout,
-                                                             &receiverPlace,
-                                                             memberName,
-                                                             sourceSlot,
-                                                             assignedValue)) {
+    if (!requireImmutableInitialization &&
+        execution_inline_frame_try_set_union_member_from_slot(state,
+                                                              function,
+                                                              frameBase,
+                                                              receiverLayout,
+                                                              &receiverPlace,
+                                                              memberName,
+                                                              sourceSlot,
+                                                              assignedValue)) {
         (void)ZrCore_Function_MarkInlineConstructorFieldInitialized(
                 state, function, frameBase, receiverSlot, memberName);
         return ZR_TRUE;
@@ -1944,6 +1994,28 @@ TZrBool execution_inline_frame_try_set_member_by_name_from_slot(SZrState *state,
         fieldLayout.byteOffset > receiverPlace.byteSize ||
         fieldLayout.byteSize > receiverPlace.byteSize - fieldLayout.byteOffset) {
         return ZR_FALSE;
+    }
+
+    {
+        TZrBool isImmutable = (TZrBool)(
+                (fieldLayout.reserved0 &
+                 ZR_FUNCTION_FRAME_FIELD_FLAG_IMMUTABLE) != 0u);
+        if (isImmutable != requireImmutableInitialization) {
+            return ZR_FALSE;
+        }
+        if (requireImmutableInitialization) {
+            TZrBool alreadyInitialized = ZR_FALSE;
+            if (!execution_inline_frame_constructor_field_is_initialized(
+                        state,
+                        function,
+                        frameBase,
+                        receiverLayout,
+                        &fieldLayout,
+                        &alreadyInitialized) ||
+                alreadyInitialized) {
+                return ZR_FALSE;
+            }
+        }
     }
 
     fieldAddress = (TZrByte *)receiverPlace.address + fieldLayout.byteOffset;
@@ -1966,6 +2038,44 @@ TZrBool execution_inline_frame_try_set_member_by_name_from_slot(SZrState *state,
     (void)ZrCore_Function_MarkInlineConstructorFieldInitialized(
             state, function, frameBase, receiverSlot, memberName);
     return ZR_TRUE;
+}
+
+TZrBool execution_inline_frame_try_set_member_by_name_from_slot(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 receiverSlot,
+        SZrString *memberName,
+        TZrUInt32 sourceSlot,
+        const SZrTypeValue *assignedValue) {
+    return execution_inline_frame_try_set_member_by_name_from_slot_core(
+            state,
+            function,
+            frameBase,
+            receiverSlot,
+            memberName,
+            sourceSlot,
+            assignedValue,
+            ZR_FALSE);
+}
+
+TZrBool execution_inline_frame_try_initialize_member_by_name_from_slot(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 receiverSlot,
+        SZrString *memberName,
+        TZrUInt32 sourceSlot,
+        const SZrTypeValue *assignedValue) {
+    return execution_inline_frame_try_set_member_by_name_from_slot_core(
+            state,
+            function,
+            frameBase,
+            receiverSlot,
+            memberName,
+            sourceSlot,
+            assignedValue,
+            ZR_TRUE);
 }
 
 TZrBool execution_inline_frame_try_get_member(SZrState *state,
@@ -2023,6 +2133,21 @@ TZrBool execution_inline_frame_try_set_member_from_slot(SZrState *state,
             function, cacheIndex, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET);
 
     return execution_inline_frame_try_set_member_by_name_from_slot(
+            state, function, frameBase, receiverSlot, memberName, sourceSlot, assignedValue);
+}
+
+TZrBool execution_inline_frame_try_initialize_member_from_slot(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 receiverSlot,
+        TZrUInt16 cacheIndex,
+        TZrUInt32 sourceSlot,
+        const SZrTypeValue *assignedValue) {
+    SZrString *memberName = execution_inline_frame_resolve_cached_member_name(
+            function, cacheIndex, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET);
+
+    return execution_inline_frame_try_initialize_member_by_name_from_slot(
             state, function, frameBase, receiverSlot, memberName, sourceSlot, assignedValue);
 }
 

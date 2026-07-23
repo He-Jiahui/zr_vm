@@ -22,6 +22,8 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
+    EZrCompilerInitializationPhase oldInitializationPhase =
+            cs->initializationPhase;
 
     // 保存当前函数节点（用于访问参数信息）
     cs->currentFunctionNode = node;
@@ -183,6 +185,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 
     // 创建新的函数对象
     cs->isInConstructor = ZR_FALSE;
+    cs->initializationPhase = ZR_COMPILER_INITIALIZATION_NONE;
     cs->currentFunctionNode = node;
     cs->currentFunction = ZrCore_Function_New(cs->state);
     if (cs->currentFunction == ZR_NULL) {
@@ -206,6 +209,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         compiler_release_array_snapshot(cs, &savedParentChildFunctions);
         compiler_release_array_snapshot(cs, &savedParentChildFunctionNameMap);
         cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
         cs->constParameters.length = oldConstParameterLength;
@@ -442,6 +446,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         compiler_restore_array_snapshot(cs, &cs->childFunctions, &savedParentChildFunctions);
         compiler_restore_array_snapshot(cs, &cs->childFunctionNameMap, &savedParentChildFunctionNameMap);
         cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
         cs->constParameters.length = oldConstParameterLength;
@@ -616,6 +621,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         compiler_restore_array_snapshot(cs, &cs->childFunctions, &savedParentChildFunctions);
         compiler_restore_array_snapshot(cs, &cs->childFunctionNameMap, &savedParentChildFunctionNameMap);
         cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = 0;
         cs->constParameters.length = oldConstParameterLength;
@@ -676,6 +682,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         compiler_restore_array_snapshot(cs, &cs->childFunctions, &savedParentChildFunctions);
         compiler_restore_array_snapshot(cs, &cs->childFunctionNameMap, &savedParentChildFunctionNameMap);
         cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = 0;
         cs->constParameters.length = oldConstParameterLength;
@@ -725,6 +732,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     compiler_restore_array_snapshot(cs, &cs->childFunctions, &savedParentChildFunctions);
     compiler_restore_array_snapshot(cs, &cs->childFunctionNameMap, &savedParentChildFunctionNameMap);
     cs->isInConstructor = oldIsInConstructor;
+    cs->initializationPhase = oldInitializationPhase;
     cs->currentFunctionNode = oldFunctionNode;
     cs->constLocalVars.length = 0;
     cs->constParameters.length = oldConstParameterLength;

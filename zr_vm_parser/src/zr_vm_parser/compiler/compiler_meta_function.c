@@ -38,10 +38,15 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     TZrUInt32 oldCachedNullConstantIndex = cs->cachedNullConstantIndex;
     TZrBool oldHasCachedNullConstantIndex = cs->hasCachedNullConstantIndex;
     TZrBool oldIsInConstructor = cs->isInConstructor;
+    EZrCompilerInitializationPhase oldInitializationPhase =
+            cs->initializationPhase;
     TZrSize oldStackSlotTypeHintScopeStart = compiler_enter_stack_slot_type_hint_scope(cs);
     
     // 设置 isInConstructor 标志（如果是构造函数）
     cs->isInConstructor = (metaType == ZR_META_CONSTRUCTOR) ? ZR_TRUE : ZR_FALSE;
+    cs->initializationPhase = metaType == ZR_META_CONSTRUCTOR
+                                      ? ZR_COMPILER_INITIALIZATION_CONSTRUCTOR
+                                      : ZR_COMPILER_INITIALIZATION_NONE;
     cs->currentFunctionNode = node;
     
     // 清空 const 变量跟踪（为新函数）
@@ -53,6 +58,7 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     if (cs->currentFunction == ZR_NULL) {
         ZrParser_Compiler_Error(cs, "Failed to create meta function object", node->location);
         cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
         compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
         return;
     }
@@ -215,6 +221,7 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
         cs->cachedNullConstantIndex = oldCachedNullConstantIndex;
         cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
         cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = ZR_NULL;
         cs->constLocalVars.length = 0;
         cs->constParameters.length = 0;
@@ -333,6 +340,7 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     cs->childFunctions.length = oldChildFunctionLength;
     cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
     cs->isInConstructor = oldIsInConstructor;
+    cs->initializationPhase = oldInitializationPhase;
     
     // 清空数组（但保留已分配的内存）
     cs->instructions.length = 0;

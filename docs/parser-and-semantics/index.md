@@ -195,10 +195,14 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 - `ast-and-syntax-contracts.md`
   - contextual unified property grammar across class, struct, resource class, and interface
   - one `PROPERTY_DECLARATION` with ordered accessor children and exact recovery ranges
+  - canonical `let`/`var` local and explicit-field bindings with stable lexer ids
+  - properties never synthesize or infer backing fields
   - legacy property AST retained only for numeric compatibility and migration rejection
 - `type-inference.md`
   - one visible PropertySymbol with linked accessor SymbolIds and canonical property TypeId
   - exact getter/setter/init role selection and receiver-effect contracts
+  - structured constructor/init-accessor phase and exactly-once immutable-field initialization
+  - explicit fields alone own TypeLayout, reflection field rows, and initialization bitmap positions
   - structured property serialization/reflection with legacy artifact reader fallback
 
 - `canonical-type-graph.md`

@@ -10068,7 +10068,12 @@ static TZrBool compiler_quicken_member_slot_accesses(SZrState *state, SZrFunctio
             compiler_quickening_clear_aliases(aliases, aliasCount);
         }
 
-        if (opcode == ZR_INSTRUCTION_ENUM(GET_MEMBER) || opcode == ZR_INSTRUCTION_ENUM(SET_MEMBER)) {
+        if ((opcode == ZR_INSTRUCTION_ENUM(GET_MEMBER) || opcode == ZR_INSTRUCTION_ENUM(SET_MEMBER)) &&
+            !(opcode == ZR_INSTRUCTION_ENUM(SET_MEMBER) &&
+              (compiler_quickening_member_entry_flags(
+                       function,
+                       instruction->instruction.operand.operand1[1]) &
+               ZR_FUNCTION_MEMBER_ENTRY_FLAG_INITIALIZATION_WRITE) != 0u)) {
             const SZrFunctionTypedLocalBinding *binding =
                     compiler_quickening_resolve_named_binding_for_slot(function,
                                                                        aliases,
@@ -10300,6 +10305,9 @@ static TZrBool compiler_quicken_meta_access(SZrState *state, SZrFunction *functi
         } else if (opcode == ZR_INSTRUCTION_ENUM(META_SET)) {
             memberEntryIndex = instruction->instruction.operand.operand1[1];
             memberFlags = compiler_quickening_member_entry_flags(function, memberEntryIndex);
+            if ((memberFlags & ZR_FUNCTION_MEMBER_ENTRY_FLAG_PROPERTY_INITIALIZER) != 0u) {
+                continue;
+            }
             isStaticAccessor =
                     (TZrBool)((memberFlags & ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR) != 0);
             cacheKind = isStaticAccessor ? ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET_STATIC

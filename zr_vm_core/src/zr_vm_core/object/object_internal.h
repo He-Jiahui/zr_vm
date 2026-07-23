@@ -4,6 +4,16 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/gc.h"
 
+ZR_CORE_API TZrBool ZrCore_Object_InitializeMember(struct SZrState *state,
+                                                   SZrTypeValue *receiver,
+                                                   struct SZrString *memberName,
+                                                   const SZrTypeValue *value);
+
+TZrBool ZrCore_Object_InvokePropertyInitializer(struct SZrState *state,
+                                                SZrTypeValue *receiver,
+                                                struct SZrString *memberName,
+                                                const SZrTypeValue *value);
+
 static ZR_FORCE_INLINE TZrBool object_node_map_is_ready(const SZrObject *object) {
     return object != ZR_NULL && object->nodeMap.isValid && object->nodeMap.buckets != ZR_NULL &&
            object->nodeMap.capacity > 0;

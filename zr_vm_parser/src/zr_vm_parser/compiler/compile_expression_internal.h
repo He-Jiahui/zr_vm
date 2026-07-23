@@ -185,6 +185,7 @@ TZrUInt32 emit_property_setter_call(SZrCompilerState *cs,
                                     TZrUInt32 objectSlot,
                                     SZrString *propertyName,
                                     TZrBool isStatic,
+                                    EZrPropertyAccessorRole accessorRole,
                                     TZrUInt32 assignedValueSlot,
                                     SZrFileRange location);
 TZrUInt32 compile_member_key_into_slot(SZrCompilerState *cs,
@@ -262,9 +263,9 @@ TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs,
                                               SZrAstNodeArray *constructorArgs,
                                               SZrFileRange location);
 SZrTypeMemberInfo *find_hidden_property_accessor_member(SZrCompilerState *cs,
-                                                        SZrString *typeName,
-                                                        SZrString *propertyName,
-                                                        TZrBool isSetter);
+                                                               SZrString *typeName,
+                                                               SZrString *propertyName,
+                                                               EZrPropertyAccessorRole expectedRole);
 TZrBool can_use_property_accessor(TZrBool rootIsTypeReference, SZrTypeMemberInfo *accessorMember);
 void compile_primary_member_chain(SZrCompilerState *cs,
                                   SZrAstNode *propertyNode,

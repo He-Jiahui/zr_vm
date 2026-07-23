@@ -523,8 +523,12 @@ SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrStri
     return ZR_NULL;
 }
 
-static SZrTypeMemberInfo *find_compiler_type_member_recursive(SZrCompilerState *cs, SZrString *typeName,
-                                                              SZrString *memberName, TZrUInt32 depth) {
+static SZrTypeMemberInfo *find_compiler_type_member_recursive(
+        SZrCompilerState *cs,
+        SZrString *typeName,
+        SZrString *memberName,
+        TZrUInt32 depth,
+        TZrBool includePropertyAccessors) {
     SZrTypePrototypeInfo *info;
     SZrArray membersSnapshot;
     SZrArray inheritsSnapshot;
@@ -546,7 +550,10 @@ static SZrTypeMemberInfo *find_compiler_type_member_recursive(SZrCompilerState *
 
     for (TZrSize i = 0; i < membersSnapshot.length; i++) {
         SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&membersSnapshot, i);
-        if (memberInfo != ZR_NULL && memberInfo->name != ZR_NULL && ZrCore_String_Equal(memberInfo->name, memberName)) {
+        if (memberInfo != ZR_NULL && memberInfo->name != ZR_NULL &&
+            (includePropertyAccessors ||
+             memberInfo->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE) &&
+            ZrCore_String_Equal(memberInfo->name, memberName)) {
             return memberInfo;
         }
     }
@@ -562,7 +569,11 @@ static SZrTypeMemberInfo *find_compiler_type_member_recursive(SZrCompilerState *
         }
 
         SZrTypeMemberInfo *inheritedMember = find_compiler_type_member_recursive(
-            cs, *inheritTypeNamePtr, memberName, depth + 1);
+                cs,
+                *inheritTypeNamePtr,
+                memberName,
+                depth + 1,
+                includePropertyAccessors);
         if (inheritedMember != ZR_NULL) {
             return inheritedMember;
         }
@@ -576,7 +587,16 @@ SZrTypeMemberInfo *find_compiler_type_member(SZrCompilerState *cs, SZrString *ty
         return ZR_NULL;
     }
 
-    return find_compiler_type_member_recursive(cs, typeName, memberName, 0);
+    return find_compiler_type_member_recursive(
+            cs, typeName, memberName, 0, ZR_FALSE);
+}
+
+static SZrTypeMemberInfo *find_compiler_type_member_including_property_accessors(
+        SZrCompilerState *cs,
+        SZrString *typeName,
+        SZrString *memberName) {
+    return find_compiler_type_member_recursive(
+            cs, typeName, memberName, 0, ZR_TRUE);
 }
 
 static TZrBool type_name_is_registered_prototype(SZrCompilerState *cs, SZrString *typeName) {
@@ -1499,14 +1519,15 @@ TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const TZrCha
     return resultSlot;
 }
 
-SZrTypeMemberInfo *find_hidden_property_accessor_member(SZrCompilerState *cs, SZrString *typeName,
-                                                               SZrString *propertyName, TZrBool isSetter) {
+SZrTypeMemberInfo *find_hidden_property_accessor_member(
+        SZrCompilerState *cs,
+        SZrString *typeName,
+        SZrString *propertyName,
+        EZrPropertyAccessorRole expectedRole) {
     SZrTypeMemberInfo *propertyMember;
-    EZrPropertyAccessorRole expectedRole = isSetter
-                                                   ? ZR_PROPERTY_ACCESSOR_ROLE_SET
-                                                   : ZR_PROPERTY_ACCESSOR_ROLE_GET;
 
-    if (cs == ZR_NULL || typeName == ZR_NULL || propertyName == ZR_NULL) {
+    if (cs == ZR_NULL || typeName == ZR_NULL || propertyName == ZR_NULL ||
+        expectedRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
         return ZR_NULL;
     }
 
@@ -1514,9 +1535,11 @@ SZrTypeMemberInfo *find_hidden_property_accessor_member(SZrCompilerState *cs, SZ
     if (propertyMember != ZR_NULL &&
         propertyMember->memberType == ZR_AST_PROPERTY_DECLARATION &&
         propertyMember->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
-        TZrSymbolId accessorSymbolId = isSetter
-                                               ? propertyMember->setterAccessorSymbolId
-                                               : propertyMember->getterAccessorSymbolId;
+        TZrSymbolId accessorSymbolId = expectedRole == ZR_PROPERTY_ACCESSOR_ROLE_GET
+                                               ? propertyMember->getterAccessorSymbolId
+                                               : (expectedRole == ZR_PROPERTY_ACCESSOR_ROLE_SET
+                                                          ? propertyMember->setterAccessorSymbolId
+                                                          : propertyMember->initAccessorSymbolId);
         SZrString *ownerTypeName = propertyMember->ownerTypeName != ZR_NULL
                                            ? propertyMember->ownerTypeName
                                            : typeName;
@@ -1551,14 +1574,18 @@ SZrTypeMemberInfo *find_hidden_property_accessor_member(SZrCompilerState *cs, SZ
     }
 
     /* Imported legacy/native descriptors do not yet carry PropertySymbol links. */
-    SZrString *accessorName = create_hidden_property_accessor_name(cs, propertyName, isSetter);
+    SZrString *accessorName = create_hidden_property_accessor_name(
+            cs,
+            propertyName,
+            expectedRole != ZR_PROPERTY_ACCESSOR_ROLE_GET);
     if (accessorName == ZR_NULL) {
         return ZR_NULL;
     }
 
     {
         SZrTypeMemberInfo *legacyAccessor =
-                find_compiler_type_member(cs, typeName, accessorName);
+                find_compiler_type_member_including_property_accessors(
+                        cs, typeName, accessorName);
 
         if (legacyAccessor == ZR_NULL ||
             legacyAccessor->declarationNode != ZR_NULL ||
@@ -2654,6 +2681,20 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 } else {
                     typeMember = find_compiler_type_member(cs, rootTypeName, memberName);
                 }
+                if (typeMember == ZR_NULL) {
+                    SZrTypeMemberInfo *hiddenAccessor =
+                            find_compiler_type_member_including_property_accessors(
+                                    cs, rootTypeName, memberName);
+                    if (hiddenAccessor != ZR_NULL &&
+                        hiddenAccessor->accessorRole !=
+                                ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
+                        ZrParser_Compiler_Error(
+                                cs,
+                                "Property accessors cannot be called directly",
+                                member->location);
+                        return;
+                    }
+                }
                 if (typeMember != ZR_NULL && typeMember->isStatic) {
                     isStaticMember = ZR_TRUE;
                 }
@@ -2678,7 +2719,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                   bindReceiverForCall &&
                                   type_is_struct_constructor_member(cs, rootTypeName, typeMember));
 
-                getterAccessor = find_hidden_property_accessor_member(cs, rootTypeName, memberName, ZR_FALSE);
+                getterAccessor = find_hidden_property_accessor_member(
+                        cs, rootTypeName, memberName, ZR_PROPERTY_ACCESSOR_ROLE_GET);
                 if (!can_use_property_accessor(rootIsTypeReference, getterAccessor)) {
                     getterAccessor = ZR_NULL;
                 }

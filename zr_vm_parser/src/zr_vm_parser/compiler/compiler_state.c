@@ -184,6 +184,7 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     
     // 初始化构造函数上下文
     cs->isInConstructor = ZR_FALSE;
+    cs->initializationPhase = ZR_COMPILER_INITIALIZATION_NONE;
     cs->currentFunctionNode = ZR_NULL;
     cs->currentFunctionReceiverEffect = ZR_CANONICAL_RECEIVER_NONE;
     cs->currentTypeName = ZR_NULL;

@@ -1220,11 +1220,19 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 处理成员信息
     if (structDecl->members != ZR_NULL && structDecl->members->count > 0) {
-        for (TZrSize i = 0; i < structDecl->members->count; i++) {
-            SZrAstNode *member = structDecl->members->nodes[i];
-            if (member == ZR_NULL) {
-                continue;
-            }
+        for (TZrUInt32 memberPhase = 0U; memberPhase < 3U; memberPhase++) {
+            for (TZrSize i = 0; i < structDecl->members->count; i++) {
+                SZrAstNode *member = structDecl->members->nodes[i];
+                TZrUInt32 actualPhase;
+                if (member == ZR_NULL) {
+                    continue;
+                }
+                actualPhase = member->type == ZR_AST_STRUCT_FIELD
+                                      ? 0U
+                                      : (member->type == ZR_AST_STRUCT_META_FUNCTION ? 2U : 1U);
+                if (actualPhase != memberPhase) {
+                    continue;
+                }
 
             if (member->type == ZR_AST_PROPERTY_DECLARATION) {
                 if (!compiler_property_bind(
@@ -1515,7 +1523,9 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
             }
         }
+        }
     }
+    compiler_type_members_restore_declaration_order(&info.members);
     
     // 计算struct字段偏移量（仅对非静态字段）
     TZrUInt32 currentOffset = 0;

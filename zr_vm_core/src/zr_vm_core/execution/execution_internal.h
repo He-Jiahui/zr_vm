@@ -1051,6 +1051,22 @@ TZrBool execution_inline_frame_try_set_member_from_slot(SZrState *state,
                                                         TZrUInt16 cacheIndex,
                                                         TZrUInt32 sourceSlot,
                                                         const SZrTypeValue *assignedValue);
+TZrBool execution_inline_frame_try_initialize_member_from_slot(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 receiverSlot,
+        TZrUInt16 cacheIndex,
+        TZrUInt32 sourceSlot,
+        const SZrTypeValue *assignedValue);
+TZrBool execution_inline_frame_try_initialize_member_by_name_from_slot(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 receiverSlot,
+        SZrString *memberName,
+        TZrUInt32 sourceSlot,
+        const SZrTypeValue *assignedValue);
 TZrBool execution_inline_frame_try_materialize_stack_slot_value(SZrState *state,
                                                                const SZrFunction *function,
                                                                TZrStackValuePointer frameBase,

@@ -3,22 +3,49 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_property.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_member.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_member_resolution.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_receiver_effect.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
+  - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_core/src/zr_vm_core/object/object.c
+  - zr_vm_core/src/zr_vm_core/object/object_internal.h
+  - zr_vm_core/src/zr_vm_core/function_type_layout.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
   - zr_vm_core/src/zr_vm_core/reflection.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_property.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_member.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_member_resolution.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_receiver_effect.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
+  - zr_vm_core/src/zr_vm_core/function_type_layout.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
   - zr_vm_core/src/zr_vm_core/reflection.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
   - docs/plans/syntax/05-property-unified-ast/m1-unified-ast-symbol-implementation-plan.md
+  - docs/plans/syntax/05-property-unified-ast/m2-explicit-field-init-implementation-plan.md
 tests:
   - tests/parser/test_property_unified_ast.c
+  - tests/parser/test_property_explicit_field_init.c
   - tests/parser/test_compiler_features.c
   - tests/parser/test_reference_receiver_call_boundary.c
   - tests/parser/test_semantic_query.c
@@ -62,9 +89,66 @@ creates the canonical `property` entry before accessor payload entries. Runtime 
 that visible property identity. Hidden accessor parsing remains a compatibility reader for older
 artifacts, not a source-language semantic path.
 
-## M1 Boundary
+## Explicit Field Initialization
 
-M1 establishes identity and callable contracts but does not claim the full M3 lowering matrix,
-compound assignment ordering, ref-return Place projection, field/init-phase rules, or source/binary
-LSP parity. Those stages must reuse these SymbolIds and TypeIds and may not reconstruct contracts from
-member text.
+An explicit immutable field (`let`, or a compatibility const field) may be initialized by its
+declaration or exactly once through a direct `this.field = value` write during object initialization.
+Constructor and `init` accessor compilation enter distinct values of one structured initialization
+phase; ordinary methods and nested callable bodies run with phase `NONE`. Replacement, compound
+assignment, foreign-receiver assignment, and mutation through an inline-struct immutable field are
+rejected. Immutability is shallow for object handles, so mutation through an immutable handle remains
+valid while replacing the handle does not.
+
+Property writes select an accessor by the visible property's linked identity and exact structured
+role. Initialization prefers `INIT`; ordinary execution requires `SET`. Static or foreign receivers
+cannot consume the initialization capability. A property `init` body may proxy an explicit mutable
+field, but property bodies are not analyzed to infer required-field assignment or field/property
+association.
+
+Class and struct member binding first publishes fields, then processes ordinary methods and properties
+in source order, and finally compiles meta functions such as constructors. A stable declaration-order
+restore makes the emitted member array match source order, including visible-property/accessor groups.
+This makes explicit fields available to accessor bodies, preserves preceding-method resolution inside
+accessors, and makes all PropertySymbols available to constructors regardless of source order; it does
+not infer association between either category or invent forward ordinary-method semantics.
+
+Accessor call inference excludes every member with a non-`NONE` accessor role. Only the property
+lowering path can consume getter/setter/init callable identity through its linked PropertySymbol.
+Source code cannot call hidden `__get_`/`__set_` payload names directly, so an init body cannot be
+re-entered as an ordinary post-construction method.
+
+Runtime initialization provenance is serialized in function member-entry flags. A field store receives
+`INITIALIZATION_WRITE` only after compiler exactly-once checks; generic and member-slot dispatch then
+permit an otherwise readonly non-static field store only through `ZrCore_Object_InitializeMember`.
+An init-property call receives the distinct `PROPERTY_INITIALIZER` flag and resolves the descriptor's
+`initializerFunction`; setter-only meta dispatch never treats that flag as a setter. PIC state remains
+a performance cache and cannot decide either semantic capability.
+
+The heap-object initializer is an internal VM capability and succeeds only for an exact readonly,
+non-static field descriptor that has no existing instance value. Writable fields, properties, static
+fields, managed/dynamic members, and repeated initialization are rejected. Inline frame-field layout
+projects the compiled field's immutable bit; normal stores reject immutable inline fields, while an
+initialization-flagged store additionally requires a constructor bitmap position that is not already
+set. Both generic and quickened dispatch inspect provenance before attempting an inline store.
+
+Constructor dataflow requires complete immutable-field initialization before a normal return, but a
+throw is a non-publishing exit and enters the existing partial-construction unwind. Init-accessor bodies
+run the same path-sensitive repeat-write analysis without requiring them to initialize unrelated fields.
+When a constructor writes a visible init-only property, definite-assignment follows the property's
+canonical symbol, linked init-accessor symbol, and declaration order to project the accessor's direct
+immutable-field write effect. All normal accessor returns are intersected with fallthrough, while throw
+paths remain non-publishing. This makes an accessor-only field initialization complete, while a prior
+direct write plus the same accessor effect is rejected before runtime. Hidden accessor functions are
+excluded from ordinary call and member-reference lookup; only the visible property linkage can select one.
+
+Field metadata and `TypeLayout` continue to enumerate only explicit fields. Property and accessor
+rows preserve their own tokens and callable identity, consume no field offset, and consume no
+constructor initialization-bitmap position. Source reflection and `.zro` loading preserve that same
+separation.
+
+## M2 Boundary
+
+M2 establishes explicit field/init-phase rules but does not claim the full M3 lowering matrix,
+compound accessor evaluation ordering, ref-return Place projection, or source/binary LSP parity.
+Those stages must reuse these SymbolIds, TypeIds, accessor roles, and field definitions and may not
+reconstruct contracts from member text.

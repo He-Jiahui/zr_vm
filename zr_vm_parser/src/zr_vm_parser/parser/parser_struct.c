@@ -37,15 +37,19 @@ SZrAstNode *parse_struct_field(SZrParserState *ps) {
         return ZR_NULL;
     }
 
+    startLoc = get_current_token_location(ps);
     // 解析 const 关键字（可选，可以在 var 之前或之后）
-    TZrBool isConst = ZR_FALSE;
+    TZrBool isConst = ps->lexer->t.token == ZR_TK_LET;
+    if (isConst) {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
     if (ps->lexer->t.token == ZR_TK_CONST) {
         isConst = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     }
 
     // var 关键字是可选的（如果已经有 const，可以省略 var）
-    if (ps->lexer->t.token == ZR_TK_VAR) {
+    if (!isConst && ps->lexer->t.token == ZR_TK_VAR) {
         ZrParser_Lexer_Next(ps->lexer);
 
         // 如果 var 后面还有 const，也解析它（支持 var const 语法）
@@ -436,7 +440,7 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
         } else if (token == ZR_TK_PERCENT || token == ZR_TK_SHARP ||
             token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO ||
             token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_USING ||
-            token == ZR_TK_VAR) {
+            token == ZR_TK_VAR || token == ZR_TK_LET) {
             // 可能是字段，尝试解析
             // 需要向前看一个 token 来确定
             TZrSize savedPos = ps->lexer->currentPos;
@@ -485,7 +489,8 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
                                     : ZR_TK_CONST;
             }
 
-            if (nextToken == ZR_TK_VAR || nextToken == ZR_TK_CONST || nextToken == ZR_TK_USING) {
+            if (nextToken == ZR_TK_VAR || nextToken == ZR_TK_LET ||
+                nextToken == ZR_TK_CONST || nextToken == ZR_TK_USING) {
                 // 恢复状态并解析字段
                 ps->lexer->currentPos = savedPos;
                 ps->lexer->currentChar = savedChar;

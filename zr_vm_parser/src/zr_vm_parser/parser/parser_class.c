@@ -42,7 +42,8 @@ static EZrAstNodeType classify_class_member_from_current(SZrParserState *ps) {
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
         current_identifier_equals(ps, "property")) {
         kind = ZR_AST_PROPERTY_DECLARATION;
-    } else if (sawFieldUsingPrefix || ps->lexer->t.token == ZR_TK_VAR) {
+    } else if (sawFieldUsingPrefix || ps->lexer->t.token == ZR_TK_VAR ||
+               ps->lexer->t.token == ZR_TK_LET) {
         kind = ZR_AST_CLASS_FIELD;
     } else if (ps->lexer->t.token == ZR_TK_CONST) {
         ZrParser_Lexer_Next(ps->lexer);
@@ -178,7 +179,7 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
 
         if (token == ZR_TK_PERCENT || token == ZR_TK_SHARP || token == ZR_TK_PUB || token == ZR_TK_PRI ||
             token == ZR_TK_PRO || token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_USING ||
-            token == ZR_TK_VAR || token == ZR_TK_ABSTRACT || token == ZR_TK_VIRTUAL ||
+            token == ZR_TK_VAR || token == ZR_TK_LET || token == ZR_TK_ABSTRACT || token == ZR_TK_VIRTUAL ||
             token == ZR_TK_OVERRIDE || token == ZR_TK_FINAL || token == ZR_TK_SHADOW || token == ZR_TK_AT ||
             token == ZR_TK_GET || token == ZR_TK_SET || token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST ||
             token == ZR_TK_FN) {
@@ -307,15 +308,19 @@ SZrAstNode *parse_class_field(SZrParserState *ps) {
         return ZR_NULL;
     }
 
+    startLoc = get_current_token_location(ps);
     // 解析 const 关键字（可选，可以在 var 之前或之后）
-    TZrBool isConst = ZR_FALSE;
+    TZrBool isConst = ps->lexer->t.token == ZR_TK_LET;
+    if (isConst) {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
     if (ps->lexer->t.token == ZR_TK_CONST) {
         isConst = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     }
 
     // var 关键字是可选的（如果已经有 const，可以省略 var）
-    if (ps->lexer->t.token == ZR_TK_VAR) {
+    if (!isConst && ps->lexer->t.token == ZR_TK_VAR) {
         ZrParser_Lexer_Next(ps->lexer);
 
         // 如果 var 后面还有 const，也解析它（支持 var const 语法）

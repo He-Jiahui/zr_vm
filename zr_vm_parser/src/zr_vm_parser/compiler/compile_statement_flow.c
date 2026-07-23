@@ -396,6 +396,7 @@ void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrBool hasResolvedBindingType = ZR_FALSE;
     TZrBool bindingTypeInitialized = ZR_FALSE;
     TZrBool useDynamicIteratorOps = ZR_FALSE;
+    TZrSize oldConstLocalVarLength;
     SZrInferredType bindingType;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -408,6 +409,7 @@ void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     foreachLoop = &node->data.foreachLoop;
+    oldConstLocalVarLength = cs->constLocalVars.length;
 
     enter_scope(cs);
     enter_type_scope(cs);
@@ -456,7 +458,6 @@ void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
     if (foreachLoop->pattern != ZR_NULL && foreachLoop->pattern->type == ZR_AST_IDENTIFIER_LITERAL &&
         foreachLoop->pattern->data.identifier.name != ZR_NULL) {
         currentValueSlot = allocate_local_var(cs, foreachLoop->pattern->data.identifier.name);
-
         if (cs->typeEnv != ZR_NULL) {
             if (hasResolvedBindingType) {
                 ZrParser_TypeEnvironment_RegisterVariable(cs->state,
@@ -508,6 +509,10 @@ void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
         } else if (foreachLoop->pattern->type == ZR_AST_DESTRUCTURING_ARRAY) {
             compile_destructuring_array(cs, foreachLoop->pattern, ZR_NULL);
         }
+        if (!cs->hasError && foreachLoop->isConst) {
+            compile_statement_register_const_pattern_bindings(
+                    cs, foreachLoop->pattern);
+        }
     }
 
     if (foreachLoop->block != ZR_NULL) {
@@ -519,6 +524,7 @@ void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
     resolve_label(cs, loopEndLabelId);
 
 foreach_cleanup:
+    cs->constLocalVars.length = oldConstLocalVarLength;
     if (cs->loopLabelStack.length > 0) {
         ZrCore_Array_Pop(&cs->loopLabelStack);
     }
@@ -1265,6 +1271,54 @@ static TZrBool destructuring_object_entry_names(SZrAstNode *entry,
     }
 
     return ZR_FALSE;
+}
+
+void compile_statement_register_const_pattern_bindings(
+        SZrCompilerState *cs,
+        SZrAstNode *pattern) {
+    SZrAstNodeArray *entries = ZR_NULL;
+
+    if (cs == ZR_NULL || pattern == ZR_NULL) {
+        return;
+    }
+    if (pattern->type == ZR_AST_IDENTIFIER_LITERAL) {
+        SZrString *name = pattern->data.identifier.name;
+        if (name != ZR_NULL) {
+            ZrCore_Array_Push(cs->state, &cs->constLocalVars, &name);
+        }
+        return;
+    }
+    if (pattern->type == ZR_AST_DESTRUCTURING_OBJECT) {
+        entries = pattern->data.destructuringObject.keys;
+    } else if (pattern->type == ZR_AST_DESTRUCTURING_ARRAY) {
+        entries = pattern->data.destructuringArray.keys;
+    }
+    if (entries == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0u; index < entries->count; index++) {
+        SZrAstNode *entry = entries->nodes[index];
+        SZrString *bindingName = ZR_NULL;
+        SZrString *fieldName = ZR_NULL;
+
+        if (entry == ZR_NULL) {
+            continue;
+        }
+        if (pattern->type == ZR_AST_DESTRUCTURING_OBJECT) {
+            if (!destructuring_object_entry_names(
+                        entry, &bindingName, &fieldName, ZR_NULL)) {
+                continue;
+            }
+            ZR_UNUSED_PARAMETER(fieldName);
+        } else if (entry->type == ZR_AST_IDENTIFIER_LITERAL) {
+            bindingName = entry->data.identifier.name;
+        }
+        if (bindingName != ZR_NULL) {
+            ZrCore_Array_Push(
+                    cs->state, &cs->constLocalVars, &bindingName);
+        }
+    }
 }
 
 void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZrAstNode *value) {
