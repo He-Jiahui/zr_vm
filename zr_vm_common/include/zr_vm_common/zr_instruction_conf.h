@@ -254,7 +254,11 @@
     Z(OWN_VIEW_SHARED)                                                                                                 \
     Z(OWN_VIEW_MUT)                                                                                                    \
     Z(OWN_INTO_GC_BOX)                                                                                                 \
-    Z(OWN_RETURN_TO_GC)
+    Z(OWN_RETURN_TO_GC)                                                                                                \
+    Z(PROPERTY_REF_LOAD)                                                                                               \
+    Z(PROPERTY_REF_STORE)                                                                                              \
+    Z(PROPERTY_REF_CREATE_MEMBER)                                                                                      \
+    Z(PROPERTY_REF_CREATE_INDEX)
 
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)

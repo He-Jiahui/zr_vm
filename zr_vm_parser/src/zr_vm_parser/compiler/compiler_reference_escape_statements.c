@@ -217,6 +217,64 @@ static TZrBool reference_escape_analyze_function_declaration(
     return ZR_TRUE;
 }
 
+static TZrBool reference_escape_analyze_property(
+        SZrReferenceEscapeContext *context,
+        SZrAstNode *propertyNode) {
+    SZrPropertyDeclaration *property;
+
+    if (context == ZR_NULL || propertyNode == ZR_NULL ||
+        propertyNode->type != ZR_AST_PROPERTY_DECLARATION) {
+        return ZR_FALSE;
+    }
+    property = &propertyNode->data.propertyDeclaration;
+    for (TZrSize index = 0U;
+         property->accessors != ZR_NULL && index < property->accessors->count;
+         index++) {
+        SZrAstNode *accessorNode = property->accessors->nodes[index];
+        SZrPropertyAccessor *accessor;
+
+        if (accessorNode == ZR_NULL ||
+            accessorNode->type != ZR_AST_PROPERTY_ACCESSOR) {
+            continue;
+        }
+        accessor = &accessorNode->data.propertyAccessor;
+        if (accessor->kind != ZR_PROPERTY_ACCESSOR_GET ||
+            accessor->body == ZR_NULL) {
+            continue;
+        }
+        if (accessor->bodyKind == ZR_PROPERTY_ACCESSOR_BODY_EXPRESSION) {
+            SZrAstNode returnNode;
+
+            memset(&returnNode, 0, sizeof(returnNode));
+            returnNode.type = ZR_AST_RETURN_STATEMENT;
+            returnNode.location = accessor->body->location;
+            returnNode.data.returnStatement.expr = accessor->body;
+            returnNode.data.returnStatement.isReferenceReturn =
+                    accessor->isReferenceResult;
+            returnNode.data.returnStatement.referenceLocation =
+                    accessor->referenceLocation;
+            if (!reference_escape_analyze_function_like(
+                        context,
+                        ZR_NULL,
+                        ZR_NULL,
+                        property->typeInfo,
+                        &returnNode,
+                        ZR_NULL)) {
+                return ZR_FALSE;
+            }
+        } else if (!reference_escape_analyze_function_like(
+                           context,
+                           ZR_NULL,
+                           ZR_NULL,
+                           property->typeInfo,
+                           accessor->body,
+                           ZR_NULL)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool reference_escape_analyze_declaration_members(
         SZrReferenceEscapeContext *context,
         SZrAstNodeArray *members) {
@@ -231,6 +289,11 @@ static TZrBool reference_escape_analyze_declaration_members(
             continue;
         }
         switch (member->type) {
+            case ZR_AST_PROPERTY_DECLARATION:
+                if (!reference_escape_analyze_property(context, member)) {
+                    return ZR_FALSE;
+                }
+                break;
             case ZR_AST_CLASS_METHOD:
                 if (!reference_escape_analyze_function_like(
                             context,

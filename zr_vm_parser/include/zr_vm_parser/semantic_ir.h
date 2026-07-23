@@ -215,6 +215,7 @@ typedef struct SZrSemanticIrInstruction {
     TZrValueId resultValueId;
     TZrValueId auxiliaryValueId;
     TZrSymbolId symbolId;
+    TZrSymbolId accessorSymbolId;
     TZrSymbolId constructorId;
     EZrSemanticOwnershipOperation ownershipOperation;
     TZrUInt32 targetBlockId;
@@ -235,6 +236,7 @@ typedef struct SZrSemanticIrInstructionSpec {
     TZrValueId resultValueId;
     TZrValueId auxiliaryValueId;
     TZrSymbolId symbolId;
+    TZrSymbolId accessorSymbolId;
     TZrSymbolId constructorId;
     EZrSemanticOwnershipOperation ownershipOperation;
     TZrUInt32 targetBlockId;

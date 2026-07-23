@@ -573,6 +573,7 @@ TZrSemanticInstructionId ZrParser_SemanticIr_Emit(
     instruction.resultValueId = spec->resultValueId;
     instruction.auxiliaryValueId = spec->auxiliaryValueId;
     instruction.symbolId = spec->symbolId;
+    instruction.accessorSymbolId = spec->accessorSymbolId;
     instruction.constructorId = spec->constructorId;
     instruction.ownershipOperation = spec->ownershipOperation;
     instruction.targetBlockId = spec->targetBlockId;
@@ -763,6 +764,11 @@ TZrBool ZrParser_SemanticIr_Validate(
              instruction->ownershipOperation == ZR_SEMANTIC_OWNERSHIP_NONE) ||
             (instruction->opcode != ZR_SEMANTIC_IR_OWN_CONSTRUCT &&
              instruction->ownershipOperation != ZR_SEMANTIC_OWNERSHIP_NONE) ||
+            (instruction->opcode == ZR_SEMANTIC_IR_PROPERTY_REF_GET &&
+             (instruction->symbolId == ZR_SEMANTIC_ID_INVALID ||
+              instruction->accessorSymbolId == ZR_SEMANTIC_ID_INVALID)) ||
+            (instruction->opcode != ZR_SEMANTIC_IR_PROPERTY_REF_GET &&
+             instruction->accessorSymbolId != ZR_SEMANTIC_ID_INVALID) ||
             (instruction->opcode == ZR_SEMANTIC_IR_VALUE_CONSTRUCT &&
              instruction->constructorId == ZR_SEMANTIC_ID_INVALID) ||
             (instruction->opcode != ZR_SEMANTIC_IR_VALUE_CONSTRUCT &&
@@ -803,7 +809,7 @@ TZrBool ZrParser_SemanticIr_Validate(
              instruction->opcode == ZR_SEMANTIC_IR_RESERVE_BORROW_MUT ||
              instruction->opcode == ZR_SEMANTIC_IR_REBORROW ||
              instruction->opcode == ZR_SEMANTIC_IR_ACTIVATE_LOAN ||
-             instruction->opcode == ZR_SEMANTIC_IR_END_LOAN) &&
+            instruction->opcode == ZR_SEMANTIC_IR_END_LOAN) &&
             instruction->loanId == ZR_SEMANTIC_LOAN_ID_INVALID) {
             return ZR_FALSE;
         }
@@ -813,7 +819,11 @@ TZrBool ZrParser_SemanticIr_Validate(
                     ZrParser_SemanticIr_Loan(function, instruction->loanId);
             if (loan == ZR_NULL ||
                 (instruction->placeId != ZR_PLACE_ID_INVALID &&
-                 loan->sourcePlaceId != instruction->placeId) ||
+                 loan->sourcePlaceId != instruction->placeId &&
+                 instruction->opcode != ZR_SEMANTIC_IR_PROPERTY_REF_GET &&
+                 instruction->opcode != ZR_SEMANTIC_IR_DEREFERENCE &&
+                 instruction->opcode != ZR_SEMANTIC_IR_LOAD &&
+                 instruction->opcode != ZR_SEMANTIC_IR_STORE) ||
                 (instruction->regionId != ZR_SEMANTIC_REGION_ID_INVALID &&
                  loan->regionId != instruction->regionId) ||
                 (instruction->opcode == ZR_SEMANTIC_IR_BORROW_SHARED &&
@@ -827,7 +837,7 @@ TZrBool ZrParser_SemanticIr_Validate(
                 (instruction->opcode == ZR_SEMANTIC_IR_ACTIVATE_LOAN &&
                  loan->phase != ZR_SEMANTIC_LOAN_TWO_PHASE) ||
                 (instruction->opcode == ZR_SEMANTIC_IR_BORROW_SHARED &&
-                 loan->phase != ZR_SEMANTIC_LOAN_IMMEDIATE)) {
+                  loan->phase != ZR_SEMANTIC_LOAN_IMMEDIATE)) {
                 return ZR_FALSE;
             }
         }

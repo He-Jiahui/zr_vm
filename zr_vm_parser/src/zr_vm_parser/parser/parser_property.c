@@ -101,8 +101,12 @@ static SZrAstNode *parse_property_accessor(SZrParserState *ps,
     EZrPropertyAccessorBodyKind bodyKind;
     EZrAccessModifier access = propertyAccess;
     TZrBool hasAccessOverride = property_access_modifier_starts_here(ps);
+    TZrBool isReferenceResult = ZR_FALSE;
+    SZrFileRange referenceLocation;
     SZrAstNode *body = ZR_NULL;
     SZrAstNode *node;
+
+    memset(&referenceLocation, 0, sizeof(referenceLocation));
 
     if (hasAccessOverride) {
         access = parse_access_modifier(ps);
@@ -121,6 +125,11 @@ static SZrAstNode *parse_property_accessor(SZrParserState *ps,
 
         bodyKind = ZR_PROPERTY_ACCESSOR_BODY_EXPRESSION;
         ZrParser_Lexer_Next(ps->lexer);
+        if (ps->lexer->t.token == ZR_TK_REF) {
+            isReferenceResult = ZR_TRUE;
+            referenceLocation = get_current_token_location(ps);
+            ZrParser_Lexer_Next(ps->lexer);
+        }
         body = parse_expression(ps);
         if (body == ZR_NULL) {
             return ZR_NULL;
@@ -162,6 +171,8 @@ static SZrAstNode *parse_property_accessor(SZrParserState *ps,
     node->data.propertyAccessor.bodyKind = bodyKind;
     node->data.propertyAccessor.body = body;
     node->data.propertyAccessor.keywordLocation = keywordLocation;
+    node->data.propertyAccessor.isReferenceResult = isReferenceResult;
+    node->data.propertyAccessor.referenceLocation = referenceLocation;
     return node;
 }
 

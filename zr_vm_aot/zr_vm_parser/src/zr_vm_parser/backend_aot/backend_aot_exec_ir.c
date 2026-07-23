@@ -90,6 +90,12 @@ const TZrChar *backend_aot_exec_ir_semir_opcode_name(TZrUInt32 opcode) {
             return "META_GET";
         case ZR_SEMIR_OPCODE_META_SET:
             return "META_SET";
+        case ZR_SEMIR_OPCODE_PROPERTY_REF_GET:
+            return "PROPERTY_REF_GET";
+        case ZR_SEMIR_OPCODE_DEREFERENCE:
+            return "DEREFERENCE";
+        case ZR_SEMIR_OPCODE_PROPERTY_REF_STORE:
+            return "PROPERTY_REF_STORE";
         case ZR_SEMIR_OPCODE_DYN_ITER_INIT:
             return "DYN_ITER_INIT";
         case ZR_SEMIR_OPCODE_DYN_ITER_MOVE_NEXT:
@@ -174,6 +180,9 @@ static TZrUInt32 backend_aot_exec_ir_runtime_contracts_for_opcode(TZrUInt32 opco
         case ZR_SEMIR_OPCODE_COPY_VALUE:
         case ZR_SEMIR_OPCODE_CALL_TYPED:
         case ZR_SEMIR_OPCODE_RETURN_TYPED:
+        case ZR_SEMIR_OPCODE_PROPERTY_REF_GET:
+        case ZR_SEMIR_OPCODE_DEREFERENCE:
+        case ZR_SEMIR_OPCODE_PROPERTY_REF_STORE:
         case ZR_SEMIR_OPCODE_OWN_UNIQUE:
         case ZR_SEMIR_OPCODE_NOP:
         default:

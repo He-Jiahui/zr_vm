@@ -7,6 +7,9 @@ related_code:
   - zr_vm_core/src/zr_vm_core/object/object_call.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_meta_access.c
+  - zr_vm_core/include/zr_vm_core/property_reference.h
+  - zr_vm_core/src/zr_vm_core/property_reference.c
+  - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
 implementation_files:
@@ -15,11 +18,15 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/object/object_call.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_meta_access.c
+  - zr_vm_core/src/zr_vm_core/property_reference.c
+  - zr_vm_core/src/zr_vm_core/function_frame_place.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
   - docs/plans/syntax/05-property-unified-ast/m3-access-lowering-receiver-effect-implementation-plan.md
+  - docs/plans/syntax/05-property-unified-ast/m4-ref-return-place-region-implementation-plan.md
 tests:
   - tests/parser/test_property_access_lowering.c
+  - tests/parser/test_property_ref_return.c
   - tests/core/test_object_call_known_native_fast_path.c
   - tests/parser/test_artifact_schema.c
 doc_type: module-detail
@@ -74,5 +81,25 @@ loaded functions therefore select the same getter/setter identity and stack-clea
 AOT continues to consume the existing typed/meta call contract; M3 does not add a property-name AOT
 opcode or side channel.
 
-Reference-return properties are deliberately outside this contract. M4 must project a `ref` getter
-as a Place/region-aware result instead of treating it as the value-copy path documented here.
+## Managed property-reference runtime
+
+M4 adds a managed property-reference value instead of representing an interior reference as a naked
+native pointer. The value records its base object or frame anchor, exact member descriptor or index,
+reference access and referent TypeId. Member, index, inline-frame, ref-struct/view and static sources
+therefore retain enough structured provenance to refresh the base after stack growth or GC movement.
+
+The interpreter uses four appended ExecBC operations: create a member reference, create an index
+reference, load through a property reference, and store through a writable property reference. Their
+numeric ids are appended so existing bytecode ids remain unchanged. Load/store resolve the current
+base and descriptor on every use. A readonly reference rejects store; non-addressable receivers and
+unsupported native raw pointers never enter this representation.
+
+Cold and quickened property paths share the same managed reference helpers. Cache entries may speed
+descriptor lookup, but they do not own reference access, receiver lifetime, or source identity.
+Source and loaded executable artifacts preserve the instruction bytes, frame layout, property/accessor
+identity, and execution SemIR operation, so cache heat and serialization cannot change the Place.
+
+The C and LLVM AOT backends lower the stable property-reference SemIR operations to shared runtime
+helpers for create/load/store. Generated code carries the managed value rather than computing a raw
+interior address. Direct native/FFI pointer projection remains unavailable until a descriptor provides
+an explicit managed or pinned contract.

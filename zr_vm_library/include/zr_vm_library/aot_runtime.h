@@ -893,6 +893,32 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ToString(struct SZrState *state,
                                                      TZrUInt32 destinationSlot,
                                                      TZrUInt32 sourceSlot);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PropertyReferenceCreateMember(
+        struct SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 receiverSlot,
+        TZrUInt32 memberEntryIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PropertyReferenceCreateIndex(
+        struct SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 receiverSlot,
+        TZrUInt32 keySlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PropertyReferenceLoad(
+        struct SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 referenceSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PropertyReferenceStore(
+        struct SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 referenceSlot);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GetMember(struct SZrState *state,
                                                       ZrAotGeneratedFrame *frame,
                                                       TZrUInt32 destinationSlot,

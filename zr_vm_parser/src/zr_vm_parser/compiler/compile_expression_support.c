@@ -4,6 +4,45 @@
 
 #include "compile_expression_internal.h"
 
+TZrBool compiler_property_reference_load(
+        SZrCompilerState *cs,
+        TZrUInt32 referenceSlot,
+        TZrUInt32 targetSlot,
+        SZrFileRange location) {
+    if (cs == ZR_NULL || referenceSlot == ZR_PARSER_SLOT_NONE ||
+        targetSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+    emit_instruction(
+            cs,
+            create_instruction_1(
+                    ZR_INSTRUCTION_ENUM(PROPERTY_REF_LOAD),
+                    (TZrUInt16)targetSlot,
+                    (TZrInt32)referenceSlot));
+    return compiler_semantic_ir_record_property_ref_load(
+            cs, referenceSlot, targetSlot, location);
+}
+
+TZrBool compiler_property_reference_store(
+        SZrCompilerState *cs,
+        TZrUInt32 referenceSlot,
+        TZrUInt32 sourceSlot,
+        SZrFileRange location) {
+    if (cs == ZR_NULL || referenceSlot == ZR_PARSER_SLOT_NONE ||
+        sourceSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+    emit_instruction(
+            cs,
+            create_instruction_2(
+                    ZR_INSTRUCTION_ENUM(PROPERTY_REF_STORE),
+                    (TZrUInt16)sourceSlot,
+                    (TZrUInt16)referenceSlot,
+                    0U));
+    return compiler_semantic_ir_record_property_ref_store(
+            cs, referenceSlot, sourceSlot, location);
+}
+
 void emit_constant_to_slot_local(SZrCompilerState *cs, TZrUInt32 slot, const SZrTypeValue *value,
                                         SZrFileRange location) {
     if (cs == ZR_NULL || value == ZR_NULL || cs->hasError) {
@@ -1834,12 +1873,16 @@ TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, T
 TZrBool emit_property_getter_call(SZrCompilerState *cs,
                                   TZrUInt32 resultSlot,
                                   TZrUInt32 receiverSlot,
+                                  TZrUInt32 semanticReceiverSlot,
                                   SZrString *propertyName,
-                                  TZrBool isStatic,
+                                  const SZrTypeMemberInfo *propertyMember,
+                                  const SZrTypeMemberInfo *getterAccessor,
                                   SZrFileRange location) {
     TZrUInt32 memberId;
     TZrInstruction metaGetInst;
-    TZrUInt8 memberFlags = isStatic ? ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR : 0;
+    TZrUInt8 memberFlags = getterAccessor != ZR_NULL && getterAccessor->isStatic
+                                   ? ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR
+                                   : 0;
 
     if (cs == ZR_NULL || resultSlot == ZR_PARSER_SLOT_NONE ||
         receiverSlot == ZR_PARSER_SLOT_NONE || propertyName == ZR_NULL ||
@@ -1857,6 +1900,19 @@ TZrBool emit_property_getter_call(SZrCompilerState *cs,
                                        (TZrUInt16)receiverSlot,
                                        (TZrUInt16)memberId);
     emit_instruction(cs, metaGetInst);
+    if (!compiler_semantic_ir_record_property_ref_get(
+                cs,
+                semanticReceiverSlot,
+                resultSlot,
+                propertyMember,
+                getterAccessor,
+                location)) {
+        ZrParser_Compiler_Error(
+                cs,
+                "Failed to record property reference getter in pre-SemIR",
+                location);
+        return ZR_FALSE;
+    }
     collapse_stack_to_slot(cs, resultSlot);
     return ZR_TRUE;
 }

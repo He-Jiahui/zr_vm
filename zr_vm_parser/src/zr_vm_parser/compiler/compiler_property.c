@@ -7,6 +7,115 @@ typedef struct SZrCompilerPropertyAccessors {
     SZrAstNode *initializer;
 } SZrCompilerPropertyAccessors;
 
+static TZrBool compiler_property_validate_reference_returns(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        TZrBool expectsReference,
+        TZrBool *foundReturn) {
+    if (node == ZR_NULL || cs == ZR_NULL || foundReturn == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    switch (node->type) {
+        case ZR_AST_RETURN_STATEMENT:
+            *foundReturn = ZR_TRUE;
+            if (node->data.returnStatement.isReferenceReturn !=
+                expectsReference) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        expectsReference
+                                ? "ref property getter must return an explicit ref Place"
+                                : "value property getter cannot return an explicit ref Place",
+                        node->data.returnStatement.isReferenceReturn
+                                ? node->data.returnStatement.referenceLocation
+                                : node->location);
+                return ZR_FALSE;
+            }
+            return ZR_TRUE;
+        case ZR_AST_BLOCK:
+            if (node->data.block.body != ZR_NULL) {
+                for (TZrSize index = 0U;
+                     index < node->data.block.body->count;
+                     index++) {
+                    if (!compiler_property_validate_reference_returns(
+                                cs,
+                                node->data.block.body->nodes[index],
+                                expectsReference,
+                                foundReturn)) {
+                        return ZR_FALSE;
+                    }
+                }
+            }
+            return ZR_TRUE;
+        case ZR_AST_IF_EXPRESSION:
+            return compiler_property_validate_reference_returns(
+                           cs,
+                           node->data.ifExpression.thenExpr,
+                           expectsReference,
+                           foundReturn) &&
+                   compiler_property_validate_reference_returns(
+                           cs,
+                           node->data.ifExpression.elseExpr,
+                           expectsReference,
+                           foundReturn);
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
+            if (!compiler_property_validate_reference_returns(
+                        cs,
+                        node->data.tryCatchFinallyStatement.block,
+                        expectsReference,
+                        foundReturn) ||
+                !compiler_property_validate_reference_returns(
+                        cs,
+                        node->data.tryCatchFinallyStatement.finallyBlock,
+                        expectsReference,
+                        foundReturn)) {
+                return ZR_FALSE;
+            }
+            if (node->data.tryCatchFinallyStatement.catchClauses != ZR_NULL) {
+                for (TZrSize index = 0U;
+                     index < node->data.tryCatchFinallyStatement.catchClauses->count;
+                     index++) {
+                    if (!compiler_property_validate_reference_returns(
+                                cs,
+                                node->data.tryCatchFinallyStatement.catchClauses->nodes[index],
+                                expectsReference,
+                                foundReturn)) {
+                        return ZR_FALSE;
+                    }
+                }
+            }
+            return ZR_TRUE;
+        case ZR_AST_CATCH_CLAUSE:
+            return compiler_property_validate_reference_returns(
+                    cs,
+                    node->data.catchClause.block,
+                    expectsReference,
+                    foundReturn);
+        case ZR_AST_WHILE_LOOP:
+            return compiler_property_validate_reference_returns(
+                    cs,
+                    node->data.whileLoop.block,
+                    expectsReference,
+                    foundReturn);
+        case ZR_AST_FOR_LOOP:
+            return compiler_property_validate_reference_returns(
+                    cs,
+                    node->data.forLoop.block,
+                    expectsReference,
+                    foundReturn);
+        case ZR_AST_FOREACH_LOOP:
+            return compiler_property_validate_reference_returns(
+                    cs,
+                    node->data.foreachLoop.block,
+                    expectsReference,
+                    foundReturn);
+        case ZR_AST_FUNCTION_DECLARATION:
+        case ZR_AST_LAMBDA_EXPRESSION:
+            return ZR_TRUE;
+        default:
+            return ZR_TRUE;
+    }
+}
+
 void compiler_type_members_restore_declaration_order(SZrArray *members) {
     SZrTypeMemberInfo *items;
 
@@ -90,6 +199,7 @@ static TZrBool compiler_property_validate(
         SZrCompilerPropertyAccessors *outAccessors) {
     SZrPropertyDeclaration *property;
     TZrBool isContractOnly;
+    TZrBool isReferenceProperty;
 
     if (cs == ZR_NULL || propertyNode == ZR_NULL || outAccessors == ZR_NULL ||
         propertyNode->type != ZR_AST_PROPERTY_DECLARATION) {
@@ -97,6 +207,9 @@ static TZrBool compiler_property_validate(
     }
     property = &propertyNode->data.propertyDeclaration;
     isContractOnly = compiler_property_is_contract_only(property, containerKind);
+    isReferenceProperty = property->typeInfo != ZR_NULL &&
+                          property->typeInfo->referenceAccess !=
+                                  ZR_REFERENCE_ACCESS_NONE;
     memset(outAccessors, 0, sizeof(*outAccessors));
     if (property->name == ZR_NULL || property->name->name == ZR_NULL ||
         property->typeInfo == ZR_NULL) {
@@ -191,6 +304,53 @@ static TZrBool compiler_property_validate(
                 "static property cannot declare an init accessor",
                 outAccessors->initializer->data.propertyAccessor.keywordLocation);
         return ZR_FALSE;
+    }
+    if (isReferenceProperty &&
+        (outAccessors->setter != ZR_NULL || outAccessors->initializer != ZR_NULL)) {
+        SZrAstNode *invalidAccessor = outAccessors->setter != ZR_NULL
+                                             ? outAccessors->setter
+                                             : outAccessors->initializer;
+        ZrParser_Compiler_Error(
+                cs,
+                "ref property cannot declare a set or init accessor",
+                invalidAccessor->location);
+        return ZR_FALSE;
+    }
+    if (isReferenceProperty && outAccessors->getter == ZR_NULL) {
+        ZrParser_Compiler_Error(
+                cs, "ref property requires a getter", propertyNode->location);
+        return ZR_FALSE;
+    }
+    if (outAccessors->getter != ZR_NULL && !isContractOnly) {
+        SZrPropertyAccessor *getter =
+                &outAccessors->getter->data.propertyAccessor;
+        TZrBool foundReturn = ZR_FALSE;
+
+        if (getter->bodyKind == ZR_PROPERTY_ACCESSOR_BODY_EXPRESSION) {
+            if (getter->isReferenceResult != isReferenceProperty) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        isReferenceProperty
+                                ? "ref property expression getter must use '=> ref'"
+                                : "value property expression getter cannot use '=> ref'",
+                        getter->isReferenceResult
+                                ? getter->referenceLocation
+                                : getter->keywordLocation);
+                return ZR_FALSE;
+            }
+        } else if (!compiler_property_validate_reference_returns(
+                           cs,
+                           getter->body,
+                           isReferenceProperty,
+                           &foundReturn)) {
+            return ZR_FALSE;
+        } else if (isReferenceProperty && !foundReturn) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "ref property getter must return an explicit ref Place",
+                    getter->keywordLocation);
+            return ZR_FALSE;
+        }
     }
     return ZR_TRUE;
 }
@@ -299,7 +459,9 @@ static TZrBool compiler_property_emit_accessor(
             accessor->kind != ZR_PROPERTY_ACCESSOR_GET);
     member.receiverEffect = property->isStatic
                                     ? ZR_CANONICAL_RECEIVER_NONE
-                                    : (accessor->kind == ZR_PROPERTY_ACCESSOR_GET
+                                    : (accessor->kind == ZR_PROPERTY_ACCESSOR_GET &&
+                                       property->typeInfo->referenceAccess !=
+                                               ZR_REFERENCE_ACCESS_WRITABLE
                                                ? ZR_CANONICAL_RECEIVER_READONLY
                                                : ZR_CANONICAL_RECEIVER_MUTABLE);
     if (isContractOnly) {
@@ -392,6 +554,14 @@ TZrBool compiler_property_bind(
     visible.accessModifier = property->access;
     visible.isStatic = property->isStatic;
     visible.modifierFlags = property->modifierFlags;
+    visible.receiverEffect = property->isStatic
+                                     ? ZR_CANONICAL_RECEIVER_NONE
+                                     : (property->typeInfo->referenceAccess ==
+                                                        ZR_REFERENCE_ACCESS_WRITABLE
+                                                ? ZR_CANONICAL_RECEIVER_MUTABLE
+                                                : ZR_CANONICAL_RECEIVER_READONLY);
+    visible.exportsWritableRef =
+            property->typeInfo->referenceAccess == ZR_REFERENCE_ACCESS_WRITABLE;
     visible.fieldType = property->typeInfo;
     visible.fieldTypeName = extract_type_name_string(cs, property->typeInfo);
     visible.baseDefinitionName = visible.name;

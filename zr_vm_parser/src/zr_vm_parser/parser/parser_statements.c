@@ -345,8 +345,18 @@ static SZrAstNode *parse_decorated_statement(SZrParserState *ps) {
 
 SZrAstNode *parse_return_statement(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    SZrFileRange referenceLocation;
+    TZrBool isReferenceReturn = ZR_FALSE;
+
+    memset(&referenceLocation, 0, sizeof(referenceLocation));
     expect_token(ps, ZR_TK_RETURN);
     ZrParser_Lexer_Next(ps->lexer);
+
+    if (ps->lexer->t.token == ZR_TK_REF) {
+        isReferenceReturn = ZR_TRUE;
+        referenceLocation = get_current_token_location(ps);
+        ZrParser_Lexer_Next(ps->lexer);
+    }
 
     SZrAstNode *expr = ZR_NULL;
     if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
@@ -365,6 +375,8 @@ SZrAstNode *parse_return_statement(SZrParserState *ps) {
     }
 
     node->data.returnStatement.expr = expr;
+    node->data.returnStatement.isReferenceReturn = isReferenceReturn;
+    node->data.returnStatement.referenceLocation = referenceLocation;
     return node;
 }
 

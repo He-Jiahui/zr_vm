@@ -973,8 +973,16 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                     if (!emit_property_getter_call(cs,
                                                    currentSlot,
                                                    currentSlot,
+                                                   memberIndex == 0U &&
+                                                                   assignment_target_direct_local_slot(
+                                                                           cs, primary->property) !=
+                                                                           ZR_PARSER_SLOT_NONE
+                                                           ? assignment_target_direct_local_slot(
+                                                                     cs, primary->property)
+                                                           : currentSlot,
                                                    memberName,
-                                                   getterAccessor->isStatic,
+                                                   typeMember,
+                                                   getterAccessor,
                                                    memberNode->location)) {
                         return ZR_FALSE;
                     }
@@ -1422,6 +1430,7 @@ static EZrCompoundPropertyAssignmentResult compile_assignment_try_compound_prope
     SZrAssignmentInlineStructParentWriteback inlineWritebacks[ZR_ASSIGNMENT_INLINE_STRUCT_WRITEBACK_MAX];
     TZrSize inlineWritebackCount = 0u;
     TZrUInt32 getterResultSlot;
+    TZrUInt32 referenceResultSlot = ZR_PARSER_SLOT_NONE;
     TZrUInt32 rightSlot;
     TZrUInt32 resultSlot;
     TZrUInt32 assignmentResultSlot;
@@ -1484,9 +1493,17 @@ static EZrCompoundPropertyAssignmentResult compile_assignment_try_compound_prope
                 cs, "Property does not declare an accessible getter", location);
         return ZR_COMPOUND_PROPERTY_ERROR;
     }
-    if (!can_use_property_accessor(rootIsTypeReference, setterAccessor)) {
+    if (!can_use_property_accessor(rootIsTypeReference, setterAccessor) &&
+        propertyMember->structuredReturnType.referenceAccess ==
+                ZR_REFERENCE_ACCESS_NONE) {
         ZrParser_Compiler_Error(
                 cs, "Property does not declare an accessible setter", location);
+        return ZR_COMPOUND_PROPERTY_ERROR;
+    }
+    if (propertyMember->structuredReturnType.referenceAccess ==
+                ZR_REFERENCE_ACCESS_READONLY) {
+        ZrParser_Compiler_Error(
+                cs, "Cannot assign through a ref readonly property", location);
         return ZR_COMPOUND_PROPERTY_ERROR;
     }
 
@@ -1513,10 +1530,17 @@ static EZrCompoundPropertyAssignmentResult compile_assignment_try_compound_prope
     }
 
     getterResultSlot = allocate_stack_slot(cs);
+    if (propertyMember->structuredReturnType.referenceAccess !=
+        ZR_REFERENCE_ACCESS_NONE) {
+        referenceResultSlot = getterResultSlot;
+        getterResultSlot = allocate_stack_slot(cs);
+    }
     if (usesSuperLookup) {
         if (!emit_super_accessor_call_from_prototype(
                     cs,
-                    getterResultSlot,
+                    referenceResultSlot != ZR_PARSER_SLOT_NONE
+                            ? referenceResultSlot
+                            : getterResultSlot,
                     superReceiverSlot,
                     getterAccessor->name,
                     ZR_NULL,
@@ -1527,13 +1551,26 @@ static EZrCompoundPropertyAssignmentResult compile_assignment_try_compound_prope
     } else {
         if (!emit_property_getter_call(
                     cs,
-                    getterResultSlot,
+                    referenceResultSlot != ZR_PARSER_SLOT_NONE
+                            ? referenceResultSlot
+                            : getterResultSlot,
                     objectSlot,
+                    assignment_target_direct_local_slot(
+                            cs, primary->property) != ZR_PARSER_SLOT_NONE
+                            ? assignment_target_direct_local_slot(
+                                      cs, primary->property)
+                            : objectSlot,
                     propertyName,
-                    getterAccessor->isStatic,
+                    propertyMember,
+                    getterAccessor,
                     location)) {
             return ZR_COMPOUND_PROPERTY_ERROR;
         }
+    }
+    if (referenceResultSlot != ZR_PARSER_SLOT_NONE &&
+        !compiler_property_reference_load(
+                cs, referenceResultSlot, getterResultSlot, location)) {
+        return ZR_COMPOUND_PROPERTY_ERROR;
     }
 
     ZrParser_Expression_Compile(cs, right);
@@ -1554,7 +1591,13 @@ static EZrCompoundPropertyAssignmentResult compile_assignment_try_compound_prope
                     ZR_COMPILE_SLOT_U16(resultSlot),
                     ZR_COMPILE_SLOT_U16(getterResultSlot),
                     ZR_COMPILE_SLOT_U16(rightSlot)));
-    if (usesSuperLookup) {
+    if (referenceResultSlot != ZR_PARSER_SLOT_NONE) {
+        if (!compiler_property_reference_store(
+                    cs, referenceResultSlot, resultSlot, location)) {
+            return ZR_COMPOUND_PROPERTY_ERROR;
+        }
+        assignmentResultSlot = resultSlot;
+    } else if (usesSuperLookup) {
         TZrUInt32 setterArgSlot = resultSlot;
         if (!emit_super_accessor_call_from_prototype(
                     cs,
@@ -2071,6 +2114,51 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                     if (propertyMember != ZR_NULL &&
                                         propertyMember->memberType ==
                                                 ZR_AST_PROPERTY_DECLARATION) {
+                                        SZrTypeMemberInfo *getterAccessor =
+                                                find_hidden_property_accessor_member(
+                                                        cs,
+                                                        rootTypeName,
+                                                        fieldName,
+                                                        ZR_PROPERTY_ACCESSOR_ROLE_GET);
+                                        if (propertyMember->structuredReturnType.referenceAccess ==
+                                                    ZR_REFERENCE_ACCESS_WRITABLE &&
+                                            can_use_property_accessor(
+                                                    rootIsTypeReference,
+                                                    getterAccessor)) {
+                                            TZrUInt32 referenceSlot =
+                                                    allocate_stack_slot(cs);
+                                            if (!emit_property_getter_call(
+                                                    cs,
+                                                    referenceSlot,
+                                                    objSlot,
+                                                    assignment_target_direct_local_slot(
+                                                            cs, primary->property) !=
+                                                                    ZR_PARSER_SLOT_NONE
+                                                            ? assignment_target_direct_local_slot(
+                                                                      cs, primary->property)
+                                                            : objSlot,
+                                                    fieldName,
+                                                    propertyMember,
+                                                    getterAccessor,
+                                                    node->location) ||
+                                                !compiler_property_reference_store(
+                                                        cs,
+                                                        referenceSlot,
+                                                        rightSlot,
+                                                        node->location)) {
+                                                return;
+                                            }
+                                            cs->lastExpressionSlot = rightSlot;
+                                            return;
+                                        }
+                                        if (propertyMember->structuredReturnType.referenceAccess ==
+                                            ZR_REFERENCE_ACCESS_READONLY) {
+                                            ZrParser_Compiler_Error(
+                                                    cs,
+                                                    "Cannot assign through a ref readonly property",
+                                                    node->location);
+                                            return;
+                                        }
                                         ZrParser_Compiler_Error(
                                                 cs,
                                                 "Property does not declare an accessible setter",

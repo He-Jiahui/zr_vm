@@ -162,6 +162,10 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_MetaSetCached(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_MetaGetStaticCached(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_MetaSetStaticCached(ptr, ptr, i32, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_PropertyReferenceCreateMember(ptr, ptr, i32, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_PropertyReferenceCreateIndex(ptr, ptr, i32, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_PropertyReferenceLoad(ptr, ptr, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_PropertyReferenceStore(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnUnique(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnBorrow(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnLoan(ptr, ptr, i32, i32)\n");

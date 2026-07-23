@@ -434,6 +434,12 @@ static const TZrChar *writer_intermediate_semir_opcode_name(TZrUInt32 opcode) {
             return "META_GET";
         case ZR_SEMIR_OPCODE_META_SET:
             return "META_SET";
+        case ZR_SEMIR_OPCODE_PROPERTY_REF_GET:
+            return "PROPERTY_REF_GET";
+        case ZR_SEMIR_OPCODE_DEREFERENCE:
+            return "DEREFERENCE";
+        case ZR_SEMIR_OPCODE_PROPERTY_REF_STORE:
+            return "PROPERTY_REF_STORE";
         case ZR_SEMIR_OPCODE_DYN_ITER_INIT:
             return "DYN_ITER_INIT";
         case ZR_SEMIR_OPCODE_DYN_ITER_MOVE_NEXT:

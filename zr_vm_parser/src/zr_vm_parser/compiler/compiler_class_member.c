@@ -630,6 +630,10 @@ static SZrFunction *compile_type_member_function(
         returnNode.type = ZR_AST_RETURN_STATEMENT;
         returnNode.location = body->location;
         returnNode.data.returnStatement.expr = body;
+        returnNode.data.returnStatement.isReferenceReturn =
+                propertyAccessorNode->data.propertyAccessor.isReferenceResult;
+        returnNode.data.returnStatement.referenceLocation =
+                propertyAccessorNode->data.propertyAccessor.referenceLocation;
         ZrParser_Statement_Compile(cs, &returnNode);
     } else if (body != ZR_NULL && isPropertyExpressionBody) {
         SZrAstNode expressionStatement;

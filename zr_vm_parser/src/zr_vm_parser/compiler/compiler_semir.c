@@ -1176,6 +1176,34 @@ static TZrBool semir_map_exec_instruction(const TZrInstruction *instruction, SZr
             outMapped->operand0 = instruction->instruction.operandExtra;
             outMapped->operand1 = instruction->instruction.operand.operand1[1];
             return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(PROPERTY_REF_CREATE_MEMBER):
+        case ZR_INSTRUCTION_ENUM(PROPERTY_REF_CREATE_INDEX):
+            outMapped->opcode = ZR_SEMIR_OPCODE_PROPERTY_REF_GET;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+            semir_mapped_instruction_set_operands(
+                    outMapped,
+                    instruction->instruction.operandExtra,
+                    instruction->instruction.operand.operand1[0],
+                    instruction->instruction.operand.operand1[1]);
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(PROPERTY_REF_LOAD):
+            outMapped->opcode = ZR_SEMIR_OPCODE_DEREFERENCE;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+            semir_mapped_instruction_set_operands(
+                    outMapped,
+                    instruction->instruction.operandExtra,
+                    (TZrUInt32)instruction->instruction.operand.operand2[0],
+                    0U);
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(PROPERTY_REF_STORE):
+            outMapped->opcode = ZR_SEMIR_OPCODE_PROPERTY_REF_STORE;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+            semir_mapped_instruction_set_operands(
+                    outMapped,
+                    instruction->instruction.operandExtra,
+                    instruction->instruction.operand.operand1[0],
+                    0U);
+            return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(ITER_INIT):
             outMapped->opcode = ZR_SEMIR_OPCODE_DYN_ITER_INIT;
             outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;

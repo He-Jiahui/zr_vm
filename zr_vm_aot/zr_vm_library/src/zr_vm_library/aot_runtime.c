@@ -21,6 +21,7 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/ownership.h"
+#include "zr_vm_core/property_reference.h"
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
@@ -6018,6 +6019,143 @@ TZrBool ZrLibrary_AotRuntime_ToString(SZrState *state,
         destinationValue->type = ZR_VALUE_TYPE_STRING;
     } else {
         ZrCore_Value_ResetAsNull(destinationValue);
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_PropertyReferenceCreateMember(
+        SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 receiverSlot,
+        TZrUInt32 memberEntryIndex) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverSlot);
+    SZrFunction *function = (SZrFunction *)aot_runtime_frame_function(frame);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *receiverValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL
+                    ? aot_runtime_get_state_from_global(state->global)
+                    : ZR_NULL;
+    destinationValue =
+            destinationPointer != ZR_NULL ? ZrCore_Stack_GetValue(destinationPointer) : ZR_NULL;
+    receiverValue =
+            receiverPointer != ZR_NULL ? ZrCore_Stack_GetValue(receiverPointer) : ZR_NULL;
+    if (state == ZR_NULL || frame == ZR_NULL || function == ZR_NULL ||
+        destinationValue == ZR_NULL || receiverValue == ZR_NULL ||
+        !ZrCore_PropertyReference_CreateMember(
+                state,
+                function,
+                frame->slotBase,
+                receiverSlot,
+                receiverValue,
+                memberEntryIndex,
+                destinationValue)) {
+        aot_runtime_fail(
+                state,
+                runtimeState,
+                "PROPERTY_REF_CREATE_MEMBER: invalid bound Place");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_PropertyReferenceCreateIndex(
+        SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 receiverSlot,
+        TZrUInt32 keySlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverSlot);
+    TZrStackValuePointer keyPointer = aot_runtime_frame_slot(frame, keySlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *receiverValue;
+    SZrTypeValue *keyValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL
+                    ? aot_runtime_get_state_from_global(state->global)
+                    : ZR_NULL;
+    destinationValue =
+            destinationPointer != ZR_NULL ? ZrCore_Stack_GetValue(destinationPointer) : ZR_NULL;
+    receiverValue =
+            receiverPointer != ZR_NULL ? ZrCore_Stack_GetValue(receiverPointer) : ZR_NULL;
+    keyValue = keyPointer != ZR_NULL ? ZrCore_Stack_GetValue(keyPointer) : ZR_NULL;
+    if (state == ZR_NULL || destinationValue == ZR_NULL ||
+        receiverValue == ZR_NULL || keyValue == ZR_NULL ||
+        !ZrCore_PropertyReference_CreateIndex(
+                state, receiverValue, keyValue, destinationValue)) {
+        aot_runtime_fail(
+                state,
+                runtimeState,
+                "PROPERTY_REF_CREATE_INDEX: invalid indexed Place");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_PropertyReferenceLoad(
+        SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 referenceSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer referencePointer = aot_runtime_frame_slot(frame, referenceSlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *referenceValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL
+                    ? aot_runtime_get_state_from_global(state->global)
+                    : ZR_NULL;
+    destinationValue =
+            destinationPointer != ZR_NULL ? ZrCore_Stack_GetValue(destinationPointer) : ZR_NULL;
+    referenceValue =
+            referencePointer != ZR_NULL ? ZrCore_Stack_GetValue(referencePointer) : ZR_NULL;
+    if (state == ZR_NULL || destinationValue == ZR_NULL ||
+        referenceValue == ZR_NULL ||
+        !ZrCore_PropertyReference_Load(state, referenceValue, destinationValue)) {
+        aot_runtime_fail(
+                state,
+                runtimeState,
+                "PROPERTY_REF_LOAD: invalid managed property reference");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_PropertyReferenceStore(
+        SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 referenceSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    TZrStackValuePointer referencePointer = aot_runtime_frame_slot(frame, referenceSlot);
+    SZrTypeValue *sourceValue;
+    SZrTypeValue *referenceValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL
+                    ? aot_runtime_get_state_from_global(state->global)
+                    : ZR_NULL;
+    sourceValue = sourcePointer != ZR_NULL ? ZrCore_Stack_GetValue(sourcePointer) : ZR_NULL;
+    referenceValue =
+            referencePointer != ZR_NULL ? ZrCore_Stack_GetValue(referencePointer) : ZR_NULL;
+    if (state == ZR_NULL || sourceValue == ZR_NULL ||
+        referenceValue == ZR_NULL ||
+        !ZrCore_PropertyReference_Store(state, referenceValue, sourceValue)) {
+        aot_runtime_fail(
+                state,
+                runtimeState,
+                "PROPERTY_REF_STORE: invalid managed property reference");
+        return ZR_FALSE;
     }
     return ZR_TRUE;
 }

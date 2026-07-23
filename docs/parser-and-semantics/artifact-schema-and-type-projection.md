@@ -48,6 +48,7 @@ tests:
   - tests/parser/test_canonical_consumers.c
   - tests/parser/test_buffer_pool_ffi.c
   - tests/parser/test_property_access_lowering.c
+  - tests/parser/test_property_ref_return.c
   - tests/core/test_type_layout_metadata_contracts.c
   - tests/core/test_resource_cross_domain_transfer.c
   - tests/acceptance/2026-07-19-syntax-01-m4-artifact-schema.md
@@ -187,6 +188,22 @@ create operator/RHS temporaries, and then enter another VM function. Preserving 
 boundary prevents a loaded function from clearing a captured receiver or leaving a stale temporary.
 The M3 roundtrip test compares the source and loaded function's stack size, entry clear boundary,
 member-entry identity, instruction bytes, and execution result before declaring artifact parity.
+
+### Property-reference execution contract
+
+Syntax 05 M4 preserves reference properties through the existing executable artifact envelope. The
+visible property and linked getter keep their canonical identity and reference TypeId; the executable
+stream preserves appended property-reference create/load/store opcodes and the frame metadata needed
+to refresh a managed base. The execution SemIR sidecar uses stable `PROPERTY_REF_GET`, `DEREFERENCE`,
+and `PROPERTY_REF_STORE` operation ids, so source and reloaded functions project the same semantic
+operations even when the interpreter later quickens a call site.
+
+Local PlaceId, LoanId and source-region arrays remain compilation-session facts and are not serialized
+as raw pointers. Artifact consumers recover executable managed-reference behavior from the encoded
+property/accessor/TypeId and operation payload; they do not infer it from member spelling or display
+text. C and LLVM AOT consume those same stable operations through the shared managed-reference runtime
+helpers. An old or native artifact without the required structured reference contract is unavailable
+rather than being treated as a direct pointer.
 
 ## Verification
 

@@ -198,6 +198,10 @@ static TZrBool compiler_member_signatures_match(const SZrTypeMemberInfo *baseMem
         currentMember->memberType == ZR_AST_PROPERTY_DECLARATION) {
         if (baseMember->memberType != ZR_AST_PROPERTY_DECLARATION ||
             currentMember->memberType != ZR_AST_PROPERTY_DECLARATION ||
+            baseMember->propertyValueTypeId !=
+                    currentMember->propertyValueTypeId ||
+            baseMember->structuredReturnType.referenceAccess !=
+                    currentMember->structuredReturnType.referenceAccess ||
             (baseMember->getterAccessorSymbolId != ZR_SEMANTIC_ID_INVALID) !=
                     (currentMember->getterAccessorSymbolId != ZR_SEMANTIC_ID_INVALID) ||
             (baseMember->setterAccessorSymbolId != ZR_SEMANTIC_ID_INVALID) !=

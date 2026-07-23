@@ -9,6 +9,8 @@ related_code:
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
+  - zr_vm_core/include/zr_vm_core/property_reference.h
+  - zr_vm_core/src/zr_vm_core/property_reference.c
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
   - zr_vm_core/src/zr_vm_core/execution/execution_meta_access.c
@@ -49,6 +51,7 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
+  - zr_vm_core/src/zr_vm_core/property_reference.c
   - zr_vm_core/src/zr_vm_core/function_type_layout.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
   - zr_vm_core/src/zr_vm_core/execution/execution_meta_access.c
@@ -108,7 +111,8 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
 - `inline-type-layout-and-byte-stack.md`: type layout descriptors, POD inline copy, field-aware copy/drop, byte-offset stack copy primitives, struct prototype `layoutByteSize/layoutByteAlign`, function frame byte-layout sidecar metadata, runtime prototype layout resolution, VM pre-call and single-result post-call copy for already-inline payloads, conservative tail-reuse fallback for inline parameters, GC/drop traversal, and real native inline-span dispatch context with stack-relocation refresh and span-only inline parameter access for the inline stack migration.
 - `property-accessor-dispatch.md`: descriptor-backed getter/setter dispatch, receiver-source frame/slot
   provenance for inline structs, cache and exception boundaries, static/virtual/interface behavior,
-  and source/artifact parity for typed compound property access.
+  source/artifact parity for typed compound property access, and managed class/inline/index/static
+  reference Places for `ref` and `ref readonly` getters.
 - `exception-scope-resource-cleanup.md`: exception-handler checkpoints for `%using`
   registrations, LIFO close before catch/finally, scratch-safe error arguments, and
   stack-relocation rules for resource cleanup.

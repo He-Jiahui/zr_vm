@@ -1893,6 +1893,44 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
+            case ZR_INSTRUCTION_ENUM(PROPERTY_REF_CREATE_MEMBER):
+                fprintf(file,
+                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PropertyReferenceCreateMember(state, &frame, %u, %u, %u));\n",
+                        (unsigned)destinationSlot,
+                        (unsigned)operandA1,
+                        (unsigned)operandB1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(PROPERTY_REF_CREATE_INDEX):
+                fprintf(file,
+                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PropertyReferenceCreateIndex(state, &frame, %u, %u, %u));\n",
+                        (unsigned)destinationSlot,
+                        (unsigned)operandA1,
+                        (unsigned)operandB1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(PROPERTY_REF_LOAD):
+                fprintf(file,
+                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PropertyReferenceLoad(state, &frame, %u, %u));\n",
+                        (unsigned)destinationSlot,
+                        (unsigned)operandA2);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(PROPERTY_REF_STORE):
+                fprintf(file,
+                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PropertyReferenceStore(state, &frame, %u, %u));\n",
+                        (unsigned)destinationSlot,
+                        (unsigned)operandA1);
+                break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
                 backend_aot_write_c_direct_logical_not_equal(
                         file, functionIr, destinationSlot, operandA1, operandB1, instructionIndex);

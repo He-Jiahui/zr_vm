@@ -67,6 +67,51 @@ static void loan_collect_instruction_inputs(
     }
 }
 
+static TZrBool loan_opcode_creates_loan(EZrSemanticIrOpcode opcode) {
+    return (TZrBool)(opcode == ZR_SEMANTIC_IR_BORROW_SHARED ||
+                     opcode == ZR_SEMANTIC_IR_BORROW_MUT ||
+                     opcode == ZR_SEMANTIC_IR_RESERVE_BORROW_MUT ||
+                     opcode == ZR_SEMANTIC_IR_REBORROW);
+}
+
+static TZrSemanticInstructionId loan_creation_instruction_id(
+        const SSemanticLoanAnalysis *analysis,
+        TZrLoanId loanId) {
+    if (loanId == ZR_SEMANTIC_LOAN_ID_INVALID ||
+        loanId > analysis->loanCount) {
+        return ZR_SEMANTIC_INSTRUCTION_ID_INVALID;
+    }
+    for (TZrSize index = 0U; index < analysis->instructionCount; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(
+                        analysis->function, index);
+        if (instruction->loanId == loanId &&
+            loan_opcode_creates_loan(instruction->opcode)) {
+            return instruction->id;
+        }
+    }
+    return ZR_SEMANTIC_INSTRUCTION_ID_INVALID;
+}
+
+static void loan_mask_before_creation(
+        const SSemanticLoanAnalysis *analysis,
+        TZrSemanticInstructionId instructionId,
+        TZrBool *loans) {
+    for (TZrSize index = 0U; index < analysis->loanCount; index++) {
+        TZrSemanticInstructionId creationInstructionId;
+
+        if (!loans[index]) {
+            continue;
+        }
+        creationInstructionId = loan_creation_instruction_id(
+                analysis, (TZrLoanId)(index + 1U));
+        if (creationInstructionId != ZR_SEMANTIC_INSTRUCTION_ID_INVALID &&
+            instructionId < creationInstructionId) {
+            loans[index] = ZR_FALSE;
+        }
+    }
+}
+
 static TZrBool loan_opcode_propagates_place_to_result(
         EZrSemanticIrOpcode opcode) {
     return (TZrBool)(opcode == ZR_SEMANTIC_IR_LOAD ||
@@ -81,7 +126,9 @@ static TZrBool loan_opcode_propagates_input_to_result(
         EZrSemanticIrOpcode opcode) {
     return (TZrBool)(opcode == ZR_SEMANTIC_IR_CONVERT ||
                      opcode == ZR_SEMANTIC_IR_COPY ||
-                     opcode == ZR_SEMANTIC_IR_MOVE);
+                     opcode == ZR_SEMANTIC_IR_MOVE ||
+                     opcode == ZR_SEMANTIC_IR_DEREFERENCE ||
+                     opcode == ZR_SEMANTIC_IR_PROPERTY_REF_GET);
 }
 
 static TZrBool loan_opcode_stores_value(EZrSemanticIrOpcode opcode) {
@@ -615,6 +662,12 @@ static void loan_add_parent_closure(
 }
 
 static void loan_build_instruction_uses(SSemanticLoanAnalysis *analysis) {
+    TZrBool *endedLoans = (TZrBool *)calloc(
+            analysis->loanCount, sizeof(TZrBool));
+
+    if (endedLoans == ZR_NULL) {
+        return;
+    }
     for (TZrSize index = 0U; index < analysis->instructionCount; index++) {
         const SZrSemanticIrInstruction *instruction =
                 ZrParser_SemanticIr_InstructionAt(analysis->function, index);
@@ -647,7 +700,21 @@ static void loan_build_instruction_uses(SSemanticLoanAnalysis *analysis) {
             uses[(TZrSize)instruction->loanId - 1U] = ZR_TRUE;
         }
         loan_add_parent_closure(analysis, uses);
+        loan_mask_before_creation(analysis, instruction->id, uses);
+        for (TZrSize loanIndex = 0U;
+             loanIndex < analysis->loanCount;
+             loanIndex++) {
+            if (endedLoans[loanIndex]) {
+                uses[loanIndex] = ZR_FALSE;
+            }
+        }
+        if (instruction->opcode == ZR_SEMANTIC_IR_END_LOAN &&
+            instruction->loanId != ZR_SEMANTIC_LOAN_ID_INVALID &&
+            instruction->loanId <= analysis->loanCount) {
+            endedLoans[(TZrSize)instruction->loanId - 1U] = ZR_TRUE;
+        }
     }
+    free(endedLoans);
 }
 
 static void loan_backward_transfer(

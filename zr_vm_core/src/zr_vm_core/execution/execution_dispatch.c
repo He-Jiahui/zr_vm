@@ -9,6 +9,7 @@
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/gc_domain.h"
+#include "zr_vm_core/property_reference.h"
 #include "zr_vm_core/profile.h"
 
 #include <stdarg.h>
@@ -9201,6 +9202,55 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                 }
                 execution_refresh_registered_owner_mirror(state, sourceBase, opA);
                 execution_refresh_registered_owner_mirror(state, destinationBase, destination);
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(PROPERTY_REF_CREATE_MEMBER) {
+                destination = FRAME_VALUE_SLOT(E(instruction));
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                if (!ZrCore_PropertyReference_CreateMember(
+                            state,
+                            currentFunction,
+                            base,
+                            (TZrUInt32)A1(instruction),
+                            opA,
+                            (TZrUInt32)B1(instruction),
+                            destination)) {
+                    ZrCore_Debug_RunError(
+                            state,
+                            "PROPERTY_REF_CREATE_MEMBER: invalid bound Place");
+                }
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(PROPERTY_REF_CREATE_INDEX) {
+                destination = FRAME_VALUE_SLOT(E(instruction));
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
+                if (!ZrCore_PropertyReference_CreateIndex(
+                            state, opA, opB, destination)) {
+                    ZrCore_Debug_RunError(
+                            state,
+                            "PROPERTY_REF_CREATE_INDEX: invalid indexed Place");
+                }
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(PROPERTY_REF_LOAD) {
+                destination = FRAME_VALUE_SLOT(E(instruction));
+                opA = FRAME_VALUE_SLOT(A2(instruction));
+                if (!ZrCore_PropertyReference_Load(state, opA, destination)) {
+                    ZrCore_Debug_RunError(
+                            state, "PROPERTY_REF_LOAD: invalid managed property reference");
+                }
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(PROPERTY_REF_STORE) {
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG
+                              ? &ret
+                              : FRAME_VALUE_SLOT(E(instruction));
+                if (!ZrCore_PropertyReference_Store(state, opA, opB)) {
+                    ZrCore_Debug_RunError(
+                            state, "PROPERTY_REF_STORE: invalid managed property reference");
+                }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(OWN_UPGRADE) {

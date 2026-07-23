@@ -323,6 +323,9 @@ void semantic_loan_check_conflicts(SSemanticLoanAnalysis *analysis) {
             }
             loan = ZrParser_SemanticIr_Loan(
                     analysis->function, (TZrLoanId)(loanIndex + 1U));
+            if (loan == ZR_NULL) {
+                continue;
+            }
             if (loan_instruction_authorizes_candidate(
                         analysis,
                         instruction,

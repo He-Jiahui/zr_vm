@@ -135,6 +135,23 @@ TZrBool compiler_semantic_ir_project_receiver_call_result(
         TZrLoanId loanId,
         TZrUInt32 resultSlot,
         SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_record_property_ref_get(
+        SZrCompilerState *cs,
+        TZrUInt32 receiverSlot,
+        TZrUInt32 resultSlot,
+        const SZrTypeMemberInfo *propertyMember,
+        const SZrTypeMemberInfo *getterAccessor,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_record_property_ref_load(
+        SZrCompilerState *cs,
+        TZrUInt32 referenceSlot,
+        TZrUInt32 targetSlot,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_record_property_ref_store(
+        SZrCompilerState *cs,
+        TZrUInt32 referenceSlot,
+        TZrUInt32 sourceSlot,
+        SZrFileRange sourceRange);
 TZrBool compiler_semantic_ir_end_receiver_call(
         SZrCompilerState *cs,
         TZrLoanId loanId,
@@ -401,6 +418,16 @@ TZrSize ZrParser_Compiler_GetLocalStackFloor(const SZrCompilerState *cs) ;
 TZrUInt32 compiler_get_cached_null_constant_index(SZrCompilerState *cs) ;
 
 TZrUInt32 compiler_get_or_add_member_entry(SZrCompilerState *cs, SZrString *memberName) ;
+TZrBool compiler_property_reference_load(
+        SZrCompilerState *cs,
+        TZrUInt32 referenceSlot,
+        TZrUInt32 targetSlot,
+        SZrFileRange location);
+TZrBool compiler_property_reference_store(
+        SZrCompilerState *cs,
+        TZrUInt32 referenceSlot,
+        TZrUInt32 sourceSlot,
+        SZrFileRange location);
 TZrUInt32 compiler_get_or_add_member_entry_with_flags(SZrCompilerState *cs,
                                                       SZrString *memberName,
                                                       TZrUInt8 flags) ;

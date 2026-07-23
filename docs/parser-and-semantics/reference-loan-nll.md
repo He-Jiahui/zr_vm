@@ -20,6 +20,7 @@ tests:
   - tests/parser/test_reference_loan_nll.c
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_resource_owner_borrow_receiver.c
+  - tests/parser/test_property_ref_return.c
   - tests/acceptance/2026-07-20-syntax-02-m3-reference-loan-nll.md
 doc_type: module-detail
 ---
@@ -56,6 +57,11 @@ Place-to-result instructions also consume the currently reaching Place loan set.
 Consequently, a later load or conversion keeps an owner-derived reference loan
 live through its real final use instead of ending it at the intermediate store.
 
+Reference-return property getters reuse that same propagation. `PROPERTY_REF_GET` creates a reference
+value tied to its receiver/source Place; `DEREFERENCE` projects the referent Place, and later load or
+store instructions consume the same LoanId. A value read therefore does not erase the owner or
+receiver region, while `ref propertyAccess` retains reference identity directly.
+
 ## NLL and reborrow
 
 The analysis collects every semantic value use, explicit loan access and
@@ -63,6 +69,13 @@ The analysis collects every semantic value use, explicit loan access and
 is killed at its creation instruction during backward transfer, which bounds the
 region at the origin. The last reachable use, rather than the containing lexical
 block, determines the normal end of the region.
+
+Semantic value ids are reusable and are not SSA definitions. Instruction-use construction therefore
+masks a loan before the actual `BorrowShared`, `BorrowMut`, `Reserve`, or `Reborrow` instruction that
+created it, instead of consulting the current definition attached to a reused ValueId. The mask is
+local to instruction uses: global Place propagation and CFG joins keep their complete reaching-loan
+sets. This prevents a future property receiver loan from appearing on earlier instructions without
+dropping legitimate branch-join facts.
 
 A `Reborrow` derives its direct parent set from the input ref value. A ref loaded
 after a CFG join may have multiple possible parents; all remain in the child
@@ -95,6 +108,8 @@ Every Place access is compared with live-in loans through
 - Store, Initialize, Move and Drop conflict with every overlapping live loan;
 - owner `share` construction consumes the Unique source and is classified as an
   exclusive access while an overlapping loan is live;
+- a reference-return property keeps its receiver/owner loan live through the dereference result's
+  last use, so move, drop, share, and into-GC operations remain conflicting until that point;
 - direct reads conflict with an overlapping mutable loan;
 - disjoint projections do not conflict;
 - unknown overlap is rejected conservatively and remains distinguishable from
@@ -128,3 +143,7 @@ connects general readonly receivers and two-phase calls. Syntax 04 M3 now reuses
 those facts for Unique/Shared owner reborrow, owner receiver access, and
 drop/share/move conflicts; see `resource-owner-borrow-receiver.md`. Reference
 escape, closure and suspension remain governed by the dedicated escape pass.
+
+Syntax 05 M4 adds property-produced references without adding a parallel lifetime system. Property
+and accessor identity select the producer, while this module remains the source of truth for LoanId
+liveness, Place overlap and last-use conflicts.

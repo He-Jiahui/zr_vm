@@ -982,6 +982,103 @@ TZrBool ZrCore_Function_MakeFrameSlotPlace(struct SZrState *state,
                                        outPlace);
 }
 
+static TZrBool function_resolve_frame_slot_reference_anchor(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 stackSlot,
+        const SZrFunction **outFunction,
+        SZrFunctionStackAnchor *outFrameBase,
+        TZrUInt32 *outStackSlot,
+        TZrUInt32 depth) {
+    const SZrFunctionFrameSlotLayout *slotLayout;
+
+    if (state == ZR_NULL || function == ZR_NULL || frameBase == ZR_NULL ||
+        outFunction == ZR_NULL || outFrameBase == ZR_NULL ||
+        outStackSlot == ZR_NULL || depth > 32u) {
+        return ZR_FALSE;
+    }
+    slotLayout = ZrCore_Function_FindFrameSlotLayout(function, stackSlot);
+    if (slotLayout == ZR_NULL ||
+        slotLayout->slotKind !=
+                (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+        return ZR_FALSE;
+    }
+    if ((slotLayout->reserved0 &
+         ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS) != 0u) {
+        SZrStackFramePlace bindingPlace;
+        SZrFunctionFrameBorrowedAliasBinding binding;
+        SZrFunction *sourceFunction;
+        TZrStackValuePointer sourceFrameBase;
+
+        if ((slotLayout->reserved0 &
+             (ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+              ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS)) !=
+                    (ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                     ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS) ||
+            !ZrCore_Stack_MakeFramePlace(
+                    state,
+                    frameBase,
+                    slotLayout->byteOffset,
+                    (TZrUInt32)sizeof(binding),
+                    (TZrUInt32)_Alignof(
+                            SZrFunctionFrameBorrowedAliasBinding),
+                    &bindingPlace)) {
+            return ZR_FALSE;
+        }
+        memcpy(&binding, bindingPlace.address, sizeof(binding));
+        if (binding.sourceCallInfo == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        sourceFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(
+                state, binding.sourceCallInfo);
+        sourceFrameBase = ZrCore_Function_StackAnchorRestore(
+                state, &binding.sourceFrameBase);
+        return function_resolve_frame_slot_reference_anchor(
+                state,
+                sourceFunction,
+                sourceFrameBase,
+                binding.sourceStackSlot,
+                outFunction,
+                outFrameBase,
+                outStackSlot,
+                depth + 1u);
+    }
+
+    *outFunction = function;
+    ZrCore_Function_StackAnchorInit(state, frameBase, outFrameBase);
+    *outStackSlot = stackSlot;
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Function_ResolveFrameSlotReferenceAnchor(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 stackSlot,
+        const SZrFunction **outFunction,
+        SZrFunctionStackAnchor *outFrameBase,
+        TZrUInt32 *outStackSlot) {
+    if (outFunction != ZR_NULL) {
+        *outFunction = ZR_NULL;
+    }
+    if (outFrameBase != ZR_NULL) {
+        outFrameBase->offset = (TZrMemoryOffset)-1;
+    }
+    if (outStackSlot != ZR_NULL) {
+        *outStackSlot = 0u;
+    }
+    return function_resolve_frame_slot_reference_anchor(
+            state,
+            function,
+            frameBase,
+            stackSlot,
+            outFunction,
+            outFrameBase,
+            outStackSlot,
+            0u);
+}
+
 TZrBool ZrCore_Function_BindFrameSlotInlineArrayElement(
         SZrState *state,
         const SZrFunction *function,

@@ -207,6 +207,8 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - typed getter/setter/init lowering through the linked accessor identity
   - single-evaluation compound assignment with receiver/RHS/exception ordering
   - inline-struct receiver-source provenance and source/artifact dispatch parity
+  - ref/ref-readonly getter invariants, `PROPERTY_REF_GET`/deref Place lowering, and the managed
+    reference artifact/AOT boundary
 
 - `canonical-type-graph.md`
   - immutable structural type nodes and canonical `TypeId` identity
@@ -224,6 +226,7 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - ref-slot reaching values with Store kill/gen and Load propagation
   - capability-aware shared/mutable conflict and multi-parent nested reborrow
   - cycle/reachability guards and structured overlap diagnostics
+  - property-produced receiver/owner loan propagation and the pre-creation ValueId reuse guard
 - `receiver-readonly-call-boundary.md`
   - canonical readonly/writable receiver effects and serialized member contracts
   - owner auto-deref capability matrix across seven dispatch kinds

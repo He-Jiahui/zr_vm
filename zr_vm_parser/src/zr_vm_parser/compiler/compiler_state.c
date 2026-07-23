@@ -187,6 +187,7 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     cs->initializationPhase = ZR_COMPILER_INITIALIZATION_NONE;
     cs->currentFunctionNode = ZR_NULL;
     cs->currentFunctionReceiverEffect = ZR_CANONICAL_RECEIVER_NONE;
+    cs->preservePropertyReferenceResult = ZR_FALSE;
     cs->currentTypeName = ZR_NULL;
     cs->currentTypeNode = ZR_NULL;
     

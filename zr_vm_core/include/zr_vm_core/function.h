@@ -379,7 +379,10 @@ typedef enum EZrSemIrOpcode {
     ZR_SEMIR_OPCODE_OWN_VIEW_SHARED = 47,
     ZR_SEMIR_OPCODE_OWN_VIEW_MUT = 48,
     ZR_SEMIR_OPCODE_OWN_INTO_GC_BOX = 49,
-    ZR_SEMIR_OPCODE_OWN_RETURN_TO_GC = 50
+    ZR_SEMIR_OPCODE_OWN_RETURN_TO_GC = 50,
+    ZR_SEMIR_OPCODE_PROPERTY_REF_GET = 51,
+    ZR_SEMIR_OPCODE_DEREFERENCE = 52,
+    ZR_SEMIR_OPCODE_PROPERTY_REF_STORE = 53
 } EZrSemIrOpcode;
 
 typedef enum EZrSemIrEffectKind {
@@ -748,6 +751,28 @@ ZR_CORE_API TZrBool ZrCore_Function_MakeFrameSlotPlace(struct SZrState *state,
                                                        TZrStackValuePointer frameBase,
                                                        TZrUInt32 stackSlot,
                                                        SZrStackFramePlace *outPlace);
+ZR_CORE_API TZrBool ZrCore_Function_ResolveFrameSlotReferenceAnchor(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 stackSlot,
+        const SZrFunction **outFunction,
+        SZrFunctionStackAnchor *outFrameBase,
+        TZrUInt32 *outStackSlot);
+ZR_CORE_API TZrBool ZrCore_Function_GetFrameSlotInlineMemberValue(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 receiverStackSlot,
+        struct SZrString *memberName,
+        struct SZrTypeValue *result);
+ZR_CORE_API TZrBool ZrCore_Function_SetFrameSlotInlineMemberValue(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 receiverStackSlot,
+        struct SZrString *memberName,
+        const struct SZrTypeValue *value);
 ZR_CORE_API TZrBool ZrCore_Function_GetFrameSlotInlineMember(
         struct SZrState *state,
         const SZrFunction *function,

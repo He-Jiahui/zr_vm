@@ -3253,6 +3253,140 @@ static TZrBool validate_return_ownership_escape(SZrCompilerState *cs, SZrAstNode
 }
 
 // 编译返回语句
+static TZrUInt32 compile_property_reference_return_value(
+        SZrCompilerState *cs,
+        SZrAstNode *expression,
+        SZrFileRange location) {
+    SZrPrimaryExpression *primary;
+    SZrAstNode *projectionNode;
+    SZrMemberExpression *projection;
+    SZrAstNode prefixNode;
+    SZrAstNodeArray prefixMembers;
+    TZrUInt32 baseSlot;
+    TZrUInt32 referenceSlot;
+
+    if (cs == ZR_NULL || expression == ZR_NULL ||
+        expression->type != ZR_AST_PRIMARY_EXPRESSION ||
+        ZrParser_PlaceExpression_Classify(expression) ==
+                ZR_PARSER_PLACE_EXPRESSION_INVALID) {
+        ZrParser_Compiler_Error(
+                cs,
+                "ref return expression must be an addressable Place",
+                location);
+        return ZR_PARSER_SLOT_NONE;
+    }
+    primary = &expression->data.primaryExpression;
+    if (primary->property == ZR_NULL || primary->members == ZR_NULL ||
+        primary->members->count == 0U) {
+        ZrParser_Compiler_Error(
+                cs,
+                "ref property getter must return a field, element, or static Place",
+                location);
+        return ZR_PARSER_SLOT_NONE;
+    }
+    projectionNode = primary->members->nodes[primary->members->count - 1U];
+    if (projectionNode == ZR_NULL ||
+        projectionNode->type != ZR_AST_MEMBER_EXPRESSION ||
+        projectionNode->data.memberExpression.property == ZR_NULL) {
+        ZrParser_Compiler_Error(
+                cs, "ref property getter has an invalid Place projection", location);
+        return ZR_PARSER_SLOT_NONE;
+    }
+    projection = &projectionNode->data.memberExpression;
+    prefixNode = *expression;
+    prefixMembers = *primary->members;
+    prefixMembers.count--;
+    prefixNode.data.primaryExpression.members = &prefixMembers;
+    ZrParser_Expression_Compile(cs, &prefixNode);
+    baseSlot = cs->lastExpressionSlot;
+    if (prefixMembers.count == 0U &&
+        prefixNode.data.primaryExpression.property != ZR_NULL &&
+        prefixNode.data.primaryExpression.property->type ==
+                ZR_AST_IDENTIFIER_LITERAL &&
+        prefixNode.data.primaryExpression.property->data.identifier.name !=
+                ZR_NULL) {
+        TZrUInt32 directLocalSlot = find_local_var(
+                cs,
+                prefixNode.data.primaryExpression.property->data.identifier.name);
+        if (directLocalSlot != ZR_PARSER_SLOT_NONE) {
+            baseSlot = directLocalSlot;
+        }
+    }
+    if (cs->hasError || baseSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+    referenceSlot = allocate_stack_slot(cs);
+    if (referenceSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to reserve managed property reference", location);
+        return ZR_PARSER_SLOT_NONE;
+    }
+
+    if (projection->computed) {
+        TZrUInt32 keySlot;
+
+        ZrParser_Expression_Compile(cs, projection->property);
+        keySlot = cs->lastExpressionSlot;
+        if (cs->hasError || keySlot == ZR_PARSER_SLOT_NONE) {
+            return ZR_PARSER_SLOT_NONE;
+        }
+        emit_instruction(
+                cs,
+                create_instruction_2(
+                        ZR_INSTRUCTION_ENUM(PROPERTY_REF_CREATE_INDEX),
+                        (TZrUInt16)referenceSlot,
+                        (TZrUInt16)baseSlot,
+                        (TZrUInt16)keySlot));
+    } else if (projection->property->type == ZR_AST_IDENTIFIER_LITERAL &&
+               projection->property->data.identifier.name != ZR_NULL) {
+        SZrInferredType baseType;
+        SZrString *baseTypeName;
+        SZrString *memberName = projection->property->data.identifier.name;
+        SZrTypeMemberInfo *memberInfo;
+        TZrUInt32 memberEntryIndex;
+
+        ZrParser_InferredType_Init(
+                cs->state, &baseType, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrParser_ExpressionType_Infer(cs, &prefixNode, &baseType)) {
+            ZrParser_InferredType_Free(cs->state, &baseType);
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Unable to resolve ref property Place receiver type",
+                    location);
+            return ZR_PARSER_SLOT_NONE;
+        }
+        baseTypeName = get_type_name_from_inferred_type(cs, &baseType);
+        memberInfo = baseTypeName != ZR_NULL
+                             ? find_compiler_type_member(
+                                       cs, baseTypeName, memberName)
+                             : ZR_NULL;
+        memberEntryIndex = memberInfo != ZR_NULL
+                                   ? compiler_get_or_add_member_entry_for_type_member(
+                                             cs, memberName, memberInfo, 0U)
+                                   : ZR_PARSER_MEMBER_ID_NONE;
+        ZrParser_InferredType_Free(cs->state, &baseType);
+        if (memberEntryIndex == ZR_PARSER_MEMBER_ID_NONE) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "ref property getter field Place lacks canonical member identity",
+                    location);
+            return ZR_PARSER_SLOT_NONE;
+        }
+        emit_instruction(
+                cs,
+                create_instruction_2(
+                        ZR_INSTRUCTION_ENUM(PROPERTY_REF_CREATE_MEMBER),
+                        (TZrUInt16)referenceSlot,
+                        (TZrUInt16)baseSlot,
+                        (TZrUInt16)memberEntryIndex));
+    } else {
+        ZrParser_Compiler_Error(
+                cs, "ref property getter has an invalid member Place", location);
+        return ZR_PARSER_SLOT_NONE;
+    }
+    return referenceSlot;
+}
+
 static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
     SZrCompilerTryContext finallyContext;
     TZrBool hasFinallyContext = ZR_FALSE;
@@ -3286,9 +3420,18 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
         TZrSize exprInstBefore = cs->instructions.length;
         TZrSize exprInstAfter;
 
-        ZrParser_Expression_Compile(cs, stmt->expr);
+        if (stmt->isReferenceReturn &&
+            cs->currentFunctionNode != ZR_NULL &&
+            cs->currentFunctionNode->type ==
+                    ZR_AST_PROPERTY_DECLARATION) {
+            resultSlot = compile_property_reference_return_value(
+                    cs, stmt->expr, stmt->referenceLocation);
+        } else {
+            ZrParser_Expression_Compile(cs, stmt->expr);
+            resultSlot = cs->lastExpressionSlot;
+        }
         exprInstAfter = cs->instructions.length;
-        if (exprInstAfter > exprInstBefore) {
+        if (!stmt->isReferenceReturn && exprInstAfter > exprInstBefore) {
             TZrInstruction *lastInst = (TZrInstruction *)ZrCore_Array_Get(&cs->instructions, exprInstAfter - 1);
             if (lastInst != ZR_NULL &&
                 (lastInst->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL) ||
@@ -3298,7 +3441,7 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
             } else {
                 resultSlot = cs->lastExpressionSlot;
             }
-        } else {
+        } else if (!stmt->isReferenceReturn) {
             resultSlot = cs->lastExpressionSlot;
         }
         if (!cs->hasError && resultSlot == ZR_PARSER_SLOT_NONE) {

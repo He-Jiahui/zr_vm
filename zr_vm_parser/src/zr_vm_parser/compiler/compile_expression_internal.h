@@ -175,8 +175,10 @@ TZrBool compile_expression_try_get_inline_union_identifier_slot_for_type(SZrComp
 TZrBool emit_property_getter_call(SZrCompilerState *cs,
                                   TZrUInt32 resultSlot,
                                   TZrUInt32 receiverSlot,
+                                  TZrUInt32 semanticReceiverSlot,
                                   SZrString *propertyName,
-                                  TZrBool isStatic,
+                                  const SZrTypeMemberInfo *propertyMember,
+                                  const SZrTypeMemberInfo *getterAccessor,
                                   SZrFileRange location);
 TZrBool emit_module_plain_share_helper_call(SZrCompilerState *cs,
                                             TZrUInt32 sourceSlot,

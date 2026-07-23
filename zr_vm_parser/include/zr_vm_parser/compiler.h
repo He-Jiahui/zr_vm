@@ -157,6 +157,7 @@ typedef struct SZrCompilerState {
     EZrCompilerInitializationPhase initializationPhase; // structured constructor/init-accessor phase
     SZrAstNode *currentFunctionNode;          // 当前编译的函数 AST 节点（用于访问参数信息）
     EZrCanonicalReceiverEffect currentFunctionReceiverEffect; // 当前 callable 的结构化 receiver effect
+    TZrBool preservePropertyReferenceResult; // `%ref property` keeps the managed reference identity
     SZrString *currentTypeName;               // 当前编译的类型名称（用于成员字段 const 检查）
     SZrAstNode *currentTypeNode;              // 当前编译的类型声明节点（用于 const 成员初始化检查）
     

@@ -6,6 +6,8 @@ typedef struct SZrCompilerSemanticIrSlot {
     TZrValueId valueId;
     TZrTypeId typeId;
     TZrSymbolId symbolId;
+    TZrLoanId loanId;
+    TZrRegionId regionId;
 } SZrCompilerSemanticIrSlot;
 
 static SZrCompilerSemanticIrSlot *compiler_semantic_ir_find_slot(
@@ -231,6 +233,7 @@ static TZrLoanId compiler_semantic_ir_begin_receiver_call_internal(
         SZrCompilerState *cs,
         TZrPlaceId receiverPlaceId,
         EZrCanonicalReceiverEffect receiverEffect,
+        TZrBool useTwoPhaseMutableLoan,
         SZrFileRange sourceRange) {
     const SZrParserPlace *receiverPlace;
     SZrSemanticIrInstructionSpec spec;
@@ -251,7 +254,8 @@ static TZrLoanId compiler_semantic_ir_begin_receiver_call_internal(
     access = receiverEffect == ZR_CANONICAL_RECEIVER_READONLY
                      ? ZR_SEMANTIC_LOAN_SHARED
                      : ZR_SEMANTIC_LOAN_MUTABLE;
-    phase = receiverEffect == ZR_CANONICAL_RECEIVER_MUTABLE
+    phase = receiverEffect == ZR_CANONICAL_RECEIVER_MUTABLE &&
+                    useTwoPhaseMutableLoan
                     ? ZR_SEMANTIC_LOAN_TWO_PHASE
                     : ZR_SEMANTIC_LOAN_IMMEDIATE;
     borrowValueId = ZrParser_SemanticIr_AddValue(
@@ -274,7 +278,9 @@ static TZrLoanId compiler_semantic_ir_begin_receiver_call_internal(
     memset(&spec, 0, sizeof(spec));
     spec.opcode = phase == ZR_SEMANTIC_LOAN_TWO_PHASE
                           ? ZR_SEMANTIC_IR_RESERVE_BORROW_MUT
-                          : ZR_SEMANTIC_IR_BORROW_SHARED;
+                          : (access == ZR_SEMANTIC_LOAN_MUTABLE
+                                     ? ZR_SEMANTIC_IR_BORROW_MUT
+                                     : ZR_SEMANTIC_IR_BORROW_SHARED);
     spec.typeId = receiverPlace->typeId;
     spec.placeId = receiverPlaceId;
     spec.resultValueId = borrowValueId;
@@ -668,7 +674,7 @@ TZrLoanId compiler_semantic_ir_begin_receiver_call_place(
         EZrCanonicalReceiverEffect receiverEffect,
         SZrFileRange sourceRange) {
     return compiler_semantic_ir_begin_receiver_call_internal(
-            cs, receiverPlaceId, receiverEffect, sourceRange);
+            cs, receiverPlaceId, receiverEffect, ZR_TRUE, sourceRange);
 }
 
 TZrLoanId compiler_semantic_ir_begin_receiver_call(
@@ -679,7 +685,7 @@ TZrLoanId compiler_semantic_ir_begin_receiver_call(
     TZrPlaceId receiverPlaceId = compiler_semantic_ir_place_for_slot(
             cs, receiverSlot, sourceRange);
     return compiler_semantic_ir_begin_receiver_call_internal(
-            cs, receiverPlaceId, receiverEffect, sourceRange);
+            cs, receiverPlaceId, receiverEffect, ZR_TRUE, sourceRange);
 }
 
 TZrBool compiler_semantic_ir_activate_receiver_call(
@@ -731,6 +737,8 @@ TZrBool compiler_semantic_ir_project_receiver_call_result(
     if (sourcePlace == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
+    result->loanId = loanId;
+    result->regionId = loan->regionId;
 
     memset(&spec, 0, sizeof(spec));
     spec.opcode = ZR_SEMANTIC_IR_CONVERT;
@@ -741,6 +749,276 @@ TZrBool compiler_semantic_ir_project_receiver_call_result(
     spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     spec.sourceRange = sourceRange;
     return compiler_semantic_ir_emit(cs, &spec);
+}
+
+static TZrTypeId compiler_semantic_ir_reference_pointee_type_id(
+        const SZrCompilerState *cs,
+        TZrTypeId referenceTypeId) {
+    const SZrCanonicalTypeNode *type;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        referenceTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    type = ZrParser_CanonicalType_Find(
+            cs->semanticContext, referenceTypeId);
+    return type != ZR_NULL && type->kind == ZR_CANONICAL_TYPE_REF
+                   ? type->data.refType.pointeeTypeId
+                   : ZR_SEMANTIC_ID_INVALID;
+}
+
+static void compiler_semantic_ir_set_slot_type(
+        SZrCompilerState *cs,
+        SZrCompilerSemanticIrSlot *slot,
+        TZrTypeId typeId) {
+    SZrSemanticIrValue *value;
+
+    if (cs == ZR_NULL || slot == ZR_NULL) {
+        return;
+    }
+    slot->typeId = typeId;
+    value = slot->valueId != ZR_VALUE_ID_INVALID
+                    ? (SZrSemanticIrValue *)ZrCore_Array_Get(
+                              &cs->preSemanticIr.values,
+                              (TZrSize)slot->valueId - 1U)
+                    : ZR_NULL;
+    if (value != ZR_NULL) {
+        value->typeId = typeId;
+    }
+}
+
+TZrBool compiler_semantic_ir_record_property_ref_get(
+        SZrCompilerState *cs,
+        TZrUInt32 receiverSlot,
+        TZrUInt32 resultSlot,
+        const SZrTypeMemberInfo *propertyMember,
+        const SZrTypeMemberInfo *getterAccessor,
+        SZrFileRange sourceRange) {
+    SZrCompilerSemanticIrSlot *receiver;
+    SZrCompilerSemanticIrSlot *result;
+    const SZrSemanticIrLoanFact *loan = ZR_NULL;
+    SZrSemanticIrInstructionSpec spec;
+    TZrLoanId loanId = ZR_SEMANTIC_LOAN_ID_INVALID;
+    TZrRegionId regionId = 1U;
+
+    if (propertyMember == ZR_NULL ||
+        propertyMember->structuredReturnType.referenceAccess ==
+                ZR_REFERENCE_ACCESS_NONE) {
+        return ZR_TRUE;
+    }
+    if (cs == ZR_NULL || getterAccessor == ZR_NULL ||
+        receiverSlot == ZR_PARSER_SLOT_NONE ||
+        resultSlot == ZR_PARSER_SLOT_NONE ||
+        propertyMember->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        getterAccessor->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        propertyMember->propertyValueTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    receiver = compiler_semantic_ir_materialize_slot(
+            cs, receiverSlot, sourceRange);
+    if (receiver == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    result = compiler_semantic_ir_add_temporary_slot(
+            cs, resultSlot, sourceRange);
+    if (result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    compiler_semantic_ir_set_slot_type(
+            cs, result, propertyMember->propertyValueTypeId);
+    if (getterAccessor->receiverEffect != ZR_CANONICAL_RECEIVER_NONE) {
+        loanId = compiler_semantic_ir_begin_receiver_call_internal(
+                cs,
+                receiver->placeId,
+                getterAccessor->receiverEffect,
+                ZR_FALSE,
+                sourceRange);
+        if (loanId == ZR_SEMANTIC_LOAN_ID_INVALID) {
+            return ZR_FALSE;
+        }
+        loan = ZrParser_SemanticIr_Loan(&cs->preSemanticIr, loanId);
+        if (loan == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        if (!compiler_semantic_ir_activate_receiver_call(
+                    cs, loanId, sourceRange)) {
+            return ZR_FALSE;
+        }
+        regionId = loan->regionId;
+    }
+    result->loanId = loanId;
+    result->regionId = regionId;
+
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_PROPERTY_REF_GET;
+    spec.typeId = propertyMember->propertyValueTypeId;
+    spec.placeId = receiver->placeId;
+    spec.valueId = loan != ZR_NULL
+                           ? loan->createdByValueId
+                           : receiver->valueId;
+    spec.resultValueId = result->valueId;
+    spec.symbolId = propertyMember->symbolId;
+    spec.accessorSymbolId = getterAccessor->symbolId;
+    spec.loanId = loanId;
+    spec.regionId = regionId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    return compiler_semantic_ir_emit(cs, &spec);
+}
+
+static TZrPlaceId compiler_semantic_ir_project_dereference(
+        SZrCompilerState *cs,
+        const SZrCompilerSemanticIrSlot *reference,
+        TZrTypeId pointeeTypeId,
+        SZrFileRange sourceRange,
+        TZrValueId *outDereferenceValueId) {
+    SZrParserPlaceProjection projection;
+    SZrSemanticIrInstructionSpec spec;
+    TZrPlaceId placeId;
+    TZrValueId valueId;
+
+    if (outDereferenceValueId != ZR_NULL) {
+        *outDereferenceValueId = ZR_VALUE_ID_INVALID;
+    }
+    if (cs == ZR_NULL || reference == ZR_NULL ||
+        reference->placeId == ZR_PLACE_ID_INVALID ||
+        reference->valueId == ZR_VALUE_ID_INVALID ||
+        pointeeTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_PLACE_ID_INVALID;
+    }
+    memset(&projection, 0, sizeof(projection));
+    projection.kind = ZR_PARSER_PLACE_PROJECTION_DEREFERENCE;
+    placeId = ZrParser_PlaceGraph_Project(
+            &cs->preSemanticIr.places,
+            reference->placeId,
+            &projection,
+            pointeeTypeId,
+            sourceRange);
+    valueId = ZrParser_SemanticIr_AddValue(
+            &cs->preSemanticIr, pointeeTypeId, sourceRange);
+    if (placeId == ZR_PLACE_ID_INVALID ||
+        valueId == ZR_VALUE_ID_INVALID) {
+        return ZR_PLACE_ID_INVALID;
+    }
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_DEREFERENCE;
+    spec.typeId = pointeeTypeId;
+    spec.placeId = placeId;
+    spec.valueId = reference->valueId;
+    spec.resultValueId = valueId;
+    spec.loanId = reference->loanId;
+    spec.regionId = reference->regionId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    if (!compiler_semantic_ir_emit(cs, &spec)) {
+        return ZR_PLACE_ID_INVALID;
+    }
+    if (outDereferenceValueId != ZR_NULL) {
+        *outDereferenceValueId = valueId;
+    }
+    return placeId;
+}
+
+TZrBool compiler_semantic_ir_record_property_ref_load(
+        SZrCompilerState *cs,
+        TZrUInt32 referenceSlot,
+        TZrUInt32 targetSlot,
+        SZrFileRange sourceRange) {
+    SZrCompilerSemanticIrSlot *reference;
+    SZrCompilerSemanticIrSlot target;
+    SZrSemanticIrInstructionSpec spec;
+    TZrTypeId pointeeTypeId;
+    TZrPlaceId placeId;
+    TZrValueId dereferenceValueId;
+    TZrValueId loadedValueId;
+
+    reference = compiler_semantic_ir_find_slot(cs, referenceSlot);
+    if (reference == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    pointeeTypeId = compiler_semantic_ir_reference_pointee_type_id(
+            cs, reference->typeId);
+    placeId = compiler_semantic_ir_project_dereference(
+            cs,
+            reference,
+            pointeeTypeId,
+            sourceRange,
+            &dereferenceValueId);
+    loadedValueId = ZrParser_SemanticIr_AddValue(
+            &cs->preSemanticIr, pointeeTypeId, sourceRange);
+    if (placeId == ZR_PLACE_ID_INVALID ||
+        loadedValueId == ZR_VALUE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_LOAD;
+    spec.typeId = pointeeTypeId;
+    spec.placeId = placeId;
+    spec.valueId = dereferenceValueId;
+    spec.resultValueId = loadedValueId;
+    spec.loanId = reference->loanId;
+    spec.regionId = reference->regionId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    if (!compiler_semantic_ir_emit(cs, &spec)) {
+        return ZR_FALSE;
+    }
+    memset(&target, 0, sizeof(target));
+    target.stackSlot = targetSlot;
+    target.placeId = placeId;
+    target.valueId = loadedValueId;
+    target.typeId = pointeeTypeId;
+    target.regionId = reference->regionId;
+    ZrCore_Array_Push(cs->state, &cs->preSemanticIrSlots, &target);
+    return compiler_semantic_ir_end_receiver_call(
+            cs, reference->loanId, sourceRange);
+}
+
+TZrBool compiler_semantic_ir_record_property_ref_store(
+        SZrCompilerState *cs,
+        TZrUInt32 referenceSlot,
+        TZrUInt32 sourceSlot,
+        SZrFileRange sourceRange) {
+    SZrCompilerSemanticIrSlot *reference;
+    SZrCompilerSemanticIrSlot *source;
+    SZrSemanticIrInstructionSpec spec;
+    TZrTypeId pointeeTypeId;
+    TZrPlaceId placeId;
+    TZrValueId dereferenceValueId;
+
+    reference = compiler_semantic_ir_find_slot(cs, referenceSlot);
+    source = compiler_semantic_ir_materialize_slot(
+            cs, sourceSlot, sourceRange);
+    if (reference == ZR_NULL || source == ZR_NULL ||
+        source->valueId == ZR_VALUE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    pointeeTypeId = compiler_semantic_ir_reference_pointee_type_id(
+            cs, reference->typeId);
+    placeId = compiler_semantic_ir_project_dereference(
+            cs,
+            reference,
+            pointeeTypeId,
+            sourceRange,
+            &dereferenceValueId);
+    if (placeId == ZR_PLACE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_STORE;
+    spec.typeId = pointeeTypeId;
+    spec.placeId = placeId;
+    spec.valueId = source->valueId;
+    spec.auxiliaryValueId = dereferenceValueId;
+    spec.loanId = reference->loanId;
+    spec.regionId = reference->regionId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    if (!compiler_semantic_ir_emit(cs, &spec)) {
+        return ZR_FALSE;
+    }
+    return compiler_semantic_ir_end_receiver_call(
+            cs, reference->loanId, sourceRange);
 }
 
 TZrBool compiler_semantic_ir_end_receiver_call(

@@ -2151,6 +2151,40 @@ TZrBool execution_inline_frame_try_initialize_member_from_slot(
             state, function, frameBase, receiverSlot, memberName, sourceSlot, assignedValue);
 }
 
+TZrBool ZrCore_Function_GetFrameSlotInlineMemberValue(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 receiverStackSlot,
+        SZrString *memberName,
+        SZrTypeValue *result) {
+    return execution_inline_frame_try_get_member_by_name_to_slot(
+            state,
+            function,
+            frameBase,
+            receiverStackSlot,
+            memberName,
+            ZR_EXECUTION_INLINE_FRAME_STACK_SLOT_NONE,
+            result);
+}
+
+TZrBool ZrCore_Function_SetFrameSlotInlineMemberValue(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        TZrUInt32 receiverStackSlot,
+        SZrString *memberName,
+        const SZrTypeValue *value) {
+    return execution_inline_frame_try_set_member_by_name_from_slot(
+            state,
+            function,
+            frameBase,
+            receiverStackSlot,
+            memberName,
+            ZR_EXECUTION_INLINE_FRAME_STACK_SLOT_NONE,
+            value);
+}
+
 TZrBool ZrCore_Function_GetFrameSlotInlineMember(
         SZrState *state,
         const SZrFunction *function,

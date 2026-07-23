@@ -854,6 +854,8 @@ typedef struct SZrPropertyAccessor {
     EZrPropertyAccessorBodyKind bodyKind;
     SZrAstNode *body;
     SZrFileRange keywordLocation;
+    TZrBool isReferenceResult;
+    SZrFileRange referenceLocation;
 } SZrPropertyAccessor;
 
 // 接口声明
@@ -931,6 +933,8 @@ typedef struct SZrUsingStatement {
 
 typedef struct SZrReturnStatement {
     SZrAstNode *expr; // 可选表达式
+    TZrBool isReferenceReturn;
+    SZrFileRange referenceLocation;
 } SZrReturnStatement;
 
 typedef struct SZrBreakContinueStatement {

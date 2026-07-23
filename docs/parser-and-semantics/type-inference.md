@@ -15,6 +15,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_receiver_effect.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/object/object.c
   - zr_vm_core/src/zr_vm_core/object/object_internal.h
@@ -46,10 +47,12 @@ plan_sources:
   - docs/plans/syntax/05-property-unified-ast/m1-unified-ast-symbol-implementation-plan.md
   - docs/plans/syntax/05-property-unified-ast/m2-explicit-field-init-implementation-plan.md
   - docs/plans/syntax/05-property-unified-ast/m3-access-lowering-receiver-effect-implementation-plan.md
+  - docs/plans/syntax/05-property-unified-ast/m4-ref-return-place-region-implementation-plan.md
 tests:
   - tests/parser/test_property_unified_ast.c
   - tests/parser/test_property_explicit_field_init.c
   - tests/parser/test_property_access_lowering.c
+  - tests/parser/test_property_ref_return.c
   - tests/parser/test_compiler_features.c
   - tests/parser/test_reference_receiver_call_boundary.c
   - tests/parser/test_semantic_query.c
@@ -193,3 +196,35 @@ artifacts. A getter returning `ref T` or `ref readonly T`, direct Place projecti
 references, and reference-region propagation remain deferred to M4. LSP hover/signature/diagnostic
 parity remains M5 and must consume the same canonical property/accessor facts without adding a text
 fallback.
+
+## Reference-return Property Contracts
+
+M4 accepts a property whose declared value type is `ref T` or `ref readonly T` only when it has one
+concrete getter. A reference property cannot declare `set` or `init`, and its getter must explicitly
+return a reference with the same access. The property and getter retain separate canonical SymbolIds,
+while the getter callable TypeId and the property value TypeId share the same reference node. A
+writable result sets `exportsWritableRef`; a readonly result does not.
+
+The binder derives receiver capability from that canonical result. A writable reference getter has a
+mutable receiver effect, a readonly reference getter has a readonly receiver effect, and a static
+getter has no receiver. Override and interface implementation require invariant reference access.
+Calling a writable reference getter through a readonly receiver is rejected before lowering.
+
+Expression lowering invokes the linked getter once and keeps the result as a reference value. Value
+context dereferences and loads it; `ref propertyAccess` preserves identity; assignment and compound
+assignment dereference and store through `ref T` without selecting a setter. `ref readonly` rejects
+the store before any partial mutation. All paths use the visible property and linked accessor
+SymbolIds, never the property name, hidden accessor spelling, source text, or display signature.
+
+The pre-execution semantic projection publishes `PROPERTY_REF_GET` with the exact property and
+accessor SymbolIds, result TypeId, receiver Place, LoanId/region and source range. `DEREFERENCE`, load,
+and store facts consume that reference result. Local or temporary references cannot escape; class,
+addressable struct, ref-struct/view, static and ownership-receiver sources retain their structured
+source region and capability.
+
+## M4 Boundary
+
+M4 closes parser/compiler/runtime/artifact/AOT behavior for source reference properties. LSP hover,
+signature, navigation, code-action projection, final PropertyDef reflection, and legacy-property
+migration are M5 work. Those consumers must join the canonical property/accessor SymbolIds and
+reference TypeId; they may not reconstruct reference access from a member name or formatted text.
