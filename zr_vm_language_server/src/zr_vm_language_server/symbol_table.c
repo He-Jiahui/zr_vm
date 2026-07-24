@@ -741,6 +741,8 @@ SZrSymbol *ZrLanguageServer_Symbol_New(SZrState *state, EZrSymbolType type,
     symbol->semanticId = 0;
     symbol->semanticTypeId = 0;
     symbol->overloadSetId = 0;
+    symbol->hasPropertyContract = ZR_FALSE;
+    ZrCore_Memory_RawSet(&symbol->propertyContract, 0, sizeof(symbol->propertyContract));
     
     // 从 AST 节点中提取 isConst 信息
     if (astNode != ZR_NULL) {

@@ -3490,6 +3490,11 @@ infer_regular_member_access:
                     } else {
                         inferred_type_from_member_access(cs, memberInfo, &nextType);
                     }
+                    type_inference_record_resolved_property_reference_fact(
+                            cs,
+                            memberNode,
+                            memberInfo,
+                            ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
                     if (currentIsPrototypeReference &&
                         (memberInfo->memberType == ZR_AST_STRUCT_METHOD ||
                          memberInfo->memberType == ZR_AST_CLASS_METHOD ||

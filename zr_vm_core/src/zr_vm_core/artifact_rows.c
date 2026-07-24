@@ -49,7 +49,8 @@ static void artifact_write_property_row(TZrByte *bytes, const SZrArtifactPropert
     zr_artifact_write_u32(bytes + 20u, row->flags);
     zr_artifact_write_u64(bytes + 24u, row->signatureHash);
     zr_artifact_write_u64(bytes + 32u, row->contractHash);
-    zr_artifact_write_u64(bytes + 40u, 0u);
+    zr_artifact_write_u32(bytes + 40u, row->initializerToken);
+    zr_artifact_write_u32(bytes + 44u, row->nameStringOffset);
 }
 
 static void artifact_write_contract_row(TZrByte *bytes, const SZrArtifactContractRow *row) {
@@ -260,6 +261,8 @@ EZrArtifactStatus ZrCore_Artifact_ReadPropertyDefRow(const SZrArtifactSectionVie
     outRow->flags = zr_artifact_read_u32(bytes + 20u);
     outRow->signatureHash = zr_artifact_read_u64(bytes + 24u);
     outRow->contractHash = zr_artifact_read_u64(bytes + 32u);
+    outRow->initializerToken = zr_artifact_read_u32(bytes + 40u);
+    outRow->nameStringOffset = zr_artifact_read_u32(bytes + 44u);
     return ZR_ARTIFACT_STATUS_OK;
 }
 

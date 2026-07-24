@@ -3,8 +3,10 @@
 //
 
 #include "semantic/semantic_analyzer_internal.h"
+#include "semantic/lsp_property_contract.h"
 #include "semantic/semantic_analyzer_duplicate_diagnostics.h"
 #include "semantic/semantic_analyzer_union_patterns.h"
+#include "zr_vm_parser/semantic_query.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
@@ -543,6 +545,22 @@ static TZrBool collect_callable_return_types(SZrState *state,
         default:
             return ZR_TRUE;
     }
+}
+
+static TZrBool callable_body_has_direct_local_declaration(const SZrAstNode *body) {
+    if (body == ZR_NULL || body->type != ZR_AST_BLOCK || body->data.block.body == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < body->data.block.body->count; index++) {
+        const SZrAstNode *statement = body->data.block.body->nodes[index];
+
+        if (statement != ZR_NULL && statement->type == ZR_AST_VARIABLE_DECLARATION) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
 }
 
 static SZrInferredType *create_type_info_for_callable_return(SZrState *state,
@@ -1522,6 +1540,8 @@ static void collect_single_parameter_symbol(SZrState *state,
                                             SZrAstNode *ownerNode) {
     SZrInferredType *typeInfo;
     SZrSymbol *symbol = ZR_NULL;
+    TZrSymbolId canonicalSymbolId = ZR_SEMANTIC_ID_INVALID;
+    TZrTypeId canonicalTypeId = ZR_SEMANTIC_ID_INVALID;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || name == ZR_NULL || ownerNode == ZR_NULL) {
         return;
@@ -1531,9 +1551,27 @@ static void collect_single_parameter_symbol(SZrState *state,
     if (typeInfo == ZR_NULL) {
         semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, ownerNode->location);
     }
+    if (ownerNode->type == ZR_AST_PROPERTY_ACCESSOR &&
+        analyzer->semanticContext != ZR_NULL) {
+        SZrParserSemanticPropertyQuery propertyQuery;
+
+        if (ZrParser_SemanticQuery_PropertyAt(
+                    analyzer->semanticContext,
+                    ownerNode->location,
+                    ZR_NULL,
+                    &propertyQuery)) {
+            canonicalTypeId = propertyQuery.propertyTypeId;
+            canonicalSymbolId =
+                    ownerNode->data.propertyAccessor.kind == ZR_PROPERTY_ACCESSOR_SET
+                            ? propertyQuery.setterValueSymbolId
+                            : (ownerNode->data.propertyAccessor.kind == ZR_PROPERTY_ACCESSOR_INIT
+                                       ? propertyQuery.initializerValueSymbolId
+                                       : ZR_SEMANTIC_ID_INVALID);
+        }
+    }
     ZrLanguageServer_SymbolTable_AddSymbolEx(state,
                                     analyzer->symbolTable,
-         ZR_SYMBOL_PARAMETER,
+                                             ZR_SYMBOL_PARAMETER,
                                              name,
                                              ownerNode->location,
                                              typeInfo,
@@ -1541,17 +1579,37 @@ static void collect_single_parameter_symbol(SZrState *state,
                                              ownerNode,
                                              &symbol);
     if (symbol != ZR_NULL) {
-        ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
-                                                                  symbol,
-                                                                  ZR_SEMANTIC_SYMBOL_KIND_PARAMETER,
-                                                                  typeInfo,
-                                                                  ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
+        if (canonicalSymbolId != ZR_SEMANTIC_ID_INVALID &&
+            canonicalTypeId != ZR_SEMANTIC_ID_INVALID) {
+            symbol->semanticId = canonicalSymbolId;
+            symbol->semanticTypeId = canonicalTypeId;
+        } else {
+            ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(
+                    analyzer,
+                    symbol,
+                    ZR_SEMANTIC_SYMBOL_KIND_PARAMETER,
+                    typeInfo,
+                    ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
+        }
         ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
     }
     register_variable_type_binding_in_env(state,
                                           analyzer->compilerState != ZR_NULL ? analyzer->compilerState->typeEnv : ZR_NULL,
                                           name,
                                           typeInfo);
+    if (canonicalSymbolId != ZR_SEMANTIC_ID_INVALID &&
+        canonicalTypeId != ZR_SEMANTIC_ID_INVALID &&
+        analyzer->compilerState != ZR_NULL &&
+        analyzer->compilerState->typeEnv != ZR_NULL) {
+        SZrTypeBinding *binding = (SZrTypeBinding *)ZrParser_TypeEnvironment_FindVariableBinding(
+                analyzer->compilerState->typeEnv,
+                name);
+
+        if (binding != ZR_NULL) {
+            binding->symbolId = canonicalSymbolId;
+            binding->typeId = canonicalTypeId;
+        }
+    }
 }
 
 static SZrFileRange semantic_scope_range_for_node(SZrAstNode *scopeNode, SZrAstNode *body) {
@@ -1748,6 +1806,55 @@ static void collect_function_like_scope(SZrState *state,
     ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
     pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
     semantic_pop_compiler_context(analyzer, &contextSnapshot);
+}
+
+static void collect_unified_property_accessor_scopes(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *propertyNode,
+        SZrAstNode *ownerTypeNode,
+        TZrBool isClassScope,
+        TZrBool isStructScope) {
+    SZrPropertyDeclaration *property;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || propertyNode == ZR_NULL ||
+        propertyNode->type != ZR_AST_PROPERTY_DECLARATION) {
+        return;
+    }
+
+    property = &propertyNode->data.propertyDeclaration;
+    for (TZrSize index = 0U;
+         property->accessors != ZR_NULL && index < property->accessors->count;
+         index++) {
+        SZrAstNode *accessorNode = property->accessors->nodes[index];
+        SZrPropertyAccessor *accessor;
+        SZrString *valueName = ZR_NULL;
+
+        if (accessorNode == ZR_NULL || accessorNode->type != ZR_AST_PROPERTY_ACCESSOR) {
+            continue;
+        }
+        accessor = &accessorNode->data.propertyAccessor;
+        if (accessor->body == ZR_NULL) {
+            continue;
+        }
+        if (accessor->kind == ZR_PROPERTY_ACCESSOR_SET ||
+            accessor->kind == ZR_PROPERTY_ACCESSOR_INIT) {
+            valueName = ZrCore_String_Create(state, "value", strlen("value"));
+        }
+        collect_function_like_scope(
+                state,
+                analyzer,
+                accessorNode,
+                accessorNode,
+                ZR_NULL,
+                accessor->body,
+                ownerTypeNode,
+                property->isStatic,
+                isClassScope,
+                isStructScope,
+                valueName,
+                valueName != ZR_NULL ? property->typeInfo : ZR_NULL);
+    }
 }
 
 static void collect_symbols_from_node_array(SZrState *state,
@@ -2037,6 +2144,30 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrTestDeclaration *testDecl = &node->data.testDeclaration;
             SZrSymbol *symbol = ZR_NULL;
             SZrString *name = testDecl->name != ZR_NULL ? testDecl->name->name : ZR_NULL;
+            SZrInferredType *returnType = ZR_NULL;
+
+            /*
+             * A test body with local declarations needs the compiler's complete
+             * statement dataflow before a return-expression inference can
+             * publish definite-assignment facts.  The LSP's lightweight symbol
+             * pass deliberately does not compile that flow.  Keep the historic
+             * no-diagnostic behavior for such tests, while still allowing a
+             * declaration-free test to publish exact member/property facts.
+             */
+            if (!callable_body_has_direct_local_declaration(testDecl->body)) {
+                SZrSemanticCompilerContextSnapshot contextSnapshot;
+
+                semantic_push_compiler_context(analyzer, ZR_NULL, node, &contextSnapshot);
+                returnType = create_type_info_for_callable_return(
+                        state,
+                        analyzer,
+                        ZR_NULL,
+                        testDecl->params,
+                        testDecl->body,
+                        node,
+                        node->location);
+                semantic_pop_compiler_context(analyzer, &contextSnapshot);
+            }
 
             if (name != ZR_NULL) {
                 ZrLanguageServer_SymbolTable_AddSymbolEx(state,
@@ -2044,14 +2175,14 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                          ZR_SYMBOL_FUNCTION,
                                                          name,
                                                          node->location,
-                                                         ZR_NULL,
+                                                         returnType,
                                                          ZR_ACCESS_PRIVATE,
                                                          node,
                                                          &symbol);
                 ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
                                                                           symbol,
                                                                           ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
-                                                                          ZR_NULL,
+                                                                          returnType,
                                                                           ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
                 ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
             }
@@ -2065,9 +2196,9 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                         ZR_NULL,
                                         ZR_TRUE,
                                         ZR_FALSE,
-                                        ZR_FALSE,
-                                        ZR_NULL,
-                                        ZR_NULL);
+                                          ZR_FALSE,
+                                          ZR_NULL,
+                                          ZR_NULL);
             return;
         }
 
@@ -2366,6 +2497,13 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                        ownerRegionId,
                                                        ZR_DETERMINISTIC_CLEANUP_KIND_INSTANCE_FIELD,
                                                        (TZrInt32)memberIndex);
+                    } else if (classMember->type == ZR_AST_PROPERTY_DECLARATION) {
+                        (void)ZrLanguageServer_LspPropertyContract_RegisterSourceSymbol(
+                                state,
+                                analyzer,
+                                node,
+                                classMember,
+                                ZR_NULL);
                     } else if (classMember->type == ZR_AST_CLASS_METHOD) {
                         SZrClassMethod *method = &classMember->data.classMethod;
                         SZrString *memberName = method->name != ZR_NULL ? method->name->name : ZR_NULL;
@@ -2503,8 +2641,16 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                         modifier->data.propertySet.param != ZR_NULL
                                                             ? modifier->data.propertySet.param->name
                                                             : ZR_NULL,
-                                                        modifier->data.propertySet.targetType);
+                                                          modifier->data.propertySet.targetType);
                         }
+                    } else if (classMember->type == ZR_AST_PROPERTY_DECLARATION) {
+                        collect_unified_property_accessor_scopes(
+                                state,
+                                analyzer,
+                                classMember,
+                                node,
+                                ZR_TRUE,
+                                ZR_FALSE);
                     }
                 }
 
@@ -2564,6 +2710,13 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                        ownerRegionId,
                                                        ZR_DETERMINISTIC_CLEANUP_KIND_STRUCT_VALUE_FIELD,
                                                        (TZrInt32)memberIndex);
+                    } else if (structMember->type == ZR_AST_PROPERTY_DECLARATION) {
+                        (void)ZrLanguageServer_LspPropertyContract_RegisterSourceSymbol(
+                                state,
+                                analyzer,
+                                node,
+                                structMember,
+                                ZR_NULL);
                     } else if (structMember->type == ZR_AST_STRUCT_METHOD) {
                         SZrStructMethod *method = &structMember->data.structMethod;
                         SZrString *memberName = method->name != ZR_NULL ? method->name->name : ZR_NULL;
@@ -2638,6 +2791,14 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                     ZR_TRUE,
                                                     ZR_NULL,
                                                     ZR_NULL);
+                    } else if (structMember->type == ZR_AST_PROPERTY_DECLARATION) {
+                        collect_unified_property_accessor_scopes(
+                                state,
+                                analyzer,
+                                structMember,
+                                node,
+                                ZR_FALSE,
+                                ZR_TRUE);
                     }
                 }
 
@@ -2864,6 +3025,34 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                                           ZR_NULL,
                                                                           ZR_SEMANTIC_TYPE_KIND_REFERENCE);
                 ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
+            }
+            if (interfaceDecl->members != ZR_NULL) {
+                SZrSemanticCompilerContextSnapshot typeContextSnapshot;
+
+                ZrLanguageServer_SymbolTable_EnterScope(
+                        state,
+                        analyzer->symbolTable,
+                        node->location,
+                        ZR_FALSE,
+                        ZR_FALSE,
+                        ZR_FALSE);
+                semantic_push_compiler_context(analyzer, node, ZR_NULL, &typeContextSnapshot);
+                for (TZrSize memberIndex = 0U;
+                     memberIndex < interfaceDecl->members->count;
+                     memberIndex++) {
+                    SZrAstNode *memberNode = interfaceDecl->members->nodes[memberIndex];
+                    if (memberNode != ZR_NULL &&
+                        memberNode->type == ZR_AST_PROPERTY_DECLARATION) {
+                        (void)ZrLanguageServer_LspPropertyContract_RegisterSourceSymbol(
+                                state,
+                                analyzer,
+                                node,
+                                memberNode,
+                                ZR_NULL);
+                    }
+                }
+                semantic_pop_compiler_context(analyzer, &typeContextSnapshot);
+                ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
             }
             break;
         }

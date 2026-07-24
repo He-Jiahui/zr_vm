@@ -186,6 +186,7 @@ static TZrInt32 semantic_token_type_from_metadata_member(const SZrLspResolvedMet
             return ZR_LSP_SEMANTIC_TOKEN_NAMESPACE;
         case ZR_LSP_METADATA_MEMBER_CONSTANT:
         case ZR_LSP_METADATA_MEMBER_FIELD:
+        case ZR_LSP_METADATA_MEMBER_PROPERTY:
             return ZR_LSP_SEMANTIC_TOKEN_PROPERTY;
         case ZR_LSP_METADATA_MEMBER_FUNCTION:
         case ZR_LSP_METADATA_MEMBER_METHOD:
@@ -257,6 +258,49 @@ static TZrInt32 semantic_token_resolve_query_type(SZrState *state,
     }
     ZrLanguageServer_LspSemanticQuery_Free(state, &query);
     return tokenType;
+}
+
+static TZrInt32 semantic_token_resolve_canonical_parameter(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrString *uri,
+        const TZrChar *text,
+        TZrSize length,
+        TZrSize startOffset,
+        TZrUInt32 line,
+        TZrUInt32 character) {
+    SZrString *name;
+    SZrFilePosition startPosition;
+    SZrFilePosition endPosition;
+    SZrFileRange range;
+    SZrSymbol *symbol;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL ||
+        analyzer->symbolTable == ZR_NULL || uri == ZR_NULL ||
+        text == ZR_NULL || length == 0U) {
+        return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
+    }
+
+    name = ZrCore_String_Create(state, (TZrNativeString)text, length);
+    if (name == ZR_NULL) {
+        return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
+    }
+    startPosition = ZrParser_FilePosition_Create(startOffset, line, character);
+    endPosition = ZrParser_FilePosition_Create(
+            startOffset + length,
+            line,
+            character + (TZrUInt32)length);
+    range = ZrParser_FileRange_Create(startPosition, endPosition, uri);
+    symbol = ZrLanguageServer_SymbolTable_LookupAtPosition(
+            analyzer->symbolTable,
+            name,
+            range);
+    if (symbol == ZR_NULL || symbol->type != ZR_SYMBOL_PARAMETER ||
+        symbol->semanticId == ZR_SEMANTIC_ID_INVALID ||
+        symbol->semanticTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
+    }
+    return ZR_LSP_SEMANTIC_TOKEN_PARAMETER;
 }
 
 static TZrInt32 semantic_token_resolve_metadata_chain_member(SZrState *state,
@@ -917,6 +961,41 @@ static void semantic_token_scan_source(SZrState *state,
 
             binding = semantic_token_find_import_binding(bindings, content + start, length);
             if (binding == ZR_NULL) {
+                TZrInt32 tokenType = semantic_token_resolve_query_type(
+                    state,
+                    context,
+                    uri,
+                    startLine,
+                    startCharacter);
+
+                if (tokenType == ZR_LSP_SEMANTIC_TOKEN_PARAMETER) {
+                    semantic_token_add_utf16_span(state,
+                                                  entries,
+                                                  content,
+                                                  contentLength,
+                                                  start,
+                                                  offset,
+                                                  (TZrUInt32)tokenType);
+                } else {
+                    tokenType = semantic_token_resolve_canonical_parameter(
+                        state,
+                        analyzer,
+                        uri,
+                        content + start,
+                        length,
+                        start,
+                        startLine,
+                        startCharacter);
+                    if (tokenType == ZR_LSP_SEMANTIC_TOKEN_PARAMETER) {
+                        semantic_token_add_utf16_span(state,
+                                                      entries,
+                                                      content,
+                                                      contentLength,
+                                                      start,
+                                                      offset,
+                                                      (TZrUInt32)tokenType);
+                    }
+                }
                 continue;
             }
 

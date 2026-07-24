@@ -49,7 +49,12 @@ static TZrBool artifact_property_row_is_valid(const SZrArtifactPropertyDefRow *r
                      artifact_type_token_is_valid(row->ownerTypeToken) &&
                      (row->getterToken == 0u || artifact_token_is(row->getterToken, ZR_METADATA_TABLE_MEMBER_DEF)) &&
                      (row->setterToken == 0u || artifact_token_is(row->setterToken, ZR_METADATA_TABLE_MEMBER_DEF)) &&
+                     (row->initializerToken == 0u ||
+                      artifact_token_is(row->initializerToken, ZR_METADATA_TABLE_MEMBER_DEF)) &&
+                     (row->getterToken != 0u || row->setterToken != 0u ||
+                      row->initializerToken != 0u) &&
                      artifact_token_is(row->signatureToken, ZR_METADATA_TABLE_SIGNATURE) &&
+                     (row->flags & ~ZR_ARTIFACT_PROPERTY_FLAG_KNOWN_MASK) == 0u &&
                      row->signatureHash != 0u && row->contractHash != 0u);
 }
 

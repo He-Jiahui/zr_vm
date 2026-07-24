@@ -45,6 +45,14 @@ typedef enum EZrMemberDescriptorKind {
     ZR_MEMBER_DESCRIPTOR_KIND_STATIC_MEMBER = 3
 } EZrMemberDescriptorKind;
 
+#define ZR_MEMBER_RECEIVER_EFFECT_NONE ((TZrUInt32)0u)
+#define ZR_MEMBER_RECEIVER_EFFECT_READONLY ((TZrUInt32)1u)
+#define ZR_MEMBER_RECEIVER_EFFECT_MUTABLE ((TZrUInt32)2u)
+#define ZR_MEMBER_REFERENCE_ACCESS_NONE ((TZrUInt32)0u)
+#define ZR_MEMBER_REFERENCE_ACCESS_WRITABLE ((TZrUInt32)1u)
+#define ZR_MEMBER_REFERENCE_ACCESS_READONLY ((TZrUInt32)2u)
+#define ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE ((TZrUInt32)0xffffffffu)
+
 typedef struct SZrMemberDescriptor {
     struct SZrString *name;
     EZrMemberDescriptorKind kind;
@@ -64,6 +72,14 @@ typedef struct SZrMemberDescriptor {
     TZrUInt32 interfaceContractSlot;
     TZrUInt32 propertyIdentity;
     TZrUInt32 accessorRole;
+    TZrUInt32 propertyValueTypeId;
+    TZrUInt32 receiverEffect;
+    TZrUInt32 referenceAccess;
+    TZrBool exportsWritableRef;
+    TZrUInt32 accessModifier;
+    TZrUInt32 getterAccessModifier;
+    TZrUInt32 setterAccessModifier;
+    TZrUInt32 initializerAccessModifier;
 } SZrMemberDescriptor;
 
 typedef struct SZrIndexContract {

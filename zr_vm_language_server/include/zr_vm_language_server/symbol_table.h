@@ -52,6 +52,8 @@ typedef struct SZrSymbol {
     TZrSymbolId semanticId;           // 语义层稳定符号 ID
     TZrTypeId semanticTypeId;         // 语义层类型 ID
     TZrOverloadSetId overloadSetId;   // 语义层重载集 ID
+    TZrBool hasPropertyContract;      // 是否由 canonical PropertyQuery 投影
+    SZrSemanticPropertyContract propertyContract; // canonical property/accessor identity
 } SZrSymbol;
 
 // 作用域节点

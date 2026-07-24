@@ -209,6 +209,8 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - inline-struct receiver-source provenance and source/artifact dispatch parity
   - ref/ref-readonly getter invariants, `PROPERTY_REF_GET`/deref Place lowering, and the managed
     reference artifact/AOT boundary
+  - canonical PropertyQuery, exact binary prototype-row joins, structured legacy migration, and
+    declaration-contract incremental invalidation without member-name reconstruction
 
 - `canonical-type-graph.md`
   - immutable structural type nodes and canonical `TypeId` identity

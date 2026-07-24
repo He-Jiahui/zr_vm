@@ -49,6 +49,8 @@ typedef struct SZrParserSemanticPublicContractQuery {
     TZrSize exportCount;
 } SZrParserSemanticPublicContractQuery;
 
+typedef SZrSemanticPropertyContract SZrParserSemanticPropertyQuery;
+
 struct SZrCompilerState;
 typedef struct SZrCompilerState SZrCompilerState;
 
@@ -103,6 +105,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_PublicContract(
         const SZrTypeEnvironment *typeEnvironment,
         const SZrAstNode *moduleRoot,
         SZrParserSemanticPublicContractQuery *outQuery);
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_PropertyAt(
+        const SZrSemanticContext *context,
+        SZrFileRange position,
+        const SZrParserSemanticQueryScope *scope,
+        SZrParserSemanticPropertyQuery *outQuery);
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_PropertyBySymbolId(
+        const SZrSemanticContext *context,
+        TZrSymbolId symbolId,
+        SZrParserSemanticPropertyQuery *outQuery);
 ZR_PARSER_API SZrAstNode *ZrParser_SemanticQuery_FindUnionDeclarationByTypeName(
         SZrCompilerState *compilerState,
         SZrString *typeName);

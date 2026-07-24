@@ -28,6 +28,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_token_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_property_contract.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_property_code_actions.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
@@ -42,6 +44,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_property.c
   - tests/language_server/test_lsp_language_feature_matrix.c
   - tests/parser/test_compiler_regressions.c
   - tests/container/test_container_type_inference.c
@@ -49,6 +52,9 @@ related_code:
   - tests/language_server/test_semantic_analyzer.c
   - tests/parser/test_parser.c
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_property_contract_cases.h
+  - tests/language_server/test_lsp_property_incremental_cases.h
+  - tests/language_server/test_lsp_property_refactor_cases.h
   - tests/language_server/test_lsp_reference_callable_consumer_cases.h
   - tests/language_server/test_lsp_local_semantic_query.c
   - tests/language_server/test_lsp_local_semantic_receiver_dependency_cases.h
@@ -82,6 +88,8 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_token_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_property_contract.c
+  - zr_vm_language_server/src/zr_vm_language_server/lsp_property_code_actions.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_descriptor_metadata_coordinates.c
@@ -96,6 +104,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_property.c
 plan_sources:
   - user: 2026-04-04 实现“ZR LSP 语义内核与元信息推断增强计划”
   - user: 2026-04-05 继续把 plugin/native/binary metadata 统一链推进到更细粒度 completion/definition/references/watched refresh 覆盖
@@ -104,6 +113,7 @@ plan_sources:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/03-lsp-robustness-and-position.md
   - docs/plans/lsp/05-implementation-blueprint.md
+  - docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration-implementation-plan.md
 tests:
   - tests/language_server/test_lsp_language_feature_matrix.c
   - tests/parser/test_compiler_regressions.c
@@ -112,6 +122,9 @@ tests:
   - tests/language_server/test_semantic_analyzer.c
   - tests/parser/test_parser.c
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_property_contract_cases.h
+  - tests/language_server/test_lsp_property_incremental_cases.h
+  - tests/language_server/test_lsp_property_refactor_cases.h
   - tests/language_server/test_lsp_reference_callable_consumer_cases.h
   - tests/language_server/test_lsp_local_semantic_query.c
   - tests/language_server/test_lsp_project_features.c
@@ -613,6 +626,38 @@ server 不再只把 `.zrp` 刷新当成 document-sync 副作用。外部 metadat
 - binary/native metadata 已经变了，但 open 文档 hover / completion 仍然吃旧 analyzer
 - metadata 先变、project 还没被任何 source doc 触发发现，导致 watched-files 事件根本进不了 project refresh
 - watched plugin refresh 之后，importer locals 仍然停留在旧的 descriptor return type，而没有重新走 compiler-side local inference
+
+## Canonical property consumers
+
+Unified properties are projected from parser `PropertyAt`/`PropertyBySymbolId` results. Hover,
+completion, definition, prepare-rename, semantic tokens, and contextual accessor `value` all retain
+the visible PropertySymbol, canonical value TypeId, exact accessor/value-parameter SymbolIds, and
+selection/reference ranges. The LSP layer neither strips `__get_`/`__set_` prefixes nor infers a
+property from a member display label.
+
+Binary imports first merge exact compiled property/accessor rows into an empty imported placeholder
+using `propertyIdentity`, accessor role, TypeId, reference fields, and module provenance. LSP then
+joins the visible row by PropertySymbolId. Missing, conflicting, native-only, or invalid metadata is
+unavailable; it does not fall back to a property name or hidden accessor. Source and binary hover,
+completion, and definition therefore share one consumer contract even though the current `.zro`
+v34 executable carrier remains the documented compatibility format rather than a nested canonical
+PropertyDef table.
+
+Receiver prototype lookup may lazily import native metadata and grow the compiler state's prototype
+array. Consumers therefore capture the prototype name, import-module name, kind and native-import
+flag before recursive lookup, and never dereference an array element after an operation that may
+reallocate that array.
+
+Legacy migration and property refactors are also fact consumers. A quick fix is emitted only from a
+structured parser diagnostic containing an exact machine-applicable replacement. Missing interface
+set/init and explicit-field proxy actions query an unambiguous canonical requirement; reference,
+binary-only, stale, invalid, or ambiguous cases publish no action. Snapshot validation runs before
+serialization, so an edit is never paired with a newer document version than the ranges it captured.
+
+Incremental coverage uses a 64-property document. A body-only edit preserves the edited and
+unrelated PropertySymbolId/TypeId values; changing one property contract changes only that TypeId
+while an unrelated property identity remains stable. This is the declaration-fact boundary used by
+scoped reanalysis, not a member-name cache heuristic.
 
 ## `.zro` 与 `.zri` 的职责分流
 

@@ -110,6 +110,33 @@ static void semantic_type_prototypes_pop_context(SZrSemanticAnalyzer *analyzer,
     compilerState->currentFunctionNode = snapshot->functionNode;
 }
 
+static TZrBool semantic_type_prototypes_bind_property(
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *ownerTypeNode,
+        SZrTypePrototypeInfo *prototype,
+        SZrAstNode *propertyNode,
+        TZrUInt32 declarationOrder) {
+    SZrSemanticPrototypeContextSnapshot snapshot;
+    TZrBool bound;
+
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
+        ownerTypeNode == ZR_NULL || prototype == ZR_NULL ||
+        propertyNode == ZR_NULL || propertyNode->type != ZR_AST_PROPERTY_DECLARATION) {
+        return ZR_FALSE;
+    }
+
+    semantic_type_prototypes_push_context(analyzer, ownerTypeNode, propertyNode, &snapshot);
+    bound = ZrParser_Compiler_BindPropertyDeclaration(
+            analyzer->compilerState,
+            prototype,
+            propertyNode,
+            prototype->name,
+            prototype->extendsTypeName,
+            declarationOrder);
+    semantic_type_prototypes_pop_context(analyzer, &snapshot);
+    return bound;
+}
+
 static void semantic_type_prototypes_init_prototype(SZrState *state,
                                                     SZrTypePrototypeInfo *info,
                                                     SZrString *name,
@@ -912,6 +939,16 @@ static void semantic_type_prototypes_append_class_member(SZrState *state,
         return;
     }
 
+    if (memberNode->type == ZR_AST_PROPERTY_DECLARATION) {
+        (void)semantic_type_prototypes_bind_property(
+                analyzer,
+                ownerTypeNode,
+                prototype,
+                memberNode,
+                declarationOrder);
+        return;
+    }
+
     compilerState = analyzer->compilerState;
     semantic_type_prototypes_init_member_defaults(&memberInfo);
     memberInfo.declarationNode = memberNode;
@@ -1070,6 +1107,16 @@ static void semantic_type_prototypes_append_struct_member(SZrState *state,
         return;
     }
 
+    if (memberNode->type == ZR_AST_PROPERTY_DECLARATION) {
+        (void)semantic_type_prototypes_bind_property(
+                analyzer,
+                ownerTypeNode,
+                prototype,
+                memberNode,
+                declarationOrder);
+        return;
+    }
+
     compilerState = analyzer->compilerState;
     semantic_type_prototypes_init_member_defaults(&memberInfo);
     memberInfo.declarationNode = memberNode;
@@ -1141,6 +1188,16 @@ static void semantic_type_prototypes_append_interface_member(SZrState *state,
 
     if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
         prototype == ZR_NULL || memberNode == ZR_NULL) {
+        return;
+    }
+
+    if (memberNode->type == ZR_AST_PROPERTY_DECLARATION) {
+        (void)semantic_type_prototypes_bind_property(
+                analyzer,
+                ownerTypeNode,
+                prototype,
+                memberNode,
+                declarationOrder);
         return;
     }
 

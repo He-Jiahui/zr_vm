@@ -1230,7 +1230,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                             typeName,
                             primarySuperTypeName,
                             ZR_COMPILER_PROPERTY_CONTAINER_CLASS,
-                            (TZrUInt32)i)) {
+                            (TZrUInt32)i,
+                            ZR_TRUE)) {
                     cs->currentTypeName = oldTypeName;
                     cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                     cs->currentTypeNode = oldTypeNode;

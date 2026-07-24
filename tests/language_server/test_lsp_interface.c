@@ -991,12 +991,9 @@ static const TZrChar *g_classes_full_fixture =
     "        this._hp = seed;\n"
     "    }\n"
     "\n"
-    "    pub get hp: int {\n"
-    "        return this._hp;\n"
-    "    }\n"
-    "\n"
-    "    pub set hp(v: int) {\n"
-    "        this._hp = v;\n"
+    "    pub property hp: int {\n"
+    "        get { return this._hp; }\n"
+    "        set { this._hp = value; }\n"
     "    }\n"
     "\n"
     "    pub heal(amount: int): int {\n"
@@ -1008,12 +1005,9 @@ static const TZrChar *g_classes_full_fixture =
     "class ScoreBoard {\n"
     "    pri static var _bonus: int = 5;\n"
     "\n"
-    "    pub static get bonus: int {\n"
-    "        return ScoreBoard._bonus;\n"
-    "    }\n"
-    "\n"
-    "    pub static set bonus(v: int) {\n"
-    "        ScoreBoard._bonus = v;\n"
+    "    pub static property bonus: int {\n"
+    "        get { return ScoreBoard._bonus; }\n"
+    "        set { ScoreBoard._bonus = value; }\n"
     "    }\n"
     "}\n"
     "\n"
@@ -1043,12 +1037,9 @@ static const TZrChar *g_documentation_fixture =
     "    pri static var _bonus: int = 5;\n"
     "\n"
     "    // Shared bonus exposed through get/set.\n"
-    "    pub static get bonus: int {\n"
-    "        return ScoreBoard._bonus;\n"
-    "    }\n"
-    "\n"
-    "    pub static set bonus(v: int) {\n"
-    "        ScoreBoard._bonus = v;\n"
+    "    pub static property bonus: int {\n"
+    "        get { return ScoreBoard._bonus; }\n"
+    "        set { ScoreBoard._bonus = value; }\n"
     "    }\n"
     "}\n"
     "\n"
@@ -7301,6 +7292,9 @@ static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZ
 
 #include "test_lsp_snapshot_cache_cases.h"
 #include "test_lsp_reference_callable_consumer_cases.h"
+#include "test_lsp_property_contract_cases.h"
+#include "test_lsp_property_incremental_cases.h"
+#include "test_lsp_property_refactor_cases.h"
 
 // 主测试函数
 int main(void) {
@@ -7383,6 +7377,24 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_get_missing_condition_parser_diagnostics(state);
+    TEST_DIVIDER();
+
+    test_lsp_unified_property_uses_one_canonical_contract(state);
+    TEST_DIVIDER();
+
+    test_lsp_binary_property_preserves_canonical_contract(state);
+    TEST_DIVIDER();
+
+    test_lsp_legacy_property_migration_consumes_structured_edit(state);
+    TEST_DIVIDER();
+
+    test_lsp_property_refactor_uses_canonical_query(state);
+    TEST_DIVIDER();
+
+    test_lsp_property_refactor_rejects_ambiguous_and_ref_contracts(state);
+    TEST_DIVIDER();
+
+    test_lsp_property_incremental_contract_boundaries(state);
     TEST_DIVIDER();
 
     test_lsp_incomplete_edit_preserves_prior_semantic_snapshot(state);

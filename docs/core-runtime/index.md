@@ -112,7 +112,8 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
 - `property-accessor-dispatch.md`: descriptor-backed getter/setter dispatch, receiver-source frame/slot
   provenance for inline structs, cache and exception boundaries, static/virtual/interface behavior,
   source/artifact parity for typed compound property access, and managed class/inline/index/static
-  reference Places for `ref` and `ref readonly` getters.
+  reference Places for `ref` and `ref readonly` getters; reflection joins visible properties and
+  accessors by exact property identity/role and keeps legacy-looking ordinary methods separate.
 - `exception-scope-resource-cleanup.md`: exception-handler checkpoints for `%using`
   registrations, LIFO close before catch/finally, scratch-safe error arguments, and
   stack-relocation rules for resource cleanup.

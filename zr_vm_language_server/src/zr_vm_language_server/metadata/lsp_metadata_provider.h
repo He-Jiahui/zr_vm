@@ -2,6 +2,7 @@
 #define ZR_VM_LANGUAGE_SERVER_LSP_METADATA_PROVIDER_H
 
 #include "module/lsp_module_metadata.h"
+#include "zr_vm_parser/semantic_query.h"
 
 typedef enum EZrLspMetadataMemberKind {
     ZR_LSP_METADATA_MEMBER_NONE = 0,
@@ -10,7 +11,8 @@ typedef enum EZrLspMetadataMemberKind {
     ZR_LSP_METADATA_MEMBER_FUNCTION = 3,
     ZR_LSP_METADATA_MEMBER_TYPE = 4,
     ZR_LSP_METADATA_MEMBER_FIELD = 5,
-    ZR_LSP_METADATA_MEMBER_METHOD = 6
+    ZR_LSP_METADATA_MEMBER_METHOD = 6,
+    ZR_LSP_METADATA_MEMBER_PROPERTY = 7
 } EZrLspMetadataMemberKind;
 
 typedef struct SZrLspMetadataProvider {
@@ -36,6 +38,9 @@ typedef struct SZrLspResolvedMetadataMember {
     SZrString *declarationUri;
     SZrFileRange declarationRange;
     SZrString *resolvedTypeText;
+    const SZrTypeMemberInfo *typeMemberInfo;
+    SZrParserSemanticPropertyQuery propertyContract;
+    TZrBool hasPropertyContract;
     TZrBool hasDeclaration;
 } SZrLspResolvedMetadataMember;
 
@@ -108,6 +113,10 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveProjectTypeMemberDeclaration
     SZrString *ownerTypeName,
     SZrString *memberName,
     SZrLspResolvedMetadataMember *outResolved);
+TZrBool ZrLanguageServer_LspMetadataProvider_ResolveBinaryTypeMemberDeclaration(
+    SZrLspMetadataProvider *provider,
+    SZrLspProjectIndex *projectIndex,
+    SZrLspResolvedMetadataMember *resolvedMember);
 TZrBool ZrLanguageServer_LspMetadataProvider_FindNativeTypeMemberDeclaration(
     SZrLspMetadataProvider *provider,
     SZrLspProjectIndex *projectIndex,

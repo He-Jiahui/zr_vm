@@ -217,6 +217,11 @@ void type_inference_record_member_call_reference_fact(
         SZrAstNode *memberNode,
         const SZrTypeMemberInfo *memberInfo,
         const SZrResolvedCallSignature *resolvedSignature);
+void type_inference_record_resolved_property_reference_fact(
+        SZrCompilerState *cs,
+        SZrAstNode *memberNode,
+        const SZrTypeMemberInfo *memberInfo,
+        EZrSemanticReferenceKind kind);
 void type_inference_record_unbound_member_reference_fact(
         SZrCompilerState *cs,
         SZrAstNode *memberNode,

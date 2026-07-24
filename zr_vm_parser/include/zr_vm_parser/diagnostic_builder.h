@@ -274,6 +274,14 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildLegacyOwnershipTypeSyntaxW
     SZrFileRange location,
     const TZrChar *legacyQualifier,
     const TZrChar *wrapperName);
+ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildLegacyPropertySyntax(
+    SZrState *state,
+    SZrStructuredDiagnostic *out,
+    SZrFileRange declarationLocation,
+    SZrFileRange nameLocation,
+    const SZrFileRange *typeLocation,
+    const SZrFileRange *bodyLocation,
+    const TZrChar *replacementText);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildWeakUpgrade(SZrState *state,
                                                                   SZrStructuredDiagnostic *out,
                                                                   SZrFileRange location);

@@ -683,6 +683,10 @@ async function main() {
     const client = new LspClient(serverPath);
     const documentUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr';
     const docsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-docs.zr';
+    const propertyContractUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-property-contract.zr';
+    const legacyPropertyUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-legacy-property.zr';
     const genericUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr';
     const nativeCallableUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-native-callable.zr';
@@ -767,17 +771,33 @@ async function main() {
         '    pri static var _bonus: int = 5;',
         '',
         '    // Shared bonus exposed through get/set.',
-        '    pub static get bonus: int {',
-        '        return ScoreBoard._bonus;',
-        '    }',
-        '',
-        '    pub static set bonus(v: int) {',
-        '        ScoreBoard._bonus = v;',
+        '    pub static property bonus: int {',
+        '        get { return ScoreBoard._bonus; }',
+        '        set { ScoreBoard._bonus = value; }',
         '    }',
         '}',
         '',
         '%test("documentation") {',
         '    return ScoreBoard.bonus;',
+        '}',
+        '',
+    ].join('\n');
+    const propertyContractText = [
+        'class Meter {',
+        '    pri var stored: int = 7;',
+        '    pub property value: int {',
+        '        get { return this.stored; }',
+        '        set { this.stored = value; }',
+        '    }',
+        '}',
+        'fn read(meter: Meter): int { return meter.value; }',
+        '',
+    ].join('\n');
+    const legacyPropertyText = [
+        'class Meter {',
+        '    pri var stored: int = 7;',
+        '    pub get value: int { return this.stored; }',
+        '    pub set value(input: int) { this.stored = input; }',
         '}',
         '',
     ].join('\n');
@@ -1631,6 +1651,93 @@ async function main() {
         resolvedBonusCompletion.documentation.kind === 'markdown' &&
         resolvedBonusCompletion.documentation.value.includes('Shared bonus exposed through get/set.'),
     'completionItem/resolve must restore markdown documentation from resolve data');
+
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: propertyContractUri,
+            languageId: 'zr',
+            version: 1,
+            text: propertyContractText,
+        },
+    });
+    const propertyContractDiagnostics =
+        await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(propertyContractDiagnostics.uri === propertyContractUri &&
+        Array.isArray(propertyContractDiagnostics.diagnostics) &&
+        propertyContractDiagnostics.diagnostics.length === 0,
+    'unified property contract fixture must open without diagnostics');
+    const propertyUsagePosition = findPosition(propertyContractText, 'meter.value', 0, 6);
+    const propertyHover = await client.request('textDocument/hover', {
+        textDocument: { uri: propertyContractUri },
+        position: propertyUsagePosition,
+    });
+    assert(propertyHover && propertyHover.contents &&
+        typeof propertyHover.contents.value === 'string' &&
+        propertyHover.contents.value.includes('property value: int') &&
+        !propertyHover.contents.value.includes('__get_') &&
+        !propertyHover.contents.value.includes('__set_'),
+    'unified property hover must expose one canonical visible property contract');
+    const propertyCompletions = await client.request('textDocument/completion', {
+        textDocument: { uri: propertyContractUri },
+        position: propertyUsagePosition,
+    });
+    assert(Array.isArray(propertyCompletions) &&
+        propertyCompletions.filter((item) => item && item.label === 'value').length === 1 &&
+        !propertyCompletions.some((item) => item &&
+            (item.label === '__get_value' || item.label === '__set_value')),
+    'unified property completion must emit one visible property and no hidden accessors');
+    const propertyDefinitions = await client.request('textDocument/definition', {
+        textDocument: { uri: propertyContractUri },
+        position: propertyUsagePosition,
+    });
+    assert(Array.isArray(propertyDefinitions) && propertyDefinitions.some((location) =>
+        location && location.uri === propertyContractUri && location.range &&
+        location.range.start.line === 2 && location.range.start.character === 17 &&
+        location.range.end.line === 2 && location.range.end.character === 22),
+    'unified property definition must target the canonical property selection range');
+    const propertyPrepareRename = await client.request('textDocument/prepareRename', {
+        textDocument: { uri: propertyContractUri },
+        position: propertyUsagePosition,
+    });
+    assert(propertyPrepareRename && propertyPrepareRename.placeholder === 'value' &&
+        propertyPrepareRename.range.start.line === 7 &&
+        propertyPrepareRename.range.start.character === 42 &&
+        propertyPrepareRename.range.end.line === 7 &&
+        propertyPrepareRename.range.end.character === 47,
+    'unified property prepareRename must preserve the usage selection range');
+
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: legacyPropertyUri,
+            languageId: 'zr',
+            version: 1,
+            text: legacyPropertyText,
+        },
+    });
+    const legacyPropertyDiagnostics =
+        await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(legacyPropertyDiagnostics.uri === legacyPropertyUri &&
+        Array.isArray(legacyPropertyDiagnostics.diagnostics),
+    'legacy property fixture diagnostics uri mismatch');
+    const legacyPropertyDiagnostic = legacyPropertyDiagnostics.diagnostics.find((diagnostic) =>
+        diagnostic && diagnostic.code === 'legacy_property_syntax');
+    assert(legacyPropertyDiagnostic,
+        'legacy property source must publish the stable legacy_property_syntax diagnostic');
+    const legacyPropertyActions = await client.request('textDocument/codeAction', {
+        textDocument: { uri: legacyPropertyUri },
+        range: legacyPropertyDiagnostic.range,
+        context: { diagnostics: [legacyPropertyDiagnostic], only: ['quickfix'] },
+    });
+    assert(Array.isArray(legacyPropertyActions) && legacyPropertyActions.some((action) =>
+        action && typeof action.title === 'string' &&
+        action.title.includes('Migrate legacy property') && action.edit &&
+        action.edit.changes && Array.isArray(action.edit.changes[legacyPropertyUri]) &&
+        action.edit.changes[legacyPropertyUri].some((edit) =>
+            edit && typeof edit.newText === 'string' &&
+            edit.newText.includes('property value: int') &&
+            edit.newText.includes('get') && edit.newText.includes('set') &&
+            !edit.newText.includes('__get_') && !edit.newText.includes('__set_'))),
+    'legacy property quickfix must serialize the parser-owned structured migration edit');
 
     const docsCodeLens = await client.request('textDocument/codeLens', {
         textDocument: { uri: docsUri },
@@ -3416,6 +3523,16 @@ async function main() {
     });
     client.notify('textDocument/didClose', {
         textDocument: {
+            uri: propertyContractUri,
+        },
+    });
+    client.notify('textDocument/didClose', {
+        textDocument: {
+            uri: legacyPropertyUri,
+        },
+    });
+    client.notify('textDocument/didClose', {
+        textDocument: {
             uri: parserDiagnosticUri,
         },
     });
@@ -3472,6 +3589,8 @@ async function main() {
         watchedBinaryFixture.mainUri,
         documentUri,
         docsUri,
+        propertyContractUri,
+        legacyPropertyUri,
         colorUri,
         inlineCompletionUri,
         importDiagnosticsFixture.mainUri,

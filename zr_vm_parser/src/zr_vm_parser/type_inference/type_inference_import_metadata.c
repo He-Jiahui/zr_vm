@@ -928,6 +928,338 @@ static TZrBool import_append_member_decorator_names_from_function_constant(SZrSt
     return import_append_decorator_names_from_constant_array(state, decorators, constantValue);
 }
 
+static TZrTypeId import_property_accessor_callable_type_id(
+        SZrCompilerState *cs,
+        const SZrTypeMemberInfo *accessor) {
+    SZrInferredType returnType;
+    TZrTypeId callableTypeId;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        accessor == ZR_NULL ||
+        accessor->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE ||
+        (accessor->parameterCount != ZR_MEMBER_PARAMETER_COUNT_UNKNOWN &&
+         accessor->parameterTypes.length != accessor->parameterCount)) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    if (accessor->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_GET) {
+        if (accessor->returnTypeName == ZR_NULL ||
+            !inferred_type_from_type_name(
+                    cs,
+                    accessor->returnTypeName,
+                    &returnType)) {
+            return ZR_SEMANTIC_ID_INVALID;
+        }
+    } else {
+        ZrParser_InferredType_Init(
+                cs->state,
+                &returnType,
+                ZR_VALUE_TYPE_NULL);
+    }
+    callableTypeId = ZrParser_CanonicalType_FromFunctionSignature(
+            cs->semanticContext,
+            &accessor->parameterTypes,
+            &accessor->parameterPassingModes,
+            &returnType,
+            accessor->receiverEffect,
+            ZR_CANONICAL_CALLABLE_EFFECT_NONE);
+    ZrParser_InferredType_Free(cs->state, &returnType);
+    return callableTypeId;
+}
+
+static TZrBool import_property_parameter_name_and_type_match(
+        SZrCompilerState *cs,
+        const SZrTypeMemberInfo *accessor,
+        TZrTypeId propertyTypeId,
+        SZrString **outName) {
+    SZrString **namePtr;
+    SZrInferredType *type;
+    TZrTypeId typeId;
+    TZrSize parameterIndex;
+
+    if (outName != ZR_NULL) {
+        *outName = ZR_NULL;
+    }
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        accessor == ZR_NULL || outName == ZR_NULL ||
+        accessor->parameterTypes.length == 0U ||
+        accessor->parameterNames.length != accessor->parameterTypes.length) {
+        return ZR_FALSE;
+    }
+    parameterIndex = accessor->parameterTypes.length - 1U;
+    namePtr = (SZrString **)ZrCore_Array_Get(
+            (SZrArray *)&accessor->parameterNames,
+            parameterIndex);
+    type = (SZrInferredType *)ZrCore_Array_Get(
+            (SZrArray *)&accessor->parameterTypes,
+            parameterIndex);
+    if (namePtr == ZR_NULL || *namePtr == ZR_NULL || type == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    typeId = ZrParser_CanonicalType_FromInferred(cs->semanticContext, type);
+    if (typeId == ZR_SEMANTIC_ID_INVALID || typeId != propertyTypeId) {
+        return ZR_FALSE;
+    }
+    *outName = *namePtr;
+    return ZR_TRUE;
+}
+
+static TZrBool import_publish_one_property_contract(
+        SZrCompilerState *cs,
+        SZrTypePrototypeInfo *prototype,
+        SZrTypeMemberInfo *visible) {
+    SZrTypeMemberInfo *getter = ZR_NULL;
+    SZrTypeMemberInfo *setter = ZR_NULL;
+    SZrTypeMemberInfo *initializer = ZR_NULL;
+    SZrInferredType propertyType;
+    SZrSemanticPropertyContract contract;
+    SZrString *setterValueName = ZR_NULL;
+    SZrString *initializerValueName = ZR_NULL;
+    SZrFileRange unavailableRange;
+    TZrTypeId propertyTypeId;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        prototype == ZR_NULL || visible == ZR_NULL ||
+        visible->memberType != ZR_AST_PROPERTY_DECLARATION ||
+        visible->accessorRole != ZR_PROPERTY_ACCESSOR_ROLE_NONE ||
+        visible->propertyIdentity == UINT32_MAX || visible->name == ZR_NULL ||
+        visible->fieldTypeName == ZR_NULL ||
+        (TZrUInt32)visible->metaType >
+                (TZrUInt32)ZR_REFERENCE_ACCESS_READONLY) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0U; index < prototype->members.length; index++) {
+        SZrTypeMemberInfo *member = (SZrTypeMemberInfo *)ZrCore_Array_Get(
+                &prototype->members,
+                index);
+
+        if (member == ZR_NULL || member == visible ||
+            member->propertyIdentity != visible->propertyIdentity) {
+            continue;
+        }
+        switch (member->accessorRole) {
+            case ZR_PROPERTY_ACCESSOR_ROLE_GET:
+                if (getter != ZR_NULL) {
+                    return ZR_FALSE;
+                }
+                getter = member;
+                break;
+            case ZR_PROPERTY_ACCESSOR_ROLE_SET:
+                if (setter != ZR_NULL) {
+                    return ZR_FALSE;
+                }
+                setter = member;
+                break;
+            case ZR_PROPERTY_ACCESSOR_ROLE_INIT:
+                if (initializer != ZR_NULL) {
+                    return ZR_FALSE;
+                }
+                initializer = member;
+                break;
+            default:
+                break;
+        }
+    }
+    if (getter == ZR_NULL && setter == ZR_NULL && initializer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!inferred_type_from_type_name(cs, visible->fieldTypeName, &propertyType)) {
+        return ZR_FALSE;
+    }
+    propertyTypeId = ZrParser_CanonicalType_FromInferred(
+            cs->semanticContext,
+            &propertyType);
+    ZrParser_InferredType_Free(cs->state, &propertyType);
+    if (propertyTypeId == ZR_SEMANTIC_ID_INVALID ||
+        (setter != ZR_NULL &&
+         !import_property_parameter_name_and_type_match(
+                 cs,
+                 setter,
+                 propertyTypeId,
+                 &setterValueName)) ||
+        (initializer != ZR_NULL &&
+         !import_property_parameter_name_and_type_match(
+                 cs,
+                 initializer,
+                 propertyTypeId,
+                 &initializerValueName))) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(&contract, 0, sizeof(contract));
+    ZrCore_Memory_RawSet(&unavailableRange, 0, sizeof(unavailableRange));
+    contract.propertyTypeId = propertyTypeId;
+    contract.getterCallableTypeId = getter != ZR_NULL
+                                            ? import_property_accessor_callable_type_id(
+                                                      cs,
+                                                      getter)
+                                            : ZR_SEMANTIC_ID_INVALID;
+    contract.setterCallableTypeId = setter != ZR_NULL
+                                            ? import_property_accessor_callable_type_id(
+                                                      cs,
+                                                      setter)
+                                            : ZR_SEMANTIC_ID_INVALID;
+    contract.initializerCallableTypeId =
+            initializer != ZR_NULL
+                    ? import_property_accessor_callable_type_id(cs, initializer)
+                    : ZR_SEMANTIC_ID_INVALID;
+    if ((getter != ZR_NULL &&
+         contract.getterCallableTypeId == ZR_SEMANTIC_ID_INVALID) ||
+        (setter != ZR_NULL &&
+         contract.setterCallableTypeId == ZR_SEMANTIC_ID_INVALID) ||
+        (initializer != ZR_NULL &&
+         contract.initializerCallableTypeId == ZR_SEMANTIC_ID_INVALID)) {
+        return ZR_FALSE;
+    }
+
+    contract.propertySymbolId = ZrParser_Semantic_RegisterSymbol(
+            cs->semanticContext,
+            visible->name,
+            ZR_SEMANTIC_SYMBOL_KIND_PROPERTY,
+            propertyTypeId,
+            ZR_SEMANTIC_ID_INVALID,
+            ZR_NULL,
+            unavailableRange);
+    contract.getterSymbolId = getter != ZR_NULL
+                                      ? ZrParser_Semantic_RegisterSymbol(
+                                                cs->semanticContext,
+                                                getter->name,
+                                                ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                                                contract.getterCallableTypeId,
+                                                ZR_SEMANTIC_ID_INVALID,
+                                                ZR_NULL,
+                                                unavailableRange)
+                                      : ZR_SEMANTIC_ID_INVALID;
+    contract.setterSymbolId = setter != ZR_NULL
+                                      ? ZrParser_Semantic_RegisterSymbol(
+                                                cs->semanticContext,
+                                                setter->name,
+                                                ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                                                contract.setterCallableTypeId,
+                                                ZR_SEMANTIC_ID_INVALID,
+                                                ZR_NULL,
+                                                unavailableRange)
+                                      : ZR_SEMANTIC_ID_INVALID;
+    contract.initializerSymbolId =
+            initializer != ZR_NULL
+                    ? ZrParser_Semantic_RegisterSymbol(
+                              cs->semanticContext,
+                              initializer->name,
+                              ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                              contract.initializerCallableTypeId,
+                              ZR_SEMANTIC_ID_INVALID,
+                              ZR_NULL,
+                              unavailableRange)
+                    : ZR_SEMANTIC_ID_INVALID;
+    contract.setterValueSymbolId =
+            setter != ZR_NULL
+                    ? ZrParser_Semantic_RegisterSymbol(
+                              cs->semanticContext,
+                              setterValueName,
+                              ZR_SEMANTIC_SYMBOL_KIND_PARAMETER,
+                              propertyTypeId,
+                              ZR_SEMANTIC_ID_INVALID,
+                              ZR_NULL,
+                              unavailableRange)
+                    : ZR_SEMANTIC_ID_INVALID;
+    contract.initializerValueSymbolId =
+            initializer != ZR_NULL
+                    ? ZrParser_Semantic_RegisterSymbol(
+                              cs->semanticContext,
+                              initializerValueName,
+                              ZR_SEMANTIC_SYMBOL_KIND_PARAMETER,
+                              propertyTypeId,
+                              ZR_SEMANTIC_ID_INVALID,
+                              ZR_NULL,
+                              unavailableRange)
+                    : ZR_SEMANTIC_ID_INVALID;
+    if (contract.propertySymbolId == ZR_SEMANTIC_ID_INVALID ||
+        (getter != ZR_NULL &&
+         contract.getterSymbolId == ZR_SEMANTIC_ID_INVALID) ||
+        (setter != ZR_NULL &&
+         (contract.setterSymbolId == ZR_SEMANTIC_ID_INVALID ||
+          contract.setterValueSymbolId == ZR_SEMANTIC_ID_INVALID)) ||
+        (initializer != ZR_NULL &&
+         (contract.initializerSymbolId == ZR_SEMANTIC_ID_INVALID ||
+          contract.initializerValueSymbolId == ZR_SEMANTIC_ID_INVALID))) {
+        return ZR_FALSE;
+    }
+
+    contract.access = visible->accessModifier;
+    contract.getterAccess = getter != ZR_NULL
+                                    ? getter->accessModifier
+                                    : visible->accessModifier;
+    contract.setterAccess = setter != ZR_NULL
+                                    ? setter->accessModifier
+                                    : visible->accessModifier;
+    contract.initializerAccess = initializer != ZR_NULL
+                                         ? initializer->accessModifier
+                                         : visible->accessModifier;
+    contract.modifierFlags = visible->modifierFlags;
+    contract.referenceAccess = (EZrReferenceAccess)visible->metaType;
+    contract.exportsWritableRef = visible->isMetaMethod;
+    contract.isStatic = visible->isStatic;
+    contract.receiverEffect = visible->isStatic
+                                      ? ZR_CANONICAL_RECEIVER_NONE
+                                      : (contract.referenceAccess ==
+                                                         ZR_REFERENCE_ACCESS_WRITABLE
+                                                 ? ZR_CANONICAL_RECEIVER_MUTABLE
+                                                 : ZR_CANONICAL_RECEIVER_READONLY);
+    contract.declarationRange = unavailableRange;
+    contract.selectionRange = unavailableRange;
+    if (!ZrParser_Semantic_PublishPropertyContract(
+                cs->semanticContext,
+                &contract)) {
+        return ZR_FALSE;
+    }
+
+    visible->symbolId = contract.propertySymbolId;
+    visible->propertySymbolId = contract.propertySymbolId;
+    visible->propertyValueTypeId = propertyTypeId;
+    visible->getterAccessorSymbolId = contract.getterSymbolId;
+    visible->setterAccessorSymbolId = contract.setterSymbolId;
+    visible->initAccessorSymbolId = contract.initializerSymbolId;
+    visible->receiverEffect = contract.receiverEffect;
+    visible->exportsWritableRef = contract.exportsWritableRef;
+    visible->isMetaMethod = ZR_FALSE;
+    if (getter != ZR_NULL) {
+        getter->symbolId = contract.getterSymbolId;
+        getter->propertySymbolId = contract.propertySymbolId;
+        getter->propertyValueTypeId = propertyTypeId;
+    }
+    if (setter != ZR_NULL) {
+        setter->symbolId = contract.setterSymbolId;
+        setter->propertySymbolId = contract.propertySymbolId;
+        setter->propertyValueTypeId = propertyTypeId;
+    }
+    if (initializer != ZR_NULL) {
+        initializer->symbolId = contract.initializerSymbolId;
+        initializer->propertySymbolId = contract.propertySymbolId;
+        initializer->propertyValueTypeId = propertyTypeId;
+    }
+    return ZR_TRUE;
+}
+
+static void import_publish_compiled_property_contracts(
+        SZrCompilerState *cs,
+        SZrTypePrototypeInfo *prototype) {
+    if (cs == ZR_NULL || prototype == ZR_NULL) {
+        return;
+    }
+    for (TZrSize index = 0U; index < prototype->members.length; index++) {
+        SZrTypeMemberInfo *member = (SZrTypeMemberInfo *)ZrCore_Array_Get(
+                &prototype->members,
+                index);
+        if (member != ZR_NULL &&
+            member->memberType == ZR_AST_PROPERTY_DECLARATION &&
+            member->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
+            (void)import_publish_one_property_contract(
+                    cs,
+                    prototype,
+                    member);
+        }
+    }
+}
+
 static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, const SZrFunction *function) {
     const TZrByte *currentPos;
     TZrSize remainingDataSize;
@@ -948,7 +1280,9 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
         TZrUInt32 membersCount;
         TZrUInt32 decoratorsCount;
         SZrString *prototypeName;
+        SZrTypePrototypeInfo *existingPrototype;
         SZrTypePrototypeInfo typePrototype;
+        TZrBool mergeImportedPlaceholder;
 
         if (remainingDataSize < sizeof(SZrCompiledPrototypeInfo)) {
             return ZR_FALSE;
@@ -967,16 +1301,45 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
         }
 
         prototypeName = function_constant_string(cs->state, function, protoInfo->nameStringIndex);
-        if (prototypeName != ZR_NULL && find_compiler_type_prototype_inference(cs, prototypeName) == ZR_NULL) {
+        existingPrototype = prototypeName != ZR_NULL
+                                    ? find_registered_type_prototype_inference_exact_only(
+                                              cs,
+                                              prototypeName)
+                                    : ZR_NULL;
+        mergeImportedPlaceholder =
+                existingPrototype != ZR_NULL &&
+                existingPrototype->isImportedNative &&
+                existingPrototype->members.length == 0U;
+        if (prototypeName != ZR_NULL &&
+            (existingPrototype == ZR_NULL || mergeImportedPlaceholder)) {
             const TZrUInt32 *prototypeDecoratorIndices =
                     (const TZrUInt32 *)(currentPos + sizeof(SZrCompiledPrototypeInfo) +
                                         inheritsCount * sizeof(TZrUInt32));
-            import_type_prototype_init(cs->state,
-                                       &typePrototype,
-                                       prototypeName,
-                                       (EZrObjectPrototypeType)protoInfo->type);
+            if (mergeImportedPlaceholder) {
+                typePrototype = *existingPrototype;
+                typePrototype.name = prototypeName;
+                typePrototype.type = (EZrObjectPrototypeType)protoInfo->type;
+                typePrototype.extendsTypeName = ZR_NULL;
+                typePrototype.inherits.length = 0U;
+                typePrototype.implements.length = 0U;
+                typePrototype.genericParameters.length = 0U;
+                typePrototype.decorators.length = 0U;
+                typePrototype.members.length = 0U;
+                typePrototype.hasDecoratorMetadata = ZR_FALSE;
+                ZrCore_Value_ResetAsNull(
+                        &typePrototype.decoratorMetadataValue);
+            } else {
+                import_type_prototype_init(
+                        cs->state,
+                        &typePrototype,
+                        prototypeName,
+                        (EZrObjectPrototypeType)protoInfo->type);
+            }
             typePrototype.accessModifier = (EZrAccessModifier)protoInfo->accessModifier;
             typePrototype.protocolMask = protoInfo->protocolMask;
+            typePrototype.modifierFlags = protoInfo->modifierFlags;
+            typePrototype.nextVirtualSlotIndex = protoInfo->nextVirtualSlotIndex;
+            typePrototype.nextPropertyIdentity = protoInfo->nextPropertyIdentity;
             typePrototype.layoutByteSize = protoInfo->layoutByteSize;
             typePrototype.layoutByteAlign = protoInfo->layoutByteAlign;
             if (protoInfo->hasDecoratorMetadata &&
@@ -1080,6 +1443,23 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                     memberInfo.callsDestructor = compiledMember->callsDestructor ? ZR_TRUE : ZR_FALSE;
                     memberInfo.declarationOrder = compiledMember->declarationOrder;
                     memberInfo.contractRole = compiledMember->contractRole;
+                    memberInfo.modifierFlags = compiledMember->modifierFlags;
+                    memberInfo.ownerTypeName = function_constant_string(
+                            cs->state,
+                            function,
+                            compiledMember->ownerTypeNameStringIndex);
+                    memberInfo.baseDefinitionOwnerTypeName =
+                            function_constant_string(
+                                    cs->state,
+                                    function,
+                                    compiledMember->baseDefinitionOwnerTypeNameStringIndex);
+                    memberInfo.baseDefinitionName = function_constant_string(
+                            cs->state,
+                            function,
+                            compiledMember->baseDefinitionNameStringIndex);
+                    memberInfo.virtualSlotIndex = compiledMember->virtualSlotIndex;
+                    memberInfo.interfaceContractSlot =
+                            compiledMember->interfaceContractSlot;
                     memberInfo.propertyIdentity = compiledMember->propertyIdentity;
                     memberInfo.accessorRole =
                             (EZrPropertyAccessorRole)compiledMember->accessorRole;
@@ -1109,8 +1489,17 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                 }
             }
 
+            import_publish_compiled_property_contracts(cs, &typePrototype);
+
             register_imported_type_name(cs, prototypeName);
-            ZrCore_Array_Push(cs->state, &cs->typePrototypes, &typePrototype);
+            if (mergeImportedPlaceholder) {
+                *existingPrototype = typePrototype;
+            } else {
+                ZrCore_Array_Push(
+                        cs->state,
+                        &cs->typePrototypes,
+                        &typePrototype);
+            }
         }
 
         currentPos += currentPrototypeSize;
@@ -1199,16 +1588,18 @@ static void import_metadata_update_summary_module_signature_hash(SZrCompilerStat
 
 static void register_io_type_prototype_stub(SZrCompilerState *cs,
                                             SZrTypePrototypeInfo *modulePrototype,
+                                            SZrString *moduleName,
                                             SZrString *typeName,
                                             EZrObjectPrototypeType type) {
     SZrTypePrototypeInfo typePrototype;
 
-    if (cs == ZR_NULL || modulePrototype == ZR_NULL || typeName == ZR_NULL ||
+    if (cs == ZR_NULL || modulePrototype == ZR_NULL || moduleName == ZR_NULL || typeName == ZR_NULL ||
         find_compiler_type_prototype_inference(cs, typeName) != ZR_NULL) {
         return;
     }
 
     import_type_prototype_init(cs->state, &typePrototype, typeName, type);
+    typePrototype.importModuleName = moduleName;
     import_metadata_apply_default_builtin_root(cs->state, &typePrototype, type);
     register_imported_type_name(cs, typeName);
     ZrCore_Array_Push(cs->state, &cs->typePrototypes, &typePrototype);
@@ -1231,6 +1622,7 @@ static TZrBool register_binary_import_metadata(SZrCompilerState *cs,
     }
 
     import_type_prototype_init(cs->state, &modulePrototype, moduleName, ZR_OBJECT_PROTOTYPE_TYPE_MODULE);
+    modulePrototype.importModuleName = moduleName;
     import_metadata_apply_default_builtin_root(cs->state, &modulePrototype, ZR_OBJECT_PROTOTYPE_TYPE_MODULE);
     for (TZrSize index = 0; index < function->typedExportedSymbolsLength; index++) {
         const SZrIoFunctionTypedExportSymbol *symbol = &function->typedExportedSymbols[index];
@@ -1261,6 +1653,7 @@ static TZrBool register_binary_import_metadata(SZrCompilerState *cs,
         for (TZrSize index = 0; index < function->classesLength; index++) {
             register_io_type_prototype_stub(cs,
                                             &modulePrototype,
+                                            moduleName,
                                             function->classes[index].name,
                                             ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
         }
@@ -1269,6 +1662,7 @@ static TZrBool register_binary_import_metadata(SZrCompilerState *cs,
         for (TZrSize index = 0; index < function->structsLength; index++) {
             register_io_type_prototype_stub(cs,
                                             &modulePrototype,
+                                            moduleName,
                                             function->structs[index].name,
                                             ZR_OBJECT_PROTOTYPE_TYPE_STRUCT);
         }
@@ -1473,7 +1867,28 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
             source->modulesLength > 0 &&
             source->modules != ZR_NULL &&
             source->modules[0].entryFunction != ZR_NULL) {
-            result = register_binary_import_metadata(cs, moduleName, source->modules[0].entryFunction);
+            const SZrIoFunction *entryFunction =
+                    source->modules[0].entryFunction;
+            result = register_binary_import_metadata(
+                    cs,
+                    moduleName,
+                    entryFunction);
+            if (result && entryFunction->prototypeData != ZR_NULL &&
+                entryFunction->prototypeDataLength > sizeof(TZrUInt32) &&
+                entryFunction->prototypesLength > 0U) {
+                SZrFunction *runtimeFunction =
+                        ZrCore_Io_LoadEntryFunctionToRuntime(
+                                cs->state,
+                                source);
+                if (runtimeFunction == ZR_NULL) {
+                    result = ZR_FALSE;
+                } else {
+                    result = register_runtime_prototypes_from_function(
+                            cs,
+                            runtimeFunction);
+                    ZrCore_Function_Free(cs->state, runtimeFunction);
+                }
+            }
             import_metadata_trace("ensure import compile info register binary result=%d", (int)result);
         }
 

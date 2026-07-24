@@ -16,6 +16,7 @@ TZrBool compiler_property_bind(
         SZrString *ownerTypeName,
         SZrString *superTypeName,
         EZrCompilerPropertyContainerKind containerKind,
-        TZrUInt32 declarationOrder);
+        TZrUInt32 declarationOrder,
+        TZrBool compileBodies);
 
 #endif

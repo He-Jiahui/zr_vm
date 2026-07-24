@@ -1141,6 +1141,65 @@ TZrBool ZrParser_DiagnosticBuilder_BuildLegacyOwnershipTypeSyntaxWarning(SZrStat
             suggestion);
 }
 
+TZrBool ZrParser_DiagnosticBuilder_BuildLegacyPropertySyntax(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange declarationLocation,
+        SZrFileRange nameLocation,
+        const SZrFileRange *typeLocation,
+        const SZrFileRange *bodyLocation,
+        const TZrChar *replacementText) {
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                declarationLocation,
+                "legacy_property_syntax",
+                "Legacy getter/setter property syntax is not a semantic declaration",
+                "Properties now use one canonical property declaration with structured accessor roles.",
+                replacementText != ZR_NULL
+                        ? "Apply the parser-owned unified property replacement."
+                        : "Rewrite the declaration manually because no unambiguous replacement is available.") ||
+        !ZrParser_StructuredDiagnostic_AddRelatedInformation(
+                state,
+                out,
+                nameLocation,
+                "Legacy property name")) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    if (typeLocation != ZR_NULL &&
+        !ZrParser_StructuredDiagnostic_AddRelatedInformation(
+                state,
+                out,
+                *typeLocation,
+                "Legacy property type")) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    if (bodyLocation != ZR_NULL &&
+        !ZrParser_StructuredDiagnostic_AddRelatedInformation(
+                state,
+                out,
+                *bodyLocation,
+                "Legacy accessor body")) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    if (replacementText != ZR_NULL &&
+        !ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Migrate legacy property syntax",
+                declarationLocation,
+                replacementText,
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrParser_DiagnosticBuilder_BuildBorrowEscape(SZrState *state,
                                                      SZrStructuredDiagnostic *out,
                                                      SZrFileRange location) {

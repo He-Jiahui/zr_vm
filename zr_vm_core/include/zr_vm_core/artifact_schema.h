@@ -195,6 +195,12 @@ typedef enum EZrArtifactDomainTransferKind {
 #define ZR_ARTIFACT_CONTRACT_FLAG_ASYNC ((TZrUInt32)1u << 2u)
 #define ZR_ARTIFACT_CONTRACT_FLAG_GENERATOR ((TZrUInt32)1u << 3u)
 #define ZR_ARTIFACT_CONTRACT_FLAG_KNOWN_MASK ((TZrUInt32)0x0fu)
+#define ZR_ARTIFACT_PROPERTY_FLAG_STATIC ((TZrUInt32)1u << 0u)
+#define ZR_ARTIFACT_PROPERTY_FLAG_ABSTRACT ((TZrUInt32)1u << 1u)
+#define ZR_ARTIFACT_PROPERTY_FLAG_VIRTUAL ((TZrUInt32)1u << 2u)
+#define ZR_ARTIFACT_PROPERTY_FLAG_OVERRIDE ((TZrUInt32)1u << 3u)
+#define ZR_ARTIFACT_PROPERTY_FLAG_REF_RETURN ((TZrUInt32)1u << 4u)
+#define ZR_ARTIFACT_PROPERTY_FLAG_KNOWN_MASK ((TZrUInt32)0x1fu)
 
 #define ZR_ARTIFACT_CALLABLE_ESCAPE_FLAG_SCOPED_INPUT ((TZrUInt32)1u << 0u)
 #define ZR_ARTIFACT_CALLABLE_ESCAPE_FLAG_BORROWED_RETURN ((TZrUInt32)1u << 1u)
@@ -285,7 +291,8 @@ typedef struct SZrArtifactPropertyDefRow {
     TZrUInt32 flags;
     TZrUInt64 signatureHash;
     TZrUInt64 contractHash;
-    TZrUInt64 reserved0;
+    TZrMetadataToken initializerToken;
+    TZrUInt32 nameStringOffset;
 } SZrArtifactPropertyDefRow;
 
 typedef struct SZrArtifactContractRow {

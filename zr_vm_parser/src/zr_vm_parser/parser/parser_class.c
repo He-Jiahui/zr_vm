@@ -1,4 +1,5 @@
 #include "parser_internal.h"
+#include "parser_property_migration.h"
 static TZrUInt32 class_member_allowed_modifier_flags(void) {
     return ZR_DECLARATION_MODIFIER_ABSTRACT |
            ZR_DECLARATION_MODIFIER_VIRTUAL |
@@ -165,11 +166,13 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
 
     // 解析成员列表
     SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    SZrLegacyPropertyMigrationCollection legacyProperties;
     if (members == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         ZrParser_AstNodeArray_Free(ps->state, inherits);
         return ZR_NULL;
     }
+    parser_property_migration_collection_init(ps->state, &legacyProperties);
 
     // 解析成员直到遇到右大括号
     while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
@@ -192,14 +195,21 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
                     member = parse_class_field(ps);
                     break;
                 case ZR_AST_CLASS_PROPERTY:
-                    report_error(
-                            ps,
-                            "Legacy getter/setter syntax is unsupported; use 'property name: Type { get; set; }'");
                     member = parse_class_property(ps);
-                    if (member != ZR_NULL) {
+                    if (member == ZR_NULL ||
+                        !parser_property_migration_collection_append(
+                                ps->state,
+                                &legacyProperties,
+                                member)) {
                         ZrParser_Ast_Free(ps->state, member);
                         member = ZR_NULL;
+                        report_error(
+                                ps,
+                                "Failed to retain legacy property migration facts");
+                        rejectedLegacyProperty = ZR_FALSE;
+                        break;
                     }
+                    member = ZR_NULL;
                     rejectedLegacyProperty = ZR_TRUE;
                     break;
                 case ZR_AST_CLASS_META_FUNCTION:
@@ -221,11 +231,16 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
         }
         if (member != ZR_NULL) {
             ZrParser_AstNodeArray_Add(ps->state, members, member);
+            parser_property_migration_collection_mark_current_member(
+                    &legacyProperties);
         } else {
             // 解析失败，尝试恢复
             break;
         }
     }
+    parser_property_migration_collection_publish_and_free(
+            ps,
+            &legacyProperties);
 
     // 期望右大括号
     if (ps->lexer->t.token != ZR_TK_RBRACE) {

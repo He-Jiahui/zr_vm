@@ -1,6 +1,9 @@
 #include "backend_aot_reachability_function_graph.h"
 
+#include <string.h>
+
 #include "backend_aot_internal.h"
+#include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
@@ -571,6 +574,127 @@ static TZrBool backend_aot_static_reachability_collect_annotation_roots(const SZ
     return ZR_TRUE;
 }
 
+static TZrBool backend_aot_static_reachability_collect_property_roots_from_function(
+        SZrState *state,
+        const SZrAotFunctionTable *table,
+        const SZrFunction *function,
+        TZrUInt32 *roots,
+        EZrAotReachabilityReason *rootReasons,
+        TZrUInt32 rootCapacity,
+        TZrUInt32 *rootCount,
+        TZrUInt32 markCount) {
+    const TZrByte *data;
+    TZrSize length;
+    TZrSize offset = sizeof(TZrUInt32);
+    TZrUInt32 prototypeCount;
+
+    if (function->prototypeDataLength == 0u) {
+        return (TZrBool)(function->prototypeData == ZR_NULL);
+    }
+    if (function->prototypeData == ZR_NULL ||
+        function->prototypeDataLength < sizeof(TZrUInt32)) {
+        return ZR_FALSE;
+    }
+    data = function->prototypeData;
+    length = function->prototypeDataLength;
+    memcpy(&prototypeCount, data, sizeof(prototypeCount));
+
+    for (TZrUInt32 prototypeIndex = 0u;
+         prototypeIndex < prototypeCount;
+         prototypeIndex++) {
+        SZrCompiledPrototypeInfo prototype;
+        TZrSize inheritBytes;
+        TZrSize decoratorBytes;
+        TZrSize memberBytes;
+
+        if (offset > length || length - offset < sizeof(prototype)) {
+            return ZR_FALSE;
+        }
+        memcpy(&prototype, data + offset, sizeof(prototype));
+        offset += sizeof(prototype);
+        if (prototype.inheritsCount > (length - offset) / sizeof(TZrUInt32)) {
+            return ZR_FALSE;
+        }
+        inheritBytes = (TZrSize)prototype.inheritsCount * sizeof(TZrUInt32);
+        offset += inheritBytes;
+        if (prototype.decoratorsCount > (length - offset) / sizeof(TZrUInt32)) {
+            return ZR_FALSE;
+        }
+        decoratorBytes = (TZrSize)prototype.decoratorsCount * sizeof(TZrUInt32);
+        offset += decoratorBytes;
+        if (prototype.membersCount >
+            (length - offset) / sizeof(SZrCompiledMemberInfo)) {
+            return ZR_FALSE;
+        }
+        memberBytes =
+                (TZrSize)prototype.membersCount * sizeof(SZrCompiledMemberInfo);
+
+        for (TZrUInt32 memberIndex = 0u;
+             memberIndex < prototype.membersCount;
+             memberIndex++) {
+            SZrCompiledMemberInfo member;
+            TZrUInt32 targetIndex = ZR_AOT_INVALID_FUNCTION_INDEX;
+
+            memcpy(
+                    &member,
+                    data + offset +
+                            (TZrSize)memberIndex * sizeof(SZrCompiledMemberInfo),
+                    sizeof(member));
+            if (member.propertyIdentity == UINT32_MAX ||
+                member.accessorRole < 1u || member.accessorRole > 3u) {
+                continue;
+            }
+            if (!backend_aot_resolve_callable_constant_function_index(
+                        table,
+                        state,
+                        function,
+                        (TZrInt32)member.functionConstantIndex,
+                        &targetIndex)) {
+                continue;
+            }
+            if (!backend_aot_static_reachability_append_root(
+                        roots,
+                        rootReasons,
+                        rootCapacity,
+                        rootCount,
+                        targetIndex,
+                        ZR_AOT_REACHABILITY_REASON_PROPERTY_ACCESSOR,
+                        markCount)) {
+                return ZR_FALSE;
+            }
+        }
+        offset += memberBytes;
+    }
+    return (TZrBool)(offset == length);
+}
+
+static TZrBool backend_aot_static_reachability_collect_property_roots(
+        SZrState *state,
+        const SZrAotFunctionTable *table,
+        TZrUInt32 *roots,
+        EZrAotReachabilityReason *rootReasons,
+        TZrUInt32 rootCapacity,
+        TZrUInt32 *rootCount,
+        TZrUInt32 markCount) {
+    for (TZrUInt32 entryIndex = 0u; entryIndex < table->count; entryIndex++) {
+        const SZrFunction *function = table->entries[entryIndex].function;
+
+        if (function == ZR_NULL ||
+            !backend_aot_static_reachability_collect_property_roots_from_function(
+                    state,
+                    table,
+                    function,
+                    roots,
+                    rootReasons,
+                    rootCapacity,
+                    rootCount,
+                    markCount)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool backend_aot_static_reachability_append_edge(SZrAotReachabilityEdge *edges,
                                                            TZrUInt32 edgeCapacity,
                                                            TZrUInt32 *edgeCount,
@@ -757,6 +881,16 @@ TZrBool backend_aot_compute_static_callable_reachability(SZrState *state,
                                                                   rootCapacity,
                                                                   &rootCount,
                                                                   markCount)) {
+        return ZR_FALSE;
+    }
+    if (!backend_aot_static_reachability_collect_property_roots(
+                state,
+                table,
+                roots,
+                rootReasons,
+                rootCapacity,
+                &rootCount,
+                markCount)) {
         return ZR_FALSE;
     }
     if (!backend_aot_static_reachability_collect_manifest_roots(table,

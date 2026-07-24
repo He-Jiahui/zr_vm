@@ -11,6 +11,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/artifact_identity.c
   - zr_vm_core/src/zr_vm_core/artifact_rows.c
   - zr_vm_core/src/zr_vm_core/artifact_schema.c
+  - zr_vm_core/src/zr_vm_core/module/module_prototype.c
+  - zr_vm_core/src/zr_vm_core/reflection_property.c
   - zr_vm_core/include/zr_vm_core/type_layout.h
   - zr_vm_core/src/zr_vm_core/type_layout.c
   - zr_vm_core/src/zr_vm_core/artifact_signature.c
@@ -18,6 +20,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/canonical_consumer.c
   - zr_vm_parser/src/zr_vm_parser/artifact_projection.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
 implementation_files:
   - zr_vm_common/include/zr_vm_common/zr_io_conf.h
   - zr_vm_core/include/zr_vm_core/io.h
@@ -30,6 +34,8 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/artifact_identity.c
   - zr_vm_core/src/zr_vm_core/artifact_rows.c
   - zr_vm_core/src/zr_vm_core/artifact_schema.c
+  - zr_vm_core/src/zr_vm_core/module/module_prototype.c
+  - zr_vm_core/src/zr_vm_core/reflection_property.c
   - zr_vm_core/include/zr_vm_core/type_layout.h
   - zr_vm_core/src/zr_vm_core/type_layout.c
   - zr_vm_core/src/zr_vm_core/artifact_signature.c
@@ -37,10 +43,13 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/canonical_consumer.c
   - zr_vm_parser/src/zr_vm_parser/artifact_projection.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md
   - docs/plans/syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
+  - docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration-implementation-plan.md
 tests:
   - tests/parser/test_artifact_schema.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
@@ -49,6 +58,8 @@ tests:
   - tests/parser/test_buffer_pool_ffi.c
   - tests/parser/test_property_access_lowering.c
   - tests/parser/test_property_ref_return.c
+  - tests/parser/test_property_consumer_contracts.c
+  - tests/parser/test_property_consumer_stripping_cases.h
   - tests/core/test_type_layout_metadata_contracts.c
   - tests/core/test_resource_cross_domain_transfer.c
   - tests/acceptance/2026-07-19-syntax-01-m4-artifact-schema.md
@@ -110,6 +121,28 @@ The encoded slot was reserved in schema v1, so old artifacts decode as `NONE` an
 new readers reject unknown values without changing row width. Current lowering
 kinds distinguish ZR value-frame calls, explicit native marshalling, and native
 direct calls.
+
+### Property definition rows
+
+`PropertyDef` is a fixed 48-byte row. It carries the visible property token, owner TypeDef token,
+name offset, value-signature token, getter/setter/initializer MemberDef tokens, flags, property
+identity, and the initializer name offset in its final slot. Every nonzero linked token must have the
+expected metadata-table shape and resolve to the exact owner/signature contract. Unknown roles,
+duplicate property identities, dangling accessor tokens, and conflicting value signatures reject the
+artifact; a consumer never searches MemberDef names to repair the row.
+
+The canonical `ZRAF` schema and the current executable compatibility carrier are intentionally
+distinct. The production `.zro` writer still emits `SZrIo` v34 prototypes and does not embed nested
+PropertyDef/MemberDef/signature tables. For that format, the authoritative bridge is the byte-stable
+visible compiled-property row plus accessor rows that already share `propertyIdentity` and structured
+roles. Source-to-write-to-reload tests compare the complete prototype byte region and verify that a
+legacy-looking ordinary method remains a method. Formal executable cutover to the canonical table is
+the Syntax 01 successor boundary; M5 does not claim an absent token table or add a name fallback.
+
+When opt-in AOT stripping consumes the current executable carrier, concrete getter/setter/initializer
+rows are retained only through their shared `propertyIdentity`, structured `accessorRole`, and exact
+`functionConstantIndex`. The reachability manifest records `root.property_accessor`; an unrelated
+unused method is still removed, and no hidden accessor spelling participates in the graph.
 
 ## Stable Signatures
 
@@ -210,3 +243,8 @@ rather than being treated as a direct pointer.
 The focused suite covers all three artifact kinds, exact binary/text roundtrips, readable syntax and Semantic IR payloads, fixed widths, zero/one/256-row tables, duplicate signatures, value-construction capability and constructor identity, repeat-write hash stability, every public mismatch, unknown mandatory versus optional sections, truncation, invalid tokens, count limits, forbidden/duplicate/overlapping sections, recursive signature limits, relocation bounds, and source-compile versus binary-import identity. Reference-callable coverage starts with the production source query TypeId, proves signature import returns the same TypeId, then verifies the same bytes and ContractRow through VM and AOT projections, including negative ref-export and scoped-flag mismatches.
 
 Parent regression suites protect the M1 type graph, M2 Place/CFG, M3 pre-execution Semantic IR, legacy metadata token/ZRP formats, runtime binding diagnostics, project imports, and compiler behavior. Syntax 02 M6 additionally proves one reference-callable signature starts at the source contract, survives binary signature import, and is consumed byte-for-byte by VM and AOT while the LSP projects the same source callable facts.
+
+Syntax 05 M5 additionally verifies the 48-byte PropertyDef layout and initializer slot, exact
+visible/accessor identity across source and `.zro` reload, reflection token stability, ordinary
+legacy-looking methods as a negative boundary, 128-property stress, binary LSP hover/completion/
+definition, and AOT metadata stripping with accessor roots retained only through structured links.

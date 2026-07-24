@@ -313,6 +313,7 @@ typedef struct SZrTypePrototypeInfo {
     EZrAccessModifier accessModifier;   // 访问修饰符
     TZrUInt32 modifierFlags;            // abstract/final 等类型修饰符
     TZrBool isImportedNative;           // 是否为仅用于编译期解析的导入类型 stub（native/source/binary）
+    SZrString *importModuleName;         // imported stub 的 canonical module provenance
     TZrBool isNativeRuntime;            // 是否来自 native registry，需要保留 native 构造器返回值
     TZrUInt64 protocolMask;             // 稳定 protocol bit mask
     SZrArray inherits;                  // 继承的类型引用（SZrString* 数组，存储类型名称字符串）
@@ -411,6 +412,24 @@ typedef struct SZrTypeMemberInfo {
     TZrBool exportsWritableRef;           // 后续 ref-return property 合同；M1 默认 false
 } SZrTypeMemberInfo;
 
+typedef enum EZrPropertyAccessorMask {
+    ZR_PROPERTY_ACCESSOR_MASK_NONE = 0,
+    ZR_PROPERTY_ACCESSOR_MASK_GET = 1U << 0,
+    ZR_PROPERTY_ACCESSOR_MASK_SET = 1U << 1,
+    ZR_PROPERTY_ACCESSOR_MASK_INIT = 1U << 2,
+} EZrPropertyAccessorMask;
+
+typedef struct SZrPropertyRequirementQuery {
+    TZrUInt32 matchingContractCount;
+    TZrUInt32 requiredAccessorMask;
+    TZrUInt32 presentAccessorMask;
+    TZrUInt32 missingAccessorMask;
+    TZrSymbolId interfacePropertySymbolId;
+    TZrSymbolId interfaceGetterSymbolId;
+    TZrSymbolId interfaceSetterSymbolId;
+    TZrSymbolId interfaceInitializerSymbolId;
+} SZrPropertyRequirementQuery;
+
 // 编译结果结构体
 typedef struct SZrCompileResult {
     SZrFunction *mainFunction;          // 主函数（脚本主体）
@@ -480,6 +499,18 @@ ZR_PARSER_API SZrAstNodeArray *ZrParser_Compiler_MatchNamedArguments(SZrCompiler
 ZR_PARSER_API void ZrParser_Compiler_CompileStructDeclaration(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Compiler_CompileClassDeclaration(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Compiler_CompileInterfaceDeclaration(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API TZrBool ZrParser_Compiler_BindPropertyDeclaration(
+        SZrCompilerState *cs,
+        SZrTypePrototypeInfo *prototype,
+        SZrAstNode *propertyNode,
+        SZrString *ownerTypeName,
+        SZrString *superTypeName,
+        TZrUInt32 declarationOrder);
+ZR_PARSER_API TZrBool ZrParser_Compiler_QueryPropertyRequirements(
+        const SZrCompilerState *cs,
+        const SZrTypePrototypeInfo *ownerPrototype,
+        TZrSymbolId propertySymbolId,
+        SZrPropertyRequirementQuery *outQuery);
 ZR_PARSER_API void ZrParser_Compiler_CompileUnionDeclaration(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Compiler_PredeclareExternBindings(SZrCompilerState *cs, SZrAstNodeArray *statements);
 ZR_PARSER_API void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZrAstNode *node);

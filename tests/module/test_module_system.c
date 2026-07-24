@@ -2049,8 +2049,8 @@ static void test_module_restores_advanced_oop_runtime_descriptor_metadata(void) 
 
         basePing = find_member_descriptor_info(state, basePrototype, "ping", ZR_FALSE);
         derivedPing = find_member_descriptor_info(state, derivedPrototype, "ping", ZR_FALSE);
-        baseGetter = find_member_descriptor_info(state, basePrototype, "__get_score", ZR_FALSE);
-        derivedGetter = find_member_descriptor_info(state, derivedPrototype, "__get_score", ZR_FALSE);
+        baseGetter = find_member_descriptor_info(state, basePrototype, "score", ZR_FALSE);
+        derivedGetter = find_member_descriptor_info(state, derivedPrototype, "score", ZR_FALSE);
         deviceRead = find_member_descriptor_info(state, devicePrototype, "read", ZR_FALSE);
         TEST_ASSERT_NOT_NULL(basePing);
         TEST_ASSERT_NOT_NULL(derivedPing);
@@ -2073,12 +2073,14 @@ static void test_module_restores_advanced_oop_runtime_descriptor_metadata(void) 
 
         TEST_ASSERT_NOT_EQUAL_UINT32(0, derivedGetter->modifierFlags & ZR_DECLARATION_MODIFIER_OVERRIDE);
         TEST_ASSERT_NOT_EQUAL_UINT32(0, derivedGetter->modifierFlags & ZR_DECLARATION_MODIFIER_FINAL);
-        TEST_ASSERT_EQUAL_UINT32(1, baseGetter->accessorRole);
-        TEST_ASSERT_EQUAL_UINT32(1, derivedGetter->accessorRole);
+        TEST_ASSERT_EQUAL_UINT32(0, baseGetter->accessorRole);
+        TEST_ASSERT_EQUAL_UINT32(0, derivedGetter->accessorRole);
+        TEST_ASSERT_NOT_NULL(baseGetter->getterFunction);
+        TEST_ASSERT_NOT_NULL(derivedGetter->getterFunction);
         TEST_ASSERT_NOT_EQUAL_UINT32((TZrUInt32)-1, baseGetter->propertyIdentity);
         TEST_ASSERT_EQUAL_UINT32(baseGetter->propertyIdentity, derivedGetter->propertyIdentity);
         TEST_ASSERT_TRUE(string_equals_cstring(derivedGetter->baseDefinitionOwnerTypeName, "Base"));
-        TEST_ASSERT_TRUE(string_equals_cstring(derivedGetter->baseDefinitionName, "__get_score"));
+        TEST_ASSERT_TRUE(string_equals_cstring(derivedGetter->baseDefinitionName, "score"));
 
         TEST_ASSERT_NOT_EQUAL_UINT32((TZrUInt32)-1, deviceRead->interfaceContractSlot);
         TEST_ASSERT_EQUAL_UINT32(0, deviceRead->modifierFlags & ZR_DECLARATION_MODIFIER_OVERRIDE);
@@ -7632,6 +7634,8 @@ static void test_percent_type_source_reflection_exposes_advanced_oop_metadata(vo
         const SZrTypeValue *boolValue;
         const SZrTypeValue *intValue;
         const SZrTypeValue *stringValue;
+        const SZrTypeValue *accessorValue;
+        SZrObject *accessorReflection;
 
         TEST_ASSERT_NOT_NULL(state);
 
@@ -7721,10 +7725,22 @@ static void test_percent_type_source_reflection_exposes_advanced_oop_metadata(vo
         intValue = get_object_field_value(state, scoreReflection, "accessorRole");
         TEST_ASSERT_NOT_NULL(intValue);
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(intValue->type));
-        TEST_ASSERT_EQUAL_INT64(1, intValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(0, intValue->value.nativeObject.nativeInt64);
         stringValue = get_object_field_value(state, scoreReflection, "baseDefinitionName");
         TEST_ASSERT_NOT_NULL(stringValue);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, stringValue->value.object), "__get_score"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, stringValue->value.object), "score"));
+        accessorValue = get_object_field_value(state, scoreReflection, "getter");
+        TEST_ASSERT_NOT_NULL(accessorValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, accessorValue->type);
+        accessorReflection = ZR_CAST_OBJECT(state, accessorValue->value.object);
+        TEST_ASSERT_NOT_NULL(accessorReflection);
+        stringValue = get_object_field_value(state, accessorReflection, "name");
+        TEST_ASSERT_NOT_NULL(stringValue);
+        TEST_ASSERT_TRUE(string_equals_cstring(
+                ZR_CAST_STRING(state, stringValue->value.object), "get"));
+        intValue = get_object_field_value(state, accessorReflection, "accessorRole");
+        TEST_ASSERT_NOT_NULL(intValue);
+        TEST_ASSERT_EQUAL_INT64(1, intValue->value.nativeObject.nativeInt64);
 
         intValue = get_object_field_value(state, readReflection, "interfaceContractSlot");
         TEST_ASSERT_NOT_NULL(intValue);
@@ -8234,7 +8250,23 @@ static void test_percent_type_binary_reflection_restores_advanced_oop_metadata(v
         TEST_ASSERT_NOT_EQUAL_INT64(-1, fieldValue->value.nativeObject.nativeInt64);
         fieldValue = get_object_field_value(state, scoreReflection, "accessorRole");
         TEST_ASSERT_NOT_NULL(fieldValue);
-        TEST_ASSERT_EQUAL_INT64(1, fieldValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(0, fieldValue->value.nativeObject.nativeInt64);
+        fieldValue = get_object_field_value(state, scoreReflection, "baseDefinitionName");
+        TEST_ASSERT_NOT_NULL(fieldValue);
+        TEST_ASSERT_TRUE(string_equals_cstring(
+                ZR_CAST_STRING(state, fieldValue->value.object), "score"));
+        fieldValue = get_object_field_value(state, scoreReflection, "getter");
+        TEST_ASSERT_NOT_NULL(fieldValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, fieldValue->type);
+        {
+            SZrObject *getterReflection =
+                    ZR_CAST_OBJECT(state, fieldValue->value.object);
+            TEST_ASSERT_NOT_NULL(getterReflection);
+            fieldValue = get_object_field_value(state, getterReflection, "name");
+            TEST_ASSERT_NOT_NULL(fieldValue);
+            TEST_ASSERT_TRUE(string_equals_cstring(
+                    ZR_CAST_STRING(state, fieldValue->value.object), "get"));
+        }
 
         fieldValue = get_object_field_value(state, readReflection, "interfaceContractSlot");
         TEST_ASSERT_NOT_NULL(fieldValue);

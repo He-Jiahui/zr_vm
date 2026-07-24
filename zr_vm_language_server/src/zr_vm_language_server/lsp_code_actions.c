@@ -1,4 +1,5 @@
 #include "lsp_code_actions_internal.h"
+#include "lsp_property_code_actions.h"
 #include "module/lsp_module_metadata.h"
 
 #include "zr_vm_library/file.h"
@@ -738,7 +739,15 @@ TZrBool ZrLanguageServer_Lsp_GetCodeActions(SZrState *state,
         ok = lsp_editor_append_unused_import_cleanup_action(state, fileVersion, result) &&
              lsp_editor_append_missing_import_action(state, context, uri, content, contentLength, range, result) &&
              lsp_editor_append_diagnostic_fix_actions(
-                     state, context, uri, range, result);
+                     state, context, uri, range, result) &&
+             ZrLanguageServer_LspPropertyCodeActions_Append(
+                     state,
+                     context,
+                     uri,
+                     content,
+                     contentLength,
+                     range,
+                     result);
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ok;
     }
@@ -747,7 +756,15 @@ TZrBool ZrLanguageServer_Lsp_GetCodeActions(SZrState *state,
     ok = lsp_editor_append_unused_import_cleanup_action(state, fileVersion, result) &&
          lsp_editor_append_missing_import_action(state, context, uri, content, contentLength, range, result) &&
          lsp_editor_append_diagnostic_fix_actions(
-                 state, context, uri, range, result);
+                 state, context, uri, range, result) &&
+         ZrLanguageServer_LspPropertyCodeActions_Append(
+                 state,
+                 context,
+                 uri,
+                 content,
+                 contentLength,
+                 range,
+                 result);
     ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     return ok;
 }

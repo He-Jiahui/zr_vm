@@ -9,9 +9,13 @@ related_code:
   - zr_vm_core/src/zr_vm_core/execution/execution_meta_access.c
   - zr_vm_core/include/zr_vm_core/property_reference.h
   - zr_vm_core/src/zr_vm_core/property_reference.c
+  - zr_vm_core/src/zr_vm_core/reflection.c
+  - zr_vm_core/src/zr_vm_core/reflection_property.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/object/object.c
@@ -19,16 +23,24 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_meta_access.c
   - zr_vm_core/src/zr_vm_core/property_reference.c
+  - zr_vm_core/src/zr_vm_core/reflection.c
+  - zr_vm_core/src/zr_vm_core/reflection_property.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
   - docs/plans/syntax/05-property-unified-ast/m3-access-lowering-receiver-effect-implementation-plan.md
   - docs/plans/syntax/05-property-unified-ast/m4-ref-return-place-region-implementation-plan.md
+  - docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration-implementation-plan.md
 tests:
   - tests/parser/test_property_access_lowering.c
   - tests/parser/test_property_ref_return.c
   - tests/core/test_object_call_known_native_fast_path.c
   - tests/parser/test_artifact_schema.c
+  - tests/parser/test_property_consumer_contracts.c
+  - tests/parser/test_property_consumer_stripping_cases.h
+  - tests/module/test_module_system.c
 doc_type: module-detail
 ---
 
@@ -103,3 +115,24 @@ The C and LLVM AOT backends lower the stable property-reference SemIR operations
 helpers for create/load/store. Generated code carries the managed value rather than computing a raw
 interior address. Direct native/FFI pointer projection remains unavailable until a descriptor provides
 an explicit managed or pinned contract.
+
+## Reflection property projection
+
+Core reflection builds one visible property descriptor before exposing its linked accessor
+functions. The join key is `propertyIdentity` plus the structured accessor role and owner; source
+name and hidden runtime spelling are presentation data only. The descriptor publishes visible
+access/static/modifier flags, value TypeId, getter/setter/initializer identities, receiver effects,
+reference access/export, decorators, and declaration token provenance. Explicit fields and
+properties remain separate reflection entries and never share a SymbolId or layout slot.
+
+`reflection_property.c` owns this projection so the general reflection dispatcher does not grow a
+second property parser. Source modules and reloaded `.zro` prototypes use the same join. If the
+visible carrier, owner, value TypeId, or accessor link is missing or inconsistent, the property is
+unavailable; the runtime does not pair `__get_`/`__set_` names. A legacy-looking ordinary method is
+therefore reflected as a method, while compile-time decorators and AOT reflection roots attach to
+the exact visible property/accessor identities.
+
+Opt-in AOT stripping also preserves concrete property accessors from those same compiled rows. A
+row becomes a `root.property_accessor` only when its property identity and accessor role are valid
+and its callable constant resolves to an exact function index. This protects descriptor/reflection
+dispatch without turning ordinary unused methods into roots.

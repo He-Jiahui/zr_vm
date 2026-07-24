@@ -170,7 +170,8 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                             typeName,
                             ZR_NULL,
                             ZR_COMPILER_PROPERTY_CONTAINER_INTERFACE,
-                            (TZrUInt32)index)) {
+                            (TZrUInt32)index,
+                            ZR_TRUE)) {
                     cs->currentTypeName = oldTypeName;
                     cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                     return;

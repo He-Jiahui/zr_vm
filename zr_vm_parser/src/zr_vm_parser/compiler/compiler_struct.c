@@ -1242,7 +1242,8 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                             typeName,
                             ZR_NULL,
                             ZR_COMPILER_PROPERTY_CONTAINER_STRUCT,
-                            (TZrUInt32)i)) {
+                            (TZrUInt32)i,
+                            ZR_TRUE)) {
                     cs->currentTypeName = oldTypeName;
                     cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                     cs->currentTypeNode = oldTypeNode;

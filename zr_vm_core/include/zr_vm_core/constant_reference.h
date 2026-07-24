@@ -93,6 +93,16 @@ typedef struct SZrCompiledMemberInfo {
 typedef char ZrCompiledMemberInfoV34LayoutMustRemainStable[
         sizeof(SZrCompiledMemberInfo) == 31U * sizeof(TZrUInt32) ? 1 : -1];
 
+/*
+ * A visible property carrier has no method payload of its own.  Current
+ * executable metadata therefore uses the otherwise-empty method slots below
+ * without changing the stable v34 31-word layout.  Accessor rows continue to
+ * use the original method meanings.
+ */
+#define ZR_COMPILED_PROPERTY_VALUE_TYPE_ID(MEMBER) ((MEMBER)->parameterCount)
+#define ZR_COMPILED_PROPERTY_REFERENCE_ACCESS(MEMBER) ((MEMBER)->metaType)
+#define ZR_COMPILED_PROPERTY_EXPORTS_WRITABLE_REF(MEMBER) ((MEMBER)->isMetaMethod)
+
 // 常量引用路径结构（从parser模块引用）
 #ifndef ZR_CONSTANT_REFERENCE_PATH_DECLARED
 #define ZR_CONSTANT_REFERENCE_PATH_DECLARED

@@ -1656,6 +1656,44 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
         return ZR_FALSE;
     }
 
+    if (symbol != ZR_NULL && symbol->hasPropertyContract &&
+        ZrLanguageServer_FileVersionContentSnapshot_Acquire(
+                state,
+                fileVersion,
+                &contentSnapshot)) {
+        content = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(
+                state,
+                symbol,
+                contentSnapshot.content,
+                contentSnapshot.contentLength);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &contentSnapshot);
+        if (content != ZR_NULL) {
+            lspHover = (SZrLspHover *)ZrCore_Memory_RawMalloc(
+                    state->global,
+                    sizeof(SZrLspHover));
+            if (lspHover == ZR_NULL) {
+                ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
+                return ZR_FALSE;
+            }
+            ZrCore_Array_Init(state, &lspHover->contents, sizeof(SZrString *), 1U);
+            ZrCore_Array_Push(state, &lspHover->contents, &content);
+            lspHover->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
+                    context,
+                    uri,
+                    fileRange);
+            *result = lspHover;
+            if (hasLocalQuery &&
+                localQuery.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT) {
+                ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(
+                        state,
+                        &localQuery,
+                        lspHover);
+            }
+            ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
+            return ZR_TRUE;
+        }
+    }
+
     if (ZrLanguageServer_LspCanonicalSignatureHelp_ResolveReceiverHover(
                 state,
                 context,

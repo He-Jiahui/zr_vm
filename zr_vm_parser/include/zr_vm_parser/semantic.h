@@ -106,6 +106,30 @@ typedef struct SZrDeterministicCleanupStep {
     TZrBool callsDestructor;
 } SZrDeterministicCleanupStep;
 
+typedef struct SZrSemanticPropertyContract {
+    TZrSymbolId propertySymbolId;
+    TZrTypeId propertyTypeId;
+    TZrSymbolId getterSymbolId;
+    TZrSymbolId setterSymbolId;
+    TZrSymbolId initializerSymbolId;
+    TZrSymbolId setterValueSymbolId;
+    TZrSymbolId initializerValueSymbolId;
+    TZrTypeId getterCallableTypeId;
+    TZrTypeId setterCallableTypeId;
+    TZrTypeId initializerCallableTypeId;
+    EZrAccessModifier access;
+    EZrAccessModifier getterAccess;
+    EZrAccessModifier setterAccess;
+    EZrAccessModifier initializerAccess;
+    TZrUInt32 modifierFlags;
+    EZrCanonicalReceiverEffect receiverEffect;
+    EZrReferenceAccess referenceAccess;
+    TZrBool exportsWritableRef;
+    TZrBool isStatic;
+    SZrFileRange declarationRange;
+    SZrFileRange selectionRange;
+} SZrSemanticPropertyContract;
+
 typedef struct SZrSemanticContext {
     SZrState *state;
     TZrTypeId nextTypeId;
@@ -129,6 +153,7 @@ typedef struct SZrSemanticContext {
     SZrArray logicalFacts;      // SZrSemanticLogicalFact
     SZrArray ownershipFacts;    // SZrSemanticOwnershipFact
     SZrArray diagnosticFacts;   // SZrSemanticDiagnosticFact
+    SZrArray propertyContracts; // SZrSemanticPropertyContract
 } SZrSemanticContext;
 
 typedef struct SZrHirModule {
@@ -200,6 +225,9 @@ ZR_PARSER_API TZrBool ZrParser_Semantic_AppendCleanupStep(SZrSemanticContext *co
                                                 const SZrDeterministicCleanupStep *step);
 ZR_PARSER_API TZrBool ZrParser_Semantic_AppendTemplateSegment(SZrSemanticContext *context,
                                                     const SZrTemplateSegment *segment);
+ZR_PARSER_API TZrBool ZrParser_Semantic_PublishPropertyContract(
+        SZrSemanticContext *context,
+        const SZrSemanticPropertyContract *contract);
 
 ZR_PARSER_API SZrHirModule *ZrParser_HirModule_New(SZrState *state,
                                            SZrSemanticContext *context,

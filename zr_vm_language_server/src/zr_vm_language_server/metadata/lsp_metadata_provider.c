@@ -2,6 +2,7 @@
 #include "interface/lsp_interface_internal.h"
 #include "lsp_virtual_documents.h"
 #include "semantic/lsp_external_callable_contract.h"
+#include "semantic/lsp_property_contract.h"
 
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
@@ -251,6 +252,8 @@ static SZrFileRange metadata_provider_type_member_declaration_range(SZrLspMetada
                                                                       memberName);
             }
             break;
+        case ZR_AST_PROPERTY_DECLARATION:
+            return declarationNode->data.propertyDeclaration.nameLocation;
         case ZR_AST_PROPERTY_GET:
             return declarationNode->data.propertyGet.nameLocation;
         case ZR_AST_PROPERTY_SET:
@@ -284,6 +287,13 @@ static TZrBool metadata_provider_node_declares_type(SZrAstNode *node, SZrString 
             return node->data.structDeclaration.name != ZR_NULL &&
                    node->data.structDeclaration.name->name != ZR_NULL &&
                    ZrLanguageServer_Lsp_StringsEqual(node->data.structDeclaration.name->name, typeName);
+
+        case ZR_AST_INTERFACE_DECLARATION:
+            return node->data.interfaceDeclaration.name != ZR_NULL &&
+                   node->data.interfaceDeclaration.name->name != ZR_NULL &&
+                   ZrLanguageServer_Lsp_StringsEqual(
+                           node->data.interfaceDeclaration.name->name,
+                           typeName);
 
         case ZR_AST_ENUM_DECLARATION:
             return node->data.enumDeclaration.name != ZR_NULL &&
@@ -360,6 +370,8 @@ static SZrAstNode *metadata_provider_find_type_member_declaration(SZrAstNode *ty
         members = typeDeclaration->data.classDeclaration.members;
     } else if (typeDeclaration->type == ZR_AST_STRUCT_DECLARATION) {
         members = typeDeclaration->data.structDeclaration.members;
+    } else if (typeDeclaration->type == ZR_AST_INTERFACE_DECLARATION) {
+        members = typeDeclaration->data.interfaceDeclaration.members;
     } else if (typeDeclaration->type == ZR_AST_ENUM_DECLARATION) {
         members = typeDeclaration->data.enumDeclaration.members;
     } else {
@@ -408,6 +420,12 @@ static SZrAstNode *metadata_provider_find_type_member_declaration(SZrAstNode *ty
                         kind = ZR_LSP_METADATA_MEMBER_FIELD;
                     }
                 }
+                break;
+            case ZR_AST_PROPERTY_DECLARATION:
+                name = member->data.propertyDeclaration.name != ZR_NULL
+                               ? member->data.propertyDeclaration.name->name
+                               : ZR_NULL;
+                kind = ZR_LSP_METADATA_MEMBER_PROPERTY;
                 break;
             case ZR_AST_ENUM_MEMBER:
                 name = member->data.enumMember.name != ZR_NULL ? member->data.enumMember.name->name : ZR_NULL;
@@ -719,6 +737,8 @@ static void metadata_provider_resolve_symbol_descriptor(SZrState *state,
     outResolved->declarationSymbol = symbol;
     if (symbol->type == ZR_SYMBOL_FUNCTION || symbol->type == ZR_SYMBOL_METHOD) {
         outResolved->memberKind = ZR_LSP_METADATA_MEMBER_FUNCTION;
+    } else if (symbol->type == ZR_SYMBOL_PROPERTY) {
+        outResolved->memberKind = ZR_LSP_METADATA_MEMBER_PROPERTY;
     } else if (symbol->type == ZR_SYMBOL_CLASS || symbol->type == ZR_SYMBOL_STRUCT ||
                symbol->type == ZR_SYMBOL_INTERFACE || symbol->type == ZR_SYMBOL_ENUM) {
         outResolved->memberKind = ZR_LSP_METADATA_MEMBER_TYPE;
@@ -856,6 +876,7 @@ static const TZrChar *metadata_provider_module_member_kind_text(SZrSemanticAnaly
         case ZR_AST_STRUCT_METHOD:
             return "function";
         case ZR_AST_CLASS_PROPERTY:
+        case ZR_AST_PROPERTY_DECLARATION:
             return "property";
         case ZR_AST_CLASS_FIELD:
         case ZR_AST_STRUCT_FIELD:
@@ -1011,8 +1032,11 @@ static void metadata_provider_resolve_module_prototype_member(SZrState *state,
         return;
     }
 
-    outResolved->memberKind = strcmp(kindText, "function") == 0 ? ZR_LSP_METADATA_MEMBER_FUNCTION
-                                                                 : ZR_LSP_METADATA_MEMBER_CONSTANT;
+    outResolved->memberKind = strcmp(kindText, "function") == 0
+                                      ? ZR_LSP_METADATA_MEMBER_FUNCTION
+                                      : (strcmp(kindText, "property") == 0
+                                                 ? ZR_LSP_METADATA_MEMBER_PROPERTY
+                                                 : ZR_LSP_METADATA_MEMBER_CONSTANT);
     metadata_provider_set_type_text(state,
                                     outResolved,
                                     strcmp(kindText, "function") == 0
@@ -1544,6 +1568,41 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveProjectTypeMemberDeclaration
     return ZR_FALSE;
 }
 
+TZrBool ZrLanguageServer_LspMetadataProvider_ResolveBinaryTypeMemberDeclaration(
+    SZrLspMetadataProvider *provider,
+    SZrLspProjectIndex *projectIndex,
+    SZrLspResolvedMetadataMember *resolvedMember) {
+    if (provider == ZR_NULL || projectIndex == ZR_NULL || resolvedMember == ZR_NULL ||
+        resolvedMember->module.sourceKind != ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA ||
+        resolvedMember->module.moduleName == ZR_NULL ||
+        resolvedMember->memberKind != ZR_LSP_METADATA_MEMBER_PROPERTY ||
+        resolvedMember->typeMemberInfo == ZR_NULL ||
+        !resolvedMember->hasPropertyContract ||
+        resolvedMember->typeMemberInfo->propertySymbolId !=
+            resolvedMember->propertyContract.propertySymbolId ||
+        resolvedMember->typeMemberInfo->propertyValueTypeId !=
+            resolvedMember->propertyContract.propertyTypeId ||
+        !ZrLanguageServer_LspMetadataProvider_ResolveBinaryModuleUri(
+            provider,
+            projectIndex,
+            resolvedMember->module.moduleName,
+            &resolvedMember->declarationUri) ||
+        resolvedMember->declarationUri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    /*
+     * Executable v34 prototype metadata has exact property/accessor identities but
+     * no nested source coordinate table.  The declaration target is therefore the
+     * owning binary module entry; identity selection above remains PropertySymbol
+     * driven and never falls back to the property or hidden-accessor spelling.
+     */
+    resolvedMember->declarationRange =
+        metadata_provider_module_entry_range(resolvedMember->declarationUri);
+    resolvedMember->hasDeclaration = ZR_TRUE;
+    return ZR_TRUE;
+}
+
 TZrBool ZrLanguageServer_LspMetadataProvider_FindNativeTypeMemberDeclaration(
     SZrLspMetadataProvider *provider,
     SZrLspProjectIndex *projectIndex,
@@ -2018,6 +2077,32 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                              ? resolvedMember->fieldDescriptor->documentation
                              : "");
                 break;
+            case ZR_LSP_METADATA_MEMBER_PROPERTY:
+                if (!resolvedMember->hasPropertyContract ||
+                    resolvedMember->resolvedTypeText == ZR_NULL) {
+                    return ZR_FALSE;
+                }
+                content = ZrLanguageServer_LspPropertyContract_FormatQuery(
+                        provider->state,
+                        resolvedMember->memberName,
+                        metadata_provider_string_text(resolvedMember->resolvedTypeText),
+                        &resolvedMember->propertyContract);
+                if (content == ZR_NULL) {
+                    return ZR_FALSE;
+                }
+                snprintf(sourceBuffer,
+                         sizeof(sourceBuffer),
+                         "Source: %s",
+                         hoverSourceText != ZR_NULL ? hoverSourceText : "unresolved");
+                content = metadata_provider_append_markdown_section(
+                        provider->state,
+                        content,
+                        metadata_provider_create_markdown_text(provider->state, sourceBuffer));
+                return metadata_provider_create_hover(
+                        provider,
+                        content,
+                        resolvedMember->hasDeclaration ? resolvedMember->declarationRange : range,
+                        result);
             case ZR_LSP_METADATA_MEMBER_METHOD: {
                 SZrParserSemanticCallQuery callQuery;
                 SZrLspExternalCallableContract callableContract;

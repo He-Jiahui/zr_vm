@@ -3,6 +3,10 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_property.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_property_requirements.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_property_contract.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_property.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_member.c
@@ -23,8 +27,13 @@ related_code:
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
   - zr_vm_core/src/zr_vm_core/reflection.c
+  - zr_vm_core/src/zr_vm_core/reflection_property.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_property.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_property_requirements.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_property_contract.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_property.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_member.c
@@ -42,12 +51,14 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
   - zr_vm_core/src/zr_vm_core/reflection.c
+  - zr_vm_core/src/zr_vm_core/reflection_property.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
   - docs/plans/syntax/05-property-unified-ast/m1-unified-ast-symbol-implementation-plan.md
   - docs/plans/syntax/05-property-unified-ast/m2-explicit-field-init-implementation-plan.md
   - docs/plans/syntax/05-property-unified-ast/m3-access-lowering-receiver-effect-implementation-plan.md
   - docs/plans/syntax/05-property-unified-ast/m4-ref-return-place-region-implementation-plan.md
+  - docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration-implementation-plan.md
 tests:
   - tests/parser/test_property_unified_ast.c
   - tests/parser/test_property_explicit_field_init.c
@@ -56,6 +67,8 @@ tests:
   - tests/parser/test_compiler_features.c
   - tests/parser/test_reference_receiver_call_boundary.c
   - tests/parser/test_semantic_query.c
+  - tests/parser/test_property_consumer_contracts.c
+  - tests/language_server/test_lsp_interface.c
 doc_type: module-detail
 ---
 
@@ -228,3 +241,31 @@ M4 closes parser/compiler/runtime/artifact/AOT behavior for source reference pro
 signature, navigation, code-action projection, final PropertyDef reflection, and legacy-property
 migration are M5 work. Those consumers must join the canonical property/accessor SymbolIds and
 reference TypeId; they may not reconstruct reference access from a member name or formatted text.
+
+## Canonical Property Consumers
+
+M5 publishes one owned property contract after binding has validated the visible declaration and
+its linked accessors. `ZrParser_SemanticQuery_PropertyAt` chooses the narrowest declaration or
+reference range, while `ZrParser_SemanticQuery_PropertyBySymbolId` joins the exact visible
+PropertySymbol. Both return a zeroed unavailable result when the property identity, canonical value
+TypeId, or accessor link is incomplete. Getter, setter, and initializer callable TypeIds remain the
+source of receiver and reference-export effects; a display label is never parsed back into a fact.
+
+Imported executable prototypes follow the same rule. The current `.zro` v34 bridge may merge an
+exact compiled property row into an otherwise empty imported placeholder, but only when the visible
+row and accessor rows already share structured `propertyIdentity`, `accessorRole`, value TypeId, and
+reference fields. A missing or conflicting row stays unavailable. Ordinary methods that happen to
+use a legacy-looking `__get_` or `__set_` spelling are not promoted to properties.
+
+Interface refactors query transitive required PropertySymbols rather than scanning declaration
+names. A missing setter/initializer action is offered only for one unambiguous canonical contract;
+an explicit field proxy creates a distinct field SymbolId. Legacy accessor syntax is parsed into a
+temporary migration node, emits exact related ranges and at most one machine-applicable complete
+property replacement, and is then discarded as a semantic member. Mismatched, non-adjacent,
+binary-only, reference, or ambiguous cases deliberately publish no action.
+
+Property facts are declaration contracts, not body snapshots. A body-only incremental edit retains
+the same PropertySymbolId and TypeId, whereas a value-type edit changes the affected TypeId without
+invalidating an unrelated property's identity. The stress gate binds 128 visible properties and 256
+accessors and checks every linked identity; the LSP gate repeats the same invariant across a
+64-property document and a contract-changing reparse.

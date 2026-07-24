@@ -5,6 +5,7 @@
 #include "zr_vm_core/reflection.h"
 
 #include "module/module_internal.h"
+#include "reflection_property_internal.h"
 
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/closure.h"
@@ -3064,6 +3065,7 @@ static void reflection_populate_script_members(SZrState *state,
                                                const SZrTypeLayout *typeLayout) {
     const SZrCompiledPrototypeInfo *prototypeInfo;
     const TZrByte *membersBase;
+    const SZrCompiledMemberInfo *compiledMembers;
     SZrObject *membersObject;
     SZrObject *layoutObject;
     const TZrChar *qualifiedTypeName;
@@ -3095,10 +3097,41 @@ static void reflection_populate_script_members(SZrState *state,
     membersBase = (const TZrByte *)prototypeInfo + sizeof(SZrCompiledPrototypeInfo) +
                   ((TZrSize)prototypeInfo->inheritsCount * sizeof(TZrUInt32)) +
                   ((TZrSize)prototypeInfo->decoratorsCount * sizeof(TZrUInt32));
+    compiledMembers = (const SZrCompiledMemberInfo *)membersBase;
+
+    {
+        static const SZrReflectionPropertyHost kPropertyHost = {
+                .buildMemberInfo = reflection_build_member_info,
+                .assignOwnerLinks = reflection_assign_owner_links,
+                .populateCompiledMetadata =
+                        reflection_populate_compiled_member_oop_metadata,
+                .populateDecoratorMetadata =
+                        reflection_populate_compiled_member_decorator_metadata,
+                .extractFunction = reflection_extract_function_from_constant_index,
+                .populateParameters = reflection_populate_parameters_from_function,
+                .populateFunctionMetadata = reflection_populate_function_metadata,
+                .stringFromConstant = reflection_string_from_constant,
+                .setFieldBool = reflection_set_field_bool,
+                .setFieldInt = reflection_set_field_int,
+                .setFieldString = reflection_set_field_string,
+                .setFieldObject = reflection_set_field_object,
+                .addNamedEntry = reflection_add_named_entry,
+        };
+        ZrCore_ReflectionProperty_PopulateCurrent(
+                state,
+                membersObject,
+                typeReflection,
+                moduleReflection,
+                prototype,
+                qualifiedTypeName,
+                entryFunction,
+                compiledMembers,
+                prototypeInfo->membersCount,
+                &kPropertyHost);
+    }
 
     for (TZrUInt32 memberIndex = 0; memberIndex < prototypeInfo->membersCount; memberIndex++) {
-        const SZrCompiledMemberInfo *member = (const SZrCompiledMemberInfo *)(membersBase +
-                                                                              (sizeof(SZrCompiledMemberInfo) * memberIndex));
+        const SZrCompiledMemberInfo *member = &compiledMembers[memberIndex];
         const SZrTypeValue *memberNameValue;
         SZrString *memberNameString;
         const TZrChar *memberName;
@@ -3109,6 +3142,13 @@ static void reflection_populate_script_members(SZrState *state,
         TZrBool isPropertyAccessor = ZR_FALSE;
         TZrChar qualifiedMemberName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
         SZrObject *memberReflection;
+
+        if (ZrCore_ReflectionProperty_ShouldSkipCanonicalMember(
+                    compiledMembers,
+                    prototypeInfo->membersCount,
+                    member)) {
+            continue;
+        }
 
         if (member->nameStringIndex >= entryFunction->constantValueLength) {
             continue;

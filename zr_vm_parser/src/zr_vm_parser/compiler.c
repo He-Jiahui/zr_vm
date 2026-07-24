@@ -412,6 +412,13 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
         if (memberInfo->memberType == ZR_AST_PROPERTY_DECLARATION) {
             compiledMember->fieldTypeNameStringIndex =
                     compiler_add_serialized_string_constant(cs, memberInfo->fieldTypeName);
+            compiledMember->parameterCount = memberInfo->propertyValueTypeId;
+            compiledMember->metaType =
+                    memberInfo->fieldType != ZR_NULL
+                            ? (TZrUInt32)memberInfo->fieldType->referenceAccess
+                            : (TZrUInt32)ZR_REFERENCE_ACCESS_NONE;
+            compiledMember->isMetaMethod =
+                    memberInfo->exportsWritableRef ? ZR_TRUE : ZR_FALSE;
         }
         
         // 方法特定信息

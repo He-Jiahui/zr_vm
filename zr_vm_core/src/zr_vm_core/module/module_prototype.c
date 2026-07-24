@@ -274,10 +274,29 @@ static SZrMemberDescriptor *module_prototype_find_own_property_descriptor(SZrObj
     return ZR_NULL;
 }
 
-static void module_prototype_add_property_accessor_descriptor(SZrState *state,
-                                                             SZrObjectPrototype *prototype,
-                                                             SZrFunction *entryFunction,
-                                                             SZrString *accessorName,
+static SZrMemberDescriptor *module_prototype_find_own_property_descriptor_by_identity(
+        SZrObjectPrototype *prototype,
+        TZrUInt32 propertyIdentity,
+        TZrBool isStatic) {
+    if (prototype == ZR_NULL || propertyIdentity == (TZrUInt32)-1) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 index = 0; index < prototype->memberDescriptorCount; index++) {
+        SZrMemberDescriptor *descriptor = &prototype->memberDescriptors[index];
+        if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY &&
+            descriptor->isStatic == isStatic &&
+            descriptor->propertyIdentity == propertyIdentity) {
+            return descriptor;
+        }
+    }
+    return ZR_NULL;
+}
+
+static TZrBool module_prototype_add_property_accessor_descriptor(SZrState *state,
+                                                              SZrObjectPrototype *prototype,
+                                                              SZrFunction *entryFunction,
+                                                              SZrString *accessorName,
                                                              const SZrCompiledMemberInfo *member,
                                                              SZrFunction *function) {
     SZrString *propertyName;
@@ -286,32 +305,48 @@ static void module_prototype_add_property_accessor_descriptor(SZrState *state,
 
     if (state == ZR_NULL || prototype == ZR_NULL || member == ZR_NULL || function == ZR_NULL ||
         member->accessorRole == 0u) {
-        return;
+        return ZR_FALSE;
     }
 
-    propertyName = module_prototype_public_property_name_from_accessor(state, accessorName, member->accessorRole);
+    existing = module_prototype_find_own_property_descriptor_by_identity(
+            prototype,
+            member->propertyIdentity,
+            member->isStatic ? ZR_TRUE : ZR_FALSE);
+    propertyName = existing != ZR_NULL
+                           ? existing->name
+                           : module_prototype_public_property_name_from_accessor(
+                                     state,
+                                     accessorName,
+                                     member->accessorRole);
     if (propertyName == ZR_NULL) {
-        return;
+        return ZR_FALSE;
     }
-
-    existing = module_prototype_find_own_property_descriptor(prototype,
-                                                            propertyName,
-                                                            member->isStatic ? ZR_TRUE : ZR_FALSE);
+    if (existing == ZR_NULL) {
+        existing = module_prototype_find_own_property_descriptor(
+                prototype,
+                propertyName,
+                member->isStatic ? ZR_TRUE : ZR_FALSE);
+    }
     if (existing != ZR_NULL) {
         if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_GETTER) {
             existing->getterFunction = function;
+            existing->getterAccessModifier = member->accessModifier;
         } else if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_SETTER) {
             existing->setterFunction = function;
             existing->isWritable = ZR_TRUE;
+            existing->setterAccessModifier = member->accessModifier;
+            existing->receiverEffect = ZR_MEMBER_RECEIVER_EFFECT_MUTABLE;
         } else if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_INITIALIZER) {
             existing->initializerFunction = function;
+            existing->initializerAccessModifier = member->accessModifier;
+            existing->receiverEffect = ZR_MEMBER_RECEIVER_EFFECT_MUTABLE;
         }
         existing->modifierFlags |= member->modifierFlags;
         existing->contractRole = member->contractRole;
         existing->propertyIdentity = member->propertyIdentity;
         existing->accessorRole = 0u;
         prototype->super.memberVersion++;
-        return;
+        return ZR_TRUE;
     }
 
     ZrCore_Memory_RawSet(&descriptor, 0, sizeof(descriptor));
@@ -332,15 +367,28 @@ static void module_prototype_add_property_accessor_descriptor(SZrState *state,
     descriptor.interfaceContractSlot = member->interfaceContractSlot;
     descriptor.propertyIdentity = member->propertyIdentity;
     descriptor.accessorRole = 0u;
+    descriptor.receiverEffect = member->isStatic
+                                        ? ZR_MEMBER_RECEIVER_EFFECT_NONE
+                                        : (member->isConst
+                                                   ? ZR_MEMBER_RECEIVER_EFFECT_READONLY
+                                                   : ZR_MEMBER_RECEIVER_EFFECT_MUTABLE);
+    descriptor.referenceAccess = ZR_MEMBER_REFERENCE_ACCESS_NONE;
+    descriptor.accessModifier = member->accessModifier;
+    descriptor.getterAccessModifier = ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE;
+    descriptor.setterAccessModifier = ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE;
+    descriptor.initializerAccessModifier = ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE;
     if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_GETTER) {
         descriptor.getterFunction = function;
+        descriptor.getterAccessModifier = member->accessModifier;
     } else if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_SETTER) {
         descriptor.setterFunction = function;
+        descriptor.setterAccessModifier = member->accessModifier;
     } else if (member->accessorRole == ZR_MODULE_PROTOTYPE_ACCESSOR_ROLE_INITIALIZER) {
         descriptor.initializerFunction = function;
+        descriptor.initializerAccessModifier = member->accessModifier;
     }
 
-    (void)ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
+    return ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
 }
 
 static void module_prototype_add_runtime_descriptor(SZrState *state,
@@ -373,14 +421,18 @@ static void module_prototype_add_runtime_descriptor(SZrState *state,
     descriptor.interfaceContractSlot = member->interfaceContractSlot;
     descriptor.propertyIdentity = member->propertyIdentity;
     descriptor.accessorRole = member->accessorRole;
+    descriptor.accessModifier = member->accessModifier;
+    descriptor.getterAccessModifier = ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE;
+    descriptor.setterAccessModifier = ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE;
+    descriptor.initializerAccessModifier = ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE;
 
     if (member->accessorRole != 0u && function != ZR_NULL) {
-        module_prototype_add_property_accessor_descriptor(state,
-                                                          prototype,
-                                                          entryFunction,
-                                                          memberName,
-                                                          member,
-                                                          function);
+        (void)module_prototype_add_property_accessor_descriptor(state,
+                                                                prototype,
+                                                                entryFunction,
+                                                                memberName,
+                                                                member,
+                                                                function);
     }
 
     switch (member->memberType) {
@@ -398,6 +450,19 @@ static void module_prototype_add_runtime_descriptor(SZrState *state,
             descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY;
             descriptor.isWritable = ZR_FALSE;
             descriptor.accessorRole = 0u;
+            descriptor.propertyValueTypeId =
+                    ZR_COMPILED_PROPERTY_VALUE_TYPE_ID(member);
+            descriptor.receiverEffect = member->isStatic
+                                                ? ZR_MEMBER_RECEIVER_EFFECT_NONE
+                                                : (member->isConst
+                                                           ? ZR_MEMBER_RECEIVER_EFFECT_READONLY
+                                                           : ZR_MEMBER_RECEIVER_EFFECT_MUTABLE);
+            descriptor.referenceAccess =
+                    ZR_COMPILED_PROPERTY_REFERENCE_ACCESS(member);
+            descriptor.exportsWritableRef =
+                    ZR_COMPILED_PROPERTY_EXPORTS_WRITABLE_REF(member)
+                            ? ZR_TRUE
+                            : ZR_FALSE;
             break;
         default:
             return;

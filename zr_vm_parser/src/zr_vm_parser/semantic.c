@@ -34,6 +34,10 @@ static void semantic_context_init_arrays(SZrSemanticContext *context) {
                 &context->queryDiagnostics,
                 sizeof(SZrStructuredDiagnostic),
                 ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(context->state,
+                &context->propertyContracts,
+                sizeof(SZrSemanticPropertyContract),
+                ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrParser_SemanticFacts_Init(context);
 }
 
@@ -110,6 +114,7 @@ void ZrParser_SemanticContext_Free(SZrSemanticContext *context) {
     semantic_context_reset_query_diagnostics(context);
     ZrCore_Array_Free(context->state, &context->queryDiagnostics);
     ZrParser_SemanticFacts_Free(context);
+    ZrCore_Array_Free(context->state, &context->propertyContracts);
     ZrCore_Memory_RawFree(context->state->global, context, sizeof(SZrSemanticContext));
 }
 
@@ -145,6 +150,7 @@ void ZrParser_SemanticContext_Reset(SZrSemanticContext *context) {
     context->overloadSets.length = 0;
     context->cleanupPlan.length = 0;
     context->templateSegments.length = 0;
+    context->propertyContracts.length = 0;
     semantic_context_reset_query_diagnostics(context);
     ZrParser_SemanticFacts_Reset(context);
 }

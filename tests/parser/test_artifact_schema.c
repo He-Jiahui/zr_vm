@@ -638,6 +638,9 @@ static void test_member_property_and_relocation_contracts_validate_tokens_and_co
     property.token = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 4u);
     property.ownerTypeToken = TEST_TYPE_DEF_TOKEN;
     property.getterToken = TEST_MEMBER_TOKEN;
+    property.initializerToken =
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 5u);
+    property.nameStringOffset = 19u;
     property.signatureToken = TEST_SIGNATURE_TOKEN;
     property.signatureHash = TEST_SIGNATURE_HASH;
     property.contractHash = TEST_CONTRACT_HASH;
@@ -666,6 +669,20 @@ static void test_member_property_and_relocation_contracts_validate_tokens_and_co
                                                 &diagnostic));
 
     property.getterToken = TEST_TYPE_DEF_TOKEN;
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+                          ZrCore_Artifact_GetEncodedSize(&fixture.document, &length, &diagnostic));
+    property.getterToken = TEST_MEMBER_TOKEN;
+    property.initializerToken = TEST_TYPE_DEF_TOKEN;
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+                          ZrCore_Artifact_GetEncodedSize(&fixture.document, &length, &diagnostic));
+    property.initializerToken =
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 5u);
+    property.flags = ZR_ARTIFACT_PROPERTY_FLAG_KNOWN_MASK + 1u;
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+                          ZrCore_Artifact_GetEncodedSize(&fixture.document, &length, &diagnostic));
+    property.flags = 0u;
+    property.getterToken = 0u;
+    property.initializerToken = 0u;
     TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
                           ZrCore_Artifact_GetEncodedSize(&fixture.document, &length, &diagnostic));
     property.getterToken = TEST_MEMBER_TOKEN;

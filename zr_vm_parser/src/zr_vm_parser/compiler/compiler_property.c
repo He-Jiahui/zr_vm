@@ -416,6 +416,25 @@ static TZrTypeId compiler_property_callable_type_id(
     return typeId;
 }
 
+static TZrTypeId compiler_property_symbol_type_id(
+        const SZrSemanticContext *context,
+        TZrSymbolId symbolId) {
+    if (context == ZR_NULL || symbolId == ZR_SEMANTIC_ID_INVALID ||
+        !context->symbols.isValid) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    for (TZrSize index = 0U; index < context->symbols.length; index++) {
+        const SZrSemanticSymbolRecord *symbol =
+                (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
+                        (SZrArray *)&context->symbols,
+                        index);
+        if (symbol != ZR_NULL && symbol->id == symbolId) {
+            return symbol->typeId;
+        }
+    }
+    return ZR_SEMANTIC_ID_INVALID;
+}
+
 static TZrBool compiler_property_emit_accessor(
         SZrCompilerState *cs,
         SZrTypePrototypeInfo *prototype,
@@ -428,7 +447,9 @@ static TZrBool compiler_property_emit_accessor(
         TZrUInt32 propertyIdentity,
         TZrSymbolId propertySymbolId,
         TZrTypeId propertyValueTypeId,
-        TZrSymbolId *outAccessorSymbolId) {
+        TZrBool compileBodies,
+        TZrSymbolId *outAccessorSymbolId,
+        TZrSymbolId *outValueSymbolId) {
     SZrPropertyDeclaration *property = &propertyNode->data.propertyDeclaration;
     SZrPropertyAccessor *accessor = &accessorNode->data.propertyAccessor;
     SZrTypeMemberInfo member;
@@ -437,6 +458,9 @@ static TZrBool compiler_property_emit_accessor(
     TZrBool isContractOnly = compiler_property_is_contract_only(
             property, containerKind);
 
+    if (outValueSymbolId != ZR_NULL) {
+        *outValueSymbolId = ZR_SEMANTIC_ID_INVALID;
+    }
     compiler_property_init_member(&member, ownerTypeName, propertyNode, declarationOrder);
     member.memberType = containerKind == ZR_COMPILER_PROPERTY_CONTAINER_STRUCT
                                 ? ZR_AST_STRUCT_METHOD
@@ -502,7 +526,29 @@ static TZrBool compiler_property_emit_accessor(
                 cs, "failed to register property accessor symbol", accessor->keywordLocation);
         return ZR_FALSE;
     }
-    if (!isContractOnly) {
+    if (accessor->kind != ZR_PROPERTY_ACCESSOR_GET && outValueSymbolId != ZR_NULL) {
+        SZrString *valueName = ZrCore_String_CreateFromNative(cs->state, "value");
+
+        if (valueName == ZR_NULL) {
+            ZrParser_Compiler_Error(
+                    cs, "failed to allocate property value parameter name", accessor->keywordLocation);
+            return ZR_FALSE;
+        }
+        *outValueSymbolId = ZrParser_Semantic_RegisterSymbol(
+                cs->semanticContext,
+                valueName,
+                ZR_SEMANTIC_SYMBOL_KIND_PARAMETER,
+                propertyValueTypeId,
+                ZR_SEMANTIC_ID_INVALID,
+                accessorNode,
+                accessor->keywordLocation);
+        if (*outValueSymbolId == ZR_SEMANTIC_ID_INVALID) {
+            ZrParser_Compiler_Error(
+                    cs, "failed to register property value parameter symbol", accessor->keywordLocation);
+            return ZR_FALSE;
+        }
+    }
+    if (!isContractOnly && compileBodies) {
         SZrFunction *compiledAccessor = compile_property_accessor_function(
                 cs,
                 propertyNode,
@@ -536,12 +582,15 @@ TZrBool compiler_property_bind(
         SZrString *ownerTypeName,
         SZrString *superTypeName,
         EZrCompilerPropertyContainerKind containerKind,
-        TZrUInt32 declarationOrder) {
+        TZrUInt32 declarationOrder,
+        TZrBool compileBodies) {
     SZrPropertyDeclaration *property;
     SZrCompilerPropertyAccessors accessors;
     SZrTypeMemberInfo visible;
     TZrUInt32 propertyIdentity;
     TZrTypeId propertyValueTypeId;
+    TZrSymbolId setterValueSymbolId = ZR_SEMANTIC_ID_INVALID;
+    TZrSymbolId initializerValueSymbolId = ZR_SEMANTIC_ID_INVALID;
 
     if (!compiler_property_validate(cs, propertyNode, containerKind, &accessors)) {
         return ZR_FALSE;
@@ -616,7 +665,9 @@ TZrBool compiler_property_bind(
                 propertyIdentity,
                 visible.symbolId,
                 propertyValueTypeId,
-                &visible.getterAccessorSymbolId)) {
+                compileBodies,
+                &visible.getterAccessorSymbolId,
+                ZR_NULL)) {
         return ZR_FALSE;
     }
     if (accessors.setter != ZR_NULL &&
@@ -632,7 +683,9 @@ TZrBool compiler_property_bind(
                 propertyIdentity,
                 visible.symbolId,
                 propertyValueTypeId,
-                &visible.setterAccessorSymbolId)) {
+                compileBodies,
+                &visible.setterAccessorSymbolId,
+                &setterValueSymbolId)) {
         return ZR_FALSE;
     }
     if (accessors.initializer != ZR_NULL &&
@@ -648,8 +701,58 @@ TZrBool compiler_property_bind(
                 propertyIdentity,
                 visible.symbolId,
                 propertyValueTypeId,
-                &visible.initAccessorSymbolId)) {
+                compileBodies,
+                &visible.initAccessorSymbolId,
+                &initializerValueSymbolId)) {
         return ZR_FALSE;
+    }
+
+    {
+        SZrSemanticPropertyContract contract;
+
+        ZrCore_Memory_RawSet(&contract, 0, sizeof(contract));
+        contract.propertySymbolId = visible.symbolId;
+        contract.propertyTypeId = propertyValueTypeId;
+        contract.getterSymbolId = visible.getterAccessorSymbolId;
+        contract.setterSymbolId = visible.setterAccessorSymbolId;
+        contract.initializerSymbolId = visible.initAccessorSymbolId;
+        contract.setterValueSymbolId = setterValueSymbolId;
+        contract.initializerValueSymbolId = initializerValueSymbolId;
+        contract.getterCallableTypeId = compiler_property_symbol_type_id(
+                cs->semanticContext,
+                visible.getterAccessorSymbolId);
+        contract.setterCallableTypeId = compiler_property_symbol_type_id(
+                cs->semanticContext,
+                visible.setterAccessorSymbolId);
+        contract.initializerCallableTypeId = compiler_property_symbol_type_id(
+                cs->semanticContext,
+                visible.initAccessorSymbolId);
+        contract.access = property->access;
+        contract.getterAccess = accessors.getter != ZR_NULL
+                                        ? accessors.getter->data.propertyAccessor.access
+                                        : property->access;
+        contract.setterAccess = accessors.setter != ZR_NULL
+                                        ? accessors.setter->data.propertyAccessor.access
+                                        : property->access;
+        contract.initializerAccess = accessors.initializer != ZR_NULL
+                                             ? accessors.initializer->data.propertyAccessor.access
+                                             : property->access;
+        contract.modifierFlags = property->modifierFlags;
+        contract.receiverEffect = visible.receiverEffect;
+        contract.referenceAccess = property->typeInfo->referenceAccess;
+        contract.exportsWritableRef = visible.exportsWritableRef;
+        contract.isStatic = property->isStatic;
+        contract.declarationRange = propertyNode->location;
+        contract.selectionRange = property->nameLocation;
+        if (!ZrParser_Semantic_PublishPropertyContract(
+                    cs->semanticContext,
+                    &contract)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "failed to publish property semantic contract",
+                    property->nameLocation);
+            return ZR_FALSE;
+        }
     }
 
     /* The visible PropertySymbol precedes its accessors in semantic order. */
@@ -668,4 +771,40 @@ TZrBool compiler_property_bind(
         members[insertionIndex] = savedVisible;
     }
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_Compiler_BindPropertyDeclaration(
+        SZrCompilerState *cs,
+        SZrTypePrototypeInfo *prototype,
+        SZrAstNode *propertyNode,
+        SZrString *ownerTypeName,
+        SZrString *superTypeName,
+        TZrUInt32 declarationOrder) {
+    EZrCompilerPropertyContainerKind containerKind;
+
+    if (prototype == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    switch (prototype->type) {
+        case ZR_OBJECT_PROTOTYPE_TYPE_CLASS:
+            containerKind = ZR_COMPILER_PROPERTY_CONTAINER_CLASS;
+            break;
+        case ZR_OBJECT_PROTOTYPE_TYPE_STRUCT:
+            containerKind = ZR_COMPILER_PROPERTY_CONTAINER_STRUCT;
+            break;
+        case ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE:
+            containerKind = ZR_COMPILER_PROPERTY_CONTAINER_INTERFACE;
+            break;
+        default:
+            return ZR_FALSE;
+    }
+    return compiler_property_bind(
+            cs,
+            prototype,
+            propertyNode,
+            ownerTypeName,
+            superTypeName,
+            containerKind,
+            declarationOrder,
+            ZR_FALSE);
 }

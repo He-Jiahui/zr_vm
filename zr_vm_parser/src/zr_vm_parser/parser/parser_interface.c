@@ -1,4 +1,5 @@
 #include "parser_internal.h"
+#include "parser_property_migration.h"
 
 SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
@@ -170,7 +171,7 @@ SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
 // 解析接口属性签名
 
 SZrAstNode *parse_interface_property_signature(SZrParserState *ps) {
-    SZrFileRange startLoc = get_current_location(ps);
+    SZrFileRange startLoc = get_current_token_location(ps);
 
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
@@ -393,10 +394,12 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
 
     // 解析成员列表
     SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    SZrLegacyPropertyMigrationCollection legacyProperties;
     if (members == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, inherits);
         return ZR_NULL;
     }
+    parser_property_migration_collection_init(ps->state, &legacyProperties);
 
     // 解析成员直到遇到右大括号
     while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
@@ -411,16 +414,9 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
         } else if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO ||
             token == ZR_TK_VAR || token == ZR_TK_LET || token == ZR_TK_CONST) {
             // 向前看以确定成员类型
-            TZrSize savedPos = ps->lexer->currentPos;
-            TZrInt32 savedChar = ps->lexer->currentChar;
-            TZrInt32 savedLine = ps->lexer->lineNumber;
-            TZrInt32 savedLastLine = ps->lexer->lastLine;
-            SZrToken savedToken = ps->lexer->t;
-            SZrToken savedLookahead = ps->lexer->lookahead;
-            TZrSize savedLookaheadPos = ps->lexer->lookaheadPos;
-            TZrInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
-            TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
-            TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
+            SZrParserCursor savedCursor;
+
+            save_parser_cursor(ps, &savedCursor);
 
             if (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI ||
                 ps->lexer->t.token == ZR_TK_PRO) {
@@ -437,63 +433,30 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
 
             if (nextToken == ZR_TK_VAR || nextToken == ZR_TK_LET || nextToken == ZR_TK_CONST) {
                 // 字段声明
-                ps->lexer->currentPos = savedPos;
-                ps->lexer->currentChar = savedChar;
-                ps->lexer->lineNumber = savedLine;
-                ps->lexer->lastLine = savedLastLine;
-                ps->lexer->t = savedToken;
-                ps->lexer->lookahead = savedLookahead;
-                ps->lexer->lookaheadPos = savedLookaheadPos;
-                ps->lexer->lookaheadChar = savedLookaheadChar;
-                ps->lexer->lookaheadLine = savedLookaheadLine;
-                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+                restore_parser_cursor(ps, &savedCursor);
                 member = parse_interface_field_declaration(ps);
             } else if (nextToken == ZR_TK_GET || nextToken == ZR_TK_SET) {
                 // 属性签名
-                ps->lexer->currentPos = savedPos;
-                ps->lexer->currentChar = savedChar;
-                ps->lexer->lineNumber = savedLine;
-                ps->lexer->lastLine = savedLastLine;
-                ps->lexer->t = savedToken;
-                ps->lexer->lookahead = savedLookahead;
-                ps->lexer->lookaheadPos = savedLookaheadPos;
-                ps->lexer->lookaheadChar = savedLookaheadChar;
-                ps->lexer->lookaheadLine = savedLookaheadLine;
-                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
-                report_error(
-                        ps,
-                        "Legacy getter/setter syntax is unsupported; use 'property name: Type { get; set; }'");
+                restore_parser_cursor(ps, &savedCursor);
                 member = parse_interface_property_signature(ps);
                 if (member != ZR_NULL) {
-                    ZrParser_Ast_Free(ps->state, member);
+                    if (!parser_property_migration_collection_append(
+                                ps->state, &legacyProperties, member)) {
+                        ZrParser_Ast_Free(ps->state, member);
+                        report_error(ps, "Failed to record legacy property declaration");
+                        rejectedLegacyProperty = ZR_FALSE;
+                    } else {
+                        rejectedLegacyProperty = ZR_TRUE;
+                    }
                     member = ZR_NULL;
                 }
-                rejectedLegacyProperty = ZR_TRUE;
             } else if (nextToken == ZR_TK_AT) {
                 // 元函数签名
-                ps->lexer->currentPos = savedPos;
-                ps->lexer->currentChar = savedChar;
-                ps->lexer->lineNumber = savedLine;
-                ps->lexer->lastLine = savedLastLine;
-                ps->lexer->t = savedToken;
-                ps->lexer->lookahead = savedLookahead;
-                ps->lexer->lookaheadPos = savedLookaheadPos;
-                ps->lexer->lookaheadChar = savedLookaheadChar;
-                ps->lexer->lookaheadLine = savedLookaheadLine;
-                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+                restore_parser_cursor(ps, &savedCursor);
                 member = parse_interface_meta_signature(ps);
             } else {
                 // 方法签名
-                ps->lexer->currentPos = savedPos;
-                ps->lexer->currentChar = savedChar;
-                ps->lexer->lineNumber = savedLine;
-                ps->lexer->lastLine = savedLastLine;
-                ps->lexer->t = savedToken;
-                ps->lexer->lookahead = savedLookahead;
-                ps->lexer->lookaheadPos = savedLookaheadPos;
-                ps->lexer->lookaheadChar = savedLookaheadChar;
-                ps->lexer->lookaheadLine = savedLookaheadLine;
-                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+                restore_parser_cursor(ps, &savedCursor);
                 member = parse_interface_method_signature(ps);
             }
         } else if (token == ZR_TK_AT) {
@@ -501,15 +464,18 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
             member = parse_interface_meta_signature(ps);
         } else if (token == ZR_TK_GET || token == ZR_TK_SET) {
             // 属性签名
-            report_error(
-                    ps,
-                    "Legacy getter/setter syntax is unsupported; use 'property name: Type { get; set; }'");
             member = parse_interface_property_signature(ps);
             if (member != ZR_NULL) {
-                ZrParser_Ast_Free(ps->state, member);
+                if (!parser_property_migration_collection_append(
+                            ps->state, &legacyProperties, member)) {
+                    ZrParser_Ast_Free(ps->state, member);
+                    report_error(ps, "Failed to record legacy property declaration");
+                    rejectedLegacyProperty = ZR_FALSE;
+                } else {
+                    rejectedLegacyProperty = ZR_TRUE;
+                }
                 member = ZR_NULL;
             }
-            rejectedLegacyProperty = ZR_TRUE;
         } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_FN) {
             // 方法签名
             member = parse_interface_method_signature(ps);
@@ -524,11 +490,14 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
         }
         if (member != ZR_NULL) {
             ZrParser_AstNodeArray_Add(ps->state, members, member);
+            parser_property_migration_collection_mark_current_member(&legacyProperties);
         } else {
             // 解析失败，尝试恢复
             break;
         }
     }
+
+    parser_property_migration_collection_publish_and_free(ps, &legacyProperties);
 
     // 期望右大括号
     if (ps->lexer->t.token != ZR_TK_RBRACE) {

@@ -9,6 +9,12 @@
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/type_inference.h"
 
+void type_inference_record_resolved_property_reference_fact(
+        SZrCompilerState *cs,
+        SZrAstNode *memberNode,
+        const SZrTypeMemberInfo *memberInfo,
+        EZrSemanticReferenceKind kind);
+
 static TZrBool type_inference_value_type_is_unsigned(EZrValueType baseType) {
     return ZR_VALUE_IS_TYPE_UNSIGNED_INT(baseType);
 }
@@ -397,6 +403,61 @@ static void type_inference_record_member_reference_fact(SZrCompilerState *cs,
     fact.typeId = ZR_SEMANTIC_ID_INVALID;
     fact.name = type_inference_identifier_name(property);
     fact.isResolved = ZR_FALSE;
+    if (!computedAccess) {
+        const SZrSemanticReferenceFact *existing =
+                ZrParser_SemanticFacts_FindReferenceAtPosition(
+                        cs->semanticContext,
+                        fact.range);
+        if (existing != ZR_NULL && existing->isResolved &&
+            existing->range.start.offset == fact.range.start.offset &&
+            existing->range.end.offset == fact.range.end.offset &&
+            existing->range.start.line == fact.range.start.line &&
+            existing->range.start.column == fact.range.start.column) {
+            return;
+        }
+    }
+    ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
+}
+
+void type_inference_record_resolved_property_reference_fact(
+        SZrCompilerState *cs,
+        SZrAstNode *memberNode,
+        const SZrTypeMemberInfo *memberInfo,
+        EZrSemanticReferenceKind kind) {
+    SZrSemanticReferenceFact fact;
+    SZrAstNode *propertyNode;
+    SZrPropertyDeclaration *property;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        memberNode == ZR_NULL || memberNode->type != ZR_AST_MEMBER_EXPRESSION ||
+        memberInfo == ZR_NULL ||
+        memberInfo->memberType != ZR_AST_PROPERTY_DECLARATION ||
+        memberInfo->propertySymbolId == ZR_SEMANTIC_ID_INVALID ||
+        memberInfo->propertyValueTypeId == ZR_SEMANTIC_ID_INVALID ||
+        memberNode->data.memberExpression.property == ZR_NULL ||
+        (kind != ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS &&
+         kind != ZR_SEMANTIC_REFERENCE_MEMBER_WRITE)) {
+        return;
+    }
+
+    propertyNode = memberInfo->declarationNode;
+    property = propertyNode != ZR_NULL &&
+                       propertyNode->type == ZR_AST_PROPERTY_DECLARATION
+                       ? &propertyNode->data.propertyDeclaration
+                       : ZR_NULL;
+    memset(&fact, 0, sizeof(fact));
+    fact.node = memberNode->data.memberExpression.property;
+    fact.range = fact.node->location;
+    if (property != ZR_NULL) {
+        fact.declarationRange = propertyNode->location;
+        fact.definitionRange = property->nameLocation;
+        fact.hasDefinitionRange = ZR_TRUE;
+    }
+    fact.kind = kind;
+    fact.symbolId = memberInfo->propertySymbolId;
+    fact.typeId = memberInfo->propertyValueTypeId;
+    fact.name = memberInfo->name;
+    fact.isResolved = ZR_TRUE;
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
 
