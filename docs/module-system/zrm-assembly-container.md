@@ -4,6 +4,8 @@ related_code:
   - zr_vm_library/src/zr_vm_library/zrm.c
   - zr_vm_library/include/zr_vm_library/project.h
   - zr_vm_library/src/zr_vm_library/project/project.c
+  - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.h
+  - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.c
   - zr_vm_library/src/zr_vm_library/project/project_import_provider_location.c
   - zr_vm_library/src/zr_vm_library/project/project_import_resolver.c
   - zr_vm_cli/src/zr_vm_cli/command/command.c
@@ -21,6 +23,7 @@ implementation_files:
   - zr_vm_library/include/zr_vm_library/zrm.h
   - zr_vm_library/src/zr_vm_library/zrm.c
   - zr_vm_library/src/zr_vm_library/project/project.c
+  - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.c
   - zr_vm_library/src/zr_vm_library/project/project_import_provider_location.c
   - zr_vm_library/src/zr_vm_library/project/project_import_resolver.c
   - zr_vm_cli/src/zr_vm_cli/command/command.c
@@ -34,6 +37,7 @@ plan_sources:
   - docs/plans/using/03-metadata-and-token-model.md
   - docs/plans/using/07-implementation-blueprint.md
   - docs/plans/using/index.md
+  - docs/plans/syntax/10-native-ffi-module-package/m2-manifest-artifact-implementation-plan.md
 tests:
   - tests/library/test_zrm_container.c
   - tests/library/test_project_import_resolver.c
@@ -50,6 +54,7 @@ tests:
   - tests/acceptance/2026-07-02-aot-11-s7zn-provider-version-selection-range-guard.md
   - tests/library/test_project_import_aot_provider_runtime.c
   - tests/library/test_project_import_provider_version_selection.c
+  - tests/library/test_project_manifest_v2.c
   - tests/parser/test_aot_c_provider_shared_library_smoke.c
 doc_type: module-detail
 ---
@@ -107,9 +112,17 @@ its manifest version instead of treating it as an untyped JSON detail. Missing `
 version 1 remain the migration-reader path. Fractional, unsupported, or incomplete v2 envelopes fail before
 project lifecycle parsing.
 
-This admission boundary does not yet consume v2 `aliases`, `package.exports`, `dependencies`, lock projections,
-`.zrm` default-entry identity, or provider phase. Those fields remain unimplemented until Syntax 10R M2.2-M2.4
-and are not inferred from legacy `pathAliases`, `$` dependencies, or provider locations.
+### V2 Declaration Admission
+
+Syntax 10R M2.2 now admits v2 `aliases`, `package`, and `dependencies` as identity-only declarations. Aliases
+retain their `#` root and parsed target domain; package exports are explicit `.` / `./logical.module` mappings;
+and every dependency has a root `@package`, version requirement, and exactly one structured `path`, `registry`,
+or `git` source. Alias targets pointing at packages must name the project package or a declared dependency.
+
+This does not select a provider, open a dependency path, fetch a registry or git source, infer unexported
+submodules, choose a `.zrm` default entry, or emit a lock. V2 rejects legacy `pathAliases`, `references`,
+`dependency`, and `local` fields rather than translating old `$`/`&` behavior into the new declaration layer.
+M2.3 adds canonical writer and lock projection; M2.4 adds artifact entries and provider phase checks.
 
 `references.<alias>.path` accepts either a `.zrp` project manifest or a `.zrm` assembly. A `.zrm` reference is opened during manifest parse, validated against the declared `assembly` and optional `version`, and then used to resolve imports such as `$mathLocal@2.1.0/ops/sum` to `modules/ops/sum.zro` inside the archive. When the actual provider version and declared min/max are strict `major.minor.patch` values, manifest parsing also rejects invalid or out-of-range `[min, max)` declarations for both `.zrp` and `.zrm` references.
 

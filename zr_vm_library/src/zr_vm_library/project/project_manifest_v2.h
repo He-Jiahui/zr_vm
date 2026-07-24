@@ -9,4 +9,11 @@ TZrBool library_project_manifest_validate_version(cJSON *manifestJson, TZrUInt32
 
 TZrBool library_project_manifest_v2_validate_base(cJSON *manifestJson);
 
+TZrBool library_project_manifest_v2_parse_declarations(SZrState *state,
+                                                        SZrLibrary_Project *project,
+                                                        cJSON *manifestJson);
+
+void library_project_manifest_v2_free_declarations(SZrGlobalState *global,
+                                                    SZrLibrary_Project *project);
+
 #endif

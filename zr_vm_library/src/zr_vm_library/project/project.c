@@ -2111,7 +2111,7 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
         ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
         return ZR_NULL;
     }
-    if (!library_project_parse_path_aliases(state, project, projectJson)) {
+    if (project->manifestVersion == 1u && !library_project_parse_path_aliases(state, project, projectJson)) {
         cJSON_Delete(projectJson);
         library_project_free_feature_switches(global, project);
         library_project_free_resources(global, project);
@@ -2120,7 +2120,8 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
         ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
         return ZR_NULL;
     }
-    if (!library_project_parse_dependencies(state, project, projectJson, path, 0, ZR_FALSE)) {
+    if (project->manifestVersion == 1u &&
+        !library_project_parse_dependencies(state, project, projectJson, path, 0, ZR_FALSE)) {
         cJSON_Delete(projectJson);
         library_project_free_feature_switches(global, project);
         library_project_free_resources(global, project);
@@ -2129,7 +2130,8 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
         ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
         return ZR_NULL;
     }
-    if (!library_project_parse_references(state, project, projectJson, path, 0, ZR_FALSE)) {
+    if (project->manifestVersion == 1u &&
+        !library_project_parse_references(state, project, projectJson, path, 0, ZR_FALSE)) {
         cJSON_Delete(projectJson);
         library_project_free_feature_switches(global, project);
         library_project_free_resources(global, project);
@@ -2169,9 +2171,22 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
         project->autoCoroutine =
                 cJSON_IsBool(autoCoroutine) ? (cJSON_IsTrue(autoCoroutine) ? ZR_TRUE : ZR_FALSE) : ZR_TRUE;
     }
+    if (project->manifestVersion == 2u &&
+        !library_project_manifest_v2_parse_declarations(state, project, projectJson)) {
+        cJSON_Delete(projectJson);
+        library_project_free_feature_switches(global, project);
+        library_project_free_resources(global, project);
+        library_project_free_export_declarations(global, project);
+        library_project_free_preserve_rules(global, project);
+        library_project_free_dependencies(global, project);
+        library_project_free_path_aliases(global, project);
+        ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
+        return ZR_NULL;
+    }
     cJSON_Delete(projectJson);
 
     if (project->source == ZR_NULL || project->binary == ZR_NULL || project->entry == ZR_NULL) {
+        library_project_manifest_v2_free_declarations(global, project);
         library_project_free_feature_switches(global, project);
         library_project_free_resources(global, project);
         library_project_free_export_declarations(global, project);
@@ -2191,6 +2206,7 @@ void ZrLibrary_Project_Free(SZrState *state, SZrLibrary_Project *project) {
     }
     SZrGlobalState *global = state->global;
     ZrLibrary_AotRuntime_FreeProjectState(state, project);
+    library_project_manifest_v2_free_declarations(global, project);
     library_project_free_feature_switches(global, project);
     library_project_free_resources(global, project);
     library_project_free_export_declarations(global, project);

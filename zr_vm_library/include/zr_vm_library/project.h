@@ -51,6 +51,29 @@ typedef struct SZrLibrary_ProjectPathAlias {
     SZrString *modulePrefix;
 } SZrLibrary_ProjectPathAlias;
 
+typedef struct SZrLibrary_ProjectManifestAlias {
+    SZrString *root;
+    SZrLibrary_ModuleSpecifier target;
+} SZrLibrary_ProjectManifestAlias;
+
+typedef struct SZrLibrary_ProjectPackageExport {
+    SZrString *key;
+    SZrLibrary_ModuleSpecifier target;
+} SZrLibrary_ProjectPackageExport;
+
+typedef enum EZrLibrary_ProjectManifestDependencySourceKind {
+    ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_PATH = 1,
+    ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_REGISTRY = 2,
+    ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_GIT = 3
+} EZrLibrary_ProjectManifestDependencySourceKind;
+
+typedef struct SZrLibrary_ProjectManifestDependency {
+    SZrLibrary_ModuleIdentity packageIdentity;
+    SZrString *versionRequirement;
+    EZrLibrary_ProjectManifestDependencySourceKind sourceKind;
+    SZrString *source;
+} SZrLibrary_ProjectManifestDependency;
+
 typedef struct SZrLibrary_ProjectDependencyReference {
     SZrString *name;
     SZrString *assemblyName;
@@ -195,6 +218,16 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     EZrLibrary_ProjectAotMode aotMode;
     SZrLibrary_ProjectPathAlias *pathAliases;
     TZrSize pathAliasCount;
+    SZrLibrary_ProjectManifestAlias *manifestAliases;
+    TZrSize manifestAliasCount;
+    TZrSize manifestAliasCapacity;
+    SZrLibrary_ModuleIdentity packageIdentity;
+    SZrLibrary_ProjectPackageExport *packageExports;
+    TZrSize packageExportCount;
+    TZrSize packageExportCapacity;
+    SZrLibrary_ProjectManifestDependency *manifestDependencies;
+    TZrSize manifestDependencyCount;
+    TZrSize manifestDependencyCapacity;
     SZrLibrary_ProjectResource *resources;
     TZrSize resourceCount;
     TZrSize resourceCapacity;
@@ -238,6 +271,16 @@ ZR_LIBRARY_API TZrBool ZrLibrary_ModuleSpecifier_ResolveRelative(
         SZrLibrary_ModuleIdentity *outIdentity,
         TZrChar *errorBuffer,
         TZrSize errorBufferSize);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveManifestAlias(
+        const SZrLibrary_Project *project,
+        const SZrLibrary_ModuleSpecifier *aliasSpecifier,
+        SZrLibrary_ModuleSpecifier *outTargetSpecifier);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolvePackageExport(
+        const SZrLibrary_Project *project,
+        const SZrLibrary_ModuleSpecifier *packageSpecifier,
+        SZrLibrary_ModuleSpecifier *outTargetSpecifier);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_NormalizeModuleKey(const TZrChar *modulePath,
                                                             TZrChar *buffer,

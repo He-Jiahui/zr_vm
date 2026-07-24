@@ -102,7 +102,7 @@ paths for one commit.
 - Modify: `project.c` only to install/free the parsed v2 data
 - Modify: `docs/module-system/module-specifier-identity.md`
 
-- [ ] **Step 1: Add RED cases for `aliases`, `package`, and `dependencies`**
+- [x] **Step 1: Add RED cases for `aliases`, `package`, and `dependencies`**
 
 ```c
 /* #alias targets parse through ZrLibrary_ModuleSpecifier_Parse; package keys use exactly @identifier.
@@ -112,17 +112,17 @@ paths for one commit.
 Include rejection for `pathAliases`, `$dependency`, `@org/math` package roots, alias-to-alias recursion, and
 an unexported package submodule.
 
-- [ ] **Step 2: Implement structured declaration storage**
+- [x] **Step 2: Implement structured declaration storage**
 
 Store alias target specifiers, package root/export pairs, and dependency package identity/version requirements
 as structured fields. Do not turn `#`/`@` prefixes into stripped strings or choose a filesystem provider.
 
-- [ ] **Step 3: Verify resolution boundary**
+- [x] **Step 3: Verify resolution boundary**
 
 Resolve exactly one alias or package export through M1 data, preserving the target domain. Existing v1 alias,
 `$dependency`, and `&dependency` inputs stay only in the migration adapter.
 
-- [ ] **Step 4: Validate and commit M2.2**
+- [x] **Step 4: Validate and commit M2.2**
 
 Run focused v2/legacy resolver tests across GCC, Clang, MSVC; update the M2 status record and commit only its
 exact paths.

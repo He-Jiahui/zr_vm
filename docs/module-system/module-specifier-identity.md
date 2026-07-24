@@ -2,20 +2,30 @@
 related_code:
   - zr_vm_library/include/zr_vm_library/project.h
   - zr_vm_library/src/zr_vm_library/project/project_module_specifier.c
+  - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.h
+  - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.c
+  - zr_vm_library/src/zr_vm_library/project/project.c
   - zr_vm_library/src/zr_vm_library/project/project_import_resolver.c
   - tests/library/test_project_module_specifier.c
   - tests/library/test_project_import_resolver.c
+  - tests/library/test_project_manifest_v2.c
 implementation_files:
   - zr_vm_library/include/zr_vm_library/project.h
   - zr_vm_library/src/zr_vm_library/project/project_module_specifier.c
+  - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.h
+  - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.c
+  - zr_vm_library/src/zr_vm_library/project/project.c
 plan_sources:
   - user: execute docs/plans/syntax milestones with a completion record and one commit per milestone
   - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
   - docs/plans/syntax/10-native-ffi-module-package/m1-specifier-foundation-implementation-plan.md
+  - docs/plans/syntax/10-native-ffi-module-package/m2-manifest-artifact-implementation-plan.md
 tests:
   - tests/library/test_project_module_specifier.c
   - tests/library/test_project_import_resolver.c
+  - tests/library/test_project_manifest_v2.c
   - tests/acceptance/2026-07-24-syntax-10r-m1-specifier-foundation.md
+  - tests/acceptance/2026-07-24-syntax-10r-m2-v2-declarations.md
 doc_type: module-detail
 ---
 
@@ -74,14 +84,36 @@ through either the current identity or the relative specifier identity.
 
 ## Scope Boundary
 
-M1 neither reads manifests nor selects source, binary, descriptor, or artifact providers. It also does not
-validate `file:` targets, assign package versions, expand aliases, record lock facts, or rewrite legacy
-`&`/`$`/`@` migration inputs. Those responsibilities remain with Syntax 10R M2 and the existing migration
-adapter until their promotion gates are complete.
+M1 neither selects source, binary, descriptor, or artifact providers nor validates the existence or terminal
+shape of a `file:` target. Syntax 10R M2.2 consumes M1's spelling parser for v2 declaration admission, but
+writer/lock projection and provider selection remain separate promotion gates.
+
+## V2 Manifest Declarations
+
+Syntax 10R M2.2 makes three v2 manifest fields structured project facts rather than legacy resolver strings:
+
+- `aliases` preserves its full `#root` spelling and a parsed `SZrLibrary_ModuleSpecifier` target. Targets may
+  be workspace, official-native, registered-native, package-root, or canonical `file:` specifiers. Relative
+  targets and alias-to-alias recursion are rejected. A package target must be the current package or a declared
+  dependency. `ZrLibrary_Project_ResolveManifestAlias` expands canonical child segments into the target domain;
+  file targets receive URI path segments only. It never chooses a provider or validates a terminal artifact.
+- `package.name` is exactly one `@package` root. `package.exports` maps `.` or `./logical.module` keys to
+  workspace module specifiers. `ZrLibrary_Project_ResolvePackageExport` resolves only an explicitly exported
+  key, so `@package/hidden` fails instead of falling back to a filename or raw module text.
+- `dependencies` stores a package identity, nonempty version requirement, exactly one source kind (`path`,
+  `registry`, or `git`), and its source spelling. The reader does not load a path, fetch a registry, clone git,
+  or serialize a lock at this stage.
+
+The v2 reader rejects v1-only `pathAliases`, `references`, `dependency`, and `local` fields. That keeps old
+`@` aliases plus `$`/`&` dependency resolution in the v1 migration adapter instead of silently translating
+them into the v2 identity model. `project.c` owns only lifecycle installation/freeing; all JSON loops and
+cross-declaration checks stay in `project_manifest_v2.c`.
 
 ## Test Coverage
 
 `test_project_module_specifier.c` fixes absolute-domain separator equivalence, native/workspace distinction,
 relative domain-preserving resolution, alias and package decomposition, canonical POSIX/drive/UNC locators,
-and malformed-input rejection. The existing `test_project_import_resolver.c` remains a regression guard for
-the untouched legacy resolver path.
+and malformed-input rejection. `test_project_manifest_v2.c` covers structured alias/package/dependency storage,
+domain-preserving alias and export resolution, unexported package rejection, v1-field isolation, ambiguous
+dependency source rejection, and malformed roots. The existing `test_project_import_resolver.c` remains a
+regression guard for the untouched legacy resolver path.
