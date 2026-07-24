@@ -1,0 +1,4 @@
+// %module in a line comment is not a migration form.
+/* %import zr.math in a block comment is not a migration form. */
+let literal = "%async worker(): int";
+let modulo = 9 % 4;

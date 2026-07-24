@@ -1,5 +1,6 @@
 ---
 related_code:
+  - scripts/syntax_migration_inventory.py
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/cfg.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
@@ -63,6 +64,7 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
 implementation_files:
+  - scripts/syntax_migration_inventory.py
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/cfg.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
@@ -123,6 +125,8 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
 plan_sources:
+  - docs/plans/syntax/2026-07-18-06-percent-migration-lsp-fixtures-design.md
+  - docs/plans/syntax/06-percent-migration-lsp-fixtures/m1-migration-inventory-implementation-plan.md
   - user: 2026-03-28 实现“ZR 全目标回归强化与 Field-Scoped using 语义计划”
   - user: 2026-04-04 实现“ZR LSP 语义内核与元信息推断增强计划”
   - user: 2026-04-04 拆分边界“final function assembly + invariant validation”独立出去
@@ -137,6 +141,7 @@ plan_sources:
   - docs/plans/lsp/03-lsp-robustness-and-position.md
   - docs/plans/lsp/05-implementation-blueprint.md
 tests:
+  - tests/scripts/test_syntax_migration_inventory.py
   - tests/parser/test_cfg_reachability.c
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_reference_loan_nll.c
@@ -351,6 +356,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - Rust-like `union` 声明、unit/tuple/struct variant AST 和泛型声明解析
   - `Shape.Circle(...)` / `Option<int>.Some(...)` 构造器解析、类型推断和 object carrier lowering
   - LSP type prototype / symbol 支持，以及后续 pattern matching、tagged layout、owner drop 分派边界
+- `syntax-migration-inventory.md`
+  - Syntax 06A 的只读 legacy syntax inventory、确定性 report schema 和显式 exclusion 边界
+  - `machineApplicable`、`maybeIncorrect`、`requiresReview`、`blocked` 与 `targetNotPromoted`
+    的分类合同，以及下游计划的 promotion gate
 
 ## 阅读顺序
 
@@ -381,4 +390,6 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
     two-phase method call loan。
 24. 再看 `reference-escape-closure-suspension.md`，了解 ref escape lattice、closure capture
     和 suspension 静态边界。
-25. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+25. 再看 `syntax-migration-inventory.md`，了解 Syntax 06A 对 legacy source、fixture 和文档 snippet
+    的只读盘点边界，以及 M2/M3 前的 target promotion gate。
+26. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

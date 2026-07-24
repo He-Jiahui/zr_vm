@@ -1,0 +1,222 @@
+{
+  "classificationCounts": {
+    "blocked": 1,
+    "machineApplicable": 20,
+    "maybeIncorrect": 0,
+    "requiresReview": 14,
+    "targetNotPromoted": 7
+  },
+  "contracts": [
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "keywordlessFunction",
+      "reason": "function_keyword_has_current_syntax",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "legacyForm": "legacyBareTypeCall",
+      "reason": "call_vs_constructor_binding_required",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "legacyDefinitionArrow",
+      "reason": "function_definition_return_delimiter_has_current_syntax",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "legacyDollarConstruct",
+      "reason": "static_constructor_has_current_syntax",
+      "targetPlan": "03"
+    },
+    {
+      "classification": "requiresReview",
+      "legacyForm": "legacyDynamicDollarConstruct",
+      "reason": "dynamic_constructor_requires_reflection_review",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "legacyFuncKeyword",
+      "reason": "function_keyword_has_current_syntax",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "legacyFunctionTypeArrow",
+      "reason": "function_type_arrow_has_current_syntax",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "legacyForm": "legacyNewStruct",
+      "reason": "new_struct_binding_required",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "legacyForm": "legacyPropertyAccessor",
+      "reason": "property_pairing_required",
+      "targetPlan": "05"
+    },
+    {
+      "classification": "targetNotPromoted",
+      "legacyForm": "nativePrototypeFactory",
+      "reason": "target_plan_not_promoted",
+      "targetPlan": "10"
+    },
+    {
+      "classification": "targetNotPromoted",
+      "legacyForm": "percentAsync",
+      "reason": "target_plan_not_promoted",
+      "targetPlan": "12"
+    },
+    {
+      "classification": "targetNotPromoted",
+      "legacyForm": "percentAwait",
+      "reason": "target_plan_not_promoted",
+      "targetPlan": "12"
+    },
+    {
+      "classification": "requiresReview",
+      "legacyForm": "percentBorrow",
+      "reason": "borrow_place_and_escape_proof_required",
+      "targetPlan": "02"
+    },
+    {
+      "classification": "requiresReview",
+      "legacyForm": "percentBorrowed",
+      "reason": "borrow_place_and_escape_proof_required",
+      "targetPlan": "02"
+    },
+    {
+      "classification": "targetNotPromoted",
+      "legacyForm": "percentCompileTime",
+      "reason": "target_plan_not_promoted",
+      "targetPlan": "11"
+    },
+    {
+      "classification": "requiresReview",
+      "legacyForm": "percentDetach",
+      "reason": "ownership_bridge_binding_required",
+      "targetPlan": "04"
+    },
+    {
+      "classification": "targetNotPromoted",
+      "legacyForm": "percentExtern",
+      "reason": "target_plan_not_promoted",
+      "targetPlan": "10"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "percentFunc",
+      "reason": "function_type_has_current_syntax",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "legacyForm": "percentImport",
+      "reason": "import_binding_context_required",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "percentIn",
+      "reason": "parameter_contract_has_current_syntax",
+      "targetPlan": "02"
+    },
+    {
+      "classification": "requiresReview",
+      "legacyForm": "percentLoan",
+      "reason": "loan_place_and_escape_proof_required",
+      "targetPlan": "02"
+    },
+    {
+      "classification": "requiresReview",
+      "legacyForm": "percentLoaned",
+      "reason": "loan_place_and_escape_proof_required",
+      "targetPlan": "02"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "percentModule",
+      "reason": "module_directive_has_current_syntax",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "percentOut",
+      "reason": "parameter_contract_has_current_syntax",
+      "targetPlan": "02"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "percentOwned",
+      "reason": "resource_keyword_has_current_syntax",
+      "targetPlan": "04"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "percentRef",
+      "reason": "parameter_contract_has_current_syntax",
+      "targetPlan": "02"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "percentRelease",
+      "reason": "owner_builtin_has_current_syntax",
+      "targetPlan": "04"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "percentShared",
+      "reason": "owner_builtin_has_current_syntax",
+      "targetPlan": "04"
+    },
+    {
+      "classification": "targetNotPromoted",
+      "legacyForm": "percentTest",
+      "reason": "target_plan_not_promoted",
+      "targetPlan": "14"
+    },
+    {
+      "classification": "targetNotPromoted",
+      "legacyForm": "percentType",
+      "reason": "target_plan_not_promoted",
+      "targetPlan": "08"
+    },
+    {
+      "classification": "requiresReview",
+      "legacyForm": "percentUnique",
+      "reason": "fresh_resource_proof_required",
+      "targetPlan": "04"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "percentUpgrade",
+      "reason": "owner_builtin_has_current_syntax",
+      "targetPlan": "04"
+    },
+    {
+      "classification": "requiresReview",
+      "legacyForm": "percentUsing",
+      "reason": "using_role_resolution_required",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "machineApplicable",
+      "legacyForm": "percentWeak",
+      "reason": "owner_builtin_has_current_syntax",
+      "targetPlan": "04"
+    },
+    {
+      "classification": "blocked",
+      "legacyForm": "unrecognizedPercentDirective",
+      "reason": "unrecognized_legacy_directive",
+      "targetPlan": "06A"
+    }
+  ],
+  "schemaVersion": 1
+}

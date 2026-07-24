@@ -1,0 +1,32 @@
+%module migration.inventory.legacy
+%import zr.math
+%async worker(): int
+%await worker()
+%extern("inventory") {}
+%test("legacy inventory") {}
+%compileTime {}
+%func(int)=>int
+%owned class Handle {}
+%release(value)
+%upgrade(weakValue)
+%weak(sharedValue)
+%shared(uniqueValue)
+%detach(uniqueValue)
+%unique new Handle()
+fn transfer(%in first: int, %ref second: int, %out third: int): void {}
+let view = %borrow(owner);
+let loan = %loan(owner);
+let borrowedType: %borrowed Handle;
+let loanedType: %loaned Handle;
+let info = %type(Handle);
+%using(resource) {}
+%unknownToken legacy
+func oldStyle(value: int) -> int { return value; }
+keywordless(value: int) -> int { return value; }
+let callback: (int)=>int;
+let staticConstructed = $Point(1);
+let dynamicConstructed = $(prototype)(1);
+Point(1);
+new Point(1);
+nativeFactory(Point, 1);
+pub get value: int { return 1; }
