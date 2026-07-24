@@ -522,6 +522,24 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_pre_semantic_ir_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_iterator_runtime_test
+            ${CMAKE_SOURCE_DIR}/tests/iterator/test_iterator_runtime.c
+    )
+    target_include_directories(zr_vm_iterator_runtime_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_iterator_runtime_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_iterator_gc_drop_test
+            ${CMAKE_SOURCE_DIR}/tests/iterator/test_iterator_gc_drop.c
+    )
+    target_include_directories(zr_vm_iterator_gc_drop_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_iterator_gc_drop_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_yield_syntax_test
             ${CMAKE_SOURCE_DIR}/tests/iterator/test_yield_syntax.c
     )
