@@ -10,6 +10,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
   - zr_vm_library/include/zr_vm_library/zrm.h
   - zr_vm_library/src/zr_vm_library/zrm.c
+  - zr_vm_library/include/zr_vm_library/project.h
+  - zr_vm_library/src/zr_vm_library/project/project_module_specifier.c
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
   - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c
 implementation_files:
@@ -23,6 +25,8 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
   - zr_vm_library/include/zr_vm_library/zrm.h
   - zr_vm_library/src/zr_vm_library/zrm.c
+  - zr_vm_library/include/zr_vm_library/project.h
+  - zr_vm_library/src/zr_vm_library/project/project_module_specifier.c
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
   - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c
 plan_sources:
@@ -36,6 +40,8 @@ tests:
   - tests/scripts/test_artifact_golden.c
   - tests/cmake/run_projects_suite.cmake
   - tests/library/test_zrm_container.c
+  - tests/library/test_project_module_specifier.c
+  - tests/library/test_project_import_resolver.c
   - tests/system/test_system_assembly_module.c
 doc_type: category-index
 ---
@@ -56,6 +62,10 @@ doc_type: category-index
   - `.zrp` 的 `assembly.output`、`resources` 和 `.zrm` references
   - CLI `--emit-zrm` 打包路径
   - `zr.system.assembly` 当前程序集资源读取 API
+- `module-specifier-identity.md`
+  - Syntax 10R M1 的 domain-aware ModuleSpecifier / ModuleIdentity substrate
+  - `zr`、`native:`、workspace、relative、`#alias`、`@package` 与 canonical `file:` 分类
+  - provider/locator 与 public identity 的分离，以及 M2 manifest/resolution 边界
 
 ## Import Path Contract
 
@@ -74,4 +84,5 @@ doc_type: category-index
 
 1. 先看 `typed-module-metadata.md`，了解 M6 强类型推断闭环的元数据结构、导入路径和序列化边界。
 2. 再看 `zrm-assembly-container.md`，了解 `.zro` 单模块产物如何被 `.zrm` 程序集容器聚合和引用。
-3. 需要落代码时，再沿 frontmatter 的 `related_code` / `tests` 进入具体实现和验证入口。
+3. 再看 `module-specifier-identity.md`，了解 10R 的结构化 specifier 解析、identity 等价和 relative 解析边界。
+4. 需要落代码时，再沿 frontmatter 的 `related_code` / `tests` 进入具体实现和验证入口。

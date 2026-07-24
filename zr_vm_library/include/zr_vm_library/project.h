@@ -13,6 +13,39 @@
 #define ZR_LIBRARY_BINARY_FILE_EXT ZR_VM_BINARY_MODULE_FILE_EXTENSION
 #define ZR_LIBRARY_PROJECT_SIGNATURE 0x5A525F50524F4A54ULL
 
+typedef enum EZrLibrary_ModuleDomain {
+    ZR_LIBRARY_MODULE_DOMAIN_INVALID = 0,
+    ZR_LIBRARY_MODULE_DOMAIN_OFFICIAL_NATIVE = 1,
+    ZR_LIBRARY_MODULE_DOMAIN_REGISTERED_NATIVE = 2,
+    ZR_LIBRARY_MODULE_DOMAIN_WORKSPACE = 3,
+    ZR_LIBRARY_MODULE_DOMAIN_PACKAGE = 4
+} EZrLibrary_ModuleDomain;
+
+typedef enum EZrLibrary_ModuleSpecifierKind {
+    ZR_LIBRARY_MODULE_SPECIFIER_KIND_INVALID = 0,
+    ZR_LIBRARY_MODULE_SPECIFIER_KIND_OFFICIAL_NATIVE = 1,
+    ZR_LIBRARY_MODULE_SPECIFIER_KIND_REGISTERED_NATIVE = 2,
+    ZR_LIBRARY_MODULE_SPECIFIER_KIND_WORKSPACE = 3,
+    ZR_LIBRARY_MODULE_SPECIFIER_KIND_RELATIVE = 4,
+    ZR_LIBRARY_MODULE_SPECIFIER_KIND_ALIAS = 5,
+    ZR_LIBRARY_MODULE_SPECIFIER_KIND_PACKAGE = 6,
+    ZR_LIBRARY_MODULE_SPECIFIER_KIND_FILE = 7
+} EZrLibrary_ModuleSpecifierKind;
+
+typedef struct SZrLibrary_ModuleIdentity {
+    EZrLibrary_ModuleDomain domain;
+    TZrChar segments[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar packageName[ZR_LIBRARY_MAX_PATH_LENGTH];
+} SZrLibrary_ModuleIdentity;
+
+typedef struct SZrLibrary_ModuleSpecifier {
+    EZrLibrary_ModuleSpecifierKind kind;
+    SZrLibrary_ModuleIdentity identity;
+    TZrChar aliasRoot[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar locator[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize relativeParentLevels;
+} SZrLibrary_ModuleSpecifier;
+
 typedef struct SZrLibrary_ProjectPathAlias {
     SZrString *alias;
     SZrString *modulePrefix;
@@ -189,6 +222,21 @@ ZR_LIBRARY_API SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNat
 ZR_LIBRARY_API void ZrLibrary_Project_Free(SZrState *state, SZrLibrary_Project *project);
 
 ZR_LIBRARY_API const SZrLibrary_Project *ZrLibrary_Project_GetFromGlobal(const SZrGlobalState *global);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_ModuleSpecifier_Parse(const TZrChar *literal,
+                                                        SZrLibrary_ModuleSpecifier *outSpecifier,
+                                                        TZrChar *errorBuffer,
+                                                        TZrSize errorBufferSize);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_ModuleIdentity_Equals(const SZrLibrary_ModuleIdentity *lhs,
+                                                        const SZrLibrary_ModuleIdentity *rhs);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_ModuleSpecifier_ResolveRelative(
+        const SZrLibrary_ModuleIdentity *currentIdentity,
+        const SZrLibrary_ModuleSpecifier *relativeSpecifier,
+        SZrLibrary_ModuleIdentity *outIdentity,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_NormalizeModuleKey(const TZrChar *modulePath,
                                                             TZrChar *buffer,
