@@ -300,6 +300,13 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             }
             break;
         }
+        case ZR_AST_AWAIT_EXPRESSION: {
+            SZrAwaitExpression *expr = &node->data.awaitExpression;
+            if (expr->operand != ZR_NULL) {
+                ZrParser_Ast_Free(state, expr->operand);
+            }
+            break;
+        }
         case ZR_AST_FUNCTION_CALL: {
             SZrFunctionCall *call = &node->data.functionCall;
             // 注意：SZrFunctionCall没有callee成员，函数调用在primary expression中处理

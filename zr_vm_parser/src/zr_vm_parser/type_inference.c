@@ -830,6 +830,52 @@ static TZrBool inferred_type_can_weaken_contiguous_view(
                                    ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY));
 }
 
+static TZrBool infer_await_expression_type(SZrCompilerState *cs,
+                                            SZrAstNode *node,
+                                            SZrInferredType *result) {
+    SZrInferredType awaitedType;
+    const SZrInferredType *payloadType;
+
+    if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL ||
+        node->type != ZR_AST_AWAIT_EXPRESSION || node->data.awaitExpression.operand == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &awaitedType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_ExpressionType_Infer(cs, node->data.awaitExpression.operand, &awaitedType)) {
+        ZrParser_InferredType_Free(cs->state, &awaitedType);
+        return ZR_FALSE;
+    }
+
+    if (!inferred_type_implements_protocol_mask(
+                cs,
+                &awaitedType,
+                ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_HANDLE))) {
+        ZrParser_Compiler_Error(cs,
+                                "await expects a zr.task.Task<T>",
+                                node->data.awaitExpression.operand->location);
+        ZrParser_InferredType_Free(cs->state, &awaitedType);
+        return ZR_FALSE;
+    }
+
+    payloadType = awaitedType.elementTypes.length == 1U
+                          ? (const SZrInferredType *)ZrCore_Array_Get(
+                                    &awaitedType.elementTypes,
+                                    0U)
+                          : ZR_NULL;
+    if (payloadType == ZR_NULL) {
+        ZrParser_Compiler_Error(cs,
+                                "await requires a closed zr.task.Task<T>",
+                                node->data.awaitExpression.operand->location);
+        ZrParser_InferredType_Free(cs->state, &awaitedType);
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Copy(cs->state, result, payloadType);
+    ZrParser_InferredType_Free(cs->state, &awaitedType);
+    return ZR_TRUE;
+}
+
 // 检查类型兼容性（用于赋值等场景）
 TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, const SZrInferredType *fromType, const SZrInferredType *toType, SZrFileRange location) {
     if (cs == ZR_NULL || fromType == ZR_NULL || toType == ZR_NULL) {
@@ -2623,6 +2669,9 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
                         ? ZR_SEMANTIC_NUMERIC_FACT_RANGE
                         : ZR_SEMANTIC_NUMERIC_FACT_PROMOTION;
             }
+            break;
+        case ZR_AST_AWAIT_EXPRESSION:
+            success = infer_await_expression_type(cs, node, result);
             break;
         case ZR_AST_CONDITIONAL_EXPRESSION:
             success = ZrParser_ConditionalType_Infer(cs, node, result);

@@ -57,8 +57,19 @@ static void task_effects_validate_class_member(ZrTaskEffectContext *context, SZr
             break;
         case ZR_AST_CLASS_METHOD:
             task_effects_validate_decorators(context, node->data.classMethod.decorators);
+            if (node->data.classMethod.isAsync &&
+                task_effects_extern_bindings_predeclared(context)) {
+                task_effects_validate_async_signature(context,
+                                                      node->data.classMethod.params,
+                                                      node->data.classMethod.args,
+                                                      node->data.classMethod.returnType,
+                                                      node->data.classMethod.nameLocation);
+            }
+            if (task_effects_has_error(context)) {
+                break;
+            }
             task_effects_validate_function_like(context,
-                                                ZR_FALSE,
+                                                node->data.classMethod.isAsync,
                                                 node->data.classMethod.params,
                                                 node->data.classMethod.args,
                                                 node->data.classMethod.body);
@@ -110,8 +121,19 @@ static void task_effects_validate_struct_member(ZrTaskEffectContext *context, SZ
             break;
         case ZR_AST_STRUCT_METHOD:
             task_effects_validate_decorators(context, node->data.structMethod.decorators);
+            if (node->data.structMethod.isAsync &&
+                task_effects_extern_bindings_predeclared(context)) {
+                task_effects_validate_async_signature(context,
+                                                      node->data.structMethod.params,
+                                                      node->data.structMethod.args,
+                                                      node->data.structMethod.returnType,
+                                                      node->location);
+            }
+            if (task_effects_has_error(context)) {
+                break;
+            }
             task_effects_validate_function_like(context,
-                                                ZR_FALSE,
+                                                node->data.structMethod.isAsync,
                                                 node->data.structMethod.params,
                                                 node->data.structMethod.args,
                                                 node->data.structMethod.body);

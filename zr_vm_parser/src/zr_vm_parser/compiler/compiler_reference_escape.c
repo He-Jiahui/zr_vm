@@ -1015,6 +1015,17 @@ TZrBool reference_escape_analyze_expression(
         case ZR_AST_PRIMARY_EXPRESSION:
             return reference_escape_analyze_primary(
                     context, node, wantReference, provenance);
+        case ZR_AST_AWAIT_EXPRESSION:
+            if (!reference_escape_analyze_expression(context,
+                                                     node->data.awaitExpression.operand,
+                                                     ZR_FALSE,
+                                                     &left)) {
+                return ZR_FALSE;
+            }
+            context->suspensionEpoch++;
+            context->suspensionRange = node->location;
+            context->suspensionName = "await";
+            return ZR_TRUE;
         case ZR_AST_FUNCTION_CALL:
             return reference_escape_analyze_expression_array(
                     context, node->data.functionCall.args);

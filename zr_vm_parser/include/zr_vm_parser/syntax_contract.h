@@ -24,6 +24,9 @@ ZR_PARSER_API EZrCanonicalReceiverEffect
 ZrParser_SyntaxCallable_ReceiverEffectFromDeclaration(
         const SZrAstNode *declaration);
 
+ZR_PARSER_API TZrUInt32 ZrParser_SyntaxCallable_EffectFlagsFromDeclaration(
+        const SZrAstNode *declaration);
+
 ZR_PARSER_API TZrTypeId ZrParser_SyntaxCallable_RefineFromDeclaration(
         struct SZrSemanticContext *context,
         const SZrAstNode *declaration,

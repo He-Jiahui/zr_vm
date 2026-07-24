@@ -404,6 +404,7 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     EZrOwnershipQualifier receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     TZrUInt32 modifierFlags = ZR_DECLARATION_MODIFIER_NONE;
     EZrMethodReceiverModifier receiverModifier = ZR_METHOD_RECEIVER_DEFAULT;
+    TZrBool isAsync = ZR_FALSE;
 
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
         receiverQualifier = parse_optional_method_receiver_qualifier(ps);
@@ -442,6 +443,12 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
 
     if (receiverQualifier == ZR_OWNERSHIP_QUALIFIER_NONE && ps->lexer->t.token == ZR_TK_PERCENT) {
         receiverQualifier = parse_optional_method_receiver_qualifier(ps);
+    }
+
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "async") &&
+        peek_token(ps) == ZR_TK_FN) {
+        isAsync = ZR_TRUE;
+        ZrParser_Lexer_Next(ps->lexer);
     }
 
     if (ps->lexer->t.token == ZR_TK_FN) {
@@ -550,6 +557,7 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     node->data.classMethod.isStatic = isStatic;
     node->data.classMethod.modifierFlags = modifierFlags;
     node->data.classMethod.receiverModifier = receiverModifier;
+    node->data.classMethod.isAsync = isAsync;
     node->data.classMethod.receiverQualifier = receiverQualifier;
     node->data.classMethod.name = name;
     node->data.classMethod.nameLocation = nameLoc;

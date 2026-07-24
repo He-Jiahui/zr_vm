@@ -244,6 +244,8 @@ AsyncFault(exception)
 
 为`zr.task`descriptor登记Task carrier role，覆盖async named/member/lambda、显式Task TypeRef、return/await、invalid modifiers/params/results和suspension CFG。
 
+完成记录：[M1 explicit Task syntax/effect](./12-async-task-job-scheduler/m1-explicit-task-syntax-effect.md)。
+
 ### M2 Task/frame runtime
 
 覆盖sync completion、single/multiple suspension、fault/finally、multi-await、non-Copy result、frame GC/Drop map和pooling。

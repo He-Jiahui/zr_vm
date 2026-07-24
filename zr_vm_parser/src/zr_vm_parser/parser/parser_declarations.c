@@ -313,6 +313,7 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     node->data.functionDeclaration.returnDelimiterLocation = returnDelimiterLoc;
     node->data.functionDeclaration.usesFnKeyword = usesFnKeyword;
     node->data.functionDeclaration.isAsync = ZR_FALSE;
+    node->data.functionDeclaration.isLegacyAsyncSyntax = ZR_FALSE;
     return node;
 }
 

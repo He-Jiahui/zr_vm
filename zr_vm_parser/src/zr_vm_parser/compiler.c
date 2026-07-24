@@ -569,6 +569,9 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
         if (cs->hasError) {
             return;
         }
+        if (!compiler_validate_task_effects(cs, node)) {
+            return;
+        }
 
         // 第二遍：编译运行时代码
         for (TZrSize i = 0; i < script->statements->count; i++) {

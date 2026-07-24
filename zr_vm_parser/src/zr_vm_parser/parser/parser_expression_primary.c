@@ -1545,6 +1545,20 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
     SZrAstNode *base = ZR_NULL;
 
+    if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "async") &&
+        peek_token(ps) == ZR_TK_FN) {
+        SZrFileRange asyncLocation = get_current_token_location(ps);
+
+        ZrParser_Lexer_Next(ps->lexer);
+        base = parse_fn_expression(ps);
+        if (base == ZR_NULL) {
+            return ZR_NULL;
+        }
+        base->data.lambdaExpression.isAsync = ZR_TRUE;
+        base->data.lambdaExpression.isLegacyAsyncSyntax = ZR_FALSE;
+        base->location = ZrParser_FileRange_Merge(asyncLocation, base->location);
+        return parse_member_access(ps, base);
+    }
     if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "own") &&
         peek_token(ps) == ZR_TK_IDENTIFIER) {
         base = parse_resource_own_expression(ps);
@@ -1684,6 +1698,7 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
                         lambdaNode->data.lambdaExpression.returnType = ZR_NULL;
                         lambdaNode->data.lambdaExpression.isExpressionBody = ZR_FALSE;
                         lambdaNode->data.lambdaExpression.isAsync = ZR_FALSE;
+                        lambdaNode->data.lambdaExpression.isLegacyAsyncSyntax = ZR_FALSE;
                         return parse_member_access(ps, lambdaNode);
                     }
                 }

@@ -459,11 +459,117 @@ static void test_cfg_builder_labels_return_and_branch_edges(void) {
     ZrParser_Ast_Free(g_state, ifScript);
 }
 
+static void test_cfg_builder_models_direct_await_suspend_and_resume(void) {
+    SZrParserCfg cfg;
+    SZrAstNode *awaitNode = test_ast_node(ZR_AST_AWAIT_EXPRESSION, 0U, 13U);
+    SZrAstNode *expressionStatement =
+            test_ast_node(ZR_AST_EXPRESSION_STATEMENT, 0U, 13U);
+    SZrAstNode *script;
+    const SZrParserCfgBlock *suspensionBlock = ZR_NULL;
+    const SZrParserCfgBlock *resumeBlock;
+    const SZrParserCfgBlock *statementBlock;
+    const SZrParserCfgEdge *suspendEdge;
+    const SZrParserCfgEdge *resumeEdge;
+    TZrSize index;
+
+    awaitNode->data.awaitExpression.operand =
+            test_ast_node(ZR_AST_IDENTIFIER_LITERAL, 6U, 13U);
+    expressionStatement->data.expressionStatement.expr = awaitNode;
+    script = script_with_statement(expressionStatement);
+
+    ZrParser_Cfg_Init(g_state, &cfg);
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+
+    for (index = 0; index < cfg.blocks.length; index++) {
+        const SZrParserCfgBlock *block =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get(&cfg.blocks, index);
+        if (block != ZR_NULL && block->kind == ZR_PARSER_CFG_BLOCK_SUSPENSION &&
+            block->statement == awaitNode) {
+            suspensionBlock = block;
+            break;
+        }
+    }
+
+    TEST_ASSERT_NOT_NULL(suspensionBlock);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_TERMINATOR_SUSPEND, suspensionBlock->terminatorKind);
+    TEST_ASSERT_EQUAL_UINT32(1U, suspensionBlock->successorCount);
+    suspendEdge = ZrParser_Cfg_BlockEdgeAt(suspensionBlock, 0U);
+    TEST_ASSERT_NOT_NULL(suspendEdge);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_EDGE_SUSPEND, suspendEdge->kind);
+    TEST_ASSERT_EQUAL_PTR(awaitNode, suspendEdge->sourceNode);
+
+    resumeBlock = (const SZrParserCfgBlock *)ZrCore_Array_Get(&cfg.blocks, suspendEdge->toBlockId);
+    TEST_ASSERT_NOT_NULL(resumeBlock);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_BLOCK_JOIN, resumeBlock->kind);
+    TEST_ASSERT_EQUAL_UINT32(1U, resumeBlock->successorCount);
+    resumeEdge = ZrParser_Cfg_BlockEdgeAt(resumeBlock, 0U);
+    TEST_ASSERT_NOT_NULL(resumeEdge);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_EDGE_RESUME, resumeEdge->kind);
+    TEST_ASSERT_EQUAL_PTR(awaitNode, resumeEdge->sourceNode);
+
+    statementBlock = (const SZrParserCfgBlock *)ZrCore_Array_Get(&cfg.blocks, resumeEdge->toBlockId);
+    TEST_ASSERT_NOT_NULL(statementBlock);
+    TEST_ASSERT_EQUAL_PTR(expressionStatement, statementBlock->statement);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+}
+
+static void test_cfg_builder_models_await_variable_initializer_suspend_and_resume(void) {
+    SZrParserCfg cfg;
+    SZrAstNode *awaitNode = test_ast_node(ZR_AST_AWAIT_EXPRESSION, 12U, 25U);
+    SZrAstNode *declaration = test_ast_node(ZR_AST_VARIABLE_DECLARATION, 0U, 25U);
+    SZrAstNode *script;
+    const SZrParserCfgBlock *suspensionBlock = ZR_NULL;
+    const SZrParserCfgBlock *resumeBlock;
+    const SZrParserCfgEdge *suspendEdge;
+    const SZrParserCfgEdge *resumeEdge;
+    TZrSize index;
+
+    awaitNode->data.awaitExpression.operand =
+            test_ast_node(ZR_AST_IDENTIFIER_LITERAL, 18U, 25U);
+    declaration->data.variableDeclaration.value = awaitNode;
+    script = script_with_statement(declaration);
+
+    ZrParser_Cfg_Init(g_state, &cfg);
+    TEST_ASSERT_TRUE(ZrParser_Cfg_Build(g_state, &cfg, script));
+
+    for (index = 0; index < cfg.blocks.length; index++) {
+        const SZrParserCfgBlock *block =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get(&cfg.blocks, index);
+        if (block != ZR_NULL && block->kind == ZR_PARSER_CFG_BLOCK_SUSPENSION &&
+            block->statement == awaitNode) {
+            suspensionBlock = block;
+            break;
+        }
+    }
+
+    TEST_ASSERT_NOT_NULL(suspensionBlock);
+    suspendEdge = ZrParser_Cfg_BlockEdgeAt(suspensionBlock, 0U);
+    TEST_ASSERT_NOT_NULL(suspendEdge);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_EDGE_SUSPEND, suspendEdge->kind);
+    TEST_ASSERT_EQUAL_PTR(awaitNode, suspendEdge->sourceNode);
+    resumeBlock = (const SZrParserCfgBlock *)ZrCore_Array_Get(&cfg.blocks, suspendEdge->toBlockId);
+    TEST_ASSERT_NOT_NULL(resumeBlock);
+    resumeEdge = ZrParser_Cfg_BlockEdgeAt(resumeBlock, 0U);
+    TEST_ASSERT_NOT_NULL(resumeEdge);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_CFG_EDGE_RESUME, resumeEdge->kind);
+    TEST_ASSERT_EQUAL_PTR(declaration,
+                          ((const SZrParserCfgBlock *)ZrCore_Array_Get(
+                                   &cfg.blocks,
+                                   resumeEdge->toBlockId))->statement);
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrParser_Ast_Free(g_state, script);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_place_graph_covers_all_bases_and_projections);
     RUN_TEST(test_place_overlap_reports_all_four_states);
     RUN_TEST(test_cfg_edges_are_extensible_and_typed);
     RUN_TEST(test_cfg_builder_labels_return_and_branch_edges);
+    RUN_TEST(test_cfg_builder_models_direct_await_suspend_and_resume);
+    RUN_TEST(test_cfg_builder_models_await_variable_initializer_suspend_and_resume);
     return UNITY_END();
 }

@@ -1,4 +1,5 @@
 #include "compiler_task_effects_internal.h"
+#include "type_inference_internal.h"
 
 typedef enum EZrTaskEffectBindingKind {
     ZR_TASK_EFFECT_BINDING_NONE = 0,
@@ -26,6 +27,15 @@ struct ZrTaskEffectContext {
     TZrBool asyncAllowed;
     TZrBool awaitSeen;
 };
+
+TZrBool task_effects_extern_bindings_predeclared(const ZrTaskEffectContext *context) {
+    return context != ZR_NULL && context->cs != ZR_NULL &&
+           context->cs->externBindingsPredeclared;
+}
+
+TZrBool task_effects_has_error(const ZrTaskEffectContext *context) {
+    return context != ZR_NULL && context->cs != ZR_NULL && context->cs->hasError;
+}
 
 static TZrBool task_effects_string_equals(SZrString *value, const TZrChar *literal) {
     const TZrChar *nativeValue;
@@ -118,6 +128,104 @@ static TZrBool task_effects_binding_kind_is_affine_guard(EZrTaskEffectBindingKin
 
 static TZrBool task_effects_binding_kind_is_plugin_guard(EZrTaskEffectBindingKind bindingKind) {
     return bindingKind == ZR_TASK_EFFECT_BINDING_PLUGIN_GUARD;
+}
+
+static TZrBool task_effects_inferred_type_is_ref_like(SZrCompilerState *cs,
+                                                       const SZrInferredType *type) {
+    return cs != ZR_NULL && type != ZR_NULL &&
+           (type->referenceAccess != ZR_REFERENCE_ACCESS_NONE ||
+            inferred_type_implements_protocol_mask(
+                    cs,
+                    type,
+                    ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE)));
+}
+
+static void task_effects_validate_async_parameter(ZrTaskEffectContext *context,
+                                                  const SZrParameter *parameter) {
+    SZrInferredType parameterType;
+
+    if (context == ZR_NULL || context->cs == ZR_NULL || parameter == ZR_NULL ||
+        context->cs->hasError) {
+        return;
+    }
+
+    if (parameter->passingMode != ZR_PARAMETER_PASSING_MODE_VALUE) {
+        ZrParser_Compiler_Error(context->cs,
+                                "async functions cannot declare in, ref, or out parameters",
+                                parameter->passingFormLocation);
+        return;
+    }
+    if (parameter->typeInfo == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_Init(context->cs->state, &parameterType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_AstTypeToInferredType_Convert(context->cs, parameter->typeInfo, &parameterType)) {
+        ZrParser_InferredType_Free(context->cs->state, &parameterType);
+        return;
+    }
+    if (task_effects_inferred_type_is_ref_like(context->cs, &parameterType)) {
+        ZrParser_Compiler_Error(context->cs,
+                                "async functions cannot use ref-like parameter types",
+                                parameter->nameLocation);
+    }
+    ZrParser_InferredType_Free(context->cs->state, &parameterType);
+}
+
+void task_effects_validate_async_signature(ZrTaskEffectContext *context,
+                                           SZrAstNodeArray *params,
+                                           SZrParameter *args,
+                                           SZrType *returnType,
+                                           SZrFileRange location) {
+    SZrInferredType taskType;
+    const SZrInferredType *payloadType;
+
+    if (context == ZR_NULL || context->cs == ZR_NULL || context->cs->hasError) {
+        return;
+    }
+    if (returnType == ZR_NULL) {
+        ZrParser_Compiler_Error(context->cs,
+                                "async functions must declare a closed zr.task.Task<T> return type",
+                                location);
+        return;
+    }
+
+    ZrParser_InferredType_Init(context->cs->state, &taskType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_AstTypeToInferredType_Convert(context->cs, returnType, &taskType)) {
+        ZrParser_InferredType_Free(context->cs->state, &taskType);
+        return;
+    }
+    payloadType = taskType.elementTypes.length == 1U
+                          ? (const SZrInferredType *)ZrCore_Array_Get(&taskType.elementTypes, 0U)
+                          : ZR_NULL;
+    if (taskType.referenceAccess != ZR_REFERENCE_ACCESS_NONE ||
+        !inferred_type_implements_protocol_mask(
+                context->cs,
+                &taskType,
+                ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_HANDLE)) ||
+        payloadType == ZR_NULL) {
+        ZrParser_Compiler_Error(context->cs,
+                                "async functions must declare a closed zr.task.Task<T> return type",
+                                returnType->name != ZR_NULL ? returnType->name->location : location);
+    } else if (task_effects_inferred_type_is_ref_like(context->cs, payloadType)) {
+        ZrParser_Compiler_Error(context->cs,
+                                "async Task payloads cannot be ref-like",
+                                returnType->name != ZR_NULL ? returnType->name->location : location);
+    }
+    ZrParser_InferredType_Free(context->cs->state, &taskType);
+    if (context->cs->hasError) {
+        return;
+    }
+
+    if (params != ZR_NULL) {
+        for (TZrSize index = 0; index < params->count && !context->cs->hasError; index++) {
+            SZrAstNode *parameterNode = params->nodes[index];
+            if (parameterNode != ZR_NULL && parameterNode->type == ZR_AST_PARAMETER) {
+                task_effects_validate_async_parameter(context, &parameterNode->data.parameter);
+            }
+        }
+    }
+    task_effects_validate_async_parameter(context, args);
 }
 
 static TZrBool task_effects_context_init(ZrTaskEffectContext *context,
@@ -1003,6 +1111,25 @@ static void task_effects_validate_primary_expression(ZrTaskEffectContext *contex
     }
 }
 
+static void task_effects_validate_await_expression(ZrTaskEffectContext *context, SZrAstNode *node) {
+    if (context == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_AWAIT_EXPRESSION ||
+        context->cs == ZR_NULL || context->cs->hasError) {
+        return;
+    }
+
+    task_effects_validate_node(context, node->data.awaitExpression.operand);
+    if (context->cs->hasError) {
+        return;
+    }
+    if (!context->asyncAllowed) {
+        ZrParser_Compiler_Error(context->cs,
+                                "await is only allowed inside async bodies or scheduler-managed top-level coroutines",
+                                node->location);
+        return;
+    }
+    context->awaitSeen = ZR_TRUE;
+}
+
 void task_effects_validate_function_like(ZrTaskEffectContext *parentContext,
                                          TZrBool asyncAllowed,
                                          SZrAstNodeArray *params,
@@ -1052,6 +1179,18 @@ void task_effects_validate_node(ZrTaskEffectContext *context, SZrAstNode *node) 
                                           ZR_TASK_EFFECT_BINDING_NONE);
             }
             task_effects_validate_decorators(context, node->data.functionDeclaration.decorators);
+            if (node->data.functionDeclaration.isAsync &&
+                !node->data.functionDeclaration.isLegacyAsyncSyntax &&
+                context->cs->externBindingsPredeclared) {
+                task_effects_validate_async_signature(context,
+                                                      node->data.functionDeclaration.params,
+                                                      node->data.functionDeclaration.args,
+                                                      node->data.functionDeclaration.returnType,
+                                                      node->data.functionDeclaration.nameLocation);
+            }
+            if (context->cs->hasError) {
+                break;
+            }
             task_effects_validate_function_like(context,
                                                 node->data.functionDeclaration.isAsync,
                                                 node->data.functionDeclaration.params,
@@ -1063,6 +1202,18 @@ void task_effects_validate_node(ZrTaskEffectContext *context, SZrAstNode *node) 
                                                 node->data.testDeclaration.args, node->data.testDeclaration.body);
             break;
         case ZR_AST_LAMBDA_EXPRESSION:
+            if (node->data.lambdaExpression.isAsync &&
+                !node->data.lambdaExpression.isLegacyAsyncSyntax &&
+                context->cs->externBindingsPredeclared) {
+                task_effects_validate_async_signature(context,
+                                                      node->data.lambdaExpression.params,
+                                                      node->data.lambdaExpression.args,
+                                                      node->data.lambdaExpression.returnType,
+                                                      node->location);
+            }
+            if (context->cs->hasError) {
+                break;
+            }
             task_effects_validate_function_like(context, node->data.lambdaExpression.isAsync,
                                                 node->data.lambdaExpression.params, node->data.lambdaExpression.args,
                                                 node->data.lambdaExpression.block);
@@ -1141,6 +1292,9 @@ void task_effects_validate_node(ZrTaskEffectContext *context, SZrAstNode *node) 
             break;
         case ZR_AST_UNARY_EXPRESSION:
             task_effects_validate_node(context, node->data.unaryExpression.argument);
+            break;
+        case ZR_AST_AWAIT_EXPRESSION:
+            task_effects_validate_await_expression(context, node);
             break;
         case ZR_AST_TYPE_CAST_EXPRESSION:
             task_effects_validate_node(context, node->data.typeCastExpression.expression);

@@ -66,6 +66,34 @@ ZrParser_SyntaxCallable_ReceiverEffectFromDeclaration(
     }
 }
 
+TZrUInt32 ZrParser_SyntaxCallable_EffectFlagsFromDeclaration(
+        const SZrAstNode *declaration) {
+    if (declaration == ZR_NULL) {
+        return ZR_CANONICAL_CALLABLE_EFFECT_NONE;
+    }
+
+    switch (declaration->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            return declaration->data.functionDeclaration.isAsync
+                           ? ZR_CANONICAL_CALLABLE_EFFECT_ASYNC
+                           : ZR_CANONICAL_CALLABLE_EFFECT_NONE;
+        case ZR_AST_LAMBDA_EXPRESSION:
+            return declaration->data.lambdaExpression.isAsync
+                           ? ZR_CANONICAL_CALLABLE_EFFECT_ASYNC
+                           : ZR_CANONICAL_CALLABLE_EFFECT_NONE;
+        case ZR_AST_CLASS_METHOD:
+            return declaration->data.classMethod.isAsync
+                           ? ZR_CANONICAL_CALLABLE_EFFECT_ASYNC
+                           : ZR_CANONICAL_CALLABLE_EFFECT_NONE;
+        case ZR_AST_STRUCT_METHOD:
+            return declaration->data.structMethod.isAsync
+                           ? ZR_CANONICAL_CALLABLE_EFFECT_ASYNC
+                           : ZR_CANONICAL_CALLABLE_EFFECT_NONE;
+        default:
+            return ZR_CANONICAL_CALLABLE_EFFECT_NONE;
+    }
+}
+
 TZrBool ZrParser_SyntaxParameter_Normalize(
         SZrSemanticContext *context,
         const SZrParameter *parameter,
@@ -227,6 +255,7 @@ TZrTypeId ZrParser_SyntaxCallable_RefineFromDeclaration(
     const SZrAstNodeArray *parameters;
     SZrArray valueTypeIds;
     EZrCanonicalReceiverEffect receiverEffect;
+    TZrUInt32 effectFlags;
     TZrTypeId result;
     TZrBool recognized = ZR_FALSE;
     TZrSize index;
@@ -244,11 +273,14 @@ TZrTypeId ZrParser_SyntaxCallable_RefineFromDeclaration(
     }
     receiverEffect = ZrParser_SyntaxCallable_ReceiverEffectFromDeclaration(
             declaration);
+    effectFlags = ZrParser_SyntaxCallable_EffectFlagsFromDeclaration(
+            declaration);
     if (parameters == ZR_NULL) {
         if (callableType->data.function.parameterContracts.length != 0U) {
             return ZR_SEMANTIC_ID_INVALID;
         }
-        if (receiverEffect == callableType->data.function.receiverEffect) {
+        if (receiverEffect == callableType->data.function.receiverEffect &&
+            effectFlags == callableType->data.function.effectFlags) {
             return callableTypeId;
         }
         return ZrParser_CanonicalType_InternFunction(
@@ -257,7 +289,7 @@ TZrTypeId ZrParser_SyntaxCallable_RefineFromDeclaration(
                 0U,
                 callableType->data.function.returnTypeId,
                 receiverEffect,
-                callableType->data.function.effectFlags);
+                effectFlags);
     }
     if (parameters->count != callableType->data.function.parameterContracts.length) {
         return ZR_SEMANTIC_ID_INVALID;
@@ -299,7 +331,7 @@ TZrTypeId ZrParser_SyntaxCallable_RefineFromDeclaration(
             (const TZrTypeId *)valueTypeIds.head,
             callableType->data.function.returnTypeId,
             receiverEffect,
-            callableType->data.function.effectFlags);
+            effectFlags);
     ZrCore_Array_Free(context->state, &valueTypeIds);
     return result;
 }

@@ -36,6 +36,44 @@ static TZrBool cfg_statement_is_terminator(SZrAstNode *statement,
     }
 }
 
+static SZrAstNode *cfg_statement_direct_await(SZrAstNode *statement) {
+    SZrAstNode *expression = ZR_NULL;
+
+    if (statement == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (statement->type) {
+        case ZR_AST_EXPRESSION_STATEMENT:
+            expression = statement->data.expressionStatement.expr;
+            break;
+        case ZR_AST_RETURN_STATEMENT:
+            expression = statement->data.returnStatement.expr;
+            break;
+        case ZR_AST_THROW_STATEMENT:
+            expression = statement->data.throwStatement.expr;
+            break;
+        case ZR_AST_OUT_STATEMENT:
+            expression = statement->data.outStatement.expr;
+            break;
+        case ZR_AST_YIELD_STATEMENT:
+            expression = statement->data.yieldStatement.expr;
+            break;
+        case ZR_AST_BREAK_CONTINUE_STATEMENT:
+            expression = statement->data.breakContinueStatement.expr;
+            break;
+        case ZR_AST_VARIABLE_DECLARATION:
+            expression = statement->data.variableDeclaration.value;
+            break;
+        default:
+            return ZR_NULL;
+    }
+
+    return expression != ZR_NULL && expression->type == ZR_AST_AWAIT_EXPRESSION
+                   ? expression
+                   : ZR_NULL;
+}
+
 static const SZrParserCfgLoopTargets g_cfg_no_loop_targets = {
     ZR_PARSER_CFG_INVALID_BLOCK_ID,
     ZR_PARSER_CFG_INVALID_BLOCK_ID,
@@ -601,7 +639,10 @@ static TZrBool cfg_build_statement_list(SZrState *state,
 
     for (index = 0; index < statements->count; index++) {
         SZrAstNode *statement = statements->nodes[index];
+        SZrAstNode *awaitNode;
         TZrUInt32 blockId;
+        TZrUInt32 resumeBlockId;
+        TZrUInt32 suspensionBlockId;
         SZrParserCfgBlock *block;
         EZrSemanticReachabilityCause terminatorCause;
 
@@ -707,8 +748,30 @@ static TZrBool cfg_build_statement_list(SZrState *state,
             block->unreachableCauseNode = pendingCauseNode;
         }
 
-        if (!cfg_connect_fallthrough(cfg, *inOutPreviousBlockId, blockId)) {
-            return ZR_FALSE;
+        awaitNode = cfg_statement_direct_await(statement);
+        if (awaitNode == ZR_NULL) {
+            if (!cfg_connect_fallthrough(cfg, *inOutPreviousBlockId, blockId)) {
+                return ZR_FALSE;
+            }
+        } else {
+            suspensionBlockId = cfg_add_block(
+                    state, cfg, ZR_PARSER_CFG_BLOCK_SUSPENSION, awaitNode);
+            resumeBlockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_JOIN, awaitNode);
+            if (suspensionBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+                resumeBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+                !cfg_connect_fallthrough(cfg, *inOutPreviousBlockId, suspensionBlockId) ||
+                !cfg_add_edge_kind(cfg,
+                                   suspensionBlockId,
+                                   resumeBlockId,
+                                   ZR_PARSER_CFG_EDGE_SUSPEND,
+                                   awaitNode) ||
+                !cfg_add_edge_kind(cfg,
+                                   resumeBlockId,
+                                   blockId,
+                                   ZR_PARSER_CFG_EDGE_RESUME,
+                                   awaitNode)) {
+                return ZR_FALSE;
+            }
         }
 
         if (cfg_statement_is_terminator(statement, &terminatorCause)) {

@@ -89,6 +89,10 @@ static SZrAstNode *parse_required_right_operand(SZrParserState *ps,
 SZrAstNode *parse_unary_expression(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
+    if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "await")) {
+        return parse_await_expression(ps);
+    }
+
     if (token == ZR_TK_IDENTIFIER &&
         current_identifier_equals(ps, "init") &&
         peek_token(ps) != ZR_TK_LPAREN &&

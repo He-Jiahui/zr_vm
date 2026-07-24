@@ -290,6 +290,8 @@ SZrAstNode *parse_reserved_import_expression(SZrParserState *ps);
 
 SZrAstNode *parse_reserved_await_expression(SZrParserState *ps);
 
+SZrAstNode *parse_await_expression(SZrParserState *ps);
+
 SZrAstNode *parse_reserved_type_expression(SZrParserState *ps);
 
 SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps);

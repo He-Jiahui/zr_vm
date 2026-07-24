@@ -120,5 +120,6 @@ SZrAstNode *parse_fn_expression(SZrParserState *ps) {
     lambdaNode->data.lambdaExpression.bodyDelimiterLocation = bodyDelimiterLoc;
     lambdaNode->data.lambdaExpression.isExpressionBody = isExpressionBody;
     lambdaNode->data.lambdaExpression.isAsync = ZR_FALSE;
+    lambdaNode->data.lambdaExpression.isLegacyAsyncSyntax = ZR_FALSE;
     return lambdaNode;
 }

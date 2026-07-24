@@ -158,6 +158,9 @@ enum EZrAstNodeType {
 
     // yield 语句（追加节点，避免已有 AST 编号漂移）
     ZR_AST_YIELD_STATEMENT,
+
+    // await 表达式（追加节点，避免已有 AST 编号漂移）
+    ZR_AST_AWAIT_EXPRESSION,
 };
 
 typedef enum EZrAstNodeType EZrAstNodeType;
@@ -421,6 +424,10 @@ typedef struct SZrUnaryExpression {
     SZrAstNode *argument;
 } SZrUnaryExpression;
 
+typedef struct SZrAwaitExpression {
+    SZrAstNode *operand;
+} SZrAwaitExpression;
+
 typedef struct SZrTypeCastExpression {
     SZrType *targetType;  // 目标类型
     SZrAstNode *expression;  // 要转换的表达式
@@ -453,6 +460,7 @@ typedef struct SZrLambdaExpression {
     SZrFileRange bodyDelimiterLocation;
     TZrBool isExpressionBody;
     TZrBool isAsync;
+    TZrBool isLegacyAsyncSyntax;
 } SZrLambdaExpression;
 
 typedef struct SZrIfExpression {
@@ -611,6 +619,7 @@ typedef struct SZrFunctionDeclaration {
     SZrFileRange returnDelimiterLocation;
     TZrBool usesFnKeyword;
     TZrBool isAsync;
+    TZrBool isLegacyAsyncSyntax;
 } SZrFunctionDeclaration;
 
 typedef struct SZrTestDeclaration {
@@ -686,6 +695,7 @@ typedef struct SZrStructMethod {
     TZrBool isStatic;
     EZrMethodReceiverModifier receiverModifier;
     TZrBool isImplicitReadonlyReceiver;
+    TZrBool isAsync;
     EZrOwnershipQualifier receiverQualifier;
     SZrIdentifier *name;
     SZrGenericDeclaration *generic; // 可选
@@ -774,6 +784,7 @@ typedef struct SZrClassMethod {
     TZrBool isStatic;
     TZrUInt32 modifierFlags;
     EZrMethodReceiverModifier receiverModifier;
+    TZrBool isAsync;
     EZrOwnershipQualifier receiverQualifier;
     SZrIdentifier *name;
     SZrFileRange nameLocation;
@@ -1080,6 +1091,7 @@ typedef struct SZrAstNode {
         // 表达式
         SZrBinaryExpression binaryExpression;
         SZrUnaryExpression unaryExpression;
+        SZrAwaitExpression awaitExpression;
         SZrTypeCastExpression typeCastExpression;
         SZrAssignmentExpression assignmentExpression;
         SZrConditionalExpression conditionalExpression;

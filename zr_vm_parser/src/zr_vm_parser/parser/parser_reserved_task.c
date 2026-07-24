@@ -254,6 +254,7 @@ static SZrAstNode *zr_task_wrap_async_body(SZrParserState *ps, SZrAstNode *body)
     lambdaNode->data.lambdaExpression.args = ZR_NULL;
     lambdaNode->data.lambdaExpression.block = body;
     lambdaNode->data.lambdaExpression.isAsync = ZR_TRUE;
+    lambdaNode->data.lambdaExpression.isLegacyAsyncSyntax = ZR_TRUE;
 
     runnerArgs = ZrParser_AstNodeArray_New(ps->state, 1);
     if (runnerArgs == ZR_NULL) {
@@ -323,6 +324,35 @@ SZrAstNode *parse_reserved_await_expression(SZrParserState *ps) {
     return zr_task_create_module_member_call(ps, "__awaitTask", args, startLoc);
 }
 
+SZrAstNode *parse_await_expression(SZrParserState *ps) {
+    SZrFileRange startLoc;
+    SZrAstNode *operand;
+    SZrAstNode *awaitNode;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_IDENTIFIER ||
+        !current_identifier_equals(ps, "await")) {
+        return ZR_NULL;
+    }
+
+    startLoc = get_current_token_location(ps);
+    ZrParser_Lexer_Next(ps->lexer);
+    operand = parse_unary_expression(ps);
+    if (operand == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    awaitNode = create_ast_node(ps,
+                                ZR_AST_AWAIT_EXPRESSION,
+                                ZrParser_FileRange_Merge(startLoc, operand->location));
+    if (awaitNode == ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, operand);
+        return ZR_NULL;
+    }
+
+    awaitNode->data.awaitExpression.operand = operand;
+    return awaitNode;
+}
+
 SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps) {
     SZrFileRange startLoc;
     SZrAstNode *functionNode;
@@ -379,6 +409,7 @@ SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps) {
         }
     }
     declaration->isAsync = ZR_TRUE;
+    declaration->isLegacyAsyncSyntax = legacyPercentSyntax;
     functionNode->location = ZrParser_FileRange_Merge(startLoc, functionNode->location);
     return functionNode;
 }

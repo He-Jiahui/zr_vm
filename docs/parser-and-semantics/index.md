@@ -224,6 +224,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 - `place-cfg-graph.md`
   - stable session-local Place identity and projection paths
   - dynamic typed CFG edges, cleanup routing, and suspension topology
+- `async-task-syntax-and-effect.md`
+  - explicit `async fn ...: zr.task.Task<T>` source contract
+  - role-based direct `await` payload inference and suspend/resume CFG topology
+  - legacy `%async`/`%await` migration boundary through Syntax 12 M6
 - `reference-place-out-flow.md`
   - exact ref/out call markers and Place-only arguments
   - field-sensitive out initialization across normal and exceptional flow

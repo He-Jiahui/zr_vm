@@ -12,6 +12,13 @@ void task_effects_validate_function_like(ZrTaskEffectContext *parentContext,
                                          SZrAstNodeArray *params,
                                          SZrParameter *args,
                                          SZrAstNode *body);
+void task_effects_validate_async_signature(ZrTaskEffectContext *context,
+                                           SZrAstNodeArray *params,
+                                           SZrParameter *args,
+                                           SZrType *returnType,
+                                           SZrFileRange location);
+TZrBool task_effects_extern_bindings_predeclared(const ZrTaskEffectContext *context);
+TZrBool task_effects_has_error(const ZrTaskEffectContext *context);
 void task_effects_validate_decorators(ZrTaskEffectContext *context, SZrAstNodeArray *decorators);
 void task_effects_validate_declaration(ZrTaskEffectContext *context, SZrAstNode *node);
 

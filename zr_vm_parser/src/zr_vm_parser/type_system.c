@@ -1615,11 +1615,8 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *state,
             }
         }
 
-        if (declarationNode != ZR_NULL &&
-            declarationNode->type == ZR_AST_FUNCTION_DECLARATION &&
-            declarationNode->data.functionDeclaration.isAsync) {
-            effectFlags |= ZR_CANONICAL_CALLABLE_EFFECT_ASYNC;
-        }
+        effectFlags |= ZrParser_SyntaxCallable_EffectFlagsFromDeclaration(
+                declarationNode);
         typeId = ZrParser_CanonicalType_FromFunctionSignatureWithGenericBindings(
                 env->semanticContext,
                 paramTypes,

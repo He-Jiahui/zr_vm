@@ -10,8 +10,10 @@
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser.h"
+#include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/syntax_contract.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
 typedef struct {
@@ -289,6 +291,9 @@ static void expect_task_compile_failure_contains(const char *source,
     if (!cs->hasError) {
         ZrParser_Compiler_PredeclareFunctionBindings(cs, ast->data.script.statements);
     }
+    if (!cs->hasError) {
+        (void)compiler_validate_task_effects(cs, ast);
+    }
     for (index = 0; index < ast->data.script.statements->count; index++) {
         if (cs->hasError) {
             break;
@@ -372,6 +377,37 @@ static void expect_task_effect_success(const char *source, const char *name) {
     destroy_task_test_state(state);
 }
 
+static void expect_task_effect_success_after_predeclare(const char *source, const char *name) {
+    SZrState *state;
+    SZrCompilerState *cs;
+    SZrAstNode *ast;
+
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_NOT_NULL(name);
+
+    state = create_task_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_FALSE(task_source_reports_parser_error(state, source, name));
+    cs = create_task_test_compiler_state(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    ast = parse_task_source_ast(state, source, name);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    cs->currentAst = ast;
+    cs->scriptAst = ast;
+    ZrParser_Compiler_PredeclareExternBindings(cs, ast->data.script.statements);
+    TEST_ASSERT_FALSE(cs->hasError);
+    ZrParser_Compiler_PredeclareFunctionBindings(cs, ast->data.script.statements);
+    TEST_ASSERT_FALSE(cs->hasError);
+    TEST_ASSERT_TRUE(compiler_validate_task_effects(cs, ast));
+    TEST_ASSERT_FALSE(cs->hasError);
+
+    ZrParser_Ast_Free(state, ast);
+    destroy_task_test_compiler_state(cs);
+    destroy_task_test_state(state);
+}
+
 static const ZrLibTypeDescriptor *find_type_descriptor(const ZrLibModuleDescriptor *descriptor, const char *typeName) {
     TZrSize index;
 
@@ -443,6 +479,7 @@ static void test_zr_task_and_zr_coroutine_register_new_public_shapes(void) {
     SZrState *state = create_task_test_state();
     const ZrLibModuleDescriptor *taskDescriptor;
     const ZrLibModuleDescriptor *coroutineDescriptor;
+    const ZrLibTypeDescriptor *taskType;
 
     TEST_ASSERT_NOT_NULL(state);
 
@@ -452,7 +489,10 @@ static void test_zr_task_and_zr_coroutine_register_new_public_shapes(void) {
     TEST_ASSERT_NOT_NULL(coroutineDescriptor);
     TEST_ASSERT_NOT_NULL(find_type_descriptor(taskDescriptor, "IScheduler"));
     TEST_ASSERT_NOT_NULL(find_type_descriptor(taskDescriptor, "TaskRunner"));
-    TEST_ASSERT_NOT_NULL(find_type_descriptor(taskDescriptor, "Task"));
+    taskType = find_type_descriptor(taskDescriptor, "Task");
+    TEST_ASSERT_NOT_NULL(taskType);
+    TEST_ASSERT_EQUAL_UINT64(1U, taskType->genericParameterCount);
+    TEST_ASSERT_TRUE((taskType->protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_HANDLE)) != 0U);
     TEST_ASSERT_NULL(find_type_descriptor(taskDescriptor, "Async"));
     TEST_ASSERT_NULL(find_type_descriptor(taskDescriptor, "Scheduler"));
     TEST_ASSERT_NOT_NULL(find_type_descriptor(coroutineDescriptor, "Scheduler"));
@@ -481,6 +521,7 @@ static void test_percent_async_wraps_declared_return_type_to_task_runner(void) {
     statement = ast->data.script.statements->nodes[0];
     TEST_ASSERT_NOT_NULL(statement);
     TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, statement->type);
+    TEST_ASSERT_TRUE(statement->data.functionDeclaration.isLegacyAsyncSyntax);
     returnType = statement->data.functionDeclaration.returnType;
     TEST_ASSERT_NOT_NULL(returnType);
     TEST_ASSERT_NOT_NULL(returnType->name);
@@ -536,6 +577,297 @@ static void test_percent_async_explicit_return_type_sugar_wraps_to_task_runner(v
 
     ZrParser_Ast_Free(state, ast);
     ZrTests_State_Destroy(state);
+}
+
+static void test_async_function_preserves_explicit_task_return_and_direct_await(void) {
+    static const char *source =
+            "async fn waitFor(value: Task<int>): Task<int> {\n"
+            "    return await value;\n"
+            "}\n";
+    SZrState *state = create_task_test_state();
+    SZrAstNode *ast;
+    SZrAstNode *functionNode;
+    SZrAstNode *returnNode;
+    SZrType *returnType;
+
+    TEST_ASSERT_NOT_NULL(state);
+    ast = parse_task_source_ast(state, source, "task_explicit_task_direct_await_test.zr");
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT64(1, ast->data.script.statements->count);
+
+    functionNode = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(functionNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, functionNode->type);
+    TEST_ASSERT_TRUE(functionNode->data.functionDeclaration.isAsync);
+    TEST_ASSERT_FALSE(functionNode->data.functionDeclaration.isLegacyAsyncSyntax);
+    returnType = functionNode->data.functionDeclaration.returnType;
+    TEST_ASSERT_NOT_NULL(returnType);
+    TEST_ASSERT_NOT_NULL(returnType->name);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_GENERIC_TYPE, returnType->name->type);
+    TEST_ASSERT_NOT_NULL(returnType->name->data.genericType.name);
+    TEST_ASSERT_EQUAL_STRING("Task",
+                             ZrCore_String_GetNativeString(returnType->name->data.genericType.name->name));
+
+    TEST_ASSERT_NOT_NULL(functionNode->data.functionDeclaration.body);
+    TEST_ASSERT_NOT_NULL(functionNode->data.functionDeclaration.body->data.block.body);
+    TEST_ASSERT_EQUAL_UINT64(1, functionNode->data.functionDeclaration.body->data.block.body->count);
+    returnNode = functionNode->data.functionDeclaration.body->data.block.body->nodes[0];
+    TEST_ASSERT_NOT_NULL(returnNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_RETURN_STATEMENT, returnNode->type);
+    TEST_ASSERT_NOT_NULL(returnNode->data.returnStatement.expr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_AWAIT_EXPRESSION, returnNode->data.returnStatement.expr->type);
+    TEST_ASSERT_NOT_NULL(returnNode->data.returnStatement.expr->data.awaitExpression.operand);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL,
+                          returnNode->data.returnStatement.expr->data.awaitExpression.operand->type);
+
+    ZrParser_Ast_Free(state, ast);
+    ZrTests_State_Destroy(state);
+}
+
+static void test_async_task_alias_signature_uses_native_task_carrier(void) {
+    expect_task_effect_success_after_predeclare(
+            "var task = %import(\"zr.task\");\n"
+            "async fn waitFor(value: task.Task<int>): task.Task<int> {\n"
+            "    return await value;\n"
+            "}\n",
+            "task_async_alias_signature_test.zr");
+}
+
+static void test_async_lambda_preserves_explicit_task_signature(void) {
+    static const char *source =
+            "var waitFor = async fn(value: zr.task.Task<int>): zr.task.Task<int> => await value;\n";
+    SZrState *state = create_task_test_state();
+    SZrAstNode *ast;
+    SZrAstNode *declaration;
+    SZrAstNode *lambda;
+
+    TEST_ASSERT_NOT_NULL(state);
+    ast = parse_task_source_ast(state, source, "task_async_lambda_signature_test.zr");
+    TEST_ASSERT_NOT_NULL(ast);
+    declaration = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, declaration->type);
+    lambda = declaration->data.variableDeclaration.value;
+    TEST_ASSERT_NOT_NULL(lambda);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_LAMBDA_EXPRESSION, lambda->type);
+    TEST_ASSERT_TRUE(lambda->data.lambdaExpression.isAsync);
+    TEST_ASSERT_FALSE(lambda->data.lambdaExpression.isLegacyAsyncSyntax);
+    TEST_ASSERT_NOT_NULL(lambda->data.lambdaExpression.returnType);
+    TEST_ASSERT_NOT_NULL(lambda->data.lambdaExpression.block);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_AWAIT_EXPRESSION,
+                          lambda->data.lambdaExpression.block->data.block.body->nodes[0]
+                                  ->data.returnStatement.expr->type);
+
+    ZrParser_Ast_Free(state, ast);
+    destroy_task_test_state(state);
+
+    expect_task_effect_success_after_predeclare(source, "task_async_lambda_effect_test.zr");
+}
+
+static void test_async_member_requires_explicit_task_signature(void) {
+    expect_task_effect_success_after_predeclare(
+            "class Worker {\n"
+            "    async fn waitFor(value: zr.task.Task<int>): zr.task.Task<int> {\n"
+            "        return await value;\n"
+            "    }\n"
+            "}\n"
+            "struct WorkerView {\n"
+            "    async fn waitFor(value: zr.task.Task<int>): zr.task.Task<int> {\n"
+            "        return await value;\n"
+            "    }\n"
+            "}\n",
+            "task_async_member_signature_test.zr");
+    expect_task_compile_failure_contains(
+            "class Worker { async fn invalid(): int { return 1; } }\n",
+            "task_async_member_requires_task_return_test.zr",
+            "async functions must declare a closed zr.task.Task<T> return type");
+}
+
+static void test_async_callable_effect_projection_is_canonical(void) {
+    static const char *source =
+            "async fn named(value: zr.task.Task<int>): zr.task.Task<int> { return await value; }\n"
+            "var lambda = async fn(value: zr.task.Task<int>): zr.task.Task<int> => await value;\n"
+            "class Worker { async fn member(): zr.task.Task<int> { return await value; } }\n"
+            "struct WorkerView { async fn member(): zr.task.Task<int> { return await value; } }\n";
+    SZrState *state = create_task_test_state();
+    SZrCompilerState *cs;
+    SZrAstNode *ast;
+    SZrFunctionTypeInfo *namedInfo = ZR_NULL;
+    const SZrCanonicalTypeNode *namedCallable;
+    SZrAstNode *lambda;
+    SZrAstNode *classMember;
+    SZrAstNode *structMember;
+
+    TEST_ASSERT_NOT_NULL(state);
+    ast = parse_task_source_ast(state, source, "task_async_canonical_effect_test.zr");
+    TEST_ASSERT_NOT_NULL(ast);
+    cs = create_task_test_compiler_state(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    cs->currentAst = ast;
+    cs->scriptAst = ast;
+    ZrParser_Compiler_PredeclareExternBindings(cs, ast->data.script.statements);
+    TEST_ASSERT_FALSE(cs->hasError);
+    ZrParser_Compiler_PredeclareFunctionBindings(cs, ast->data.script.statements);
+    TEST_ASSERT_FALSE(cs->hasError);
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_LookupFunction(
+            cs->typeEnv,
+            ast->data.script.statements->nodes[0]->data.functionDeclaration.name->name,
+            &namedInfo));
+    TEST_ASSERT_NOT_NULL(namedInfo);
+    namedCallable = ZrParser_CanonicalType_Find(cs->semanticContext, namedInfo->typeId);
+    TEST_ASSERT_NOT_NULL(namedCallable);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_FUNCTION, namedCallable->kind);
+    TEST_ASSERT_TRUE((namedCallable->data.function.effectFlags &
+                      ZR_CANONICAL_CALLABLE_EFFECT_ASYNC) != 0U);
+
+    lambda = ast->data.script.statements->nodes[1]->data.variableDeclaration.value;
+    classMember = ast->data.script.statements->nodes[2]->data.classDeclaration.members->nodes[0];
+    structMember = ast->data.script.statements->nodes[3]->data.structDeclaration.members->nodes[0];
+    TEST_ASSERT_TRUE((ZrParser_SyntaxCallable_EffectFlagsFromDeclaration(lambda) &
+                      ZR_CANONICAL_CALLABLE_EFFECT_ASYNC) != 0U);
+    TEST_ASSERT_TRUE((ZrParser_SyntaxCallable_EffectFlagsFromDeclaration(classMember) &
+                      ZR_CANONICAL_CALLABLE_EFFECT_ASYNC) != 0U);
+    TEST_ASSERT_TRUE((ZrParser_SyntaxCallable_EffectFlagsFromDeclaration(structMember) &
+                      ZR_CANONICAL_CALLABLE_EFFECT_ASYNC) != 0U);
+
+    ZrParser_Ast_Free(state, ast);
+    destroy_task_test_compiler_state(cs);
+    destroy_task_test_state(state);
+}
+
+static void test_direct_await_requires_async_effect(void) {
+    static const char *source =
+            "fn invalid(value: Task<int>): Task<int> {\n"
+            "    return await value;\n"
+            "}\n";
+
+    expect_task_effect_failure_contains(source,
+                                        "task_direct_await_outside_async_effect_test.zr",
+                                        "await is only allowed inside async bodies");
+}
+
+static void test_direct_await_infers_task_payload_type(void) {
+    static const char *source =
+            "async fn waitFor(value: zr.task.Task<int>): zr.task.Task<int> {\n"
+            "    return await value;\n"
+            "}\n";
+    SZrState *state = create_task_test_state();
+    SZrCompilerState *cs;
+    SZrAstNode *ast;
+    SZrAstNode *functionNode;
+    SZrAstNode *returnNode;
+    SZrAstNode *parameterNode;
+    SZrInferredType taskType;
+    SZrInferredType resultType;
+
+    TEST_ASSERT_NOT_NULL(state);
+    ast = parse_task_source_ast(state, source, "task_direct_await_payload_type_test.zr");
+    TEST_ASSERT_NOT_NULL(ast);
+    functionNode = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(functionNode);
+    TEST_ASSERT_NOT_NULL(functionNode->data.functionDeclaration.params);
+    TEST_ASSERT_EQUAL_UINT64(1, functionNode->data.functionDeclaration.params->count);
+    parameterNode = functionNode->data.functionDeclaration.params->nodes[0];
+    TEST_ASSERT_NOT_NULL(parameterNode);
+    returnNode = functionNode->data.functionDeclaration.body->data.block.body->nodes[0];
+    TEST_ASSERT_NOT_NULL(returnNode);
+
+    cs = create_task_test_compiler_state(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    cs->currentAst = ast;
+    cs->scriptAst = ast;
+    ZrParser_InferredType_Init(state, &taskType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(state, &resultType, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrParser_AstTypeToInferredType_Convert(
+            cs, parameterNode->data.parameter.typeInfo, &taskType));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterVariable(
+            state,
+            cs->typeEnv,
+            parameterNode->data.parameter.name->name,
+            &taskType));
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(
+            cs, returnNode->data.returnStatement.expr, &resultType));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, resultType.baseType);
+    TEST_ASSERT_EQUAL_UINT64(0, resultType.elementTypes.length);
+
+    ZrParser_InferredType_Free(state, &resultType);
+    ZrParser_InferredType_Free(state, &taskType);
+    ZrParser_Ast_Free(state, ast);
+    destroy_task_test_compiler_state(cs);
+    destroy_task_test_state(state);
+}
+
+static void test_direct_await_rejects_non_task_operand(void) {
+    static const char *source =
+            "async fn waitFor(value: int): zr.task.Task<int> {\n"
+            "    return await value;\n"
+            "}\n";
+    SZrState *state = create_task_test_state();
+    SZrCompilerState *cs;
+    SZrAstNode *ast;
+    SZrAstNode *functionNode;
+    SZrAstNode *returnNode;
+    SZrAstNode *parameterNode;
+    SZrInferredType valueType;
+    SZrInferredType resultType;
+
+    TEST_ASSERT_NOT_NULL(state);
+    ast = parse_task_source_ast(state, source, "task_direct_await_non_task_type_test.zr");
+    TEST_ASSERT_NOT_NULL(ast);
+    functionNode = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(functionNode);
+    parameterNode = functionNode->data.functionDeclaration.params->nodes[0];
+    returnNode = functionNode->data.functionDeclaration.body->data.block.body->nodes[0];
+    TEST_ASSERT_NOT_NULL(parameterNode);
+    TEST_ASSERT_NOT_NULL(returnNode);
+
+    cs = create_task_test_compiler_state(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    cs->currentAst = ast;
+    cs->scriptAst = ast;
+    ZrParser_InferredType_Init(state, &valueType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(state, &resultType, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrParser_AstTypeToInferredType_Convert(
+            cs, parameterNode->data.parameter.typeInfo, &valueType));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterVariable(
+            state,
+            cs->typeEnv,
+            parameterNode->data.parameter.name->name,
+            &valueType));
+    TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(
+            cs, returnNode->data.returnStatement.expr, &resultType));
+    TEST_ASSERT_NOT_NULL(cs->errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "await expects a zr.task.Task<T>"));
+
+    ZrParser_InferredType_Free(state, &resultType);
+    ZrParser_InferredType_Free(state, &valueType);
+    ZrParser_Ast_Free(state, ast);
+    destroy_task_test_compiler_state(cs);
+    destroy_task_test_state(state);
+}
+
+static void test_direct_await_rejects_borrow_crossing_suspension(void) {
+    expect_task_effect_failure_contains(
+            "async fn invalid(task: zr.task.Task<int>): zr.task.Task<int> {\n"
+            "    var value: %borrowed string = \"ok\";\n"
+            "    await task;\n"
+            "    return value;\n"
+            "}\n",
+            "task_direct_await_borrow_escape_test.zr",
+            "Borrowed binding 'value' cannot be used after an await boundary");
+}
+
+static void test_async_signature_requires_closed_task_return_and_value_parameters(void) {
+    expect_task_compile_failure_contains(
+            "async fn invalid(): int { return 1; }\n",
+            "task_async_requires_task_return_test.zr",
+            "async functions must declare a closed zr.task.Task<T> return type");
+    expect_task_compile_failure_contains(
+            "async fn invalid(value: ref int): zr.task.Task<int> { return 1; }\n",
+            "task_async_rejects_ref_parameter_test.zr",
+            "async functions cannot declare in, ref, or out parameters");
 }
 
 static void test_percent_mutex_and_percent_atomic_are_rejected(void) {
@@ -1272,6 +1604,16 @@ int main(void) {
     RUN_TEST(test_zr_task_and_zr_coroutine_register_new_public_shapes);
     RUN_TEST(test_percent_async_wraps_declared_return_type_to_task_runner);
     RUN_TEST(test_percent_async_explicit_return_type_sugar_wraps_to_task_runner);
+    RUN_TEST(test_async_function_preserves_explicit_task_return_and_direct_await);
+    RUN_TEST(test_async_task_alias_signature_uses_native_task_carrier);
+    RUN_TEST(test_async_lambda_preserves_explicit_task_signature);
+    RUN_TEST(test_async_member_requires_explicit_task_signature);
+    RUN_TEST(test_async_callable_effect_projection_is_canonical);
+    RUN_TEST(test_direct_await_requires_async_effect);
+    RUN_TEST(test_direct_await_infers_task_payload_type);
+    RUN_TEST(test_direct_await_rejects_non_task_operand);
+    RUN_TEST(test_direct_await_rejects_borrow_crossing_suspension);
+    RUN_TEST(test_async_signature_requires_closed_task_return_and_value_parameters);
     RUN_TEST(test_percent_mutex_and_percent_atomic_are_rejected);
     RUN_TEST(test_percent_await_is_rejected_outside_async_context);
     RUN_TEST(test_percent_await_rejects_task_runner_values);
