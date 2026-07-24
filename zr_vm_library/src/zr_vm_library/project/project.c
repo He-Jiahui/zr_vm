@@ -24,6 +24,7 @@
 #include "project/project_aot_options.h"
 #include "project/project_exports.h"
 #include "project/project_features.h"
+#include "project/project_manifest_v2.h"
 #include "project/project_preserve.h"
 
 #include <stdarg.h>
@@ -691,23 +692,6 @@ static TZrBool library_project_validate_assembly_name(const TZrChar *assemblyNam
     }
 
     return !previousWasDot;
-}
-
-static TZrBool library_project_validate_manifest_version(cJSON *manifestJson) {
-    cJSON *manifestVersionJson;
-
-    if (manifestJson == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    manifestVersionJson = cJSON_GetObjectItemCaseSensitive(manifestJson, "manifestVersion");
-    if (manifestVersionJson == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    return cJSON_IsNumber(manifestVersionJson) &&
-           manifestVersionJson->valueint == 1 &&
-           manifestVersionJson->valuedouble == 1.0;
 }
 
 static TZrBool library_project_normalize_public_key_token(TZrChar *publicKeyToken) {
@@ -1979,7 +1963,8 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
         ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
         return ZR_NULL;
     }
-    if (!library_project_validate_manifest_version(projectJson)) {
+    if (!library_project_manifest_validate_version(projectJson, &project->manifestVersion) ||
+        (project->manifestVersion == 2u && !library_project_manifest_v2_validate_base(projectJson))) {
         cJSON_Delete(projectJson);
         ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
         return ZR_NULL;
@@ -2040,10 +2025,11 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
             project->assemblyName = ZrCore_String_CreateTryHitCache(state, assemblyNameText);
             project->name = project->assemblyName;
         }
-        if (assemblyVersionText == ZR_NULL) {
-            assemblyVersionText = "0.0.0";
+        if (assemblyVersionText != ZR_NULL) {
+            project->version = ZrCore_String_CreateTryHitCache(state, assemblyVersionText);
+        } else if (project->version == ZR_NULL) {
+            project->version = ZrCore_String_CreateTryHitCache(state, "0.0.0");
         }
-        project->version = ZrCore_String_CreateTryHitCache(state, assemblyVersionText);
         project->assemblyCulture = ZrCore_String_CreateTryHitCache(state, assemblyCultureText);
         if (assemblyPublicKeyTokenText != ZR_NULL) {
             project->assemblyPublicKeyToken = ZrCore_String_CreateTryHitCache(state, assemblyPublicKeyTokenText);

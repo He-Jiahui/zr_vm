@@ -170,6 +170,7 @@ typedef struct SZrLibrary_ProjectExportDeclaration {
 
 struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     TZrUInt64 signature;
+    TZrUInt32 manifestVersion;
     SZrString *file;
     SZrString *directory;
     SZrString *name;

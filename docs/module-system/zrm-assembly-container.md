@@ -99,6 +99,18 @@ Project manifests can declare assembly output and resources:
 
 If `assembly.output` is omitted, `ZrLibrary_Project_ResolveAssemblyOutputPath()` resolves the default to `<binary>/<assembly-name>.zrm` relative to the project manifest directory.
 
+### V2 Base Admission
+
+Syntax 10R M2.1 additionally admits a versioned project envelope with `manifestVersion: 2`. A v2 manifest must
+provide nonempty `name`, `version`, `kind`, `source`, `binary`, and `entry` strings; the parsed project retains
+its manifest version instead of treating it as an untyped JSON detail. Missing `manifestVersion` and explicit
+version 1 remain the migration-reader path. Fractional, unsupported, or incomplete v2 envelopes fail before
+project lifecycle parsing.
+
+This admission boundary does not yet consume v2 `aliases`, `package.exports`, `dependencies`, lock projections,
+`.zrm` default-entry identity, or provider phase. Those fields remain unimplemented until Syntax 10R M2.2-M2.4
+and are not inferred from legacy `pathAliases`, `$` dependencies, or provider locations.
+
 `references.<alias>.path` accepts either a `.zrp` project manifest or a `.zrm` assembly. A `.zrm` reference is opened during manifest parse, validated against the declared `assembly` and optional `version`, and then used to resolve imports such as `$mathLocal@2.1.0/ops/sum` to `modules/ops/sum.zro` inside the archive. When the actual provider version and declared min/max are strict `major.minor.patch` values, manifest parsing also rejects invalid or out-of-range `[min, max)` declarations for both `.zrp` and `.zrm` references.
 
 `ZrLibrary_Project_ResolveImportProviderLocation()` is the AOT-facing discovery API for referenced providers. It resolves the same import specifier to the canonical provider module key plus the declared assembly identity/version range. For `.zrm` references it returns the open archive and module entry; for `.zrp` project references it returns source, binary, and intermediate module paths. Exact aliases can point at multiple versions of the same assembly and resolve to distinct canonical provider keys. This is location discovery only: automatic range-based candidate selection remains separate.
