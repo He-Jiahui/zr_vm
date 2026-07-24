@@ -1,0 +1,13 @@
+{
+  "schema": "syntax-reference-v1-provider-locator",
+  "registeredNative": {
+    "moduleIdentity": "native:engine.render",
+    "workspaceShadow": "engine.render",
+    "entry": "ZrVm_GetSyntaxReferenceRenderModule_v1"
+  },
+  "fileLocator": {
+    "source": "generated/file_locator_import.zr",
+    "uri": "file:${SYNTAX_REFERENCE_FILE_URI}",
+    "pathPolicy": "placeholder-only"
+  }
+}

@@ -1,0 +1,3 @@
+fn fixtureDependencyToolValue(): int {
+    return 23;
+}

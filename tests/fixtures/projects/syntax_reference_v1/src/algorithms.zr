@@ -1,0 +1,3 @@
+fn syntaxReferenceBorrow(value: in int): int {
+    return value;
+}

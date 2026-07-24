@@ -1,0 +1,17 @@
+class SyntaxReferenceCounter {
+    pri var stored: int = 0;
+
+    pub property value: int {
+        pub get { return this.stored; }
+        pri set { return; }
+    }
+
+    pub const fn read(): int {
+        return this.stored;
+    }
+
+    pub increment(delta: int): int {
+        this.stored = this.stored + delta;
+        return this.stored;
+    }
+}

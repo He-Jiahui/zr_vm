@@ -1,0 +1,79 @@
+{
+  "schema": "syntax-reference-v1-coverage",
+  "version": 1,
+  "collections": [
+    {
+      "collection": "current",
+      "files": [
+        "src/host.zr",
+        "src/host.min.zr",
+        "src/callables.zr",
+        "src/model.zr",
+        "src/object_model.zr",
+        "src/algorithms.zr",
+        "src/effects.zr",
+        "src/ownership.zr",
+        "src/main.zr",
+        "surface/lexical_and_literals.zr"
+      ]
+    },
+    {
+      "collection": "negative",
+      "files": [
+        "negative/function_delimiters.zr",
+        "negative/legacy_percent_surface.zr"
+      ]
+    },
+    {
+      "collection": "design-pending",
+      "files": [
+        "src/semicolon_explicit.zr",
+        "src/anonymous_expression_arrow.zr",
+        "src/reflection.zr",
+        "src/pooling.zr",
+        "src/modules.zr",
+        "src/native_ffi.zr",
+        "src/engine/render.zr",
+        "src/compile_time_and_attributes.zr",
+        "src/async_jobs.zr",
+        "src/iterators.zr",
+        "generated/file_locator_import.zr",
+        "native/syntax_reference_native.c",
+        "packages/fixturedep/fixturedep.zrp",
+        "artifacts/fixturedep.zrm",
+        "tests/syntax_tests.zr"
+      ]
+    }
+  ],
+  "features": [
+    {"feature":"function.definition.colon","status":"current","collection":"current","source":"src/host.zr","expect":"pass","ast":"FunctionDefinition(returnDelimiter=colon)","semantic":"callable declaration","consumers":["parser","formatter","lsp"]},
+    {"feature":"callable.type.arrow","status":"current","collection":"current","source":"src/callables.zr","expect":"pass","ast":"FunctionTypeSyntax(arrow=thinArrow)","semantic":"callable TypeRef","consumers":["parser","artifact","lsp"]},
+    {"feature":"anonymous.function.expression_arrow","status":"design-pending","collection":"design-pending","ownerPlan":"06B","ownerGate":"expression-arrow-cutover","source":"src/anonymous_expression_arrow.zr","expectAfterPromotion":"pass","ast":"AnonymousFunctionExpression(bodyKind=expressionArrow)","semantic":"closure binding","consumers":["parser","semir"]},
+    {"feature":"reference.passing","status":"current","collection":"current","source":"src/algorithms.zr","expect":"pass","ast":"PassingModeSyntax","semantic":"Place and loan facts","consumers":["parser","cfg","lsp"]},
+    {"feature":"construct.init_new_own_call","status":"current","collection":"current","source":"src/model.zr","expect":"pass","ast":"ValueConstruct/GcNew/OwnConstruct/Call","semantic":"distinct construction kinds","consumers":["semir","vm","aot"]},
+    {"feature":"struct.ref_struct","status":"current","collection":"current","source":"src/model.zr","expect":"pass","ast":"StructDeclarationSyntax","semantic":"layout category","consumers":["layout","region"]},
+    {"feature":"span.continuous_view","status":"current","collection":"current","source":"src/model.zr","expect":"pass","ast":"TypeRef","semantic":"continuous view contract","consumers":["cfg","vm","aot"]},
+    {"feature":"receiver.effect","status":"current","collection":"current","source":"src/object_model.zr","expect":"pass","ast":"FunctionDefinition","semantic":"receiver effect","consumers":["dispatch","lsp"]},
+    {"feature":"resource.owner_lifetime","status":"current","collection":"current","source":"src/ownership.zr","expect":"pass","ast":"OwnerTypeRef","semantic":"drop and cleanup","consumers":["cfg","runtime"]},
+    {"feature":"gc.gcbox_bridge","status":"current","collection":"current","source":"src/ownership.zr","expect":"pass","ast":"OwnConstruct","semantic":"GcBox bridge","consumers":["gc","aot"]},
+    {"feature":"property.unified","status":"current","collection":"current","source":"src/object_model.zr","expect":"pass","ast":"PropertyDeclSyntax","semantic":"PropertySymbol and Place","consumers":["semir","reflection","lsp"]},
+    {"feature":"enum.union.generic_array_tuple","status":"current","collection":"current","source":"src/model.zr","expect":"pass","ast":"TypeRefSyntax","semantic":"canonical type graph","consumers":["layout","cfg"]},
+    {"feature":"lexical.literal_destructuring","status":"current","collection":"current","source":"surface/lexical_and_literals.zr","expect":"pass","ast":"LiteralExpression","semantic":"literal binding","consumers":["lexer","parser"]},
+    {"feature":"control_flow.cleanup","status":"current","collection":"current","source":"src/ownership.zr","expect":"pass","ast":"ControlFlowStatement","semantic":"cleanup edges","consumers":["cfg","vm","aot"]},
+    {"feature":"legacy.percent_migration","status":"negative","collection":"negative","source":"negative/legacy_percent_surface.zr","diagnostic":"legacy_migration_required","ast":"LegacyMigrationSyntax","semantic":"migration report","consumers":["migration","lsp"]},
+    {"feature":"semicolon.explicit","status":"design-pending","collection":"design-pending","ownerPlan":"06B","ownerGate":"cutover","source":"src/semicolon_explicit.zr","expectAfterPromotion":"pass","ast":"SimpleStatement(terminatorRange)","semantic":"no ASI","consumers":["parser","formatter","lsp"]},
+    {"feature":"module.import_native_ffi","status":"design-pending","collection":"design-pending","ownerPlan":"10","ownerGate":"10F","source":"src/native_ffi.zr","expectAfterPromotion":"pass","ast":"NativeExternDeclaration","semantic":"FfiSignature","consumers":["resolver","vm","aot"]},
+    {"feature":"module_namespace.import_binding","status":"design-pending","collection":"design-pending","ownerPlan":"10","ownerGate":"10R","source":"src/modules.zr","expectAfterPromotion":"pass","ast":"ModuleImportBinding","semantic":"ModuleNamespace","consumers":["resolver","artifact","lsp"]},
+    {"feature":"reflection.type_and_construction","status":"design-pending","collection":"design-pending","ownerPlan":"08","ownerGate":"M4","source":"src/reflection.zr","expectAfterPromotion":"pass","ast":"CallExpression(SpreadArgument)","semantic":"ConstructibleType.createInstance","consumers":["runtime","aot","lsp"]},
+    {"feature":"pooling.handle_and_ref","status":"design-pending","collection":"design-pending","ownerPlan":"09","ownerGate":"M5","source":"src/pooling.zr","expectAfterPromotion":"pass","ast":"TypeRef","semantic":"PoolHandle and PoolRef","consumers":["gc","runtime","lsp"]},
+    {"feature":"comptime.metadata_transform","status":"design-pending","collection":"design-pending","ownerPlan":"11","ownerGate":"M3","source":"src/compile_time_and_attributes.zr","expectAfterPromotion":"pass","ast":"AttributeApplicationSyntax","semantic":"DeclarationPatch","consumers":["compiler","artifact","lsp"]},
+    {"feature":"conditional.direct_call","status":"design-pending","collection":"design-pending","ownerPlan":"11","ownerGate":"M4","source":"src/compile_time_and_attributes.zr","expectAfterPromotion":"pass","ast":"ComptimeIfSyntax","semantic":"conditional direct call","consumers":["semir","vm","aot"]},
+    {"feature":"async.task_job_scheduler","status":"design-pending","collection":"design-pending","ownerPlan":"12","ownerGate":"M3","source":"src/async_jobs.zr","expectAfterPromotion":"pass","ast":"AwaitExpressionSyntax","semantic":"Task Job Scheduler","consumers":["cfg","runtime","lsp"]},
+    {"feature":"iterator.enumerator_yield","status":"design-pending","collection":"design-pending","ownerPlan":"13","ownerGate":"M3","source":"src/iterators.zr","expectAfterPromotion":"pass","ast":"YieldStatementSyntax","semantic":"Iterator state machine","consumers":["cfg","vm","aot"]},
+    {"feature":"testing.manifest_and_case","status":"design-pending","collection":"design-pending","ownerPlan":"14","ownerGate":"M3","source":"tests/syntax_tests.zr","expectAfterPromotion":"pass","ast":"AttributeApplicationSyntax","semantic":"TestEntry","consumers":["artifact","cli","lsp"]},
+    {"feature":"module_specifier.package_artifact","status":"design-pending","collection":"design-pending","ownerPlan":"10","ownerGate":"10R","source":"src/modules.zr","expectAfterPromotion":"pass","ast":"ModuleSpecifierSyntax","semantic":"canonical ModuleId","consumers":["resolver","artifact","lsp"]},
+    {"feature":"module_domain.provider_locator","status":"design-pending","collection":"design-pending","ownerPlan":"10","ownerGate":"10R","source":"generated/file_locator_import.zr","expectAfterPromotion":"pass","ast":"ModuleSpecifierSyntax","semantic":"ModuleDomain and locator","consumers":["resolver","debug","lsp"]},
+    {"feature":"official_native_provider_contract","status":"design-pending","collection":"design-pending","ownerPlan":"10","ownerGate":"10C","source":"native/syntax_reference_native.c","expectAfterPromotion":"pass","ast":"NativeProviderDescriptor","semantic":"OfficialNative identity","consumers":["resolver","artifact","lsp"]},
+    {"feature":"canonical.callable_ffi_contract","status":"design-pending","collection":"design-pending","ownerPlan":"10","ownerGate":"10F","source":"src/native_ffi.zr","expectAfterPromotion":"pass","ast":"NativeExternDeclaration","semantic":"CallableContract and FfiSignature","consumers":["vm","aot","artifact"]}
+  ]
+}

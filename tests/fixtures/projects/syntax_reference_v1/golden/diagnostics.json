@@ -1,0 +1,17 @@
+{
+  "schema": "syntax-reference-v1-diagnostics",
+  "cases": [
+    {
+      "source": "negative/function_delimiters.zr",
+      "primaryDiagnostic": "function_definition_return_delimiter",
+      "range": "line:1,column:35",
+      "status": "negative"
+    },
+    {
+      "source": "negative/legacy_percent_surface.zr",
+      "primaryDiagnostic": "legacy_migration_required",
+      "range": "line:1,column:1",
+      "status": "negative"
+    }
+  ]
+}

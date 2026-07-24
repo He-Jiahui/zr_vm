@@ -1,0 +1,2 @@
+// design-pending: owner 06B requires an explicit statement terminator.
+var syntaxReferenceSemicolon = 1;

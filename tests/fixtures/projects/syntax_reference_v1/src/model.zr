@@ -1,0 +1,23 @@
+ref struct SyntaxReferenceView {
+    var value: int;
+}
+
+struct SyntaxReferencePoint {
+    var x: int;
+    var y: int;
+
+    pub @constructor(x: int, y: int) {
+        this.x = x;
+        this.y = y;
+    }
+}
+
+union SyntaxReferenceChoice<T> {
+    None;
+}
+
+fn syntaxReferenceModelSurface(): int {
+    var point: SyntaxReferencePoint = init SyntaxReferencePoint(1, 2);
+    var view: Span<int> = init Span<int>();
+    return point.x;
+}

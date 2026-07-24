@@ -1,0 +1,10 @@
+{
+  "manifestVersion": 2,
+  "name": "@fixturedep",
+  "version": "1.0.0",
+  "source": "src",
+  "exports": {
+    ".": "index",
+    "./tool": "tool"
+  }
+}

@@ -1,0 +1,3 @@
+fn syntaxReferenceTransform(factory: fn(int) -> int): int {
+    return factory(7);
+}

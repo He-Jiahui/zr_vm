@@ -1,0 +1,3 @@
+fn syntaxReferenceHost(): int {
+    return 7;
+}

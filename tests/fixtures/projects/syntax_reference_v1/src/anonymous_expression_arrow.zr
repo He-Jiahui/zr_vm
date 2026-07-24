@@ -1,0 +1,2 @@
+// design-pending: owner 06B expression-arrow cutover.
+var syntaxReferenceAnonymous = fn(value: int): int => value;

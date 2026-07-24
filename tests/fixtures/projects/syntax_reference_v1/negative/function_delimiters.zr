@@ -1,0 +1,3 @@
+fn invalidDefinition(value: int) -> int {
+    return value;
+}

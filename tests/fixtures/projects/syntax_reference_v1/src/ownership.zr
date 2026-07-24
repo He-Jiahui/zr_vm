@@ -1,0 +1,19 @@
+resource class SyntaxReferenceOwned {
+    var value: int;
+
+    pub @constructor(value: int) {
+        this.value = value;
+    }
+
+    pub const fn read(): int {
+        return this.value;
+    }
+}
+
+fn syntaxReferenceOwnership(): int {
+    {
+        var owner: Unique<SyntaxReferenceOwned> = own SyntaxReferenceOwned(7);
+        var boxed: GcBox<SyntaxReferenceOwned> = owner.intoGc();
+        return boxed.read();
+    }
+}

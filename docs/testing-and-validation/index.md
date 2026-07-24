@@ -10,6 +10,8 @@ related_code:
   - tests/parser/test_char_and_type_cast.c
   - tests/function/test_named_arguments.c
   - tests/module/test_module_system.c
+  - tests/parser/test_syntax_reference_v1.c
+  - tests/fixtures/projects/syntax_reference_v1/golden/coverage.json
   - docs/zr_language_specification.md
   - docs/zr_language_test_requirements.md
 implementation_files:
@@ -23,6 +25,8 @@ implementation_files:
   - tests/parser/test_char_and_type_cast.c
   - tests/function/test_named_arguments.c
   - tests/module/test_module_system.c
+  - tests/parser/test_syntax_reference_v1.c
+  - tests/fixtures/projects/syntax_reference_v1/golden/coverage.json
 plan_sources:
   - user: 2026-04-03 实现 ZR 核心语义外部对齐第一阶段
   - user: 2026-04-05 ctest 需要生成性能测试报告并包含耗时与内存占用
@@ -68,12 +72,17 @@ doc_type: category-index
   - 首轮 30 条高风险优先 case 清单
   - `source / artifact / runtime / project` 分层验证入口
   - `smoke/core/stress` 三档过滤与 interp/binary 主链路合同
+- `syntax-reference-v1-fixture.md`
+  - Syntax 07A 的单一 project fixture、coverage feature ids 和 collection contract
+  - `design-pending` owner gate 规则，以及 provider/file-locator golden 的 path hygiene
+  - formatted/minified `.zrs` 与 source-range-independent `.zri` fingerprint evidence
 
 ## 阅读顺序
 
 1. 先看 `core-semantics-reference-alignment.md`，了解 reference manifests、fixture 组织方式和本阶段覆盖边界。
 2. 需要看性能报告链路时打开 `ctest-performance-reporting.md`，确认 benchmark suite、报告产物和环境变量覆盖。
 3. 再看 `../reference-alignment/full-stack-test-matrix.md`，确认当前已经升级到 10 个固定语义域、120 条首轮 inventory，以及现有分层验证入口。
-4. 再沿 frontmatter 的 `tests` 字段定位具体 C 测试、manifest 和 fixture 文件。
-5. 需要跑快速回归时优先走 `smoke/core/stress` 过滤；AOT 归档资产已移到 `zr_vm_aot/`，不再属于主仓测试入口。
-6. 后续新增语义主题时，优先复用主矩阵和 manifest 合同，而不是继续把上游参考散落在临时笔记里。
+4. 需要跟进 Syntax 07A fixture 时看 `syntax-reference-v1-fixture.md`，确认 feature slot 是否为 current、negative 或 design-pending。
+5. 再沿 frontmatter 的 `tests` 字段定位具体 C 测试、manifest 和 fixture 文件。
+6. 需要跑快速回归时优先走 `smoke/core/stress` 过滤；AOT 归档资产已移到 `zr_vm_aot/`，不再属于主仓测试入口。
+7. 后续新增语义主题时，优先复用主矩阵和 manifest 合同，而不是继续把上游参考散落在临时笔记里。

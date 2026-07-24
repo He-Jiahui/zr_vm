@@ -1,0 +1,3 @@
+fn fixtureDependencyValue(): int {
+    return 17;
+}

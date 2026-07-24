@@ -1,0 +1,42 @@
+{
+  "manifestVersion": 2,
+  "name": "syntax_reference_v1",
+  "version": "1.0.0",
+  "kind": "library",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main",
+  "aliases": {
+    "#fixture": "syntax/reference",
+    "#nativeRender": "native:engine.render"
+  },
+  "package": {
+    "name": "@syntaxref",
+    "exports": {
+      ".": "main",
+      "./model": "model"
+    }
+  },
+  "dependencies": {
+    "@fixturedep": {
+      "version": "1.0.0",
+      "path": "packages/fixturedep/fixturedep.zrp"
+    }
+  },
+  "nativeProviders": {
+    "engine.render": {
+      "library": "bin/syntax_reference_native",
+      "entry": "ZrVm_GetSyntaxReferenceRenderModule_v1",
+      "abiVersion": 1
+    }
+  },
+  "build": {
+    "features": ["trace", "simd", "debug_assert"],
+    "profiles": {
+      "debug": { "enableFeatures": ["trace", "debug_assert"] },
+      "release": { "enableFeatures": [] }
+    }
+  },
+  "testSource": "tests",
+  "capabilities": ["thread", "native"]
+}
