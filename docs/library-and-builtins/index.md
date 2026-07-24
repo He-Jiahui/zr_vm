@@ -98,6 +98,9 @@ doc_type: category-index
 - `zr-container-contiguous-views.md`
   - `Span<T>` / `ReadOnlySpan<T>` 的 protocol/role、inline representation 与 readonly weakening
   - array/owner/native-pinned source 的 SemIR loan、bounds proof 和 VM/AOT 等价边界
+- `zr-iteration-protocol.md`
+  - `zr.iteration` 是 `Iterable<T>` / `Enumerator<T>` / `Iterator<T>` / `AsyncIterator<T>` 的唯一公开所有者
+  - 容器只发布 capability metadata，普通 `for` 只消费 canonical protocol facts
 - `zr-pooling-and-pinned-ffi-views.md`
   - `BufferPool` / `PoolLease<T>` 的 single-return、generation 和异常清理合同
   - `BufferHandle.pin()` / `Ptr<u8>.span()` 的显式 pin、延迟释放和 moving-GC 地址稳定边界

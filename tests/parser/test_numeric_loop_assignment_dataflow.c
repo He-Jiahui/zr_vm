@@ -5,6 +5,7 @@
 
 #include "harness/runtime_support.h"
 #include "zr_vm_core/array.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_common/zr_type_conf.h"
@@ -84,6 +85,7 @@ static void register_int64_array_variable(SZrCompilerState *cs, const char *name
     SZrInferredType elementType;
 
     ZrParser_InferredType_Init(g_state, &arrayType, ZR_VALUE_TYPE_ARRAY);
+    arrayType.protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE);
     ZrParser_InferredType_Init(g_state, &elementType, ZR_VALUE_TYPE_INT64);
     ZrCore_Array_Init(g_state, &arrayType.elementTypes, sizeof(SZrInferredType), 1);
     ZrCore_Array_Push(g_state, &arrayType.elementTypes, &elementType);
@@ -104,6 +106,7 @@ static void register_int64_range_array_variable(SZrCompilerState *cs,
     SZrInferredType elementType;
 
     ZrParser_InferredType_Init(g_state, &arrayType, ZR_VALUE_TYPE_ARRAY);
+    arrayType.protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE);
     ZrParser_InferredType_Init(g_state, &elementType, ZR_VALUE_TYPE_INT64);
     elementType.hasRangeConstraint = ZR_TRUE;
     elementType.minValue = minValue;

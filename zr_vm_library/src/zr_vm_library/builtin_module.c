@@ -252,10 +252,6 @@ static const ZrLibParameterDescriptor g_array_like_set_item_parameters[] = {
         {"value", "T", "Element value."},
 };
 
-static const ZrLibFieldDescriptor g_enumerator_fields[] = {
-        ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT("current", "T", "Current iterator element.", ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_FIELD),
-};
-
 static const ZrLibFieldDescriptor g_array_like_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("length", "int", "Logical element count."),
 };
@@ -267,18 +263,6 @@ static const ZrLibFieldDescriptor g_type_info_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("hash", "UInt64", "Stable reflection hash."),
         ZR_LIB_FIELD_DESCRIPTOR_INIT("owner", "zr.builtin.TypeInfo", "Owning reflection target when applicable."),
         ZR_LIB_FIELD_DESCRIPTOR_INIT("module", "zr.builtin.TypeInfo", "Owning module reflection when applicable."),
-};
-
-static const ZrLibMethodDescriptor g_enumerable_methods[] = {
-        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, ZR_NULL, "zr.builtin.IEnumerator<T>",
-                                           "Create an iterator.", ZR_FALSE, ZR_NULL, 0,
-                                           ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT),
-};
-
-static const ZrLibMethodDescriptor g_enumerator_methods[] = {
-        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("moveNext", 0, 0, ZR_NULL, "bool",
-                                           "Advance iterator state.", ZR_FALSE, ZR_NULL, 0,
-                                           ZR_MEMBER_CONTRACT_ROLE_ITERATOR_MOVE_NEXT),
 };
 
 static const ZrLibMetaMethodDescriptor g_array_like_meta_methods[] = {
@@ -388,19 +372,6 @@ static const TZrChar *g_uint64_implements[] = {
 };
 
 static const ZrLibTypeDescriptor g_builtin_types[] = {
-        ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT("IEnumerable", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0,
-                                             g_enumerable_methods, ZR_ARRAY_COUNT(g_enumerable_methods), ZR_NULL, 0,
-                                             "Canonical builtin enumerable protocol.", ZR_NULL, ZR_NULL, 0,
-                                             ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "IEnumerable<T>()",
-                                             g_builtin_single_generic_parameter, ZR_ARRAY_COUNT(g_builtin_single_generic_parameter),
-                                             ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)),
-        ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT("IEnumerator", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE,
-                                             g_enumerator_fields, ZR_ARRAY_COUNT(g_enumerator_fields),
-                                             g_enumerator_methods, ZR_ARRAY_COUNT(g_enumerator_methods), ZR_NULL, 0,
-                                             "Canonical builtin iterator protocol.", ZR_NULL, ZR_NULL, 0,
-                                             ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, "IEnumerator<T>()",
-                                             g_builtin_single_generic_parameter, ZR_ARRAY_COUNT(g_builtin_single_generic_parameter),
-                                             ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERATOR)),
         ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT("IArrayLike", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE,
                                              g_array_like_fields, ZR_ARRAY_COUNT(g_array_like_fields),
                                              ZR_NULL, 0, g_array_like_meta_methods, ZR_ARRAY_COUNT(g_array_like_meta_methods),
@@ -509,8 +480,6 @@ static const ZrLibTypeDescriptor g_builtin_types[] = {
 };
 
 static const ZrLibTypeHintDescriptor g_builtin_hints[] = {
-        {"IEnumerable", "type", "interface IEnumerable<T>", "Canonical builtin enumerable protocol."},
-        {"IEnumerator", "type", "interface IEnumerator<T>", "Canonical builtin iterator protocol."},
         {"IArrayLike", "type", "interface IArrayLike<T>", "Canonical builtin array-like protocol."},
         {"IEquatable", "type", "interface IEquatable<T>", "Canonical builtin equality protocol."},
         {"IHashable", "type", "interface IHashable", "Canonical builtin hash protocol."},

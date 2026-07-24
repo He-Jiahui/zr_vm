@@ -6,6 +6,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
+#include "zr_vm_parser/iteration_contract.h"
 #include "type_inference_semantic_facts.h"
 #include "zr_vm_parser/ast.h"
 
@@ -1254,7 +1255,7 @@ static TZrBool protocol_id_from_mask(TZrUInt64 protocolMask, EZrProtocolId *outP
     }
 
     for (EZrProtocolId protocolId = (EZrProtocolId)(ZR_PROTOCOL_ID_NONE + 1);
-         protocolId <= ZR_PROTOCOL_ID_ARRAY_LIKE;
+         protocolId <= ZR_PROTOCOL_ID_MAX;
          protocolId = (EZrProtocolId)(protocolId + 1)) {
         if ((protocolMask & ZR_PROTOCOL_BIT(protocolId)) == 0) {
             continue;
@@ -2160,48 +2161,48 @@ static TZrBool prototype_bind_protocol_argument_recursive(SZrCompilerState *cs,
     return ZR_FALSE;
 }
 
-ZR_PARSER_API TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
-                                                                       const SZrInferredType *iterableType,
-                                                                       SZrInferredType *outType) {
-    static const EZrProtocolId kForeachProtocols[] = {
-            ZR_PROTOCOL_ID_ITERABLE,
-            ZR_PROTOCOL_ID_ARRAY_LIKE,
-            ZR_PROTOCOL_ID_ITERATOR
-    };
+TZrBool ZrParser_TypeInference_BindProtocolElementType(SZrCompilerState *cs,
+                                                        const SZrInferredType *sourceType,
+                                                        EZrProtocolId protocolId,
+                                                        SZrInferredType *outType) {
+    SZrTypePrototypeInfo *prototype;
 
-    if (cs == ZR_NULL || iterableType == ZR_NULL || outType == ZR_NULL) {
+    if (cs == ZR_NULL || sourceType == ZR_NULL || outType == ZR_NULL ||
+        (protocolId != ZR_PROTOCOL_ID_ITERATOR && protocolId != ZR_PROTOCOL_ID_ITERABLE)) {
         return ZR_FALSE;
     }
 
-    if (iterableType->baseType == ZR_VALUE_TYPE_ARRAY && iterableType->elementTypes.length > 0) {
+    if ((sourceType->protocolMask & ZR_PROTOCOL_BIT(protocolId)) != 0 &&
+        sourceType->elementTypes.length > 0) {
         SZrInferredType *elementType =
-                (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&iterableType->elementTypes, 0);
+                (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&sourceType->elementTypes, 0);
         if (elementType != ZR_NULL) {
             ZrParser_InferredType_Copy(cs->state, outType, elementType);
             return ZR_TRUE;
         }
     }
 
-    if (iterableType->typeName != ZR_NULL) {
-        SZrTypePrototypeInfo *prototype;
-
-        ensure_generic_instance_type_prototype(cs, iterableType->typeName);
-        prototype = find_compiler_type_prototype_inference(cs, iterableType->typeName);
-        if (prototype != ZR_NULL) {
-            for (TZrSize index = 0; index < (sizeof(kForeachProtocols) / sizeof(kForeachProtocols[0])); index++) {
-                if (prototype_bind_protocol_argument_recursive(cs,
-                                                               prototype,
-                                                               kForeachProtocols[index],
-                                                               0,
-                                                               outType,
-                                                               0)) {
-                    return ZR_TRUE;
-                }
-            }
-        }
+    if (sourceType->typeName == ZR_NULL) {
+        return ZR_FALSE;
     }
 
-    return ZR_FALSE;
+    ensure_generic_instance_type_prototype(cs, sourceType->typeName);
+    prototype = find_compiler_type_prototype_inference(cs, sourceType->typeName);
+    if (prototype == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (bind_protocol_argument_from_type_name(cs, sourceType->typeName, protocolId, 0, outType)) {
+        return ZR_TRUE;
+    }
+
+    return prototype_bind_protocol_argument_recursive(cs, prototype, protocolId, 0, outType, 0);
+}
+
+ZR_PARSER_API TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
+                                                                       const SZrInferredType *iterableType,
+                                                                       SZrInferredType *outType) {
+    return ZrParser_EnumeratorBinding_ResolveElementType(cs, iterableType, outType);
 }
 
 static SZrString *substitute_generic_type_name(SZrState *state,

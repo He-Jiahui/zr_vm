@@ -138,7 +138,7 @@ static void test_container_metadata_open_module_info_exposes_generic_shapes(void
     TEST_ASSERT_NOT_NULL(typesValue);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, typesValue->type);
     typesArray = ZR_CAST_OBJECT(state, typesValue->value.object);
-    TEST_ASSERT_EQUAL_UINT64(6, ZrContainerTests_GetArrayLength(typesArray));
+    TEST_ASSERT_EQUAL_UINT64(8, ZrContainerTests_GetArrayLength(typesArray));
 
     arrayEntry = ZrContainerTests_FindNamedEntryInArray(state, typesArray, "name", "Array");
     mapEntry = ZrContainerTests_FindNamedEntryInArray(state, typesArray, "name", "Map");
@@ -152,7 +152,7 @@ static void test_container_metadata_open_module_info_exposes_generic_shapes(void
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, implementsValue->type);
     implementsArray = ZR_CAST_OBJECT(state, implementsValue->value.object);
     TEST_ASSERT_NOT_NULL(find_string_entry_in_object_array(state, implementsArray, "zr.builtin.IArrayLike<T>"));
-    TEST_ASSERT_NOT_NULL(find_string_entry_in_object_array(state, implementsArray, "zr.builtin.IEnumerable<T>"));
+    TEST_ASSERT_NOT_NULL(find_string_entry_in_object_array(state, implementsArray, "zr.iteration.Iterable<T>"));
 
     metaMethodsValue = ZrContainerTests_GetObjectFieldValue(state, arrayEntry, "metaMethods");
     TEST_ASSERT_NOT_NULL(metaMethodsValue);
@@ -253,8 +253,8 @@ static void test_container_metadata_closed_native_prototypes_substitute_members_
     TEST_ASSERT_EQUAL_UINT64(1, ZrContainerTests_CountTypePrototypes(cs, "Array<int>"));
 
     TEST_ASSERT_TRUE(string_array_contains(&arrayPrototype->implements, "zr.builtin.IArrayLike<int>"));
-    TEST_ASSERT_TRUE(string_array_contains(&arrayPrototype->implements, "zr.builtin.IEnumerable<int>"));
-    TEST_ASSERT_TRUE(string_array_contains(&mapPrototype->implements, "zr.builtin.IEnumerable<Pair<string, int>>"));
+    TEST_ASSERT_TRUE(string_array_contains(&arrayPrototype->implements, "zr.iteration.Iterable<int>"));
+    TEST_ASSERT_TRUE(string_array_contains(&mapPrototype->implements, "zr.iteration.Iterable<Pair<string, int>>"));
     TEST_ASSERT_TRUE(string_array_contains(&pairPrototype->implements, "zr.builtin.IEquatable<Pair<int, string>>"));
     TEST_ASSERT_TRUE(string_array_contains(&pairPrototype->implements, "zr.builtin.IComparable<Pair<int, string>>"));
     TEST_ASSERT_TRUE(string_array_contains(&pairPrototype->implements, "zr.builtin.IHashable"));

@@ -1,6 +1,8 @@
 #ifndef ZR_VM_PARSER_TYPE_INFERENCE_INTERNAL_H
 #define ZR_VM_PARSER_TYPE_INFERENCE_INTERNAL_H
 
+#include "zr_vm_core/object.h"
+
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/ast.h"
@@ -161,6 +163,10 @@ TZrBool infer_struct_init_expression_type(SZrCompilerState *cs,
 TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
                                                          const SZrInferredType *iterableType,
                                                          SZrInferredType *outType);
+TZrBool ZrParser_TypeInference_BindProtocolElementType(SZrCompilerState *cs,
+                                                        const SZrInferredType *sourceType,
+                                                        EZrProtocolId protocolId,
+                                                        SZrInferredType *outType);
 const TZrChar *receiver_ownership_call_error(EZrOwnershipQualifier receiverQualifier);
 SZrString *extract_imported_module_name(SZrFunctionCall *call);
 TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *moduleName);

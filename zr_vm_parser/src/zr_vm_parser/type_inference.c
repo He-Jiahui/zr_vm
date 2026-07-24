@@ -2011,6 +2011,7 @@ static TZrBool init_wrapped_array_inferred_type(SZrCompilerState *cs,
     }
 
     ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_ARRAY);
+    result->protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE);
     ZrCore_Array_Init(cs->state, &result->elementTypes, sizeof(SZrInferredType), 1);
 
     ZrParser_InferredType_Init(cs->state, &copiedElement, ZR_VALUE_TYPE_OBJECT);
@@ -2039,6 +2040,7 @@ TZrBool ZrParser_ArrayLiteralType_Infer(SZrCompilerState *cs, SZrAstNode *node, 
     }
 
     ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_ARRAY);
+    result->protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE);
     arrayLiteral = &node->data.arrayLiteral;
     if (arrayLiteral->elements == ZR_NULL || arrayLiteral->elements->count == 0) {
         return ZR_TRUE;
@@ -2881,10 +2883,13 @@ static const TZrChar *ast_type_builtin_canonical_name(const TZrChar *typeNameTex
     }
 
     if (strcmp(typeNameText, "Iterable") == 0) {
-        return "zr.builtin.IEnumerable";
+        return "zr.iteration.Iterable";
+    }
+    if (strcmp(typeNameText, "Enumerator") == 0) {
+        return "zr.iteration.Enumerator";
     }
     if (strcmp(typeNameText, "Iterator") == 0) {
-        return "zr.builtin.IEnumerator";
+        return "zr.iteration.Iterator";
     }
     if (strcmp(typeNameText, "ArrayLike") == 0) {
         return "zr.builtin.IArrayLike";
@@ -2903,9 +2908,7 @@ static const TZrChar *ast_type_builtin_canonical_name(const TZrChar *typeNameTex
         strcmp(typeNameText, "TypeInfo") == 0) {
         return "zr.builtin.TypeInfo";
     }
-    if (strcmp(typeNameText, "IEnumerable") == 0 ||
-        strcmp(typeNameText, "IEnumerator") == 0 ||
-        strcmp(typeNameText, "IArrayLike") == 0 ||
+    if (strcmp(typeNameText, "IArrayLike") == 0 ||
         strcmp(typeNameText, "IEquatable") == 0 ||
         strcmp(typeNameText, "IHashable") == 0 ||
         strcmp(typeNameText, "IComparable") == 0 ||

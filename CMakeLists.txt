@@ -98,6 +98,8 @@ add_subdirectory("zr_vm_lib_math")
 
 add_subdirectory("zr_vm_lib_system")
 
+add_subdirectory("zr_vm_lib_iteration")
+
 add_subdirectory("zr_vm_lib_container")
 
 add_subdirectory("zr_vm_lib_ffi")

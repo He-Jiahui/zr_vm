@@ -11,6 +11,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_lib_container/module.h"
+#include "zr_vm_lib_iteration/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_lib_ffi/module.h"
@@ -380,6 +381,7 @@ static SZrState *create_test_state(void) {
     SZrState *mainState = ZrTests_State_Create(ZR_NULL);
 
     if (mainState != ZR_NULL && mainState->global != ZR_NULL) {
+        ZrVmLibIteration_Register(mainState->global);
         ZrVmLibContainer_Register(mainState->global);
         ZrVmLibMath_Register(mainState->global);
         ZrVmLibSystem_Register(mainState->global);
@@ -3651,9 +3653,9 @@ static void test_type_inference_type_query_function_type_returns_callable_reflec
     TEST_DIVIDER();
 }
 
-static void test_type_inference_builtin_names_require_explicit_import(void) {
+static void test_type_inference_iteration_names_require_explicit_import(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - Builtin Names Require Explicit Import";
+    const char *testSummary = "Type Inference - Iteration Names Require Explicit Import";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -3662,7 +3664,7 @@ static void test_type_inference_builtin_names_require_explicit_import(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var iter: IEnumerable<int> = null;\n";
+                "var iter: Iterable<int> = null;\n";
         SZrString *sourceName = ZrCore_String_Create(state, "builtin_names_require_import_test.zr", 37);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -3675,8 +3677,8 @@ static void test_type_inference_builtin_names_require_explicit_import(void) {
         compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "IEnumerable"));
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "zr.builtin"));
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Iterable"));
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "zr.iteration.Iterable"));
 
         ZrParser_Ast_Free(state, ast);
         destroy_test_compiler_state(cs);
@@ -3688,9 +3690,9 @@ static void test_type_inference_builtin_names_require_explicit_import(void) {
     TEST_DIVIDER();
 }
 
-static void test_type_inference_builtin_names_accept_module_qualified_and_destructured_imports(void) {
+static void test_type_inference_iteration_names_accept_module_qualified_and_destructured_imports(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - Builtin Names Accept Module Qualified And Destructured Imports";
+    const char *testSummary = "Type Inference - Iteration Names Accept Module Qualified And Destructured Imports";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -3700,7 +3702,8 @@ static void test_type_inference_builtin_names_accept_module_qualified_and_destru
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "var builtin = %import(\"zr.builtin\");\n"
-                "var iter: builtin.IEnumerable<int> = null;\n"
+                "var iteration = %import(\"zr.iteration\");\n"
+                "var iter: iteration.Iterable<int> = null;\n"
                 "var {TypeInfo, Integer} = %import(\"zr.builtin\");\n"
                 "var meta: TypeInfo = %type(int);\n"
                 "var boxed: Integer = null;\n";
@@ -3710,10 +3713,10 @@ static void test_type_inference_builtin_names_accept_module_qualified_and_destru
         TEST_ASSERT_NOT_NULL(state);
         TEST_ASSERT_NOT_NULL(cs);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_EQUAL_INT(5, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(6, (int)ast->data.script.statements->count);
 
         cs->scriptAst = ast;
-        for (TZrSize index = 0; index < 5; index++) {
+        for (TZrSize index = 0; index < 6; index++) {
             compile_test_top_level_statement(cs, ast->data.script.statements->nodes[index]);
             TEST_ASSERT_FALSE(cs->hasError);
         }
@@ -3784,8 +3787,8 @@ static void test_type_inference_legacy_builtin_aliases_fail_with_canonical_diagn
     } LegacyBuiltinDiagnosticCase;
 
     static const LegacyBuiltinDiagnosticCase cases[] = {
-            {"var iter: Iterable<int> = null;\n", "Iterable", "zr.builtin.IEnumerable"},
-            {"var iter: Iterator<int> = null;\n", "Iterator", "zr.builtin.IEnumerator"},
+            {"var iter: IEnumerable<int> = null;\n", "IEnumerable", "IEnumerable"},
+            {"var iter: IEnumerator<int> = null;\n", "IEnumerator", "IEnumerator"},
             {"var items: ArrayLike<int> = null;\n", "ArrayLike", "zr.builtin.IArrayLike"},
             {"var item: Equatable<int> = null;\n", "Equatable", "zr.builtin.IEquatable"},
             {"var item: Hashable = null;\n", "Hashable", "zr.builtin.IHashable"},
@@ -8077,6 +8080,7 @@ static void test_type_inference_foreach_binds_iterated_element_type(void) {
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "var container = %import(\"zr.container\");"
+                "var iteration = %import(\"zr.iteration\");"
                 "var {Array} = %import(\"zr.container\");"
                 "var dynamic: Array<int> = new container.Array<int>();"
                 "var fixed = [1, 2, 3];"
@@ -8091,7 +8095,7 @@ static void test_type_inference_foreach_binds_iterated_element_type(void) {
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(7, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(8, (int)ast->data.script.statements->count);
 
         cs->currentFunction = ZrCore_Function_New(state);
         TEST_ASSERT_NOT_NULL(cs->currentFunction);
@@ -8327,8 +8331,8 @@ int main(void) {
     RUN_TEST(test_convert_function_ast_type_to_callable_inferred_type);
     RUN_TEST(test_type_inference_function_type_annotation_accepts_lambda_assignment);
     RUN_TEST(test_type_inference_type_query_function_type_returns_callable_reflection_type);
-    RUN_TEST(test_type_inference_builtin_names_require_explicit_import);
-    RUN_TEST(test_type_inference_builtin_names_accept_module_qualified_and_destructured_imports);
+    RUN_TEST(test_type_inference_iteration_names_require_explicit_import);
+    RUN_TEST(test_type_inference_iteration_names_accept_module_qualified_and_destructured_imports);
     RUN_TEST(test_type_inference_builtin_value_helpers_require_explicit_import);
     RUN_TEST(test_type_inference_legacy_builtin_aliases_fail_with_canonical_diagnostics);
     RUN_TEST(test_type_inference_type_value_aliases_can_be_used_in_type_position);

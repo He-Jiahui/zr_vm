@@ -9,6 +9,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_ffi/module.h"
+#include "zr_vm_lib_iteration/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_library/native_registry.h"
@@ -53,6 +54,7 @@ SZrState *ZrContainerTests_CreateState(void) {
     mainState = global->mainThreadState;
     if (mainState != ZR_NULL) {
         ZrCore_GlobalState_InitRegistry(mainState, global);
+        ZrVmLibIteration_Register(global);
         ZrVmLibContainer_Register(global);
         ZrVmLibMath_Register(global);
         ZrVmLibSystem_Register(global);

@@ -129,9 +129,9 @@ static const TZrChar *zr_debug_protocol_name(EZrProtocolId protocolId) {
         case ZR_PROTOCOL_ID_COMPARABLE:
             return "zr.builtin.IComparable";
         case ZR_PROTOCOL_ID_ITERABLE:
-            return "zr.builtin.IEnumerable";
+            return "zr.iteration.Iterable";
         case ZR_PROTOCOL_ID_ITERATOR:
-            return "zr.builtin.IEnumerator";
+            return "zr.iteration.Enumerator";
         case ZR_PROTOCOL_ID_ARRAY_LIKE:
             return "zr.builtin.IArrayLike";
         case ZR_PROTOCOL_ID_NONE:

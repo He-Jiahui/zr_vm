@@ -399,6 +399,7 @@ void ZrParser_InferredType_Init(SZrState *state, SZrInferredType *type, EZrValue
     type->gcBridgeKind = ZR_GC_BRIDGE_NONE;
     type->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
     type->isReadonlyView = ZR_FALSE;
+    type->protocolMask = 0;
     type->typeName = ZR_NULL;
     type->genericArgumentKind = ZR_INFERRED_GENERIC_ARGUMENT_TYPE;
     type->genericConstIntValue = 0;
@@ -433,6 +434,7 @@ void ZrParser_InferredType_InitFull(SZrState *state, SZrInferredType *type, EZrV
     type->gcBridgeKind = ZR_GC_BRIDGE_NONE;
     type->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
     type->isReadonlyView = ZR_FALSE;
+    type->protocolMask = 0;
     type->typeName = typeName;
     type->genericArgumentKind = ZR_INFERRED_GENERIC_ARGUMENT_TYPE;
     type->genericConstIntValue = 0;
@@ -527,6 +529,7 @@ void ZrParser_InferredType_Copy(SZrState *state, SZrInferredType *dest, const SZ
     dest->gcBridgeKind = src->gcBridgeKind;
     dest->referenceAccess = src->referenceAccess;
     dest->isReadonlyView = src->isReadonlyView;
+    dest->protocolMask = src->protocolMask;
     dest->typeName = src->typeName; // 字符串由GC管理，直接复制引用
     dest->genericArgumentKind = src->genericArgumentKind;
     dest->genericConstIntValue = src->genericConstIntValue;
@@ -605,6 +608,10 @@ TZrBool ZrParser_InferredType_Equal(const SZrInferredType *type1, const SZrInfer
     }
 
     if (type1->isReadonlyView != type2->isReadonlyView) {
+        return ZR_FALSE;
+    }
+
+    if (type1->protocolMask != type2->protocolMask) {
         return ZR_FALSE;
     }
     

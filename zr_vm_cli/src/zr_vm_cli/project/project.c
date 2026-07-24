@@ -18,6 +18,7 @@
 #include "zr_vm_common/zr_runtime_sentinel_conf.h"
 #include "zr_vm_lib_ffi/module.h"
 #include "zr_vm_lib_container/module.h"
+#include "zr_vm_lib_iteration/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_network/module.h"
 #include "zr_vm_lib_system/module.h"
@@ -358,6 +359,7 @@ TZrBool ZrCli_Project_RegisterStandardModulesWithBootstrap(SZrGlobalState *globa
     return ZrVmLibMath_Register(global) &&
            ZrVmLibSystem_Register(global) &&
            ZrVmLibNetwork_Register(global) &&
+           ZrVmLibIteration_Register(global) &&
            ZrVmLibContainer_Register(global) &&
            ZrVmLibFfi_Register(global) &&
 #if defined(ZR_VM_HAS_THREAD_MODULE)

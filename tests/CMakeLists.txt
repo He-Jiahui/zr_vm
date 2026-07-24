@@ -481,9 +481,15 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_iteration/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_type_inference_test)
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_type_inference_test PRIVATE zr_vm_lib_iteration_shared)
+    else ()
+        target_link_libraries(zr_vm_type_inference_test PRIVATE zr_vm_lib_iteration_static)
+    endif ()
 
     zr_vm_add_unity_test_target(
             zr_vm_canonical_type_graph_test
@@ -3547,9 +3553,15 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_iteration/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_module_system_test)
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_module_system_test PRIVATE zr_vm_lib_iteration_shared)
+    else ()
+        target_link_libraries(zr_vm_module_system_test PRIVATE zr_vm_lib_iteration_static)
+    endif ()
 
     zr_vm_add_unity_test_target(
             zr_vm_metadata_token_model_test
@@ -3918,6 +3930,23 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_enumerator_protocol_test
+            ${CMAKE_SOURCE_DIR}/tests/iterator/test_enumerator_protocol.c
+            ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
+    )
+    target_include_directories(zr_vm_enumerator_protocol_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests/container
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_iteration/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_enumerator_protocol_test)
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_enumerator_protocol_test PRIVATE zr_vm_lib_iteration_shared)
+    else ()
+        target_link_libraries(zr_vm_enumerator_protocol_test PRIVATE zr_vm_lib_iteration_static)
+    endif ()
+    zr_vm_add_unity_test_target(
             zr_vm_container_type_inference_test
             ${CMAKE_SOURCE_DIR}/tests/container/test_container_type_inference.c
             ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
@@ -3969,10 +3998,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
                 ${CMAKE_SOURCE_DIR}/zr_vm_library/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_lib_iteration/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
         )
         zr_vm_link_parser_core_plus_library(${container_target})
+        if (BUILD_SHARED_LIB)
+            target_link_libraries(${container_target} PRIVATE zr_vm_lib_iteration_shared)
+        else ()
+            target_link_libraries(${container_target} PRIVATE zr_vm_lib_iteration_static)
+        endif ()
     endforeach ()
 
     target_include_directories(zr_vm_task_runtime_test PRIVATE

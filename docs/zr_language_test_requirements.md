@@ -249,7 +249,7 @@ var list: LinkedList<int> = new container.LinkedList<int>();
   - open generic 参数 / 约束 / implemented interfaces
   - closed native instance canonical name、字段 / 方法 / meta-method 签名替换
 - 编译 / 类型推断: `tests/container/test_container_type_inference.c`
-  - fixed array 类型身份与 `zr.builtin.IArrayLike` / `zr.builtin.IEnumerable` 适配
+  - fixed array 类型身份与 `zr.builtin.IArrayLike` / `zr.iteration.Iterable` 适配
   - native generic 约束接受 / 拒绝路径
   - `GET_MEMBER` / `SET_MEMBER` 与 `GET_BY_INDEX` / `SET_BY_INDEX` 分流后的返回类型
   - typed function return 上的 native container method 闭型保持
@@ -267,7 +267,7 @@ var list: LinkedList<int> = new container.LinkedList<int>();
 - `Map` / `Set` 迭代顺序无关聚合，不锁顺序只锁总和/集合语义
 - `Map` key 与成员名冲突、`Pair` 相等 key 覆盖不增计数
 - `LinkedList.clear` 后旧节点完全脱链
-- fixed array 作为参数传给 `zr.builtin.IArrayLike<T>` / `zr.builtin.IEnumerable<T>` 约束目标
+- fixed array 作为参数传给 `zr.builtin.IArrayLike<T>` / `zr.iteration.Iterable<T>` 约束目标
 - 同一 closed native generic 在重复 materialize / import alias 场景下保持稳定身份
 
 ### 3.7 基础访问语义 / 迭代 / 协议 / 构造目标测试
@@ -343,7 +343,7 @@ for (var item in values) {
   - 旧访问语义产生的 `.zri/.zro` 视为失效产物，fixture 需要重新编译，不保留运行时兼容分支
 
 **持续回归优先补充点**:
-- protocol conformance 统一走稳定 `protocol_id`，不再依赖 `zr.builtin.IEnumerable` / `zr.builtin.IEnumerator` / `zr.builtin.IArrayLike` 字符串白名单
+- protocol conformance 统一走稳定 `protocol_id`，不再依赖 `zr.iteration.Iterable` / `zr.iteration.Enumerator` / `zr.builtin.IArrayLike` 字符串白名单
 - construct-target resolution 统一走 prototype identity，不再按 `"Array"` / `"Map"` / `"Tensor"` / `"Pair"` 等名字复用 self
 - property accessor、static member、prototype member、dynamic member write opt-in 的顺序冲突和边界错误路径
 - 空迭代器、失效迭代器、GC 下活跃 iterator/constructor 对象、重复导入 `.zro` 的压力测试

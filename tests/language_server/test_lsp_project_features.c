@@ -6238,7 +6238,7 @@ static void test_lsp_builtin_native_module_members_surface_completion_and_hover(
         !completion_array_contains_label(&completions, "Integer") ||
         !completion_array_contains_label(&completions, "TypeInfo") ||
         !completion_array_contains_label(&completions, "Object") ||
-        !completion_array_contains_label(&completions, "IEnumerable")) {
+        completion_array_contains_label(&completions, "IEnumerable")) {
         describe_completion_labels(&completions, completionLabels, sizeof(completionLabels));
         ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -6246,7 +6246,7 @@ static void test_lsp_builtin_native_module_members_surface_completion_and_hover(
                   "LSP Builtin Native Module Members Surface Completion And Hover",
                   completionLabels[0] != '\0'
                       ? completionLabels
-                      : "Builtin module completion should list protocol, root, and wrapper members");
+                      : "Builtin module completion should not list migrated iteration protocol members");
         return;
     }
     ZrCore_Array_Free(state, &completions);

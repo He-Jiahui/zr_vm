@@ -51,6 +51,7 @@ typedef struct SZrInferredType {
     EZrGcBridgeKind gcBridgeKind;    // 显式 Gc<T>/GcBox<T> bridge，不属于 ownership qualifier
     EZrReferenceAccess referenceAccess; // canonical ref access, independent of legacy ownership
     TZrBool isReadonlyView;          // readonly receiver/value capability
+    TZrUInt64 protocolMask;          // canonical capability facts projected by type inference
     SZrArray elementTypes;           // 泛型/数组元素类型（SZrInferredType*），可选
     SZrString *typeName;             // 用户定义类型名（struct/class等），可选
     EZrInferredGenericArgumentKind genericArgumentKind;

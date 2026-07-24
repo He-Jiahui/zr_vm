@@ -8,6 +8,7 @@
 #include "compile_statement_union_switch_validation.h"
 #include "compile_expression_internal.h"
 #include "type_inference_internal.h"
+#include "zr_vm_parser/iteration_contract.h"
 
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/string.h"
@@ -144,7 +145,7 @@ static TZrBool foreach_infer_element_type(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    success = bind_foreach_element_type_from_inferred_iterable(cs, &iterableType, outType);
+    success = ZrParser_EnumeratorBinding_ResolveElementType(cs, &iterableType, outType);
 
     ZrParser_InferredType_Free(cs->state, &iterableType);
     return success;

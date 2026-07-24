@@ -499,10 +499,13 @@ static const TZrChar *compiler_builtin_canonical_name(const TZrChar *typeNameTex
     }
 
     if (strcmp(typeNameText, "Iterable") == 0) {
-        return "zr.builtin.IEnumerable";
+        return "zr.iteration.Iterable";
+    }
+    if (strcmp(typeNameText, "Enumerator") == 0) {
+        return "zr.iteration.Enumerator";
     }
     if (strcmp(typeNameText, "Iterator") == 0) {
-        return "zr.builtin.IEnumerator";
+        return "zr.iteration.Iterator";
     }
     if (strcmp(typeNameText, "ArrayLike") == 0) {
         return "zr.builtin.IArrayLike";
@@ -520,12 +523,6 @@ static const TZrChar *compiler_builtin_canonical_name(const TZrChar *typeNameTex
         strcmp(typeNameText, "zr.system.reflect.CallableType") == 0 ||
         strcmp(typeNameText, "TypeInfo") == 0) {
         return "zr.builtin.TypeInfo";
-    }
-    if (strcmp(typeNameText, "IEnumerable") == 0) {
-        return "zr.builtin.IEnumerable";
-    }
-    if (strcmp(typeNameText, "IEnumerator") == 0) {
-        return "zr.builtin.IEnumerator";
     }
     if (strcmp(typeNameText, "IArrayLike") == 0) {
         return "zr.builtin.IArrayLike";

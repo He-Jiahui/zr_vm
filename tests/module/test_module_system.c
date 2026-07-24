@@ -27,6 +27,7 @@
 #include "zr_vm_library.h"
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_lib_container/module.h"
+#include "zr_vm_lib_iteration/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser.h"
@@ -549,11 +550,11 @@ static const TZrChar *kProbeDeviceImplements[] = {
 };
 
 static const TZrChar *kProbeCounterIterableImplements[] = {
-        "zr.builtin.IEnumerable<int>",
+        "zr.iteration.Iterable<int>",
 };
 
 static const TZrChar *kProbeCounterIteratorImplements[] = {
-        "zr.builtin.IEnumerator<int>",
+        "zr.iteration.Enumerator<int>",
 };
 
 static const ZrLibFieldDescriptor kProbeDeviceFields[] = {
@@ -933,6 +934,7 @@ static SZrState *create_test_state_with_allocator_context(TZrPtr allocatorUserDa
         // 注册 parser 模块
         ZrParser_ToGlobalState_Register(mainState);
         ZrVmLibMath_Register(global);
+        ZrVmLibIteration_Register(global);
         ZrVmLibContainer_Register(global);
         ZrVmLibSystem_Register(global);
     }
@@ -4500,7 +4502,7 @@ static void test_container_module_exports_generic_interfaces_and_constraints(voi
         TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, firstMetaTypeValue->value.object),
                                               "zr.builtin.IArrayLike<T>"));
         TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, secondMetaTypeValue->value.object),
-                                              "zr.builtin.IEnumerable<T>"));
+                                              "zr.iteration.Iterable<T>"));
 
         mapEntry = find_named_entry_in_array(state, typesArray, "name", "Map");
         TEST_ASSERT_NOT_NULL(mapEntry);
@@ -4581,8 +4583,8 @@ static void test_builtin_module_exports_protocols_roots_and_wrappers(void) {
         typesArray = ZR_CAST_OBJECT(state, typesValue->value.object);
         TEST_ASSERT_NOT_NULL(typesArray);
 
-        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "IEnumerable"));
-        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "IEnumerator"));
+        TEST_ASSERT_NULL(find_named_entry_in_array(state, typesArray, "name", "IEnumerable"));
+        TEST_ASSERT_NULL(find_named_entry_in_array(state, typesArray, "name", "IEnumerator"));
         TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "IArrayLike"));
         TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "IEquatable"));
         TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "IHashable"));
@@ -4615,8 +4617,6 @@ static void test_builtin_module_exports_complete_type_hints(void) {
         const TZrChar *symbolName;
         const TZrChar *signature;
     } kBuiltinTypeHints[] = {
-            {"IEnumerable", "interface IEnumerable<T>"},
-            {"IEnumerator", "interface IEnumerator<T>"},
             {"IArrayLike", "interface IArrayLike<T>"},
             {"IEquatable", "interface IEquatable<T>"},
             {"IHashable", "interface IHashable"},
@@ -8585,14 +8585,14 @@ static void test_reference_protocols_native_iterable_fixture_uses_registered_con
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, implementsValue->type);
     implementsArray = ZR_CAST_OBJECT(state, implementsValue->value.object);
     TEST_ASSERT_NOT_NULL(implementsArray);
-    TEST_ASSERT_NOT_NULL(find_string_entry_in_array(state, implementsArray, "zr.builtin.IEnumerable<int>"));
+    TEST_ASSERT_NOT_NULL(find_string_entry_in_array(state, implementsArray, "zr.iteration.Iterable<int>"));
 
     implementsValue = get_object_field_value(state, iteratorEntry, "implements");
     TEST_ASSERT_NOT_NULL(implementsValue);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, implementsValue->type);
     implementsArray = ZR_CAST_OBJECT(state, implementsValue->value.object);
     TEST_ASSERT_NOT_NULL(implementsArray);
-    TEST_ASSERT_NOT_NULL(find_string_entry_in_array(state, implementsArray, "zr.builtin.IEnumerator<int>"));
+    TEST_ASSERT_NOT_NULL(find_string_entry_in_array(state, implementsArray, "zr.iteration.Enumerator<int>"));
 
     methodsValue = get_object_field_value(state, iterableEntry, "methods");
     TEST_ASSERT_NOT_NULL(methodsValue);

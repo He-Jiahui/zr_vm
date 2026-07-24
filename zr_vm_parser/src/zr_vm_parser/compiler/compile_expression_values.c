@@ -31,11 +31,14 @@ static const TZrChar *compile_identifier_builtin_explicit_source(const TZrChar *
         return ZR_NULL;
     }
 
-    if (strcmp(identifierText, "IEnumerable") == 0 || strcmp(identifierText, "Iterable") == 0) {
-        return "zr.builtin.IEnumerable";
+    if (strcmp(identifierText, "Iterable") == 0) {
+        return "zr.iteration.Iterable";
     }
-    if (strcmp(identifierText, "IEnumerator") == 0 || strcmp(identifierText, "Iterator") == 0) {
-        return "zr.builtin.IEnumerator";
+    if (strcmp(identifierText, "Enumerator") == 0) {
+        return "zr.iteration.Enumerator";
+    }
+    if (strcmp(identifierText, "Iterator") == 0) {
+        return "zr.iteration.Iterator";
     }
     if (strcmp(identifierText, "IArrayLike") == 0 || strcmp(identifierText, "ArrayLike") == 0) {
         return "zr.builtin.IArrayLike";
