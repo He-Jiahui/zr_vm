@@ -3,6 +3,7 @@
 #include "command/command.h"
 #include "compiler/compiler.h"
 #include "metadata/zrp_metadata_dump.h"
+#include "migration/migration.h"
 #include "repl/repl.h"
 #include "runtime/runtime.h"
 #include "zr_vm_cli/conf.h"
@@ -58,6 +59,9 @@ int ZrCli_App_Run(int argc, char **argv) {
 
         case ZR_CLI_MODE_CHECK_ZRP_METADATA_VERSION:
             return ZrCli_ZrpMetadataDump_RunVersionCheckPath(command.zrpMetadataVersionCheckPath, stdout, stderr);
+
+        case ZR_CLI_MODE_MIGRATE_SYNTAX:
+            return ZrCli_Migration_Run(&command, stdout, stderr);
 
         case ZR_CLI_MODE_COMPILE_PROJECT: {
             int compileResult = ZrCli_Compiler_CompileProject(&command);

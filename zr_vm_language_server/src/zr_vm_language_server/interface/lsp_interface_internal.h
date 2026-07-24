@@ -120,15 +120,16 @@ SZrSymbol *ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(SZrSemanticAnalyze
                                                               SZrFileRange position);
 ZR_LANGUAGE_SERVER_API SZrFileVersion *ZrLanguageServer_Lsp_GetDocumentFileVersion(SZrLspContext *context,
                                                                                    SZrString *uri);
-SZrFilePosition ZrLanguageServer_Lsp_GetDocumentFilePosition(SZrLspContext *context,
-                                                             SZrString *uri,
-                                                             SZrLspPosition position);
-SZrLspPosition ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(SZrLspContext *context,
-                                                                        SZrString *uri,
-                                                                        SZrFilePosition position);
-SZrLspRange ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(SZrLspContext *context,
-                                                               SZrString *uri,
-                                                               SZrFileRange range);
+ZR_LANGUAGE_SERVER_API SZrFilePosition ZrLanguageServer_Lsp_GetDocumentFilePosition(SZrLspContext *context,
+                                                                                      SZrString *uri,
+                                                                                      SZrLspPosition position);
+ZR_LANGUAGE_SERVER_API SZrLspPosition ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
+    SZrLspContext *context,
+    SZrString *uri,
+    SZrFilePosition position);
+ZR_LANGUAGE_SERVER_API SZrLspRange ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(SZrLspContext *context,
+                                                                                         SZrString *uri,
+                                                                                         SZrFileRange range);
 TZrBool ZrLanguageServer_Lsp_TryRangeFromBinaryMetadataCoordinates(SZrLspContext *context,
                                                                    SZrString *uri,
                                                                    SZrFileRange range,

@@ -18,7 +18,8 @@ typedef enum EZrCliPrimaryMode {
     ZR_CLI_PRIMARY_MODE_PROJECT = 6,
     ZR_CLI_PRIMARY_MODE_DUMP_ZRP_METADATA = 7,
     ZR_CLI_PRIMARY_MODE_DIFF_ZRP_METADATA = 8,
-    ZR_CLI_PRIMARY_MODE_CHECK_ZRP_METADATA_VERSION = 9
+    ZR_CLI_PRIMARY_MODE_CHECK_ZRP_METADATA_VERSION = 9,
+    ZR_CLI_PRIMARY_MODE_MIGRATE_SYNTAX = 10
 } EZrCliPrimaryMode;
 
 static void zr_cli_write_error(TZrChar *buffer, TZrSize bufferSize, const TZrChar *format, ...) {
@@ -49,6 +50,7 @@ static void zr_cli_command_init(SZrCliCommand *command) {
     command->zrpMetadataBeforePath = ZR_NULL;
     command->zrpMetadataAfterPath = ZR_NULL;
     command->zrpMetadataVersionCheckPath = ZR_NULL;
+    command->migrationPath = ZR_NULL;
     command->programArgs = ZR_NULL;
     command->programArgCount = 0;
     command->debugAddress = ZR_NULL;
@@ -70,6 +72,10 @@ static void zr_cli_command_init(SZrCliCommand *command) {
     command->coverageEnabled = ZR_FALSE;
     command->dumpBytecodeEnabled = ZR_FALSE;
     command->heapSummaryEnabled = ZR_FALSE;
+    command->migrationCheck = ZR_FALSE;
+    command->migrationWrite = ZR_FALSE;
+    command->migrationIncludeGenerated = ZR_FALSE;
+    command->migrationFormat = ZR_CLI_MIGRATION_FORMAT_JSON;
 }
 
 static TZrBool zr_cli_command_parse_execution_mode(const TZrChar *text, EZrCliExecutionMode *outMode) {
@@ -138,6 +144,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  %s --dump-zrp-metadata <file>\n"
             "  %s --diff-zrp-metadata <before> <after>\n"
             "  %s --check-zrp-metadata-version <file>\n"
+            "  %s migrate syntax <path> (--check|--write) [--format json|text]\n"
             "  %s -e <code> [-- <args...>]\n"
             "  %s -c <code> [-- <args...>]\n"
             "  %s --project <project.zrp> -m <module> [run-options] [-- <args...>]\n"
@@ -151,6 +158,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  --dump-zrp-metadata <file>       Print zrp metadata section bytes and counts.\n"
             "  --diff-zrp-metadata <a> <b>      Print zrp metadata section byte/count deltas.\n"
             "  --check-zrp-metadata-version <f> Check the zrp metadata header version and shape.\n"
+            "  migrate syntax <path>             Report or safely apply current-parser migration edits.\n"
             "  -e <code>, -c <code>             Execute inline source with a bare global runtime.\n"
             "  --project <project.zrp> -m <m>   Run a specific module entry inside the project.\n"
             "\n"
@@ -203,6 +211,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             name,
             name,
             name,
+            name,
             name);
     if (requiredLength < 0) {
         return ZR_NULL;
@@ -222,6 +231,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  %s --dump-zrp-metadata <file>\n"
              "  %s --diff-zrp-metadata <before> <after>\n"
              "  %s --check-zrp-metadata-version <file>\n"
+             "  %s migrate syntax <path> (--check|--write) [--format json|text]\n"
              "  %s -e <code> [-- <args...>]\n"
              "  %s -c <code> [-- <args...>]\n"
              "  %s --project <project.zrp> -m <module> [run-options] [-- <args...>]\n"
@@ -235,6 +245,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  --dump-zrp-metadata <file>       Print zrp metadata section bytes and counts.\n"
              "  --diff-zrp-metadata <a> <b>      Print zrp metadata section byte/count deltas.\n"
              "  --check-zrp-metadata-version <f> Check the zrp metadata header version and shape.\n"
+             "  migrate syntax <path>             Report or safely apply current-parser migration edits.\n"
              "  -e <code>, -c <code>             Execute inline source with a bare global runtime.\n"
              "  --project <project.zrp> -m <m>   Run a specific module entry inside the project.\n"
              "\n"
@@ -269,6 +280,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  %s --check-zrp-metadata-version module.zrp\n"
              "  %s -e \"return 1;\" -- foo bar\n"
              "  %s --project demo.zrp -m tools.seed --execution-mode binary -- foo bar\n",
+             name,
              name,
              name,
              name,
@@ -370,6 +382,92 @@ TZrBool ZrCli_Command_Parse(int argc,
                                                  argument,
                                                  errorBuffer,
                                                  errorBufferSize)) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
+
+        if (strcmp(argument, "migrate") == 0) {
+            if (!zr_cli_command_set_primary_mode(&primaryMode,
+                                                 ZR_CLI_PRIMARY_MODE_MIGRATE_SYNTAX,
+                                                 "migrate syntax",
+                                                 errorBuffer,
+                                                 errorBufferSize)) {
+                return ZR_FALSE;
+            }
+            if (index + 1 >= argc || strcmp(argv[index + 1], "syntax") != 0) {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "migrate requires the syntax subcommand");
+                return ZR_FALSE;
+            }
+            if (index + 2 >= argc || argv[index + 2][0] == '-') {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Missing <path> after migrate syntax");
+                return ZR_FALSE;
+            }
+            outCommand->migrationPath = argv[index + 2];
+            index += 2;
+            continue;
+        }
+
+        if (strcmp(argument, "--check") == 0 || strcmp(argument, "--write") == 0 ||
+            strcmp(argument, "--include-generated") == 0 || strcmp(argument, "--format") == 0 ||
+            strncmp(argument, "--format=", strlen("--format=")) == 0 ||
+            strcmp(argument, "--language-from") == 0 || strcmp(argument, "--language-to") == 0) {
+            const TZrChar *value = ZR_NULL;
+
+            if (primaryMode != ZR_CLI_PRIMARY_MODE_MIGRATE_SYNTAX) {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "%s requires migrate syntax", argument);
+                return ZR_FALSE;
+            }
+            if (strcmp(argument, "--check") == 0) {
+                if (outCommand->migrationCheck) {
+                    zr_cli_write_error(errorBuffer, errorBufferSize, "Duplicate migration option: --check");
+                    return ZR_FALSE;
+                }
+                outCommand->migrationCheck = ZR_TRUE;
+                continue;
+            }
+            if (strcmp(argument, "--write") == 0) {
+                if (outCommand->migrationWrite) {
+                    zr_cli_write_error(errorBuffer, errorBufferSize, "Duplicate migration option: --write");
+                    return ZR_FALSE;
+                }
+                outCommand->migrationWrite = ZR_TRUE;
+                continue;
+            }
+            if (strcmp(argument, "--include-generated") == 0) {
+                if (outCommand->migrationIncludeGenerated) {
+                    zr_cli_write_error(errorBuffer, errorBufferSize, "Duplicate migration option: --include-generated");
+                    return ZR_FALSE;
+                }
+                outCommand->migrationIncludeGenerated = ZR_TRUE;
+                continue;
+            }
+            if (strncmp(argument, "--format=", strlen("--format=")) == 0) {
+                value = argument + strlen("--format=");
+            } else {
+                if (index + 1 >= argc || argv[index + 1][0] == '-') {
+                    zr_cli_write_error(errorBuffer, errorBufferSize, "Missing value after %s", argument);
+                    return ZR_FALSE;
+                }
+                value = argv[++index];
+            }
+            if (strcmp(argument, "--format") == 0 || strncmp(argument, "--format=", strlen("--format=")) == 0) {
+                if (strcmp(value, "json") == 0) {
+                    outCommand->migrationFormat = ZR_CLI_MIGRATION_FORMAT_JSON;
+                } else if (strcmp(value, "text") == 0) {
+                    outCommand->migrationFormat = ZR_CLI_MIGRATION_FORMAT_TEXT;
+                } else {
+                    zr_cli_write_error(errorBuffer, errorBufferSize, "Unsupported migration format: %s", value);
+                    return ZR_FALSE;
+                }
+                continue;
+            }
+            if (strcmp(argument, "--language-from") == 0 && strcmp(value, "legacy") != 0) {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Migration language-from must be legacy");
+                return ZR_FALSE;
+            }
+            if (strcmp(argument, "--language-to") == 0 && strcmp(value, "current") != 0) {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Migration language-to must be current");
                 return ZR_FALSE;
             }
             continue;
@@ -799,6 +897,25 @@ TZrBool ZrCli_Command_Parse(int argc,
         return ZR_FALSE;
     }
 
+    if (primaryMode == ZR_CLI_PRIMARY_MODE_MIGRATE_SYNTAX &&
+        (interactiveRequested || outCommand->emitIntermediate || outCommand->emitZrm || outCommand->emitAotC ||
+         outCommand->incremental || outCommand->runAfterCompile || outCommand->emitExecutedVia ||
+         outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
+         outCommand->profileEnabled || outCommand->coverageEnabled || outCommand->dumpBytecodeEnabled ||
+         outCommand->heapSummaryEnabled || outCommand->debugAddress != ZR_NULL ||
+         outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP || outCommand->moduleName != ZR_NULL ||
+         outCommand->programArgCount > 0 || compileSeen || explicitProjectSeen || positionalSeen)) {
+        zr_cli_write_error(errorBuffer,
+                           errorBufferSize,
+                           "migrate syntax cannot be combined with run, compile, debug, or output modifiers");
+        return ZR_FALSE;
+    }
+    if (primaryMode == ZR_CLI_PRIMARY_MODE_MIGRATE_SYNTAX &&
+        (outCommand->migrationCheck == outCommand->migrationWrite)) {
+        zr_cli_write_error(errorBuffer, errorBufferSize, "migrate syntax requires exactly one of --check or --write");
+        return ZR_FALSE;
+    }
+
     if (compileSeen && !outCommand->runAfterCompile &&
         (outCommand->emitExecutedVia || outCommand->debugEnabled ||
          outCommand->profileEnabled || outCommand->coverageEnabled || outCommand->dumpBytecodeEnabled ||
@@ -843,6 +960,10 @@ TZrBool ZrCli_Command_Parse(int argc,
         case ZR_CLI_PRIMARY_MODE_CHECK_ZRP_METADATA_VERSION:
             outCommand->mode = ZR_CLI_MODE_CHECK_ZRP_METADATA_VERSION;
             outCommand->zrpMetadataVersionCheckPath = zrpMetadataVersionCheckPath;
+            return ZR_TRUE;
+
+        case ZR_CLI_PRIMARY_MODE_MIGRATE_SYNTAX:
+            outCommand->mode = ZR_CLI_MODE_MIGRATE_SYNTAX;
             return ZR_TRUE;
 
         case ZR_CLI_PRIMARY_MODE_COMPILE:

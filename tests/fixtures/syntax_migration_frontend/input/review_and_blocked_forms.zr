@@ -1,0 +1,3 @@
+%import zr.math
+let dynamic = $(prototype)(1);
+%unknown legacy

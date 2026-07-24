@@ -674,6 +674,58 @@ static int test_zrp_metadata_version_check_mode_parse(void) {
     return 0;
 }
 
+static int test_syntax_migration_mode_parse(void) {
+    char *checkArgv[] = {"zr_vm_cli", "migrate", "syntax", "legacy.zr", "--check", "--format", "json"};
+    char *writeArgv[] = {"zr_vm_cli", "migrate", "syntax", "legacy.zr", "--write", "--format=text",
+                         "--include-generated", "--language-from", "legacy", "--language-to", "current"};
+    char error[256];
+    SZrCliCommand command;
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(7, checkArgv, &command, error, sizeof(error)),
+                    "parse syntax migration check mode");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_MIGRATE_SYNTAX, command.mode, "mode should be syntax migration");
+    CLI_ASSERT_STR_EQ("legacy.zr", command.migrationPath, "migration path should match");
+    CLI_ASSERT_TRUE(command.migrationCheck, "check should be set");
+    CLI_ASSERT_TRUE(!command.migrationWrite, "check should not write");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MIGRATION_FORMAT_JSON, command.migrationFormat, "format should be json");
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(11, writeArgv, &command, error, sizeof(error)),
+                    "parse syntax migration write mode");
+    CLI_ASSERT_TRUE(command.migrationWrite, "write should be set");
+    CLI_ASSERT_TRUE(!command.migrationCheck, "write should not check");
+    CLI_ASSERT_TRUE(command.migrationIncludeGenerated, "generated opt-in should be retained");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MIGRATION_FORMAT_TEXT, command.migrationFormat, "format should be text");
+    return 0;
+}
+
+static int test_syntax_migration_mode_rejects_invalid_combinations(void) {
+    char *missingSyntax[] = {"zr_vm_cli", "migrate", "legacy.zr", "--check"};
+    char *missingPath[] = {"zr_vm_cli", "migrate", "syntax", "--check"};
+    char *missingOperation[] = {"zr_vm_cli", "migrate", "syntax", "legacy.zr"};
+    char *conflictingOperation[] = {"zr_vm_cli", "migrate", "syntax", "legacy.zr", "--check", "--write"};
+    char *invalidFormat[] = {"zr_vm_cli", "migrate", "syntax", "legacy.zr", "--check", "--format", "yaml"};
+    char *invalidDirection[] = {"zr_vm_cli", "migrate", "syntax", "legacy.zr", "--check", "--language-from", "current"};
+    char *runtimeModifier[] = {"zr_vm_cli", "migrate", "syntax", "legacy.zr", "--check", "--run"};
+    char error[256];
+    SZrCliCommand command;
+
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(4, missingSyntax, &command, error, sizeof(error)),
+                    "migration subcommand should require syntax");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(4, missingPath, &command, error, sizeof(error)),
+                    "migration should require a path");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(4, missingOperation, &command, error, sizeof(error)),
+                    "migration should require check or write");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(6, conflictingOperation, &command, error, sizeof(error)),
+                    "migration check and write should conflict");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(7, invalidFormat, &command, error, sizeof(error)),
+                    "migration should reject unsupported format");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(7, invalidDirection, &command, error, sizeof(error)),
+                    "migration should reject unsupported source language");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(6, runtimeModifier, &command, error, sizeof(error)),
+                    "migration should reject runtime modifiers");
+    return 0;
+}
+
 static int test_unknown_and_duplicate_modes_fail(void) {
     char *argv1[] = {"zr_vm_cli", "--wat"};
     char *argv2[] = {"zr_vm_cli", "--compile", "a.zrp", "--compile", "b.zrp"};
@@ -802,6 +854,12 @@ int main(void) {
         return 1;
     }
     if (test_zrp_metadata_version_check_mode_parse() != 0) {
+        return 1;
+    }
+    if (test_syntax_migration_mode_parse() != 0) {
+        return 1;
+    }
+    if (test_syntax_migration_mode_rejects_invalid_combinations() != 0) {
         return 1;
     }
     if (test_unknown_and_duplicate_modes_fail() != 0) {

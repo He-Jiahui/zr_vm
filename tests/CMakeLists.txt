@@ -609,6 +609,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_property_consumer_contracts_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_legacy_migration_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_legacy_migration.c
+    )
+    target_include_directories(zr_vm_legacy_migration_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_legacy_migration_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_reference_place_out_flow_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_reference_place_out_flow.c
     )
@@ -5332,6 +5342,16 @@ if (TARGET zr_vm_cli_executable)
     target_include_directories(zr_vm_cli_repl_e2e_test PRIVATE
             ${CMAKE_SOURCE_DIR}/tests/harness
     )
+
+    add_executable(
+            zr_vm_cli_syntax_migration_test
+            ${CMAKE_SOURCE_DIR}/tests/cli/test_cli_syntax_migration.c
+            ${CMAKE_SOURCE_DIR}/tests/harness/path_support.c
+    )
+    zr_vm_apply_common_test_settings(zr_vm_cli_syntax_migration_test)
+    target_compile_definitions(zr_vm_cli_syntax_migration_test PRIVATE
+            ZR_VM_CLI_EXECUTABLE_PATH="$<TARGET_FILE:zr_vm_cli_executable>"
+    )
 endif ()
 
 if (TARGET zr_vm_cli_executable AND
@@ -6077,6 +6097,51 @@ if (TARGET zr_vm_cli_args_test)
             "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_cli_args_test>"
             "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_cli_args_test>"
             "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_cli_args_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_cli_syntax_migration_test)
+    add_test(
+            NAME cli_syntax_migration
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=cli_syntax_migration"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_cli_syntax_migration_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_cli_syntax_migration_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_cli_syntax_migration_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_cli_syntax_migration_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_legacy_migration_test)
+    add_test(
+            NAME legacy_migration
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=legacy_migration"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_legacy_migration_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_legacy_migration_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_legacy_migration_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_legacy_migration_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_property_consumer_contracts_test)
+    add_test(
+            NAME property_consumer_contracts
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=property_consumer_contracts"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_property_consumer_contracts_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_property_consumer_contracts_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_property_consumer_contracts_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_property_consumer_contracts_test>"
             "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
             "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
             -P ${ZR_VM_SUITE_RUNNER_SCRIPT}

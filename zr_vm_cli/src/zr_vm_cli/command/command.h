@@ -15,8 +15,14 @@ typedef enum EZrCliMode {
     ZR_CLI_MODE_RUN_PROJECT_MODULE = 6,
     ZR_CLI_MODE_DUMP_ZRP_METADATA = 7,
     ZR_CLI_MODE_DIFF_ZRP_METADATA = 8,
-    ZR_CLI_MODE_CHECK_ZRP_METADATA_VERSION = 9
+    ZR_CLI_MODE_CHECK_ZRP_METADATA_VERSION = 9,
+    ZR_CLI_MODE_MIGRATE_SYNTAX = 10
 } EZrCliMode;
+
+typedef enum EZrCliMigrationFormat {
+    ZR_CLI_MIGRATION_FORMAT_JSON = 0,
+    ZR_CLI_MIGRATION_FORMAT_TEXT = 1
+} EZrCliMigrationFormat;
 
 typedef enum EZrCliExecutionMode {
     ZR_CLI_EXECUTION_MODE_INTERP = 0,
@@ -34,6 +40,7 @@ typedef struct SZrCliCommand {
     const TZrChar *zrpMetadataBeforePath;
     const TZrChar *zrpMetadataAfterPath;
     const TZrChar *zrpMetadataVersionCheckPath;
+    const TZrChar *migrationPath;
     const TZrChar *const *programArgs;
     TZrSize programArgCount;
     const TZrChar *debugAddress;
@@ -55,6 +62,10 @@ typedef struct SZrCliCommand {
     TZrBool coverageEnabled;
     TZrBool dumpBytecodeEnabled;
     TZrBool heapSummaryEnabled;
+    TZrBool migrationCheck;
+    TZrBool migrationWrite;
+    TZrBool migrationIncludeGenerated;
+    EZrCliMigrationFormat migrationFormat;
 } SZrCliCommand;
 
 TZrBool ZrCli_Command_Parse(int argc,

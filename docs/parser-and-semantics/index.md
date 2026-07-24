@@ -360,6 +360,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - Syntax 06A 的只读 legacy syntax inventory、确定性 report schema 和显式 exclusion 边界
   - `machineApplicable`、`maybeIncorrect`、`requiresReview`、`blocked` 与 `targetNotPromoted`
     的分类合同，以及下游计划的 promotion gate
+- `legacy-syntax-migration-frontend.md`
+  - parser-owned migration plan、词法屏蔽边界和 source-hash/overlap 防御
+  - 当前 parser/compiler 已证明的 `%owned -> resource` machine edit 与其余 review/gate 边界
+  - property producer ownership、06A LSP handoff 和 06B formal diagnostic 责任划分
 
 ## 阅读顺序
 
@@ -391,5 +395,7 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 24. 再看 `reference-escape-closure-suspension.md`，了解 ref escape lattice、closure capture
     和 suspension 静态边界。
 25. 再看 `syntax-migration-inventory.md`，了解 Syntax 06A 对 legacy source、fixture 和文档 snippet
-    的只读盘点边界，以及 M2/M3 前的 target promotion gate。
-26. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+   的只读盘点边界，以及 M2/M3 前的 target promotion gate。
+26. 再看 `legacy-syntax-migration-frontend.md`，了解 M2 parser plan、可发布 edit 和 formal cutover
+   前的 LSP 边界。
+27. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

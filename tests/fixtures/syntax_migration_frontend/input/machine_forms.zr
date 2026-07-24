@@ -1,0 +1,3 @@
+%module migration.fixture;
+%owned class Handle {}
+let remainder = 9 % 2;

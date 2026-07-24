@@ -71,6 +71,9 @@ doc_type: category-index
   - 入口模式、合法组合、非法组合和 `zr.system.process.arguments` 的查表矩阵
   - parser / runtime 拒绝边界与稳定错误片段
   - 当前单测、集成用例和专用 fixture 的覆盖映射
+- `syntax-migration-command.md`
+  - `migrate syntax` 的 check/write、JSON/text report 和固定 language direction
+  - machine-only write、hash/parser/compiler/atomic replacement guard 与目录 exclusion
 - `zr-debugger-v1-launch-workflow.md`
   - `launch-under-debug` 作为 v1 主路线的模块分层
   - `zr_vm_debug` / `zr_vm_network` / CLI runtime 的职责边界
