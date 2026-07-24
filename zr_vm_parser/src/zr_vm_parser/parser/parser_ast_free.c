@@ -538,6 +538,13 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             }
             break;
         }
+        case ZR_AST_YIELD_STATEMENT: {
+            SZrYieldStatement *yieldStatement = &node->data.yieldStatement;
+            if (yieldStatement->expr != ZR_NULL) {
+                ZrParser_Ast_Free(state, yieldStatement->expr);
+            }
+            break;
+        }
         case ZR_AST_TRY_CATCH_FINALLY_STATEMENT: {
             SZrTryCatchFinallyStatement *tryStmt = &node->data.tryCatchFinallyStatement;
             if (tryStmt->block != ZR_NULL) {

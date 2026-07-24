@@ -60,6 +60,7 @@ static const TZrChar *get_ast_node_type_name(EZrAstNodeType type) {
         case ZR_AST_BREAK_CONTINUE_STATEMENT: return "BREAK_CONTINUE_STATEMENT";
         case ZR_AST_THROW_STATEMENT: return "THROW_STATEMENT";
         case ZR_AST_OUT_STATEMENT: return "OUT_STATEMENT";
+        case ZR_AST_YIELD_STATEMENT: return "YIELD_STATEMENT";
         case ZR_AST_TRY_CATCH_FINALLY_STATEMENT: return "TRY_CATCH_FINALLY_STATEMENT";
         case ZR_AST_KEY_VALUE_PAIR: return "KEY_VALUE_PAIR";
         case ZR_AST_UNPACK_LITERAL: return "UNPACK_LITERAL";

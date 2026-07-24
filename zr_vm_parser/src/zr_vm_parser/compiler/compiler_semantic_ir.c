@@ -97,6 +97,67 @@ static TZrBool compiler_semantic_ir_emit(
                      ZR_SEMANTIC_INSTRUCTION_ID_INVALID);
 }
 
+TZrBool compiler_semantic_ir_record_iterator_yield(
+        SZrCompilerState *cs,
+        TZrTypeId elementTypeId,
+        SZrFileRange sourceRange) {
+    SZrSemanticIrInstructionSpec spec;
+    TZrValueId valueId;
+
+    if (cs == ZR_NULL || !cs->preSemanticIrInitialized ||
+        elementTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+
+    valueId = ZrParser_SemanticIr_AddValue(
+            &cs->preSemanticIr, elementTypeId, sourceRange);
+    if (valueId == ZR_VALUE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_YIELD_VALUE;
+    spec.typeId = elementTypeId;
+    spec.valueId = valueId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    if (!compiler_semantic_ir_emit(cs, &spec)) {
+        return ZR_FALSE;
+    }
+
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_YIELD_SUSPEND;
+    spec.valueId = valueId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    if (!compiler_semantic_ir_emit(cs, &spec)) {
+        return ZR_FALSE;
+    }
+
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_YIELD_RESUME;
+    spec.valueId = valueId;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    return compiler_semantic_ir_emit(cs, &spec);
+}
+
+TZrBool compiler_semantic_ir_record_iterator_complete(
+        SZrCompilerState *cs,
+        SZrFileRange sourceRange) {
+    SZrSemanticIrInstructionSpec spec;
+
+    if (cs == ZR_NULL || !cs->preSemanticIrInitialized) {
+        return ZR_FALSE;
+    }
+
+    memset(&spec, 0, sizeof(spec));
+    spec.opcode = ZR_SEMANTIC_IR_ITERATOR_COMPLETE;
+    spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    spec.sourceRange = sourceRange;
+    return compiler_semantic_ir_emit(cs, &spec);
+}
+
 static const SZrSemanticIrInstruction *compiler_semantic_ir_last_instruction(
         const SZrCompilerState *cs) {
     if (cs == ZR_NULL || !cs->preSemanticIrInitialized ||

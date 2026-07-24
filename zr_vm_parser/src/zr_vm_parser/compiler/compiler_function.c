@@ -16,6 +16,8 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     SZrFunctionDeclaration *funcDecl = &node->data.functionDeclaration;
+    TZrBool functionContainsYield = compiler_iterator_function_contains_yield(
+            funcDecl->body);
 
     if (!ZrParser_CompileTime_RegisterDecoratorFunctionIfAvailable(cs, node, node->location)) {
         return;
@@ -318,8 +320,16 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
 
+    if (!cs->hasError && functionContainsYield &&
+        !compiler_semantic_ir_record_iterator_complete(cs, node->location)) {
+        ZrParser_Compiler_Error(
+                cs,
+                "Failed to record iterator completion semantic fact",
+                node->location);
+    }
+
     // 如果没有显式返回，添加隐式返回
-    if (!cs->hasError) {
+    if (!cs->hasError && !functionContainsYield) {
         if (cs->instructions.length == 0) {
             // 如果没有任何指令，添加隐式返回 null
             compiler_emit_active_scope_ownership_cleanups(cs);

@@ -48,7 +48,8 @@ static TZrBool semantic_ir_opcode_requires_input_value(EZrSemanticIrOpcode opcod
     return (TZrBool)(opcode == ZR_SEMANTIC_IR_STORE ||
                      opcode == ZR_SEMANTIC_IR_INITIALIZE ||
                      opcode == ZR_SEMANTIC_IR_FIELD_INITIALIZE ||
-                     opcode == ZR_SEMANTIC_IR_PROPERTY_SET);
+                     opcode == ZR_SEMANTIC_IR_PROPERTY_SET ||
+                     opcode == ZR_SEMANTIC_IR_YIELD_VALUE);
 }
 
 static TZrBool semantic_ir_field_initialize_place_is_valid(

@@ -522,6 +522,45 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_pre_semantic_ir_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_yield_syntax_test
+            ${CMAKE_SOURCE_DIR}/tests/iterator/test_yield_syntax.c
+    )
+    target_include_directories(zr_vm_yield_syntax_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core(zr_vm_yield_syntax_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_iterator_semantic_ir_test
+            ${CMAKE_SOURCE_DIR}/tests/iterator/test_iterator_semantic_ir.c
+    )
+    target_include_directories(zr_vm_iterator_semantic_ir_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core(zr_vm_iterator_semantic_ir_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_yield_semantic_test
+            ${CMAKE_SOURCE_DIR}/tests/iterator/test_yield_semantic.c
+            ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
+    )
+    target_include_directories(zr_vm_yield_semantic_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests/container
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_iteration/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_yield_semantic_test)
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_yield_semantic_test PRIVATE zr_vm_lib_iteration_shared)
+    else ()
+        target_link_libraries(zr_vm_yield_semantic_test PRIVATE zr_vm_lib_iteration_static)
+    endif ()
+
+    zr_vm_add_unity_test_target(
             zr_vm_artifact_schema_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_artifact_schema.c
             ${CMAKE_SOURCE_DIR}/tests/parser/test_artifact_schema_source_roundtrip.c

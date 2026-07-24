@@ -48,6 +48,10 @@ const TZrChar *ZrParser_SemanticIr_OpcodeName(EZrSemanticIrOpcode opcode) {
         "destructure.leaf_assign",
         "destructure.leaf_bind",
         "destructure.rest",
+        "yield.value",
+        "yield.suspend",
+        "yield.resume",
+        "iterator.complete",
     };
 
     if (opcode < ZR_SEMANTIC_IR_INVALID || opcode >= ZR_SEMANTIC_IR_ENUM_MAX) {

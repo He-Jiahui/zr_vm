@@ -119,6 +119,7 @@ enum EZrToken {
     ZR_TK_THIN_ARROW,    // -> function type delimiter
     ZR_TK_FAT_ARROW,     // => expression body delimiter
     ZR_TK_LET,           // immutable binding keyword (appended for token id stability)
+    ZR_TK_YIELD,         // yield statement keyword (appended for token id stability)
 };
 
 typedef enum EZrToken EZrToken;

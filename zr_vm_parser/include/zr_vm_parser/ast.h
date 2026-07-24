@@ -155,6 +155,9 @@ enum EZrAstNodeType {
     // 统一属性语法（追加节点，避免已有 AST 编号漂移）
     ZR_AST_PROPERTY_DECLARATION,
     ZR_AST_PROPERTY_ACCESSOR,
+
+    // yield 语句（追加节点，避免已有 AST 编号漂移）
+    ZR_AST_YIELD_STATEMENT,
 };
 
 typedef enum EZrAstNodeType EZrAstNodeType;
@@ -950,6 +953,10 @@ typedef struct SZrOutStatement {
     SZrAstNode *expr;
 } SZrOutStatement;
 
+typedef struct SZrYieldStatement {
+    SZrAstNode *expr;
+} SZrYieldStatement;
+
 typedef struct SZrCatchClause {
     SZrAstNodeArray *pattern; // Parameter 数组（可选）
     SZrAstNode *block; // Block
@@ -1123,6 +1130,7 @@ typedef struct SZrAstNode {
         SZrBreakContinueStatement breakContinueStatement;
         SZrThrowStatement throwStatement;
         SZrOutStatement outStatement;
+        SZrYieldStatement yieldStatement;
         SZrCatchClause catchClause;
         SZrTryCatchFinallyStatement tryCatchFinallyStatement;
         SZrIntermediateStatement intermediateStatement;

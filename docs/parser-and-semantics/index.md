@@ -247,6 +247,11 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - pre-execution semantic instructions with owned Place/CFG/Value/loan state
   - compiler ordering and the execution SemIR compatibility boundary
   - separate initialization, availability, borrowing, escape, and reachability joins
+- `iterator-yield-suspension.md`
+  - `yield expression;` as a normal `FunctionDefinition` statement
+  - explicit canonical `zr.iteration.Iterator<T>` carrier and element contract
+  - `YIELD_VALUE` / `YIELD_SUSPEND` / `YIELD_RESUME` / `ITERATOR_COMPLETE`
+    pre-SemIR facts without an iterator runtime frame
 - `ffi-extern-declarations.md`
   - `%extern("lib") decl` 与 `%extern("lib") { decls }` 源级 FFI 语法
   - extern function / struct / enum / delegate 的 declaration metadata 和 lowering 规则

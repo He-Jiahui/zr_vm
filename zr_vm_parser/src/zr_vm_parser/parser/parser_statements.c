@@ -1471,6 +1471,13 @@ static TZrBool parser_brace_starts_object_literal_statement(SZrParserState *ps) 
 SZrAstNode *parse_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
+    if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "iterator") &&
+        peek_token(ps) == ZR_TK_FN) {
+        report_error(ps,
+                     "Iterator function modifiers are not supported; declare an explicit Iterator<T> return carrier and use yield");
+        return ZR_NULL;
+    }
+
     if (parser_async_function_declaration_starts_here(ps)) {
         return parse_reserved_async_function_declaration(ps);
     }
@@ -1535,6 +1542,9 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
 
         case ZR_TK_OUT:
             return parse_out_statement(ps);
+
+        case ZR_TK_YIELD:
+            return parse_yield_statement(ps);
 
         case ZR_TK_THROW:
             return parse_throw_statement(ps);
@@ -1701,6 +1711,13 @@ static SZrAstNode *parse_resource_class_declaration(SZrParserState *ps,
 
 SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
+
+    if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "iterator") &&
+        peek_token(ps) == ZR_TK_FN) {
+        report_error(ps,
+                     "Iterator function modifiers are not supported; declare an explicit Iterator<T> return carrier and use yield");
+        return ZR_NULL;
+    }
 
     if (parser_struct_declaration_starts_here(ps)) {
         return parse_struct_declaration(ps);
@@ -1939,6 +1956,9 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
 
         case ZR_TK_OUT:
             return parse_out_statement(ps);
+
+        case ZR_TK_YIELD:
+            return parse_yield_statement(ps);
 
         case ZR_TK_THROW:
             return parse_throw_statement(ps);

@@ -156,6 +156,17 @@ TZrBool compiler_semantic_ir_end_receiver_call(
         SZrCompilerState *cs,
         TZrLoanId loanId,
         SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_record_iterator_yield(
+        SZrCompilerState *cs,
+        TZrTypeId elementTypeId,
+        SZrFileRange sourceRange);
+TZrBool compiler_semantic_ir_record_iterator_complete(
+        SZrCompilerState *cs,
+        SZrFileRange sourceRange);
+TZrBool compiler_iterator_function_contains_yield(const SZrAstNode *body);
+TZrBool compiler_iterator_current_function_contains_yield(
+        const SZrCompilerState *cs);
+void compiler_iterator_compile_yield(SZrCompilerState *cs, SZrAstNode *node);
 
 static ZR_FORCE_INLINE EZrMetaType compiler_resolve_meta_type_name(SZrString *metaName) {
     TZrNativeString metaNameText;

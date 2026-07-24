@@ -400,6 +400,8 @@ SZrAstNode *parse_break_continue_statement(SZrParserState *ps);
 
 SZrAstNode *parse_out_statement(SZrParserState *ps);
 
+SZrAstNode *parse_yield_statement(SZrParserState *ps);
+
 SZrAstNode *parse_throw_statement(SZrParserState *ps);
 
 SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps);

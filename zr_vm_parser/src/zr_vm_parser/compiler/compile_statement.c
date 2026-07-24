@@ -3406,6 +3406,15 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     stmt = &node->data.returnStatement;
+    if (compiler_iterator_current_function_contains_yield(cs)) {
+        if (stmt->expr != ZR_NULL) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Iterator functions cannot return a value; use return; to complete",
+                    stmt->expr->location);
+        }
+        return;
+    }
     if (stmt->expr != ZR_NULL && !validate_return_ownership_escape(cs, stmt->expr)) {
         return;
     }
@@ -3757,6 +3766,10 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
         
         case ZR_AST_OUT_STATEMENT:
             compile_out_statement(cs, node);
+            break;
+
+        case ZR_AST_YIELD_STATEMENT:
+            compiler_iterator_compile_yield(cs, node);
             break;
         
         case ZR_AST_FUNCTION_DECLARATION:
