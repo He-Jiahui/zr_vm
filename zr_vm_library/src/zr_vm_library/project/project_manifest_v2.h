@@ -13,6 +13,8 @@ TZrBool library_project_manifest_v2_parse_declarations(SZrState *state,
                                                         SZrLibrary_Project *project,
                                                         cJSON *manifestJson);
 
+TZrBool library_project_manifest_v2_validate_writer_input(const SZrLibrary_Project *project);
+
 void library_project_manifest_v2_free_declarations(SZrGlobalState *global,
                                                     SZrLibrary_Project *project);
 

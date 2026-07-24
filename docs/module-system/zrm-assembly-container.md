@@ -122,7 +122,22 @@ or `git` source. Alias targets pointing at packages must name the project packag
 This does not select a provider, open a dependency path, fetch a registry or git source, infer unexported
 submodules, choose a `.zrm` default entry, or emit a lock. V2 rejects legacy `pathAliases`, `references`,
 `dependency`, and `local` fields rather than translating old `$`/`&` behavior into the new declaration layer.
-M2.3 adds canonical writer and lock projection; M2.4 adds artifact entries and provider phase checks.
+M2.3 provides canonical writer and lock projection; M2.4 adds artifact entries and provider phase checks.
+
+### V2 Canonical Writer And Lock Projection
+
+`ZrLibrary_ProjectManifestV2_Write` writes only an already-complete v2 envelope. It serializes base fields in a fixed
+order and sorts aliases, package exports, and dependencies by their canonical identity keys. Its output uses only v2
+`#alias` and `@package` spellings, and it rejects v1 projects or any machine-local locator rather than publishing an
+environment-specific source location. `path` stays relative; `registry` admits a package ID or a non-loopback HTTP(S)
+URI; and `git` admits a non-loopback HTTP(S), SSH, or git URI with an authority. Empty-authority and loopback URI
+forms are not publishable.
+
+Resolved dependency state is not fed back into `.zrp`. Instead,
+`ZrLibrary_ProjectManifestV2_WriteDependencyLock` accepts a lock entry for each declared dependency and emits its
+resolved version, content hash, transitive identity, and source-kind provider fact. Each entry must use the exact
+declared `@package` identity and provider kind. The lock API intentionally has no locator field, so it cannot write a
+machine-local cache path. Artifact default-entry selection and actual provider loading remain M2.4 responsibilities.
 
 `references.<alias>.path` accepts either a `.zrp` project manifest or a `.zrm` assembly. A `.zrm` reference is opened during manifest parse, validated against the declared `assembly` and optional `version`, and then used to resolve imports such as `$mathLocal@2.1.0/ops/sum` to `modules/ops/sum.zro` inside the archive. When the actual provider version and declared min/max are strict `major.minor.patch` values, manifest parsing also rejects invalid or out-of-range `[min, max)` declarations for both `.zrp` and `.zrm` references.
 
@@ -164,6 +179,8 @@ This is intentionally project-assembly scoped. `.zro` execution without an emitt
 - `tests/library/test_zrm_container.c` verifies manifest writing, module/resource entry names, compression mode, byte extraction, duplicate rejection, unsafe logical name rejection, missing manifest rejection, corrupt ZIP rejection, and manifest entry path traversal rejection.
 - `tests/library/test_project_import_resolver.c` verifies `assembly.output`, project resources, `.zrm` references, `$alias@version/module` resolution, provider-location discovery and AOT load-request planning for `.zrp` and `.zrm` references, and loading a module `.zro` from inside the container.
 - `tests/library/test_project_import_provider_version_selection.c` verifies multi-version `.zrp` provider exact alias/version selection and strict declared range rejection.
+- `tests/library/test_project_manifest_v2.c` verifies canonical v2 manifest ordering/read-write-read equivalence,
+  migration, local-locator/loopback writer rejection, and separate dependency-lock projection without source locators.
 - `tests/cli/test_cli_args.c` verifies `--emit-zrm` parsing and compile-only validation.
 - `tests/cli/test_cli_project_incremental.c` verifies `--emit-zrm` packages reachable modules and resources and that the resulting `.zrm` can be opened and read.
 - `tests/cli/test_cli_zrm_fixture.c` builds a provider `.zrm`, references it from a consumer project, runs a consumer module that imports the provider module from the referenced assembly and reads its exported `answer`, then runs a second consumer module that reads the current project `.zrm` resource through `zr.system.assembly`.

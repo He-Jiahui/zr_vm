@@ -74,6 +74,14 @@ typedef struct SZrLibrary_ProjectManifestDependency {
     SZrString *source;
 } SZrLibrary_ProjectManifestDependency;
 
+typedef struct SZrLibrary_ProjectManifestDependencyLockEntry {
+    SZrLibrary_ModuleIdentity packageIdentity;
+    const TZrChar *resolvedVersion;
+    const TZrChar *contentHash;
+    const TZrChar *transitiveIdentity;
+    EZrLibrary_ProjectManifestDependencySourceKind providerSourceKind;
+} SZrLibrary_ProjectManifestDependencyLockEntry;
+
 typedef struct SZrLibrary_ProjectDependencyReference {
     SZrString *name;
     SZrString *assemblyName;
@@ -281,6 +289,17 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolvePackageExport(
         const SZrLibrary_Project *project,
         const SZrLibrary_ModuleSpecifier *packageSpecifier,
         SZrLibrary_ModuleSpecifier *outTargetSpecifier);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_ProjectManifestV2_Write(const SZrLibrary_Project *project,
+                                                          TZrChar *outManifest,
+                                                          TZrSize outManifestSize);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_ProjectManifestV2_WriteDependencyLock(
+        const SZrLibrary_Project *project,
+        const SZrLibrary_ProjectManifestDependencyLockEntry *entries,
+        TZrSize entryCount,
+        TZrChar *outLock,
+        TZrSize outLockSize);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_NormalizeModuleKey(const TZrChar *modulePath,
                                                             TZrChar *buffer,

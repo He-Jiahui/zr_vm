@@ -26,6 +26,7 @@ tests:
   - tests/library/test_project_manifest_v2.c
   - tests/acceptance/2026-07-24-syntax-10r-m1-specifier-foundation.md
   - tests/acceptance/2026-07-24-syntax-10r-m2-v2-declarations.md
+  - tests/acceptance/2026-07-24-syntax-10r-m2-v2-writer-lock.md
 doc_type: module-detail
 ---
 
@@ -85,8 +86,8 @@ through either the current identity or the relative specifier identity.
 ## Scope Boundary
 
 M1 neither selects source, binary, descriptor, or artifact providers nor validates the existence or terminal
-shape of a `file:` target. Syntax 10R M2.2 consumes M1's spelling parser for v2 declaration admission, but
-writer/lock projection and provider selection remain separate promotion gates.
+shape of a `file:` target. Syntax 10R M2.2 consumes M1's spelling parser for v2 declaration admission; M2.3
+publishes the admitted declarations deterministically. Provider selection remains a separate M2.4 promotion gate.
 
 ## V2 Manifest Declarations
 
@@ -109,11 +110,31 @@ The v2 reader rejects v1-only `pathAliases`, `references`, `dependency`, and `lo
 them into the v2 identity model. `project.c` owns only lifecycle installation/freeing; all JSON loops and
 cross-declaration checks stay in `project_manifest_v2.c`.
 
+## Canonical V2 Writer And Lock Projection
+
+`ZrLibrary_ProjectManifestV2_Write` accepts only a complete v2 project and emits the required base envelope followed
+by v2 `aliases`, `package.exports`, and `dependencies`. Base fields have a fixed order; declaration keys are ordered
+by their canonical `#root`, export key, or `@package` identity. Logical segment output uses slash separators, but
+the in-memory `ModuleSpecifier`/`ModuleIdentity` remains structured and dot-normalized.
+
+The publisher rejects v1 migration projects and every machine-local source locator: absolute drive, POSIX, UNC, and
+`file:` locations are never publishable. A `path` dependency must therefore remain relative; a `registry` dependency
+may use a package ID or a non-loopback HTTP(S) URI; and a `git` dependency must use a non-loopback HTTP(S), SSH, or
+git URI with an authority. Empty-authority URIs, drive-like authorities, `localhost`, and IPv4/IPv6 loopback hosts are
+rejected. The writer does not emit `pathAliases`, `$dependency`, `&reference`, `local`, or a machine-local cache path.
+
+`ZrLibrary_ProjectManifestV2_WriteDependencyLock` receives independently resolved
+`SZrLibrary_ProjectManifestDependencyLockEntry` facts. Each lock entry must match exactly one declared package and
+the declaration's source kind. The generated lock contains only resolved version, content hash, transitive identity,
+and structured provider kind. It deliberately does not receive or write a provider locator, so lock data cannot
+accidentally publish a local cache path.
+
 ## Test Coverage
 
 `test_project_module_specifier.c` fixes absolute-domain separator equivalence, native/workspace distinction,
 relative domain-preserving resolution, alias and package decomposition, canonical POSIX/drive/UNC locators,
 and malformed-input rejection. `test_project_manifest_v2.c` covers structured alias/package/dependency storage,
-domain-preserving alias and export resolution, unexported package rejection, v1-field isolation, ambiguous
-dependency source rejection, and malformed roots. The existing `test_project_import_resolver.c` remains a
-regression guard for the untouched legacy resolver path.
+domain-preserving alias and export resolution, deterministic v2 writer and lock projection output, unexported package
+rejection, v1-field isolation, local locator and loopback publication rejection, ambiguous dependency source
+rejection, and malformed roots. The existing `test_project_import_resolver.c` remains a regression guard for the
+untouched legacy resolver path.

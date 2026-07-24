@@ -134,7 +134,7 @@ exact paths.
 - Create: `tests/library/test_project_manifest_v2_writer.c` if the existing test becomes unwieldy
 - Modify: module docs and the M2 status record
 
-- [ ] **Step 1: Write round-trip RED**
+- [x] **Step 1: Write round-trip RED**
 
 ```c
 TEST_ASSERT_TRUE(ZrLibrary_ProjectManifestV2_Write(project, output, sizeof(output)));
@@ -143,13 +143,13 @@ TEST_ASSERT_NULL(strstr(output, "pathAliases"));
 TEST_ASSERT_NULL(strstr(output, "C:/"));
 ```
 
-- [ ] **Step 2: Implement canonical writer**
+- [x] **Step 2: Implement canonical writer**
 
 Emit only v2 spellings (`#alias`, `@package`) in deterministic key order. Write resolved package version,
 content hash, transitive identity, and provider facts into a separate lock projection; never serialize local
-absolute cache paths into the manifest.
+absolute/cache/loopback locators into the manifest.
 
-- [ ] **Step 3: Validate and commit M2.3**
+- [x] **Step 3: Validate and commit M2.3**
 
 Verify read-write-read identity equivalence, writer rejection of incomplete declarations, and migration-reader
 separation across all three toolchains before an exact-path commit.

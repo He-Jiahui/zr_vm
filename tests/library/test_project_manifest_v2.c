@@ -243,6 +243,175 @@ static void test_project_manifest_v2_rejects_legacy_or_ambiguous_declarations(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_project_manifest_v2_writes_canonical_declarations(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrLibrary_Project *project;
+    SZrLibrary_Project *roundTrippedProject;
+    TZrChar output[4096];
+    static const TZrChar manifest[] =
+            "{"
+            "\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"aliases\":{\"#sdk\":\"file:///vendor/sdk\",\"#lib\":\"engine/lib\",\"#math\":\"@math\"},"
+            "\"package\":{\"name\":\"@physics\",\"exports\":{\"./matrix\":\"math/matrix\",\".\":\"index\"}},"
+            "\"dependencies\":{"
+            "\"@render\":{\"version\":\"~2.0.0\",\"registry\":\"central\"},"
+            "\"@math\":{\"version\":\"^1.2.0\",\"path\":\"../math\"},"
+            "\"@engine\":{\"version\":\"3.0.0\",\"git\":\"ssh://[2001:db8::1]/engine.git\"}"
+            "}"
+            "}";
+    static const TZrChar expected[] =
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"aliases\":{\"#lib\":\"engine/lib\",\"#math\":\"@math\",\"#sdk\":\"file:///vendor/sdk\"},"
+            "\"package\":{\"name\":\"@physics\",\"exports\":{\".\":\"index\",\"./matrix\":\"math/matrix\"}},"
+            "\"dependencies\":{"
+            "\"@engine\":{\"version\":\"3.0.0\",\"git\":\"ssh://[2001:db8::1]/engine.git\"},"
+            "\"@math\":{\"version\":\"^1.2.0\",\"path\":\"../math\"},"
+            "\"@render\":{\"version\":\"~2.0.0\",\"registry\":\"central\"}"
+            "}}";
+
+    TEST_ASSERT_NOT_NULL(state);
+    memset(output, 0, sizeof(output));
+    project = new_project(state, manifest);
+    TEST_ASSERT_NOT_NULL(project);
+    TEST_ASSERT_TRUE(ZrLibrary_ProjectManifestV2_Write(project, output, sizeof(output)));
+    TEST_ASSERT_EQUAL_STRING(expected, output);
+    TEST_ASSERT_NULL(strstr(output, "pathAliases"));
+    TEST_ASSERT_NULL(strstr(output, "C:/"));
+
+    roundTrippedProject = new_project(state, output);
+    TEST_ASSERT_NOT_NULL(roundTrippedProject);
+    TEST_ASSERT_EQUAL_UINT32(2u, roundTrippedProject->manifestVersion);
+    TEST_ASSERT_EQUAL_UINT32(3u, roundTrippedProject->manifestAliasCount);
+    TEST_ASSERT_EQUAL_UINT32(2u, roundTrippedProject->packageExportCount);
+    TEST_ASSERT_EQUAL_UINT32(3u, roundTrippedProject->manifestDependencyCount);
+    ZrLibrary_Project_Free(state, roundTrippedProject);
+    ZrLibrary_Project_Free(state, project);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_project_manifest_v2_writer_rejects_migration_and_absolute_path_inputs(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrLibrary_Project *legacyProject;
+    SZrLibrary_Project *nonPortableProject;
+    TZrChar output[1024];
+    static const TZrChar legacyManifest[] =
+            "{\"manifestVersion\":1,\"name\":\"legacy\",\"version\":\"1.0.0\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\"}";
+    static const TZrChar *nonPortableManifests[] = {
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"dependencies\":{\"@math\":{\"version\":\"1.2.0\",\"path\":\"C:/cache/math\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"dependencies\":{\"@math\":{\"version\":\"1.2.0\",\"registry\":\"file:///cache/math\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"dependencies\":{\"@math\":{\"version\":\"1.2.0\",\"git\":\"C:/cache/math.git\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"dependencies\":{\"@math\":{\"version\":\"1.2.0\",\"registry\":\"https:///C:/cache/math\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"dependencies\":{\"@math\":{\"version\":\"1.2.0\",\"git\":\"ssh:///C:/cache/math.git\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"dependencies\":{\"@math\":{\"version\":\"1.2.0\",\"registry\":\"https://C:/cache/math\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"dependencies\":{\"@math\":{\"version\":\"1.2.0\",\"registry\":\"https://127.0.0.1/cache/math\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"dependencies\":{\"@math\":{\"version\":\"1.2.0\",\"git\":\"ssh://localhost/repo.git\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"dependencies\":{\"@math\":{\"version\":\"1.2.0\",\"git\":\"git://[::1]/repo.git\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"dependencies\":{\"@math\":{\"version\":\"1.2.0\",\"registry\":\"https://[0:0:0:0:0:0:0:1]/cache/math\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"dependencies\":{\"@math\":{\"version\":\"1.2.0\",\"git\":\"ssh://[0::1]/repo.git\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"dependencies\":{\"@math\":{\"version\":\"1.2.0\",\"git\":\"git://[::ffff:127.0.0.1]/repo.git\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"dependencies\":{\"@math\":{\"version\":\"1.2.0\",\"git\":\"ssh://[::1%25lo]/repo.git\"}}}"
+    };
+
+    TEST_ASSERT_NOT_NULL(state);
+    memset(output, 0, sizeof(output));
+    legacyProject = new_project(state, legacyManifest);
+    TEST_ASSERT_NOT_NULL(legacyProject);
+    TEST_ASSERT_FALSE(ZrLibrary_ProjectManifestV2_Write(legacyProject, output, sizeof(output)));
+    TEST_ASSERT_EQUAL_CHAR('\0', output[0]);
+    ZrLibrary_Project_Free(state, legacyProject);
+
+    for (TZrSize index = 0u; index < ZR_ARRAY_COUNT(nonPortableManifests); index++) {
+        nonPortableProject = new_project(state, nonPortableManifests[index]);
+        TEST_ASSERT_NOT_NULL(nonPortableProject);
+        TEST_ASSERT_FALSE(ZrLibrary_ProjectManifestV2_Write(nonPortableProject, output, sizeof(output)));
+        TEST_ASSERT_EQUAL_CHAR('\0', output[0]);
+        ZrLibrary_Project_Free(state, nonPortableProject);
+    }
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_project_manifest_v2_writes_dependency_lock_separately(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrLibrary_Project *project;
+    SZrLibrary_ProjectManifestDependencyLockEntry entries[3];
+    TZrChar output[2048];
+    static const TZrChar manifest[] =
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\",\"dependencies\":{"
+            "\"@render\":{\"version\":\"~2.0.0\",\"registry\":\"https://registry.example/render\"},"
+            "\"@math\":{\"version\":\"^1.2.0\",\"path\":\"../math\"},"
+            "\"@engine\":{\"version\":\"3.0.0\",\"git\":\"https://git.example/engine.git\"}}}";
+    static const TZrChar expected[] =
+            "{\"lockVersion\":1,\"dependencies\":{"
+            "\"@engine\":{\"version\":\"3.0.1\",\"contentHash\":\"sha256-engine\","
+            "\"transitiveIdentity\":\"engine-core@3.0.1\",\"provider\":\"git\"},"
+            "\"@math\":{\"version\":\"1.2.3\",\"contentHash\":\"sha256-math\","
+            "\"transitiveIdentity\":\"math-core@1.2.3\",\"provider\":\"path\"},"
+            "\"@render\":{\"version\":\"2.0.4\",\"contentHash\":\"sha256-render\","
+            "\"transitiveIdentity\":\"render-core@2.0.4\",\"provider\":\"registry\"}}}";
+
+    TEST_ASSERT_NOT_NULL(state);
+    project = new_project(state, manifest);
+    TEST_ASSERT_NOT_NULL(project);
+    memset(entries, 0, sizeof(entries));
+    entries[0].packageIdentity = project->manifestDependencies[0].packageIdentity;
+    entries[0].resolvedVersion = "2.0.4";
+    entries[0].contentHash = "sha256-render";
+    entries[0].transitiveIdentity = "render-core@2.0.4";
+    entries[0].providerSourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_REGISTRY;
+    entries[1].packageIdentity = project->manifestDependencies[1].packageIdentity;
+    entries[1].resolvedVersion = "1.2.3";
+    entries[1].contentHash = "sha256-math";
+    entries[1].transitiveIdentity = "math-core@1.2.3";
+    entries[1].providerSourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_PATH;
+    entries[2].packageIdentity = project->manifestDependencies[2].packageIdentity;
+    entries[2].resolvedVersion = "3.0.1";
+    entries[2].contentHash = "sha256-engine";
+    entries[2].transitiveIdentity = "engine-core@3.0.1";
+    entries[2].providerSourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_GIT;
+
+    memset(output, 0, sizeof(output));
+    TEST_ASSERT_TRUE(ZrLibrary_ProjectManifestV2_WriteDependencyLock(project, entries, ZR_ARRAY_COUNT(entries), output,
+                                                                      sizeof(output)));
+    TEST_ASSERT_EQUAL_STRING(expected, output);
+    TEST_ASSERT_NULL(strstr(output, "C:/"));
+    TEST_ASSERT_NULL(strstr(output, "../math"));
+    TEST_ASSERT_FALSE(ZrLibrary_ProjectManifestV2_WriteDependencyLock(project, entries, 2u, output, sizeof(output)));
+    TEST_ASSERT_EQUAL_CHAR('\0', output[0]);
+
+    ZrLibrary_Project_Free(state, project);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -251,6 +420,9 @@ int main(void) {
     RUN_TEST(test_project_manifest_v1_remains_an_explicit_migration_input);
     RUN_TEST(test_project_manifest_v2_reads_structured_alias_package_and_dependency_declarations);
     RUN_TEST(test_project_manifest_v2_rejects_legacy_or_ambiguous_declarations);
+    RUN_TEST(test_project_manifest_v2_writes_canonical_declarations);
+    RUN_TEST(test_project_manifest_v2_writer_rejects_migration_and_absolute_path_inputs);
+    RUN_TEST(test_project_manifest_v2_writes_dependency_lock_separately);
 
     return UNITY_END();
 }
