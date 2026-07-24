@@ -161,23 +161,23 @@ separation across all three toolchains before an exact-path commit.
 - Modify: project public facts only where provider kind/phase must be returned structurally
 - Modify: `docs/module-system/zrm-assembly-container.md` and the M2 status record
 
-- [ ] **Step 1: Write RED for `.zrm` default entry and phase mismatch**
+- [x] **Step 1: Write RED for `.zrm` default entry and phase mismatch**
 
 ```c
 /* Package root maps to an explicit exported/default zrm entry; Runtime cannot consume CompileTool provider. */
 ```
 
-- [ ] **Step 2: Add resolver-result facts**
+- [x] **Step 2: Add resolver-result facts**
 
 Return selected provider kind, provider phase, artifact entry, and contract hash separately from
 `SZrLibrary_ModuleIdentity`; reject unknown domain tags, identity mismatch, and phase mismatch before load.
 
-- [ ] **Step 3: Add `.zro` dependency round-trip**
+- [x] **Step 3: Add `.zro` dependency round-trip**
 
 Serialize and reload the domain-aware dependency identity without locator-derived TypeId fields. Test source,
 zrm, and descriptor provider selection with the same identity.
 
-- [ ] **Step 4: Validate M2 gate and commit M2.4**
+- [x] **Step 4: Validate M2 gate and commit M2.4**
 
 Run manifest/resolver/artifact tests and consumer smoke under GCC, Clang, and MSVC. Update the M2 record with
 the gate evidence and commit only the final exact path set.

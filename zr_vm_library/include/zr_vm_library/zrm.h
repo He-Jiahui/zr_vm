@@ -15,6 +15,12 @@ typedef enum EZrLibrary_ZrmCompression {
     ZR_LIBRARY_ZRM_COMPRESSION_DEFLATE = 1
 } EZrLibrary_ZrmCompression;
 
+typedef enum EZrLibrary_ProviderPhase {
+    ZR_LIBRARY_PROVIDER_PHASE_RUNTIME = 0,
+    ZR_LIBRARY_PROVIDER_PHASE_TEST = 1,
+    ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL = 2
+} EZrLibrary_ProviderPhase;
+
 typedef struct SZrLibrary_ZrmAssemblyInfo {
     const TZrChar *name;
     const TZrChar *version;
@@ -22,6 +28,8 @@ typedef struct SZrLibrary_ZrmAssemblyInfo {
     const TZrChar *publicKeyToken;
     const TZrChar *kind;
     const TZrChar *entryModule;
+    EZrLibrary_ProviderPhase providerPhase;
+    const TZrChar *publicContractHash;
 } SZrLibrary_ZrmAssemblyInfo;
 
 typedef struct SZrLibrary_ZrmPackModule {
@@ -64,6 +72,8 @@ typedef struct SZrLibrary_ZrmArchive {
     TZrChar assemblyPublicKeyToken[128];
     TZrChar assemblyKind[64];
     TZrChar entryModule[ZR_LIBRARY_MAX_PATH_LENGTH];
+    EZrLibrary_ProviderPhase providerPhase;
+    TZrChar publicContractHash[128];
     SZrLibrary_ZrmEntryInfo *modules;
     TZrSize moduleCount;
     SZrLibrary_ZrmEntryInfo *resources;

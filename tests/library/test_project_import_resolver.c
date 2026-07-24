@@ -567,6 +567,9 @@ static void test_project_import_resolver_normalizes_assembly_references(void) {
     TEST_ASSERT_EQUAL_STRING("2.1.0", test_string_text(providerLocation.requestedVersion));
     TEST_ASSERT_EQUAL_STRING("2.0.0", test_string_text(providerLocation.minVersionInclusive));
     TEST_ASSERT_EQUAL_STRING("3.0.0", test_string_text(providerLocation.maxVersionExclusive));
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, providerLocation.providerPhase);
+    TEST_ASSERT_EQUAL_STRING("", providerLocation.artifactEntry);
+    TEST_ASSERT_EQUAL_STRING("", providerLocation.publicContractHash);
     normalize_path_text(providerLocation.sourcePath);
     normalize_path_text(providerLocation.binaryPath);
     normalize_path_text(providerLocation.intermediatePath);
@@ -586,8 +589,11 @@ static void test_project_import_resolver_normalizes_assembly_references(void) {
                              providerError);
     TEST_ASSERT_EQUAL_INT(ZR_AOT_BACKEND_KIND_C, providerLoadRequest.backendKind);
     TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_DEPENDENCY_PACKAGE_PROJECT, providerLoadRequest.artifactKind);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, providerLoadRequest.providerPhase);
     TEST_ASSERT_EQUAL_STRING("$mathLocal@2.1.0/ops/sum", providerLoadRequest.resolvedModuleKey);
     TEST_ASSERT_EQUAL_STRING("ops/sum", providerLoadRequest.descriptorModuleName);
+    TEST_ASSERT_EQUAL_STRING("", providerLoadRequest.artifactEntry);
+    TEST_ASSERT_EQUAL_STRING("", providerLoadRequest.publicContractHash);
     normalize_path_text(providerLoadRequest.sourcePath);
     normalize_path_text(providerLoadRequest.binaryPath);
     normalize_path_text(providerLoadRequest.intermediatePath);
@@ -738,6 +744,8 @@ static void test_project_references_accept_zrm_assembly_container(void) {
     assembly.version = "2.1.0";
     assembly.kind = "library";
     assembly.entryModule = "ops/sum";
+    assembly.providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME;
+    assembly.publicContractHash = "sha256-zr-math-runtime";
     memset(modules, 0, sizeof(modules));
     modules[0].moduleKey = "ops/sum";
     modules[0].sourcePath = modulePath;
@@ -799,6 +807,24 @@ static void test_project_references_accept_zrm_assembly_container(void) {
     TEST_ASSERT_NOT_NULL(providerLocation.archive);
     TEST_ASSERT_NOT_NULL(providerLocation.entry);
     TEST_ASSERT_EQUAL_STRING("modules/ops/sum.zro", providerLocation.entry->entryName);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, providerLocation.providerPhase);
+    TEST_ASSERT_EQUAL_STRING("modules/ops/sum.zro", providerLocation.artifactEntry);
+    TEST_ASSERT_EQUAL_STRING("sha256-zr-math-runtime", providerLocation.publicContractHash);
+
+    memset(&providerLocation, 0, sizeof(providerLocation));
+    memset(providerModuleKey, 0, sizeof(providerModuleKey));
+    memset(providerError, 0, sizeof(providerError));
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_Project_ResolveImportProviderLocation(project,
+                                                                             "main",
+                                                                             "&mathLocal",
+                                                                             providerModuleKey,
+                                                                             sizeof(providerModuleKey),
+                                                                             &providerLocation,
+                                                                             providerError,
+                                                                             sizeof(providerError)),
+                             providerError);
+    TEST_ASSERT_EQUAL_STRING("$mathLocal@2.1.0/ops/sum", providerModuleKey);
+    TEST_ASSERT_EQUAL_STRING("modules/ops/sum.zro", providerLocation.artifactEntry);
 
     memset(&providerLoadRequest, 0, sizeof(providerLoadRequest));
     memset(providerError, 0, sizeof(providerError));
@@ -812,11 +838,14 @@ static void test_project_references_accept_zrm_assembly_container(void) {
                              providerError);
     TEST_ASSERT_EQUAL_INT(ZR_AOT_BACKEND_KIND_LLVM, providerLoadRequest.backendKind);
     TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_DEPENDENCY_PACKAGE_ZRM, providerLoadRequest.artifactKind);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, providerLoadRequest.providerPhase);
     TEST_ASSERT_EQUAL_STRING("$mathLocal@2.1.0/ops/sum", providerLoadRequest.resolvedModuleKey);
     TEST_ASSERT_EQUAL_STRING("ops/sum", providerLoadRequest.descriptorModuleName);
     TEST_ASSERT_NOT_NULL(providerLoadRequest.archive);
     TEST_ASSERT_NOT_NULL(providerLoadRequest.entry);
     TEST_ASSERT_EQUAL_STRING("modules/ops/sum.zro", providerLoadRequest.entry->entryName);
+    TEST_ASSERT_EQUAL_STRING("modules/ops/sum.zro", providerLoadRequest.artifactEntry);
+    TEST_ASSERT_EQUAL_STRING("sha256-zr-math-runtime", providerLoadRequest.publicContractHash);
     TEST_ASSERT_EQUAL_STRING("", providerLoadRequest.libraryPath);
     TEST_ASSERT_TRUE(ZrLibrary_Project_GetDependencyImportVersionRange(project,
                                                                        "main",
@@ -855,6 +884,23 @@ static void test_project_references_accept_zrm_assembly_container(void) {
     if (io.close != ZR_NULL) {
         io.close(state, io.customData);
     }
+
+    project->dependencyPackages[0].zrmArchive.providerPhase = ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL;
+    memset(&providerLoadRequest, 0, sizeof(providerLoadRequest));
+    memset(providerError, 0, sizeof(providerError));
+    TEST_ASSERT_FALSE(ZrLibrary_Project_ResolveImportProviderAotLoadRequest(project,
+                                                                            "main",
+                                                                            "&mathLocal.ops.sum",
+                                                                            ZR_AOT_BACKEND_KIND_LLVM,
+                                                                            &providerLoadRequest,
+                                                                            providerError,
+                                                                            sizeof(providerError)));
+    TEST_ASSERT_NOT_NULL(strstr(providerError, "phase"));
+    ZrCore_Io_Init(state, &io, ZR_NULL, ZR_NULL, ZR_NULL);
+    TEST_ASSERT_FALSE(ZrLibrary_Project_SourceLoadImplementation(state,
+                                                                 "$mathLocal@2.1.0/ops/sum",
+                                                                 ZR_NULL,
+                                                                 &io));
 
     destroy_test_project(state, project);
 }

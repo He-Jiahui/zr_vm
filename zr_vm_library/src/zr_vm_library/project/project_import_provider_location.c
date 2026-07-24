@@ -289,6 +289,15 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportProviderLocation(
                                                &outLocation->archive,
                                                &outLocation->entry)) {
         outLocation->artifactKind = ZR_LIBRARY_PROJECT_DEPENDENCY_PACKAGE_ZRM;
+        outLocation->providerPhase = outLocation->archive->providerPhase;
+        snprintf(outLocation->artifactEntry,
+                 sizeof(outLocation->artifactEntry),
+                 "%s",
+                 outLocation->entry->entryName);
+        snprintf(outLocation->publicContractHash,
+                 sizeof(outLocation->publicContractHash),
+                 "%s",
+                 outLocation->archive->publicContractHash);
         return ZR_TRUE;
     }
 
@@ -307,6 +316,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportProviderLocation(
                                                                                sizeof(outLocation->intermediatePath));
         if (hasSourcePath || hasBinaryPath || hasIntermediatePath) {
             outLocation->artifactKind = ZR_LIBRARY_PROJECT_DEPENDENCY_PACKAGE_PROJECT;
+            outLocation->providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME;
             return ZR_TRUE;
         }
     }
@@ -357,15 +367,26 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportProviderAotLoadRequest(
     }
 
     outRequest->artifactKind = location.artifactKind;
+    outRequest->providerPhase = location.providerPhase;
     outRequest->assemblyName = location.assemblyName;
     outRequest->requestedVersion = location.requestedVersion;
     outRequest->minVersionInclusive = location.minVersionInclusive;
     outRequest->maxVersionExclusive = location.maxVersionExclusive;
     outRequest->archive = location.archive;
     outRequest->entry = location.entry;
+    snprintf(outRequest->artifactEntry, sizeof(outRequest->artifactEntry), "%s", location.artifactEntry);
+    snprintf(outRequest->publicContractHash, sizeof(outRequest->publicContractHash), "%s", location.publicContractHash);
     snprintf(outRequest->sourcePath, sizeof(outRequest->sourcePath), "%s", location.sourcePath);
     snprintf(outRequest->binaryPath, sizeof(outRequest->binaryPath), "%s", location.binaryPath);
     snprintf(outRequest->intermediatePath, sizeof(outRequest->intermediatePath), "%s", location.intermediatePath);
+
+    if (outRequest->providerPhase != ZR_LIBRARY_PROVIDER_PHASE_RUNTIME) {
+        project_import_provider_location_set_error(errorBuffer,
+                                                   errorBufferSize,
+                                                   "provider phase mismatch: runtime cannot consume phase %u",
+                                                   (unsigned)outRequest->providerPhase);
+        return ZR_FALSE;
+    }
 
     if (!project_import_provider_copy_descriptor_module_name(outRequest->resolvedModuleKey,
                                                             outRequest->descriptorModuleName,

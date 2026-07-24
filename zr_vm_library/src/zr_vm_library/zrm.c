@@ -67,6 +67,58 @@ static const TZrChar *zrm_json_string(cJSON *object, const TZrChar *name) {
     return cJSON_IsString(item) && item->valuestring != ZR_NULL ? item->valuestring : ZR_NULL;
 }
 
+static TZrBool zrm_json_optional_string(cJSON *object, const TZrChar *name, const TZrChar **outText) {
+    cJSON *item;
+
+    if (object == ZR_NULL || name == ZR_NULL || outText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outText = ZR_NULL;
+    item = cJSON_GetObjectItemCaseSensitive(object, name);
+    if (item == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (!cJSON_IsString(item) || item->valuestring == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outText = item->valuestring;
+    return ZR_TRUE;
+}
+
+static const TZrChar *zrm_provider_phase_text(EZrLibrary_ProviderPhase phase) {
+    switch (phase) {
+    case ZR_LIBRARY_PROVIDER_PHASE_RUNTIME:
+        return "runtime";
+    case ZR_LIBRARY_PROVIDER_PHASE_TEST:
+        return "test";
+    case ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL:
+        return "compileTool";
+    default:
+        return ZR_NULL;
+    }
+}
+
+static TZrBool zrm_parse_provider_phase(const TZrChar *text, EZrLibrary_ProviderPhase *outPhase) {
+    if (outPhase == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (text == ZR_NULL || strcmp(text, "runtime") == 0) {
+        *outPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME;
+        return ZR_TRUE;
+    }
+    if (strcmp(text, "test") == 0) {
+        *outPhase = ZR_LIBRARY_PROVIDER_PHASE_TEST;
+        return ZR_TRUE;
+    }
+    if (strcmp(text, "compileTool") == 0) {
+        *outPhase = ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL;
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool zrm_read_file(const TZrChar *path, TZrByte **outBytes, TZrSize *outByteCount) {
     FILE *file;
     long fileSize;
@@ -191,6 +243,21 @@ static TZrBool zrm_module_duplicate(const SZrLibrary_ZrmPackModule *modules, TZr
     for (TZrSize index = 0; index < currentIndex; index++) {
         if (modules[index].moduleKey != ZR_NULL &&
             strcmp(modules[index].moduleKey, modules[currentIndex].moduleKey) == 0) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool zrm_pack_request_has_module(const SZrLibrary_ZrmPackModule *modules,
+                                           TZrSize moduleCount,
+                                           const TZrChar *moduleKey) {
+    if (modules == ZR_NULL || moduleKey == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < moduleCount; index++) {
+        if (modules[index].moduleKey != ZR_NULL && strcmp(modules[index].moduleKey, moduleKey) == 0) {
             return ZR_TRUE;
         }
     }
@@ -421,6 +488,7 @@ TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
     TZrBool ok = ZR_FALSE;
     TZrBool writerInitialized = ZR_FALSE;
     TZrChar *manifestText = ZR_NULL;
+    const TZrChar *providerPhase;
 
     zrm_set_error(errorBuffer, errorBufferSize, ZR_NULL);
     if (request == ZR_NULL || request->outputPath == ZR_NULL || request->assembly.name == ZR_NULL ||
@@ -428,8 +496,17 @@ TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
         zrm_set_error(errorBuffer, errorBufferSize, "zrm pack request is missing required assembly fields");
         return ZR_FALSE;
     }
-    if (!ZrLibrary_Zrm_ValidateLogicalName(request->assembly.entryModule)) {
-        zrm_set_error(errorBuffer, errorBufferSize, "zrm entry module '%s' is invalid", request->assembly.entryModule);
+    if (!ZrLibrary_Zrm_ValidateLogicalName(request->assembly.entryModule) ||
+        !zrm_pack_request_has_module(request->modules, request->moduleCount, request->assembly.entryModule)) {
+        zrm_set_error(errorBuffer,
+                      errorBufferSize,
+                      "zrm entry module '%s' does not name a packed module",
+                      request->assembly.entryModule);
+        return ZR_FALSE;
+    }
+    providerPhase = zrm_provider_phase_text(request->assembly.providerPhase);
+    if (providerPhase == ZR_NULL) {
+        zrm_set_error(errorBuffer, errorBufferSize, "zrm provider phase is invalid");
         return ZR_FALSE;
     }
 
@@ -460,6 +537,10 @@ TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
         !zrm_add_manifest_string(assembly, "culture", request->assembly.culture) ||
         !zrm_add_manifest_string(assembly, "publicKeyToken", request->assembly.publicKeyToken) ||
         !zrm_add_manifest_string(assembly, "kind", request->assembly.kind != ZR_NULL ? request->assembly.kind : "library") ||
+        !zrm_add_manifest_string(assembly, "providerPhase", providerPhase) ||
+        !zrm_add_manifest_string(assembly,
+                                 "publicContractHash",
+                                 request->assembly.publicContractHash != ZR_NULL ? request->assembly.publicContractHash : "") ||
         !zrm_add_manifest_string(manifest, "entry", request->assembly.entryModule)) {
         zrm_set_error(errorBuffer, errorBufferSize, "zrm failed to build manifest identity");
         goto cleanup;
@@ -649,6 +730,8 @@ TZrBool ZrLibrary_Zrm_Open(const TZrChar *path,
     cJSON *manifest = ZR_NULL;
     cJSON *assembly = ZR_NULL;
     const TZrChar *format;
+    const TZrChar *providerPhase;
+    const TZrChar *publicContractHash;
     TZrBool ok = ZR_FALSE;
 
     zrm_set_error(errorBuffer, errorBufferSize, ZR_NULL);
@@ -702,6 +785,7 @@ TZrBool ZrLibrary_Zrm_Open(const TZrChar *path,
 
     assembly = cJSON_GetObjectItemCaseSensitive(manifest, "assembly");
     if (!cJSON_IsObject(assembly) ||
+        !zrm_json_optional_string(assembly, "providerPhase", &providerPhase) ||
         !zrm_copy_text(archive->assemblyName, sizeof(archive->assemblyName), zrm_json_string(assembly, "name")) ||
         !zrm_copy_text(archive->assemblyVersion, sizeof(archive->assemblyVersion), zrm_json_string(assembly, "version")) ||
         !zrm_copy_text(archive->assemblyCulture, sizeof(archive->assemblyCulture), zrm_json_string(assembly, "culture")) ||
@@ -709,6 +793,9 @@ TZrBool ZrLibrary_Zrm_Open(const TZrChar *path,
                        sizeof(archive->assemblyPublicKeyToken),
                        zrm_json_string(assembly, "publicKeyToken")) ||
         !zrm_copy_text(archive->assemblyKind, sizeof(archive->assemblyKind), zrm_json_string(assembly, "kind")) ||
+        !zrm_json_optional_string(assembly, "publicContractHash", &publicContractHash) ||
+        !zrm_copy_text(archive->publicContractHash, sizeof(archive->publicContractHash), publicContractHash) ||
+        !zrm_parse_provider_phase(providerPhase, &archive->providerPhase) ||
         !zrm_copy_text(archive->entryModule, sizeof(archive->entryModule), zrm_json_string(manifest, "entry")) ||
         archive->assemblyName[0] == '\0' ||
         archive->assemblyVersion[0] == '\0' ||
@@ -729,6 +816,13 @@ TZrBool ZrLibrary_Zrm_Open(const TZrChar *path,
                                &archive->resourceCount,
                                errorBuffer,
                                errorBufferSize)) {
+        goto cleanup;
+    }
+    if (ZrLibrary_Zrm_FindModule(archive, archive->entryModule) == ZR_NULL) {
+        zrm_set_error(errorBuffer,
+                      errorBufferSize,
+                      "zrm entry module '%s' does not name a module entry",
+                      archive->entryModule);
         goto cleanup;
     }
 

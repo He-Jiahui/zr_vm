@@ -2282,7 +2282,8 @@ static TZrBool library_project_load_zrm_module_entry(SZrState *state,
     TZrChar error[ZR_LIBRARY_ZRM_ERROR_BUFFER_LENGTH];
 
     if (state == ZR_NULL || state->global == ZR_NULL || project == ZR_NULL || moduleName == ZR_NULL || io == ZR_NULL ||
-        !ZrLibrary_Project_ResolveZrmModuleEntry(project, moduleName, &archive, &entry)) {
+        !ZrLibrary_Project_ResolveZrmModuleEntry(project, moduleName, &archive, &entry) ||
+        archive->providerPhase != ZR_LIBRARY_PROVIDER_PHASE_RUNTIME) {
         return ZR_FALSE;
     }
 

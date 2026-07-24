@@ -130,6 +130,8 @@ static void test_zrm_pack_writes_manifest_modules_and_deflated_resources(void) {
     assembly.version = "2.1.0";
     assembly.kind = "library";
     assembly.entryModule = "ops/sum";
+    assembly.providerPhase = ZR_LIBRARY_PROVIDER_PHASE_TEST;
+    assembly.publicContractHash = "sha256-zr-math-test";
 
     memset(modules, 0, sizeof(modules));
     modules[0].moduleKey = "ops/sum";
@@ -157,6 +159,8 @@ static void test_zrm_pack_writes_manifest_modules_and_deflated_resources(void) {
     TEST_ASSERT_EQUAL_STRING("zr.math", archive.assemblyName);
     TEST_ASSERT_EQUAL_STRING("2.1.0", archive.assemblyVersion);
     TEST_ASSERT_EQUAL_STRING("ops/sum", archive.entryModule);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROVIDER_PHASE_TEST, archive.providerPhase);
+    TEST_ASSERT_EQUAL_STRING("sha256-zr-math-test", archive.publicContractHash);
     TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)archive.moduleCount);
     TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)archive.resourceCount);
 
@@ -198,11 +202,14 @@ static void test_zrm_pack_writes_manifest_modules_and_deflated_resources(void) {
 
 static void test_zrm_rejects_unsafe_and_duplicate_logical_names(void) {
     TZrChar archivePath[ZR_TESTS_PATH_MAX];
+    TZrChar modulePath[ZR_TESTS_PATH_MAX];
     TZrChar resourcePath[ZR_TESTS_PATH_MAX];
     TZrChar error[512];
     SZrLibrary_ZrmAssemblyInfo assembly;
+    SZrLibrary_ZrmPackModule modules[1];
     SZrLibrary_ZrmPackResource resources[2];
     SZrLibrary_ZrmPackRequest request;
+    static const TZrByte moduleText[] = "main module\n";
     static const TZrByte resourceText[] = "resource\n";
 
     TEST_ASSERT_TRUE(ZrLibrary_Zrm_ValidateLogicalName("assets/config.json"));
@@ -213,7 +220,9 @@ static void test_zrm_rejects_unsafe_and_duplicate_logical_names(void) {
     TEST_ASSERT_FALSE(ZrLibrary_Zrm_ValidateLogicalName("assets/../bad.txt"));
 
     TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("library", "zrm_container", "duplicate", ".zrm", archivePath, sizeof(archivePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("library", "zrm_container", "duplicate_main", ".zro", modulePath, sizeof(modulePath)));
     TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("library", "zrm_container", "resource", ".txt", resourcePath, sizeof(resourcePath)));
+    TEST_ASSERT_TRUE(write_bytes_file(modulePath, moduleText, sizeof(moduleText) - 1u));
     TEST_ASSERT_TRUE(write_bytes_file(resourcePath, resourceText, sizeof(resourceText) - 1u));
 
     memset(&assembly, 0, sizeof(assembly));
@@ -222,6 +231,9 @@ static void test_zrm_rejects_unsafe_and_duplicate_logical_names(void) {
     assembly.kind = "library";
     assembly.entryModule = "main";
 
+    memset(modules, 0, sizeof(modules));
+    modules[0].moduleKey = "main";
+    modules[0].sourcePath = modulePath;
     memset(resources, 0, sizeof(resources));
     resources[0].logicalName = "config/default.txt";
     resources[0].sourcePath = resourcePath;
@@ -233,6 +245,8 @@ static void test_zrm_rejects_unsafe_and_duplicate_logical_names(void) {
     memset(&request, 0, sizeof(request));
     request.outputPath = archivePath;
     request.assembly = assembly;
+    request.modules = modules;
+    request.moduleCount = 1;
     request.resources = resources;
     request.resourceCount = 2;
 
@@ -304,6 +318,141 @@ static void test_zrm_open_rejects_manifest_path_traversal_entries(void) {
     TEST_ASSERT_NOT_NULL(strstr(error, "unsafe"));
 }
 
+static void test_zrm_provider_phase_defaults_and_rejects_unknown_values(void) {
+    TZrChar archivePath[ZR_TESTS_PATH_MAX];
+    TZrChar error[512];
+    SZrLibrary_ZrmArchive archive;
+    static const TZrChar runtimeManifest[] =
+            "{"
+            "\"format\":\"zr.zrm/v1\","
+            "\"assembly\":{\"name\":\"legacy\",\"version\":\"1.0.0\",\"culture\":\"\",\"publicKeyToken\":\"\",\"kind\":\"library\"},"
+            "\"entry\":\"main\","
+            "\"modules\":[{\"name\":\"main\",\"entry\":\"modules/main.zro\",\"hash\":\"\",\"size\":0,\"crc32\":0,\"compression\":\"store\"}],"
+            "\"resources\":[]"
+            "}";
+    static const TZrChar invalidManifest[] =
+            "{"
+            "\"format\":\"zr.zrm/v1\","
+            "\"assembly\":{\"name\":\"invalid\",\"version\":\"1.0.0\",\"culture\":\"\",\"publicKeyToken\":\"\",\"kind\":\"library\",\"providerPhase\":\"unknown\"},"
+            "\"entry\":\"main\",\"modules\":[],\"resources\":[]"
+            "}";
+    static const TZrChar emptyPhaseManifest[] =
+            "{"
+            "\"format\":\"zr.zrm/v1\","
+            "\"assembly\":{\"name\":\"empty\",\"version\":\"1.0.0\",\"culture\":\"\",\"publicKeyToken\":\"\",\"kind\":\"library\",\"providerPhase\":\"\"},"
+            "\"entry\":\"main\",\"modules\":[],\"resources\":[]"
+            "}";
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("library",
+                                                       "zrm_container",
+                                                       "legacy_phase",
+                                                       ".zrm",
+                                                       archivePath,
+                                                       sizeof(archivePath)));
+    TEST_ASSERT_TRUE(write_zip_with_entries(archivePath,
+                                            ZR_LIBRARY_ZRM_MANIFEST_ENTRY,
+                                            runtimeManifest,
+                                            "modules/main.zro",
+                                            "legacy"));
+    memset(&archive, 0, sizeof(archive));
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_Zrm_Open(archivePath, &archive, error, sizeof(error)), error);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, archive.providerPhase);
+    TEST_ASSERT_EQUAL_STRING("", archive.publicContractHash);
+    ZrLibrary_Zrm_Close(&archive);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("library",
+                                                       "zrm_container",
+                                                       "invalid_phase",
+                                                       ".zrm",
+                                                       archivePath,
+                                                       sizeof(archivePath)));
+    TEST_ASSERT_TRUE(write_zip_with_entries(archivePath,
+                                            ZR_LIBRARY_ZRM_MANIFEST_ENTRY,
+                                            invalidManifest,
+                                            ZR_NULL,
+                                            ZR_NULL));
+    memset(&archive, 0, sizeof(archive));
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_FALSE(ZrLibrary_Zrm_Open(archivePath, &archive, error, sizeof(error)));
+    TEST_ASSERT_NOT_NULL(strstr(error, "invalid assembly identity"));
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("library",
+                                                       "zrm_container",
+                                                       "empty_phase",
+                                                       ".zrm",
+                                                       archivePath,
+                                                       sizeof(archivePath)));
+    TEST_ASSERT_TRUE(write_zip_with_entries(archivePath,
+                                            ZR_LIBRARY_ZRM_MANIFEST_ENTRY,
+                                            emptyPhaseManifest,
+                                            ZR_NULL,
+                                            ZR_NULL));
+    memset(&archive, 0, sizeof(archive));
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_FALSE(ZrLibrary_Zrm_Open(archivePath, &archive, error, sizeof(error)));
+    TEST_ASSERT_NOT_NULL(strstr(error, "invalid assembly identity"));
+}
+
+static void test_zrm_rejects_default_entry_without_a_module(void) {
+    TZrChar archivePath[ZR_TESTS_PATH_MAX];
+    TZrChar modulePath[ZR_TESTS_PATH_MAX];
+    TZrChar error[512];
+    SZrLibrary_ZrmAssemblyInfo assembly;
+    SZrLibrary_ZrmPackModule module;
+    SZrLibrary_ZrmPackRequest request;
+    SZrLibrary_ZrmArchive archive;
+    static const TZrByte moduleBytes[] = "module-bytes";
+    static const TZrChar missingEntryManifest[] =
+            "{"
+            "\"format\":\"zr.zrm/v1\","
+            "\"assembly\":{\"name\":\"broken\",\"version\":\"1.0.0\",\"culture\":\"\",\"publicKeyToken\":\"\",\"kind\":\"library\"},"
+            "\"entry\":\"missing\","
+            "\"modules\":[{\"name\":\"real\",\"entry\":\"modules/real.zro\",\"hash\":\"\",\"size\":0,\"crc32\":0,\"compression\":\"store\"}],"
+            "\"resources\":[]"
+            "}";
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("library",
+                                                       "zrm_container",
+                                                       "missing_default_entry",
+                                                       ".zrm",
+                                                       archivePath,
+                                                       sizeof(archivePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("library",
+                                                       "zrm_container",
+                                                       "missing_default_entry",
+                                                       ".zro",
+                                                       modulePath,
+                                                       sizeof(modulePath)));
+    TEST_ASSERT_TRUE(write_bytes_file(modulePath, moduleBytes, sizeof(moduleBytes) - 1u));
+
+    memset(&assembly, 0, sizeof(assembly));
+    assembly.name = "broken";
+    assembly.version = "1.0.0";
+    assembly.kind = "library";
+    assembly.entryModule = "missing";
+    memset(&module, 0, sizeof(module));
+    module.moduleKey = "real";
+    module.sourcePath = modulePath;
+    memset(&request, 0, sizeof(request));
+    request.outputPath = archivePath;
+    request.assembly = assembly;
+    request.modules = &module;
+    request.moduleCount = 1;
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_FALSE(ZrLibrary_Zrm_WriteArchive(&request, error, sizeof(error)));
+    TEST_ASSERT_NOT_NULL(strstr(error, "does not name a packed module"));
+
+    TEST_ASSERT_TRUE(write_zip_with_manifest_and_entry(archivePath,
+                                                       missingEntryManifest,
+                                                       "modules/real.zro",
+                                                       (const TZrChar *)moduleBytes));
+    memset(&archive, 0, sizeof(archive));
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_FALSE(ZrLibrary_Zrm_Open(archivePath, &archive, error, sizeof(error)));
+    TEST_ASSERT_NOT_NULL(strstr(error, "does not name a module entry"));
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -311,6 +460,8 @@ int main(void) {
     RUN_TEST(test_zrm_rejects_unsafe_and_duplicate_logical_names);
     RUN_TEST(test_zrm_open_rejects_missing_manifest_and_corrupt_zip);
     RUN_TEST(test_zrm_open_rejects_manifest_path_traversal_entries);
+    RUN_TEST(test_zrm_provider_phase_defaults_and_rejects_unknown_values);
+    RUN_TEST(test_zrm_rejects_default_entry_without_a_module);
 
     return UNITY_END();
 }

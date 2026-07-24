@@ -87,7 +87,9 @@ through either the current identity or the relative specifier identity.
 
 M1 neither selects source, binary, descriptor, or artifact providers nor validates the existence or terminal
 shape of a `file:` target. Syntax 10R M2.2 consumes M1's spelling parser for v2 declaration admission; M2.3
-publishes the admitted declarations deterministically. Provider selection remains a separate M2.4 promotion gate.
+publishes the admitted declarations deterministically. M2.4 selects a `.zrm` provider entry and returns provider
+kind, phase, and contract hash as separate location facts. `SZrLibrary_ModuleIdentity` remains only the semantic
+identity and never absorbs an archive path, artifact entry, phase, or contract hash.
 
 ## V2 Manifest Declarations
 

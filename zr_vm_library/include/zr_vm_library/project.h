@@ -120,12 +120,15 @@ typedef struct SZrLibrary_ProjectDependencyPackage {
 
 typedef struct SZrLibrary_ProjectImportProviderLocation {
     EZrLibrary_ProjectDependencyPackageArtifactKind artifactKind;
+    EZrLibrary_ProviderPhase providerPhase;
     SZrString *assemblyName;
     SZrString *requestedVersion;
     SZrString *minVersionInclusive;
     SZrString *maxVersionExclusive;
     const SZrLibrary_ZrmArchive *archive;
     const SZrLibrary_ZrmEntryInfo *entry;
+    TZrChar artifactEntry[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar publicContractHash[128];
     TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar binaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar intermediatePath[ZR_LIBRARY_MAX_PATH_LENGTH];
@@ -134,12 +137,15 @@ typedef struct SZrLibrary_ProjectImportProviderLocation {
 typedef struct SZrLibrary_ProjectImportProviderAotLoadRequest {
     EZrAotBackendKind backendKind;
     EZrLibrary_ProjectDependencyPackageArtifactKind artifactKind;
+    EZrLibrary_ProviderPhase providerPhase;
     SZrString *assemblyName;
     SZrString *requestedVersion;
     SZrString *minVersionInclusive;
     SZrString *maxVersionExclusive;
     const SZrLibrary_ZrmArchive *archive;
     const SZrLibrary_ZrmEntryInfo *entry;
+    TZrChar artifactEntry[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar publicContractHash[128];
     TZrChar resolvedModuleKey[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar descriptorModuleName[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
