@@ -2,6 +2,8 @@
 related_code:
   - zr_vm_core/include/zr_vm_core/type_layout.h
   - zr_vm_core/src/zr_vm_core/type_layout.c
+  - zr_vm_core/include/zr_vm_core/task_frame_runtime.h
+  - zr_vm_core/src/zr_vm_core/task_frame_runtime.c
   - zr_vm_core/include/zr_vm_core/constant_reference.h
   - zr_vm_core/include/zr_vm_core/object.h
   - zr_vm_core/include/zr_vm_core/stack.h
@@ -44,6 +46,8 @@ related_code:
 implementation_files:
   - zr_vm_core/include/zr_vm_core/type_layout.h
   - zr_vm_core/src/zr_vm_core/type_layout.c
+  - zr_vm_core/include/zr_vm_core/task_frame_runtime.h
+  - zr_vm_core/src/zr_vm_core/task_frame_runtime.c
   - zr_vm_core/include/zr_vm_core/constant_reference.h
   - zr_vm_core/include/zr_vm_core/object.h
   - zr_vm_core/include/zr_vm_core/stack.h
@@ -86,6 +90,7 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
   - tests/core/test_type_layout_inline_copy.c
+  - tests/task/test_task_frame_runtime.c
   - tests/core/test_tail_reuse_callinfo_reset.c
   - tests/core/test_object_call_known_native_fast_path.c
   - tests/parser/test_property_access_lowering.c
@@ -108,6 +113,9 @@ doc_type: category-index
 
 Core runtime documents cover VM stack storage, call-frame data movement, ownership-aware inline values, and low-level execution helpers.
 
+- `task-frame-runtime.md`: structured Task/frame state, synchronous no-allocation completion,
+  suspension-only promotion, layout-declared GC/drop maps, result roots, non-Copy transfer,
+  and typed frame pooling without a dynamic-object coroutine fallback.
 - `inline-type-layout-and-byte-stack.md`: type layout descriptors, POD inline copy, field-aware copy/drop, byte-offset stack copy primitives, struct prototype `layoutByteSize/layoutByteAlign`, function frame byte-layout sidecar metadata, runtime prototype layout resolution, VM pre-call and single-result post-call copy for already-inline payloads, conservative tail-reuse fallback for inline parameters, GC/drop traversal, and real native inline-span dispatch context with stack-relocation refresh and span-only inline parameter access for the inline stack migration.
 - `property-accessor-dispatch.md`: descriptor-backed getter/setter dispatch, receiver-source frame/slot
   provenance for inline structs, cache and exception boundaries, static/virtual/interface behavior,

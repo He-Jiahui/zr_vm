@@ -4033,6 +4033,10 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/tests/task/test_task_runtime.c
             ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
     )
+    zr_vm_add_unity_test_target(
+            zr_vm_task_frame_runtime_test
+            ${CMAKE_SOURCE_DIR}/tests/task/test_task_frame_runtime.c
+    )
     if (TARGET zr_vm_thread_shared OR TARGET zr_vm_thread_static)
         zr_vm_add_unity_test_target(
                 zr_vm_thread_runtime_test
@@ -4072,6 +4076,10 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
     )
+    target_include_directories(zr_vm_task_frame_runtime_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
     if (BUILD_SHARED_LIB)
         target_link_libraries(zr_vm_task_runtime_test PRIVATE
                 zr_vm_parser_shared
@@ -4085,6 +4093,7 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
                 zr_vm_library_static
         )
     endif ()
+    zr_vm_link_core(zr_vm_task_frame_runtime_test)
 
     if (TARGET zr_vm_thread_runtime_test)
         target_include_directories(zr_vm_thread_runtime_test PRIVATE

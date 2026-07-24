@@ -250,6 +250,8 @@ AsyncFault(exception)
 
 覆盖sync completion、single/multiple suspension、fault/finally、multi-await、non-Copy result、frame GC/Drop map和pooling。
 
+完成记录：[M2 Task/frame runtime](./12-async-task-job-scheduler/m2-task-frame-runtime.md)。
+
 ### M3 Job/Scheduler
 
 在同一`zr.task`descriptor登记Job/Scheduler及constructor/functions，覆盖single consume、schedule/currentScheduler/yieldNow/delay、must-use和provider ABI。
