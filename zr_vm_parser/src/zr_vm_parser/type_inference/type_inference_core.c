@@ -4647,6 +4647,20 @@ static TZrBool type_name_is_resource_declaration_inference(SZrCompilerState *cs,
                       ZR_DECLARATION_MODIFIER_RESOURCE) != 0);
 }
 
+static void infer_construct_apply_task_job_ownership(
+        SZrCompilerState *cs,
+        SZrInferredType *result) {
+    if (cs != ZR_NULL &&
+        result != ZR_NULL &&
+        result->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE &&
+        inferred_type_implements_protocol_mask(
+                cs,
+                result,
+                ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_JOB))) {
+        result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+    }
+}
+
 TZrBool infer_struct_init_expression_type(SZrCompilerState *cs,
                                           SZrAstNode *node,
                                           SZrInferredType *result) {
@@ -4655,8 +4669,12 @@ TZrBool infer_struct_init_expression_type(SZrCompilerState *cs,
         node->data.structInitExpression.typeInfo == ZR_NULL) {
         return ZR_FALSE;
     }
-    return ZrParser_AstTypeToInferredType_Convert(
-            cs, node->data.structInitExpression.typeInfo, result);
+    if (!ZrParser_AstTypeToInferredType_Convert(
+                cs, node->data.structInitExpression.typeInfo, result)) {
+        return ZR_FALSE;
+    }
+    infer_construct_apply_task_job_ownership(cs, result);
+    return ZR_TRUE;
 }
 
 TZrBool infer_construct_expression_type(SZrCompilerState *cs,
@@ -4859,6 +4877,7 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
                 ZrParser_InferredType_Copy(cs->state, result, &targetType);
                 ZrParser_InferredType_Free(cs->state, &targetType);
                 result->ownershipQualifier = construct->ownershipQualifier;
+                infer_construct_apply_task_job_ownership(cs, result);
                 return ZR_TRUE;
             }
             ZrParser_InferredType_Free(cs->state, &targetType);
@@ -4872,5 +4891,6 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
     }
 
     result->ownershipQualifier = construct->ownershipQualifier;
+    infer_construct_apply_task_job_ownership(cs, result);
     return ZR_TRUE;
 }

@@ -3153,6 +3153,25 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
     }
 }
 
+static TZrBool compile_expression_statement_discards_task(SZrCompilerState *cs, SZrAstNode *expression) {
+    SZrInferredType inferredType;
+    TZrBool discardsTask = ZR_FALSE;
+
+    if (cs == ZR_NULL || expression == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_ExpressionType_Infer(cs, expression, &inferredType) && !cs->hasError) {
+        discardsTask = inferred_type_implements_protocol_mask(
+                cs,
+                &inferredType,
+                ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_HANDLE));
+    }
+    ZrParser_InferredType_Free(cs->state, &inferredType);
+    return discardsTask;
+}
+
 // 编译表达式语句
 static void compile_expression_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize previousStackCount;
@@ -3169,6 +3188,12 @@ static void compile_expression_statement(SZrCompilerState *cs, SZrAstNode *node)
     SZrExpressionStatement *stmt = &node->data.expressionStatement;
     previousStackCount = cs->stackSlotCount;
     if (stmt->expr != ZR_NULL) {
+        if (compile_expression_statement_discards_task(cs, stmt->expr)) {
+            ZrParser_Compiler_Error(cs,
+                                    "Task values must be awaited, returned, or stored",
+                                    stmt->expr->location);
+            return;
+        }
         // 编译表达式
         ZrParser_Expression_Compile(cs, stmt->expr);
         ZrParser_Compiler_TrimStackToCount(cs, previousStackCount);

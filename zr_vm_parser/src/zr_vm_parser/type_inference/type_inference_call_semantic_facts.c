@@ -570,6 +570,7 @@ void type_inference_record_member_call_reference_fact(
     fact.kind = ZR_SEMANTIC_REFERENCE_CALL;
     fact.symbolId = symbolId;
     fact.typeId = callTypeId;
+    fact.contractRole = memberInfo->contractRole;
     fact.name = memberInfo->name;
     fact.signatureDisplay = type_inference_callable_signature_display(
             cs,
@@ -578,9 +579,7 @@ void type_inference_record_member_call_reference_fact(
             &memberInfo->parameterNames,
             &memberInfo->genericParameters,
             callTypeId);
-    if (fact.signatureDisplay == ZR_NULL) {
-        return;
-    }
-    fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID;
+    fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID ||
+                      memberInfo->contractRole != ZR_MEMBER_CONTRACT_ROLE_NONE;
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }

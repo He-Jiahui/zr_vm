@@ -1395,6 +1395,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
             declarationFact.kind = ZR_SEMANTIC_REFERENCE_DECLARATION;
             declarationFact.symbolId = symbolId;
             declarationFact.typeId = typeId;
+            declarationFact.ownershipQualifier = type->ownershipQualifier;
             declarationFact.name = name;
             declarationFact.isResolved = ZR_TRUE;
             ZrParser_SemanticFacts_AppendReference(env->semanticContext, &declarationFact);

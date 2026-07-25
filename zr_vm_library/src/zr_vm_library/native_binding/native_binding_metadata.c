@@ -443,6 +443,7 @@ SZrObject *native_metadata_make_method_entry(SZrState *state, const ZrLibMethodD
     native_metadata_set_string_field(state, object, "returnTypeName", descriptor->returnTypeName);
     native_metadata_set_int_field(state, object, "minArgumentCount", descriptor->minArgumentCount);
     native_metadata_set_int_field(state, object, "maxArgumentCount", descriptor->maxArgumentCount);
+    native_metadata_set_int_field(state, object, "contractRole", (TZrInt64)descriptor->contractRole);
     native_metadata_set_bool_field(state, object, "isStatic", descriptor->isStatic);
     native_metadata_set_bool_field(
             state,
@@ -1251,6 +1252,7 @@ TZrBool native_registry_add_methods(SZrState *state,
                                                          : ZR_MEMBER_DESCRIPTOR_KIND_METHOD;
             descriptor.isStatic = methodDescriptor->isStatic;
             descriptor.isWritable = ZR_FALSE;
+            descriptor.contractRole = methodDescriptor->contractRole;
             ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
         }
 

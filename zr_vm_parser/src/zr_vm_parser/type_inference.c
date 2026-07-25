@@ -1142,6 +1142,7 @@ static void record_identifier_reference_fact(SZrCompilerState *cs,
     fact.kind = ZR_SEMANTIC_REFERENCE_READ;
     fact.symbolId = binding->symbolId;
     fact.typeId = binding->typeId;
+    fact.ownershipQualifier = binding->type.ownershipQualifier;
     fact.name = binding->name;
     fact.isResolved = ZR_TRUE;
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);

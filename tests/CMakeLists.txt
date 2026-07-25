@@ -4034,6 +4034,11 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_task_job_scheduler_test
+            ${CMAKE_SOURCE_DIR}/tests/task/test_task_job_scheduler.c
+            ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_task_frame_runtime_test
             ${CMAKE_SOURCE_DIR}/tests/task/test_task_frame_runtime.c
     )
@@ -4076,6 +4081,11 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
     )
+    target_include_directories(zr_vm_task_job_scheduler_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
     target_include_directories(zr_vm_task_frame_runtime_test PRIVATE
             ${CMAKE_SOURCE_DIR}/tests
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
@@ -4088,6 +4098,20 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
         )
     else ()
         target_link_libraries(zr_vm_task_runtime_test PRIVATE
+                zr_vm_parser_static
+                zr_vm_core_static
+                zr_vm_library_static
+        )
+    endif ()
+    zr_vm_link_core(zr_vm_task_job_scheduler_test)
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_task_job_scheduler_test PRIVATE
+                zr_vm_parser_shared
+                zr_vm_core_shared
+                zr_vm_library_shared
+        )
+    else ()
+        target_link_libraries(zr_vm_task_job_scheduler_test PRIVATE
                 zr_vm_parser_static
                 zr_vm_core_static
                 zr_vm_library_static

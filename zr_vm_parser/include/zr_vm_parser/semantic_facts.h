@@ -170,6 +170,8 @@ typedef struct SZrSemanticReferenceFact {
     EZrSemanticReferenceKind kind;
     TZrSymbolId symbolId;
     TZrTypeId typeId;
+    TZrUInt32 contractRole;
+    EZrOwnershipQualifier ownershipQualifier;
     SZrString *name;
     SZrString *signatureDisplay;
     EZrSemanticDefiniteAssignmentState definiteAssignmentState;

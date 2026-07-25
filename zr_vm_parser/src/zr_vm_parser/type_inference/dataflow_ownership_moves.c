@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "zr_vm_common/zr_contract_conf.h"
 #include "zr_vm_parser/semantic.h"
 
 static TZrBool ownership_move_names_equal(SZrString *left, SZrString *right) {
@@ -64,6 +65,31 @@ static const SZrSemanticReferenceFact *ownership_move_find_call_reference(
               fact->node == callOwner->data.primaryExpression.property)) &&
             fact->isResolved &&
             fact->symbolId != ZR_SEMANTIC_ID_INVALID) {
+            return fact;
+        }
+    }
+    return ZR_NULL;
+}
+
+static const SZrSemanticReferenceFact *ownership_move_find_member_call_reference(
+        const SZrSemanticContext *context,
+        const SZrAstNode *memberNode) {
+    TZrSize index;
+
+    if (context == ZR_NULL || memberNode == ZR_NULL || !context->referenceFacts.isValid) {
+        return ZR_NULL;
+    }
+    for (index = 0; index < context->referenceFacts.length; index++) {
+        const SZrSemanticReferenceFact *fact =
+                (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->referenceFacts,
+                        index);
+        if (fact != ZR_NULL &&
+            fact->kind == ZR_SEMANTIC_REFERENCE_CALL &&
+            fact->isResolved &&
+            (fact->node == memberNode ||
+             (memberNode->type == ZR_AST_MEMBER_EXPRESSION &&
+              fact->node == memberNode->data.memberExpression.property))) {
             return fact;
         }
     }
@@ -217,6 +243,18 @@ static TZrBool ownership_move_argument_is_by_value(const SZrSemanticContext *con
     return parameter != ZR_NULL && parameter->passingMode == ZR_PARAMETER_PASSING_MODE_VALUE;
 }
 
+static TZrBool ownership_move_argument_is_consumed_by_contract(
+        const SZrSemanticContext *context,
+        const SZrAstNode *memberNode,
+        TZrSize argumentIndex) {
+    const SZrSemanticReferenceFact *callReference =
+            ownership_move_find_member_call_reference(context, memberNode);
+
+    return callReference != ZR_NULL &&
+           callReference->contractRole == ZR_MEMBER_CONTRACT_ROLE_TASK_SCHEDULER_SCHEDULE &&
+           argumentIndex == 0U;
+}
+
 static TZrBool ownership_move_argument_requires_weak_upgrade(
         const SZrSemanticContext *context,
         SZrAstNode *callOwner,
@@ -287,20 +325,25 @@ static TZrBool ownership_move_primary_contains_call(const SZrSemanticContext *co
     for (memberIndex = 0; members != ZR_NULL && memberIndex < members->count; memberIndex++) {
         SZrAstNode *member = members->nodes[memberIndex];
         SZrFunctionCall *call;
+        SZrAstNode *callMember;
         TZrSize argumentIndex;
 
         if (member == ZR_NULL || member->type != ZR_AST_FUNCTION_CALL) {
             continue;
         }
         call = &member->data.functionCall;
+        callMember = memberIndex > 0U ? members->nodes[memberIndex - 1U] : ZR_NULL;
         for (argumentIndex = 0; call->args != ZR_NULL && argumentIndex < call->args->count;
              argumentIndex++) {
             SZrAstNode *argument = call->args->nodes[argumentIndex];
             if (ownership_move_expression_is_direct_reference(argument, fact) &&
-                ownership_move_argument_is_by_value(context,
-                                                    primaryNode,
-                                                    call,
-                                                    argumentIndex)) {
+                (ownership_move_argument_is_by_value(context,
+                                                     primaryNode,
+                                                     call,
+                                                     argumentIndex) ||
+                 ownership_move_argument_is_consumed_by_contract(context,
+                                                                  callMember,
+                                                                  argumentIndex))) {
                 return ZR_TRUE;
             }
             if (ownership_move_expression_contains_call(context, argument, fact)) {

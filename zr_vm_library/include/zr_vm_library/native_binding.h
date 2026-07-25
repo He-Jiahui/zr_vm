@@ -210,6 +210,7 @@ typedef struct ZrLibMetaMethodDescriptor {
     TZrUInt32 dispatchFlags;
     FZrLibMetaMethodReadonlyInlineGetFastCallback readonlyInlineGetFastCallback;
     FZrLibMetaMethodReadonlyInlineSetNoResultFastCallback readonlyInlineSetNoResultFastCallback;
+    TZrUInt32 contractRole;
 } ZrLibMetaMethodDescriptor;
 
 typedef struct ZrLibConstantDescriptor {

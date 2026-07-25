@@ -76,6 +76,20 @@ static TZrBool inferred_type_is_task_handle(SZrCompilerState *cs, const SZrInfer
                                                   ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_HANDLE));
 }
 
+static void inferred_type_apply_task_job_ownership(
+        SZrCompilerState *cs,
+        SZrInferredType *type) {
+    if (cs != ZR_NULL &&
+        type != ZR_NULL &&
+        type->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE &&
+        inferred_type_implements_protocol_mask(
+                cs,
+                type,
+                ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_JOB))) {
+        type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+    }
+}
+
 static const SZrTypeValue *native_module_info_get_object_field(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
     SZrString *fieldString;
     SZrTypeValue key;
@@ -539,6 +553,22 @@ static void native_module_info_init_prototype(SZrState *state,
     info->constructorSignature = ZR_NULL;
 }
 
+static TZrBool native_module_info_has_public_constructor(const SZrTypePrototypeInfo *info) {
+    if (info == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0U; index < info->members.length; index++) {
+        const SZrTypeMemberInfo *member = (const SZrTypeMemberInfo *)ZrCore_Array_Get(
+                (SZrArray *)&info->members, index);
+        if (member != ZR_NULL && member->isMetaMethod &&
+            member->metaType == ZR_META_CONSTRUCTOR &&
+            member->accessModifier == ZR_ACCESS_PUBLIC) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool native_module_info_register_canonical_value_definition(
         SZrCompilerState *cs,
         const SZrTypePrototypeInfo *info) {
@@ -550,8 +580,13 @@ static TZrBool native_module_info_register_canonical_value_definition(
     TZrBool registered;
 
     if (cs == ZR_NULL || info == ZR_NULL ||
-        info->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+        (info->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+         info->type != ZR_OBJECT_PROTOTYPE_TYPE_CLASS) ||
         cs->semanticContext == ZR_NULL || info->name == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (info->type == ZR_OBJECT_PROTOTYPE_TYPE_CLASS &&
+        !native_module_info_has_public_constructor(info)) {
         return ZR_TRUE;
     }
 
@@ -579,9 +614,14 @@ static TZrBool native_module_info_register_canonical_value_definition(
         return ZR_FALSE;
     }
 
-    capabilities = ZR_CANONICAL_TYPE_CAPABILITY_VALUE_TYPE |
-                   ZR_CANONICAL_TYPE_CAPABILITY_HAS_GC_REFERENCES;
-    if (info->allowValueConstruction) {
+    capabilities = info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT
+                           ? ZR_CANONICAL_TYPE_CAPABILITY_VALUE_TYPE |
+                                     ZR_CANONICAL_TYPE_CAPABILITY_HAS_GC_REFERENCES
+                           : ZR_CANONICAL_TYPE_CAPABILITY_GC_CLASS |
+                                     ZR_CANONICAL_TYPE_CAPABILITY_HAS_GC_REFERENCES;
+    if (info->allowValueConstruction &&
+        (info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+         native_module_info_has_public_constructor(info))) {
         capabilities |= ZR_CANONICAL_TYPE_CAPABILITY_VALUE_CONSTRUCTIBLE;
     }
     if ((info->modifierFlags & ZR_DECLARATION_MODIFIER_READONLY) != 0U) {
@@ -1082,7 +1122,39 @@ static void native_module_info_add_field_member_with_identity(SZrState *state,
     ZrCore_Array_Push(state, &info->members, &memberInfo);
 }
 
+static SZrString *native_module_info_local_type_name(SZrCompilerState *cs,
+                                                      SZrString *moduleName,
+                                                      SZrString *typeName) {
+    const TZrChar *moduleNameText;
+    const TZrChar *typeNameText;
+    TZrSize moduleNameLength;
+    TZrSize typeNameLength;
+
+    if (cs == ZR_NULL || moduleName == ZR_NULL || typeName == ZR_NULL) {
+        return typeName;
+    }
+
+    moduleNameText = ZrCore_String_GetNativeString(moduleName);
+    typeNameText = ZrCore_String_GetNativeString(typeName);
+    if (moduleNameText == ZR_NULL || typeNameText == ZR_NULL) {
+        return typeName;
+    }
+
+    moduleNameLength = strlen(moduleNameText);
+    typeNameLength = strlen(typeNameText);
+    if (typeNameLength <= moduleNameLength + 1U ||
+        strncmp(typeNameText, moduleNameText, moduleNameLength) != 0 ||
+        typeNameText[moduleNameLength] != '.') {
+        return typeName;
+    }
+
+    return ZrCore_String_Create(cs->state,
+                                (TZrNativeString)(typeNameText + moduleNameLength + 1U),
+                                typeNameLength - moduleNameLength - 1U);
+}
+
 static void native_module_info_copy_parameter_types(SZrCompilerState *cs,
+                                                    SZrString *moduleName,
                                                     SZrTypeMemberInfo *memberInfo,
                                                     SZrObject *parametersArray) {
     TZrSize parameterCount;
@@ -1106,10 +1178,11 @@ static void native_module_info_copy_parameter_types(SZrCompilerState *cs,
         SZrString *parameterName = native_module_info_get_string_field(
                 cs->state, parameterEntry, "name");
         SZrString *typeName = native_module_info_get_string_field(cs->state, parameterEntry, "typeName");
+        SZrString *localTypeName = native_module_info_local_type_name(cs, moduleName, typeName);
         SZrInferredType parameterType;
 
         ZrParser_InferredType_Init(cs->state, &parameterType, ZR_VALUE_TYPE_OBJECT);
-        if (!inferred_type_from_type_name(cs, typeName, &parameterType)) {
+        if (!inferred_type_from_type_name(cs, localTypeName, &parameterType)) {
             ZrParser_InferredType_Free(cs->state, &parameterType);
             continue;
         }
@@ -1226,6 +1299,7 @@ static TZrUInt32 native_module_info_exact_parameter_count(SZrState *state, SZrOb
 }
 
 static void native_module_info_add_method_member_with_identity(SZrCompilerState *cs,
+                                                               SZrString *moduleName,
                                                                SZrTypePrototypeInfo *info,
                                                                EZrAstNodeType memberType,
                                                                SZrString *memberName,
@@ -1240,6 +1314,7 @@ static void native_module_info_add_method_member_with_identity(SZrCompilerState 
                                                                const SZrNativeModuleMemberIdentity *identity);
 
 static void native_module_info_add_method_member(SZrCompilerState *cs,
+                                                 SZrString *moduleName,
                                                  SZrTypePrototypeInfo *info,
                                                  EZrAstNodeType memberType,
                                                  SZrString *memberName,
@@ -1252,6 +1327,7 @@ static void native_module_info_add_method_member(SZrCompilerState *cs,
                                                  SZrObject *genericParametersArray,
                                                  TZrUInt32 contractRole) {
     native_module_info_add_method_member_with_identity(cs,
+                                                       moduleName,
                                                        info,
                                                        memberType,
                                                        memberName,
@@ -1267,6 +1343,7 @@ static void native_module_info_add_method_member(SZrCompilerState *cs,
 }
 
 static void native_module_info_add_method_member_with_identity(SZrCompilerState *cs,
+                                                               SZrString *moduleName,
                                                                SZrTypePrototypeInfo *info,
                                                                EZrAstNodeType memberType,
                                                                SZrString *memberName,
@@ -1294,7 +1371,7 @@ static void native_module_info_add_method_member_with_identity(SZrCompilerState 
     memberInfo.receiverEffect = isStatic ? ZR_CANONICAL_RECEIVER_NONE : receiverEffect;
     memberInfo.parameterCount = parameterCount;
     memberInfo.minArgumentCount = minArgumentCount;
-    memberInfo.returnTypeName = returnTypeName;
+    memberInfo.returnTypeName = native_module_info_local_type_name(cs, moduleName, returnTypeName);
     memberInfo.ownerTypeName = info->name;
     memberInfo.baseDefinitionOwnerTypeName = info->name;
     memberInfo.baseDefinitionName = memberName;
@@ -1313,11 +1390,12 @@ static void native_module_info_add_method_member_with_identity(SZrCompilerState 
         memberInfo.signatureHash = identity->signatureHash;
     }
     native_module_info_copy_method_generic_parameters(cs->state, &memberInfo, genericParametersArray);
-    native_module_info_copy_parameter_types(cs, &memberInfo, parametersArray);
+    native_module_info_copy_parameter_types(cs, moduleName, &memberInfo, parametersArray);
     ZrCore_Array_Push(cs->state, &info->members, &memberInfo);
 }
 
 static void native_module_info_add_meta_method_member(SZrCompilerState *cs,
+                                                      SZrString *moduleName,
                                                       SZrTypePrototypeInfo *info,
                                                       EZrMetaType metaType,
                                                       EZrCanonicalReceiverEffect receiverEffect,
@@ -1358,9 +1436,9 @@ static void native_module_info_add_meta_method_member(SZrCompilerState *cs,
                                         : receiverEffect;
     memberInfo.parameterCount = parameterCount;
     memberInfo.minArgumentCount = minArgumentCount;
-    memberInfo.returnTypeName = returnTypeName;
+    memberInfo.returnTypeName = native_module_info_local_type_name(cs, moduleName, returnTypeName);
     native_module_info_copy_method_generic_parameters(cs->state, &memberInfo, genericParametersArray);
-    native_module_info_copy_parameter_types(cs, &memberInfo, parametersArray);
+    native_module_info_copy_parameter_types(cs, moduleName, &memberInfo, parametersArray);
     ZrCore_Array_Push(cs->state, &info->members, &memberInfo);
 }
 
@@ -1493,6 +1571,7 @@ not_array_type_name:
             ZrCore_Array_Push(cs->state, &result->elementTypes, &argumentType);
         }
         ensure_generic_instance_type_prototype(cs, typeName);
+        inferred_type_apply_task_job_ownership(cs, result);
         ZrCore_Array_Free(cs->state, &genericArgumentTypeNames);
         return ZR_TRUE;
     }
@@ -1545,6 +1624,126 @@ not_array_type_name:
     }
 
     ZrParser_InferredType_InitFull(cs->state, result, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, typeName);
+    inferred_type_apply_task_job_ownership(cs, result);
+    return ZR_TRUE;
+}
+
+static TZrBool native_module_info_register_canonical_constructor_contracts(
+        SZrCompilerState *cs,
+        SZrTypePrototypeInfo *info) {
+    TZrTypeId typeId;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || info == ZR_NULL ||
+        info->type != ZR_OBJECT_PROTOTYPE_TYPE_CLASS || info->name == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (!native_module_info_has_public_constructor(info)) {
+        return ZR_TRUE;
+    }
+    typeId = ZrParser_CanonicalType_FromName(cs->semanticContext, info->name);
+    if (typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    if (!ZrParser_CanonicalType_HasCapabilities(
+                cs->semanticContext,
+                typeId,
+                ZR_CANONICAL_TYPE_CAPABILITY_VALUE_CONSTRUCTIBLE)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize memberIndex = 0U; memberIndex < info->members.length; memberIndex++) {
+        SZrTypeMemberInfo *member = (SZrTypeMemberInfo *)ZrCore_Array_Get(
+                &info->members, memberIndex);
+        SZrCanonicalConstructorParameter *parameters = ZR_NULL;
+        TZrBool registered;
+
+        if (member == ZR_NULL || !member->isMetaMethod ||
+            member->metaType != ZR_META_CONSTRUCTOR ||
+            member->accessModifier != ZR_ACCESS_PUBLIC || member->name == ZR_NULL) {
+            continue;
+        }
+        if (member->parameterTypes.length != member->parameterCount ||
+            member->parameterNames.length != member->parameterCount) {
+            return ZR_FALSE;
+        }
+        member->symbolId = ZrParser_Semantic_RegisterSymbol(
+                cs->semanticContext,
+                member->name,
+                ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                typeId,
+                ZR_SEMANTIC_ID_INVALID,
+                ZR_NULL,
+                (SZrFileRange){0});
+        if (member->symbolId == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_FALSE;
+        }
+        if (member->parameterCount > 0U) {
+            parameters = (SZrCanonicalConstructorParameter *)ZrCore_Memory_RawMallocWithType(
+                    cs->state->global,
+                    sizeof(SZrCanonicalConstructorParameter) * member->parameterCount,
+                    ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            if (parameters == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            memset(parameters,
+                   0,
+                   sizeof(SZrCanonicalConstructorParameter) * member->parameterCount);
+        }
+        for (TZrSize parameterIndex = 0U; parameterIndex < member->parameterCount; parameterIndex++) {
+            const SZrInferredType *parameterType = (const SZrInferredType *)ZrCore_Array_Get(
+                    &member->parameterTypes, parameterIndex);
+            SZrString **parameterName = (SZrString **)ZrCore_Array_Get(
+                    &member->parameterNames, parameterIndex);
+
+            if (parameterType == ZR_NULL || parameterName == ZR_NULL) {
+                if (parameters != ZR_NULL) {
+                    ZrCore_Memory_RawFreeWithType(
+                            cs->state->global,
+                            parameters,
+                            sizeof(SZrCanonicalConstructorParameter) * member->parameterCount,
+                            ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                }
+                return ZR_FALSE;
+            }
+            parameters[parameterIndex].name = *parameterName;
+            parameters[parameterIndex].contract.typeId = ZrParser_CanonicalType_FromInferred(
+                    cs->semanticContext, parameterType);
+            parameters[parameterIndex].contract.escapeUpperBound = ZR_CANONICAL_ESCAPE_FUNCTION;
+            parameters[parameterIndex].contract.entryInitialization =
+                    ZR_CANONICAL_ENTRY_INITIALIZED;
+            parameters[parameterIndex].contract.exitInitialization =
+                    ZR_CANONICAL_EXIT_UNCHANGED;
+            parameters[parameterIndex].contract.acceptsTemporary = ZR_TRUE;
+            parameters[parameterIndex].contract.passingForm = ZR_CANONICAL_PASSING_VALUE;
+            parameters[parameterIndex].contract.callSiteMarker = ZR_CANONICAL_CALL_SITE_NONE;
+            parameters[parameterIndex].hasDefaultValue = ZR_FALSE;
+            if (parameters[parameterIndex].contract.typeId == ZR_SEMANTIC_ID_INVALID) {
+                ZrCore_Memory_RawFreeWithType(
+                        cs->state->global,
+                        parameters,
+                        sizeof(SZrCanonicalConstructorParameter) * member->parameterCount,
+                        ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                return ZR_FALSE;
+            }
+        }
+        registered = ZrParser_CanonicalType_RegisterConstructorContract(
+                cs->semanticContext,
+                typeId,
+                member->symbolId,
+                parameters,
+                member->parameterCount,
+                ZR_TRUE);
+        if (parameters != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(
+                    cs->state->global,
+                    parameters,
+                    sizeof(SZrCanonicalConstructorParameter) * member->parameterCount,
+                    ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        }
+        if (!registered) {
+            return ZR_FALSE;
+        }
+    }
     return ZR_TRUE;
 }
 
@@ -2533,6 +2732,7 @@ translate_module_info:
                                                     &nativeSignatureRidCursor,
                                                     &identity);
             native_module_info_add_method_member_with_identity(cs,
+                                                               moduleName,
                                                                &modulePrototype,
                                                                ZR_AST_CLASS_METHOD,
                                                                name,
@@ -2764,6 +2964,7 @@ translate_module_info:
                     native_module_info_get_array_field(cs->state, methodEntry, "genericParameters");
             if (methodName != ZR_NULL) {
                 native_module_info_add_method_member(cs,
+                                                     moduleName,
                                                      &typePrototype,
                                                      methodMemberType,
                                                      methodName,
@@ -2801,6 +3002,7 @@ translate_module_info:
             }
 
             native_module_info_add_meta_method_member(cs,
+                                                      moduleName,
                                                       &typePrototype,
                                                       (EZrMetaType)metaTypeValue,
                                                       isReadonlyReceiver
@@ -2829,6 +3031,10 @@ translate_module_info:
         }
 
         if (!native_module_info_register_canonical_value_definition(
+                    cs, &typePrototype)) {
+            goto cleanup;
+        }
+        if (!native_module_info_register_canonical_constructor_contracts(
                     cs, &typePrototype)) {
             goto cleanup;
         }

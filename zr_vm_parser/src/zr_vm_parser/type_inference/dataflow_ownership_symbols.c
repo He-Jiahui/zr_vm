@@ -66,6 +66,47 @@ static EZrOwnershipQualifier ownership_symbol_type_qualifier(
     return ZR_OWNERSHIP_QUALIFIER_NONE;
 }
 
+static EZrOwnershipQualifier ownership_symbol_declaration_qualifier(
+        const SZrSemanticContext *context,
+        TZrSymbolId symbolId) {
+    TZrSize index;
+
+    if (context == ZR_NULL || !context->referenceFacts.isValid ||
+        symbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+    for (index = 0; index < context->referenceFacts.length; index++) {
+        const SZrSemanticReferenceFact *fact =
+                (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->referenceFacts,
+                        index);
+        if (fact != ZR_NULL &&
+            fact->kind == ZR_SEMANTIC_REFERENCE_DECLARATION &&
+            fact->symbolId == symbolId &&
+            fact->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE) {
+            return fact->ownershipQualifier;
+        }
+    }
+    return ZR_OWNERSHIP_QUALIFIER_NONE;
+}
+
+static EZrOwnershipQualifier ownership_symbol_reference_qualifier(
+        const SZrSemanticContext *context,
+        const SZrSemanticReferenceFact *fact) {
+    EZrOwnershipQualifier qualifier;
+
+    if (fact == ZR_NULL) {
+        return ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+    if (fact->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE) {
+        return fact->ownershipQualifier;
+    }
+    qualifier = ownership_symbol_declaration_qualifier(context, fact->symbolId);
+    return qualifier != ZR_OWNERSHIP_QUALIFIER_NONE
+                   ? qualifier
+                   : ownership_symbol_type_qualifier(context, fact->typeId);
+}
+
 static const SZrSemanticReferenceFact *ownership_symbol_declaration_reference(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId) {
@@ -209,7 +250,7 @@ TZrBool ZrParser_DataflowOwnership_SymbolMapBuild(
             fact->symbolId == ZR_SEMANTIC_ID_INVALID) {
             continue;
         }
-        qualifier = ownership_symbol_type_qualifier(context, fact->typeId);
+        qualifier = ownership_symbol_reference_qualifier(context, fact);
         if (qualifier == ZR_OWNERSHIP_QUALIFIER_NONE) {
             continue;
         }

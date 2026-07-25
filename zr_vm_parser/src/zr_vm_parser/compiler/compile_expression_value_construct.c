@@ -145,7 +145,11 @@ static TZrBool value_construct_emit_explicit_constructor(
         TZrPlaceId destinationPlaceId,
         const SZrBoundValueConstruct *bound) {
     const SZrTypeMemberInfo *member;
+    SZrTypePrototypeInfo *prototype;
+    SZrTypeValue typeNameValue;
     TZrUInt32 functionSlot;
+    TZrUInt32 typeNameConstantIndex;
+    TZrUInt32 constructorMemberId;
     TZrUInt32 *argumentSlots = ZR_NULL;
     TZrUInt32 *sourceArgumentSlots = ZR_NULL;
     TZrBool *provided = ZR_NULL;
@@ -157,10 +161,33 @@ static TZrBool value_construct_emit_explicit_constructor(
         return ZR_FALSE;
     }
     member = value_construct_find_constructor(cs, typeName, bound->constructorId);
-    if (member == ZR_NULL || member->compiledFunction == ZR_NULL) {
+    if (member == ZR_NULL) {
         ZrParser_Compiler_Error(
                 cs, "Resolved struct constructor declaration is unavailable", node->location);
         return ZR_FALSE;
+    }
+    prototype = find_compiler_type_prototype(cs, typeName);
+    if (member->compiledFunction == ZR_NULL) {
+        if (prototype == ZR_NULL || !prototype->isNativeRuntime ||
+            prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+            ZrParser_Compiler_Error(
+                    cs, "Resolved native constructor target is unavailable", node->location);
+            return ZR_FALSE;
+        }
+        ZrCore_Value_InitAsRawObject(
+                cs->state, &typeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
+        typeNameValue.type = ZR_VALUE_TYPE_STRING;
+        typeNameConstantIndex = add_constant(cs, &typeNameValue);
+        emit_instruction(
+                cs,
+                create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_OBJECT), (TZrUInt16)targetSlot));
+        emit_instruction(
+                cs,
+                create_instruction_2(
+                        ZR_INSTRUCTION_ENUM(TO_OBJECT),
+                        (TZrUInt16)targetSlot,
+                        (TZrUInt16)targetSlot,
+                        (TZrUInt16)typeNameConstantIndex));
     }
     functionSlot = targetSlot - 1U;
     parameterCount = member->parameterCount;
@@ -260,9 +287,26 @@ static TZrBool value_construct_emit_explicit_constructor(
         }
     }
 
-    if (!emit_member_function_constant_to_slot(
-                cs, functionSlot, member, node->location)) {
-        goto cleanup;
+    if (member->compiledFunction != ZR_NULL) {
+        if (!emit_member_function_constant_to_slot(
+                    cs, functionSlot, member, node->location)) {
+            goto cleanup;
+        }
+    } else {
+        constructorMemberId = compiler_get_or_add_member_entry_for_type_member(
+                cs, member->name, member, 0U);
+        if (constructorMemberId == ZR_PARSER_MEMBER_ID_NONE) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to bind resolved native constructor", node->location);
+            goto cleanup;
+        }
+        emit_instruction(
+                cs,
+                create_instruction_2(
+                        ZR_INSTRUCTION_ENUM(GET_MEMBER),
+                        (TZrUInt16)functionSlot,
+                        (TZrUInt16)targetSlot,
+                        (TZrUInt16)constructorMemberId));
     }
     emit_instruction(
             cs,
