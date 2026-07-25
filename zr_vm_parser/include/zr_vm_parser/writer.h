@@ -8,6 +8,7 @@
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_common/zr_aot_abi.h"
+#include "zr_vm_core/artifact_schema.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/state.h"
@@ -93,6 +94,19 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFileWithOptions(SZrState *state
                                                                  const TZrChar *filename,
                                                                  const SZrBinaryWriterOptions *options);
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFile(SZrState *state, SZrFunction *function, const TZrChar *filename);
+
+/*
+ * Writes a canonical .zri/.zro scheduler contract artifact from a compiled
+ * source function. This deliberately does not route through the legacy .zrb
+ * stream writer: every serialized TypeRef is joined by provider token,
+ * signature, layout, and module identities recorded on the source fact.
+ */
+ZR_PARSER_API EZrArtifactStatus ZrParser_Writer_WriteSchedulerArtifactFile(
+        SZrState *state,
+        const SZrFunction *function,
+        const TZrChar *filename,
+        EZrArtifactKind kind,
+        SZrArtifactDiagnostic *diagnostic);
 
 // 将 native helper 函数指针映射为稳定的可序列化 helper id
 ZR_PARSER_API TZrUInt64 ZrParser_Writer_GetSerializableNativeHelperId(FZrNativeFunction function);

@@ -2882,6 +2882,7 @@ translate_module_info:
                                           &typePrototype,
                                           name,
                                           (EZrObjectPrototypeType)prototypeTypeValue);
+        typePrototype.importModuleName = moduleName;
         native_module_info_copy_type_metadata(cs, &typePrototype, entry);
         typePrototype.protocolMask = protocolMask;
         if ((protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE)) != 0) {
@@ -3684,9 +3685,10 @@ infer_regular_member_access:
                                                        &nextType);
                     }
                     if (!compiler_scheduler_artifact_record_resolved_call(
-                                cs,
-                                &currentType,
-                                memberInfo)) {
+                                 cs,
+                                 &currentType,
+                                 memberInfo,
+                                 &resolvedMemberSignature)) {
                         ZrParser_InferredType_Free(cs->state, &currentType);
                         ZrParser_InferredType_Free(cs->state, &nextType);
                         free_resolved_call_signature(cs->state, &resolvedMemberSignature);

@@ -203,14 +203,35 @@ typedef struct SZrFunctionTypedLocalBinding {
  * row: the artifact writer must still join its canonical TypeId with an exact
  * TypeDef or TypeRef before serializing anything.
  */
+typedef struct SZrFunctionArtifactSourceTypeIdentity {
+    TZrMetadataToken metadataToken;
+    TZrMetadataToken signatureToken;
+    TZrUInt64 signatureHash;
+    TZrUInt32 layoutVersion;
+    TZrUInt32 reserved0;
+    TZrUInt64 layoutHash;
+    TZrUInt64 moduleSignatureHash;
+} SZrFunctionArtifactSourceTypeIdentity;
+
 typedef struct SZrFunctionSchedulerSourceFact {
     TZrUInt32 schedulerTypeId;
+    TZrUInt32 taskTypeId;
+    TZrUInt32 jobTypeId;
+    TZrUInt32 schedulerAbiVersion;
     TZrMetadataToken scheduleMemberToken;
     TZrMetadataToken scheduleSignatureToken;
     TZrUInt64 scheduleSignatureHash;
     TZrUInt64 schedulerProtocolMask;
     TZrUInt32 contractRole;
+    TZrUInt32 schedulerPolicyMask;
+    TZrUInt32 attachedRequirementFlags;
+    TZrUInt32 isolatedRequirementFlags;
     TZrUInt32 reserved0;
+    TZrUInt64 transportContractHash;
+    TZrUInt64 schedulerContractHash;
+    SZrFunctionArtifactSourceTypeIdentity schedulerProvider;
+    SZrFunctionArtifactSourceTypeIdentity taskProvider;
+    SZrFunctionArtifactSourceTypeIdentity jobProvider;
 } SZrFunctionSchedulerSourceFact;
 
 typedef struct SZrFunctionTypedExportSymbol {

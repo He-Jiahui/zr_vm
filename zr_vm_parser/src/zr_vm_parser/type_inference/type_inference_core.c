@@ -2991,6 +2991,7 @@ static TZrBool ensure_generic_instance_type_prototype_internal(
         closedPrototype.accessModifier = openPrototypeSnapshot.accessModifier;
         closedPrototype.modifierFlags = openPrototypeSnapshot.modifierFlags;
         closedPrototype.isImportedNative = openPrototypeSnapshot.isImportedNative;
+        closedPrototype.importModuleName = openPrototypeSnapshot.importModuleName;
         closedPrototype.isNativeRuntime = openPrototypeSnapshot.isNativeRuntime;
         closedPrototype.protocolMask = openPrototypeSnapshot.protocolMask;
         closedPrototype.extendsTypeName = substitute_generic_type_name(cs->state,

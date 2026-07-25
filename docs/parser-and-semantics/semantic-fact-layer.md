@@ -3261,3 +3261,23 @@ name-derived scheduler key. The source fact does not contain an artifact
 `TypeDef` or `TypeRef`; M6.1b.2b must join it with one before it may serialize
 a `.zri` or `.zro` document. Legacy `.zrb` bytes and hand-built artifact rows
 remain invalid producer evidence.
+
+## Syntax 12 M6.1b.2b Scheduler Artifact Writer
+
+`ZrParser_Writer_WriteSchedulerArtifactFile` is the first source-produced
+canonical artifact boundary for this contract. It accepts a compiled function
+only when its retained scheduler source fact has complete Scheduler, Task, and
+Job provider identities. The compiler, not the writer, supplies those
+identities: native descriptor imports use deterministic module/prototype
+provenance and closed generic providers preserve the open prototype's module
+provenance. The writer then emits fresh artifact-local TypeRef and TypeDef
+rows, the scheduler contract row, and the Job ResourceMove/DropOnFailure
+domain-transfer row through `ZrCore_Artifact_Write`.
+
+The writer deliberately rejects an unavailable provider identity rather than
+consulting names, display text, AST spelling, runtime value categories,
+function metadata records, or legacy `.zrb` output. Canonical import resolves
+the emitted rows before it permits consumption; source/import schedule hash
+equality and ABI, policy, requirement, transport, scheduler-contract, and
+provider-token rejection are therefore all evaluated against the same
+structured contract.

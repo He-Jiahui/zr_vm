@@ -874,7 +874,8 @@ ZR_PARSER_API TZrBool compiler_build_function_metadata_tokens(SZrCompilerState *
 TZrBool compiler_scheduler_artifact_record_resolved_call(
         SZrCompilerState *cs,
         const SZrInferredType *receiverType,
-        const SZrTypeMemberInfo *memberInfo);
+        const SZrTypeMemberInfo *memberInfo,
+        const SZrResolvedCallSignature *resolvedSignature);
 
 ZR_PARSER_API TZrBool compiler_build_function_semir_metadata(SZrState *state, SZrFunction *function);
 ZR_PARSER_API TZrBool compiler_build_function_semir_metadata_shallow(SZrState *state, SZrFunction *function);

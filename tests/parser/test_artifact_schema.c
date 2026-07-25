@@ -43,6 +43,9 @@ void test_real_source_compile_and_binary_signature_import_are_identical(void);
 void test_real_source_scheduler_call_publishes_canonical_source_fact(void);
 void test_repeated_scheduler_calls_coalesce_canonical_source_fact(void);
 void test_source_without_scheduler_call_publishes_no_scheduler_fact(void);
+void test_real_source_scheduler_call_writes_and_imports_canonical_artifact(void);
+void test_source_without_scheduler_call_rejects_artifact_write(void);
+void test_scheduler_artifact_writer_rejects_unavailable_provider(void);
 
 static void write_u32(TZrByte *bytes, TZrUInt32 value) {
     bytes[0] = (TZrByte)(value & 0xffu);
@@ -1122,6 +1125,9 @@ int main(void) {
     RUN_TEST(test_real_source_scheduler_call_publishes_canonical_source_fact);
     RUN_TEST(test_repeated_scheduler_calls_coalesce_canonical_source_fact);
     RUN_TEST(test_source_without_scheduler_call_publishes_no_scheduler_fact);
+    RUN_TEST(test_real_source_scheduler_call_writes_and_imports_canonical_artifact);
+    RUN_TEST(test_source_without_scheduler_call_rejects_artifact_write);
+    RUN_TEST(test_scheduler_artifact_writer_rejects_unavailable_provider);
     RUN_TEST(test_domain_transfer_contract_roundtrips_as_independent_artifact_schema);
     RUN_TEST(test_scheduler_contract_roundtrips_as_independent_artifact_schema);
     return UNITY_END();

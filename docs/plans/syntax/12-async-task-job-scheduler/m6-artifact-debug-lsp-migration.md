@@ -47,6 +47,16 @@
     artifact 文件，不把 `.zrb` 或 fixture 当作 source-produced artifact。
     GCC、Clang、MSVC 的 artifact schema 均为 18/18，canonical consumers
     均为 17/17，所有测试进程真实 exit 0。
+  - M6.1b.2b 已完成：`ZrParser_Writer_WriteSchedulerArtifactFile` 从完整的
+    compiler-owned Scheduler/Task/Job provider facts 投影真实 `.zro`
+    TypeRef/TypeDef、scheduler contract 和 Job ResourceMove/DropOnFailure
+    domain-transfer section，再由 `ZrCore_CanonicalConsumer` 导入。writer 不
+    使用 legacy `.zrb`、metadata/name/text fallback；source/import contract
+    hash 一致，ABI、policy、requirement、transport、contract 与 provider
+    token 不匹配均被拒绝，unavailable provider 也明确拒绝。固定
+    `e04719a + M6.1b.2b overlay` 的 GCC、Clang、MSVC 各通过 artifact schema
+    21/21 和 canonical consumers 17/17，六个进程真实 exit 0；完成时间为
+    2026-07-25 21:55 +08:00。
   - M6.2 baseline（仅定位，不作为通过证据）：GCC
     `zr_vm_task_runtime_test` 当前为 54 tests / 6 failures / raw exit 6；
     失败包含 TaskRunner/start/pump/defaultScheduler 旧表面，以及两项既有
