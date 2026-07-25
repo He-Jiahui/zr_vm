@@ -269,6 +269,8 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->typedLocalBindingLength = 0;
     function->typedExportedSymbols = ZR_NULL;
     function->typedExportedSymbolLength = 0;
+    function->schedulerSourceFacts = ZR_NULL;
+    function->schedulerSourceFactLength = 0;
     function->metadataTokenRecords = ZR_NULL;
     function->metadataTokenRecordLength = 0;
     function->moduleMetadataTokenRecords = ZR_NULL;
@@ -1020,6 +1022,8 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->typedExportedSymbolLength = 0;
     function->typedLocalBindings = ZR_NULL;
     function->typedLocalBindingLength = 0;
+    function->schedulerSourceFacts = ZR_NULL;
+    function->schedulerSourceFactLength = 0;
     function->metadataTokenRecords = ZR_NULL;
     function->metadataTokenRecordLength = 0;
     function->moduleMetadataTokenRecords = ZR_NULL;
@@ -1114,6 +1118,23 @@ void ZrCore_Function_DetachOwnedBuffers(SZrFunction *function) {
     function_reset_to_tombstone(function);
 }
 
+const SZrFunctionSchedulerSourceFact *ZrCore_Function_FindSchedulerSourceFact(
+        const SZrFunction *function,
+        TZrUInt32 schedulerTypeId) {
+    if (function == ZR_NULL || function->schedulerSourceFacts == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 index = 0u; index < function->schedulerSourceFactLength; ++index) {
+        const SZrFunctionSchedulerSourceFact *fact = &function->schedulerSourceFacts[index];
+
+        if (schedulerTypeId == 0u || fact->schedulerTypeId == schedulerTypeId) {
+            return fact;
+        }
+    }
+    return ZR_NULL;
+}
+
 void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
     SZrGlobalState *global = state->global;
     ZR_ASSERT(function != ZR_NULL);
@@ -1203,6 +1224,12 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
         ZrCore_Memory_RawFreeWithType(global,
                                       function->typedLocalBindings,
                                       sizeof(SZrFunctionTypedLocalBinding) * function->typedLocalBindingLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->schedulerSourceFacts != ZR_NULL && function->schedulerSourceFactLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->schedulerSourceFacts,
+                                      sizeof(SZrFunctionSchedulerSourceFact) * function->schedulerSourceFactLength,
                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
     if (function->metadataTokenRecords != ZR_NULL && function->metadataTokenRecordLength > 0) {

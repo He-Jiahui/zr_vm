@@ -3,8 +3,12 @@
 #include <string.h>
 
 #include "harness/runtime_support.h"
+#include "zr_vm_common/zr_contract_conf.h"
 #include "zr_vm_core/artifact_schema.h"
+#include "zr_vm_core/task_runtime.h"
 #include "zr_vm_core/metadata_token.h"
+#include "zr_vm_lib_thread/module.h"
+#include "zr_vm_lib_thread/runtime.h"
 #include "zr_vm_parser/artifact_projection.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
@@ -13,6 +17,11 @@
 #define SOURCE_TYPE_REF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 21u)
 #define SOURCE_TYPE_SPEC_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_SPEC, 21u)
 #define SOURCE_SIGNATURE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 21u)
+
+void test_real_source_compile_and_binary_signature_import_are_identical(void);
+void test_real_source_scheduler_call_publishes_canonical_source_fact(void);
+void test_repeated_scheduler_calls_coalesce_canonical_source_fact(void);
+void test_source_without_scheduler_call_publishes_no_scheduler_fact(void);
 
 void test_real_source_compile_and_binary_signature_import_are_identical(void) {
     static const TZrChar source[] = "identity(value: int): int { return value; }";
@@ -124,5 +133,132 @@ void test_real_source_compile_and_binary_signature_import_are_identical(void) {
     ZrParser_InferredType_Free(state, &parameterType);
     ZrParser_CompilerState_Free(&projectionCompiler);
     ZrParser_Ast_Free(state, ast);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static SZrState *create_scheduler_artifact_test_state(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+
+    if (state == ZR_NULL || state->global == ZR_NULL) {
+        return state;
+    }
+    ZrParser_ToGlobalState_Register(state);
+    if (!ZrCore_TaskRuntime_RegisterBuiltins(state->global) ||
+        !ZrVmThread_Register(state->global)) {
+        ZrTests_Runtime_State_Destroy(state);
+        return ZR_NULL;
+    }
+    return state;
+}
+
+static SZrFunction *compile_scheduler_artifact_source(SZrState *state,
+                                                       const TZrChar *source,
+                                                       TZrSize sourceLength,
+                                                       const TZrChar *sourceNameText) {
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFunction *function;
+
+    if (state == ZR_NULL || source == ZR_NULL || sourceNameText == ZR_NULL) {
+        return ZR_NULL;
+    }
+    sourceName = ZrCore_String_Create(
+            state,
+            (TZrNativeString) sourceNameText,
+            strlen(sourceNameText));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    ast = ZrParser_Parse(state, source, sourceLength, sourceName);
+    if (ast == ZR_NULL) {
+        return ZR_NULL;
+    }
+    function = ZrParser_Compiler_Compile(state, ast);
+    ZrParser_Ast_Free(state, ast);
+    return function;
+}
+
+void test_real_source_scheduler_call_publishes_canonical_source_fact(void) {
+    static const TZrChar source[] =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var job = init task.Job<int>(() => { return 7; });\n"
+            "var completion = scheduler.schedule<int>(job);\n"
+            "return completion.result();\n";
+    SZrState *state = create_scheduler_artifact_test_state();
+    SZrFunction *function;
+    const SZrFunctionSchedulerSourceFact *fact;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_scheduler_artifact_source(
+            state,
+            source,
+            sizeof(source) - 1u,
+            "scheduler_artifact_source_fact.zr");
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "scheduler source must compile");
+    TEST_ASSERT_EQUAL_UINT32(1u, function->schedulerSourceFactLength);
+
+    fact = ZrCore_Function_FindSchedulerSourceFact(function, 0u);
+    TEST_ASSERT_NOT_NULL(fact);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0u, fact->schedulerTypeId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0u, fact->scheduleMemberToken);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0u, fact->scheduleSignatureToken);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0u, fact->scheduleSignatureHash);
+    TEST_ASSERT_EQUAL_UINT32(ZR_MEMBER_CONTRACT_ROLE_TASK_SCHEDULER_SCHEDULE,
+                             fact->contractRole);
+    TEST_ASSERT_TRUE((fact->schedulerProtocolMask &
+                      ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_SCHEDULER)) != 0u);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+void test_repeated_scheduler_calls_coalesce_canonical_source_fact(void) {
+    static const TZrChar source[] =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var firstJob = init task.Job<int>(() => { return 7; });\n"
+            "var secondJob = init task.Job<int>(() => { return 8; });\n"
+            "var first = scheduler.schedule<int>(firstJob);\n"
+            "var second = scheduler.schedule<int>(secondJob);\n"
+            "return first.result() + second.result();\n";
+    SZrState *state = create_scheduler_artifact_test_state();
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_scheduler_artifact_source(
+            state,
+            source,
+            sizeof(source) - 1u,
+            "scheduler_artifact_source_fact_dedup.zr");
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "repeated scheduler source must compile");
+    TEST_ASSERT_EQUAL_UINT32(1u, function->schedulerSourceFactLength);
+    TEST_ASSERT_NOT_NULL(ZrCore_Function_FindSchedulerSourceFact(function, 0u));
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+void test_source_without_scheduler_call_publishes_no_scheduler_fact(void) {
+    static const TZrChar source[] =
+            "var thread = %import(\"zr.thread\");\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "return scheduler;\n";
+    SZrState *state = create_scheduler_artifact_test_state();
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_scheduler_artifact_source(
+            state,
+            source,
+            sizeof(source) - 1u,
+            "scheduler_artifact_unavailable.zr");
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "source without schedule call must compile");
+    TEST_ASSERT_EQUAL_UINT32(0u, function->schedulerSourceFactLength);
+    TEST_ASSERT_NULL(ZrCore_Function_FindSchedulerSourceFact(function, 0u));
+
+    ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 }

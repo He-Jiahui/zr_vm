@@ -3242,3 +3242,22 @@ scheduler row, so a missing imported identity is unavailable rather than a
 reason to infer a provider. This identity prerequisite does not itself publish
 a compiler scheduler fact or make legacy `.zrb` output a source-produced
 artifact.
+
+## Syntax 12 M6.1b.2a Scheduler Source Fact
+
+`SZrFunctionSchedulerSourceFact` is a compiler-owned fact retained by the
+compiled `SZrFunction`, not an artifact row. It is published only after a
+resolved receiver call has the `TASK_SCHEDULER_SCHEDULE` contract role, the
+receiver implements the TaskScheduler protocol, and the native or source
+member has an exact metadata token, signature token, and signature hash. The
+fact retains the canonical scheduler `TypeId`, those member identities, the
+TaskScheduler protocol mask, and the role. Repeated structurally identical
+calls coalesce; an unresolved identity or a non-scheduler receiver publishes
+no fact.
+
+Native descriptor type methods receive their member/signature identity from
+the existing deterministic native metadata identity generator. This is not a
+name-derived scheduler key. The source fact does not contain an artifact
+`TypeDef` or `TypeRef`; M6.1b.2b must join it with one before it may serialize
+a `.zri` or `.zro` document. Legacy `.zrb` bytes and hand-built artifact rows
+remain invalid producer evidence.

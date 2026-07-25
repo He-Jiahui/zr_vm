@@ -111,25 +111,62 @@ caller, or a source-produced artifact.
 
 #### M6.1b.2: Compiler and Artifact-Writer Integration
 
+M6.1b.2 is split into two commits because source call resolution and artifact
+serialization have different ownership and failure boundaries. M6.1b.2a
+persists only a resolved source scheduler fact. It does not invent an artifact
+token and does not write a file. M6.1b.2b is allowed to emit a `.zri` or
+`.zro` document only after that fact has been joined with an exact local
+`TypeDef` or imported `TypeRef` row.
+
+#### M6.1b.2a: Compiler Scheduler Source Fact
+
+| Layer | Paths | Responsibility |
+|---|---|---|
+| compiled-function fact | `zr_vm_core/include/zr_vm_core/function.h`, `zr_vm_core/src/zr_vm_core/function.c` | Retain and release a compact source scheduler fact containing canonical scheduler `TypeId`, resolved schedule member token/signature/hash, protocol mask, and contract role. |
+| compiler fact publisher | new `zr_vm_parser/src/zr_vm_parser/compiler/compiler_scheduler_artifact.c`, `compiler_internal.h`, `type_inference_native.c` | Publish a fact only from a resolved receiver call with `TASK_SCHEDULER_SCHEDULE` role and canonical receiver type. Duplicate facts coalesce structurally; missing identity stays unavailable. |
+| tests | `tests/parser/test_artifact_schema_source_roundtrip.c`, `tests/CMakeLists.txt` | Compile a real `zr.thread.ThreadScheduler.schedule` call, assert its structured fact, and reject a non-scheduler receiver without a fact. |
+| documentation | this plan, `m6-artifact-debug-lsp-migration.md`, `docs/parser-and-semantics/semantic-fact-layer.md`, `m6-1b-2a-compiler-scheduler-source-fact.md` | Record that the fact is a compiler product, not yet a serializable artifact row. |
+
+M6.1b.2a does not use a provider name, source spelling, legacy `.zrb` bytes,
+or a runtime value category as an artifact key. It also does not claim that
+the scheduler `TypeId` has an artifact `TypeDef`/`TypeRef` token. That join is
+the explicit entry condition for M6.1b.2b.
+
+#### M6.1b.2a Acceptance
+
+Completed 2026-07-25 17:19 +08:00. A real
+`zr.thread.ThreadScheduler.schedule` source call now retains exactly one
+compiler-owned source fact per structural scheduler contract. The fact carries
+the canonical scheduler `TypeId`, deterministic native member/signature
+tokens, signature hash, TaskScheduler protocol mask, and the resolved
+`TASK_SCHEDULER_SCHEDULE` contract role. A source module with no scheduler call
+retains no fact. GCC, Clang, and MSVC each passed
+`zr_vm_artifact_schema_test` (18/18) and
+`zr_vm_canonical_consumers_test` (17/17) with true process exit zero. This
+acceptance does not serialize a `.zri`/`.zro` artifact or relax the exact
+TypeDef/TypeRef join required by M6.1b.2b.
+
+#### M6.1b.2b: Artifact Writer Integration
+
 ### Exact Write Set
 
 | Layer | Paths | Responsibility |
 |---|---|---|
 | schema consumer | `zr_vm_core/include/zr_vm_core/canonical_consumer.h`, `zr_vm_core/src/zr_vm_core/canonical_consumer.c` | Consume the M6.1a/M6.1b.1 scheduler row as the authoritative import contract. |
 | parser artifact projection | `zr_vm_parser/include/zr_vm_parser/artifact_projection.h`, `zr_vm_parser/src/zr_vm_parser/artifact_projection.c` | Build a canonical scheduler contract from resolved type/layout/provider facts; no value-class or identifier fallback. |
-| compiler task facts | `zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c`, `compiler_task_effects_internal.h`, `compiler_task_effects_declarations.c` | Publish the resolved Task/Job/Scheduler owner/module, Send/Sync and transport requirements used by projection. |
-| source/binary integration | `zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c`, `writer_binary_internal.h`, new artifact-writer module if required | Emit the domain-transfer section and stable scheduler contract only from the canonical projection. The legacy `.zrb` VM stream is not relabeled as an artifact. |
+| compiler task facts | `zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c`, `compiler_task_effects_internal.h`, `compiler_task_effects_declarations.c`, M6.1b.2a source fact | Join the resolved Task/Job/Scheduler owner/module, Send/Sync and transport requirements to the persisted source fact. |
+| source/binary integration | `zr_vm_parser/include/zr_vm_parser/writer.h`, `zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c`, `writer_binary_internal.h`, new artifact-writer module if required | Emit the domain-transfer section and stable scheduler contract only from the canonical projection. The legacy `.zrb` VM stream is not relabeled as an artifact. |
 | tests | `tests/parser/test_artifact_schema_source_roundtrip.c`, `tests/parser/test_compiler_features.c` | Cover real source compile -> artifact write -> canonical import, source/import hash equality, mismatched ABI/schema/provider rejection, and unavailable provider rejection. |
 | documentation | this plan, `m6-artifact-debug-lsp-migration.md`, `docs/parser-and-semantics/semantic-fact-layer.md` | Record schema ownership, policy fields, and rejection behavior. |
 
 ### Steps
 
-1. Add RED tests that compile a scheduler-relevant type from source and require
-   a real artifact DomainTransfer row rather than a hand-built fixture.
-2. Publish a narrow scheduler-artifact fact from canonical type/layout/provider
-   facts. `FORBIDDEN` remains the result if a provider, schema, or owner-module
-   identity is unavailable.
-3. Serialize the fact through the binary writer; bind it to the exact type
+1. M6.1b.2a adds RED tests that compile a scheduler-relevant source call and
+   require a resolved compiler fact rather than a name or runtime-value guess.
+2. M6.1b.2b adds RED tests requiring a real artifact DomainTransfer row rather
+   than a hand-built fixture. `FORBIDDEN` remains the result if a provider,
+   schema, or owner-module identity is unavailable.
+3. Serialize the joined fact through the new artifact writer; bind it to the exact type
    token and canonical public contract hash.
 4. Import through `ZrCore_CanonicalConsumer` and reject policy, ABI,
    schema-version, schema-hash, provider-token, provider-contract, Send, or

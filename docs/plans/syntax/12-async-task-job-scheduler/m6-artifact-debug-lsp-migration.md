@@ -31,10 +31,22 @@
     imported identity 前置条件，不声明 source artifact writer 已完成。
   - M6.1b.2 仍负责唯一的 source -> compiler -> binary artifact producer
     链路；当前 M6 总状态不因 M6.1a/M6.1b.1 完成而提前关闭。
+  - M6.1b.2 已按事实依赖拆分：M6.1b.2a 先持久化真实 source 中已解析的
+    scheduler receiver-call fact，M6.1b.2b 仅在该 fact 已关联 exact TypeDef/
+    TypeRef 后才写入 `.zri`/`.zro` artifact。两者均不能将 legacy `.zrb`
+    stream 或 hand-built row 作为 producer 证据。
   - M6.1b preflight 已确认：生产 `writer_binary.c` 仍只写旧 `.zrb` VM
     函数流，仓库中 `ZrCore_Artifact_Write` 的生产调用者为零。下一步先补
     compiler-owned type/provider artifact identity，再接入实际 artifact 文件
     writer，不能把旧 writer 或测试 fixture 当作 producer。
+  - M6.1b.2a 已完成：真实 `zr.thread.ThreadScheduler.schedule` receiver
+    call 现在在编译函数上发布去重的 canonical scheduler source fact，包含
+    scheduler `TypeId`、精确 member/signature token、signature hash、protocol
+    mask 和 contract role。native descriptor 的类型方法也获得确定性的 member
+    identity；身份不完整或非 scheduler call 仍保持 unavailable。该阶段不写
+    artifact 文件，不把 `.zrb` 或 fixture 当作 source-produced artifact。
+    GCC、Clang、MSVC 的 artifact schema 均为 18/18，canonical consumers
+    均为 17/17，所有测试进程真实 exit 0。
   - M6.2 baseline（仅定位，不作为通过证据）：GCC
     `zr_vm_task_runtime_test` 当前为 54 tests / 6 failures / raw exit 6；
     失败包含 TaskRunner/start/pump/defaultScheduler 旧表面，以及两项既有

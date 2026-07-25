@@ -586,8 +586,15 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     target_include_directories(zr_vm_artifact_schema_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_thread/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_artifact_schema_test)
+    if (BUILD_SHARED_LIB AND TARGET zr_vm_thread_shared)
+        target_link_libraries(zr_vm_artifact_schema_test PRIVATE zr_vm_thread_shared)
+    elseif (TARGET zr_vm_thread_static)
+        target_link_libraries(zr_vm_artifact_schema_test PRIVATE zr_vm_thread_static)
+    endif ()
 
     zr_vm_add_unity_test_target(
             zr_vm_canonical_consumers_test

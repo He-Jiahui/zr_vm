@@ -198,6 +198,21 @@ typedef struct SZrFunctionTypedLocalBinding {
     SZrFunctionTypedTypeRef type;
 } SZrFunctionTypedLocalBinding;
 
+/*
+ * A compiler-owned scheduler call fact. This is intentionally not an artifact
+ * row: the artifact writer must still join its canonical TypeId with an exact
+ * TypeDef or TypeRef before serializing anything.
+ */
+typedef struct SZrFunctionSchedulerSourceFact {
+    TZrUInt32 schedulerTypeId;
+    TZrMetadataToken scheduleMemberToken;
+    TZrMetadataToken scheduleSignatureToken;
+    TZrUInt64 scheduleSignatureHash;
+    TZrUInt64 schedulerProtocolMask;
+    TZrUInt32 contractRole;
+    TZrUInt32 reserved0;
+} SZrFunctionSchedulerSourceFact;
+
 typedef struct SZrFunctionTypedExportSymbol {
     struct SZrString *name;
     TZrUInt32 stackSlot;
@@ -542,6 +557,8 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 typedLocalBindingLength;
     SZrFunctionTypedExportSymbol *typedExportedSymbols;
     TZrUInt32 typedExportedSymbolLength;
+    SZrFunctionSchedulerSourceFact *schedulerSourceFacts;
+    TZrUInt32 schedulerSourceFactLength;
     SZrMetadataTokenRecord *metadataTokenRecords;
     TZrUInt32 metadataTokenRecordLength;
     SZrMetadataTokenRecord *moduleMetadataTokenRecords;
@@ -698,6 +715,10 @@ ZR_CORE_API const SZrFunctionFrameSlotLayout *ZrCore_Function_FindFrameSlotLayou
                                                                                   TZrUInt32 stackSlot);
 ZR_CORE_API const SZrMetadataTokenRecord *ZrCore_Function_FindMetadataTokenRecord(const SZrFunction *function,
                                                                                   TZrMetadataToken token);
+/* schedulerTypeId == 0 selects the first recorded scheduler source fact. */
+ZR_CORE_API const SZrFunctionSchedulerSourceFact *ZrCore_Function_FindSchedulerSourceFact(
+        const SZrFunction *function,
+        TZrUInt32 schedulerTypeId);
 ZR_CORE_API const SZrMetadataTokenRecord *ZrCore_Function_FindMetadataSignatureRecord(const SZrFunction *function,
                                                                                       TZrMetadataToken entityToken);
 ZR_CORE_API const SZrMetadataTokenRecord *ZrCore_Function_FindModuleMetadataTokenRecord(const SZrFunction *function,

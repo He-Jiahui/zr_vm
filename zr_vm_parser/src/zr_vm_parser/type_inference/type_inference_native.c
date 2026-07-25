@@ -1336,35 +1336,6 @@ static void native_module_info_add_method_member_with_identity(SZrCompilerState 
                                                                TZrUInt32 contractRole,
                                                                const SZrNativeModuleMemberIdentity *identity);
 
-static void native_module_info_add_method_member(SZrCompilerState *cs,
-                                                 SZrString *moduleName,
-                                                 SZrTypePrototypeInfo *info,
-                                                 EZrAstNodeType memberType,
-                                                 SZrString *memberName,
-                                                 SZrString *returnTypeName,
-                                                 TZrBool isStatic,
-                                                 EZrCanonicalReceiverEffect receiverEffect,
-                                                 TZrUInt32 parameterCount,
-                                                 TZrUInt32 minArgumentCount,
-                                                 SZrObject *parametersArray,
-                                                 SZrObject *genericParametersArray,
-                                                 TZrUInt32 contractRole) {
-    native_module_info_add_method_member_with_identity(cs,
-                                                       moduleName,
-                                                       info,
-                                                       memberType,
-                                                       memberName,
-                                                       returnTypeName,
-                                                       isStatic,
-                                                       receiverEffect,
-                                                       parameterCount,
-                                                       minArgumentCount,
-                                                       parametersArray,
-                                                       genericParametersArray,
-                                                       contractRole,
-                                                       ZR_NULL);
-}
-
 static void native_module_info_add_method_member_with_identity(SZrCompilerState *cs,
                                                                SZrString *moduleName,
                                                                SZrTypePrototypeInfo *info,
@@ -2986,23 +2957,39 @@ translate_module_info:
             SZrObject *methodGenericParametersArray =
                     native_module_info_get_array_field(cs->state, methodEntry, "genericParameters");
             if (methodName != ZR_NULL) {
-                native_module_info_add_method_member(cs,
-                                                     moduleName,
-                                                     &typePrototype,
-                                                     methodMemberType,
-                                                     methodName,
-                                                     returnTypeName,
-                                                     isStatic,
-                                                     isStatic
-                                                             ? ZR_CANONICAL_RECEIVER_NONE
-                                                             : (isReadonlyReceiver
-                                                                        ? ZR_CANONICAL_RECEIVER_READONLY
-                                                                        : ZR_CANONICAL_RECEIVER_MUTABLE),
-                                                     parameterCount,
-                                                     minArgumentCount,
-                                                     parametersArray,
-                                                     methodGenericParametersArray,
-                                                     contractRole);
+                SZrNativeModuleMemberIdentity identity;
+
+                native_module_info_next_member_identity(cs->state,
+                                                        ZR_METADATA_SIGNATURE_NODE_METHOD_SIG,
+                                                        methodMemberType,
+                                                        typePrototype.name,
+                                                        methodName,
+                                                        returnTypeName,
+                                                        parameterCount,
+                                                        minArgumentCount,
+                                                        parametersArray,
+                                                        &nativeMemberRidCursor,
+                                                        &nativeSignatureRidCursor,
+                                                        &identity);
+                native_module_info_add_method_member_with_identity(
+                        cs,
+                        moduleName,
+                        &typePrototype,
+                        methodMemberType,
+                        methodName,
+                        returnTypeName,
+                        isStatic,
+                        isStatic
+                                ? ZR_CANONICAL_RECEIVER_NONE
+                                : (isReadonlyReceiver
+                                           ? ZR_CANONICAL_RECEIVER_READONLY
+                                           : ZR_CANONICAL_RECEIVER_MUTABLE),
+                        parameterCount,
+                        minArgumentCount,
+                        parametersArray,
+                        methodGenericParametersArray,
+                        contractRole,
+                        &identity);
             }
         }
 
@@ -3695,6 +3682,15 @@ infer_regular_member_access:
                                                        &members->nodes[i + 1]->data.functionCall,
                                                        &resolvedMemberSignature,
                                                        &nextType);
+                    }
+                    if (!compiler_scheduler_artifact_record_resolved_call(
+                                cs,
+                                &currentType,
+                                memberInfo)) {
+                        ZrParser_InferredType_Free(cs->state, &currentType);
+                        ZrParser_InferredType_Free(cs->state, &nextType);
+                        free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                        return ZR_FALSE;
                     }
                     type_inference_record_member_call_reference_fact(
                             cs,

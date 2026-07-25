@@ -871,6 +871,10 @@ TZrBool compiler_build_callable_return_type_metadata(SZrCompilerState *cs,
 TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs);
 TZrBool ZrParser_Compiler_PublishSemanticQueryDiagnostics(SZrCompilerState *cs);
 ZR_PARSER_API TZrBool compiler_build_function_metadata_tokens(SZrCompilerState *cs, SZrFunction *function);
+TZrBool compiler_scheduler_artifact_record_resolved_call(
+        SZrCompilerState *cs,
+        const SZrInferredType *receiverType,
+        const SZrTypeMemberInfo *memberInfo);
 
 ZR_PARSER_API TZrBool compiler_build_function_semir_metadata(SZrState *state, SZrFunction *function);
 ZR_PARSER_API TZrBool compiler_build_function_semir_metadata_shallow(SZrState *state, SZrFunction *function);
