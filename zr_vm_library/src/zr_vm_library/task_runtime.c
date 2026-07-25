@@ -945,6 +945,49 @@ void ZrLibrary_TaskRuntime_ReleasePreparedJob(SZrState *state,
     memset(item, 0, sizeof(*item));
 }
 
+TZrBool ZrLibrary_TaskRuntime_CopyPreparedCallable(
+        SZrState *state,
+        const ZrLibraryTaskRuntimeWorkItem *item,
+        SZrTypeValue *outCallable) {
+    SZrRawObject *rawTask = ZR_NULL;
+    SZrObject *task;
+    const SZrTypeValue *callable;
+
+    if (state == ZR_NULL || item == ZR_NULL || outCallable == ZR_NULL ||
+        !ZrCore_GcRootHandle_Resolve(state, &item->taskRoot, &rawTask) || rawTask == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    task = ZR_CAST_OBJECT(state, rawTask);
+    callable = task_runtime_get_field_value(state, task, kTaskCallableField);
+    if (callable == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Value_Copy(state, outCallable, callable);
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_TaskRuntime_CompletePreparedJob(
+        SZrState *state,
+        ZrLibraryTaskRuntimeWorkItem *item,
+        const SZrTypeValue *result) {
+    SZrRawObject *rawTask = ZR_NULL;
+    SZrObject *task;
+
+    if (state == ZR_NULL || item == ZR_NULL || result == ZR_NULL ||
+        !ZrCore_GcRootHandle_Resolve(state, &item->taskRoot, &rawTask) || rawTask == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    task = ZR_CAST_OBJECT(state, rawTask);
+    if (ZrLibrary_TaskRuntime_IsTaskComplete(state, task)) {
+        return ZR_FALSE;
+    }
+    task_runtime_set_value_field(state, task, kTaskResultField, result);
+    task_runtime_set_null_field(state, task, kTaskErrorField);
+    task_runtime_set_null_field(state, task, kTaskCallableField);
+    task_runtime_set_int_field(state, task, kTaskStatusField, ZR_VM_TASK_STATUS_COMPLETED);
+    return ZR_TRUE;
+}
+
 static TZrBool task_runtime_schedule_job_on_scheduler(SZrState *state,
                                                        SZrObject *scheduler,
                                                        SZrObject *job,

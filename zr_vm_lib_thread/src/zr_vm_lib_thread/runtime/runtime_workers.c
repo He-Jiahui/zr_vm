@@ -62,7 +62,6 @@ static TZrBool zr_vm_thread_attached_scheduler_await(SZrState *state,
     }
     return ZR_TRUE;
 }
-
 static void zr_vm_thread_attached_scheduler_worker_finished(ZrVmAttachedDomainRuntime *runtime) {
     if (runtime == ZR_NULL) {
         return;
@@ -310,31 +309,8 @@ TZrBool zr_vm_thread_attached_scheduler_schedule(SZrState *state,
     return ZR_TRUE;
 }
 
-typedef struct ZrVmTaskWorkerLaunch {
-    TZrChar *binaryPath;
-    TZrChar *projectFile;
-    TZrChar *projectDirectory;
-    TZrChar *projectSource;
-    TZrChar *projectBinary;
-    TZrChar *projectEntry;
-    TZrUInt32 captureCount;
-    ZrVmTaskTransportValue *captures;
-    ZrVmTaskSchedulerRuntime *ownerRuntime;
-    SZrObject *ownerHandle;
-    FZrAllocator allocator;
-    TZrPtr userAllocationArguments;
-    TZrUInt64 workerIsolateId;
-    TZrBool supportMultithread;
-    TZrBool autoCoroutine;
-} ZrVmTaskWorkerLaunch;
 
-typedef struct ZrVmTaskWorkerExecuteRequest {
-    const SZrTypeValue *callable;
-    SZrTypeValue result;
-    TZrBool completed;
-} ZrVmTaskWorkerExecuteRequest;
-
-static TZrChar *zr_vm_task_worker_strdup(const TZrChar *text) {
+TZrChar *zr_vm_task_worker_strdup(const TZrChar *text) {
     TZrSize length;
     TZrChar *copy;
 
@@ -352,7 +328,7 @@ static TZrChar *zr_vm_task_worker_strdup(const TZrChar *text) {
     return copy;
 }
 
-static void zr_vm_task_worker_launch_free(ZrVmTaskWorkerLaunch *launch) {
+void zr_vm_task_worker_launch_free(ZrVmTaskWorkerLaunch *launch) {
     TZrUInt32 captureIndex;
 
     if (launch == ZR_NULL) {
@@ -375,7 +351,7 @@ static void zr_vm_task_worker_launch_free(ZrVmTaskWorkerLaunch *launch) {
     free(launch);
 }
 
-static SZrLibrary_Project *zr_vm_task_worker_clone_project(SZrState *state, const ZrVmTaskWorkerLaunch *launch) {
+SZrLibrary_Project *zr_vm_task_worker_clone_project(SZrState *state, const ZrVmTaskWorkerLaunch *launch) {
     SZrLibrary_Project *project;
 
     if (state == ZR_NULL || state->global == ZR_NULL || launch == ZR_NULL) {
@@ -410,7 +386,7 @@ static SZrLibrary_Project *zr_vm_task_worker_clone_project(SZrState *state, cons
     return project;
 }
 
-static TZrBool zr_vm_task_worker_make_temp_path(TZrChar *buffer, TZrSize bufferSize) {
+TZrBool zr_vm_task_worker_make_temp_path(TZrChar *buffer, TZrSize bufferSize) {
     if (buffer == ZR_NULL || bufferSize == 0) {
         return ZR_FALSE;
     }
@@ -468,7 +444,7 @@ static TZrBool zr_vm_task_worker_append_pending_handle(SZrState *state, SZrObjec
 	    return ZR_TRUE;
 	}
 
-static TZrBool zr_vm_task_worker_load_function(SZrState *state, const TZrChar *path, SZrFunction **outFunction) {
+TZrBool zr_vm_task_worker_load_function(SZrState *state, const TZrChar *path, SZrFunction **outFunction) {
     SZrLibrary_File_Reader *reader;
     SZrIo io;
     SZrIoSource *source;
@@ -532,6 +508,12 @@ static TZrBool zr_vm_task_worker_build_callable(SZrState *state,
     return ZR_TRUE;
 }
 
+typedef struct ZrVmTaskWorkerExecuteRequest {
+    const SZrTypeValue *callable;
+    SZrTypeValue result;
+    TZrBool completed;
+} ZrVmTaskWorkerExecuteRequest;
+
 static void zr_vm_task_worker_execute_body(SZrState *state, TZrPtr arguments) {
     ZrVmTaskWorkerExecuteRequest *request = (ZrVmTaskWorkerExecuteRequest *)arguments;
     SZrFunction *function;
@@ -567,7 +549,7 @@ static void zr_vm_task_worker_execute_body(SZrState *state, TZrPtr arguments) {
     request->completed = ZR_TRUE;
 }
 
-static TZrBool zr_vm_task_worker_execute_callable(SZrState *state,
+TZrBool zr_vm_task_worker_execute_callable(SZrState *state,
                                                   const SZrTypeValue *callableValue,
                                                   SZrTypeValue *resultValue) {
     ZrVmTaskWorkerExecuteRequest request;

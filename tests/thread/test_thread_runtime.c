@@ -9,6 +9,7 @@
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_lib_thread/module.h"
+#include "zr_vm_lib_thread/runtime.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/compiler.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
@@ -91,6 +92,46 @@ static SZrFunction *compile_thread_source(SZrState *state, const char *source, c
     }
 
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static TZrBool thread_test_shutdown_isolated_schedulers_callback(
+        ZrLibCallContext *context,
+        SZrTypeValue *result) {
+    TZrBool shutDown;
+
+    if (context == ZR_NULL || context->state == ZR_NULL || context->state->global == ZR_NULL ||
+        result == ZR_NULL || !ZrLib_CallContext_CheckArity(context, 0u, 0u)) {
+        return ZR_FALSE;
+    }
+    shutDown = ZrVmThread_Runtime_ShutdownIsolatedSchedulers(context->state->global);
+    ZrCore_Value_InitAsInt(context->state, result, shutDown ? 1 : 0);
+    return ZR_TRUE;
+}
+
+static const ZrLibFunctionDescriptor kThreadTestHostFunctions[] = {
+        {
+                .name = "shutdownIsolatedSchedulers",
+                .minArgumentCount = 0u,
+                .maxArgumentCount = 0u,
+                .callback = thread_test_shutdown_isolated_schedulers_callback,
+                .returnTypeName = "int",
+                .documentation = "Test-only host shutdown hook.",
+        },
+};
+
+static const ZrLibModuleDescriptor kThreadTestHostModule = {
+        .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
+        .moduleName = "thread.test.host",
+        .functions = kThreadTestHostFunctions,
+        .functionCount = ZR_ARRAY_COUNT(kThreadTestHostFunctions),
+        .documentation = "Thread runtime test host hooks.",
+        .moduleVersion = "1.0.0",
+        .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
+};
+
+static TZrBool register_thread_test_host_module(SZrState *state) {
+    return state != ZR_NULL && state->global != ZR_NULL &&
+           ZrLibrary_NativeRegistry_RegisterModule(state->global, &kThreadTestHostModule);
 }
 
 static SZrAstNode *parse_thread_source_ast(SZrState *state, const char *source, const char *name) {
@@ -1075,6 +1116,293 @@ static void test_thread_scheduler_constructs_with_worker_count_and_consumes_job(
     destroy_thread_test_state(state);
 }
 
+static void test_thread_scheduler_isolated_domain_completes_caller_task(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var job = init task.Job<int>(() => { return 29; });\n"
+            "var completion = scheduler.schedule<int>(job);\n"
+            "return completion.result();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    SZrGcDomainIdentity callerDomain;
+    SZrGcDomainIdentity workerDomain;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    callerDomain = ZrCore_GcDomain_GetIdentity(state);
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_SetSchedulerExecutionPolicy(
+            state->global,
+            ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN));
+    function = compile_thread_source(state, source, "thread_scheduler_isolated_domain_test.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(29, result);
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_GetLastSchedulerWorkerDomain(
+            state->global,
+            &workerDomain));
+    TEST_ASSERT_FALSE(ZrCore_GcDomain_IdentityEquals(callerDomain, workerDomain));
+
+    destroy_thread_test_state(state);
+}
+
+static void test_thread_scheduler_isolated_domain_transfers_scalar_capture(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var captured = 17;\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var job = init task.Job<int>(() => { return captured + 1; });\n"
+            "var completion = scheduler.schedule<int>(job);\n"
+            "return completion.result();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_SetSchedulerExecutionPolicy(
+            state->global,
+            ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN));
+    function = compile_thread_source(state, source, "thread_scheduler_isolated_scalar_capture.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(18, result);
+
+    destroy_thread_test_state(state);
+}
+
+static void test_thread_scheduler_isolated_domain_clones_string_capture(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var captured = \"isolated clone\";\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var job = init task.Job<int>(() => {\n"
+            "    if (captured == \"isolated clone\") { return 37; }\n"
+            "    return 0;\n"
+            "});\n"
+            "var completion = scheduler.schedule<int>(job);\n"
+            "return completion.result();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_SetSchedulerExecutionPolicy(
+            state->global,
+            ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN));
+    function = compile_thread_source(state, source, "thread_scheduler_isolated_string_clone.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(37, result);
+
+    destroy_thread_test_state(state);
+}
+
+static void test_thread_scheduler_isolated_domain_clones_string_result(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var captured = \"isolated result\";\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var job = init task.Job<string>(() => { return captured; });\n"
+            "var completion = scheduler.schedule<string>(job);\n"
+            "var result = completion.result();\n"
+            "if (result == \"isolated result\") { return 43; }\n"
+            "return 0;\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_SetSchedulerExecutionPolicy(
+            state->global,
+            ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN));
+    function = compile_thread_source(state, source, "thread_scheduler_isolated_string_result.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(43, result);
+
+    destroy_thread_test_state(state);
+}
+
+static void test_thread_scheduler_isolated_domain_settles_multiple_requests(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var firstValue = 6;\n"
+            "var secondValue = 8;\n"
+            "var scheduler = new thread.ThreadScheduler(2);\n"
+            "var firstJob = init task.Job<int>(() => { return firstValue; });\n"
+            "var secondJob = init task.Job<int>(() => { return secondValue; });\n"
+            "var first = scheduler.schedule<int>(firstJob);\n"
+            "var second = scheduler.schedule<int>(secondJob);\n"
+            "return first.result() * 10 + second.result();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_SetSchedulerExecutionPolicy(
+            state->global,
+            ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN));
+    function = compile_thread_source(state, source, "thread_scheduler_isolated_multiple_requests.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(68, result);
+
+    destroy_thread_test_state(state);
+}
+
+static void test_thread_scheduler_isolated_domain_drains_shared_provider_queue(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var firstValue = 1;\n"
+            "var secondValue = 2;\n"
+            "var thirdValue = 3;\n"
+            "var fourthValue = 4;\n"
+            "var scheduler = new thread.ThreadScheduler(2);\n"
+            "var firstJob = init task.Job<int>(() => { return firstValue; });\n"
+            "var secondJob = init task.Job<int>(() => { return secondValue; });\n"
+            "var thirdJob = init task.Job<int>(() => { return thirdValue; });\n"
+            "var fourthJob = init task.Job<int>(() => { return fourthValue; });\n"
+            "var first = scheduler.schedule<int>(firstJob);\n"
+            "var second = scheduler.schedule<int>(secondJob);\n"
+            "var third = scheduler.schedule<int>(thirdJob);\n"
+            "var fourth = scheduler.schedule<int>(fourthJob);\n"
+            "return first.result() * 1000 + second.result() * 100 + "
+            "third.result() * 10 + fourth.result();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_SetSchedulerExecutionPolicy(
+            state->global,
+            ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN));
+    function = compile_thread_source(
+            state, source, "thread_scheduler_isolated_shared_provider_queue.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1234, result);
+
+    destroy_thread_test_state(state);
+}
+
+static void test_thread_scheduler_isolated_domain_quota_faults_prepared_task(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var captured = \"quota must reject this clone\";\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var job = init task.Job<int>(() => {\n"
+            "    if (captured == \"quota must reject this clone\") { return 1; }\n"
+            "    return 0;\n"
+            "});\n"
+            "var completion = scheduler.schedule<int>(job);\n"
+            "return completion.result();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_SetSchedulerExecutionPolicy(
+            state->global,
+            ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN));
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_SetIsolatedTransferQuota(state->global, 1u, 1u, 1u));
+    function = compile_thread_source(state, source, "thread_scheduler_isolated_quota_fault.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_FALSE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+
+    destroy_thread_test_state(state);
+}
+
+static void test_thread_scheduler_isolated_domain_faults_forbidden_resource_capture(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "resource class Counter {\n"
+            "  pub var value: int;\n"
+            "  pub @constructor(value: int) { this.value = value; }\n"
+            "  pub const fn read(): int { return this.value; }\n"
+            "}\n"
+            "var captured: Unique<Counter> = own Counter(47);\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var job = init task.Job<int>(() => { return captured.read(); });\n"
+            "var completion = scheduler.schedule<int>(job);\n"
+            "return completion.result();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_SetSchedulerExecutionPolicy(
+            state->global,
+            ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN));
+    function = compile_thread_source(
+            state, source, "thread_scheduler_isolated_forbidden_resource_capture.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_FALSE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+
+    destroy_thread_test_state(state);
+}
+
+static void test_thread_scheduler_isolated_domain_shutdown_faults_later_submission(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var job = init task.Job<int>(() => { return 5; });\n"
+            "var completion = scheduler.schedule<int>(job);\n"
+            "return completion.result();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_SetSchedulerExecutionPolicy(
+            state->global,
+            ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN));
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_ShutdownIsolatedSchedulers(state->global));
+    function = compile_thread_source(state, source, "thread_scheduler_isolated_shutdown_fault.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_FALSE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+
+    destroy_thread_test_state(state);
+}
+
+static void test_thread_scheduler_isolated_domain_shutdown_faults_queued_submission(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var host = %import(\"thread.test.host\");\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var firstJob = init task.Job<int>(() => { return 3; });\n"
+            "var secondJob = init task.Job<int>(() => { return 5; });\n"
+            "var first = scheduler.schedule<int>(firstJob);\n"
+            "var second = scheduler.schedule<int>(secondJob);\n"
+            "var shutDown = host.shutdownIsolatedSchedulers();\n"
+            "if (shutDown != 1) { return -1; }\n"
+            "var firstValue = first.result();\n"
+            "return firstValue + second.result();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_SetSchedulerExecutionPolicy(
+            state->global,
+            ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN));
+    TEST_ASSERT_TRUE(register_thread_test_host_module(state));
+    function = compile_thread_source(state, source, "thread_scheduler_isolated_shutdown_queued.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_FALSE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+
+    destroy_thread_test_state(state);
+}
+
 static void test_thread_scheduler_drains_one_worker_queue_in_submission_order(void) {
     static const char *source =
             "var task = %import(\"zr.task\");\n"
@@ -1090,6 +1418,9 @@ static void test_thread_scheduler_drains_one_worker_queue_in_submission_order(vo
     TZrInt64 result = 0;
 
     TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrVmThread_Runtime_SetSchedulerExecutionPolicy(
+            state->global,
+            ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN));
     function = compile_thread_source(state, source, "thread_scheduler_single_worker_queue_test.zr");
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
@@ -1157,6 +1488,16 @@ int main(void) {
     RUN_TEST(test_lock_guard_rejects_transfer_storage);
     RUN_TEST(test_thread_worker_state_attaches_to_caller_gc_domain);
     RUN_TEST(test_thread_scheduler_constructs_with_worker_count_and_consumes_job);
+    RUN_TEST(test_thread_scheduler_isolated_domain_completes_caller_task);
+    RUN_TEST(test_thread_scheduler_isolated_domain_transfers_scalar_capture);
+    RUN_TEST(test_thread_scheduler_isolated_domain_clones_string_capture);
+    RUN_TEST(test_thread_scheduler_isolated_domain_clones_string_result);
+    RUN_TEST(test_thread_scheduler_isolated_domain_settles_multiple_requests);
+    RUN_TEST(test_thread_scheduler_isolated_domain_drains_shared_provider_queue);
+    RUN_TEST(test_thread_scheduler_isolated_domain_quota_faults_prepared_task);
+    RUN_TEST(test_thread_scheduler_isolated_domain_faults_forbidden_resource_capture);
+    RUN_TEST(test_thread_scheduler_isolated_domain_shutdown_faults_later_submission);
+    RUN_TEST(test_thread_scheduler_isolated_domain_shutdown_faults_queued_submission);
     RUN_TEST(test_thread_scheduler_drains_one_worker_queue_in_submission_order);
     RUN_TEST(test_thread_scheduler_rejects_non_send_job_result);
     RUN_TEST(test_thread_scheduler_rejects_reused_job);

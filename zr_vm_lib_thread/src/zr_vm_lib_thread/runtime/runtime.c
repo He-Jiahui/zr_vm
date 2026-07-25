@@ -31,6 +31,8 @@ static const TZrChar *kTaskIsPumpingField = "__zr_task_is_pumping";
 static const TZrChar *kTaskSchedulerRuntimeField = "__zr_task_scheduler_runtime";
 static const TZrChar *kTaskPendingWorkersField = "__zr_task_pending_workers";
 static const TZrChar *kTaskLastWorkerIsolateIdField = "__zr_task_last_worker_isolate_id";
+static const TZrChar *kTaskLastWorkerDomainIdField = "__zr_task_last_worker_domain_id";
+static const TZrChar *kTaskLastWorkerDomainGenerationField = "__zr_task_last_worker_domain_generation";
 static const TZrChar *kTaskStatusField = "__zr_task_status";
 static const TZrChar *kTaskCallableField = "__zr_task_callable";
 static const TZrChar *kTaskResultField = "__zr_task_result";
@@ -40,6 +42,12 @@ static const TZrChar *kTaskRunnerCallableField = "__zr_task_runner_callable";
 static const TZrChar *kTaskRunnerStartedField = "__zr_task_runner_started";
 static const TZrChar *kThreadObjectSchedulerField = "__zr_thread_scheduler";
 static const TZrChar *kThreadSchedulerWorkerCountField = "__zr_thread_scheduler_worker_count";
+static const TZrChar *kThreadSchedulerExecutionPolicyField = "__zr_thread_scheduler_execution_policy";
+static const TZrChar *kThreadSchedulerConfiguredPolicyField = "__zr_thread_scheduler_configured_policy";
+static const TZrChar *kThreadSchedulerConfiguredQuotaObjectsField = "__zr_thread_scheduler_configured_quota_objects";
+static const TZrChar *kThreadSchedulerConfiguredQuotaBytesField = "__zr_thread_scheduler_configured_quota_bytes";
+static const TZrChar *kThreadSchedulerConfiguredQuotaDepthField = "__zr_thread_scheduler_configured_quota_depth";
+static const TZrChar *kThreadSchedulerIsolatedShutdownField = "__zr_thread_scheduler_isolated_shutdown";
 static const TZrUInt32 kTaskSchedulerExternalWaitMs = 1u;
 
 static TZrBool zr_vm_task_spawn_on_scheduler(ZrLibCallContext *context,
@@ -282,6 +290,132 @@ void zr_vm_task_record_last_worker_isolate(SZrState *state, TZrUInt64 isolateId)
     }
 }
 
+void zr_vm_task_record_last_worker_domain(SZrState *state, SZrGcDomainIdentity domain) {
+    SZrObject *rootObject = zr_vm_task_root_object(state);
+
+    if (rootObject == ZR_NULL || domain.id == 0u || domain.generation == 0u) {
+        return;
+    }
+    zr_vm_task_set_uint_field(state, rootObject, kTaskLastWorkerDomainIdField, domain.id);
+    zr_vm_task_set_uint_field(state,
+                              rootObject,
+                              kTaskLastWorkerDomainGenerationField,
+                              (TZrUInt64)domain.generation);
+}
+
+TZrBool ZrVmThread_Runtime_SetSchedulerExecutionPolicy(
+        SZrGlobalState *global,
+        EZrVmThreadSchedulerExecutionPolicy policy) {
+    SZrState *state;
+    SZrObject *rootObject;
+
+    if (global == ZR_NULL || global->mainThreadState == ZR_NULL ||
+        (policy != ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ATTACHED_DOMAIN &&
+         policy != ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN)) {
+        return ZR_FALSE;
+    }
+    state = global->mainThreadState;
+    rootObject = zr_vm_task_root_object(state);
+    if (rootObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    zr_vm_task_set_uint_field(state,
+                              rootObject,
+                              kThreadSchedulerConfiguredPolicyField,
+                              (TZrUInt64)policy);
+    return ZR_TRUE;
+}
+
+TZrBool ZrVmThread_Runtime_SetIsolatedTransferQuota(
+        SZrGlobalState *global,
+        TZrUInt32 maxObjects,
+        TZrUInt64 maxBytes,
+        TZrUInt32 maxDepth) {
+    SZrState *state;
+    SZrObject *rootObject;
+
+    if (global == ZR_NULL || global->mainThreadState == ZR_NULL ||
+        maxObjects == 0u || maxBytes == 0u || maxDepth == 0u) {
+        return ZR_FALSE;
+    }
+    state = global->mainThreadState;
+    rootObject = zr_vm_task_root_object(state);
+    if (rootObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    zr_vm_task_set_uint_field(state, rootObject, kThreadSchedulerConfiguredQuotaObjectsField, maxObjects);
+    zr_vm_task_set_uint_field(state, rootObject, kThreadSchedulerConfiguredQuotaBytesField, maxBytes);
+    zr_vm_task_set_uint_field(state, rootObject, kThreadSchedulerConfiguredQuotaDepthField, maxDepth);
+    return ZR_TRUE;
+}
+
+TZrBool ZrVmThread_Runtime_ShutdownIsolatedSchedulers(SZrGlobalState *global) {
+    SZrState *state;
+    SZrObject *rootObject;
+
+    if (global == ZR_NULL || global->mainThreadState == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    state = global->mainThreadState;
+    rootObject = zr_vm_task_root_object(state);
+    if (rootObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    zr_vm_task_set_bool_field(state, rootObject, kThreadSchedulerIsolatedShutdownField, ZR_TRUE);
+    zr_vm_thread_isolated_scheduler_shutdown_all(state);
+    return ZR_TRUE;
+}
+
+static SZrDomainTransferQuota zr_vm_thread_isolated_configured_transfer_quota(SZrState *state) {
+    SZrDomainTransferQuota quota;
+    SZrObject *rootObject = zr_vm_task_root_object(state);
+
+    quota.maxObjects = 256u;
+    quota.maxBytes = 1024u * 1024u;
+    quota.maxDepth = 32u;
+    if (rootObject != ZR_NULL) {
+        quota.maxObjects = (TZrUInt32)zr_vm_task_get_uint_field(
+                state, rootObject, kThreadSchedulerConfiguredQuotaObjectsField, quota.maxObjects);
+        quota.maxBytes = zr_vm_task_get_uint_field(
+                state, rootObject, kThreadSchedulerConfiguredQuotaBytesField, quota.maxBytes);
+        quota.maxDepth = (TZrUInt32)zr_vm_task_get_uint_field(
+                state, rootObject, kThreadSchedulerConfiguredQuotaDepthField, quota.maxDepth);
+    }
+    return quota;
+}
+
+TZrBool ZrVmThread_Runtime_GetLastSchedulerWorkerDomain(
+        const SZrGlobalState *global,
+        SZrGcDomainIdentity *outDomain) {
+    SZrState *state;
+    SZrObject *rootObject;
+    TZrUInt64 id;
+    TZrUInt64 generation;
+
+    if (outDomain != ZR_NULL) {
+        memset(outDomain, 0, sizeof(*outDomain));
+    }
+    if (global == ZR_NULL || global->mainThreadState == ZR_NULL || outDomain == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    state = global->mainThreadState;
+    rootObject = zr_vm_task_root_object(state);
+    if (rootObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    id = zr_vm_task_get_uint_field(state, rootObject, kTaskLastWorkerDomainIdField, 0u);
+    generation = zr_vm_task_get_uint_field(state,
+                                            rootObject,
+                                            kTaskLastWorkerDomainGenerationField,
+                                            0u);
+    if (id == 0u || generation == 0u || generation > (TZrUInt64)((TZrUInt32)-1)) {
+        return ZR_FALSE;
+    }
+    outDomain->id = id;
+    outDomain->generation = (TZrUInt32)generation;
+    return ZR_TRUE;
+}
+
 static SZrObject *zr_vm_task_ensure_scheduler_with_field(SZrState *state, const TZrChar *fieldName) {
     SZrObject *rootObject;
     SZrObject *scheduler;
@@ -433,6 +567,69 @@ TZrBool zr_vm_task_scheduler_process_external(SZrState *state, SZrObject *schedu
         return ZR_FALSE;
     }
 
+    if (message->kind == ZR_VM_TASK_SCHEDULER_MESSAGE_ISOLATED_COMPLETE) {
+        TZrBool completed = ZR_FALSE;
+        TZrBool envelopeClaimed = ZR_FALSE;
+        TZrBool workerMustDisposeEnvelope = ZR_FALSE;
+        SZrGcDomainIdentity callerDomain;
+
+        ZrLib_Value_SetNull(&value);
+        callerDomain = ZrCore_GcDomain_GetIdentity(state);
+        if (message->isolatedEnvelope != ZR_NULL && callerDomain.id != 0u &&
+            (envelopeClaimed = ZrCore_OwnershipTransfer_Claim(message->isolatedEnvelope,
+                                                               state,
+                                                               callerDomain.id,
+                                                               callerDomain.generation)) &&
+            ZrCore_OwnershipTransfer_CommitCrossDomain(message->isolatedEnvelope,
+                                                        state,
+                                                        callerDomain.id,
+                                                        callerDomain.generation,
+                                                        &value,
+                                                        ZR_NULL) &&
+            ZrLibrary_TaskRuntime_CompletePreparedJob(state, &message->isolatedWorkItem, &value)) {
+            completed = ZR_TRUE;
+            zr_vm_task_record_last_worker_domain(state, message->isolatedWorkerDomain);
+        } else {
+            if (envelopeClaimed) {
+                ZrCore_OwnershipTransfer_AbortCrossDomain(message->isolatedEnvelope,
+                                                           state,
+                                                           callerDomain.id,
+                                                           callerDomain.generation,
+                                                           ZR_NULL);
+            } else {
+                workerMustDisposeEnvelope = ZR_TRUE;
+            }
+            ZrLibrary_TaskRuntime_FaultPreparedJob(state,
+                                                   &message->isolatedWorkItem,
+                                                   "IsolatedDomain result transfer failed");
+        }
+        if (message->isolatedEnvelope != ZR_NULL && !workerMustDisposeEnvelope) {
+            ZrCore_OwnershipTransfer_Free(state, message->isolatedEnvelope);
+        }
+        ZrLibrary_TaskRuntime_ReleasePreparedJob(state, &message->isolatedWorkItem);
+        zr_vm_thread_isolated_completion_processed(message->isolatedCompletionContext,
+                                                    completed,
+                                                    workerMustDisposeEnvelope);
+        zr_vm_thread_isolated_scheduler_dispatch_pending(state, scheduler);
+        free(message);
+        return completed ? ZR_TRUE : ZR_FALSE;
+    }
+
+    if (message->kind == ZR_VM_TASK_SCHEDULER_MESSAGE_ISOLATED_FAULT) {
+        zr_vm_thread_isolated_abort_pending_caller_transfers(state,
+                                                              message->isolatedCompletionContext);
+        ZrLibrary_TaskRuntime_FaultPreparedJob(state,
+                                               &message->isolatedWorkItem,
+                                               "IsolatedDomain worker failed Job execution");
+        ZrLibrary_TaskRuntime_ReleasePreparedJob(state, &message->isolatedWorkItem);
+        zr_vm_thread_isolated_completion_processed(message->isolatedCompletionContext,
+                                                    ZR_FALSE,
+                                                    ZR_FALSE);
+        zr_vm_thread_isolated_scheduler_dispatch_pending(state, scheduler);
+        free(message);
+        return ZR_TRUE;
+    }
+
     if (message->handle != ZR_NULL) {
         if (message->kind == ZR_VM_TASK_SCHEDULER_MESSAGE_COMPLETE &&
             zr_vm_task_transport_decode_value(state, &message->payload, &value)) {
@@ -455,6 +652,80 @@ TZrBool zr_vm_task_scheduler_process_external(SZrState *state, SZrObject *schedu
 
     zr_vm_task_transport_clear(&message->payload);
     free(message);
+    return ZR_TRUE;
+}
+
+TZrBool zr_vm_task_scheduler_enqueue_isolated_completion(
+        ZrVmTaskSchedulerRuntime *runtime,
+        ZrLibraryTaskRuntimeWorkItem *workItem,
+        SZrOwnershipTransferEnvelope *envelope,
+        SZrGcDomainIdentity workerDomain,
+        TZrPtr completionContext,
+        ZrVmTaskSchedulerMessage *preallocatedMessage) {
+    ZrVmTaskSchedulerMessage *message;
+
+    if (runtime == ZR_NULL || workItem == ZR_NULL || envelope == ZR_NULL || workerDomain.id == 0u) {
+        return ZR_FALSE;
+    }
+    message = preallocatedMessage;
+    if (message == ZR_NULL) {
+        message = (ZrVmTaskSchedulerMessage *)calloc(1, sizeof(*message));
+    }
+    if (message == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    memset(message, 0, sizeof(*message));
+    message->kind = ZR_VM_TASK_SCHEDULER_MESSAGE_ISOLATED_COMPLETE;
+    message->isolatedWorkItem = *workItem;
+    memset(workItem, 0, sizeof(*workItem));
+    message->isolatedEnvelope = envelope;
+    message->isolatedWorkerDomain = workerDomain;
+    message->isolatedCompletionContext = completionContext;
+
+    zr_vm_task_sync_mutex_lock(&runtime->mutex);
+    if (runtime->tail != ZR_NULL) {
+        runtime->tail->next = message;
+    } else {
+        runtime->head = message;
+    }
+    runtime->tail = message;
+    zr_vm_task_sync_condition_signal(&runtime->condition);
+    zr_vm_task_sync_mutex_unlock(&runtime->mutex);
+    return ZR_TRUE;
+}
+
+TZrBool zr_vm_task_scheduler_enqueue_isolated_fault(
+        ZrVmTaskSchedulerRuntime *runtime,
+        ZrLibraryTaskRuntimeWorkItem *workItem,
+        TZrPtr completionContext,
+        ZrVmTaskSchedulerMessage *preallocatedMessage) {
+    ZrVmTaskSchedulerMessage *message;
+
+    if (runtime == ZR_NULL || workItem == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    message = preallocatedMessage;
+    if (message == ZR_NULL) {
+        message = (ZrVmTaskSchedulerMessage *)calloc(1, sizeof(*message));
+    }
+    if (message == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    memset(message, 0, sizeof(*message));
+    message->kind = ZR_VM_TASK_SCHEDULER_MESSAGE_ISOLATED_FAULT;
+    message->isolatedWorkItem = *workItem;
+    memset(workItem, 0, sizeof(*workItem));
+    message->isolatedCompletionContext = completionContext;
+
+    zr_vm_task_sync_mutex_lock(&runtime->mutex);
+    if (runtime->tail != ZR_NULL) {
+        runtime->tail->next = message;
+    } else {
+        runtime->head = message;
+    }
+    runtime->tail = message;
+    zr_vm_task_sync_condition_signal(&runtime->condition);
+    zr_vm_task_sync_mutex_unlock(&runtime->mutex);
     return ZR_TRUE;
 }
 
@@ -940,7 +1211,9 @@ static TZrBool zr_vm_thread_scheduler_construct(ZrLibCallContext *context, SZrTy
     SZrObject *scheduler;
     SZrObject *queue;
     SZrTypeValue queueValue;
+    SZrDomainTransferQuota isolatedTransferQuota;
     TZrInt64 workerCount;
+    TZrUInt64 configuredPolicy;
 
     if (context == ZR_NULL || context->state == ZR_NULL || result == ZR_NULL ||
         !ZrLib_CallContext_ReadInt(context, 0, &workerCount)) {
@@ -970,7 +1243,29 @@ static TZrBool zr_vm_thread_scheduler_construct(ZrLibCallContext *context, SZrTy
                               zr_vm_task_default_support_multithread(context->state));
     zr_vm_task_set_bool_field(context->state, scheduler, kTaskIsPumpingField, ZR_FALSE);
     zr_vm_task_set_int_field(context->state, scheduler, kThreadSchedulerWorkerCountField, workerCount);
-    if (!zr_vm_thread_attached_scheduler_init(context->state, scheduler, (TZrUInt32)workerCount)) {
+    configuredPolicy = zr_vm_task_get_uint_field(context->state,
+                                                  zr_vm_task_root_object(context->state),
+                                                  kThreadSchedulerConfiguredPolicyField,
+                                                  ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ATTACHED_DOMAIN);
+    if (configuredPolicy != ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN) {
+        configuredPolicy = ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ATTACHED_DOMAIN;
+    }
+    zr_vm_task_set_uint_field(context->state,
+                              scheduler,
+                              kThreadSchedulerExecutionPolicyField,
+                              configuredPolicy);
+    if ((EZrVmThreadSchedulerExecutionPolicy)configuredPolicy ==
+            ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN) {
+        isolatedTransferQuota = zr_vm_thread_isolated_configured_transfer_quota(context->state);
+        if (!zr_vm_thread_isolated_scheduler_init(context->state,
+                                                   scheduler,
+                                                   (TZrUInt32)workerCount,
+                                                   &isolatedTransferQuota)) {
+            return ZR_FALSE;
+        }
+    } else if (!zr_vm_thread_attached_scheduler_init(context->state,
+                                                      scheduler,
+                                                      (TZrUInt32)workerCount)) {
         return ZR_FALSE;
     }
     return zr_vm_task_finish_object(context->state, result, scheduler);
@@ -979,6 +1274,7 @@ static TZrBool zr_vm_thread_scheduler_construct(ZrLibCallContext *context, SZrTy
 static TZrBool zr_vm_thread_scheduler_schedule(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *scheduler;
     SZrObject *job;
+    TZrUInt64 policy;
 
     if (context == ZR_NULL || context->state == ZR_NULL || result == ZR_NULL ||
         !ZrLib_CallContext_ReadObject(context, 0, &job)) {
@@ -989,6 +1285,13 @@ static TZrBool zr_vm_thread_scheduler_schedule(ZrLibCallContext *context, SZrTyp
     if (scheduler == ZR_NULL ||
         !zr_vm_task_require_multithread(context->state, "ThreadScheduler requires supportMultithread = true")) {
         return ZR_FALSE;
+    }
+    policy = zr_vm_task_get_uint_field(context->state,
+                                        scheduler,
+                                        kThreadSchedulerExecutionPolicyField,
+                                        ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ATTACHED_DOMAIN);
+    if (policy == ZR_VM_THREAD_SCHEDULER_EXECUTION_POLICY_ISOLATED_DOMAIN) {
+        return zr_vm_thread_isolated_scheduler_schedule(context->state, scheduler, job, result);
     }
     return zr_vm_thread_attached_scheduler_schedule(context->state, scheduler, job, result);
 }

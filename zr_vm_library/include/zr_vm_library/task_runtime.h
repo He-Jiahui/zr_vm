@@ -57,6 +57,18 @@ ZR_LIBRARY_API void ZrLibrary_TaskRuntime_ReleasePreparedJob(
         struct SZrState *state,
         ZrLibraryTaskRuntimeWorkItem *item);
 
+/* Isolated providers may inspect the callable retained by a prepared caller
+ * Task and settle that Task from a caller-domain completion queue. Neither API
+ * exposes the Job object or permits a worker-domain task root. */
+ZR_LIBRARY_API TZrBool ZrLibrary_TaskRuntime_CopyPreparedCallable(
+        struct SZrState *state,
+        const ZrLibraryTaskRuntimeWorkItem *item,
+        struct SZrTypeValue *outCallable);
+ZR_LIBRARY_API TZrBool ZrLibrary_TaskRuntime_CompletePreparedJob(
+        struct SZrState *state,
+        ZrLibraryTaskRuntimeWorkItem *item,
+        const struct SZrTypeValue *result);
+
 /* Provider schedulers register a native wait hook so Task.result() can await
  * completion without exposing a source-level pump/step member. */
 ZR_LIBRARY_API TZrBool ZrLibrary_TaskRuntime_RegisterAwaitHook(

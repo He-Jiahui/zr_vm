@@ -5,6 +5,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/state.c
   - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c
   - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_internal.h
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_isolated_domain.c
   - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c
   - zr_vm_library/include/zr_vm_library/task_runtime.h
   - zr_vm_library/src/zr_vm_library/task_runtime.c
@@ -14,6 +15,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_moves.c
 implementation_files:
   - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_isolated_domain.c
   - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c
   - zr_vm_library/src/zr_vm_library/task_runtime.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
@@ -21,9 +23,11 @@ plan_sources:
   - user: 2026-07-25 execute Syntax 12 milestones and record each completed milestone
   - docs/plans/syntax/2026-07-20-12-async-task-job-scheduler-design.md
   - docs/plans/syntax/12-async-task-job-scheduler/m4-attached-domain-thread-scheduler-implementation-plan.md
+  - docs/plans/syntax/12-async-task-job-scheduler/m5-isolated-domain-transport-implementation-plan.md
 tests:
   - tests/thread/test_thread_runtime.c
   - tests/acceptance/2026-07-25-syntax-12-m4-attached-domain-thread-scheduler.md
+  - tests/acceptance/2026-07-25-syntax-12-m5-isolated-domain-transport.md
 doc_type: module-detail
 ---
 
@@ -105,6 +109,26 @@ work-stealing, and provider/domain shutdown protocols remain separate
 milestones. The runtime uses the normal Task fault path for a failed local
 submission; it does not restore a consumed Job.
 
+## IsolatedDomain Provider (M5)
+
+The embedding host may select `IsolatedDomain` before constructing a
+`ThreadScheduler`. The public ZR contract remains unchanged. A bounded,
+caller-side FIFO retains only prepared caller Task roots and serialized
+callable artifacts while worker capacity is unavailable. Once a worker has
+created and published its independent `GcDomainIdentity`, the caller creates
+and publishes separate request/capture envelopes for that target. The worker
+claims and commits those envelopes in its own domain; its result returns in a
+separate envelope for caller-domain commit.
+
+The queue has no worker affinity: a capacity slot made available by a caller
+completion or fault acknowledgement starts the next unclaimed launch. A
+shutdown stops subsequent submissions and faults queued work when the
+provider pumps its caller-side queue. ResourceMove and ImmutableHandle remain
+canonical type-layout provider contracts. The scheduler receives only an
+`SZrTypeValue`; if no provider metadata is available at that boundary, it
+publishes a `FORBIDDEN` envelope and faults the already-consumed Job's Task.
+It never infers a provider from a value category, type name, or raw pointer.
+
 ## Test Coverage
 
 `tests/thread/test_thread_runtime.c` verifies:
@@ -113,9 +137,12 @@ submission; it does not restore a consumed Job.
 - a worker state attaching to the caller `GcDomain`;
 - one Job completing through `ThreadScheduler`;
 - two jobs draining in source submission order with `workerCount = 1`;
+- IsolatedDomain zero-capture/scalar/StructuredClone capture and result paths;
+- bounded multi-worker FIFO delivery, quota faults, forbidden payload faults,
+  later shutdown rejection, and queued shutdown faults; and
 - rejection of a non-`Send` result; and
 - rejection of a second submission of the same Job.
 
-The acceptance record captures the isolated GCC, Clang, and MSVC evidence and
-separately lists the pre-existing legacy TaskRunner failures that are outside
-this provider contract.
+The M5 acceptance record captures the isolated GCC, Clang, and MSVC evidence,
+the canonical provider transfer/race tests, and the pre-existing legacy
+TaskRunner failures that remain outside this provider contract.

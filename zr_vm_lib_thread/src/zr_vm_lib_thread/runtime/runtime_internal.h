@@ -19,6 +19,7 @@
 #endif
 
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/ownership_transfer.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/native_binding.h"
@@ -107,7 +108,9 @@ typedef struct ZrVmTaskMutexCell {
 
 enum {
     ZR_VM_TASK_SCHEDULER_MESSAGE_COMPLETE = 1,
-    ZR_VM_TASK_SCHEDULER_MESSAGE_FAULT = 2
+    ZR_VM_TASK_SCHEDULER_MESSAGE_FAULT = 2,
+    ZR_VM_TASK_SCHEDULER_MESSAGE_ISOLATED_COMPLETE = 3,
+    ZR_VM_TASK_SCHEDULER_MESSAGE_ISOLATED_FAULT = 4
 };
 
 typedef struct ZrVmTaskSchedulerMessage {
@@ -115,6 +118,10 @@ typedef struct ZrVmTaskSchedulerMessage {
     TZrUInt32 reserved;
     struct SZrObject *handle;
     ZrVmTaskTransportValue payload;
+    ZrLibraryTaskRuntimeWorkItem isolatedWorkItem;
+    SZrOwnershipTransferEnvelope *isolatedEnvelope;
+    SZrGcDomainIdentity isolatedWorkerDomain;
+    TZrPtr isolatedCompletionContext;
     struct ZrVmTaskSchedulerMessage *next;
 } ZrVmTaskSchedulerMessage;
 
@@ -143,6 +150,24 @@ typedef struct ZrVmAttachedDomainRuntime {
     TZrBool accepting;
     ZrLibraryTaskRuntimeAwaitRegistration awaitRegistration;
 } ZrVmAttachedDomainRuntime;
+
+typedef struct ZrVmTaskWorkerLaunch {
+    TZrChar *binaryPath;
+    TZrChar *projectFile;
+    TZrChar *projectDirectory;
+    TZrChar *projectSource;
+    TZrChar *projectBinary;
+    TZrChar *projectEntry;
+    TZrUInt32 captureCount;
+    ZrVmTaskTransportValue *captures;
+    ZrVmTaskSchedulerRuntime *ownerRuntime;
+    SZrObject *ownerHandle;
+    FZrAllocator allocator;
+    TZrPtr userAllocationArguments;
+    TZrUInt64 workerIsolateId;
+    TZrBool supportMultithread;
+    TZrBool autoCoroutine;
+} ZrVmTaskWorkerLaunch;
 
 typedef struct ZrVmTaskChannelMessage {
     ZrVmTaskTransportValue value;
@@ -214,7 +239,28 @@ ZrVmTaskSchedulerRuntime *zr_vm_task_scheduler_get_runtime(SZrState *state, SZrO
 void zr_vm_task_scheduler_signal_runtime(ZrVmTaskSchedulerRuntime *runtime);
 TZrBool zr_vm_task_scheduler_process_external(SZrState *state, SZrObject *scheduler);
 TZrBool zr_vm_task_scheduler_wait_for_external(SZrState *state, SZrObject *scheduler, TZrUInt32 timeoutMs);
+TZrBool zr_vm_task_scheduler_enqueue_isolated_completion(
+        ZrVmTaskSchedulerRuntime *runtime,
+        ZrLibraryTaskRuntimeWorkItem *workItem,
+        SZrOwnershipTransferEnvelope *envelope,
+        SZrGcDomainIdentity workerDomain,
+        TZrPtr completionContext,
+        ZrVmTaskSchedulerMessage *preallocatedMessage);
+TZrBool zr_vm_task_scheduler_enqueue_isolated_fault(
+        ZrVmTaskSchedulerRuntime *runtime,
+        ZrLibraryTaskRuntimeWorkItem *workItem,
+        TZrPtr completionContext,
+        ZrVmTaskSchedulerMessage *preallocatedMessage);
+void zr_vm_thread_isolated_completion_processed(TZrPtr completionContext,
+                                                TZrBool completed,
+                                                TZrBool workerMustDisposeEnvelope);
+void zr_vm_thread_isolated_abort_pending_caller_transfers(SZrState *state,
+                                                           TZrPtr completionContext);
+void zr_vm_thread_isolated_scheduler_dispatch_pending(SZrState *state,
+                                                       SZrObject *scheduler);
+void zr_vm_thread_isolated_scheduler_shutdown_all(SZrState *state);
 void zr_vm_task_record_last_worker_isolate(SZrState *state, TZrUInt64 isolateId);
+void zr_vm_task_record_last_worker_domain(SZrState *state, SZrGcDomainIdentity domain);
 TZrUInt64 zr_vm_task_next_worker_isolate_id(void);
 TZrBool zr_vm_task_finish_object(SZrState *state, SZrTypeValue *result, SZrObject *object);
 void zr_vm_task_set_value_field(SZrState *state,
@@ -287,13 +333,33 @@ TZrBool zr_vm_task_shared_cell_add_weak_ref_if_alive(ZrVmTaskSharedCell *cell);
 void zr_vm_task_shared_cell_release_strong(ZrVmTaskSharedCell *cell);
 void zr_vm_task_shared_cell_release_weak(ZrVmTaskSharedCell *cell);
 TZrBool zr_vm_task_spawn_thread_worker(ZrLibCallContext *context,
-                                       const SZrTypeValue *callable,
-                                        SZrTypeValue *result,
-                                        SZrObject *mainScheduler);
+                                        const SZrTypeValue *callable,
+                                         SZrTypeValue *result,
+                                         SZrObject *mainScheduler);
+TZrChar *zr_vm_task_worker_strdup(const TZrChar *text);
+void zr_vm_task_worker_launch_free(ZrVmTaskWorkerLaunch *launch);
+struct SZrLibrary_Project *zr_vm_task_worker_clone_project(
+        SZrState *state,
+        const ZrVmTaskWorkerLaunch *launch);
+TZrBool zr_vm_task_worker_make_temp_path(TZrChar *buffer, TZrSize bufferSize);
+TZrBool zr_vm_task_worker_load_function(SZrState *state,
+                                         const TZrChar *path,
+                                         struct SZrFunction **outFunction);
+TZrBool zr_vm_task_worker_execute_callable(SZrState *state,
+                                            const SZrTypeValue *callableValue,
+                                            SZrTypeValue *resultValue);
 TZrBool zr_vm_thread_attached_scheduler_init(SZrState *state,
                                               SZrObject *scheduler,
                                               TZrUInt32 workerCount);
 TZrBool zr_vm_thread_attached_scheduler_schedule(SZrState *state,
+                                                  SZrObject *scheduler,
+                                                  SZrObject *job,
+                                                  SZrTypeValue *result);
+TZrBool zr_vm_thread_isolated_scheduler_init(SZrState *state,
+                                              SZrObject *scheduler,
+                                              TZrUInt32 workerCount,
+                                              const SZrDomainTransferQuota *transferQuota);
+TZrBool zr_vm_thread_isolated_scheduler_schedule(SZrState *state,
                                                   SZrObject *scheduler,
                                                   SZrObject *job,
                                                   SZrTypeValue *result);

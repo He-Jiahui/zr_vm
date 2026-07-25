@@ -195,6 +195,39 @@ isolatedDomainTransport: DomainTransferKind + schema/token per payload
 - ThreadScheduler返回的Task及continuation始终归caller domain。worker只通过thread-safe completion record发布，不让caller直接访问worker Task/frame。
 - 第一版不提供常驻跨domain Channel或任意shared GC object；大型共享只读资产使用04的ImmutableHandle，可变共享使用显式Sync native/resource contract。
 
+### 6.3 `schedule` 接收点与 owner 失败语义
+
+`Scheduler.schedule(job): Task<T>`按值消费Job。source层在call完成参数绑定时就把Job和所有moved captures标为Moved；provider是否关闭、选择哪种domain policy、queue是否饱和都不能让源Place重新可用。
+
+runtime按以下顺序执行：
+
+1. 在caller domain创建proxy Task/completion record；
+2. 把Job及owner captures移入04定义的TransferEnvelope，envelope成为唯一owner；
+3. 验证静态保存的policy分支并执行same-domain prepare或cross-domain transport prepare；
+4. 完整初始化request后以release语义发布到queue，worker以acquire语义claim；
+5. worker完成target owner/frame登记后commit request envelope，再开始执行Job body；
+6. 若result含owner，worker把它移入第二个result envelope，按same-domain handoff或cross-domain transport在caller domain完成接管；
+7. result envelope已commit到caller completion record，或exception与worker cleanup已完成后，才以release语义发布completion，awaiter以acquire语义恢复。
+
+request与result envelope使用不同transfer id并各自满足唯一owner状态机。`Task<Unique<T>>`完成后，completion record是result owner；await消费唯一Task时再move给awaiter。Task未被消费而释放时由completion record Drop result，不能让worker frame和caller同时持有。该completion owner slot是Task ABI内部、带Canonical ownership/drop map的carrier，不是允许普通GC class随意声明Unique field的例外。
+
+失败处置固定如下：
+
+| 失败点 | owner处置 | Task处置 |
+|---|---|---|
+| policy/prepare/enqueue失败或scheduler已关闭 | envelope abort并Drop captures恰好一次 | 返回已Faulted proxy Task |
+| Queued时shutdown/尚未claim | 从queue移除同一envelope identity后abort | Faulted |
+| Claimed但未commit时decode/provider失败或worker确认退出 | worker或host monitor凭claim epoch CAS abort envelope | Faulted |
+| Committed后Job throw或worker正常fault | target frame cleanup Drop owner | Faulted并保留logical async stack |
+| owner result返回caller时prepare/decode/commit失败 | result envelope abort；worker/caller不能保留第二份owner | Faulted |
+| completion发布后caller不await | caller Task仍按must-use规则诊断；worker owner已按target cleanup处理 | completion保持到Task释放 |
+
+- 第一版统一采用`DropOnFailure`，不自动把owner返还给已继续执行的源scope。`Task` fault不是resource recovery carrier。
+- recoverable submission以后若需要，必须增加显式`trySchedule(...): Result<Task<T>, Job<T>>`或等价API、reference ledger与artifact contract；不能改变现有`schedule`的ABI或在某些provider中偷偷返还。
+- queue migration/work stealing可在claim前requeue同一个envelope identity，但不能创建第二个attempt；claim后不自动retry。host若重启Job，必须由更高层显式创建新Job并承担业务幂等，语言只保证owner exactly-once，不保证消息必达或副作用exactly-once。
+- scheduler close先停止admission，再abort Queued，等待Claimed进入Committed或由匹配claim epoch的worker-exit monitor转为Aborted，最后fault completion。普通timeout不构成owner reclaim依据；不能先释放queue/domain再让worker继续访问envelope。
+- 第一版无CancellationToken；未来取消只能复用同一状态机。取消在commit前可abort，commit后只能请求Job协作停止并由target cleanup收口，不能并发抢回owner。
+
 ## 7. Suspension IR、frame与GC
 
 ```text
@@ -219,11 +252,12 @@ AsyncFault(exception)
 - Canonical callable保存Async effect和显式`Task<T>` return TypeId。
 - public return TypeId规范化为`zr.task.Task<T>`；ThreadScheduler返回的proxy也使用同一TypeId，不存在thread-local Task type。
 - `.zri`保存suspension CFG、frame liveness/layout、awaiter scheduler fact和source map。
-- `.zro`保存public `zr.task.Task<T>` signature、Task/Await ABI version、owner ModuleId、required scheduler capability，以及Job的same-domain Send/Sync requirements和isolated-domain transport schema/token。
+- `.zro`保存public `zr.task.Task<T>` signature、Task/Await ABI version、owner ModuleId、required scheduler capability，以及Job的same-domain Send/Sync requirements、TransferEnvelope ABI、`DropOnFailure` disposition和isolated-domain transport schema/token。
 - host/provider manifest保存ThreadScheduler的domain policy与04的GcDomain/safepoint/transport ABI version；bind时不允许policy与artifact capability降级匹配。
 - LSP hover只显示源码真实signature，不再显示“completion T / hidden result Task<T>”双层信息。
 - debugger显示logical async stack；step-over await在suspend时返回host，resume后停在下一source statement。
 - dropped Task、borrow across await、non-Send/non-Sync capture和Forbidden cross-domain payload提供定向diagnostic。
+- runtime fault保留稳定stage category：`SchedulerClosed`、`SchedulerRejected`、`SchedulerPolicyMismatch`、`TransferPrepareFailed`、`TransferDecodeFailed`、`TransferCommitFailed`、`WorkerExited`。error data携带transfer id、source/target domain、payload TypeId和provider identity，但不得暴露裸地址；Task/LSP/debugger消费同一category而不是匹配message文本。
 
 ## 9. 迁移
 
@@ -235,8 +269,11 @@ AsyncFault(exception)
 | `runner.start()/spawn(...)` | `scheduler.schedule(init Job<T>(callable))` |
 | autoCoroutine/pump业务调用 | 删除；host loop自动驱动 |
 | cross-thread shared wrapper | same-domain改为Send move或Sync shared reference；cross-domain改为显式transport/immutable handle，无法表达则blocked |
+| dynamic `Transfer`/SharedCell/Channel transport | 删除type-name/object-field protocol；owner capture降低为Canonical TransferEnvelope，第一版不保留Channel/SharedCell public surface |
 
 旧artifact的TaskRunner contract不能静默解释为Task，必须重编译或迁移。
+
+当前`zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_transport.c`在encode成功后先设置`Transfer.taken`并清空源field，目标`Transfer`对象的allocation/decode随后才发生。该路径没有Canonical owner schema、source Place fact或完整失败返还/Drop证明，只是迁移输入；必须由04 M5/M6的envelope状态机替换，不能作为ThreadScheduler晋级证据。
 
 ## 10. 分层里程碑与验收
 
@@ -258,15 +295,17 @@ AsyncFault(exception)
 
 ### M4 AttachedDomain ThreadScheduler/Send/Sync
 
-在`zr.thread`descriptor只登记ThreadScheduler/Send/Sync，接入04 M5的mutator attach、domain-local safepoint与barrier；覆盖same-domain zero-copy move/share、awaiter affinity、scheduler close和non-Send/non-Sync diagnostics。不得re-export Task/Job/Scheduler TypeDef。
+在`zr.thread`descriptor只登记ThreadScheduler/Send/Sync，接入04 M5的mutator attach、domain-local safepoint、barrier和TransferEnvelope；覆盖same-domain zero-copy owner move/share、release/acquire queue publication、awaiter affinity、scheduler close和non-Send/non-Sync diagnostics。不得re-export Task/Job/Scheduler TypeDef。
 
-晋级门：worker触发GC时只暂停所属domain；共享domain之外的progress counter持续增长；mutable class、Shared/ref-like capture不能借“同heap”绕过Sync。
+晋级门：worker触发GC时只暂停所属domain；共享domain之外的progress counter持续增长；mutable class、Shared/ref-like capture不能借“同heap”绕过Sync。prepare/enqueue/claim/commit/abort和completion每个线性化点有直接测试，所有失败race下owner/Drop count均为1，TSAN/等价race验证无partial publication。
 
 ### M5 IsolatedDomain transport
 
-接入04 M6的DomainTransferKind，覆盖value copy、structured clone、immutable handle、resource move、request/result、quota/rollback、policy mismatch和domain shutdown。
+接入04 M6的DomainTransferKind，覆盖value copy、structured clone、immutable handle、resource prepare/commit/abort、request/result、quota、DropOnFailure、policy mismatch、work stealing和domain shutdown。
 
-晋级门：worker heap pointer永不暴露给caller；transport前后无跨domain GC edge；相同Job/Task TypeId可在固定policy的host manifest下分别验证两种成本模型。
+完成记录：[M5 IsolatedDomain transport](./12-async-task-job-scheduler/m5-isolated-domain-transport.md)。
+
+晋级门：worker heap pointer永不暴露给caller；transport前后无跨domain GC edge；相同Job/Task TypeId可在固定policy的host manifest下分别验证两种成本模型。source taken后target allocation/decode失败的回归必须证明envelope仍唯一拥有payload并最终Drop一次；claim后不得隐式retry Job。
 
 ### M6 artifact/debug/LSP/migration
 
@@ -281,9 +320,11 @@ AsyncFault(exception)
 - sync-complete path allocation counter为0；
 - illegal borrow在lowering前失败；
 - Task/frame全exit释放；
-- AttachedDomain provider只让满足Send/Sync的capture跨mutator，不因共享heap放宽并发安全；
+- AttachedDomain provider只让满足Send/Sync的capture跨mutator，不因共享heap放宽并发安全；Unique handoff不退化为AtomicShared/refcount；
 - IsolatedDomain provider不跨domain传裸GC/native pointer，所有payload命中稳定transport schema；
-- 一个domain STW时其他domain仍有进展；million completed awaits、100k suspended Tasks、worker churn、multi-mutator barrier和multi-domain GC stress有测试。
+- scheduler closed、queue saturated、policy mismatch、prepare/decode/commit failure、shutdown与Job throw分别验证Task fault、source Moved和exactly-once Drop；
+- release/acquire publication、duplicate claim/completion、stale transfer generation、ABA、work stealing和commit前/后取消race有直接并发测试；
+- 一个domain STW时其他domain仍有进展；million completed awaits、100k suspended Tasks、million owner handoffs、worker churn、multi-mutator barrier和multi-domain GC stress有测试。
 
 ## 11. Public API reference ledger
 
@@ -294,7 +335,7 @@ AsyncFault(exception)
 | `async fn ...: zr.task.Task<T>` / `await` | 显式异步状态机与等待 | `lua/runtime/src/libraries/System.Private.CoreLib/src/System/Threading/Tasks/Task.cs` | `lua/roslyn/src/Compilers/CSharp/Test/Emit/CodeGen/CodeGenAsyncTests.cs`；`lua/roslyn/src/Compilers/CSharp/Test/Semantic/Semantics/BindingAsyncTests.cs`；`lua/roslyn/src/Compilers/CSharp/Test/Emit/CodeGen/CodeGenAsyncEHTests.cs` |
 | `zr.task.Task<T>` | completion/result/fault identity | `lua/runtime/src/libraries/System.Private.CoreLib/src/System/Threading/Tasks/Task.cs`；`lua/jdk/src/java.base/share/classes/java/util/concurrent/FutureTask.java` | `lua/runtime/src/libraries/System.Runtime/tests/System.Threading.Tasks.Tests/Task/TaskStatusTest.cs`；`lua/jdk/test/jdk/java/util/concurrent/tck/FutureTaskTest.java` |
 | `zr.task.Job<T>`；`init Job<T>(fn() -> T | fn() -> Task<T>)` | cold、non-Copy work type及两种constructor contract | `lua/jdk/src/java.base/share/classes/java/util/concurrent/Callable.java`；`lua/jdk/src/java.base/share/classes/java/util/concurrent/FutureTask.java`；`lua/rust/library/core/src/future/future.rs` | `lua/jdk/test/jdk/java/util/concurrent/tck/FutureTaskTest.java`；`lua/rust/tests/ui/async-await/async-fn-nonsend.rs` |
-| `zr.task.Scheduler.schedule(job): Task<T>` | 唯一投递边界 | `lua/jdk/src/java.base/share/classes/java/util/concurrent/ExecutorService.java`；`lua/runtime/src/libraries/System.Private.CoreLib/src/System/Threading/Tasks/TaskScheduler.cs` | `lua/jdk/test/jdk/java/util/concurrent/tck/AbstractExecutorServiceTest.java`；`lua/runtime/src/libraries/System.Runtime/tests/System.Threading.Tasks.Tests/TaskScheduler/TaskSchedulerTests.cs` |
+| `zr.task.Scheduler.schedule(job): Task<T>` | 唯一投递边界；按值消费Job并以DropOnFailure收口 | `lua/jdk/src/java.base/share/classes/java/util/concurrent/ExecutorService.java`；`lua/jdk/src/java.base/share/classes/java/util/concurrent/BlockingQueue.java`；`lua/runtime/src/libraries/System.Private.CoreLib/src/System/Threading/Tasks/TaskScheduler.cs` | `lua/jdk/test/jdk/java/util/concurrent/tck/AbstractExecutorServiceTest.java`；`lua/jdk/test/jdk/java/util/concurrent/tck/LinkedBlockingQueueTest.java`；`lua/runtime/src/libraries/System.Runtime/tests/System.Threading.Tasks.Tests/TaskScheduler/TaskSchedulerTests.cs` |
 | `task.currentScheduler` | 明确continuation归属 | `lua/runtime/src/libraries/System.Private.CoreLib/src/System/Threading/Tasks/TaskScheduler.cs` | `lua/runtime/src/libraries/System.Runtime/tests/System.Threading.Tasks.Tests/TaskScheduler/TaskSchedulerTests.cs`；`lua/testes/coroutine.lua` |
 | `task.yieldNow(): Task<void>` | cooperative fairness | `lua/runtime/src/libraries/System.Private.CoreLib/src/System/Runtime/CompilerServices/YieldAwaitable.cs` | `lua/runtime/src/libraries/System.Runtime/tests/System.Threading.Tasks.Tests/System.Runtime.CompilerServices/YieldAwaitableTests.cs`；`lua/testes/coroutine.lua` |
 | `task.delay(Duration): Task<void>` | timer await without blocking thread | `lua/runtime/src/libraries/System.Private.CoreLib/src/System/Threading/Tasks/Task.cs`；`lua/jdk/src/java.base/share/classes/java/util/concurrent/ScheduledThreadPoolExecutor.java` | `lua/runtime/src/libraries/System.Runtime/tests/System.Threading.Tasks.Tests/Task/TaskRtTests.cs`；`lua/jdk/test/jdk/java/util/concurrent/tck/ScheduledExecutorTest.java` |
@@ -302,6 +343,6 @@ AsyncFault(exception)
 | `zr.thread.Send` capability | 静态限制value/owner跨mutator move | `lua/rust/library/core/src/marker.rs` | `lua/rust/tests/ui/async-await/async-fn-nonsend.rs`；`lua/rust/tests/ui/async-await/async-fn-send-uses-nonsend.rs` |
 | `zr.thread.Sync` capability | 静态限制shared reference跨mutator并发访问 | `lua/rust/library/core/src/marker.rs` | `lua/rust/tests/ui/async-await/issue-64130-1-sync.rs`；`lua/rust/tests/ui/async-await/async-fn-send-uses-nonsend.rs` |
 
-`DomainTransferKind`不是public ZR surface，因此不增加ledger实体；其runtime参考为QuickJS/Lua的runtime/state隔离（`lua/QuickJS-master/quickjs.c`、`lua/src/lstate.h`），当前迁移锚点为`zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_transport.c`与`tests/thread/test_thread_runtime.c`。
+`DomainTransferKind`和TransferEnvelope不是public ZR surface，因此不增加ledger实体；其runtime参考为QuickJS/Lua的runtime/state隔离（`lua/QuickJS-master/quickjs.c`、`lua/src/lstate.h`）、Rust Send/Sync/Arc及失败返还value的`SendError<T>`（`lua/rust/library/core/src/marker.rs`、`lua/rust/library/alloc/src/sync.rs`、`lua/rust/library/std/src/sync/mpsc.rs`），当前迁移锚点为`zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_transport.c`与`tests/thread/test_thread_runtime.c`。
 
-刻意差异：ZR采用.NET显式Task return和eager execution，但不复制custom awaiter、SynchronizationContext、TaskCreationOptions或完整cancellation体系；thread只作为Scheduler provider。GC隔离策略由host配置，语言只固定Send/Sync、domain identity和transport安全边界。
+刻意差异：ZR采用.NET显式Task return和eager execution，但不复制custom awaiter、SynchronizationContext、TaskCreationOptions或完整cancellation体系；thread只作为Scheduler provider。GC隔离策略由host配置，语言只固定Send/Sync、domain identity和transport安全边界。与Rust channel失败通过`SendError<T>`返还value不同，第一版`schedule`已消费Job并采用DropOnFailure；这保证owner exactly-once，但不承诺消息必达、源变量恢复或Job副作用exactly-once。
