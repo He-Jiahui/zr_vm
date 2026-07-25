@@ -1630,28 +1630,6 @@ static TZrBool prototype_implements_protocol_recursive(SZrCompilerState *cs,
     return ZR_FALSE;
 }
 
-static TZrBool prototype_name_matches_thread_marker_alias(const SZrTypePrototypeInfo *prototype,
-                                                          SZrString *constraintTypeName) {
-    TZrNativeString candidateText;
-    TZrNativeString constraintText;
-
-    if (prototype == ZR_NULL || !prototype->isImportedNative ||
-        prototype->name == ZR_NULL || constraintTypeName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    candidateText = ZrCore_String_GetNativeString(prototype->name);
-    constraintText = ZrCore_String_GetNativeString(constraintTypeName);
-    if (candidateText == ZR_NULL || constraintText == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    return ((strcmp(candidateText, "Send") == 0 || strcmp(candidateText, "zr.thread.Send") == 0) &&
-            (strcmp(constraintText, "Send") == 0 || strcmp(constraintText, "zr.thread.Send") == 0)) ||
-           ((strcmp(candidateText, "Sync") == 0 || strcmp(candidateText, "zr.thread.Sync") == 0) &&
-            (strcmp(constraintText, "Sync") == 0 || strcmp(constraintText, "zr.thread.Sync") == 0));
-}
-
 static TZrBool prototype_satisfies_named_constraint_recursive(SZrCompilerState *cs,
                                                               SZrTypePrototypeInfo *prototype,
                                                               SZrString *constraintTypeName,
@@ -1664,9 +1642,7 @@ static TZrBool prototype_satisfies_named_constraint_recursive(SZrCompilerState *
         return ZR_FALSE;
     }
 
-    if (prototype->name != ZR_NULL &&
-        (ZrCore_String_Equal(prototype->name, constraintTypeName) ||
-         prototype_name_matches_thread_marker_alias(prototype, constraintTypeName))) {
+    if (prototype->name != ZR_NULL && ZrCore_String_Equal(prototype->name, constraintTypeName)) {
         return ZR_TRUE;
     }
 
@@ -1740,23 +1716,6 @@ static TZrBool inferred_type_is_primitive_value_type(const SZrInferredType *actu
     return actualType->baseType == ZR_VALUE_TYPE_BOOL ||
            ZR_VALUE_IS_TYPE_INT(actualType->baseType) ||
            ZR_VALUE_IS_TYPE_FLOAT(actualType->baseType);
-}
-
-static TZrBool inferred_type_is_thread_marker_constraint(SZrString *constraintTypeName,
-                                                         const TZrChar *shortName,
-                                                         const TZrChar *qualifiedName) {
-    const TZrChar *constraintText;
-
-    if (constraintTypeName == ZR_NULL || shortName == ZR_NULL || qualifiedName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    constraintText = ZrCore_String_GetNativeString(constraintTypeName);
-    if (constraintText == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    return strcmp(constraintText, shortName) == 0 || strcmp(constraintText, qualifiedName) == 0;
 }
 
 static TZrBool inferred_type_has_thread_unsafe_ownership(const SZrInferredType *actualType) {
@@ -1949,25 +1908,28 @@ static TZrBool inferred_type_satisfies_constraint(SZrCompilerState *cs,
     SZrArray constraintArgumentTypeNames;
     TZrBool isProtocolConstraint;
     TZrBool primitiveMatches;
-    TZrBool isSendConstraint;
+    TZrBool isThreadCapabilityConstraint;
     TZrBool isSyncConstraint;
 
     if (cs == ZR_NULL || actualType == ZR_NULL || constraintTypeName == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    isSendConstraint = inferred_type_is_thread_marker_constraint(constraintTypeName, "Send", "zr.thread.Send");
-    isSyncConstraint = inferred_type_is_thread_marker_constraint(constraintTypeName, "Sync", "zr.thread.Sync");
-    if ((isSendConstraint || isSyncConstraint) && inferred_type_has_thread_unsafe_ownership(actualType)) {
-        return ZR_FALSE;
-    }
-    if ((isSendConstraint || isSyncConstraint) &&
-        inferred_type_satisfies_thread_marker_primitive(actualType, isSyncConstraint)) {
-        return ZR_TRUE;
-    }
-
     ZrCore_Array_Construct(&constraintArgumentTypeNames);
     isProtocolConstraint = try_parse_protocol_type_name(cs, constraintTypeName, &protocolId, &constraintArgumentTypeNames);
+    isThreadCapabilityConstraint = isProtocolConstraint &&
+                                  (protocolId == ZR_PROTOCOL_ID_THREAD_SEND ||
+                                   protocolId == ZR_PROTOCOL_ID_THREAD_SYNC);
+    isSyncConstraint = protocolId == ZR_PROTOCOL_ID_THREAD_SYNC;
+    if (isThreadCapabilityConstraint && inferred_type_has_thread_unsafe_ownership(actualType)) {
+        ZrCore_Array_Free(cs->state, &constraintArgumentTypeNames);
+        return ZR_FALSE;
+    }
+    if (isThreadCapabilityConstraint &&
+        inferred_type_satisfies_thread_marker_primitive(actualType, isSyncConstraint)) {
+        ZrCore_Array_Free(cs->state, &constraintArgumentTypeNames);
+        return ZR_TRUE;
+    }
     primitiveMatches = isProtocolConstraint &&
                        primitive_type_satisfies_protocol_constraint(cs,
                                                                    actualType,

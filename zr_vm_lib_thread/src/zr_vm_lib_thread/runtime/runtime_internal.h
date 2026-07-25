@@ -22,6 +22,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/native_binding.h"
+#include "zr_vm_library/task_runtime.h"
 
 typedef enum EZrVmTaskTransportKind {
     ZR_VM_TASK_TRANSPORT_KIND_NONE = 0,
@@ -124,6 +125,24 @@ typedef struct ZrVmTaskSchedulerRuntime {
     ZrVmTaskSchedulerMessage *tail;
     TZrUInt64 isolateId;
 } ZrVmTaskSchedulerRuntime;
+
+typedef struct ZrVmAttachedDomainRequest {
+    ZrLibraryTaskRuntimeWorkItem workItem;
+    struct ZrVmAttachedDomainRequest *next;
+} ZrVmAttachedDomainRequest;
+
+typedef struct ZrVmAttachedDomainRuntime {
+    ZrVmTaskMutex mutex;
+    ZrVmTaskCondition condition;
+    ZrVmAttachedDomainRequest *head;
+    ZrVmAttachedDomainRequest *tail;
+    struct SZrGlobalState *global;
+    TZrUInt32 workerLimit;
+    TZrUInt32 liveWorkerCount;
+    TZrUInt32 queuedRequestCount;
+    TZrBool accepting;
+    ZrLibraryTaskRuntimeAwaitRegistration awaitRegistration;
+} ZrVmAttachedDomainRuntime;
 
 typedef struct ZrVmTaskChannelMessage {
     ZrVmTaskTransportValue value;
@@ -269,8 +288,15 @@ void zr_vm_task_shared_cell_release_strong(ZrVmTaskSharedCell *cell);
 void zr_vm_task_shared_cell_release_weak(ZrVmTaskSharedCell *cell);
 TZrBool zr_vm_task_spawn_thread_worker(ZrLibCallContext *context,
                                        const SZrTypeValue *callable,
-                                       SZrTypeValue *result,
-                                       SZrObject *mainScheduler);
+                                        SZrTypeValue *result,
+                                        SZrObject *mainScheduler);
+TZrBool zr_vm_thread_attached_scheduler_init(SZrState *state,
+                                              SZrObject *scheduler,
+                                              TZrUInt32 workerCount);
+TZrBool zr_vm_thread_attached_scheduler_schedule(SZrState *state,
+                                                  SZrObject *scheduler,
+                                                  SZrObject *job,
+                                                  SZrTypeValue *result);
 
 TZrBool zr_vm_task_channel_construct(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool zr_vm_task_channel_send(ZrLibCallContext *context, SZrTypeValue *result);

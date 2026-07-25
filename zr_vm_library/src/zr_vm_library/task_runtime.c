@@ -13,6 +13,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/native_binding.h"
 #include "zr_vm_library/native_registry.h"
+#include "zr_vm_library/task_runtime.h"
 #include "zr_vm_library/project.h"
 
 #ifndef ZR_ARRAY_COUNT
@@ -43,6 +44,7 @@ static const TZrChar *kTaskJobCallableField = "__zr_task_job_callable";
 static const TZrChar *kTaskJobConsumedField = "__zr_task_job_consumed";
 static const TZrChar *kTaskCooperativeTaskField = "__zr_task_cooperative_task";
 static const TZrChar *kTaskCooperativeTurnsField = "__zr_task_cooperative_turns";
+static const TZrChar *kTaskProviderAwaitRegistrationField = "__zr_task_provider_await_registration";
 
 static TZrBool task_runtime_scheduler_invoke_step(SZrState *state, SZrObject *scheduler);
 
@@ -714,6 +716,16 @@ static TZrBool task_runtime_wait_for_task(SZrState *state, SZrObject *handle, SZ
     if (scheduler == ZR_NULL) {
         scheduler = task_runtime_ensure_coroutine_scheduler(state);
     }
+    if (scheduler != ZR_NULL) {
+        TZrBool providerHandled = ZR_FALSE;
+
+        if (!ZrLibrary_TaskRuntime_AwaitProviderTask(state, scheduler, handle, &providerHandled)) {
+            return ZR_FALSE;
+        }
+        if (providerHandled) {
+            return task_runtime_wait_for_task(state, handle, result);
+        }
+    }
     autoCoroutine = scheduler != ZR_NULL && task_runtime_get_bool_field(state, scheduler, kTaskAutoCoroutineField, ZR_TRUE);
     isPumping = scheduler != ZR_NULL && task_runtime_get_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE);
 
@@ -852,15 +864,18 @@ static TZrBool task_runtime_start_runner_on_scheduler(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrBool task_runtime_schedule_job_on_scheduler(SZrState *state,
-                                                       SZrObject *scheduler,
-                                                       SZrObject *job,
-                                                       SZrTypeValue *result) {
+TZrBool ZrLibrary_TaskRuntime_PrepareJob(SZrState *state,
+                                         SZrObject *scheduler,
+                                         SZrObject *job,
+                                         SZrTypeValue *result,
+                                         ZrLibraryTaskRuntimeWorkItem *outItem) {
     const SZrTypeValue *callable;
-    SZrObject *queue;
     SZrObject *handle;
 
-    if (state == ZR_NULL || scheduler == ZR_NULL || job == ZR_NULL || result == ZR_NULL) {
+    if (outItem != ZR_NULL) {
+        memset(outItem, 0, sizeof(*outItem));
+    }
+    if (state == ZR_NULL || scheduler == ZR_NULL || job == ZR_NULL || result == ZR_NULL || outItem == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -882,20 +897,136 @@ static TZrBool task_runtime_schedule_job_on_scheduler(SZrState *state,
     task_runtime_set_null_field(state, job, kTaskJobCallableField);
 
     handle = ZR_CAST_OBJECT(state, result->value.object);
+    task_runtime_set_int_field(state, handle, kTaskStatusField, ZR_VM_TASK_STATUS_QUEUED);
+    if (!ZrCore_GcRootHandle_Create(state, ZR_CAST_RAW_OBJECT_AS_SUPER(handle), &outItem->taskRoot)) {
+        SZrTypeValue errorValue;
+        ZrLib_Value_SetString(state, &errorValue, "Scheduler could not root Job completion");
+        task_runtime_handle_mark_faulted(state, handle, ZR_THREAD_STATUS_RUNTIME_ERROR, &errorValue);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_TaskRuntime_ExecutePreparedJob(SZrState *state,
+                                                  ZrLibraryTaskRuntimeWorkItem *item) {
+    SZrRawObject *rawTask = ZR_NULL;
+    SZrObject *task;
+
+    if (state == ZR_NULL || item == ZR_NULL ||
+        !ZrCore_GcRootHandle_Resolve(state, &item->taskRoot, &rawTask) || rawTask == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    task = ZR_CAST_OBJECT(state, rawTask);
+    return task_runtime_execute_task(state, task);
+}
+
+void ZrLibrary_TaskRuntime_FaultPreparedJob(SZrState *state,
+                                            ZrLibraryTaskRuntimeWorkItem *item,
+                                            const TZrChar *message) {
+    SZrRawObject *rawTask = ZR_NULL;
+    SZrObject *task;
+    SZrTypeValue errorValue;
+
+    if (state == ZR_NULL || item == ZR_NULL ||
+        !ZrCore_GcRootHandle_Resolve(state, &item->taskRoot, &rawTask) || rawTask == ZR_NULL) {
+        return;
+    }
+    task = ZR_CAST_OBJECT(state, rawTask);
+    ZrLib_Value_SetString(state, &errorValue, message != ZR_NULL ? message : "ThreadScheduler failed Job execution");
+    task_runtime_handle_mark_faulted(state, task, ZR_THREAD_STATUS_RUNTIME_ERROR, &errorValue);
+}
+
+void ZrLibrary_TaskRuntime_ReleasePreparedJob(SZrState *state,
+                                              ZrLibraryTaskRuntimeWorkItem *item) {
+    if (state == ZR_NULL || item == ZR_NULL) {
+        return;
+    }
+    ZrCore_GcRootHandle_Release(state, &item->taskRoot);
+    memset(item, 0, sizeof(*item));
+}
+
+static TZrBool task_runtime_schedule_job_on_scheduler(SZrState *state,
+                                                       SZrObject *scheduler,
+                                                       SZrObject *job,
+                                                       SZrTypeValue *result) {
+    ZrLibraryTaskRuntimeWorkItem item;
+    SZrObject *queue;
+
+    if (!ZrLibrary_TaskRuntime_PrepareJob(state, scheduler, job, result, &item)) {
+        return ZR_FALSE;
+    }
     queue = task_runtime_scheduler_queue(state, scheduler);
     if (queue == ZR_NULL || !ZrLib_Array_PushValue(state, queue, result)) {
-        SZrTypeValue errorValue;
-        ZrLib_Value_SetString(state, &errorValue, "Scheduler rejected Job after consume");
-        return task_runtime_handle_mark_faulted(state, handle, ZR_THREAD_STATUS_RUNTIME_ERROR, &errorValue);
+        ZrLibrary_TaskRuntime_FaultPreparedJob(state, &item, "Scheduler rejected Job after consume");
+        ZrLibrary_TaskRuntime_ReleasePreparedJob(state, &item);
+        return ZR_FALSE;
     }
-
-    task_runtime_set_int_field(state, handle, kTaskStatusField, ZR_VM_TASK_STATUS_QUEUED);
     if (task_runtime_get_bool_field(state, scheduler, kTaskAutoCoroutineField, ZR_TRUE) &&
         !task_runtime_get_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE)) {
         task_runtime_scheduler_pump_internal(state, scheduler);
     }
-
+    ZrLibrary_TaskRuntime_ReleasePreparedJob(state, &item);
     return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_TaskRuntime_ScheduleJob(SZrState *state,
+                                          SZrObject *scheduler,
+                                          SZrObject *job,
+                                          SZrTypeValue *result) {
+    return task_runtime_schedule_job_on_scheduler(state, scheduler, job, result);
+}
+
+TZrBool ZrLibrary_TaskRuntime_RegisterAwaitHook(
+        SZrState *state,
+        SZrObject *scheduler,
+        const ZrLibraryTaskRuntimeAwaitRegistration *registration) {
+    SZrTypeValue registrationValue;
+
+    if (state == ZR_NULL || scheduler == ZR_NULL || registration == ZR_NULL || registration->awaitHook == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Value_InitAsNativePointer(state, &registrationValue, (TZrPtr)registration);
+    task_runtime_set_value_field(state, scheduler, kTaskProviderAwaitRegistrationField, &registrationValue);
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_TaskRuntime_AwaitProviderTask(
+        SZrState *state,
+        SZrObject *scheduler,
+        SZrObject *task,
+        TZrBool *outHandled) {
+    const SZrTypeValue *registrationValue;
+    const ZrLibraryTaskRuntimeAwaitRegistration *registration;
+
+    if (outHandled != ZR_NULL) {
+        *outHandled = ZR_FALSE;
+    }
+    if (state == ZR_NULL || scheduler == ZR_NULL || task == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    registrationValue = task_runtime_get_field_value(state, scheduler, kTaskProviderAwaitRegistrationField);
+    if (registrationValue == ZR_NULL || registrationValue->type != ZR_VALUE_TYPE_NATIVE_POINTER ||
+        registrationValue->value.nativeObject.nativePointer == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    registration = (const ZrLibraryTaskRuntimeAwaitRegistration *)registrationValue->value.nativeObject.nativePointer;
+    if (registration->awaitHook == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (outHandled != ZR_NULL) {
+        *outHandled = ZR_TRUE;
+    }
+    return registration->awaitHook(state, task, registration->context);
+}
+
+TZrBool ZrLibrary_TaskRuntime_IsTaskComplete(SZrState *state, SZrObject *task) {
+    TZrInt64 status;
+
+    if (state == ZR_NULL || task == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    status = task_runtime_get_int_field(state, task, kTaskStatusField, ZR_VM_TASK_STATUS_CREATED);
+    return status == ZR_VM_TASK_STATUS_COMPLETED || status == ZR_VM_TASK_STATUS_FAULTED;
 }
 
 static TZrBool task_runtime_create_runner(ZrLibCallContext *context, SZrTypeValue *result) {

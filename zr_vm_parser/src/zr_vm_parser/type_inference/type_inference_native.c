@@ -1153,6 +1153,29 @@ static SZrString *native_module_info_local_type_name(SZrCompilerState *cs,
                                 typeNameLength - moduleNameLength - 1U);
 }
 
+static SZrString *native_module_info_resolve_contract_type_name(SZrCompilerState *cs,
+                                                                 SZrString *moduleName,
+                                                                 SZrString *typeName) {
+    SZrTypePrototypeInfo *prototype;
+    SZrString *localTypeName;
+
+    if (cs == ZR_NULL || typeName == ZR_NULL) {
+        return typeName;
+    }
+
+    /* A native contract may refer to a type exported by another module. Resolve
+     * that reference through the imported module's canonical prototype before
+     * copying it into a member signature, so generic binding compares the same
+     * semantic type on both sides rather than qualified display spellings. */
+    prototype = find_compiler_type_prototype_inference(cs, typeName);
+    if (prototype != ZR_NULL && prototype->name != ZR_NULL) {
+        return prototype->name;
+    }
+
+    localTypeName = native_module_info_local_type_name(cs, moduleName, typeName);
+    return localTypeName;
+}
+
 static void native_module_info_copy_parameter_types(SZrCompilerState *cs,
                                                     SZrString *moduleName,
                                                     SZrTypeMemberInfo *memberInfo,
@@ -1178,7 +1201,7 @@ static void native_module_info_copy_parameter_types(SZrCompilerState *cs,
         SZrString *parameterName = native_module_info_get_string_field(
                 cs->state, parameterEntry, "name");
         SZrString *typeName = native_module_info_get_string_field(cs->state, parameterEntry, "typeName");
-        SZrString *localTypeName = native_module_info_local_type_name(cs, moduleName, typeName);
+        SZrString *localTypeName = native_module_info_resolve_contract_type_name(cs, moduleName, typeName);
         SZrInferredType parameterType;
 
         ZrParser_InferredType_Init(cs->state, &parameterType, ZR_VALUE_TYPE_OBJECT);
@@ -3035,7 +3058,7 @@ translate_module_info:
             goto cleanup;
         }
         if (!native_module_info_register_canonical_constructor_contracts(
-                    cs, &typePrototype)) {
+                   cs, &typePrototype)) {
             goto cleanup;
         }
         ZrCore_Array_Push(cs->state, &cs->typePrototypes, &typePrototype);

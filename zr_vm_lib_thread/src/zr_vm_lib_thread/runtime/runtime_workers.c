@@ -9,6 +9,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/exception.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/task_runtime.h"
@@ -22,6 +23,292 @@
 
 static const TZrChar *kTaskPendingWorkersField = "__zr_task_pending_workers";
 static const TZrChar *kTaskWorkerIsolateIdField = "__zr_task_worker_isolate_id";
+static const TZrChar *kThreadSchedulerAttachedRuntimeField = "__zr_thread_scheduler_attached_runtime";
+
+typedef struct ZrVmAttachedDomainWorkerLaunch {
+    ZrVmAttachedDomainRuntime *runtime;
+    SZrState *state;
+} ZrVmAttachedDomainWorkerLaunch;
+
+static ZrVmAttachedDomainRuntime *zr_vm_thread_attached_scheduler_runtime(
+        SZrState *state,
+        SZrObject *scheduler) {
+    const SZrTypeValue *runtimeValue;
+
+    if (state == ZR_NULL || scheduler == ZR_NULL) {
+        return ZR_NULL;
+    }
+    runtimeValue = zr_vm_task_get_field_value(state, scheduler, kThreadSchedulerAttachedRuntimeField);
+    if (runtimeValue == ZR_NULL || runtimeValue->type != ZR_VALUE_TYPE_NATIVE_POINTER) {
+        return ZR_NULL;
+    }
+    return (ZrVmAttachedDomainRuntime *)runtimeValue->value.nativeObject.nativePointer;
+}
+
+static TZrBool zr_vm_thread_attached_scheduler_await(SZrState *state,
+                                                      SZrObject *task,
+                                                      TZrPtr context) {
+    ZrVmAttachedDomainRuntime *runtime = (ZrVmAttachedDomainRuntime *)context;
+
+    if (state == ZR_NULL || task == ZR_NULL || runtime == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    while (!ZrLibrary_TaskRuntime_IsTaskComplete(state, task)) {
+        zr_vm_task_sync_mutex_lock(&runtime->mutex);
+        if (!ZrLibrary_TaskRuntime_IsTaskComplete(state, task)) {
+            zr_vm_task_sync_condition_wait(&runtime->condition, &runtime->mutex, 10u);
+        }
+        zr_vm_task_sync_mutex_unlock(&runtime->mutex);
+    }
+    return ZR_TRUE;
+}
+
+static void zr_vm_thread_attached_scheduler_worker_finished(ZrVmAttachedDomainRuntime *runtime) {
+    if (runtime == ZR_NULL) {
+        return;
+    }
+    zr_vm_task_sync_mutex_lock(&runtime->mutex);
+    if (runtime->liveWorkerCount > 0u) {
+        runtime->liveWorkerCount--;
+    }
+    zr_vm_task_sync_condition_signal(&runtime->condition);
+    zr_vm_task_sync_mutex_unlock(&runtime->mutex);
+}
+
+static void zr_vm_thread_attached_scheduler_worker_run(ZrVmAttachedDomainWorkerLaunch *launch) {
+    ZrVmAttachedDomainRuntime *runtime;
+    SZrState *workerState;
+    TZrBool workerIsLive = ZR_TRUE;
+
+    if (launch == ZR_NULL) {
+        return;
+    }
+    runtime = launch->runtime;
+    workerState = launch->state;
+    free(launch);
+    if (runtime == ZR_NULL || workerState == ZR_NULL || !ZrCore_State_MutatorLaunch(workerState)) {
+        if (workerState != ZR_NULL && workerState->global != ZR_NULL) {
+            ZrCore_State_Free(workerState->global, workerState);
+        }
+        zr_vm_thread_attached_scheduler_worker_finished(runtime);
+        return;
+    }
+
+    while (ZR_TRUE) {
+        ZrVmAttachedDomainRequest *request;
+
+        zr_vm_task_sync_mutex_lock(&runtime->mutex);
+        request = runtime->head;
+        if (request != ZR_NULL) {
+            runtime->head = request->next;
+            if (runtime->head == ZR_NULL) {
+                runtime->tail = ZR_NULL;
+            }
+        } else if (runtime->liveWorkerCount > 0u) {
+            /* Make a later submission start a replacement before this worker exits. */
+            runtime->liveWorkerCount--;
+            workerIsLive = ZR_FALSE;
+            zr_vm_task_sync_condition_signal(&runtime->condition);
+        }
+        zr_vm_task_sync_mutex_unlock(&runtime->mutex);
+        if (request == ZR_NULL) {
+            break;
+        }
+
+        if (!ZrLibrary_TaskRuntime_ExecutePreparedJob(workerState, &request->workItem)) {
+            ZrLibrary_TaskRuntime_FaultPreparedJob(workerState,
+                                                   &request->workItem,
+                                                   "AttachedDomain worker could not execute Job");
+        }
+        ZrLibrary_TaskRuntime_ReleasePreparedJob(workerState, &request->workItem);
+        free(request);
+
+        zr_vm_task_sync_mutex_lock(&runtime->mutex);
+        if (runtime->queuedRequestCount > 0u) {
+            runtime->queuedRequestCount--;
+        }
+        zr_vm_task_sync_condition_signal(&runtime->condition);
+        zr_vm_task_sync_mutex_unlock(&runtime->mutex);
+        ZrCore_GcDomain_MutatorPoll(workerState);
+    }
+
+    ZrCore_State_MutatorExit(workerState);
+    ZrCore_State_Free(workerState->global, workerState);
+    if (workerIsLive) {
+        zr_vm_thread_attached_scheduler_worker_finished(runtime);
+    }
+}
+
+#if defined(ZR_PLATFORM_WIN)
+static unsigned __stdcall zr_vm_thread_attached_scheduler_worker_entry(void *argument) {
+    zr_vm_thread_attached_scheduler_worker_run((ZrVmAttachedDomainWorkerLaunch *)argument);
+    return 0;
+}
+#else
+static void *zr_vm_thread_attached_scheduler_worker_entry(void *argument) {
+    zr_vm_thread_attached_scheduler_worker_run((ZrVmAttachedDomainWorkerLaunch *)argument);
+    return ZR_NULL;
+}
+#endif
+
+static TZrBool zr_vm_thread_attached_scheduler_start_worker(
+        ZrVmAttachedDomainRuntime *runtime,
+        SZrState *callerState) {
+    ZrVmAttachedDomainWorkerLaunch *launch;
+
+    if (runtime == ZR_NULL || callerState == ZR_NULL || callerState->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    launch = (ZrVmAttachedDomainWorkerLaunch *)calloc(1, sizeof(*launch));
+    if (launch == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    launch->runtime = runtime;
+    launch->state = ZrCore_State_New(callerState->global);
+    if (launch->state == ZR_NULL) {
+        free(launch);
+        return ZR_FALSE;
+    }
+
+#if defined(ZR_PLATFORM_WIN)
+    {
+        uintptr_t threadHandle = _beginthreadex(ZR_NULL,
+                                                0,
+                                                zr_vm_thread_attached_scheduler_worker_entry,
+                                                launch,
+                                                0,
+                                                ZR_NULL);
+        if (threadHandle == 0) {
+            ZrCore_State_Free(callerState->global, launch->state);
+            free(launch);
+            return ZR_FALSE;
+        }
+        CloseHandle((HANDLE)threadHandle);
+    }
+#else
+    {
+        pthread_t thread;
+        if (pthread_create(&thread, ZR_NULL, zr_vm_thread_attached_scheduler_worker_entry, launch) != 0) {
+            ZrCore_State_Free(callerState->global, launch->state);
+            free(launch);
+            return ZR_FALSE;
+        }
+        pthread_detach(thread);
+    }
+#endif
+    return ZR_TRUE;
+}
+
+TZrBool zr_vm_thread_attached_scheduler_init(SZrState *state,
+                                              SZrObject *scheduler,
+                                              TZrUInt32 workerCount) {
+    ZrVmAttachedDomainRuntime *runtime;
+    SZrTypeValue runtimeValue;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || scheduler == ZR_NULL || workerCount == 0u) {
+        return ZR_FALSE;
+    }
+    runtime = (ZrVmAttachedDomainRuntime *)calloc(1, sizeof(*runtime));
+    if (runtime == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    zr_vm_task_sync_mutex_init(&runtime->mutex);
+    zr_vm_task_sync_condition_init(&runtime->condition);
+    runtime->global = state->global;
+    runtime->workerLimit = workerCount;
+    runtime->accepting = ZR_TRUE;
+    runtime->awaitRegistration.awaitHook = zr_vm_thread_attached_scheduler_await;
+    runtime->awaitRegistration.context = runtime;
+    ZrCore_Value_InitAsNativePointer(state, &runtimeValue, runtime);
+    zr_vm_task_set_value_field(state, scheduler, kThreadSchedulerAttachedRuntimeField, &runtimeValue);
+    if (!ZrLibrary_TaskRuntime_RegisterAwaitHook(state, scheduler, &runtime->awaitRegistration)) {
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool zr_vm_thread_attached_scheduler_schedule(SZrState *state,
+                                                  SZrObject *scheduler,
+                                                  SZrObject *job,
+                                                  SZrTypeValue *result) {
+    ZrVmAttachedDomainRuntime *runtime;
+    ZrVmAttachedDomainRequest *request;
+    TZrBool startWorker = ZR_FALSE;
+
+    runtime = zr_vm_thread_attached_scheduler_runtime(state, scheduler);
+    if (runtime == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    request = (ZrVmAttachedDomainRequest *)calloc(1, sizeof(*request));
+    if (request == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!ZrLibrary_TaskRuntime_PrepareJob(state, scheduler, job, result, &request->workItem)) {
+        free(request);
+        return ZR_FALSE;
+    }
+
+    zr_vm_task_sync_mutex_lock(&runtime->mutex);
+    if (!runtime->accepting) {
+        zr_vm_task_sync_mutex_unlock(&runtime->mutex);
+        ZrLibrary_TaskRuntime_FaultPreparedJob(state, &request->workItem, "ThreadScheduler is closed");
+        ZrLibrary_TaskRuntime_ReleasePreparedJob(state, &request->workItem);
+        free(request);
+        return ZR_FALSE;
+    }
+    if (runtime->tail != ZR_NULL) {
+        runtime->tail->next = request;
+    } else {
+        runtime->head = request;
+    }
+    runtime->tail = request;
+    runtime->queuedRequestCount++;
+    if (runtime->liveWorkerCount < runtime->workerLimit) {
+        runtime->liveWorkerCount++;
+        startWorker = ZR_TRUE;
+    }
+    zr_vm_task_sync_condition_signal(&runtime->condition);
+    zr_vm_task_sync_mutex_unlock(&runtime->mutex);
+
+    if (startWorker && !zr_vm_thread_attached_scheduler_start_worker(runtime, state)) {
+        ZrVmAttachedDomainRequest **pending;
+        TZrBool requestStillQueued = ZR_FALSE;
+
+        zr_vm_task_sync_mutex_lock(&runtime->mutex);
+        if (runtime->liveWorkerCount > 0u) {
+            runtime->liveWorkerCount--;
+        }
+        pending = &runtime->head;
+        while (*pending != ZR_NULL) {
+            if (*pending == request) {
+                *pending = request->next;
+                if (runtime->tail == request) {
+                    runtime->tail = runtime->head;
+                    while (runtime->tail != ZR_NULL && runtime->tail->next != ZR_NULL) {
+                        runtime->tail = runtime->tail->next;
+                    }
+                }
+                if (runtime->queuedRequestCount > 0u) {
+                    runtime->queuedRequestCount--;
+                }
+                requestStillQueued = ZR_TRUE;
+                break;
+            }
+            pending = &(*pending)->next;
+        }
+        zr_vm_task_sync_condition_signal(&runtime->condition);
+        zr_vm_task_sync_mutex_unlock(&runtime->mutex);
+        if (requestStillQueued) {
+            ZrLibrary_TaskRuntime_FaultPreparedJob(state,
+                                                   &request->workItem,
+                                                   "ThreadScheduler could not start AttachedDomain worker");
+            ZrLibrary_TaskRuntime_ReleasePreparedJob(state, &request->workItem);
+            free(request);
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
 
 typedef struct ZrVmTaskWorkerLaunch {
     TZrChar *binaryPath;

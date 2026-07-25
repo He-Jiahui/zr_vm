@@ -127,6 +127,15 @@ ZR_CORE_API void ZrCore_State_Init(SZrState *state, struct SZrGlobalState *globa
 
 ZR_CORE_API void ZrCore_State_MainThreadLaunch(SZrState *state, TZrPtr arguments);
 
+/*
+ * Start and stop a secondary state already attached to the caller's GcDomain.
+ * These functions intentionally do not initialize global registries or a
+ * second main thread; providers use them for an AttachedDomain mutator.
+ */
+ZR_CORE_API TZrBool ZrCore_State_MutatorLaunch(SZrState *state);
+
+ZR_CORE_API void ZrCore_State_MutatorExit(SZrState *state);
+
 ZR_CORE_API void ZrCore_State_Exit(SZrState *state);
 
 ZR_CORE_API void ZrCore_State_Free(struct SZrGlobalState *global, SZrState *state);

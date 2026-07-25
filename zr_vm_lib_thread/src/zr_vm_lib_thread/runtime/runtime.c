@@ -1,5 +1,7 @@
 #include "runtime/runtime_internal.h"
 
+#include "zr_vm_library/task_runtime.h"
+
 #include <string.h>
 
 #include "zr_vm_core/debug.h"
@@ -37,6 +39,7 @@ static const TZrChar *kTaskSchedulerOwnerField = "__zr_task_scheduler_owner";
 static const TZrChar *kTaskRunnerCallableField = "__zr_task_runner_callable";
 static const TZrChar *kTaskRunnerStartedField = "__zr_task_runner_started";
 static const TZrChar *kThreadObjectSchedulerField = "__zr_thread_scheduler";
+static const TZrChar *kThreadSchedulerWorkerCountField = "__zr_thread_scheduler_worker_count";
 static const TZrUInt32 kTaskSchedulerExternalWaitMs = 1u;
 
 static TZrBool zr_vm_task_spawn_on_scheduler(ZrLibCallContext *context,
@@ -933,6 +936,63 @@ static SZrObject *zr_vm_thread_create_scheduler(SZrState *state) {
     return scheduler;
 }
 
+static TZrBool zr_vm_thread_scheduler_construct(ZrLibCallContext *context, SZrTypeValue *result) {
+    SZrObject *scheduler;
+    SZrObject *queue;
+    SZrTypeValue queueValue;
+    TZrInt64 workerCount;
+
+    if (context == ZR_NULL || context->state == ZR_NULL || result == ZR_NULL ||
+        !ZrLib_CallContext_ReadInt(context, 0, &workerCount)) {
+        return ZR_FALSE;
+    }
+    if (workerCount <= 0) {
+        return zr_vm_task_raise_runtime_error(context->state,
+                                              "ThreadScheduler workerCount must be greater than zero");
+    }
+
+    scheduler = zr_vm_task_resolve_construct_target(context);
+    queue = ZrLib_Array_New(context->state);
+    if (scheduler == ZR_NULL || queue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrLib_Value_SetObject(context->state, &queueValue, queue, ZR_VALUE_TYPE_ARRAY);
+    zr_vm_task_set_value_field(context->state, scheduler, kTaskQueueField, &queueValue);
+    zr_vm_task_set_int_field(context->state, scheduler, kTaskQueueHeadField, 0);
+    zr_vm_task_set_bool_field(context->state,
+                              scheduler,
+                              kTaskAutoCoroutineField,
+                              zr_vm_task_default_auto_coroutine(context->state));
+    zr_vm_task_set_bool_field(context->state,
+                              scheduler,
+                              kTaskSupportMultithreadField,
+                              zr_vm_task_default_support_multithread(context->state));
+    zr_vm_task_set_bool_field(context->state, scheduler, kTaskIsPumpingField, ZR_FALSE);
+    zr_vm_task_set_int_field(context->state, scheduler, kThreadSchedulerWorkerCountField, workerCount);
+    if (!zr_vm_thread_attached_scheduler_init(context->state, scheduler, (TZrUInt32)workerCount)) {
+        return ZR_FALSE;
+    }
+    return zr_vm_task_finish_object(context->state, result, scheduler);
+}
+
+static TZrBool zr_vm_thread_scheduler_schedule(ZrLibCallContext *context, SZrTypeValue *result) {
+    SZrObject *scheduler;
+    SZrObject *job;
+
+    if (context == ZR_NULL || context->state == ZR_NULL || result == ZR_NULL ||
+        !ZrLib_CallContext_ReadObject(context, 0, &job)) {
+        return ZR_FALSE;
+    }
+
+    scheduler = zr_vm_task_self_object(context);
+    if (scheduler == ZR_NULL ||
+        !zr_vm_task_require_multithread(context->state, "ThreadScheduler requires supportMultithread = true")) {
+        return ZR_FALSE;
+    }
+    return zr_vm_thread_attached_scheduler_schedule(context->state, scheduler, job, result);
+}
+
 static const SZrTypeValue *zr_vm_thread_runner_callable(SZrState *state, SZrObject *runner) {
     return zr_vm_task_get_field_value(state, runner, kTaskRunnerCallableField);
 }
@@ -1161,7 +1221,18 @@ static const ZrLibParameterDescriptor g_thread_start_parameters[] = {
         {"runner", "zr.task.TaskRunner<T>", "The task runner to launch on the target thread scheduler."},
 };
 
-static const TZrChar *g_scheduler_implements[] = {"IScheduler"};
+static const ZrLibParameterDescriptor g_thread_scheduler_schedule_parameters[] = {
+        {"job", "zr.task.Job<T>", "The cold Job consumed by this ThreadScheduler."},
+};
+
+static const ZrLibParameterDescriptor g_thread_scheduler_constructor_parameters[] = {
+        {"workerCount", "int", "The number of workers attached to the caller GcDomain."},
+};
+
+static const ZrLibParameterDescriptor g_thread_value_parameters[] = {
+        {"value", "T", "The value carried by the thread runtime wrapper."},
+};
+
 static const TZrChar *g_send_sync_implements[] = {"Send", "Sync"};
 static const TZrChar *g_send_implements[] = {"Send"};
 
@@ -1187,6 +1258,27 @@ static const ZrLibMethodDescriptor g_scheduler_methods[] = {
                                       "Enable or disable automatic scheduler pumping.", ZR_FALSE, ZR_NULL, 0),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("getAutoCoroutine", 0, 0, zr_vm_task_scheduler_get_auto, "bool",
                                       "Return the scheduler autoCoroutine flag.", ZR_FALSE, ZR_NULL, 0),
+};
+
+static const ZrLibMethodDescriptor g_thread_scheduler_methods[] = {
+        {"schedule", 1, 1, zr_vm_thread_scheduler_schedule, "zr.task.Task<T>",
+         "Consume a canonical Job and publish its caller-domain Task.", ZR_FALSE,
+          g_thread_scheduler_schedule_parameters, ZR_ARRAY_COUNT(g_thread_scheduler_schedule_parameters),
+          ZR_MEMBER_CONTRACT_ROLE_TASK_SCHEDULER_SCHEDULE, g_send_generic_parameter,
+          ZR_ARRAY_COUNT(g_send_generic_parameter), 0U},
+};
+
+static const ZrLibMetaMethodDescriptor g_thread_scheduler_meta_methods[] = {
+        {
+                .metaType = ZR_META_CONSTRUCTOR,
+                .minArgumentCount = 1,
+                .maxArgumentCount = 1,
+                .callback = zr_vm_thread_scheduler_construct,
+                .returnTypeName = "ThreadScheduler",
+                .documentation = "Create a ThreadScheduler provider attached to the current GcDomain.",
+                .parameters = g_thread_scheduler_constructor_parameters,
+                .parameterCount = ZR_ARRAY_COUNT(g_thread_scheduler_constructor_parameters),
+        },
 };
 
 static const ZrLibMethodDescriptor g_thread_methods[] = {
@@ -1275,8 +1367,18 @@ static const ZrLibMethodDescriptor g_shared_lock_methods[] = {
 };
 
 static const ZrLibMetaMethodDescriptor g_shared_meta_methods[] = {
-        {ZR_META_CONSTRUCTOR, 1, 1, zr_vm_task_shared_construct, "Shared<T>",
-         "Construct a shared wrapper cell from a value.", ZR_NULL, 0},
+        {
+                .metaType = ZR_META_CONSTRUCTOR,
+                .minArgumentCount = 1,
+                .maxArgumentCount = 1,
+                .callback = zr_vm_task_shared_construct,
+                .returnTypeName = "Shared<T>",
+                .documentation = "Construct a shared wrapper cell from a value.",
+                .parameters = g_thread_value_parameters,
+                .parameterCount = ZR_ARRAY_COUNT(g_thread_value_parameters),
+                .genericParameters = g_send_sync_generic_parameter,
+                .genericParameterCount = ZR_ARRAY_COUNT(g_send_sync_generic_parameter),
+        },
 };
 
 static const ZrLibMetaMethodDescriptor g_channel_meta_methods[] = {
@@ -1285,32 +1387,74 @@ static const ZrLibMetaMethodDescriptor g_channel_meta_methods[] = {
 };
 
 static const ZrLibMetaMethodDescriptor g_transfer_meta_methods[] = {
-        {ZR_META_CONSTRUCTOR, 1, 1, zr_vm_task_transfer_construct, "Transfer<T>",
-         "Construct a single-consumer transfer wrapper from a value.", ZR_NULL, 0},
+        {
+                .metaType = ZR_META_CONSTRUCTOR,
+                .minArgumentCount = 1,
+                .maxArgumentCount = 1,
+                .callback = zr_vm_task_transfer_construct,
+                .returnTypeName = "Transfer<T>",
+                .documentation = "Construct a single-consumer transfer wrapper from a value.",
+                .parameters = g_thread_value_parameters,
+                .parameterCount = ZR_ARRAY_COUNT(g_thread_value_parameters),
+                .genericParameters = g_send_generic_parameter,
+                .genericParameterCount = ZR_ARRAY_COUNT(g_send_generic_parameter),
+        },
 };
 
 static const ZrLibMetaMethodDescriptor g_unique_mutex_meta_methods[] = {
-        {ZR_META_CONSTRUCTOR, 1, 1, zr_vm_task_unique_mutex_construct, "UniqueMutex<T>",
-         "Construct an exclusive mutex wrapper from a Send payload.", ZR_NULL, 0},
+        {
+                .metaType = ZR_META_CONSTRUCTOR,
+                .minArgumentCount = 1,
+                .maxArgumentCount = 1,
+                .callback = zr_vm_task_unique_mutex_construct,
+                .returnTypeName = "UniqueMutex<T>",
+                .documentation = "Construct an exclusive mutex wrapper from a Send payload.",
+                .parameters = g_thread_value_parameters,
+                .parameterCount = ZR_ARRAY_COUNT(g_thread_value_parameters),
+                .genericParameters = g_send_generic_parameter,
+                .genericParameterCount = ZR_ARRAY_COUNT(g_send_generic_parameter),
+        },
 };
 
 static const ZrLibMetaMethodDescriptor g_shared_mutex_meta_methods[] = {
-        {ZR_META_CONSTRUCTOR, 1, 1, zr_vm_task_shared_mutex_construct, "SharedMutex<T>",
-         "Construct a read/write mutex wrapper from a Send + Sync payload.", ZR_NULL, 0},
+        {
+                .metaType = ZR_META_CONSTRUCTOR,
+                .minArgumentCount = 1,
+                .maxArgumentCount = 1,
+                .callback = zr_vm_task_shared_mutex_construct,
+                .returnTypeName = "SharedMutex<T>",
+                .documentation = "Construct a read/write mutex wrapper from a Send + Sync payload.",
+                .parameters = g_thread_value_parameters,
+                .parameterCount = ZR_ARRAY_COUNT(g_thread_value_parameters),
+                .genericParameters = g_send_sync_generic_parameter,
+                .genericParameterCount = ZR_ARRAY_COUNT(g_send_sync_generic_parameter),
+        },
 };
 
 static const ZrLibTypeDescriptor g_task_types[] = {
-        ZR_LIB_TYPE_DESCRIPTOR_INIT("Send", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, 0,
-                                    "Marker contract for values that can move between thread isolates.", ZR_NULL,
-                                    ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0),
-        ZR_LIB_TYPE_DESCRIPTOR_INIT("Sync", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, 0,
-                                    "Marker contract for values that can be safely shared across thread isolates.",
-                                    ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL,
-                                    0),
+        ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT("Send", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, ZR_NULL, 0,
+                                             ZR_NULL, 0,
+                                             "Marker contract for values that can move between thread mutators.",
+                                             ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL,
+                                             ZR_NULL, 0, ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_THREAD_SEND)),
+        ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT("Sync", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, ZR_NULL, 0,
+                                             ZR_NULL, 0,
+                                             "Marker contract for values that can be safely shared between thread mutators.",
+                                             ZR_NULL, ZR_NULL, 0, ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL,
+                                             ZR_NULL, 0, ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_THREAD_SYNC)),
+        ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT(
+                "ThreadScheduler", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_thread_scheduler_methods,
+                ZR_ARRAY_COUNT(g_thread_scheduler_methods), g_thread_scheduler_meta_methods,
+                ZR_ARRAY_COUNT(g_thread_scheduler_meta_methods),
+                "Scheduler provider whose workers attach to the caller GcDomain.", ZR_NULL, ZR_NULL, 0,
+                ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE,
+                "init ThreadScheduler(workerCount: int)", ZR_NULL, 0,
+                ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_SCHEDULER) |
+                        ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_THREAD_SCHEDULER)),
         ZR_LIB_TYPE_DESCRIPTOR_INIT("Scheduler", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_scheduler_methods,
                                     ZR_ARRAY_COUNT(g_scheduler_methods), ZR_NULL, 0,
                                     "Worker-backed scheduler that integrates with zr.task.Task awaiting.", ZR_NULL,
-                                    g_scheduler_implements, ZR_ARRAY_COUNT(g_scheduler_implements),
+                                    ZR_NULL, 0,
                                     ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0),
         ZR_LIB_TYPE_DESCRIPTOR_INIT("Thread", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_thread_methods,
                                     ZR_ARRAY_COUNT(g_thread_methods), ZR_NULL, 0,

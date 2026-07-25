@@ -174,6 +174,33 @@ void ZrCore_State_MainThreadLaunch(SZrState *state, TZrPtr arguments) {
     }
 }
 
+TZrBool ZrCore_State_MutatorLaunch(SZrState *state) {
+    if (state == ZR_NULL || state->global == ZR_NULL || state->global->mainThreadState == ZR_NULL ||
+        state->gcDomain == ZR_NULL || state->stackBase.valuePointer != ZR_NULL || state->callInfoList != ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    state_stack_init(state, state->global->mainThreadState);
+    if (!ZrCore_GcDomain_MutatorEnter(state)) {
+        ZrCore_Stack_Deconstruct(state,
+                                 &state->stackBase,
+                                 ZrCore_State_StackGetSize(state) + ZR_THREAD_STACK_SIZE_EXTRA);
+        state->stackBase.valuePointer = ZR_NULL;
+        state->stackTop.valuePointer = ZR_NULL;
+        state->stackTail.valuePointer = ZR_NULL;
+        state->callInfoList = ZR_NULL;
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+void ZrCore_State_MutatorExit(SZrState *state) {
+    if (state == ZR_NULL) {
+        return;
+    }
+    ZrCore_GcDomain_MutatorLeave(state);
+}
+
 void ZrCore_State_Exit(SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
     // SZrGlobalState *global = state->global;

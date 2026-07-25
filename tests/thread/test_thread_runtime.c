@@ -3,6 +3,8 @@
 
 #include "unity.h"
 #include "test_support.h"
+#include "zr_vm_common/zr_contract_conf.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/task_runtime.h"
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
@@ -387,6 +389,34 @@ static void test_zr_thread_descriptors_express_send_sync_contracts(void) {
     TEST_ASSERT_TRUE(generic_parameter_has_constraint(&schedulerStartDescriptor->genericParameters[0], "zr.thread.Send"));
 
     ZrTests_State_Destroy(state);
+}
+
+static void test_zr_thread_descriptor_publishes_canonical_thread_scheduler_contract(void) {
+    const ZrLibModuleDescriptor *descriptor = ZrVmThread_GetModuleDescriptor();
+    const ZrLibTypeDescriptor *threadScheduler;
+    const ZrLibTypeDescriptor *send;
+    const ZrLibTypeDescriptor *sync;
+    const ZrLibMethodDescriptor *schedule;
+
+    TEST_ASSERT_NOT_NULL(descriptor);
+    threadScheduler = find_type_descriptor(descriptor, "ThreadScheduler");
+    send = find_type_descriptor(descriptor, "Send");
+    sync = find_type_descriptor(descriptor, "Sync");
+    TEST_ASSERT_NOT_NULL(threadScheduler);
+    TEST_ASSERT_NOT_NULL(send);
+    TEST_ASSERT_NOT_NULL(sync);
+    TEST_ASSERT_TRUE((threadScheduler->protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_SCHEDULER)) != 0U);
+    TEST_ASSERT_TRUE((threadScheduler->protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_THREAD_SCHEDULER)) != 0U);
+    TEST_ASSERT_TRUE((send->protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_THREAD_SEND)) != 0U);
+    TEST_ASSERT_TRUE((sync->protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_THREAD_SYNC)) != 0U);
+
+    schedule = find_method_descriptor(threadScheduler, "schedule");
+    TEST_ASSERT_NOT_NULL(schedule);
+    TEST_ASSERT_EQUAL_UINT64(1, schedule->parameterCount);
+    TEST_ASSERT_EQUAL_STRING("zr.task.Job<T>", schedule->parameters[0].typeName);
+    TEST_ASSERT_EQUAL_STRING("zr.task.Task<T>", schedule->returnTypeName);
+    TEST_ASSERT_EQUAL_UINT32(ZR_MEMBER_CONTRACT_ROLE_TASK_SCHEDULER_SCHEDULE,
+                             schedule->contractRole);
 }
 
 static void test_thread_markers_reject_isolate_alias_ownership_qualifiers(void) {
@@ -993,10 +1023,119 @@ static void test_lock_guard_rejects_transfer_storage(void) {
     destroy_thread_test_state(state);
 }
 
+static void test_thread_worker_state_attaches_to_caller_gc_domain(void) {
+    SZrState *caller = create_thread_test_state();
+    SZrState *worker;
+    SZrGcDomainIdentity callerDomain;
+    SZrGcDomainIdentity workerDomain;
+    SZrGcDomainMutatorSnapshot beforeLeave;
+    SZrGcDomainMutatorSnapshot afterLeave;
+
+    TEST_ASSERT_NOT_NULL(caller);
+    worker = ZrCore_State_New(caller->global);
+    TEST_ASSERT_NOT_NULL(worker);
+
+    callerDomain = ZrCore_GcDomain_GetIdentity(caller);
+    workerDomain = ZrCore_GcDomain_GetIdentity(worker);
+    TEST_ASSERT_TRUE(ZrCore_GcDomain_IdentityEquals(callerDomain, workerDomain));
+    TEST_ASSERT_TRUE(ZrCore_State_MutatorLaunch(worker));
+    TEST_ASSERT_NOT_EQUAL_UINT64(0u, ZrCore_GcDomain_GetMutatorId(worker));
+
+    ZrCore_GcDomain_GetMutatorSnapshot(caller, &beforeLeave);
+    TEST_ASSERT_EQUAL_UINT32(2u, beforeLeave.registeredMutatorCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, beforeLeave.runningMutatorCount);
+
+    ZrCore_State_MutatorExit(worker);
+    ZrCore_GcDomain_GetMutatorSnapshot(caller, &afterLeave);
+    TEST_ASSERT_EQUAL_UINT32(2u, afterLeave.registeredMutatorCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, afterLeave.runningMutatorCount);
+
+    ZrCore_State_Free(caller->global, worker);
+    destroy_thread_test_state(caller);
+}
+
+static void test_thread_scheduler_constructs_with_worker_count_and_consumes_job(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var job = init task.Job<int>(() => { return 7; });\n"
+            "var completion = scheduler.schedule<int>(job);\n"
+            "return completion.result();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_thread_source(state, source, "thread_scheduler_job_contract_test.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(7, result);
+
+    destroy_thread_test_state(state);
+}
+
+static void test_thread_scheduler_drains_one_worker_queue_in_submission_order(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var firstJob = init task.Job<int>(() => { return 3; });\n"
+            "var secondJob = init task.Job<int>(() => { return 5; });\n"
+            "var first = scheduler.schedule<int>(firstJob);\n"
+            "var second = scheduler.schedule<int>(secondJob);\n"
+            "return first.result() * 10 + second.result();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_thread_source(state, source, "thread_scheduler_single_worker_queue_test.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(35, result);
+
+    destroy_thread_test_state(state);
+}
+
+static void test_thread_scheduler_rejects_non_send_job_result(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var job = init task.Job<thread.ThreadScheduler>(() => { return scheduler; });\n"
+            "var completion = scheduler.schedule(job);\n"
+            "return 0;\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NULL(compile_thread_source(state, source, "thread_scheduler_non_send_result_test.zr"));
+
+    destroy_thread_test_state(state);
+}
+
+static void test_thread_scheduler_rejects_reused_job(void) {
+    static const char *source =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var job = init task.Job<int>(() => { return 7; });\n"
+            "var first = scheduler.schedule<int>(job);\n"
+            "var second = scheduler.schedule<int>(job);\n"
+            "return first.result() + second.result();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NULL(compile_thread_source(state, source, "thread_scheduler_reused_job_test.zr"));
+
+    destroy_thread_test_state(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_zr_thread_registers_public_shapes_without_legacy_mutex_or_atomic);
     RUN_TEST(test_zr_thread_descriptors_express_send_sync_contracts);
+    RUN_TEST(test_zr_thread_descriptor_publishes_canonical_thread_scheduler_contract);
     RUN_TEST(test_thread_markers_reject_isolate_alias_ownership_qualifiers);
     RUN_TEST(test_thread_markers_reject_nested_isolate_alias_generic_arguments);
     RUN_TEST(test_local_async_function_call_infers_task_runner_type);
@@ -1016,5 +1155,10 @@ int main(void) {
     RUN_TEST(test_unique_mutex_lock_guard_updates_value);
     RUN_TEST(test_shared_mutex_read_and_write_guards_observe_updates);
     RUN_TEST(test_lock_guard_rejects_transfer_storage);
+    RUN_TEST(test_thread_worker_state_attaches_to_caller_gc_domain);
+    RUN_TEST(test_thread_scheduler_constructs_with_worker_count_and_consumes_job);
+    RUN_TEST(test_thread_scheduler_drains_one_worker_queue_in_submission_order);
+    RUN_TEST(test_thread_scheduler_rejects_non_send_job_result);
+    RUN_TEST(test_thread_scheduler_rejects_reused_job);
     return UNITY_END();
 }
