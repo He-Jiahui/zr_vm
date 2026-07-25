@@ -91,6 +91,33 @@ static void semantic_record_reachability_fact_at_range(SZrSemanticAnalyzer *anal
     ZrParser_SemanticFacts_AppendReachability(analyzer->semanticContext, &fact);
 }
 
+static SZrFileRange semantic_reachability_fact_range_for_node(const SZrAstNode *node) {
+    SZrFileRange range;
+
+    if (node == ZR_NULL) {
+        return ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 0, 0),
+                                         ZrParser_FilePosition_Create(0, 0, 0),
+                                         ZR_NULL);
+    }
+
+    range = node->location;
+    if (node->type == ZR_AST_VARIABLE_DECLARATION) {
+        const SZrVariableDeclaration *declaration = &node->data.variableDeclaration;
+
+        if (declaration->pattern != ZR_NULL) {
+            range = ZrParser_FileRange_Merge(range, declaration->pattern->location);
+        }
+        if (declaration->typeInfo != ZR_NULL && declaration->typeInfo->name != ZR_NULL) {
+            range = ZrParser_FileRange_Merge(range, declaration->typeInfo->name->location);
+        }
+        if (declaration->value != ZR_NULL) {
+            range = ZrParser_FileRange_Merge(range, declaration->value->location);
+        }
+    }
+
+    return range;
+}
+
 static void semantic_record_reachability_fact(SZrSemanticAnalyzer *analyzer,
                                               SZrAstNode *node,
                                               EZrSemanticReachabilityCause cause,
@@ -99,7 +126,11 @@ static void semantic_record_reachability_fact(SZrSemanticAnalyzer *analyzer,
         return;
     }
 
-    semantic_record_reachability_fact_at_range(analyzer, node, node->location, cause, causeNode);
+    semantic_record_reachability_fact_at_range(analyzer,
+                                               node,
+                                               semantic_reachability_fact_range_for_node(node),
+                                               cause,
+                                               causeNode);
 }
 
 static void semantic_record_logical_fact(SZrSemanticAnalyzer *analyzer,

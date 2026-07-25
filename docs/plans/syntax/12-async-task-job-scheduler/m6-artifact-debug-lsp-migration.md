@@ -105,10 +105,22 @@
     reachability-query 两个非零目标及现有 Unity marker 未由 M6.4 触及，
     不计入通过证据。完成时间 2026-07-26 03:16 +08:00；M6 promotion gate
     因这些基线失败保持 `in_progress`。
+  - M6.4a 已完成：reachability fact 不再把 `ZR_AST_VARIABLE_DECLARATION`
+    的 keyword-only location 当作整个不可达语句的 query range。它只合并
+    declaration、pattern、可用 type name 和 initializer 的 canonical AST
+    ranges，因此 identifier hover、semantic query 和 diagnostic projection
+    命中相同事实，而不读取 source text 或按变量名重新定位。GCC 11.4、Clang
+    14.0、MSVC 17.14 的 18-target LSP matrix 现在均为 18 个真实 exit 0；
+    每平台的 main/position/diagnostic-fix stdio/CLI smoke 也均 exit 0。
+    三个矩阵仍有相同的六个 Unity assertion marker（receiver completion/
+    hover、foreach shadow、container matrix、native value constructor 和
+    interface variance），不属于此次 range 修复，未作为通过证据，M6 总状态
+    因而继续为 `in_progress`。完成时间 2026-07-26 03:45 +08:00。
 
 ## 产出位置
 
 - 实施计划：`docs/plans/syntax/12-async-task-job-scheduler/m6-artifact-debug-lsp-migration-implementation-plan.md`
 - M6.3 记录：`docs/plans/syntax/12-async-task-job-scheduler/m6-3-debug-projection-fault-semantics.md`
 - M6.4 记录：`docs/plans/syntax/12-async-task-job-scheduler/m6-4-lsp-artifact-projection-and-workspace-migration.md`
+- M6.4a 记录：`docs/plans/syntax/12-async-task-job-scheduler/m6-4a-lsp-reachability-fact-spans.md`
 - LSP artifact projection：`docs/cli-and-tooling/lsp-scheduler-artifact-projection.md`

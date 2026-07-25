@@ -86,3 +86,13 @@ with real process exit zero. The wider 18-target LSP matrix was 16/18 on every
 toolchain; the two nonzero reachability query/hover targets and their existing
 Unity markers are recorded as baseline failures, not as M6.4 passing evidence,
 in the Syntax 12 completion record.
+
+The M6.4a follow-up closed those two process-exit failures on 2026-07-26. A
+reachability fact for a variable declaration now carries the union of its
+declaration, pattern, available type-name, and initializer AST ranges instead
+of the keyword-only declaration node range. This keeps position lookup in the
+same structured semantic fact layer and does not introduce source-text or
+identifier-name fallback. GCC 11.4, Clang 14.0, and MSVC 17.14 each completed
+the 18 target matrix and all three stdio/CLI smokes with real exit zero. The
+remaining Unity assertion markers are tracked by the M6 plan as unrelated
+baseline work; they are not evidence for this artifact projection.

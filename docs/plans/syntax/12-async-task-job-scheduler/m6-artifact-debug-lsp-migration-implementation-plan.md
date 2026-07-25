@@ -330,6 +330,22 @@ smokes (main, position encoding, and diagnostic fix on each toolchain) exited
 zero. The nonzero targets remain outside this projection's write set, so M6's
 promotion gate remains `in_progress` until their baseline failures are closed.
 
+#### M6.4a Reachability Fact Span Follow-up
+
+Completed 2026-07-26 03:45 +08:00. The two nonzero reachability targets were
+root-caused to a projection range mismatch: the variable-declaration AST node
+covered only the `var` keyword while the LSP query position was the declared
+identifier. The semantic analyzer now derives the reachability fact range by
+merging the declaration, pattern, available type-name, and initializer AST
+ranges. The query remains fact-based; it does not search source text or infer
+a range from a variable name. On the same isolated snapshot, GCC 11.4, Clang
+14.0, and MSVC 17.14 each ran all 18 LSP test processes with true exit zero.
+All nine stdio/CLI smokes also exited zero. The identical six Unity assertion
+markers in receiver completion/hover, foreach shadowing, container matrix,
+native constructor, and interface-variance tests remain recorded separately;
+their test processes exit zero but they keep the overall M6 promotion gate
+`in_progress`.
+
 ## Promotion Gate
 
 M6 is complete only when a real source-produced artifact is the single source
