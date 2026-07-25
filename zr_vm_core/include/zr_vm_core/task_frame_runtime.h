@@ -7,6 +7,7 @@
 
 struct SZrState;
 struct SZrCoreTaskFrame;
+struct SZrDebugAsyncTerminalEvent;
 
 typedef enum EZrCoreTaskFrameStatus {
     ZR_CORE_TASK_FRAME_STATUS_IDLE = 0,
@@ -80,6 +81,7 @@ struct SZrCoreTaskFrameTask {
     SZrTypeValue error;
     SZrGcRootHandle resultRoot;
     SZrGcRootHandle errorRoot;
+    TZrUInt32 debugAsyncFaultProvenance;
     TZrBool resultConsumed;
     TZrBool finallyRan;
 };
@@ -101,6 +103,10 @@ ZR_CORE_API TZrBool ZrCore_TaskFrameTask_Resume(struct SZrState *state,
                                                  SZrCoreTaskFrameTask *task);
 ZR_CORE_API EZrCoreTaskFrameStatus ZrCore_TaskFrameTask_Status(
         const SZrCoreTaskFrameTask *task);
+ZR_CORE_API TZrBool ZrCore_TaskFrameTask_ProjectDebugTerminal(
+        const SZrCoreTaskFrameTask *task,
+        TZrBool isolatedTransport,
+        struct SZrDebugAsyncTerminalEvent *outEvent);
 ZR_CORE_API TZrUInt32 ZrCore_TaskFrameTask_State(
         const SZrCoreTaskFrameTask *task);
 ZR_CORE_API TZrBool ZrCore_TaskFrameTask_Suspend(struct SZrState *state,
@@ -117,6 +123,11 @@ ZR_CORE_API TZrBool ZrCore_TaskFrameTask_LoadSlot(struct SZrState *state,
 ZR_CORE_API TZrBool ZrCore_TaskFrameTask_Fault(struct SZrState *state,
                                                 SZrCoreTaskFrameTask *task,
                                                 const SZrTypeValue *error);
+ZR_CORE_API TZrBool ZrCore_TaskFrameTask_FaultWithDebugProvenance(
+        struct SZrState *state,
+        SZrCoreTaskFrameTask *task,
+        const SZrTypeValue *error,
+        TZrUInt32 faultProvenance);
 ZR_CORE_API EZrCoreTaskFrameAwaitStatus ZrCore_TaskFrameTask_Await(
         struct SZrState *state,
         SZrCoreTaskFrameTask *task,

@@ -14,6 +14,59 @@ struct SZrObjectPrototype;
 struct SZrObject;
 struct SZrFunction;
 struct SZrClosure;
+
+typedef enum EZrDebugAsyncContractOrigin {
+    ZR_DEBUG_ASYNC_CONTRACT_ORIGIN_NONE = 0,
+    ZR_DEBUG_ASYNC_CONTRACT_ORIGIN_SOURCE_FACT,
+    ZR_DEBUG_ASYNC_CONTRACT_ORIGIN_ARTIFACT_ROW
+} EZrDebugAsyncContractOrigin;
+
+typedef enum EZrDebugAsyncTerminalState {
+    ZR_DEBUG_ASYNC_TERMINAL_NONE = 0,
+    ZR_DEBUG_ASYNC_TERMINAL_ATTACHED_COMPLETED,
+    ZR_DEBUG_ASYNC_TERMINAL_ATTACHED_FAULTED,
+    ZR_DEBUG_ASYNC_TERMINAL_ISOLATED_COMPLETED,
+    ZR_DEBUG_ASYNC_TERMINAL_ISOLATED_FAULTED
+} EZrDebugAsyncTerminalState;
+
+typedef enum EZrDebugAsyncFaultProvenance {
+    ZR_DEBUG_ASYNC_FAULT_NONE = 0,
+    ZR_DEBUG_ASYNC_FAULT_POLICY_REJECTED,
+    ZR_DEBUG_ASYNC_FAULT_TRANSPORT_PREPARE_FAILED,
+    ZR_DEBUG_ASYNC_FAULT_TRANSPORT_DECODE_FAILED,
+    ZR_DEBUG_ASYNC_FAULT_TRANSPORT_COMMIT_FAILED,
+    ZR_DEBUG_ASYNC_FAULT_CANCELLED,
+    ZR_DEBUG_ASYNC_FAULT_SHUTDOWN,
+    ZR_DEBUG_ASYNC_FAULT_JOB_THROWN,
+    ZR_DEBUG_ASYNC_FAULT_MAX
+} EZrDebugAsyncFaultProvenance;
+
+/*
+ * Canonical scheduler identity for a debug projection. Source location is
+ * deliberately absent: the active frame owns presentation-only source data.
+ */
+typedef struct SZrDebugAsyncSchedulerContract {
+    EZrDebugAsyncContractOrigin origin;
+    TZrMetadataToken schedulerTypeToken;
+    TZrMetadataToken taskTypeToken;
+    TZrMetadataToken jobTypeToken;
+    TZrMetadataToken scheduleMemberToken;
+    TZrMetadataToken scheduleSignatureToken;
+    TZrUInt64 scheduleSignatureHash;
+    TZrUInt32 schedulerAbiVersion;
+    TZrUInt32 schedulerPolicyMask;
+    TZrUInt32 attachedRequirementFlags;
+    TZrUInt32 isolatedRequirementFlags;
+    TZrUInt64 transportContractHash;
+    TZrUInt64 schedulerContractHash;
+} SZrDebugAsyncSchedulerContract;
+
+typedef struct SZrDebugAsyncTerminalEvent {
+    EZrDebugAsyncTerminalState terminalState;
+    TZrUInt32 taskFrameStatus;
+    EZrDebugAsyncFaultProvenance faultProvenance;
+    TZrBool isFaulted;
+} SZrDebugAsyncTerminalEvent;
 enum EZrDebugHookEvent {
     ZR_DEBUG_HOOK_EVENT_CALL,
     ZR_DEBUG_HOOK_EVENT_RETURN,
@@ -212,5 +265,21 @@ ZR_CORE_API EZrArtifactStatus ZrCore_Debug_ResolveArtifactType(
         TZrUInt32 canonicalTypeId,
         SZrCanonicalTypeProjection *outType,
         SZrArtifactDiagnostic *diagnostic);
+
+ZR_CORE_API TZrBool ZrCore_Debug_ProjectSchedulerSourceContract(
+        const struct SZrFunction *function,
+        TZrUInt32 schedulerTypeId,
+        SZrDebugAsyncSchedulerContract *outContract);
+ZR_CORE_API TZrBool ZrCore_Debug_ProjectSchedulerArtifactContract(
+        const SZrArtifactSchedulerContractRow *row,
+        SZrDebugAsyncSchedulerContract *outContract);
+ZR_CORE_API TZrBool ZrCore_Debug_AsyncSchedulerContractsEqual(
+        const SZrDebugAsyncSchedulerContract *left,
+        const SZrDebugAsyncSchedulerContract *right);
+ZR_CORE_API TZrBool ZrCore_Debug_ProjectTaskFrameTerminal(
+        TZrUInt32 taskFrameStatus,
+        TZrBool isolatedTransport,
+        EZrDebugAsyncFaultProvenance faultProvenance,
+        SZrDebugAsyncTerminalEvent *outEvent);
 
 #endif // ZR_VM_CORE_DEBUG_H

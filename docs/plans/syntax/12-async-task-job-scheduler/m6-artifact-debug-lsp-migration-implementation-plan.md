@@ -256,9 +256,9 @@ graph neither builds nor registers that historical module.
 
 | Layer | Paths | Responsibility |
 |---|---|---|
-| debug core | `zr_vm_core/include/zr_vm_core/debug.h`, `zr_vm_core/src/zr_vm_core/debug_traceback.c`, `zr_vm_core/src/zr_vm_core/task_frame_runtime.c` | Project canonical Task/Job/Scheduler identity, policy, transport state, and fault provenance into debug events/frames. |
-| debug library | `zr_vm_lib_debug/src/zr_vm_lib_debug/**` | Serialize only structured debug facts and preserve stable logical async stack links. |
-| tests/docs | `tests/debug/test_debug_traceback.c`, `tests/debug/test_debug_agent*.c`, `docs/debugging-and-observability/**` | Prove policy mismatch, transport prepare/decode/commit failure, cancellation/shutdown, and Job throw are distinguishable without source-text inference. |
+| debug core | `zr_vm_core/include/zr_vm_core/debug.h`, `zr_vm_core/src/zr_vm_core/debug_traceback.c`, `zr_vm_core/include/zr_vm_core/task_frame_runtime.h`, `zr_vm_core/src/zr_vm_core/task_frame_runtime.c` | Project canonical Task/Job/Scheduler identity, policy, transport state, and fault provenance into debug events/frames. |
+| debug library | `zr_vm_lib_debug/include/zr_vm_lib_debug/debug.h`, `zr_vm_lib_debug/src/zr_vm_lib_debug/debug_snapshot.c`, `zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol.c` | Serialize only structured debug facts and preserve stable logical async stack links. |
+| tests/docs | `tests/debug/test_debug_traceback.c`, `tests/debug/test_debug_agent_protocol.c`, `docs/cli-and-tooling/zr-debugger-v1-launch-workflow.md`, this plan, M6 status/record | Prove policy mismatch, transport prepare/decode/commit failure, cancellation/shutdown, and Job throw are distinguishable without source-text inference. The planned `docs/debugging-and-observability/` directory does not exist in this repository; the maintained debugger protocol document is the replacement documentation location. |
 
 ### Steps
 
@@ -267,6 +267,27 @@ graph neither builds nor registers that historical module.
    retain the source range as a projection, not a key.
 3. Verify source and imported artifact executions yield the same policy and
    fault contract. Commit M6.3 independently.
+
+#### M6.3 Acceptance
+
+Completed 2026-07-26 00:15 +08:00. Core now projects a scheduler source fact
+and an imported scheduler artifact row into one structured debug contract keyed
+by Scheduler/Task/Job TypeDef-or-TypeRef tokens, resolved schedule member and
+signature identities, ABI, policy, requirements, transport hash and contract
+hash. Source range remains solely the ordinary stack-frame presentation field.
+The debug agent serializes the source projection as `stackTrace[].asyncContract`;
+all 64-bit hashes use fixed-width hexadecimal strings, so JSON number precision
+cannot alter contract identity. TaskFrame terminal projection distinguishes
+AttachedDomain/IsolatedDomain completion and fault terminals and accepts only a
+structured fault provenance: policy rejection, transport prepare/decode/commit,
+cancellation, shutdown, or Job throw. It never parses runtime error text.
+
+In isolated GCC 11.4, Clang 14.0 and MSVC 17.14 builds,
+`zr_vm_debug_traceback_test` passed 5/5,
+`zr_vm_debug_agent_protocol_test` passed 5/5, and
+`zr_vm_thread_runtime_test` passed 25/25. All nine test process exit codes were
+zero. The thread test deliberately prints an expected compile-time Unique-use
+rejection while asserting it, so its Unity result remains 25/25 with exit zero.
 
 ## M6.4: Language-Server Projection and Workspace Migration
 

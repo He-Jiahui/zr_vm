@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "zr_vm_core/gc_domain.h"
+#include "zr_vm_core/debug.h"
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/state.h"
 
@@ -267,6 +268,7 @@ void ZrCore_TaskFrameTask_Free(SZrState *state, SZrCoreTaskFrameTask *task) {
     task->userData = ZR_NULL;
     task->resultConsumed = ZR_FALSE;
     task->finallyRan = ZR_FALSE;
+    task->debugAsyncFaultProvenance = ZR_DEBUG_ASYNC_FAULT_NONE;
 }
 
 TZrBool ZrCore_TaskFrameTask_Start(SZrState *state,
@@ -296,6 +298,18 @@ TZrBool ZrCore_TaskFrameTask_Resume(SZrState *state, SZrCoreTaskFrameTask *task)
 
 EZrCoreTaskFrameStatus ZrCore_TaskFrameTask_Status(const SZrCoreTaskFrameTask *task) {
     return task != ZR_NULL ? task->status : ZR_CORE_TASK_FRAME_STATUS_IDLE;
+}
+
+TZrBool ZrCore_TaskFrameTask_ProjectDebugTerminal(
+        const SZrCoreTaskFrameTask *task,
+        TZrBool isolatedTransport,
+        SZrDebugAsyncTerminalEvent *outEvent) {
+    return ZrCore_Debug_ProjectTaskFrameTerminal(
+            task != ZR_NULL ? (TZrUInt32)task->status : (TZrUInt32)ZR_CORE_TASK_FRAME_STATUS_IDLE,
+            isolatedTransport,
+            task != ZR_NULL ? (EZrDebugAsyncFaultProvenance)task->debugAsyncFaultProvenance
+                            : ZR_DEBUG_ASYNC_FAULT_NONE,
+            outEvent);
 }
 
 TZrUInt32 ZrCore_TaskFrameTask_State(const SZrCoreTaskFrameTask *task) {
@@ -378,10 +392,15 @@ TZrBool ZrCore_TaskFrameTask_LoadSlot(SZrState *state,
     return ZR_TRUE;
 }
 
-TZrBool ZrCore_TaskFrameTask_Fault(SZrState *state,
-                                   SZrCoreTaskFrameTask *task,
-                                   const SZrTypeValue *error) {
+TZrBool ZrCore_TaskFrameTask_FaultWithDebugProvenance(
+        SZrState *state,
+        SZrCoreTaskFrameTask *task,
+        const SZrTypeValue *error,
+        TZrUInt32 faultProvenance) {
     if (state == ZR_NULL || task == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (faultProvenance >= ZR_DEBUG_ASYNC_FAULT_MAX) {
         return ZR_FALSE;
     }
     task_frame_task_run_finally(state, task);
@@ -399,8 +418,16 @@ TZrBool ZrCore_TaskFrameTask_Fault(SZrState *state,
         ZrCore_Value_ResetAsNull(&task->error);
     }
     task->status = ZR_CORE_TASK_FRAME_STATUS_FAULTED;
+    task->debugAsyncFaultProvenance = faultProvenance;
     task->resultConsumed = ZR_FALSE;
     return ZR_TRUE;
+}
+
+TZrBool ZrCore_TaskFrameTask_Fault(SZrState *state,
+                                   SZrCoreTaskFrameTask *task,
+                                   const SZrTypeValue *error) {
+    return ZrCore_TaskFrameTask_FaultWithDebugProvenance(
+            state, task, error, ZR_DEBUG_ASYNC_FAULT_NONE);
 }
 
 EZrCoreTaskFrameAwaitStatus ZrCore_TaskFrameTask_Await(SZrState *state,

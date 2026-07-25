@@ -1,5 +1,17 @@
 #include "debug_internal.h"
 
+#include <stdio.h>
+
+static void zr_debug_json_add_u64_hash(cJSON *object, const TZrChar *name, TZrUInt64 value) {
+    TZrChar text[17];
+
+    if (object == ZR_NULL || name == ZR_NULL) {
+        return;
+    }
+    snprintf(text, sizeof(text), "%016llx", (unsigned long long)value);
+    cJSON_AddStringToObject(object, name, text);
+}
+
 static cJSON *zr_debug_json_make_message_id(const cJSON *requestId) {
     if (requestId == ZR_NULL) {
         return cJSON_CreateNull();
@@ -917,6 +929,35 @@ static cJSON *zr_debug_agent_make_stack_trace_result(ZrDebugAgent *agent, TZrUIn
         cJSON_AddNumberToObject(frameObject, "argumentCount", frames[index].argument_count);
         cJSON_AddNumberToObject(frameObject, "returnSlot", frames[index].return_slot);
         cJSON_AddBoolToObject(frameObject, "isExceptionFrame", frames[index].is_exception_frame ? 1 : 0);
+        if (frames[index].has_async_contract) {
+            cJSON *asyncContract = cJSON_CreateObject();
+            if (asyncContract != ZR_NULL) {
+                cJSON_AddNumberToObject(asyncContract, "origin", frames[index].async_contract_origin);
+                cJSON_AddNumberToObject(asyncContract, "schedulerTypeToken", frames[index].async_scheduler_type_token);
+                cJSON_AddNumberToObject(asyncContract, "taskTypeToken", frames[index].async_task_type_token);
+                cJSON_AddNumberToObject(asyncContract, "jobTypeToken", frames[index].async_job_type_token);
+                cJSON_AddNumberToObject(asyncContract, "scheduleMemberToken", frames[index].async_schedule_member_token);
+                cJSON_AddNumberToObject(asyncContract, "scheduleSignatureToken", frames[index].async_schedule_signature_token);
+                zr_debug_json_add_u64_hash(asyncContract,
+                                           "scheduleSignatureHash",
+                                           frames[index].async_schedule_signature_hash);
+                cJSON_AddNumberToObject(asyncContract, "schedulerAbiVersion", frames[index].async_scheduler_abi_version);
+                cJSON_AddNumberToObject(asyncContract, "schedulerPolicyMask", frames[index].async_scheduler_policy_mask);
+                cJSON_AddNumberToObject(asyncContract,
+                                        "attachedRequirementFlags",
+                                        frames[index].async_attached_requirement_flags);
+                cJSON_AddNumberToObject(asyncContract,
+                                        "isolatedRequirementFlags",
+                                        frames[index].async_isolated_requirement_flags);
+                zr_debug_json_add_u64_hash(asyncContract,
+                                           "transportContractHash",
+                                           frames[index].async_transport_contract_hash);
+                zr_debug_json_add_u64_hash(asyncContract,
+                                           "schedulerContractHash",
+                                           frames[index].async_scheduler_contract_hash);
+                cJSON_AddItemToObject(frameObject, "asyncContract", asyncContract);
+            }
+        }
         if (frames[index].receiver_name[0] != '\0') {
             cJSON *receiverObject = cJSON_CreateObject();
             if (receiverObject != ZR_NULL) {

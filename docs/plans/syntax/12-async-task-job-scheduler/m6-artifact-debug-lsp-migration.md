@@ -77,7 +77,21 @@
     2026-07-25 23:20 +08:00。`zr_vm_lib_task` 仍明确排除：root CMake
     product graph 不构建或注册该历史模块。M6.3/M6.4 尚未开始，因此 M6
     总状态保持 `in_progress`。
+  - M6.3 已完成：debug core 将 compiler-owned scheduler source fact 与
+    imported artifact scheduler row 投影为相同的 structured async contract；
+    活跃 debug frame 仅序列化 canonical Scheduler/Task/Job token、resolved
+    schedule member/signature、ABI、policy、requirements 与 hashes。source
+    range 仍只是帧展示字段，function/module display text、error message 与
+    runtime value 类别均不参与 identity。三个 64-bit hash 在 `zrdbg/1`
+    stackTrace 中固定为 16 位十六进制字符串，避免 JSON number 精度丢失。
+    TaskFrame terminal event 现在结构化地区分 attached/isolated complete/fault
+    和 policy、prepare、decode、commit、cancel、shutdown、Job throw provenance；
+    没有 message parsing fallback。GCC 11.4、Clang 14.0、MSVC 17.14 各通过
+    debug traceback 5/5、debug agent protocol 5/5、thread runtime 25/25，
+    九个进程真实 exit 0；完成时间 2026-07-26 00:15 +08:00。M6.4 尚未开始，
+    M6 总状态保持 `in_progress`。
 
 ## 产出位置
 
 - 实施计划：`docs/plans/syntax/12-async-task-job-scheduler/m6-artifact-debug-lsp-migration-implementation-plan.md`
+- M6.3 记录：`docs/plans/syntax/12-async-task-job-scheduler/m6-3-debug-projection-fault-semantics.md`

@@ -2656,6 +2656,25 @@ TZrBool ZrDebug_ReadStack(ZrDebugAgent *agent, ZrDebugFrameSnapshot **outFrames,
                         ? (TZrInt32)ZrCore_Stack_SavePointerAsOffset(agent->state, callInfo->returnDestination)
                         : -1;
         frames[frameId - 1].is_exception_frame = ZR_FALSE;
+        {
+            SZrDebugAsyncSchedulerContract asyncContract;
+            if (ZrCore_Debug_ProjectSchedulerSourceContract(function, 0u, &asyncContract)) {
+                frames[frameId - 1].has_async_contract = ZR_TRUE;
+                frames[frameId - 1].async_contract_origin = (TZrUInt32)asyncContract.origin;
+                frames[frameId - 1].async_scheduler_type_token = asyncContract.schedulerTypeToken;
+                frames[frameId - 1].async_task_type_token = asyncContract.taskTypeToken;
+                frames[frameId - 1].async_job_type_token = asyncContract.jobTypeToken;
+                frames[frameId - 1].async_schedule_member_token = asyncContract.scheduleMemberToken;
+                frames[frameId - 1].async_schedule_signature_token = asyncContract.scheduleSignatureToken;
+                frames[frameId - 1].async_schedule_signature_hash = asyncContract.scheduleSignatureHash;
+                frames[frameId - 1].async_scheduler_abi_version = asyncContract.schedulerAbiVersion;
+                frames[frameId - 1].async_scheduler_policy_mask = asyncContract.schedulerPolicyMask;
+                frames[frameId - 1].async_attached_requirement_flags = asyncContract.attachedRequirementFlags;
+                frames[frameId - 1].async_isolated_requirement_flags = asyncContract.isolatedRequirementFlags;
+                frames[frameId - 1].async_transport_contract_hash = asyncContract.transportContractHash;
+                frames[frameId - 1].async_scheduler_contract_hash = asyncContract.schedulerContractHash;
+            }
+        }
         zr_debug_copy_text(frames[frameId - 1].module_name, sizeof(frames[frameId - 1].module_name), agent->moduleName);
         zr_debug_copy_text(frames[frameId - 1].function_name,
                            sizeof(frames[frameId - 1].function_name),

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "unity.h"
@@ -8,9 +9,11 @@
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/artifact_schema.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/task_frame_runtime.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser.h"
 
@@ -396,6 +399,107 @@ static void test_throw_normalizes_exception_with_text_traceback(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void debug_traceback_fill_scheduler_fact(SZrFunctionSchedulerSourceFact *fact) {
+    memset(fact, 0, sizeof(*fact));
+    fact->schedulerTypeId = 61u;
+    fact->taskTypeId = 62u;
+    fact->jobTypeId = 63u;
+    fact->schedulerAbiVersion = 1u;
+    fact->scheduleMemberToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 9u);
+    fact->scheduleSignatureToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 10u);
+    fact->scheduleSignatureHash = 701u;
+    fact->contractRole = ZR_MEMBER_CONTRACT_ROLE_TASK_SCHEDULER_SCHEDULE;
+    fact->schedulerPolicyMask = ZR_ARTIFACT_SCHEDULER_POLICY_ISOLATED_DOMAIN;
+    fact->isolatedRequirementFlags = ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SEND;
+    fact->transportContractHash = 702u;
+    fact->schedulerContractHash = 703u;
+    fact->schedulerProvider.metadataToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 1u);
+    fact->taskProvider.metadataToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 2u);
+    fact->jobProvider.metadataToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 3u);
+}
+
+static void test_debug_projects_canonical_scheduler_contract_and_task_terminals(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrArtifactSchedulerContractRow artifactRow;
+    SZrDebugAsyncSchedulerContract sourceContract;
+    SZrDebugAsyncSchedulerContract artifactContract;
+    SZrDebugAsyncTerminalEvent terminal;
+    SZrCoreTaskFrameTask task;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->schedulerSourceFacts = (SZrFunctionSchedulerSourceFact *)calloc(1u, sizeof(*function->schedulerSourceFacts));
+    TEST_ASSERT_NOT_NULL(function->schedulerSourceFacts);
+    function->schedulerSourceFactLength = 1u;
+    debug_traceback_fill_scheduler_fact(&function->schedulerSourceFacts[0]);
+
+    memset(&sourceContract, 0, sizeof(sourceContract));
+    TEST_ASSERT_TRUE(ZrCore_Debug_ProjectSchedulerSourceContract(function, 61u, &sourceContract));
+    TEST_ASSERT_EQUAL_UINT32(ZR_DEBUG_ASYNC_CONTRACT_ORIGIN_SOURCE_FACT, sourceContract.origin);
+    TEST_ASSERT_EQUAL_UINT32(function->schedulerSourceFacts[0].schedulerProvider.metadataToken,
+                             sourceContract.schedulerTypeToken);
+    TEST_ASSERT_EQUAL_UINT32(function->schedulerSourceFacts[0].scheduleMemberToken,
+                             sourceContract.scheduleMemberToken);
+    function->schedulerSourceFacts[0].scheduleMemberToken =
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 9u);
+    TEST_ASSERT_FALSE(ZrCore_Debug_ProjectSchedulerSourceContract(function, 61u, &sourceContract));
+    debug_traceback_fill_scheduler_fact(&function->schedulerSourceFacts[0]);
+    TEST_ASSERT_TRUE(ZrCore_Debug_ProjectSchedulerSourceContract(function, 61u, &sourceContract));
+
+    memset(&artifactRow, 0, sizeof(artifactRow));
+    artifactRow.schedulerTypeToken = sourceContract.schedulerTypeToken;
+    artifactRow.taskTypeToken = sourceContract.taskTypeToken;
+    artifactRow.jobTypeToken = sourceContract.jobTypeToken;
+    artifactRow.abiVersion = sourceContract.schedulerAbiVersion;
+    artifactRow.policyMask = sourceContract.schedulerPolicyMask;
+    artifactRow.attachedRequirementFlags = sourceContract.attachedRequirementFlags;
+    artifactRow.isolatedRequirementFlags = sourceContract.isolatedRequirementFlags;
+    artifactRow.transportContractHash = sourceContract.transportContractHash;
+    artifactRow.schedulerContractHash = sourceContract.schedulerContractHash;
+    TEST_ASSERT_TRUE(ZrCore_Debug_ProjectSchedulerArtifactContract(&artifactRow, &artifactContract));
+    TEST_ASSERT_EQUAL_UINT32(ZR_DEBUG_ASYNC_CONTRACT_ORIGIN_ARTIFACT_ROW, artifactContract.origin);
+    TEST_ASSERT_TRUE(ZrCore_Debug_AsyncSchedulerContractsEqual(&sourceContract, &artifactContract));
+    artifactRow.schedulerTypeToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 1u);
+    TEST_ASSERT_FALSE(ZrCore_Debug_ProjectSchedulerArtifactContract(&artifactRow, &artifactContract));
+    artifactRow.schedulerTypeToken = sourceContract.schedulerTypeToken;
+    artifactRow.transportContractHash++;
+    TEST_ASSERT_TRUE(ZrCore_Debug_ProjectSchedulerArtifactContract(&artifactRow, &artifactContract));
+    TEST_ASSERT_FALSE(ZrCore_Debug_AsyncSchedulerContractsEqual(&sourceContract, &artifactContract));
+
+    ZrCore_TaskFrameTask_Init(&task);
+    memset(&terminal, 0, sizeof(terminal));
+    TEST_ASSERT_FALSE(ZrCore_TaskFrameTask_ProjectDebugTerminal(&task, ZR_FALSE, &terminal));
+    task.status = ZR_CORE_TASK_FRAME_STATUS_COMPLETED;
+    TEST_ASSERT_TRUE(ZrCore_TaskFrameTask_ProjectDebugTerminal(&task, ZR_FALSE, &terminal));
+    TEST_ASSERT_EQUAL_UINT32(ZR_DEBUG_ASYNC_TERMINAL_ATTACHED_COMPLETED, terminal.terminalState);
+    TEST_ASSERT_FALSE(terminal.isFaulted);
+    {
+        const EZrDebugAsyncFaultProvenance faultKinds[] = {
+                ZR_DEBUG_ASYNC_FAULT_POLICY_REJECTED,
+                ZR_DEBUG_ASYNC_FAULT_TRANSPORT_PREPARE_FAILED,
+                ZR_DEBUG_ASYNC_FAULT_TRANSPORT_DECODE_FAILED,
+                ZR_DEBUG_ASYNC_FAULT_TRANSPORT_COMMIT_FAILED,
+                ZR_DEBUG_ASYNC_FAULT_CANCELLED,
+                ZR_DEBUG_ASYNC_FAULT_SHUTDOWN,
+                ZR_DEBUG_ASYNC_FAULT_JOB_THROWN};
+        TZrSize index;
+        for (index = 0u; index < sizeof(faultKinds) / sizeof(faultKinds[0]); index++) {
+            ZrCore_TaskFrameTask_Init(&task);
+            TEST_ASSERT_TRUE(ZrCore_TaskFrameTask_FaultWithDebugProvenance(
+                    state, &task, ZR_NULL, faultKinds[index]));
+            TEST_ASSERT_TRUE(ZrCore_TaskFrameTask_ProjectDebugTerminal(&task, ZR_TRUE, &terminal));
+            TEST_ASSERT_EQUAL_UINT32(ZR_DEBUG_ASYNC_TERMINAL_ISOLATED_FAULTED, terminal.terminalState);
+            TEST_ASSERT_EQUAL_UINT32(faultKinds[index], terminal.faultProvenance);
+            TEST_ASSERT_TRUE(terminal.isFaulted);
+        }
+    }
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -406,5 +510,6 @@ int main(void) {
     RUN_TEST(test_traceback_formats_mixed_native_and_script_frames);
     RUN_TEST(test_traceback_folds_deep_stacks_with_skip_marker);
     RUN_TEST(test_throw_normalizes_exception_with_text_traceback);
+    RUN_TEST(test_debug_projects_canonical_scheduler_contract_and_task_terminals);
     return UNITY_END();
 }

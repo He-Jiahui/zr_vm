@@ -407,6 +407,27 @@ stop 所属 thread。读取时代理只在请求期间把快照上下文切到�
 当前 task runtime 仍复用主 `SZrState`，所以本阶段完成的是 DAP 线程枚举和按 thread 快照路由
 MVP；跨 task 同步 step 与 task runtime 侧额外 state 注册留后续。
 
+### Async Scheduler Contract Projection
+
+当活跃帧的 compiled `SZrFunction` 含有 compiler-owned
+`SZrFunctionSchedulerSourceFact` 时，`stackTrace` frame 会额外返回
+`asyncContract`。它只从已解析的 Scheduler/Task/Job provider token、resolved
+`schedule` member/signature、ABI、policy、per-policy requirements、transport hash
+和 scheduler contract hash 投影；source file、line、function name、module display
+text 和异常文本都不是身份 key。
+
+协议中的 type/member/signature token 是 JSON number。三个 64-bit hash
+(`scheduleSignatureHash`、`transportContractHash`、`schedulerContractHash`) 是固定
+16 位、零填充的小写十六进制字符串，避免 JSON double 丢失精度。它们用于展示和
+adapter correlation，不允许客户端用显示名、范围或 hash 字符串重新推断 scheduler
+identity。
+
+core 同时为 TaskFrame 公开 terminal projection：AttachedDomain 和 IsolatedDomain
+各自保留 completed/faulted 终态；faulted 事件只能携带结构化
+`policy_rejected`、`transport_prepare_failed`、`transport_decode_failed`、
+`transport_commit_failed`、`cancelled`、`shutdown` 或 `job_thrown` provenance。
+缺少此事实时保留 `none`，不会解析 runtime error message 补造分类。
+
 variables 目前是只读快照，不支持变量写回或带副作用求值。scope 划分固定为：
 
 - `Locals`

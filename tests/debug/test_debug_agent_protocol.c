@@ -5,6 +5,7 @@
 #include "cJSON/cJSON.h"
 #include "unity.h"
 #include "runtime_support.h"
+#include "zr_vm_common/zr_contract_conf.h"
 #include "zr_vm_lib_debug/debug.h"
 #include "zr_vm_lib_network/network.h"
 #include "zr_vm_parser.h"
@@ -40,6 +41,39 @@ static SZrFunction *compile_debug_agent_source(SZrState *state, const char *sour
     }
 
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static void debug_agent_attach_scheduler_contract(SZrFunction *function) {
+    TZrUInt32 index;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NULL(function->schedulerSourceFacts);
+    function->schedulerSourceFacts = (SZrFunctionSchedulerSourceFact *)calloc(1u, sizeof(*function->schedulerSourceFacts));
+    TEST_ASSERT_NOT_NULL(function->schedulerSourceFacts);
+    function->schedulerSourceFactLength = 1u;
+    function->schedulerSourceFacts[0].schedulerTypeId = 91u;
+    function->schedulerSourceFacts[0].taskTypeId = 92u;
+    function->schedulerSourceFacts[0].jobTypeId = 93u;
+    function->schedulerSourceFacts[0].schedulerAbiVersion = 1u;
+    function->schedulerSourceFacts[0].scheduleMemberToken =
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 41u);
+    function->schedulerSourceFacts[0].scheduleSignatureToken =
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 42u);
+    function->schedulerSourceFacts[0].scheduleSignatureHash = 7101u;
+    function->schedulerSourceFacts[0].contractRole = ZR_MEMBER_CONTRACT_ROLE_TASK_SCHEDULER_SCHEDULE;
+    function->schedulerSourceFacts[0].schedulerPolicyMask = ZR_ARTIFACT_SCHEDULER_POLICY_ISOLATED_DOMAIN;
+    function->schedulerSourceFacts[0].isolatedRequirementFlags = ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SEND;
+    function->schedulerSourceFacts[0].transportContractHash = 7102u;
+    function->schedulerSourceFacts[0].schedulerContractHash = 7103u;
+    function->schedulerSourceFacts[0].schedulerProvider.metadataToken =
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 11u);
+    function->schedulerSourceFacts[0].taskProvider.metadataToken =
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 12u);
+    function->schedulerSourceFacts[0].jobProvider.metadataToken =
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 13u);
+    for (index = 0u; index < function->childFunctionLength; index++) {
+        debug_agent_attach_scheduler_contract(&function->childFunctionList[index]);
+    }
 }
 
 static SZrFunction *compile_debug_agent_fixture(SZrState *state, const char *sourceLabel) {
@@ -609,6 +643,7 @@ static void test_debug_agent_running_socket_close_allows_reconnect_and_pause(voi
     TEST_ASSERT_NOT_NULL(state);
     function = compile_debug_agent_source(state, sourcePath, source);
     TEST_ASSERT_NOT_NULL(function);
+    debug_agent_attach_scheduler_contract(function);
 
     memset(&config, 0, sizeof(config));
     config.address = "127.0.0.1:0";
@@ -663,6 +698,18 @@ static void test_debug_agent_running_socket_close_allows_reconnect_and_pause(voi
     TEST_ASSERT_EQUAL_STRING(sourcePath, debug_json_string(topFrame, "sourceFile"));
     TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") >= 4);
     TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") <= 10);
+    {
+        cJSON *asyncContract = cJSON_GetObjectItemCaseSensitive(topFrame, "asyncContract");
+        TEST_ASSERT_TRUE(cJSON_IsObject(asyncContract));
+        TEST_ASSERT_EQUAL_INT(ZR_DEBUG_ASYNC_CONTRACT_ORIGIN_SOURCE_FACT,
+                              debug_json_int(asyncContract, "origin"));
+        TEST_ASSERT_EQUAL_INT(ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 11u),
+                              debug_json_int(asyncContract, "schedulerTypeToken"));
+        TEST_ASSERT_EQUAL_INT(ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 41u),
+                              debug_json_int(asyncContract, "scheduleMemberToken"));
+        TEST_ASSERT_EQUAL_STRING("0000000000001bbf",
+                                 debug_json_string(asyncContract, "schedulerContractHash"));
+    }
     frameId = debug_json_int(topFrame, "frameId");
     TEST_ASSERT_TRUE(frameId > 0);
     cJSON_Delete(message);

@@ -3,6 +3,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "zr_vm_common/zr_contract_conf.h"
+#include "zr_vm_core/function.h"
+#include "zr_vm_core/task_frame_runtime.h"
+
 #define ZR_DEBUG_TRACEBACK_DEFAULT_MAX_FRAMES 21u
 #define ZR_DEBUG_TRACEBACK_FOLD_MARKER_FRAME_COST 1u
 
@@ -194,4 +198,160 @@ TZrSize ZrCore_Debug_Traceback(struct SZrState *state,
     totalFrames = debug_traceback_count_frames(state, level);
     debug_traceback_append_frames(state, &writer, level, totalFrames, maxFrames);
     return writer.length;
+}
+
+static TZrBool debug_async_contract_has_identity(const SZrDebugAsyncSchedulerContract *contract) {
+    TZrUInt32 schedulerTable;
+    TZrUInt32 taskTable;
+    TZrUInt32 jobTable;
+
+    if (contract == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    schedulerTable = ZR_METADATA_TOKEN_TABLE(contract->schedulerTypeToken);
+    taskTable = ZR_METADATA_TOKEN_TABLE(contract->taskTypeToken);
+    jobTable = ZR_METADATA_TOKEN_TABLE(contract->jobTypeToken);
+    return contract != ZR_NULL &&
+           contract->schedulerTypeToken != 0u &&
+           contract->taskTypeToken != 0u &&
+           contract->jobTypeToken != 0u &&
+           (schedulerTable == ZR_METADATA_TABLE_TYPE_DEF || schedulerTable == ZR_METADATA_TABLE_TYPE_REF) &&
+           (taskTable == ZR_METADATA_TABLE_TYPE_DEF || taskTable == ZR_METADATA_TABLE_TYPE_REF) &&
+           (jobTable == ZR_METADATA_TABLE_TYPE_DEF || jobTable == ZR_METADATA_TABLE_TYPE_REF) &&
+           contract->schedulerAbiVersion != 0u &&
+           contract->schedulerPolicyMask != 0u &&
+           contract->transportContractHash != 0u &&
+           contract->schedulerContractHash != 0u;
+}
+
+TZrBool ZrCore_Debug_ProjectSchedulerSourceContract(
+        const SZrFunction *function,
+        TZrUInt32 schedulerTypeId,
+        SZrDebugAsyncSchedulerContract *outContract) {
+    const SZrFunctionSchedulerSourceFact *fact;
+
+    if (outContract != ZR_NULL) {
+        memset(outContract, 0, sizeof(*outContract));
+    }
+    if (function == ZR_NULL || outContract == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    fact = ZrCore_Function_FindSchedulerSourceFact(function, schedulerTypeId);
+    if (fact == ZR_NULL ||
+        fact->contractRole != ZR_MEMBER_CONTRACT_ROLE_TASK_SCHEDULER_SCHEDULE ||
+        fact->scheduleMemberToken == 0u ||
+        fact->scheduleSignatureToken == 0u ||
+        fact->scheduleSignatureHash == 0u ||
+        (ZR_METADATA_TOKEN_TABLE(fact->scheduleMemberToken) != ZR_METADATA_TABLE_MEMBER_DEF &&
+         ZR_METADATA_TOKEN_TABLE(fact->scheduleMemberToken) != ZR_METADATA_TABLE_MEMBER_REF) ||
+        ZR_METADATA_TOKEN_TABLE(fact->scheduleSignatureToken) != ZR_METADATA_TABLE_SIGNATURE ||
+        fact->schedulerProvider.metadataToken == 0u ||
+        fact->taskProvider.metadataToken == 0u ||
+        fact->jobProvider.metadataToken == 0u) {
+        return ZR_FALSE;
+    }
+
+    outContract->origin = ZR_DEBUG_ASYNC_CONTRACT_ORIGIN_SOURCE_FACT;
+    outContract->schedulerTypeToken = fact->schedulerProvider.metadataToken;
+    outContract->taskTypeToken = fact->taskProvider.metadataToken;
+    outContract->jobTypeToken = fact->jobProvider.metadataToken;
+    outContract->scheduleMemberToken = fact->scheduleMemberToken;
+    outContract->scheduleSignatureToken = fact->scheduleSignatureToken;
+    outContract->scheduleSignatureHash = fact->scheduleSignatureHash;
+    outContract->schedulerAbiVersion = fact->schedulerAbiVersion;
+    outContract->schedulerPolicyMask = fact->schedulerPolicyMask;
+    outContract->attachedRequirementFlags = fact->attachedRequirementFlags;
+    outContract->isolatedRequirementFlags = fact->isolatedRequirementFlags;
+    outContract->transportContractHash = fact->transportContractHash;
+    outContract->schedulerContractHash = fact->schedulerContractHash;
+    if (!debug_async_contract_has_identity(outContract)) {
+        memset(outContract, 0, sizeof(*outContract));
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Debug_ProjectSchedulerArtifactContract(
+        const SZrArtifactSchedulerContractRow *row,
+        SZrDebugAsyncSchedulerContract *outContract) {
+    if (outContract != ZR_NULL) {
+        memset(outContract, 0, sizeof(*outContract));
+    }
+    if (row == ZR_NULL || outContract == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    outContract->origin = ZR_DEBUG_ASYNC_CONTRACT_ORIGIN_ARTIFACT_ROW;
+    outContract->schedulerTypeToken = row->schedulerTypeToken;
+    outContract->taskTypeToken = row->taskTypeToken;
+    outContract->jobTypeToken = row->jobTypeToken;
+    outContract->schedulerAbiVersion = row->abiVersion;
+    outContract->schedulerPolicyMask = row->policyMask;
+    outContract->attachedRequirementFlags = row->attachedRequirementFlags;
+    outContract->isolatedRequirementFlags = row->isolatedRequirementFlags;
+    outContract->transportContractHash = row->transportContractHash;
+    outContract->schedulerContractHash = row->schedulerContractHash;
+    if (!debug_async_contract_has_identity(outContract)) {
+        memset(outContract, 0, sizeof(*outContract));
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Debug_AsyncSchedulerContractsEqual(
+        const SZrDebugAsyncSchedulerContract *left,
+        const SZrDebugAsyncSchedulerContract *right) {
+    if (!debug_async_contract_has_identity(left) || !debug_async_contract_has_identity(right)) {
+        return ZR_FALSE;
+    }
+    if (left->schedulerTypeToken != right->schedulerTypeToken ||
+        left->taskTypeToken != right->taskTypeToken ||
+        left->jobTypeToken != right->jobTypeToken ||
+        left->schedulerAbiVersion != right->schedulerAbiVersion ||
+        left->schedulerPolicyMask != right->schedulerPolicyMask ||
+        left->attachedRequirementFlags != right->attachedRequirementFlags ||
+        left->isolatedRequirementFlags != right->isolatedRequirementFlags ||
+        left->transportContractHash != right->transportContractHash ||
+        left->schedulerContractHash != right->schedulerContractHash) {
+        return ZR_FALSE;
+    }
+    if (left->origin == ZR_DEBUG_ASYNC_CONTRACT_ORIGIN_SOURCE_FACT &&
+        right->origin == ZR_DEBUG_ASYNC_CONTRACT_ORIGIN_SOURCE_FACT) {
+        return left->scheduleMemberToken == right->scheduleMemberToken &&
+               left->scheduleSignatureToken == right->scheduleSignatureToken &&
+               left->scheduleSignatureHash == right->scheduleSignatureHash;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Debug_ProjectTaskFrameTerminal(
+        TZrUInt32 taskFrameStatus,
+        TZrBool isolatedTransport,
+        EZrDebugAsyncFaultProvenance faultProvenance,
+        SZrDebugAsyncTerminalEvent *outEvent) {
+    if (outEvent != ZR_NULL) {
+        memset(outEvent, 0, sizeof(*outEvent));
+    }
+    if (outEvent == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    outEvent->taskFrameStatus = taskFrameStatus;
+    if (taskFrameStatus == ZR_CORE_TASK_FRAME_STATUS_COMPLETED) {
+        outEvent->terminalState = isolatedTransport
+                                          ? ZR_DEBUG_ASYNC_TERMINAL_ISOLATED_COMPLETED
+                                          : ZR_DEBUG_ASYNC_TERMINAL_ATTACHED_COMPLETED;
+        return ZR_TRUE;
+    }
+    if (taskFrameStatus == ZR_CORE_TASK_FRAME_STATUS_FAULTED) {
+        if (faultProvenance >= ZR_DEBUG_ASYNC_FAULT_MAX) {
+            return ZR_FALSE;
+        }
+        outEvent->terminalState = isolatedTransport
+                                          ? ZR_DEBUG_ASYNC_TERMINAL_ISOLATED_FAULTED
+                                          : ZR_DEBUG_ASYNC_TERMINAL_ATTACHED_FAULTED;
+        outEvent->faultProvenance = faultProvenance;
+        outEvent->isFaulted = ZR_TRUE;
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
 }
