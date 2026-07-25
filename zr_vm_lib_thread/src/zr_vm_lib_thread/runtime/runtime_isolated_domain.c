@@ -855,7 +855,6 @@ TZrBool zr_vm_thread_isolated_scheduler_schedule(SZrState *state,
     artifact->userAllocationArguments = state->global->userAllocationArguments;
     artifact->workerIsolateId = zr_vm_task_next_worker_isolate_id();
     artifact->supportMultithread = zr_vm_task_default_support_multithread(state);
-    artifact->autoCoroutine = zr_vm_task_get_bool_field(state, scheduler, "__zr_task_auto_coroutine", ZR_TRUE);
     project = (SZrLibrary_Project *)state->global->userData;
     if (project != ZR_NULL) {
         artifact->projectFile = project->file != ZR_NULL ? zr_vm_task_worker_strdup(ZrCore_String_GetNativeString(project->file)) : ZR_NULL;

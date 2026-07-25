@@ -37,41 +37,6 @@ static SZrState *create_task_test_state(void) {
     return state;
 }
 
-static SZrState *create_task_test_state_with_project_flags(TZrBool supportMultithread, TZrBool autoCoroutine) {
-    static const char *kProjectTemplate =
-            "{\n"
-            "  \"name\": \"task_runtime_project\",\n"
-            "  \"source\": \"src\",\n"
-            "  \"binary\": \"bin\",\n"
-            "  \"entry\": \"main\",\n"
-            "  \"supportMultithread\": %s,\n"
-            "  \"autoCoroutine\": %s\n"
-            "}";
-    char json[256];
-    SZrState *state = create_task_test_state();
-    SZrLibrary_Project *project;
-
-    if (state == ZR_NULL || state->global == ZR_NULL) {
-        return state;
-    }
-
-    snprintf(json,
-             sizeof(json),
-             kProjectTemplate,
-             supportMultithread ? "true" : "false",
-             autoCoroutine ? "true" : "false");
-    project = ZrLibrary_Project_New(state,
-                                    (TZrNativeString)json,
-                                    (TZrNativeString)"tests/fixtures/projects/hello_world/hello_world.zrp");
-    if (project == ZR_NULL) {
-        ZrTests_State_Destroy(state);
-        return ZR_NULL;
-    }
-
-    state->global->userData = project;
-    return state;
-}
-
 static void destroy_task_test_state(SZrState *state) {
     if (state == ZR_NULL) {
         return;
@@ -348,35 +313,6 @@ static void expect_task_effect_failure_contains(const char *source,
     destroy_task_test_state(state);
 }
 
-static void expect_task_effect_success(const char *source, const char *name) {
-    SZrState *state;
-    SZrCompilerState *cs;
-    SZrAstNode *ast;
-
-    TEST_ASSERT_NOT_NULL(source);
-    TEST_ASSERT_NOT_NULL(name);
-
-    state = create_task_test_state();
-    TEST_ASSERT_NOT_NULL(state);
-    TEST_ASSERT_FALSE(task_source_reports_parser_error(state, source, name));
-
-    cs = create_task_test_compiler_state(state);
-    TEST_ASSERT_NOT_NULL(cs);
-
-    ast = parse_task_source_ast(state, source, name);
-    TEST_ASSERT_NOT_NULL(ast);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-
-    cs->currentAst = ast;
-    cs->scriptAst = ast;
-    TEST_ASSERT_TRUE(compiler_validate_task_effects(cs, ast));
-    TEST_ASSERT_FALSE(cs->hasError);
-
-    ZrParser_Ast_Free(state, ast);
-    destroy_task_test_compiler_state(cs);
-    destroy_task_test_state(state);
-}
-
 static void expect_task_effect_success_after_predeclare(const char *source, const char *name) {
     SZrState *state;
     SZrCompilerState *cs;
@@ -425,6 +361,42 @@ static const ZrLibTypeDescriptor *find_type_descriptor(const ZrLibModuleDescript
     return ZR_NULL;
 }
 
+static const ZrLibMethodDescriptor *find_method_descriptor(const ZrLibTypeDescriptor *descriptor,
+                                                           const char *methodName) {
+    TZrSize index;
+
+    if (descriptor == ZR_NULL || methodName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < descriptor->methodCount; index++) {
+        const ZrLibMethodDescriptor *method = &descriptor->methods[index];
+        if (method->name != ZR_NULL && strcmp(method->name, methodName) == 0) {
+            return method;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static const ZrLibFunctionDescriptor *find_function_descriptor(const ZrLibModuleDescriptor *descriptor,
+                                                                const char *functionName) {
+    TZrSize index;
+
+    if (descriptor == ZR_NULL || functionName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < descriptor->functionCount; index++) {
+        const ZrLibFunctionDescriptor *function = &descriptor->functions[index];
+        if (function->name != ZR_NULL && strcmp(function->name, functionName) == 0) {
+            return function;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static void test_project_config_defaults_enable_local_async_manual_threads_disabled(void) {
     const char *json =
             "{\n"
@@ -444,13 +416,12 @@ static void test_project_config_defaults_enable_local_async_manual_threads_disab
                                     (TZrNativeString)"tests/fixtures/projects/hello_world/hello_world.zrp");
     TEST_ASSERT_NOT_NULL(project);
     TEST_ASSERT_FALSE(project->supportMultithread);
-    TEST_ASSERT_TRUE(project->autoCoroutine);
 
     ZrLibrary_Project_Free(state, project);
     ZrTests_State_Destroy(state);
 }
 
-static void test_project_config_reads_supportMultithread_and_autoCoroutine_flags(void) {
+static void test_project_config_ignores_legacy_auto_coroutine_flag(void) {
     const char *json =
             "{\n"
             "  \"name\": \"task_mt_project\",\n"
@@ -469,113 +440,106 @@ static void test_project_config_reads_supportMultithread_and_autoCoroutine_flags
                                     (TZrNativeString)"tests/fixtures/projects/hello_world/hello_world.zrp");
     TEST_ASSERT_NOT_NULL(project);
     TEST_ASSERT_TRUE(project->supportMultithread);
-    TEST_ASSERT_FALSE(project->autoCoroutine);
 
     ZrLibrary_Project_Free(state, project);
     ZrTests_State_Destroy(state);
 }
 
-static void test_zr_task_and_zr_coroutine_register_new_public_shapes(void) {
+static void test_zr_task_registers_only_canonical_public_shapes(void) {
     SZrState *state = create_task_test_state();
     const ZrLibModuleDescriptor *taskDescriptor;
     const ZrLibModuleDescriptor *coroutineDescriptor;
     const ZrLibTypeDescriptor *taskType;
+    const ZrLibTypeDescriptor *jobType;
+    const ZrLibTypeDescriptor *schedulerType;
 
     TEST_ASSERT_NOT_NULL(state);
 
     taskDescriptor = ZrLibrary_NativeRegistry_FindModule(state->global, "zr.task");
     coroutineDescriptor = ZrLibrary_NativeRegistry_FindModule(state->global, "zr.coroutine");
     TEST_ASSERT_NOT_NULL(taskDescriptor);
-    TEST_ASSERT_NOT_NULL(coroutineDescriptor);
-    TEST_ASSERT_NOT_NULL(find_type_descriptor(taskDescriptor, "IScheduler"));
-    TEST_ASSERT_NOT_NULL(find_type_descriptor(taskDescriptor, "TaskRunner"));
+    TEST_ASSERT_NULL(coroutineDescriptor);
+    TEST_ASSERT_NULL(find_type_descriptor(taskDescriptor, "IScheduler"));
+    TEST_ASSERT_NULL(find_type_descriptor(taskDescriptor, "TaskRunner"));
     taskType = find_type_descriptor(taskDescriptor, "Task");
+    jobType = find_type_descriptor(taskDescriptor, "Job");
+    schedulerType = find_type_descriptor(taskDescriptor, "Scheduler");
     TEST_ASSERT_NOT_NULL(taskType);
+    TEST_ASSERT_NOT_NULL(jobType);
+    TEST_ASSERT_NOT_NULL(schedulerType);
     TEST_ASSERT_EQUAL_UINT64(1U, taskType->genericParameterCount);
     TEST_ASSERT_TRUE((taskType->protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_HANDLE)) != 0U);
     TEST_ASSERT_NULL(find_type_descriptor(taskDescriptor, "Async"));
-    TEST_ASSERT_NULL(find_type_descriptor(taskDescriptor, "Scheduler"));
-    TEST_ASSERT_NOT_NULL(find_type_descriptor(coroutineDescriptor, "Scheduler"));
+    TEST_ASSERT_NOT_NULL(find_method_descriptor(schedulerType, "schedule"));
+    TEST_ASSERT_NULL(find_method_descriptor(schedulerType, "start"));
+    TEST_ASSERT_NULL(find_method_descriptor(schedulerType, "step"));
+    TEST_ASSERT_NULL(find_method_descriptor(schedulerType, "pump"));
+    TEST_ASSERT_NULL(find_method_descriptor(schedulerType, "setAutoCoroutine"));
+    TEST_ASSERT_NULL(find_method_descriptor(schedulerType, "getAutoCoroutine"));
+    TEST_ASSERT_NULL(find_function_descriptor(taskDescriptor, "__createTaskRunner"));
+    TEST_ASSERT_NULL(find_function_descriptor(taskDescriptor, "__awaitTask"));
 
     ZrTests_State_Destroy(state);
 }
 
-static void test_percent_async_wraps_declared_return_type_to_task_runner(void) {
+static void test_legacy_task_source_surfaces_are_rejected(void) {
     static const char *source =
             "%async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
             "return 0;\n";
     SZrState *state = create_task_test_state();
-    SZrAstNode *ast;
-    SZrAstNode *statement;
-    SZrType *returnType;
+    SZrFunction *function;
+    SZrTypeValue result;
 
     TEST_ASSERT_NOT_NULL(state);
-    ast = parse_task_source_ast(state, source, "task_async_return_wrap_test.zr");
-    TEST_ASSERT_NOT_NULL(ast);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-    TEST_ASSERT_TRUE(ast->data.script.statements->count >= 1);
-
-    statement = ast->data.script.statements->nodes[0];
-    TEST_ASSERT_NOT_NULL(statement);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, statement->type);
-    TEST_ASSERT_TRUE(statement->data.functionDeclaration.isLegacyAsyncSyntax);
-    returnType = statement->data.functionDeclaration.returnType;
-    TEST_ASSERT_NOT_NULL(returnType);
-    TEST_ASSERT_NOT_NULL(returnType->name);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_GENERIC_TYPE, returnType->name->type);
-    TEST_ASSERT_NOT_NULL(returnType->name->data.genericType.name);
-    TEST_ASSERT_EQUAL_STRING("zr.task.TaskRunner",
-                             ZrCore_String_GetNativeString(returnType->name->data.genericType.name->name));
-    TEST_ASSERT_NOT_NULL(returnType->name->data.genericType.params);
-    TEST_ASSERT_EQUAL_UINT64(1, returnType->name->data.genericType.params->count);
-
-    ZrParser_Ast_Free(state, ast);
+    TEST_ASSERT_TRUE(task_source_reports_parser_error(state, source, "legacy_percent_async.zr"));
+    TEST_ASSERT_TRUE(task_source_reports_parser_error(state,
+                                                       "var handle: %async int = null;\n",
+                                                       "legacy_percent_async_type.zr"));
+    TEST_ASSERT_TRUE(task_source_reports_parser_error(state,
+                                                       "%await pending;\n",
+                                                       "legacy_percent_await.zr"));
+    TEST_ASSERT_NULL(compile_task_source(state,
+                                         "var task = %import(\"zr.task\");\n"
+                                         "var runner: task.TaskRunner<int> = null;\n"
+                                         "return 0;\n",
+                                         "legacy_task_runner_type.zr"));
+    function = compile_task_source(state,
+                                   "var task = %import(\"zr.task\");\n"
+                                   "task.currentScheduler.pump();\n"
+                                   "return 0;\n",
+                                   "legacy_task_pump.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_FALSE(ZrTests_Function_Execute(state, function, &result));
+    function = compile_task_source(state,
+                                   "var task = %import(\"zr.task\");\n"
+                                   "return task.defaultScheduler;\n",
+                                   "legacy_default_scheduler.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_FALSE(ZrTests_Function_Execute(state, function, &result));
+    TEST_ASSERT_NULL(compile_task_source(state,
+                                         "var coroutine = %import(\"zr.coroutine\");\n"
+                                         "return 0;\n",
+                                         "legacy_coroutine_module.zr"));
     ZrTests_State_Destroy(state);
 }
 
-static void test_percent_async_explicit_return_type_sugar_wraps_to_task_runner(void) {
+static void test_canonical_job_scheduler_path_executes(void) {
     static const char *source =
-            "%async addOne(value: int): %async int {\n"
-            "    return value + 1;\n"
-            "}\n"
-            "return 0;\n";
+            "var task = %import(\"zr.task\");\n"
+            "var job = init task.Job<int>(() => { return 17; });\n"
+            "var completion = task.currentScheduler.schedule<int>(job);\n"
+            "return completion.result();\n";
     SZrState *state = create_task_test_state();
-    SZrAstNode *ast;
-    SZrAstNode *statement;
-    SZrType *returnType;
-    SZrAstNode *innerTypeNode;
+    SZrFunction *function;
+    TZrInt64 result = 0;
 
     TEST_ASSERT_NOT_NULL(state);
-    ast = parse_task_source_ast(state, source, "task_async_explicit_return_wrap_test.zr");
-    TEST_ASSERT_NOT_NULL(ast);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-    TEST_ASSERT_TRUE(ast->data.script.statements->count >= 1);
-
-    statement = ast->data.script.statements->nodes[0];
-    TEST_ASSERT_NOT_NULL(statement);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, statement->type);
-    returnType = statement->data.functionDeclaration.returnType;
-    TEST_ASSERT_NOT_NULL(returnType);
-    TEST_ASSERT_NOT_NULL(returnType->name);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_GENERIC_TYPE, returnType->name->type);
-    TEST_ASSERT_NOT_NULL(returnType->name->data.genericType.name);
-    TEST_ASSERT_EQUAL_STRING("zr.task.TaskRunner",
-                             ZrCore_String_GetNativeString(returnType->name->data.genericType.name->name));
-    TEST_ASSERT_NOT_NULL(returnType->name->data.genericType.params);
-    TEST_ASSERT_EQUAL_UINT64(1, returnType->name->data.genericType.params->count);
-
-    innerTypeNode = returnType->name->data.genericType.params->nodes[0];
-    TEST_ASSERT_NOT_NULL(innerTypeNode);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE, innerTypeNode->type);
-    TEST_ASSERT_NOT_NULL(innerTypeNode->data.type.name);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, innerTypeNode->data.type.name->type);
-    TEST_ASSERT_EQUAL_STRING("int", ZrCore_String_GetNativeString(innerTypeNode->data.type.name->data.identifier.name));
-
-    ZrParser_Ast_Free(state, ast);
+    function = compile_task_source(state, source, "canonical_job_scheduler_runtime.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(17, result);
     ZrTests_State_Destroy(state);
 }
 
@@ -883,6 +847,12 @@ static void test_percent_mutex_and_percent_atomic_are_rejected(void) {
     ZrTests_State_Destroy(state);
 }
 
+/*
+ * Retired TaskRunner/coroutine compatibility coverage.  The canonical runtime
+ * deliberately has no public legacy surface, so these historical positive
+ * cases must not participate in the task-runtime test binary.
+ */
+#if 0
 static void test_percent_await_is_rejected_outside_async_context(void) {
     static const char *source =
             "%async addOne(value: int): int {\n"
@@ -1597,13 +1567,15 @@ static void test_default_scheduler_property_is_readable_and_writable(void) {
     ZrTests_State_Destroy(state);
 }
 
+#endif
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_project_config_defaults_enable_local_async_manual_threads_disabled);
-    RUN_TEST(test_project_config_reads_supportMultithread_and_autoCoroutine_flags);
-    RUN_TEST(test_zr_task_and_zr_coroutine_register_new_public_shapes);
-    RUN_TEST(test_percent_async_wraps_declared_return_type_to_task_runner);
-    RUN_TEST(test_percent_async_explicit_return_type_sugar_wraps_to_task_runner);
+    RUN_TEST(test_project_config_ignores_legacy_auto_coroutine_flag);
+    RUN_TEST(test_zr_task_registers_only_canonical_public_shapes);
+    RUN_TEST(test_legacy_task_source_surfaces_are_rejected);
+    RUN_TEST(test_canonical_job_scheduler_path_executes);
     RUN_TEST(test_async_function_preserves_explicit_task_return_and_direct_await);
     RUN_TEST(test_async_task_alias_signature_uses_native_task_carrier);
     RUN_TEST(test_async_lambda_preserves_explicit_task_signature);
@@ -1615,43 +1587,5 @@ int main(void) {
     RUN_TEST(test_direct_await_rejects_borrow_crossing_suspension);
     RUN_TEST(test_async_signature_requires_closed_task_return_and_value_parameters);
     RUN_TEST(test_percent_mutex_and_percent_atomic_are_rejected);
-    RUN_TEST(test_percent_await_is_rejected_outside_async_context);
-    RUN_TEST(test_percent_await_rejects_task_runner_values);
-    RUN_TEST(test_borrowed_value_cannot_cross_await_boundary);
-    RUN_TEST(test_borrowed_value_used_before_await_still_compiles);
-    RUN_TEST(test_local_borrowed_value_cannot_cross_await_boundary);
-    RUN_TEST(test_loaned_value_cannot_cross_await_boundary);
-    RUN_TEST(test_generic_borrow_parameter_cannot_cross_await_boundary);
-    RUN_TEST(test_generic_loan_parameter_cannot_cross_await_boundary);
-    RUN_TEST(test_generic_loan_typed_local_cannot_cross_await_boundary);
-    RUN_TEST(test_nested_generic_borrow_typed_local_cannot_cross_await_boundary);
-    RUN_TEST(test_nested_generic_loan_typed_local_cannot_cross_await_boundary);
-    RUN_TEST(test_using_else_branch_borrow_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_binding_cannot_cross_await_boundary);
-    RUN_TEST(test_dynamic_module_payload_binding_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_alias_assignment_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_conditional_alias_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_logical_alias_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_cast_alias_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_assignment_expression_alias_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_generator_body_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_template_interpolation_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_type_query_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_array_alias_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_object_alias_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_construct_argument_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_decorator_argument_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_if_branch_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_block_expression_alias_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_generic_call_argument_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_generic_call_type_argument_cannot_cross_await_boundary);
-    RUN_TEST(test_plugin_guard_nested_function_after_parent_await_cannot_read_binding);
-    RUN_TEST(test_nested_function_after_parent_await_allows_fresh_local_binding);
-    RUN_TEST(test_task_effects_reject_await_inside_class_method);
-    RUN_TEST(test_task_effects_reject_await_inside_struct_method);
-    RUN_TEST(test_task_runner_start_and_await_execute_on_default_scheduler);
-    RUN_TEST(test_task_runner_start_and_await_execute_with_explicit_async_return_type);
-    RUN_TEST(test_coroutine_scheduler_manual_pump_executes_started_runner);
-    RUN_TEST(test_default_scheduler_property_is_readable_and_writable);
     return UNITY_END();
 }

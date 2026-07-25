@@ -246,13 +246,13 @@ var compat = (param1: Type, param2: Type): ReturnType => {
     // body
 };
 
-// %async 返回类型两种写法都兼容，规范展示优先 %async T
-%async addOne(value: int): %async int {
+// async callable 必须显式声明闭合 Task<T> 返回类型
+async fn addOne(value: int): zr.task.Task<int> {
     return value + 1;
 }
 
-%async run(): int {
-    return %await addOne(4);
+async fn run(): zr.task.Task<int> {
+    return await addOne(4);
 }
 ```
 
@@ -844,8 +844,8 @@ var boxed: GcBox<Resource>;
 // 嵌套类型
 var name: Outer<Inner<Type>>;
 
-// async 类型糖，规范展示优先 %async T
-var runner: %async int;
+// Task carrier
+var completion: zr.task.Task<int>;
 
 // 显式函数类型
 var mapper: %func(int)->int;
@@ -870,6 +870,7 @@ var callback: F = (x: int)->{
 - `Unique<T>` / `Shared<T>` / `Weak<T>` / `Borrow<T>` / `Loan<T>` 是内建所有权泛型；旧 `%unique T` / `%shared T` / `%weak T` / `%borrow T` / `%loan T` 过渡期作为等价语法糖保留。`Gc<T>` / `GcBox<T>` 是独立 GC bridge 泛型，不属于 ownership qualifier。
 - 任意编译期可折叠且冻结的 `Type` 值都可进入类型位置，因此 `var F = %func(int)->int; var c: F = ...;` 合法。
 - `%type(...)` 同时接受 `TypeExpr` 与普通表达式；`%type(%func(int)->int)` 返回 callable reflection。
+- `async fn` 必须显式返回闭合 `zr.task.Task<T>`；`await` 只能在 async effect 中消费该 carrier。旧 `%async`、`%await` 和 `%async T` 已被拒绝。
 
 ---
 

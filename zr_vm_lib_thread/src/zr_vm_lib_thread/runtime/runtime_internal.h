@@ -166,7 +166,6 @@ typedef struct ZrVmTaskWorkerLaunch {
     TZrPtr userAllocationArguments;
     TZrUInt64 workerIsolateId;
     TZrBool supportMultithread;
-    TZrBool autoCoroutine;
 } ZrVmTaskWorkerLaunch;
 
 typedef struct ZrVmTaskChannelMessage {

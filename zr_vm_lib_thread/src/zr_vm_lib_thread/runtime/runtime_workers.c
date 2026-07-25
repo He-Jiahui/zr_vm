@@ -382,7 +382,6 @@ SZrLibrary_Project *zr_vm_task_worker_clone_project(SZrState *state, const ZrVmT
         project->entry = ZrCore_String_CreateTryHitCache(state, launch->projectEntry);
     }
     project->supportMultithread = launch->supportMultithread;
-    project->autoCoroutine = launch->autoCoroutine;
     return project;
 }
 
@@ -810,7 +809,6 @@ TZrBool zr_vm_task_spawn_thread_worker(ZrLibCallContext *context,
     launch->userAllocationArguments = context->state->global->userAllocationArguments;
     launch->workerIsolateId = zr_vm_task_next_worker_isolate_id();
     launch->supportMultithread = zr_vm_task_default_support_multithread(context->state);
-    launch->autoCoroutine = zr_vm_task_get_bool_field(context->state, mainScheduler, "__zr_task_auto_coroutine", ZR_TRUE);
 
     project = (SZrLibrary_Project *)context->state->global->userData;
     if (project != ZR_NULL) {

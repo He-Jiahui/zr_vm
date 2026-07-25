@@ -2335,7 +2335,7 @@ static TZrBool validate_member_call_arguments(SZrCompilerState *cs,
 
         if (requireTaskHandleArgument && index == 0 && !inferred_type_is_task_handle(cs, argType)) {
             ZrParser_Compiler_Error(cs,
-                                    "%await expects a zr.task.Task<T>; call .start() on the TaskRunner first",
+                                    "await expects a zr.task.Task<T>",
                                     argNode != ZR_NULL ? argNode->location : location);
             goto cleanup_error_with_types;
         }
@@ -3595,7 +3595,7 @@ infer_regular_member_access:
 
                         if (!inferred_type_is_task_handle(cs, &awaitedType)) {
                             ZrParser_Compiler_Error(cs,
-                                                    "%await expects a zr.task.Task<T>; call .start() on the TaskRunner first",
+                                                    "await expects a zr.task.Task<T>",
                                                     awaitedNode->location);
                             ZrParser_InferredType_Free(cs->state, &currentType);
                             ZrParser_InferredType_Free(cs->state, &nextType);
@@ -3906,57 +3906,6 @@ static const TZrChar *type_name_string_get_base_or_named_type(const SZrInferredT
 static TZrBool type_name_string_append(TZrChar *buffer,
                                        TZrSize bufferSize,
                                        TZrSize *writeIndex,
-                                       const TZrChar *text);
-
-static TZrBool type_name_string_try_append_async_surface(const SZrInferredType *type,
-                                                         TZrChar *buffer,
-                                                         TZrSize bufferSize,
-                                                         TZrSize *writeIndex) {
-    const TZrChar *baseName;
-    const TZrChar *innerStart;
-    const TZrChar *innerEnd;
-    TZrSize innerLength;
-
-    if (type == ZR_NULL || buffer == ZR_NULL || writeIndex == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    baseName = type_name_string_get_base_or_named_type(type);
-    if (baseName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (strncmp(baseName, "TaskRunner<", 11) == 0) {
-        innerStart = baseName + 11;
-    } else if (strncmp(baseName, "zr.task.TaskRunner<", 19) == 0) {
-        innerStart = baseName + 19;
-    } else {
-        return ZR_FALSE;
-    }
-
-    innerEnd = strrchr(innerStart, '>');
-    if (innerEnd == ZR_NULL || innerEnd <= innerStart) {
-        return ZR_FALSE;
-    }
-
-    innerLength = (TZrSize)(innerEnd - innerStart);
-    if (!type_name_string_append(buffer, bufferSize, writeIndex, "%async ")) {
-        return ZR_FALSE;
-    }
-
-    if (*writeIndex + innerLength >= bufferSize) {
-        return ZR_FALSE;
-    }
-
-    memcpy(buffer + *writeIndex, innerStart, innerLength);
-    *writeIndex += innerLength;
-    buffer[*writeIndex] = '\0';
-    return ZR_TRUE;
-}
-
-static TZrBool type_name_string_append(TZrChar *buffer,
-                                       TZrSize bufferSize,
-                                       TZrSize *writeIndex,
                                        const TZrChar *text) {
     TZrSize length;
 
@@ -4009,8 +3958,7 @@ static TZrBool type_name_string_append_type(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (!type_name_string_try_append_async_surface(type, buffer, bufferSize, writeIndex) &&
-        !type_name_string_append(buffer, bufferSize, writeIndex, baseName != ZR_NULL ? baseName : "unknown")) {
+    if (!type_name_string_append(buffer, bufferSize, writeIndex, baseName != ZR_NULL ? baseName : "unknown")) {
         return ZR_FALSE;
     }
 

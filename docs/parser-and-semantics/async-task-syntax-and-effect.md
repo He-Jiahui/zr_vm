@@ -81,8 +81,8 @@ frame creation, resume dispatch, and payload materialization are M2 work.
 
 ## Legacy Boundary
 
-`%async`, `%await`, `TaskRunner`, and the `__createTaskRunner` / `__awaitTask`
-lowering path remain legacy migration inputs through Syntax 12 M6. The AST
-records that `%async` lowered a declaration so new explicit `async` signature
-rules do not alter that compatibility route. M1 neither removes nor promotes
-those legacy forms as the public Task carrier contract.
+Syntax 12 M6.2 removes the compatibility parser route. `%async`, `%await`,
+and `%async T` report migration diagnostics; `TaskRunner` and the hidden
+`__createTaskRunner` / `__awaitTask` helpers are not public descriptor facts.
+Consumers derive the async effect only from explicit `async` AST state and the
+canonical Task protocol. There is no legacy lowering fallback.

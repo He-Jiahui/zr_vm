@@ -82,11 +82,10 @@ doc_type: category-index
   - `debug` native module 的受信/沙箱注册入口，以及 `traceback/getinfo/local/upvalue/hook` 首批脚本 API
   - 写能力默认由宿主 opt-in，沙箱描述符拒绝 `setlocal/setupvalue/sethook`
 - `zr-task-runtime.md`
-  - `zr.task` builtin 已切到 `TaskRunner<T>` / `Task<T>` / `IScheduler` / `defaultScheduler`
-  - `%async` / `%await` 现在对接 builtin hidden helper，而不是旧 `spawn/await` 公开 helper
+  - `zr.task` 只公开 `Task<T>` / `Job<T>` / `Scheduler` 与 `currentScheduler`
+  - `async fn ...: Task<T>` 与 direct `await` 是唯一任务源代码表面
 - `zr-coroutine-runtime.md`
-  - `zr.coroutine` builtin 提供 isolate 级 `coroutineScheduler`
-  - 手动 `step/pump` 与 `autoCoroutine` 的当前行为边界
+  - `zr.coroutine` 已退役；不再提供独立 scheduler 或手动 pump 表面
 - `zr-thread-runtime.md`
   - `zr.thread` 提供 `Send/Sync` marker contract、worker isolate、thread scheduler，以及 `Transfer/Channel/Shared/WeakShared`
   - 同步容器收敛为 `UniqueMutex/SharedMutex`，guard 是 affine 的 `Lock/SharedLock`
@@ -110,8 +109,8 @@ doc_type: category-index
 
 ## 阅读顺序
 
-1. 先看 `zr-task-runtime.md`，了解 `TaskRunner/Task/defaultScheduler` 这条新的 builtin 任务抽象。
-2. 再看 `zr-coroutine-runtime.md`，了解 isolate 内建协程调度器和手动 pump 路径。
+1. 先看 `zr-task-runtime.md`，了解 `Task/Job/Scheduler` 的唯一 builtin 任务抽象。
+2. 再看 `zr-coroutine-runtime.md`，确认已删除的 coroutine 表面及迁移目标。
 3. 接着看 `zr-thread-runtime.md`，了解 worker isolate、`Send/Sync` contract、shared control cell 和 mutex/guard 约束。
 4. 连续内存算法和通用借用事实看 `zr-container-contiguous-views.md`。
 5. pool lease 与 pinned native provider 的具体生命周期看 `zr-pooling-and-pinned-ffi-views.md`。

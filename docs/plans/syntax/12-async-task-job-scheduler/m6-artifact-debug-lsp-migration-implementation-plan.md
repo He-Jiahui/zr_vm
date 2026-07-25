@@ -197,8 +197,28 @@ and `zr_vm_canonical_consumers_test` 17/17 with real process exit zero.
 |---|---|---|
 | task/library runtime | `zr_vm_library/include/zr_vm_library/task_runtime.h`, `zr_vm_library/src/zr_vm_library/task_runtime.c`, `zr_vm_library/include/zr_vm_library/project.h`, `zr_vm_library/src/zr_vm_library/project/project.c` | Replace public `TaskRunner`/`autoCoroutine` compatibility state with the explicit Task/Job/Scheduler contract. |
 | thread provider | `zr_vm_lib_thread/include/zr_vm_lib_thread/runtime.h`, `zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c`, `runtime_internal.h`, `runtime_workers.c`, `runtime_isolated_domain.c` | Consume the M6.1 artifact contract for policy and transport; delete legacy compatibility paths only after equivalent provider behavior is covered. |
-| parser/compiler | `zr_vm_parser/src/zr_vm_parser/parser/parser_reserved_task.c`, `zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c`, `zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c` | Remove concrete Task-name and automatic-coroutine branches in favor of resolved owner/module/type facts. |
+| parser/compiler | `zr_vm_parser/src/zr_vm_parser/parser/parser_reserved_task.c`, `parser_types.c`, `type_inference/type_inference_native.c`, `compiler/compile_expression_types.c`, `compiler_task_effects.c`, `compiler_reference_escape.c` | Reject legacy task parser forms and remove hidden-await compatibility recognition; derive async boundaries only from explicit AST Task/await facts. |
 | tests/docs | `tests/thread/test_thread_runtime.c`, `tests/parser/test_compiler_features.c`, `docs/library-and-builtins/zr-thread-scheduler.md`, `docs/parser-and-semantics/*task*.md` | Lock the reference ledger, source rejection/migration behavior, sync-complete allocation, task-frame drop, and provider failure outcomes. |
+
+#### M6.2 Discovery Additions
+
+The first M6.2 baseline run found that the legacy bridge is also reachable
+through parser pseudo-type sugar, dedicated task-runtime regression fixtures,
+and documentation that still teaches the removed public surface. They are
+therefore part of this milestone's exact write set rather than deferred
+cleanup:
+
+| Layer | Paths | Responsibility |
+|---|---|---|
+| parser compatibility removal | `zr_vm_parser/src/zr_vm_parser/parser/parser_types.c`, `tests/parser/test_parser.c` | Reject `%async T` pseudo-type sugar and remove its `TaskRunner<T>` AST expectation; preserve explicit `async fn ...: Task<T>` parsing. |
+| task runtime regressions | `tests/task/test_task_runtime.c` | Replace legacy TaskRunner/start/pump/default-scheduler coverage with negative public-surface tests and canonical `Job`/`Scheduler.schedule` execution coverage. |
+| thread runtime regressions | `tests/thread/test_thread_runtime.c` | Replace Thread/Scheduler/start wrapper assertions with `ThreadScheduler.schedule(Job)` provider and lifecycle coverage; delete legacy `%async` runner test positives. |
+| source ledger and module docs | `docs/zr_language_specification.md`, `docs/library-and-builtins/index.md`, `docs/library-and-builtins/zr-task-runtime.md`, `docs/library-and-builtins/zr-coroutine-runtime.md`, `docs/library-and-builtins/zr-thread-runtime.md`, `docs/library-and-builtins/zr-task-job-scheduler.md`, `docs/parser-and-semantics/async-task-syntax-and-effect.md`, `docs/parser-and-semantics/index.md` | Remove obsolete `%async`/`%await`, `zr.coroutine`, `TaskRunner`, `autoCoroutine`, `start`, and source `pump/step` guidance; retain the explicit Task/Job/Scheduler ledger. |
+
+`zr_vm_lib_task` is not added: the root CMake project does not build or
+register that historical module, and the production built-in registration path
+is `ZrCore_TaskRuntime_RegisterBuiltins`. Its obsolete source is not a public
+surface in this configured product graph.
 
 ### Steps
 
@@ -212,6 +232,23 @@ and `zr_vm_canonical_consumers_test` 17/17 with real process exit zero.
    three toolchains; do not combine unrelated deleted surface with debug/LSP.
 5. Exact-path commit M6.2 with an acceptance record listing any pre-existing
    target failures separately from the migrated tests.
+
+#### M6.2 Acceptance
+
+Completed 2026-07-25 23:20 +08:00. The configured product graph now exposes
+only the canonical `zr.task` `Task`/`Job`/`Scheduler` contract and the
+`zr.thread.ThreadScheduler.schedule(Job)` provider path. `TaskRunner`,
+`autoCoroutine`, `zr.coroutine`, source `pump`/`step`, `%async`, `%await`,
+and `%async T` are rejected or unavailable; compiler task and reference-escape
+analysis derives await boundaries only from direct AST facts. The private
+runtime scheduler remains an implementation detail used to complete canonical
+Task results, not a script-visible public API. Task and thread regressions
+retain the M4/M5 lifecycle, transport, cancellation, fault, and exactly-once
+drop coverage. In isolated GCC 11.4, Clang 14.0, and MSVC 17.14 builds,
+`zr_vm_parser_test` passed 75/75, `zr_vm_task_runtime_test` passed 16/16, and
+`zr_vm_thread_runtime_test` passed 25/25; every test process exited zero.
+`zr_vm_lib_task` remains intentionally excluded because the root CMake product
+graph neither builds nor registers that historical module.
 
 ## M6.3: Debug Projection and Fault Semantics
 

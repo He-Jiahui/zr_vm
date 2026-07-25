@@ -10,18 +10,6 @@ static TZrBool reference_escape_string_equals(
            ZrCore_String_Equal(left, right);
 }
 
-static TZrBool reference_escape_string_equals_literal(
-        SZrString *value,
-        const TZrChar *literal) {
-    TZrNativeString nativeValue;
-
-    if (value == ZR_NULL || literal == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    nativeValue = ZrCore_String_GetNativeString(value);
-    return nativeValue != ZR_NULL && strcmp(nativeValue, literal) == 0;
-}
-
 void reference_escape_provenance_reset(
         SZrReferenceEscapeProvenance *provenance) {
     if (provenance == ZR_NULL) {
@@ -475,51 +463,6 @@ TZrSize reference_escape_last_identifier_offset(
     return result;
 }
 
-static TZrBool reference_escape_primary_is_await(
-        SZrAstNode *node,
-        TZrSize *callIndex) {
-    SZrPrimaryExpression *primary;
-    SZrAstNode *member;
-
-    if (callIndex != ZR_NULL) {
-        *callIndex = 0U;
-    }
-    if (node == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION ||
-        node->data.primaryExpression.property == ZR_NULL ||
-        node->data.primaryExpression.property->type != ZR_AST_IMPORT_EXPRESSION ||
-        node->data.primaryExpression.property->data.importExpression.modulePath == ZR_NULL ||
-        node->data.primaryExpression.property->data.importExpression.modulePath->type !=
-                ZR_AST_STRING_LITERAL ||
-        !reference_escape_string_equals_literal(
-                node->data.primaryExpression.property->data.importExpression.modulePath
-                        ->data.stringLiteral.value,
-                "zr.task")) {
-        return ZR_FALSE;
-    }
-    primary = &node->data.primaryExpression;
-    if (primary->members == ZR_NULL || primary->members->count < 2U) {
-        return ZR_FALSE;
-    }
-    member = primary->members->nodes[0];
-    if (member == ZR_NULL || member->type != ZR_AST_MEMBER_EXPRESSION ||
-        member->data.memberExpression.computed ||
-        member->data.memberExpression.property == ZR_NULL ||
-        member->data.memberExpression.property->type != ZR_AST_IDENTIFIER_LITERAL ||
-        !reference_escape_string_equals_literal(
-                member->data.memberExpression.property->data.identifier.name,
-                "__awaitTask")) {
-        return ZR_FALSE;
-    }
-    member = primary->members->nodes[1];
-    if (member == ZR_NULL || member->type != ZR_AST_FUNCTION_CALL) {
-        return ZR_FALSE;
-    }
-    if (callIndex != ZR_NULL) {
-        *callIndex = 1U;
-    }
-    return ZR_TRUE;
-}
-
 TZrBool reference_escape_analyze_expression(
         SZrReferenceEscapeContext *context,
         SZrAstNode *node,
@@ -840,21 +783,9 @@ static TZrBool reference_escape_analyze_primary(
         TZrBool wantReference,
         SZrReferenceEscapeProvenance *provenance) {
     SZrPrimaryExpression *primary = &node->data.primaryExpression;
-    TZrSize awaitCallIndex = 0U;
     TZrSize index;
     TZrBool hasReceiverMemberCall = ZR_FALSE;
 
-    if (reference_escape_primary_is_await(node, &awaitCallIndex)) {
-        SZrAstNode *call = primary->members->nodes[awaitCallIndex];
-        if (!reference_escape_analyze_expression_array(
-                    context, call->data.functionCall.args)) {
-            return ZR_FALSE;
-        }
-        context->suspensionEpoch++;
-        context->suspensionRange = node->location;
-        context->suspensionName = "await";
-        return ZR_TRUE;
-    }
     if (!reference_escape_analyze_expression(
                 context, primary->property, wantReference, provenance)) {
         return ZR_FALSE;

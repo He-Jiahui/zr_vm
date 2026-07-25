@@ -698,15 +698,6 @@ static void task_effects_register_vararg_parameter(ZrTaskEffectContext *context,
                               bindingKind);
 }
 
-static TZrBool task_effects_is_zr_task_import(SZrAstNode *node) {
-    if (node == ZR_NULL || node->type != ZR_AST_IMPORT_EXPRESSION || node->data.importExpression.modulePath == ZR_NULL ||
-        node->data.importExpression.modulePath->type != ZR_AST_STRING_LITERAL) {
-        return ZR_FALSE;
-    }
-
-    return task_effects_string_equals(node->data.importExpression.modulePath->data.stringLiteral.value, "zr.task");
-}
-
 static TZrBool task_effects_is_zr_thread_import(SZrAstNode *node) {
     if (node == ZR_NULL || node->type != ZR_AST_IMPORT_EXPRESSION || node->data.importExpression.modulePath == ZR_NULL ||
         node->data.importExpression.modulePath->type != ZR_AST_STRING_LITERAL) {
@@ -1019,42 +1010,6 @@ static void task_effects_register_assignment_binding(ZrTaskEffectContext *contex
     }
 }
 
-static TZrBool task_effects_primary_is_await_call(SZrAstNode *node, TZrSize *callMemberIndex) {
-    SZrPrimaryExpression *primary;
-    SZrAstNode *memberNode;
-
-    if (callMemberIndex != ZR_NULL) {
-        *callMemberIndex = 0;
-    }
-
-    if (node == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION || !task_effects_is_zr_task_import(node->data.primaryExpression.property)) {
-        return ZR_FALSE;
-    }
-
-    primary = &node->data.primaryExpression;
-    if (primary->members == ZR_NULL || primary->members->count < 2) {
-        return ZR_FALSE;
-    }
-
-    memberNode = primary->members->nodes[0];
-    if (memberNode == ZR_NULL || memberNode->type != ZR_AST_MEMBER_EXPRESSION || memberNode->data.memberExpression.computed ||
-        memberNode->data.memberExpression.property == ZR_NULL ||
-        memberNode->data.memberExpression.property->type != ZR_AST_IDENTIFIER_LITERAL ||
-        !task_effects_identifier_equals(&memberNode->data.memberExpression.property->data.identifier, "__awaitTask")) {
-        return ZR_FALSE;
-    }
-
-    memberNode = primary->members->nodes[1];
-    if (memberNode == ZR_NULL || memberNode->type != ZR_AST_FUNCTION_CALL) {
-        return ZR_FALSE;
-    }
-
-    if (callMemberIndex != ZR_NULL) {
-        *callMemberIndex = 1;
-    }
-    return ZR_TRUE;
-}
-
 static void task_effects_validate_member_node(ZrTaskEffectContext *context, SZrAstNode *node) {
     if (context == ZR_NULL || node == ZR_NULL || context->cs->hasError) {
         return;
@@ -1078,33 +1033,12 @@ static void task_effects_validate_member_node(ZrTaskEffectContext *context, SZrA
 static void task_effects_validate_primary_expression(ZrTaskEffectContext *context, SZrAstNode *node) {
     SZrPrimaryExpression *primary;
     TZrSize memberIndex;
-    TZrSize awaitCallIndex = 0;
 
     if (context == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION || context->cs->hasError) {
         return;
     }
 
     primary = &node->data.primaryExpression;
-    if (task_effects_primary_is_await_call(node, &awaitCallIndex)) {
-        SZrAstNode *callNode = primary->members->nodes[awaitCallIndex];
-        task_effects_validate_function_call(context, &callNode->data.functionCall);
-        if (context->cs->hasError) {
-            return;
-        }
-        if (!context->asyncAllowed) {
-            ZrParser_Compiler_Error(context->cs,
-                                    "%await is only allowed inside %async bodies or scheduler-managed top-level coroutines",
-                                    node->location);
-            return;
-        }
-        context->awaitSeen = ZR_TRUE;
-        for (memberIndex = awaitCallIndex + 1; memberIndex < primary->members->count && !context->cs->hasError;
-             memberIndex++) {
-            task_effects_validate_member_node(context, primary->members->nodes[memberIndex]);
-        }
-        return;
-    }
-
     task_effects_validate_node(context, primary->property);
     for (memberIndex = 0; memberIndex < primary->members->count && !context->cs->hasError; memberIndex++) {
         task_effects_validate_member_node(context, primary->members->nodes[memberIndex]);

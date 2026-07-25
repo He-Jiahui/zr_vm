@@ -203,65 +203,6 @@ static void init_thread_generic_type(SZrState *state,
     ZrCore_Array_Push(state, &type->elementTypes, argumentType);
 }
 
-static void ensure_thread_test_root_scope(SZrCompilerState *cs) {
-    TEST_ASSERT_NOT_NULL(cs);
-    TEST_ASSERT_NOT_NULL(cs->state);
-
-    if (cs->currentFunction == ZR_NULL) {
-        cs->currentFunction = ZrCore_Function_New(cs->state);
-        TEST_ASSERT_NOT_NULL(cs->currentFunction);
-    }
-
-    if (cs->scopeStack.length == 0) {
-        enter_scope(cs);
-    }
-}
-
-static SZrAstNode *find_async_wrapped_lambda_block(SZrAstNode *functionNode) {
-    SZrFunctionDeclaration *declaration;
-    SZrAstNode *returnNode;
-    SZrAstNode *returnExpr;
-    SZrPrimaryExpression *primary;
-    SZrAstNode *callNode;
-    SZrAstNode *lambdaNode;
-
-    if (functionNode == ZR_NULL || functionNode->type != ZR_AST_FUNCTION_DECLARATION) {
-        return ZR_NULL;
-    }
-
-    declaration = &functionNode->data.functionDeclaration;
-    if (declaration->body == ZR_NULL || declaration->body->type != ZR_AST_BLOCK ||
-        declaration->body->data.block.body == ZR_NULL || declaration->body->data.block.body->count == 0) {
-        return ZR_NULL;
-    }
-
-    returnNode = declaration->body->data.block.body->nodes[0];
-    if (returnNode == ZR_NULL || returnNode->type != ZR_AST_RETURN_STATEMENT ||
-        returnNode->data.returnStatement.expr == ZR_NULL ||
-        returnNode->data.returnStatement.expr->type != ZR_AST_PRIMARY_EXPRESSION) {
-        return ZR_NULL;
-    }
-
-    returnExpr = returnNode->data.returnStatement.expr;
-    primary = &returnExpr->data.primaryExpression;
-    if (primary->members == ZR_NULL || primary->members->count == 0) {
-        return ZR_NULL;
-    }
-
-    callNode = primary->members->nodes[primary->members->count - 1];
-    if (callNode == ZR_NULL || callNode->type != ZR_AST_FUNCTION_CALL ||
-        callNode->data.functionCall.args == ZR_NULL || callNode->data.functionCall.args->count == 0) {
-        return ZR_NULL;
-    }
-
-    lambdaNode = callNode->data.functionCall.args->nodes[0];
-    if (lambdaNode == ZR_NULL || lambdaNode->type != ZR_AST_LAMBDA_EXPRESSION) {
-        return ZR_NULL;
-    }
-
-    return lambdaNode->data.lambdaExpression.block;
-}
-
 static const ZrLibTypeDescriptor *find_type_descriptor(const ZrLibModuleDescriptor *descriptor, const char *typeName) {
     TZrSize index;
 
@@ -314,15 +255,16 @@ static TZrBool generic_parameter_has_constraint(const ZrLibGenericParameterDescr
     return ZR_FALSE;
 }
 
-static void test_zr_thread_registers_public_shapes_without_legacy_mutex_or_atomic(void) {
+static void test_zr_thread_registers_canonical_scheduler_without_legacy_wrappers(void) {
     SZrState *state = create_thread_test_state();
     const ZrLibModuleDescriptor *threadDescriptor;
 
     TEST_ASSERT_NOT_NULL(state);
     threadDescriptor = ZrLibrary_NativeRegistry_FindModule(state->global, "zr.thread");
     TEST_ASSERT_NOT_NULL(threadDescriptor);
-    TEST_ASSERT_NOT_NULL(find_type_descriptor(threadDescriptor, "Scheduler"));
-    TEST_ASSERT_NOT_NULL(find_type_descriptor(threadDescriptor, "Thread"));
+    TEST_ASSERT_NOT_NULL(find_type_descriptor(threadDescriptor, "ThreadScheduler"));
+    TEST_ASSERT_NULL(find_type_descriptor(threadDescriptor, "Scheduler"));
+    TEST_ASSERT_NULL(find_type_descriptor(threadDescriptor, "Thread"));
     TEST_ASSERT_NOT_NULL(find_type_descriptor(threadDescriptor, "Channel"));
     TEST_ASSERT_NOT_NULL(find_type_descriptor(threadDescriptor, "Shared"));
     TEST_ASSERT_NOT_NULL(find_type_descriptor(threadDescriptor, "Transfer"));
@@ -352,10 +294,8 @@ static void test_zr_thread_descriptors_express_send_sync_contracts(void) {
     const ZrLibTypeDescriptor *sharedMutexDescriptor;
     const ZrLibTypeDescriptor *lockDescriptor;
     const ZrLibTypeDescriptor *sharedLockDescriptor;
-    const ZrLibTypeDescriptor *threadTypeDescriptor;
-    const ZrLibTypeDescriptor *schedulerDescriptor;
-    const ZrLibMethodDescriptor *threadStartDescriptor;
-    const ZrLibMethodDescriptor *schedulerStartDescriptor;
+    const ZrLibTypeDescriptor *threadSchedulerDescriptor;
+    const ZrLibMethodDescriptor *scheduleDescriptor;
 
     TEST_ASSERT_NOT_NULL(state);
     threadDescriptor = ZrLibrary_NativeRegistry_FindModule(state->global, "zr.thread");
@@ -369,8 +309,7 @@ static void test_zr_thread_descriptors_express_send_sync_contracts(void) {
     sharedMutexDescriptor = find_type_descriptor(threadDescriptor, "SharedMutex");
     lockDescriptor = find_type_descriptor(threadDescriptor, "Lock");
     sharedLockDescriptor = find_type_descriptor(threadDescriptor, "SharedLock");
-    threadTypeDescriptor = find_type_descriptor(threadDescriptor, "Thread");
-    schedulerDescriptor = find_type_descriptor(threadDescriptor, "Scheduler");
+    threadSchedulerDescriptor = find_type_descriptor(threadDescriptor, "ThreadScheduler");
 
     TEST_ASSERT_NOT_NULL(channelDescriptor);
     TEST_ASSERT_NOT_NULL(transferDescriptor);
@@ -380,8 +319,9 @@ static void test_zr_thread_descriptors_express_send_sync_contracts(void) {
     TEST_ASSERT_NOT_NULL(sharedMutexDescriptor);
     TEST_ASSERT_NOT_NULL(lockDescriptor);
     TEST_ASSERT_NOT_NULL(sharedLockDescriptor);
-    TEST_ASSERT_NOT_NULL(threadTypeDescriptor);
-    TEST_ASSERT_NOT_NULL(schedulerDescriptor);
+    TEST_ASSERT_NOT_NULL(threadSchedulerDescriptor);
+    TEST_ASSERT_NULL(find_type_descriptor(threadDescriptor, "Thread"));
+    TEST_ASSERT_NULL(find_type_descriptor(threadDescriptor, "Scheduler"));
 
     TEST_ASSERT_EQUAL_UINT64(1, channelDescriptor->genericParameterCount);
     TEST_ASSERT_TRUE(generic_parameter_has_constraint(&channelDescriptor->genericParameters[0], "zr.thread.Send"));
@@ -412,22 +352,16 @@ static void test_zr_thread_descriptors_express_send_sync_contracts(void) {
     TEST_ASSERT_EQUAL_UINT64(1, sharedLockDescriptor->genericParameterCount);
     TEST_ASSERT_EQUAL_UINT64(0, sharedLockDescriptor->implementsTypeCount);
 
-    threadStartDescriptor = find_method_descriptor(threadTypeDescriptor, "start");
-    schedulerStartDescriptor = find_method_descriptor(schedulerDescriptor, "start");
-    TEST_ASSERT_NOT_NULL(threadStartDescriptor);
-    TEST_ASSERT_NOT_NULL(schedulerStartDescriptor);
-
-    TEST_ASSERT_EQUAL_UINT64(1, threadStartDescriptor->parameterCount);
-    TEST_ASSERT_EQUAL_UINT64(1, threadStartDescriptor->genericParameterCount);
-    TEST_ASSERT_EQUAL_STRING("zr.task.TaskRunner<T>", threadStartDescriptor->parameters[0].typeName);
-    TEST_ASSERT_EQUAL_STRING("zr.task.Task<T>", threadStartDescriptor->returnTypeName);
-    TEST_ASSERT_TRUE(generic_parameter_has_constraint(&threadStartDescriptor->genericParameters[0], "zr.thread.Send"));
-
-    TEST_ASSERT_EQUAL_UINT64(1, schedulerStartDescriptor->parameterCount);
-    TEST_ASSERT_EQUAL_UINT64(1, schedulerStartDescriptor->genericParameterCount);
-    TEST_ASSERT_EQUAL_STRING("zr.task.TaskRunner<T>", schedulerStartDescriptor->parameters[0].typeName);
-    TEST_ASSERT_EQUAL_STRING("zr.task.Task<T>", schedulerStartDescriptor->returnTypeName);
-    TEST_ASSERT_TRUE(generic_parameter_has_constraint(&schedulerStartDescriptor->genericParameters[0], "zr.thread.Send"));
+    scheduleDescriptor = find_method_descriptor(threadSchedulerDescriptor, "schedule");
+    TEST_ASSERT_NOT_NULL(scheduleDescriptor);
+    TEST_ASSERT_NULL(find_method_descriptor(threadSchedulerDescriptor, "start"));
+    TEST_ASSERT_NULL(find_method_descriptor(threadSchedulerDescriptor, "pump"));
+    TEST_ASSERT_NULL(find_method_descriptor(threadSchedulerDescriptor, "step"));
+    TEST_ASSERT_EQUAL_UINT64(1, scheduleDescriptor->parameterCount);
+    TEST_ASSERT_EQUAL_UINT64(1, scheduleDescriptor->genericParameterCount);
+    TEST_ASSERT_EQUAL_STRING("zr.task.Job<T>", scheduleDescriptor->parameters[0].typeName);
+    TEST_ASSERT_EQUAL_STRING("zr.task.Task<T>", scheduleDescriptor->returnTypeName);
+    TEST_ASSERT_TRUE(generic_parameter_has_constraint(&scheduleDescriptor->genericParameters[0], "zr.thread.Send"));
 
     ZrTests_State_Destroy(state);
 }
@@ -583,131 +517,17 @@ static void test_thread_markers_reject_nested_isolate_alias_generic_arguments(vo
     destroy_thread_test_state(state);
 }
 
-static void test_local_async_function_call_infers_task_runner_type(void) {
-    static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
-            "%async run(): int {\n"
-            "    %async localAdd(): int {\n"
-            "        return 5;\n"
-            "    }\n"
-            "    var runner = localAdd();\n"
-            "    return 0;\n"
-            "}\n"
-            "return 0;\n";
-    SZrState *state = create_thread_test_state();
-    SZrCompilerState *cs = create_thread_test_compiler_state(state);
-    SZrAstNode *ast;
-    SZrAstNode *lambdaBlock;
-    SZrAstNode *runnerDecl;
-    SZrInferredType result;
-
-    TEST_ASSERT_NOT_NULL(state);
-    TEST_ASSERT_NOT_NULL(cs);
-
-    ast = parse_thread_source_ast(state, source, "thread_local_async_runner_inference_test.zr");
-    TEST_ASSERT_NOT_NULL(ast);
-    TEST_ASSERT_TRUE(ast->type == ZR_AST_SCRIPT);
-    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-    TEST_ASSERT_TRUE(ast->data.script.statements->count >= 2);
-
-    ensure_thread_test_root_scope(cs);
-    cs->scriptAst = ast;
-    ZrParser_Compiler_PredeclareFunctionBindings(cs, ast->data.script.statements);
-    TEST_ASSERT_FALSE(cs->hasError);
-
-    lambdaBlock = find_async_wrapped_lambda_block(ast->data.script.statements->nodes[1]);
-    TEST_ASSERT_NOT_NULL(lambdaBlock);
-    TEST_ASSERT_TRUE(lambdaBlock->type == ZR_AST_BLOCK);
-    TEST_ASSERT_NOT_NULL(lambdaBlock->data.block.body);
-    TEST_ASSERT_TRUE(lambdaBlock->data.block.body->count >= 2);
-
-    enter_scope(cs);
-    ZrParser_Compiler_PredeclareFunctionBindings(cs, lambdaBlock->data.block.body);
-    TEST_ASSERT_FALSE(cs->hasError);
-
-    runnerDecl = lambdaBlock->data.block.body->nodes[1];
-    TEST_ASSERT_NOT_NULL(runnerDecl);
-    TEST_ASSERT_TRUE(runnerDecl->type == ZR_AST_VARIABLE_DECLARATION);
-    TEST_ASSERT_NOT_NULL(runnerDecl->data.variableDeclaration.value);
-
-    ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, runnerDecl->data.variableDeclaration.value, &result));
-    TEST_ASSERT_NOT_NULL(result.typeName);
-    TEST_ASSERT_NOT_NULL(strstr(ZrCore_String_GetNativeString(result.typeName), "zr.task.TaskRunner"));
-    TEST_ASSERT_TRUE(result.elementTypes.length == 1);
-
-    ZrParser_InferredType_Free(state, &result);
-    ZrParser_Ast_Free(state, ast);
-    destroy_thread_test_compiler_state(cs);
-    destroy_thread_test_state(state);
-}
-
-static void test_thread_start_infers_task_handle_for_local_async_runner_call(void) {
-    static const char *source =
-            "%async run(): int {\n"
-            "    %async localAdd(): int {\n"
-            "        return 5;\n"
-            "    }\n"
-            "    var task = %import(\"zr.thread\").spawnThread().start(localAdd());\n"
-            "    return 0;\n"
-            "}\n"
-            "return 0;\n";
-    SZrState *state = create_thread_test_state();
-    SZrCompilerState *cs = create_thread_test_compiler_state(state);
-    SZrAstNode *ast;
-    SZrAstNode *lambdaBlock;
-    SZrAstNode *taskDecl;
-    SZrInferredType result;
-
-    TEST_ASSERT_NOT_NULL(state);
-    TEST_ASSERT_NOT_NULL(cs);
-
-    ast = parse_thread_source_ast(state, source, "thread_local_async_start_inference_test.zr");
-    TEST_ASSERT_NOT_NULL(ast);
-    TEST_ASSERT_TRUE(ast->type == ZR_AST_SCRIPT);
-    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-    TEST_ASSERT_TRUE(ast->data.script.statements->count >= 1);
-
-    ensure_thread_test_root_scope(cs);
-    cs->scriptAst = ast;
-
-    lambdaBlock = find_async_wrapped_lambda_block(ast->data.script.statements->nodes[0]);
-    TEST_ASSERT_NOT_NULL(lambdaBlock);
-    TEST_ASSERT_TRUE(lambdaBlock->type == ZR_AST_BLOCK);
-    TEST_ASSERT_NOT_NULL(lambdaBlock->data.block.body);
-    TEST_ASSERT_TRUE(lambdaBlock->data.block.body->count >= 2);
-
-    enter_scope(cs);
-    ZrParser_Compiler_PredeclareFunctionBindings(cs, lambdaBlock->data.block.body);
-    TEST_ASSERT_FALSE(cs->hasError);
-
-    taskDecl = lambdaBlock->data.block.body->nodes[1];
-    TEST_ASSERT_NOT_NULL(taskDecl);
-    TEST_ASSERT_TRUE(taskDecl->type == ZR_AST_VARIABLE_DECLARATION);
-    TEST_ASSERT_NOT_NULL(taskDecl->data.variableDeclaration.value);
-
-    ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, taskDecl->data.variableDeclaration.value, &result));
-    TEST_ASSERT_NOT_NULL(result.typeName);
-    TEST_ASSERT_NOT_NULL(strstr(ZrCore_String_GetNativeString(result.typeName), "zr.task.Task"));
-
-    ZrParser_InferredType_Free(state, &result);
-    ZrParser_Ast_Free(state, ast);
-    destroy_thread_test_compiler_state(cs);
-    destroy_thread_test_state(state);
-}
-
 static void test_lock_guard_is_rejected_after_await_boundary(void) {
     static const char *source =
             "var thread = %import(\"zr.thread\");\n"
-            "%async pause(): int {\n"
+            "async fn pause(): Task<int> {\n"
             "    return 1;\n"
             "}\n"
-            "%async invalid(): int {\n"
+            "async fn invalid(): Task<int> {\n"
             "    var mutex = new thread.UniqueMutex<int>(1);\n"
             "    var lock = mutex.lock();\n"
-            "    var task = pause().start();\n"
-            "    %await task;\n"
+            "    var task = pause();\n"
+            "    await task;\n"
             "    return lock.load();\n"
             "}\n"
             "return 0;\n";
@@ -731,266 +551,21 @@ static void test_lock_guard_is_rejected_after_await_boundary(void) {
     destroy_thread_test_state(state);
 }
 
-static void test_spawn_thread_requires_support_multithread(void) {
+static void test_thread_scheduler_requires_support_multithread(void) {
     static const char *source =
+            "var task = %import(\"zr.task\");\n"
             "var thread = %import(\"zr.thread\");\n"
-            "var worker = thread.spawnThread();\n"
-            "return 1;\n";
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var job = init task.Job<int>(() => { return 1; });\n"
+            "return scheduler.schedule<int>(job).result();\n";
     SZrState *state = create_thread_test_state_with_project_flags(ZR_FALSE, ZR_TRUE);
     SZrFunction *function;
     SZrTypeValue result;
 
     TEST_ASSERT_NOT_NULL(state);
-    function = compile_thread_source(state, source, "thread_spawn_gate_test.zr");
+    function = compile_thread_source(state, source, "thread_scheduler_gate_test.zr");
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_FALSE(ZrTests_Function_Execute(state, function, &result));
-
-    destroy_thread_test_state(state);
-}
-
-static void test_thread_start_and_await_execute_runner_result(void) {
-    static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
-            "%async addOne(value: int): int {\n"
-            "    return value + 1;\n"
-            "}\n"
-            "%async run(): int {\n"
-            "    var worker = thread.spawnThread();\n"
-            "    var task = worker.start(addOne(4));\n"
-            "    return %await task;\n"
-            "}\n"
-            "return %await run().start();\n";
-    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
-    SZrFunction *function;
-    TZrInt64 result = 0;
-
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_thread_source(state, source, "thread_start_await_test.zr");
-    TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
-    TEST_ASSERT_EQUAL_INT64(5, result);
-
-    destroy_thread_test_state(state);
-}
-
-static void test_async_runner_creation_still_works_with_thread_import_present(void) {
-    static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
-            "%async addOne(value: int): int {\n"
-            "    return value + 1;\n"
-            "}\n"
-            "%async run(): int {\n"
-            "    var task = addOne(4).start();\n"
-            "    return %await task;\n"
-            "}\n"
-            "return %await run().start();\n";
-    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
-    SZrFunction *function;
-    TZrInt64 result = 0;
-
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_thread_source(state, source, "thread_import_local_runner_test.zr");
-    TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
-    TEST_ASSERT_EQUAL_INT64(5, result);
-
-    destroy_thread_test_state(state);
-}
-
-static void test_thread_start_with_precomputed_runner_execute_runner_result(void) {
-    static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
-            "%async addOne(value: int): int {\n"
-            "    return value + 1;\n"
-            "}\n"
-            "%async run(): int {\n"
-            "    var worker = thread.spawnThread();\n"
-            "    var runner = addOne(4);\n"
-            "    var task = worker.start(runner);\n"
-            "    return %await task;\n"
-            "}\n"
-            "return %await run().start();\n";
-    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
-    SZrFunction *function;
-    TZrInt64 result = 0;
-
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_thread_source(state, source, "thread_start_precomputed_runner_test.zr");
-    TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
-    TEST_ASSERT_EQUAL_INT64(5, result);
-
-    destroy_thread_test_state(state);
-}
-
-static void test_thread_start_with_local_async_function_execute_runner_result(void) {
-    static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
-            "%async run(): int {\n"
-            "    var worker = thread.spawnThread();\n"
-            "    %async localAdd(): int {\n"
-            "        return 5;\n"
-            "    }\n"
-            "    return %await worker.start(localAdd());\n"
-            "}\n"
-            "return %await run().start();\n";
-    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
-    SZrFunction *function;
-    TZrInt64 result = 0;
-
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_thread_source(state, source, "thread_start_local_async_runner_test.zr");
-    TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
-    TEST_ASSERT_EQUAL_INT64(5, result);
-
-    destroy_thread_test_state(state);
-}
-
-static void test_channel_transports_value_back_from_worker_isolate(void) {
-    static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
-            "%async run(): int {\n"
-            "    var worker = thread.spawnThread();\n"
-            "    var channel = new thread.Channel<int>();\n"
-            "    %async sendBack(): int {\n"
-            "        channel.send(41);\n"
-            "        return 1;\n"
-            "    }\n"
-            "    var task = worker.start(sendBack());\n"
-            "    if (%await task != 1) { return 0; }\n"
-            "    return channel.recv();\n"
-            "}\n"
-            "return %await run().start();\n";
-    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
-    SZrFunction *function;
-    TZrInt64 result = 0;
-
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_thread_source(state, source, "thread_channel_transport_test.zr");
-    TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
-    TEST_ASSERT_EQUAL_INT64(41, result);
-
-    destroy_thread_test_state(state);
-}
-
-static void test_transfer_moves_value_into_worker_isolate_and_invalidates_source(void) {
-    static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
-            "%async run(): int {\n"
-            "    var worker = thread.spawnThread();\n"
-            "    var transfer = new thread.Transfer<int>(41);\n"
-            "    %async consume(): int {\n"
-            "        var moved = transfer.take();\n"
-            "        if (transfer.isTaken() != true) { return 0; }\n"
-            "        return moved + 1;\n"
-            "    }\n"
-            "    var task = worker.start(consume());\n"
-            "    if (%await task != 42) { return 0; }\n"
-            "    if (transfer.isTaken() != true) { return 0; }\n"
-            "    if (transfer.take() != null) { return 0; }\n"
-            "    return 1;\n"
-            "}\n"
-            "return %await run().start();\n";
-    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
-    SZrFunction *function;
-    TZrInt64 result = 0;
-
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_thread_source(state, source, "thread_transfer_move_test.zr");
-    TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
-    TEST_ASSERT_EQUAL_INT64(1, result);
-
-    destroy_thread_test_state(state);
-}
-
-static void test_transfer_rejects_non_send_thread_handle_payload(void) {
-    static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
-            "var worker = thread.spawnThread();\n"
-            "var transfer = new thread.Transfer(worker);\n"
-            "return 0;\n";
-    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
-    SZrFunction *function;
-
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_thread_source(state, source, "thread_transfer_non_send_rejected_test.zr");
-    TEST_ASSERT_NULL(function);
-
-    destroy_thread_test_state(state);
-}
-
-static void test_shared_handle_capture_roundtrips_across_worker_isolate(void) {
-    static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
-            "%async run(): int {\n"
-            "    var worker = thread.spawnThread();\n"
-            "    var shared = new thread.Shared<int>(41);\n"
-            "    %async bump(): int {\n"
-            "        var current = shared.load();\n"
-            "        shared.store(current + 1);\n"
-            "        return current;\n"
-            "    }\n"
-            "    var task = worker.start(bump());\n"
-            "    if (%await task != 41) { return 0; }\n"
-            "    return shared.load();\n"
-            "}\n"
-            "return %await run().start();\n";
-    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
-    SZrFunction *function;
-    TZrInt64 result = 0;
-
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_thread_source(state, source, "thread_shared_capture_test.zr");
-    TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
-    TEST_ASSERT_EQUAL_INT64(42, result);
-
-    destroy_thread_test_state(state);
-}
-
-static void test_shared_rejects_non_sync_thread_handle_payload(void) {
-    static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
-            "var worker = thread.spawnThread();\n"
-            "var shared = new thread.Shared(worker);\n"
-            "return 0;\n";
-    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
-    SZrFunction *function;
-
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_thread_source(state, source, "thread_shared_non_sync_rejected_test.zr");
-    TEST_ASSERT_NULL(function);
-
-    destroy_thread_test_state(state);
-}
-
-static void test_weak_shared_handle_capture_upgrades_across_worker_isolate(void) {
-    static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
-            "%async run(): int {\n"
-            "    var worker = thread.spawnThread();\n"
-            "    var shared = new thread.Shared<int>(7);\n"
-            "    var weak = shared.downgrade();\n"
-            "    %async readWeak(): int {\n"
-            "        var upgraded = weak.upgrade();\n"
-            "        if (upgraded == null) { return 0; }\n"
-            "        return upgraded.load();\n"
-            "    }\n"
-            "    return %await worker.start(readWeak());\n"
-            "}\n"
-            "return %await run().start();\n";
-    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
-    SZrFunction *function;
-    TZrInt64 result = 0;
-
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_thread_source(state, source, "thread_weak_shared_capture_test.zr");
-    TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
-    TEST_ASSERT_EQUAL_INT64(7, result);
 
     destroy_thread_test_state(state);
 }
@@ -1464,25 +1039,13 @@ static void test_thread_scheduler_rejects_reused_job(void) {
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_zr_thread_registers_public_shapes_without_legacy_mutex_or_atomic);
+    RUN_TEST(test_zr_thread_registers_canonical_scheduler_without_legacy_wrappers);
     RUN_TEST(test_zr_thread_descriptors_express_send_sync_contracts);
     RUN_TEST(test_zr_thread_descriptor_publishes_canonical_thread_scheduler_contract);
     RUN_TEST(test_thread_markers_reject_isolate_alias_ownership_qualifiers);
     RUN_TEST(test_thread_markers_reject_nested_isolate_alias_generic_arguments);
-    RUN_TEST(test_local_async_function_call_infers_task_runner_type);
-    RUN_TEST(test_thread_start_infers_task_handle_for_local_async_runner_call);
     RUN_TEST(test_lock_guard_is_rejected_after_await_boundary);
-    RUN_TEST(test_spawn_thread_requires_support_multithread);
-    RUN_TEST(test_async_runner_creation_still_works_with_thread_import_present);
-    RUN_TEST(test_thread_start_with_precomputed_runner_execute_runner_result);
-    RUN_TEST(test_thread_start_and_await_execute_runner_result);
-    RUN_TEST(test_thread_start_with_local_async_function_execute_runner_result);
-    RUN_TEST(test_channel_transports_value_back_from_worker_isolate);
-    RUN_TEST(test_transfer_moves_value_into_worker_isolate_and_invalidates_source);
-    RUN_TEST(test_transfer_rejects_non_send_thread_handle_payload);
-    RUN_TEST(test_shared_handle_capture_roundtrips_across_worker_isolate);
-    RUN_TEST(test_shared_rejects_non_sync_thread_handle_payload);
-    RUN_TEST(test_weak_shared_handle_capture_upgrades_across_worker_isolate);
+    RUN_TEST(test_thread_scheduler_requires_support_multithread);
     RUN_TEST(test_unique_mutex_lock_guard_updates_value);
     RUN_TEST(test_shared_mutex_read_and_write_guards_observe_updates);
     RUN_TEST(test_lock_guard_rejects_transfer_storage);

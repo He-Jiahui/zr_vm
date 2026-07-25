@@ -13,11 +13,10 @@ doc_type: module-detail
 
 ## Scope
 
-Syntax 12 M3 extends the existing `zr.task` descriptor with the cold
-`Job<T>` handoff and cooperative `Scheduler` surface. The descriptor module
-version is `2.1.0`. This document describes only the M3 runtime contract; it
-does not make `TaskRunner`, coroutine scheduler names, worker threads, or a
-numeric duration type part of the new contract.
+Syntax 12 M6.2 exposes the cold `Job<T>` handoff and cooperative `Scheduler`
+surface as the sole `zr.task` scheduling contract. The descriptor module
+version is `3.0.0`. It does not expose `TaskRunner`, coroutine scheduler
+names, worker threads, or script-controlled pumping.
 
 ## Public Contract
 
@@ -29,7 +28,7 @@ numeric duration type part of the new contract.
 - `Scheduler.schedule(Job<T>)` consumes its first argument and returns a
   `zr.task.Task<T>` completion handle. Reusing the submitted Job is a source
   ownership error.
-- `zr.task.currentScheduler()` returns the local cooperative scheduler.
+- `zr.task.currentScheduler` resolves to the local cooperative scheduler.
 - `zr.task.yieldNow()` and `zr.task.delay(...)` return completion Tasks via
   the same Task ABI. M3 establishes the call contract only; a public Duration
   value provider belongs to a later scheduler/provider milestone.
@@ -41,23 +40,23 @@ owner or execute the callable twice.
 ## Canonical Metadata and Facts
 
 The native descriptor publishes protocol masks and stable member contract
-roles for the Job constructor, `Scheduler.schedule`, `currentScheduler`,
-`yieldNow`, and `delay`. Parser semantic reference facts carry the resolved
-role and ownership qualifier. A native member with a non-zero contract role
-is an exact resolved fact even when it has no source declaration `SymbolId`.
+roles for the Job constructor and `Scheduler.schedule`. Parser semantic
+reference facts carry the resolved role and ownership qualifier. A native
+member with a non-zero contract role is an exact resolved fact even when it
+has no source declaration `SymbolId`.
 
 The ownership move pass consumes an argument only when the resolved call fact
 identifies the Scheduler schedule role at argument zero. It does not inspect
-the member spelling, legacy `start`/`pump` methods, or a coroutine owner.
+the member spelling or synthesize legacy `start`/`pump` methods.
 
 The compiler also rejects a standalone Task expression through the canonical
 Task Handle protocol. A Task must be awaited, returned, or stored rather than
 silently discarded.
 
-## Compatibility Boundary
+## Migration Boundary
 
-The existing Task/frame runtime and legacy `TaskRunner` surface remain in
-place for later migration work. M3 neither introduces a thread scheduler nor
-changes cross-domain transfer, artifact/AOT metadata, debugger/LSP behavior,
-or the legacy public surface deletion planned after the scheduler stack is
-complete.
+M6.2 removes `%async`, `%await`, `%async T`, `TaskRunner`, `Async`,
+`defaultScheduler`, public scheduler pumping, and `zr.coroutine`. Source must
+use `async fn ...: Task<T>`, direct `await`, and the resolved
+`currentScheduler.schedule(Job<T>)` contract. Thread providers consume the
+same Job/Scheduler role and do not recreate the deleted wrappers.

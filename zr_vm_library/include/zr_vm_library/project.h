@@ -261,7 +261,6 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     TZrSize dependencyRefCount;
     TZrSize dependencyRefCapacity;
     TZrBool supportMultithread;
-    TZrBool autoCoroutine;
 };
 
 typedef struct SZrLibrary_Project SZrLibrary_Project;

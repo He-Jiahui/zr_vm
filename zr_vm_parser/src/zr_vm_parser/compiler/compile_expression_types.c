@@ -2277,7 +2277,7 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
                 if (!compile_inferred_type_is_task_handle(cs, &argType)) {
                     ZrParser_InferredType_Free(cs->state, &argType);
                     ZrParser_Compiler_Error(cs,
-                                            "%await expects a zr.task.Task<T>; call .start() on the TaskRunner first",
+                                            "await expects a zr.task.Task<T>",
                                             argNode->location);
                     goto cleanup;
                 }

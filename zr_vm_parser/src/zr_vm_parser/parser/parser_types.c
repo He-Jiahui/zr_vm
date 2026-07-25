@@ -635,12 +635,8 @@ static SZrType *parse_percent_prefixed_type(SZrParserState *ps, TZrBool noGeneri
     }
 
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "async")) {
-        ZrParser_Lexer_Next(ps->lexer);
-        innerType = parse_task_inner_type(ps, noGeneric);
-        if (innerType == ZR_NULL) {
-            return ZR_NULL;
-        }
-        return wrap_type_in_task_generic(ps, innerType, "zr.task.TaskRunner", location);
+        report_error(ps, "Legacy '%async T' type syntax is not supported; use zr.task.Task<T>");
+        return ZR_NULL;
     }
 
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {

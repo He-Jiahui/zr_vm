@@ -279,7 +279,7 @@ void test_compile_time_public_class_decorator_parsing(void);
 void test_compile_time_struct_decorator_parsing(void);
 void test_compile_time_function_decorator_parsing(void);
 static void test_function_declaration_optional_func_keyword(void);
-static void test_async_prefixed_type_annotation_parsing(void);
+static void test_legacy_async_surfaces_are_rejected(void);
 static void test_function_type_annotation_parsing(void);
 static void test_type_query_accepts_function_type_expression(void);
 static void test_type_value_alias_parsing_variants(void);
@@ -2672,59 +2672,61 @@ static void test_owned_class_and_prefixed_ownership_parsing(void) {
     TEST_DIVIDER();
 }
 
-static void test_async_prefixed_type_annotation_parsing(void) {
+static void test_legacy_async_surfaces_are_rejected(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Async Prefixed Type Annotation Parsing";
+    const char *testSummary = "Legacy Async Surfaces Are Rejected";
+    SZrState *state;
+    SZrCapturedParserDiagnostic diagnostic;
+    SZrAstNode *ast;
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = create_test_state();
+    state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("Percent async type parsing",
-              "Testing parsing of `%async` type annotations as TaskRunner sugar in variable and async return positions");
-
-    {
-        const char *source =
-            "var runner: %async int = null;\n"
-            "%async run(): %async int {\n"
-            "    return 1;\n"
-            "}\n";
-        SZrString *sourceName = ZrCore_String_Create(state, "async_type_test.zr", 18);
-        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        SZrAstNode *variableDecl;
-        SZrAstNode *functionDecl;
-
-        TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_TRUE(ast->data.script.statements->count >= 2);
-
-        variableDecl = ast->data.script.statements->nodes[0];
-        TEST_ASSERT_NOT_NULL(variableDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, variableDecl->type);
-        TEST_ASSERT_NOT_NULL(variableDecl->data.variableDeclaration.typeInfo);
-        TEST_ASSERT_NOT_NULL(variableDecl->data.variableDeclaration.typeInfo->name);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_GENERIC_TYPE, variableDecl->data.variableDeclaration.typeInfo->name->type);
-        TEST_ASSERT_EQUAL_STRING(
-            "zr.task.TaskRunner",
-            ZrCore_String_GetNativeString(
-                variableDecl->data.variableDeclaration.typeInfo->name->data.genericType.name->name));
-
-        functionDecl = ast->data.script.statements->nodes[1];
-        TEST_ASSERT_NOT_NULL(functionDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, functionDecl->type);
-        TEST_ASSERT_NOT_NULL(functionDecl->data.functionDeclaration.returnType);
-        TEST_ASSERT_NOT_NULL(functionDecl->data.functionDeclaration.returnType->name);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_GENERIC_TYPE, functionDecl->data.functionDeclaration.returnType->name->type);
-        TEST_ASSERT_EQUAL_STRING(
-            "zr.task.TaskRunner",
-            ZrCore_String_GetNativeString(
-                functionDecl->data.functionDeclaration.returnType->name->data.genericType.name->name));
-
+    ast = parse_source_with_diagnostic(state,
+                                       "%async run(): zr.task.Task<int> { return 1; }\n",
+                                       strlen("%async run(): zr.task.Task<int> { return 1; }\n"),
+                                       "legacy_percent_async.zr",
+                                       &diagnostic);
+    TEST_ASSERT_TRUE(diagnostic.reported);
+    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Legacy '%async' syntax"));
+    if (ast != ZR_NULL) {
         ZrParser_Ast_Free(state, ast);
     }
+
+    ast = parse_source_with_diagnostic(state,
+                                       "var runner: %async int = null;\n",
+                                       strlen("var runner: %async int = null;\n"),
+                                       "legacy_percent_async_type.zr",
+                                       &diagnostic);
+    TEST_ASSERT_TRUE(diagnostic.reported);
+    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Legacy '%async T' type syntax"));
+    if (ast != ZR_NULL) {
+        ZrParser_Ast_Free(state, ast);
+    }
+
+    ast = parse_source_with_diagnostic(state,
+                                       "%await pending;\n",
+                                       strlen("%await pending;\n"),
+                                       "legacy_percent_await.zr",
+                                       &diagnostic);
+    TEST_ASSERT_TRUE(diagnostic.reported);
+    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Legacy '%await' syntax"));
+    if (ast != ZR_NULL) {
+        ZrParser_Ast_Free(state, ast);
+    }
+
+    ast = parse_source_with_diagnostic(state,
+                                       "async fn run(): zr.task.Task<int> { return 1; }\n",
+                                       strlen("async fn run(): zr.task.Task<int> { return 1; }\n"),
+                                       "canonical_async.zr",
+                                       &diagnostic);
+    TEST_ASSERT_FALSE(diagnostic.reported);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    ZrParser_Ast_Free(state, ast);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -4030,7 +4032,7 @@ int main(void) {
     RUN_TEST(test_owned_class_and_prefixed_ownership_parsing);
     RUN_TEST(test_class_abstract_member_and_final_class_parsing);
     RUN_TEST(test_class_member_modifier_and_super_member_parsing);
-    RUN_TEST(test_async_prefixed_type_annotation_parsing);
+    RUN_TEST(test_legacy_async_surfaces_are_rejected);
     RUN_TEST(test_function_type_annotation_parsing);
     RUN_TEST(test_function_type_missing_return_arrow_is_rejected);
     RUN_TEST(test_type_query_accepts_function_type_expression);

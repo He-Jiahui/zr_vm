@@ -1,28 +1,15 @@
 ---
 related_code:
   - zr_vm_core/include/zr_vm_core/task_runtime.h
-  - zr_vm_library/include/zr_vm_library/native_binding.h
   - zr_vm_library/src/zr_vm_library/task_runtime.c
-  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_reserved_task.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects_declarations.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects_internal.h
-  - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
-  - zr_vm_cli/src/zr_vm_cli/project/project.c
   - tests/task/test_task_runtime.c
 implementation_files:
-  - zr_vm_core/include/zr_vm_core/task_runtime.h
   - zr_vm_library/src/zr_vm_library/task_runtime.c
-  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_reserved_task.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects_declarations.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects_internal.h
-  - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
-  - zr_vm_cli/src/zr_vm_cli/project/project.c
 plan_sources:
-  - user: 2026-04-05 Task / Coroutine / Thread 并发模型重构计划
+  - docs/plans/syntax/12-async-task-job-scheduler/m6-artifact-debug-lsp-migration-implementation-plan.md
 tests:
   - tests/task/test_task_runtime.c
 doc_type: module-detail
@@ -30,99 +17,63 @@ doc_type: module-detail
 
 # zr.task Built-in Runtime
 
-## Scope
+## Public Contract
 
-`zr.task` 不再由 `zr_vm_lib_task` 对外注册。当前实现把任务抽象与 `%async/%await` 的 builtin owner 收到 VM 内建注册路径，由 `ZrCore_TaskRuntime_RegisterBuiltins(...)` 把 `zr.task` 与 `zr.coroutine` 一起挂进 native registry。
+`zr.task` exposes exactly three task-facing types:
 
-这一轮已经落地的公开面是：
+- `Task<T>` is the completion handle.
+- `Job<T>` owns one cold callable and is consumed by scheduling.
+- `Scheduler` is the canonical scheduler capability. Its only public operation
+  is `schedule(Job<T>): Task<T>`.
 
-- `zr.task.IScheduler`
-- `zr.task.TaskRunner<T>`
-- `zr.task.Task<T>`
-- `zr.task.defaultScheduler`
-
-当前没有再公开旧接口：
-
-- `zr.task.Async<T>`
-- `zr.task.Scheduler`
-- `zr.task.spawn(...)`
-- `zr.task.spawnThread(...)`
-- `zr.task.currentScheduler()`
-- `zr.task.await(...)`
-
-`%mutex` / `%atomic` 也不再属于兼容接口集合。它们现在由 parser 直接拒绝；线程同步能力已经收口到 `zr.thread.UniqueMutex<T>` / `SharedMutex<T>`。
-
-## `%async` / `%await` Lowering
-
-`%async` 仍然先走 parser lowering，但目标已经改成 builtin `TaskRunner` 模型，而不是旧 `spawn()` 热启动模型。
-
-源代码：
+The module provides `currentScheduler` as the local provider. `yieldNow()` and
+`delay(...)` retain their Task-returning ABI. A completed task is observed with
+`Task.result()` or by direct `await` inside an `async` callable.
 
 ```zr
-%async f(): %async int {
-    return 1;
+var task = %import("zr.task");
+var job = init task.Job<int>(() => { return 17; });
+var completion = task.currentScheduler.schedule<int>(job);
+return completion.result();
+```
+
+`Job<T>` is move-only. Submission consumes the source Job even when queue
+allocation fails, so a failed handoff cannot execute the callable twice.
+
+## Source And Runtime Boundary
+
+The source form is explicit:
+
+```zr
+async fn fetch(pending: zr.task.Task<int>): zr.task.Task<int> {
+    return await pending;
 }
 ```
 
-当前会 lower 成：
+`Task.result()` drives the task's owning provider only when it is not already
+inside that provider's active scheduler frame. The queue, pump state, and
+provider wait loop are runtime-private; source code cannot select or mutate
+them through a legacy scheduler API.
 
-- 表面返回类型推荐写成 `%async int`，底层仍会包成 `TaskRunner<int>`
-- 函数体返回 `zr.task.__createTaskRunner(...)`
+## Removed Compatibility Surface
 
-也就是说，调用 `%async` 函数只会得到冷的 runner，不会立即排队执行。
+The following are rejected or absent from native metadata:
 
-`%await expr` 当前 lower 到 builtin hidden helper `zr.task.__awaitTask(expr)`。effect 检查也已经从旧 `zr.task.await(...)` helper 改到这个新的 hidden await call。
+- `%async`, `%await`, and `%async T`
+- `TaskRunner<T>`, `Async<T>`, `__createTaskRunner`, and `__awaitTask`
+- `defaultScheduler`, `start`, `step`, `pump`, `setAutoCoroutine`, and
+  `getAutoCoroutine`
+- the `zr.coroutine` module and its scheduler aliases
+- the project `autoCoroutine` setting
 
-## Runtime Model
-
-### TaskRunner
-
-- `TaskRunner<T>` 保存冷启动 callable
-- `TaskRunner.start()` 委托到 `zr.task.defaultScheduler`
-- 同一个 runner 只能 `start()` 一次；重复启动直接抛运行时错误
-
-### Task
-
-- `Task<T>` 状态目前实现为：
-  - `Created`
-  - `Queued`
-  - `Running`
-  - `Suspended`
-  - `Completed`
-  - `Faulted`
-- 当前调度器主路径实际会用到 `Created/Queued/Running/Completed/Faulted`
-- `Task.result()` 与 `%await task` 共用同一条等待路径
-
-### defaultScheduler
-
-- `zr.task.defaultScheduler` 在模块 materialize 时初始化为当前 isolate 的 `zr.coroutine.coroutineScheduler`
-- 它是模块根导出字段，脚本层可直接重绑
-- `TaskRunner.start()` 每次都会重新读取这个字段，因此重绑会立即生效
+Dynamic source member access may be represented until execution, but an absent
+native descriptor is never synthesized as a compatibility fallback and fails
+when invoked. Consumers must use the resolved Task/Job/Scheduler contract,
+not a member name or a source-text migration heuristic.
 
 ## Context Safety
 
-`compiler_task_effects.c` 继续保留 borrow-across-await 诊断，但 await 边界识别已经从旧公开 helper 改成 builtin hidden await helper。
-
-当前保持的约束：
-
-- `%await` 只能出现在 `%async` 上下文
-- borrowed / loaned binding 不能跨 `await` 使用
-- `zr.thread.Lock<T>` / `SharedLock<T>` 这类 affine guard 不能跨 `await` 使用
-- `%import` using guard 的 binder、`DynamicModule<T>.@Available` payload，以及同一 guarded body 内由赋值、条件表达式、逻辑表达式、类型转换、`%type(...)` / prototype wrapper、array/object/key-value/unpack 容器字面量和普通 `=` 赋值表达式 initializer 传播出的 guard alias 不能跨 `await` 使用，会报告 `Plugin guard binding '<name>' cannot be used after an await boundary`
-- 父 `%async` body 已跨 `%await` 后声明 nested function/lambda 时，子体读取继承的 Borrow/Loan、affine guard 或 `%import` guard binding 会共享同一 await-boundary 诊断；子体新声明的 local/parameter 仍按子 context 自己的 await 状态处理
-- generator expression body 也参与同一 task-effect validation；`{{ ... %await task; out plugin; }}` 不能绕过 guard binding 的 await-boundary 检查
-- template string interpolation 也参与同一 task-effect validation；插值 expression 不能绕过 guard binding 的 await-boundary 检查
-- `%type(...)`、prototype reference wrapper、construct expression 和 decorator expression 也参与同一 task-effect validation；wrapper operand/target、constructor target/args 与 decorator body expression 不能绕过 guard binding 的 await-boundary 检查
-- class / struct declaration members 也参与同一 task-effect validation；普通 method / meta function / property getter/setter body 中的 `%await` 会按非 `%async` 上下文拒绝，字段 initializer 和 enum member value 也会被扫描
-- borrowed / guard 值在 `await` 前使用、`await` 后不再读，仍然允许
-
-## Module Materialization Hook
-
-native binding descriptor 现在支持模块 materialize 回调。`zr.task` 与 `zr.coroutine` 利用这条路径把状态相关的根属性挂到每个 isolate 的模块对象上，而不是把 `defaultScheduler` / `coroutineScheduler` 硬编码成静态常量。
-
-这条 hook 当前用于：
-
-- `zr.task.defaultScheduler`
-- `zr.coroutine.coroutineScheduler`
-
-`zr.thread` 的 worker isolate 调度、`Send/Sync` cross-thread contract、shared control cell 和 mutex/guard 约束，另见 `zr-thread-runtime.md`。
+The compiler derives async effect from the explicit declaration AST. `await`
+requires the Task-handle protocol with one payload type, rejects non-Task
+operands, and establishes a suspension boundary for borrow, loan, and affine
+guard checks. No Task name or diagnostic text is used to infer that boundary.

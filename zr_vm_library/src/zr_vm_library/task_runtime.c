@@ -27,26 +27,20 @@ typedef struct ZrVmTaskExecuteRequest {
 } ZrVmTaskExecuteRequest;
 
 static const TZrChar *kTaskModuleName = "zr.task";
-static const TZrChar *kCoroutineModuleName = "zr.coroutine";
-static const TZrChar *kTaskRootCoroutineSchedulerField = "__zr_coroutine_scheduler";
+static const TZrChar *kTaskRootSchedulerField = "__zr_task_scheduler";
 static const TZrChar *kTaskQueueField = "__zr_task_queue";
 static const TZrChar *kTaskQueueHeadField = "__zr_task_queue_head";
-static const TZrChar *kTaskAutoCoroutineField = "__zr_task_auto_coroutine";
 static const TZrChar *kTaskIsPumpingField = "__zr_task_is_pumping";
 static const TZrChar *kTaskStatusField = "__zr_task_status";
 static const TZrChar *kTaskCallableField = "__zr_task_callable";
 static const TZrChar *kTaskResultField = "__zr_task_result";
 static const TZrChar *kTaskErrorField = "__zr_task_error";
 static const TZrChar *kTaskSchedulerOwnerField = "__zr_task_scheduler_owner";
-static const TZrChar *kTaskRunnerCallableField = "__zr_task_runner_callable";
-static const TZrChar *kTaskRunnerStartedField = "__zr_task_runner_started";
 static const TZrChar *kTaskJobCallableField = "__zr_task_job_callable";
 static const TZrChar *kTaskJobConsumedField = "__zr_task_job_consumed";
 static const TZrChar *kTaskCooperativeTaskField = "__zr_task_cooperative_task";
 static const TZrChar *kTaskCooperativeTurnsField = "__zr_task_cooperative_turns";
 static const TZrChar *kTaskProviderAwaitRegistrationField = "__zr_task_provider_await_registration";
-
-static TZrBool task_runtime_scheduler_invoke_step(SZrState *state, SZrObject *scheduler);
 
 static SZrObject *task_runtime_self_object(const ZrLibCallContext *context) {
     SZrTypeValue *selfValue = ZrLib_CallContext_Self(context);
@@ -176,17 +170,6 @@ static SZrObject *task_runtime_root_object(SZrState *state) {
     }
 
     return ZR_CAST_OBJECT(state, state->global->zrObject.value.object);
-}
-
-static TZrBool task_runtime_default_auto_coroutine(SZrState *state) {
-    SZrLibrary_Project *project;
-
-    if (state == ZR_NULL || state->global == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    project = (SZrLibrary_Project *)state->global->userData;
-    return project == ZR_NULL || project->autoCoroutine ? ZR_TRUE : ZR_FALSE;
 }
 
 static TZrBool task_runtime_raise_runtime_error(SZrState *state, const TZrChar *message) {
@@ -339,7 +322,7 @@ static SZrObject *task_runtime_new_loaded_module_typed_object(SZrState *state,
     return object;
 }
 
-static SZrObject *task_runtime_ensure_coroutine_scheduler(SZrState *state) {
+static SZrObject *task_runtime_ensure_current_scheduler(SZrState *state) {
     SZrObject *rootObject;
     SZrObject *scheduler;
     SZrObject *queue;
@@ -355,12 +338,12 @@ static SZrObject *task_runtime_ensure_coroutine_scheduler(SZrState *state) {
         return ZR_NULL;
     }
 
-    scheduler = task_runtime_get_object_field(state, rootObject, kTaskRootCoroutineSchedulerField);
+    scheduler = task_runtime_get_object_field(state, rootObject, kTaskRootSchedulerField);
     if (scheduler != ZR_NULL) {
         return scheduler;
     }
 
-    scheduler = task_runtime_new_module_typed_object(state, kCoroutineModuleName, "Scheduler");
+    scheduler = task_runtime_new_module_typed_object(state, kTaskModuleName, "Scheduler");
     queue = ZrLib_Array_New(state);
     if (scheduler == ZR_NULL || queue == ZR_NULL) {
         return ZR_NULL;
@@ -368,15 +351,14 @@ static SZrObject *task_runtime_ensure_coroutine_scheduler(SZrState *state) {
 
     ZrLib_Value_SetObject(state, &schedulerValue, scheduler, ZR_VALUE_TYPE_OBJECT);
     ZrLib_Value_SetObject(state, &queueValue, queue, ZR_VALUE_TYPE_ARRAY);
-    task_runtime_set_value_field(state, rootObject, kTaskRootCoroutineSchedulerField, &schedulerValue);
+    task_runtime_set_value_field(state, rootObject, kTaskRootSchedulerField, &schedulerValue);
     task_runtime_set_value_field(state, scheduler, kTaskQueueField, &queueValue);
     task_runtime_set_int_field(state, scheduler, kTaskQueueHeadField, 0);
-    task_runtime_set_bool_field(state, scheduler, kTaskAutoCoroutineField, task_runtime_default_auto_coroutine(state));
     task_runtime_set_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE);
     return scheduler;
 }
 
-static SZrObject *task_runtime_ensure_coroutine_scheduler_for_module(SZrState *state, SZrObjectModule *module) {
+static SZrObject *task_runtime_ensure_current_scheduler_for_module(SZrState *state, SZrObjectModule *module) {
     SZrObject *rootObject;
     SZrObject *scheduler;
     SZrObject *queue;
@@ -392,7 +374,7 @@ static SZrObject *task_runtime_ensure_coroutine_scheduler_for_module(SZrState *s
         return ZR_NULL;
     }
 
-    scheduler = task_runtime_get_object_field(state, rootObject, kTaskRootCoroutineSchedulerField);
+    scheduler = task_runtime_get_object_field(state, rootObject, kTaskRootSchedulerField);
     if (scheduler != ZR_NULL) {
         return scheduler;
     }
@@ -405,10 +387,9 @@ static SZrObject *task_runtime_ensure_coroutine_scheduler_for_module(SZrState *s
 
     ZrLib_Value_SetObject(state, &schedulerValue, scheduler, ZR_VALUE_TYPE_OBJECT);
     ZrLib_Value_SetObject(state, &queueValue, queue, ZR_VALUE_TYPE_ARRAY);
-    task_runtime_set_value_field(state, rootObject, kTaskRootCoroutineSchedulerField, &schedulerValue);
+    task_runtime_set_value_field(state, rootObject, kTaskRootSchedulerField, &schedulerValue);
     task_runtime_set_value_field(state, scheduler, kTaskQueueField, &queueValue);
     task_runtime_set_int_field(state, scheduler, kTaskQueueHeadField, 0);
-    task_runtime_set_bool_field(state, scheduler, kTaskAutoCoroutineField, task_runtime_default_auto_coroutine(state));
     task_runtime_set_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE);
     return scheduler;
 }
@@ -685,8 +666,7 @@ static TZrBool task_runtime_create_cooperative_task(SZrState *state,
         return task_runtime_handle_mark_faulted(state, handle, ZR_THREAD_STATUS_RUNTIME_ERROR, &errorValue);
     }
 
-    if (task_runtime_get_bool_field(state, scheduler, kTaskAutoCoroutineField, ZR_TRUE) &&
-        !task_runtime_get_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE)) {
+    if (!task_runtime_get_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE)) {
         task_runtime_scheduler_pump_internal(state, scheduler);
     }
     return ZR_TRUE;
@@ -695,8 +675,6 @@ static TZrBool task_runtime_create_cooperative_task(SZrState *state,
 static TZrBool task_runtime_wait_for_task(SZrState *state, SZrObject *handle, SZrTypeValue *result) {
     TZrInt64 status;
     SZrObject *scheduler;
-    TZrBool autoCoroutine;
-    TZrBool isPumping;
     const SZrTypeValue *value;
 
     if (state == ZR_NULL || handle == ZR_NULL || result == ZR_NULL) {
@@ -714,7 +692,7 @@ static TZrBool task_runtime_wait_for_task(SZrState *state, SZrObject *handle, SZ
 
     scheduler = task_runtime_get_object_field(state, handle, kTaskSchedulerOwnerField);
     if (scheduler == ZR_NULL) {
-        scheduler = task_runtime_ensure_coroutine_scheduler(state);
+        scheduler = task_runtime_ensure_current_scheduler(state);
     }
     if (scheduler != ZR_NULL) {
         TZrBool providerHandled = ZR_FALSE;
@@ -726,17 +704,14 @@ static TZrBool task_runtime_wait_for_task(SZrState *state, SZrObject *handle, SZ
             return task_runtime_wait_for_task(state, handle, result);
         }
     }
-    autoCoroutine = scheduler != ZR_NULL && task_runtime_get_bool_field(state, scheduler, kTaskAutoCoroutineField, ZR_TRUE);
-    isPumping = scheduler != ZR_NULL && task_runtime_get_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE);
-
-    if (scheduler != ZR_NULL && autoCoroutine) {
+    if (scheduler != ZR_NULL && !task_runtime_get_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE)) {
         while (ZR_TRUE) {
             status = task_runtime_get_int_field(state, handle, kTaskStatusField, ZR_VM_TASK_STATUS_CREATED);
             if (status == ZR_VM_TASK_STATUS_COMPLETED || status == ZR_VM_TASK_STATUS_FAULTED) {
                 return task_runtime_wait_for_task(state, handle, result);
             }
 
-            if (!task_runtime_scheduler_invoke_step(state, scheduler)) {
+            if (!task_runtime_scheduler_step_internal(state, scheduler)) {
                 if (state->threadStatus != ZR_THREAD_STATUS_FINE || state->hasCurrentException) {
                     return ZR_FALSE;
                 }
@@ -745,123 +720,7 @@ static TZrBool task_runtime_wait_for_task(SZrState *state, SZrObject *handle, SZ
         }
     }
 
-    if (isPumping) {
-        ZrCore_Debug_RunError(state, "Task is still pending on an active scheduler frame");
-    }
-
-    ZrCore_Debug_RunError(state,
-                          "Task is still pending while autoCoroutine is disabled; call Scheduler.pump() first");
-}
-
-static SZrObject *task_runtime_default_scheduler(SZrState *state) {
-    const SZrTypeValue *exportValue;
-
-    exportValue = task_runtime_get_module_export(state, kTaskModuleName, "defaultScheduler");
-    if (exportValue == ZR_NULL || (exportValue->type != ZR_VALUE_TYPE_OBJECT && exportValue->type != ZR_VALUE_TYPE_ARRAY) ||
-        exportValue->value.object == ZR_NULL) {
-        return task_runtime_ensure_coroutine_scheduler(state);
-    }
-
-    return ZR_CAST_OBJECT(state, exportValue->value.object);
-}
-
-static TZrBool task_runtime_scheduler_invoke_start(SZrState *state,
-                                                   SZrObject *scheduler,
-                                                   SZrObject *runner,
-                                                   SZrTypeValue *result) {
-    SZrString *memberName;
-    SZrTypeValue receiverValue;
-    SZrTypeValue argumentValue;
-
-    if (state == ZR_NULL || scheduler == ZR_NULL || runner == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    memberName = ZrCore_String_Create(state, "start", strlen("start"));
-    if (memberName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrLib_Value_SetObject(state, &receiverValue, scheduler, ZR_VALUE_TYPE_OBJECT);
-    ZrLib_Value_SetObject(state, &argumentValue, runner, task_runtime_value_type_for_object(runner));
-    return ZrCore_Object_InvokeMember(state, &receiverValue, memberName, &argumentValue, 1, result);
-}
-
-static TZrBool task_runtime_scheduler_invoke_step(SZrState *state, SZrObject *scheduler) {
-    SZrString *memberName;
-    SZrTypeValue receiverValue;
-    SZrTypeValue stepResult;
-    TZrBool invoked;
-
-    if (state == ZR_NULL || scheduler == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    memberName = ZrCore_String_Create(state, "step", strlen("step"));
-    if (memberName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrLib_Value_SetObject(state, &receiverValue, scheduler, ZR_VALUE_TYPE_OBJECT);
-    ZrLib_Value_SetNull(&stepResult);
-    invoked = ZrCore_Object_InvokeMember(state, &receiverValue, memberName, ZR_NULL, 0, &stepResult);
-    if (!invoked) {
-        return ZR_FALSE;
-    }
-
-    if (stepResult.type == ZR_VALUE_TYPE_BOOL) {
-        return stepResult.value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
-    }
-    if (ZR_VALUE_IS_TYPE_SIGNED_INT(stepResult.type)) {
-        return stepResult.value.nativeObject.nativeInt64 != 0 ? ZR_TRUE : ZR_FALSE;
-    }
-    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(stepResult.type)) {
-        return stepResult.value.nativeObject.nativeUInt64 != 0 ? ZR_TRUE : ZR_FALSE;
-    }
-    return ZR_FALSE;
-}
-
-static TZrBool task_runtime_start_runner_on_scheduler(SZrState *state,
-                                                      SZrObject *scheduler,
-                                                      SZrObject *runner,
-                                                      SZrTypeValue *result) {
-    const SZrTypeValue *callable;
-    SZrObject *queue;
-
-    if (state == ZR_NULL || scheduler == ZR_NULL || runner == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (task_runtime_get_bool_field(state, runner, kTaskRunnerStartedField, ZR_FALSE)) {
-        return task_runtime_raise_runtime_error(state, "TaskRunner.start() can only be called once");
-    }
-
-    callable = task_runtime_get_field_value(state, runner, kTaskRunnerCallableField);
-    if (callable == ZR_NULL) {
-        return task_runtime_raise_runtime_error(state, "TaskRunner is missing its callable");
-    }
-
-    if (!task_runtime_create_task_handle(state, scheduler, callable, result) ||
-        result->type != ZR_VALUE_TYPE_OBJECT || result->value.object == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    task_runtime_set_bool_field(state, runner, kTaskRunnerStartedField, ZR_TRUE);
-    queue = task_runtime_scheduler_queue(state, scheduler);
-    if (queue == ZR_NULL || !ZrLib_Array_PushValue(state, queue, result)) {
-        return ZR_FALSE;
-    }
-
-    task_runtime_set_int_field(state,
-                               ZR_CAST_OBJECT(state, result->value.object),
-                               kTaskStatusField,
-                               ZR_VM_TASK_STATUS_QUEUED);
-    if (task_runtime_get_bool_field(state, scheduler, kTaskAutoCoroutineField, ZR_TRUE) &&
-        !task_runtime_get_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE)) {
-        task_runtime_scheduler_pump_internal(state, scheduler);
-    }
-
-    return ZR_TRUE;
+    ZrCore_Debug_RunError(state, "Task is still pending on an active scheduler frame");
 }
 
 TZrBool ZrLibrary_TaskRuntime_PrepareJob(SZrState *state,
@@ -1004,8 +863,7 @@ static TZrBool task_runtime_schedule_job_on_scheduler(SZrState *state,
         ZrLibrary_TaskRuntime_ReleasePreparedJob(state, &item);
         return ZR_FALSE;
     }
-    if (task_runtime_get_bool_field(state, scheduler, kTaskAutoCoroutineField, ZR_TRUE) &&
-        !task_runtime_get_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE)) {
+    if (!task_runtime_get_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE)) {
         task_runtime_scheduler_pump_internal(state, scheduler);
     }
     ZrLibrary_TaskRuntime_ReleasePreparedJob(state, &item);
@@ -1072,24 +930,6 @@ TZrBool ZrLibrary_TaskRuntime_IsTaskComplete(SZrState *state, SZrObject *task) {
     return status == ZR_VM_TASK_STATUS_COMPLETED || status == ZR_VM_TASK_STATUS_FAULTED;
 }
 
-static TZrBool task_runtime_create_runner(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *runner;
-    SZrTypeValue *callable;
-
-    if (context == ZR_NULL || result == ZR_NULL || !ZrLib_CallContext_ReadFunction(context, 0, &callable)) {
-        return ZR_FALSE;
-    }
-
-    runner = task_runtime_new_module_typed_object(context->state, kTaskModuleName, "TaskRunner");
-    if (runner == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    task_runtime_set_value_field(context->state, runner, kTaskRunnerCallableField, callable);
-    task_runtime_set_bool_field(context->state, runner, kTaskRunnerStartedField, ZR_FALSE);
-    return task_runtime_finish_object(context->state, result, runner);
-}
-
 static TZrBool task_runtime_create_job(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *job = task_runtime_self_object(context);
     SZrTypeValue *callable;
@@ -1102,27 +942,6 @@ static TZrBool task_runtime_create_job(ZrLibCallContext *context, SZrTypeValue *
     task_runtime_set_value_field(context->state, job, kTaskJobCallableField, callable);
     task_runtime_set_bool_field(context->state, job, kTaskJobConsumedField, ZR_FALSE);
     return task_runtime_finish_object(context->state, result, job);
-}
-
-static TZrBool task_runtime_await_hidden(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *handle;
-    if (context == ZR_NULL || result == ZR_NULL || !ZrLib_CallContext_ReadObject(context, 0, &handle)) {
-        return ZR_FALSE;
-    }
-
-    return task_runtime_wait_for_task(context->state, handle, result);
-}
-
-static TZrBool task_runtime_runner_start(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *runner = task_runtime_self_object(context);
-    SZrObject *scheduler;
-
-    if (context == ZR_NULL || result == ZR_NULL || runner == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    scheduler = task_runtime_default_scheduler(context->state);
-    return task_runtime_scheduler_invoke_start(context->state, scheduler, runner, result);
 }
 
 static TZrBool task_runtime_task_result(ZrLibCallContext *context, SZrTypeValue *result) {
@@ -1146,18 +965,6 @@ static TZrBool task_runtime_task_is_completed(ZrLibCallContext *context, SZrType
     return ZR_TRUE;
 }
 
-static TZrBool task_runtime_scheduler_start_method(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *scheduler = task_runtime_self_object(context);
-    SZrObject *runner;
-
-    if (context == ZR_NULL || result == ZR_NULL || scheduler == ZR_NULL ||
-        !ZrLib_CallContext_ReadObject(context, 0, &runner)) {
-        return ZR_FALSE;
-    }
-
-    return task_runtime_start_runner_on_scheduler(context->state, scheduler, runner, result);
-}
-
 static TZrBool task_runtime_scheduler_schedule_method(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *scheduler = task_runtime_self_object(context);
     SZrObject *job;
@@ -1170,55 +977,6 @@ static TZrBool task_runtime_scheduler_schedule_method(ZrLibCallContext *context,
     return task_runtime_schedule_job_on_scheduler(context->state, scheduler, job, result);
 }
 
-static TZrBool task_runtime_scheduler_step_method(ZrLibCallContext *context, SZrTypeValue *result) {
-    if (context == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrLib_Value_SetBool(context->state,
-                        result,
-                        task_runtime_scheduler_step_internal(context->state, task_runtime_self_object(context)));
-    return ZR_TRUE;
-}
-
-static TZrBool task_runtime_scheduler_pump_method(ZrLibCallContext *context, SZrTypeValue *result) {
-    if (context == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrLib_Value_SetInt(context->state,
-                       result,
-                       task_runtime_scheduler_pump_internal(context->state, task_runtime_self_object(context)));
-    return ZR_TRUE;
-}
-
-static TZrBool task_runtime_scheduler_set_auto_method(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *self = task_runtime_self_object(context);
-    TZrBool autoCoroutine;
-
-    if (self == ZR_NULL || result == ZR_NULL || !ZrLib_CallContext_ReadBool(context, 0, &autoCoroutine)) {
-        return ZR_FALSE;
-    }
-
-    task_runtime_set_bool_field(context->state, self, kTaskAutoCoroutineField, autoCoroutine);
-    ZrLib_Value_SetNull(result);
-    return ZR_TRUE;
-}
-
-static TZrBool task_runtime_scheduler_get_auto_method(ZrLibCallContext *context, SZrTypeValue *result) {
-    if (context == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrLib_Value_SetBool(context->state,
-                        result,
-                        task_runtime_get_bool_field(context->state,
-                                                    task_runtime_self_object(context),
-                                                    kTaskAutoCoroutineField,
-                                                    ZR_TRUE));
-    return ZR_TRUE;
-}
-
 static TZrBool task_runtime_yield_now(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *scheduler;
 
@@ -1226,7 +984,7 @@ static TZrBool task_runtime_yield_now(ZrLibCallContext *context, SZrTypeValue *r
         return ZR_FALSE;
     }
 
-    scheduler = task_runtime_default_scheduler(context->state);
+    scheduler = task_runtime_ensure_current_scheduler(context->state);
     return scheduler != ZR_NULL && task_runtime_create_cooperative_task(context->state, scheduler, 1, result);
 }
 
@@ -1238,38 +996,14 @@ static TZrBool task_runtime_delay(ZrLibCallContext *context, SZrTypeValue *resul
         return ZR_FALSE;
     }
 
-    scheduler = task_runtime_default_scheduler(context->state);
+    scheduler = task_runtime_ensure_current_scheduler(context->state);
     return scheduler != ZR_NULL && task_runtime_create_cooperative_task(context->state, scheduler, turns, result);
-}
-
-static TZrBool task_runtime_coroutine_start_function(ZrLibCallContext *context, SZrTypeValue *result) {
-    const SZrTypeValue *schedulerExport;
-    SZrObject *runner;
-    SZrObject *scheduler = ZR_NULL;
-
-    if (context == ZR_NULL || result == ZR_NULL || !ZrLib_CallContext_ReadObject(context, 0, &runner)) {
-        return ZR_FALSE;
-    }
-
-    schedulerExport = task_runtime_get_module_export(context->state, kCoroutineModuleName, "coroutineScheduler");
-    if (schedulerExport != ZR_NULL &&
-        (schedulerExport->type == ZR_VALUE_TYPE_OBJECT || schedulerExport->type == ZR_VALUE_TYPE_ARRAY) &&
-        schedulerExport->value.object != ZR_NULL) {
-        scheduler = ZR_CAST_OBJECT(context->state, schedulerExport->value.object);
-    }
-
-    if (scheduler == ZR_NULL) {
-        scheduler = task_runtime_ensure_coroutine_scheduler(context->state);
-    }
-
-    return task_runtime_start_runner_on_scheduler(context->state, scheduler, runner, result);
 }
 
 static TZrBool task_runtime_task_module_materialize(SZrState *state,
                                                     SZrObjectModule *module,
                                                     const ZrLibModuleDescriptor *descriptor) {
     SZrObject *scheduler;
-    SZrString *defaultSchedulerName;
     SZrString *currentSchedulerName;
     SZrTypeValue value;
 
@@ -1278,39 +1012,14 @@ static TZrBool task_runtime_task_module_materialize(SZrState *state,
         return ZR_FALSE;
     }
 
-    scheduler = task_runtime_ensure_coroutine_scheduler(state);
-    defaultSchedulerName = ZrCore_String_Create(state, "defaultScheduler", strlen("defaultScheduler"));
+    scheduler = task_runtime_ensure_current_scheduler_for_module(state, module);
     currentSchedulerName = ZrCore_String_Create(state, "currentScheduler", strlen("currentScheduler"));
-    if (scheduler == ZR_NULL || defaultSchedulerName == ZR_NULL || currentSchedulerName == ZR_NULL) {
+    if (scheduler == ZR_NULL || currentSchedulerName == ZR_NULL) {
         return ZR_FALSE;
     }
 
     ZrLib_Value_SetObject(state, &value, scheduler, ZR_VALUE_TYPE_OBJECT);
-    ZrCore_Module_AddPubExport(state, module, defaultSchedulerName, &value);
     ZrCore_Module_AddPubExport(state, module, currentSchedulerName, &value);
-    return ZR_TRUE;
-}
-
-static TZrBool task_runtime_coroutine_module_materialize(SZrState *state,
-                                                         SZrObjectModule *module,
-                                                         const ZrLibModuleDescriptor *descriptor) {
-    SZrObject *scheduler;
-    SZrString *fieldName;
-    SZrTypeValue value;
-
-    ZR_UNUSED_PARAMETER(descriptor);
-    if (state == ZR_NULL || module == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    scheduler = task_runtime_ensure_coroutine_scheduler_for_module(state, module);
-    fieldName = ZrCore_String_Create(state, "coroutineScheduler", strlen("coroutineScheduler"));
-    if (scheduler == ZR_NULL || fieldName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrLib_Value_SetObject(state, &value, scheduler, ZR_VALUE_TYPE_OBJECT);
-    ZrCore_Module_AddPubExport(state, module, fieldName, &value);
     return ZR_TRUE;
 }
 
@@ -1321,10 +1030,6 @@ static const ZrLibGenericParameterDescriptor g_task_single_generic_parameter[] =
         },
 };
 
-static const ZrLibParameterDescriptor g_scheduler_start_parameters[] = {
-        {"runner", "zr.task.TaskRunner<T>", "The cold runner to schedule."},
-};
-
 static const ZrLibParameterDescriptor g_scheduler_schedule_parameters[] = {
         {"job", "zr.task.Job<T>", "The cold Job consumed by this scheduler."},
 };
@@ -1333,21 +1038,8 @@ static const ZrLibParameterDescriptor g_delay_parameters[] = {
         {"duration", "Duration", "The provider-owned timer duration."},
 };
 
-static const ZrLibParameterDescriptor g_create_runner_parameters[] = {
+static const ZrLibParameterDescriptor g_job_constructor_parameters[] = {
         {"callable", "function", "Hidden callable backing an async function body."},
-};
-
-static const ZrLibParameterDescriptor g_await_parameters[] = {
-        {"task", "zr.task.Task<T>", "The started task to await."},
-};
-
-static const ZrLibParameterDescriptor g_scheduler_set_auto_parameters[] = {
-        {"enabled", "bool", "Whether the scheduler should auto-pump queued work."},
-};
-
-static const ZrLibMethodDescriptor g_runner_methods[] = {
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("start", 0, 0, task_runtime_runner_start, "zr.task.Task<T>",
-                                      "Start this cold task runner on zr.task.defaultScheduler.", ZR_FALSE, ZR_NULL, 0),
 };
 
 static const ZrLibMethodDescriptor g_task_methods[] = {
@@ -1364,27 +1056,6 @@ static const ZrLibMethodDescriptor g_task_scheduler_methods[] = {
          g_task_single_generic_parameter, ZR_ARRAY_COUNT(g_task_single_generic_parameter), 0U},
 };
 
-static const ZrLibMethodDescriptor g_scheduler_methods[] = {
-        {"schedule", 1, 1, task_runtime_scheduler_schedule_method, "zr.task.Task<T>",
-         "Consume a cold Job and publish its Task completion handle.", ZR_FALSE, g_scheduler_schedule_parameters,
-         ZR_ARRAY_COUNT(g_scheduler_schedule_parameters), ZR_MEMBER_CONTRACT_ROLE_TASK_SCHEDULER_SCHEDULE,
-         g_task_single_generic_parameter, ZR_ARRAY_COUNT(g_task_single_generic_parameter), 0U},
-        {"start", 1, 1, task_runtime_scheduler_start_method, "zr.task.Task<T>",
-         "Queue a TaskRunner on this scheduler.", ZR_FALSE, g_scheduler_start_parameters,
-         ZR_ARRAY_COUNT(g_scheduler_start_parameters), 0U, g_task_single_generic_parameter,
-         ZR_ARRAY_COUNT(g_task_single_generic_parameter)},
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("step", 0, 0, task_runtime_scheduler_step_method, "bool",
-                                      "Execute one runnable task if present.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("pump", 0, 0, task_runtime_scheduler_pump_method, "int",
-                                      "Drain runnable tasks until the queue becomes empty.", ZR_FALSE, ZR_NULL, 0),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("setAutoCoroutine", 1, 1, task_runtime_scheduler_set_auto_method, "null",
-                                      "Enable or disable automatic scheduler pumping.", ZR_FALSE,
-                                      g_scheduler_set_auto_parameters,
-                                      ZR_ARRAY_COUNT(g_scheduler_set_auto_parameters)),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("getAutoCoroutine", 0, 0, task_runtime_scheduler_get_auto_method, "bool",
-                                      "Return whether automatic scheduler pumping is enabled.", ZR_FALSE, ZR_NULL, 0),
-};
-
 static const ZrLibMetaMethodDescriptor g_job_meta_methods[] = {
         {
                 .metaType = ZR_META_CONSTRUCTOR,
@@ -1393,25 +1064,15 @@ static const ZrLibMetaMethodDescriptor g_job_meta_methods[] = {
                 .callback = task_runtime_create_job,
                 .returnTypeName = "zr.task.Job<T>",
                 .documentation = "Create a cold Job from a callable returning T or Task<T>.",
-                .parameters = g_create_runner_parameters,
-                .parameterCount = ZR_ARRAY_COUNT(g_create_runner_parameters),
+                .parameters = g_job_constructor_parameters,
+                .parameterCount = ZR_ARRAY_COUNT(g_job_constructor_parameters),
                 .genericParameters = g_task_single_generic_parameter,
                 .genericParameterCount = ZR_ARRAY_COUNT(g_task_single_generic_parameter),
                 .contractRole = ZR_MEMBER_CONTRACT_ROLE_TASK_JOB_CONSTRUCT,
         },
 };
 
-static const TZrChar *g_scheduler_implements[] = {"Scheduler"};
-
 static const ZrLibFunctionDescriptor g_task_functions[] = {
-        {"__createTaskRunner", 1, 1, task_runtime_create_runner, "zr.task.TaskRunner<T>",
-         "Internal helper used by %async lowering.", g_create_runner_parameters,
-         ZR_ARRAY_COUNT(g_create_runner_parameters), g_task_single_generic_parameter,
-         ZR_ARRAY_COUNT(g_task_single_generic_parameter), ZR_MEMBER_CONTRACT_ROLE_NONE},
-        {"__awaitTask", 1, 1, task_runtime_await_hidden, "T",
-         "Internal helper used by %await lowering.", g_await_parameters, ZR_ARRAY_COUNT(g_await_parameters),
-         g_task_single_generic_parameter, ZR_ARRAY_COUNT(g_task_single_generic_parameter),
-         ZR_MEMBER_CONTRACT_ROLE_TASK_AWAIT},
         {"yieldNow", 0, 0, task_runtime_yield_now, "zr.task.Task<void>",
          "Yield once through the current scheduler's Task completion ABI.", ZR_NULL, 0, ZR_NULL, 0,
          ZR_MEMBER_CONTRACT_ROLE_TASK_YIELD_NOW, 0U},
@@ -1420,24 +1081,7 @@ static const ZrLibFunctionDescriptor g_task_functions[] = {
          ZR_ARRAY_COUNT(g_delay_parameters), ZR_NULL, 0, ZR_MEMBER_CONTRACT_ROLE_TASK_DELAY, 0U},
 };
 
-static const ZrLibFunctionDescriptor g_coroutine_functions[] = {
-        {"start", 1, 1, task_runtime_coroutine_start_function, "zr.task.Task<T>",
-         "Queue a TaskRunner on the coroutine scheduler.", g_scheduler_start_parameters,
-         ZR_ARRAY_COUNT(g_scheduler_start_parameters), g_task_single_generic_parameter,
-         ZR_ARRAY_COUNT(g_task_single_generic_parameter), ZR_MEMBER_CONTRACT_ROLE_NONE},
-};
-
 static const ZrLibTypeDescriptor g_task_types[] = {
-        ZR_LIB_TYPE_DESCRIPTOR_INIT("IScheduler", ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE, ZR_NULL, 0, g_scheduler_methods,
-                                    ZR_ARRAY_COUNT(g_scheduler_methods), ZR_NULL, 0,
-                                    "Scheduler interface implemented by task schedulers.", ZR_NULL, ZR_NULL, 0,
-                                    ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0),
-        ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT("TaskRunner", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_runner_methods,
-                                             ZR_ARRAY_COUNT(g_runner_methods), ZR_NULL, 0,
-                                             "Cold async runner produced by %async declarations.", ZR_NULL, ZR_NULL, 0,
-                                             ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL,
-                                             g_task_single_generic_parameter, ZR_ARRAY_COUNT(g_task_single_generic_parameter),
-                                             ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_RUNNER)),
         ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT("Task", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_task_methods,
                                              ZR_ARRAY_COUNT(g_task_methods), ZR_NULL, 0,
                                              "Started task handle that can be awaited.", ZR_NULL, ZR_NULL, 0, ZR_NULL, 0,
@@ -1458,21 +1102,9 @@ static const ZrLibTypeDescriptor g_task_types[] = {
                                              ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_SCHEDULER)),
 };
 
-static const ZrLibTypeDescriptor g_coroutine_types[] = {
-        ZR_LIB_TYPE_DESCRIPTOR_INIT("Scheduler", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_scheduler_methods,
-                                    ZR_ARRAY_COUNT(g_scheduler_methods), ZR_NULL, 0,
-                                    "Built-in isolate coroutine scheduler.", ZR_NULL, g_scheduler_implements,
-                                    ZR_ARRAY_COUNT(g_scheduler_implements), ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE,
-                                    ZR_NULL, ZR_NULL, 0),
-};
-
 static const ZrLibTypeHintDescriptor g_task_hints[] = {
-        {"defaultScheduler", "property", "defaultScheduler: IScheduler",
-         "Legacy compatibility scheduler used by TaskRunner.start()."},
         {"currentScheduler", "property", "currentScheduler: Scheduler",
          "Readonly current Scheduler capability."},
-        {"IScheduler", "type", "interface IScheduler", "Scheduler interface for task dispatchers."},
-        {"TaskRunner", "type", "class TaskRunner<T>", "Cold async runner produced by %async."},
         {"Task", "type", "class Task<T>", "Started task handle that can be awaited."},
         {"Job", "type", "class Job<T>", "Cold non-Copy work consumed by Scheduler.schedule."},
         {"Scheduler", "type", "interface Scheduler", "Canonical scheduler capability."},
@@ -1480,25 +1112,10 @@ static const ZrLibTypeHintDescriptor g_task_hints[] = {
         {"delay", "function", "delay(duration: Duration): Task<void>", "Timer Task through currentScheduler."},
 };
 
-static const ZrLibTypeHintDescriptor g_coroutine_hints[] = {
-        {"coroutineScheduler", "property", "coroutineScheduler: Scheduler",
-         "The isolate-wide built-in coroutine scheduler instance."},
-        {"start", "function", "start(runner: TaskRunner<T>): Task<T>",
-         "Queue a TaskRunner on the coroutine scheduler."},
-        {"Scheduler", "type", "class Scheduler implements zr.task.Scheduler",
-         "Built-in coroutine scheduler type."},
-};
-
 static const TZrChar g_task_hints_json[] =
         "{\n"
         "  \"schema\": \"zr.native.hints/v1\",\n"
         "  \"module\": \"zr.task\"\n"
-        "}\n";
-
-static const TZrChar g_coroutine_hints_json[] =
-        "{\n"
-        "  \"schema\": \"zr.native.hints/v1\",\n"
-        "  \"module\": \"zr.coroutine\"\n"
         "}\n";
 
 static const ZrLibModuleDescriptor g_task_descriptor = {
@@ -1513,34 +1130,13 @@ static const ZrLibModuleDescriptor g_task_descriptor = {
         g_task_hints,
         ZR_ARRAY_COUNT(g_task_hints),
         g_task_hints_json,
-        "Built-in task abstractions and scheduler interfaces for %async/%await.",
+        "Built-in Task, Job, and Scheduler abstractions.",
         ZR_NULL,
         0,
-        "2.1.0",
+        "3.0.0",
         ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
         0,
         task_runtime_task_module_materialize,
-};
-
-static const ZrLibModuleDescriptor g_coroutine_descriptor = {
-        ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
-        "zr.coroutine",
-        ZR_NULL,
-        0,
-        g_coroutine_functions,
-        ZR_ARRAY_COUNT(g_coroutine_functions),
-        g_coroutine_types,
-        ZR_ARRAY_COUNT(g_coroutine_types),
-        g_coroutine_hints,
-        ZR_ARRAY_COUNT(g_coroutine_hints),
-        g_coroutine_hints_json,
-        "Built-in isolate coroutine scheduler for zr_vm.",
-        ZR_NULL,
-        0,
-        "2.0.0",
-        ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
-        0,
-        task_runtime_coroutine_module_materialize,
 };
 
 TZrBool ZrCore_TaskRuntime_RegisterBuiltins(SZrGlobalState *global) {
@@ -1552,6 +1148,5 @@ TZrBool ZrCore_TaskRuntime_RegisterBuiltins(SZrGlobalState *global) {
         return ZR_FALSE;
     }
 
-    return ZrLibrary_NativeRegistry_RegisterModule(global, &g_task_descriptor) &&
-           ZrLibrary_NativeRegistry_RegisterModule(global, &g_coroutine_descriptor);
+    return ZrLibrary_NativeRegistry_RegisterModule(global, &g_task_descriptor);
 }

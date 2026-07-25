@@ -59,8 +59,24 @@
     2026-07-25 21:55 +08:00。
   - M6.2 baseline（仅定位，不作为通过证据）：GCC
     `zr_vm_task_runtime_test` 当前为 54 tests / 6 failures / raw exit 6；
-    失败包含 TaskRunner/start/pump/defaultScheduler 旧表面，以及两项既有
-    borrowed-value/import 回归，后续必须按 root cause 分片处理。
+    失败包含 TaskRunner/start/pump/defaultScheduler 旧表面；
+    `test_borrowed_value_used_before_await_still_compiles` 与
+    `test_zr_task_and_zr_coroutine_register_new_public_shapes` 同时证明旧
+    compatibility route 仍在影响 canonical task 验收。M6.2 将以 explicit
+    Task/Job/Scheduler 回归替换这些旧断言；任何未由该迁移触及的既有失败会在
+    M6.2 acceptance 中单列，不作为通过证据。
+  - M6.2 已完成：configured product graph 现在只公开 `zr.task` 的
+    `Task`/`Job`/`Scheduler` 与 `zr.thread.ThreadScheduler.schedule(Job)`；
+    `TaskRunner`、`autoCoroutine`、`zr.coroutine`、source `pump`/`step`、
+    `%async`、`%await` 与 `%async T` 均不再形成可用 compatibility route。
+    parser/compiler 只从直接 AST Task/await facts 产生 effect 与
+    reference-escape suspension boundary，运行时私有 scheduler 不再成为
+    script API。GCC 11.4、Clang 14.0、MSVC 17.14 的
+    `zr_vm_parser_test` 75/75、`zr_vm_task_runtime_test` 16/16、
+    `zr_vm_thread_runtime_test` 25/25 均真实 exit 0；完成时间
+    2026-07-25 23:20 +08:00。`zr_vm_lib_task` 仍明确排除：root CMake
+    product graph 不构建或注册该历史模块。M6.3/M6.4 尚未开始，因此 M6
+    总状态保持 `in_progress`。
 
 ## 产出位置
 
