@@ -42,6 +42,11 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state,
                                                            SZrSemanticAnalyzer *analyzer,
                                                            SZrAstNode *node);
 
+void ZrLanguageServer_SemanticAnalyzer_ValidateInterfaceVarianceRules(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *interfaceNode);
+
 SZrString *ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(SZrState *state, SZrAstNode *node);
 
 TZrBool ZrLanguageServer_SemanticAnalyzer_IsImplicitRuntimeIdentifier(SZrString *name);

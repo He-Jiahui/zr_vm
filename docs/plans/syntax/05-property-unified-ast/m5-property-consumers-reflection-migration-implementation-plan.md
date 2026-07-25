@@ -337,3 +337,38 @@ feat(syntax): converge property consumers
 ```
 
 Verify exact path count, forbidden count zero and index empty before advancing beyond Syntax 05.
+
+## M5.1: Unified Property Variance Follow-up
+
+### Exact Write Set
+
+| Layer | Paths | Responsibility |
+|---|---|---|
+| LSP semantic analyzer | `zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_variance.c`, `semantic_analyzer_typecheck.c`, `semantic_analyzer_internal.h` | Extract interface variance validation behind a narrow internal API and apply the existing canonical rule to `ZR_AST_PROPERTY_DECLARATION` using structured accessor kinds. |
+| LSP regression | `tests/language_server/test_semantic_analyzer.c` | Keep the six-position variance fixture on current unified property syntax. |
+| docs | M5 status/record and LSP semantic-resolution module document | Record the compatibility removal, range of acceptance, and unrelated marker boundary. |
+
+### Steps
+
+1. Replace the legacy `pub get/set` fixture input with the current bodyless
+   `property` declaration and retain the six required `invalid_variance`
+   locations.
+2. Extend only the LSP analyzer's interface variance switch to classify
+   canonical accessor kinds: `get` is output, `set/init` is input, and a
+   mixed property is invariant. Do not branch on names or source text.
+3. Run the semantic-analyzer regression, the frozen GCC/Clang/MSVC 18-target
+   LSP matrices, and the three stdio/CLI smokes per toolchain. Record unrelated
+   Unity markers separately.
+
+#### M5.1 Acceptance
+
+Completed 2026-07-26 04:21 +08:00. The old fixture had become invalid before
+variance analysis because legacy accessor declarations are no longer semantic
+members. The LSP analyzer now handles the same unified PropertyDecl accessor
+facts already used by the compiler: getter-only properties are output,
+setter/init-only properties are input, and mixed properties are invariant.
+GCC 11.4, Clang 14.0, and MSVC 17.14 each completed the 18-target LSP matrix
+with true process exit zero, and all nine stdio/CLI smokes exited zero. The
+same five Unity assertion markers in native constructor, receiver completion,
+foreach shadowing, and container inference remain outside this exact write
+set and are not counted as M5.1 passing evidence.

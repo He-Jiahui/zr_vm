@@ -83,6 +83,15 @@
     为既有基线且不宣称 GREEN。exact ownership 共 70 paths，冻结 snapshot 与工作树逐文件
     SHA-256 一致，`git diff --check` 通过，三份外部 Syntax 草案、生成目录与其他 forbidden 路径为
     0，提交前共享 index 为空。
+  - M5.1 property variance follow-up 已完成：interface variance responsibility 已从 2708 行的
+    `semantic_analyzer_typecheck.c` 提取到 `semantic_analyzer_variance.c`，并经窄内部接口调用。
+    LSP semantic analyzer 现与 compiler canonical variance validator 一致地消费统一
+    `ZR_AST_PROPERTY_DECLARATION` 的 structured accessor kinds。仅 `get` 为协变、仅 `set/init`
+    为逆变、混合访问器为不变；没有 property name 或 source text fallback。回归 fixture 同步从已废弃的 `pub get/set` declaration 迁移为
+    `property item: T { get/set; }`，仍严格要求六个 `invalid_variance` diagnostics。GCC、
+    Clang、MSVC 的 LSP 18-target matrix 均为真实 exit 0，三套 main/position/diagnostic-fix
+    stdio/CLI smoke 均 exit 0。native constructor/foreach/container 的五个既有 Unity marker
+    与此叶无关，未作为通过证据；详情见 M5.1 completion record。
 
 ## 当前实现边界
 

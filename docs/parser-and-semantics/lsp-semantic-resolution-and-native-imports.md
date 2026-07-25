@@ -732,3 +732,19 @@ scoped reanalysis, not a member-name cache heuristic.
 - 当前工作区还存在独立的 parser 脏改动，完整 `cmake --build` 会在 `zr_vm_parser/src/zr_vm_parser/lexer.c` 的 `ZR_LEXER_EOZ` 未定义处失败。这不是本轮 `%import` literal 导航修复引入的问题，因此本轮验证采用了对象级别重编 + 定向重链。
 - Windows MSVC 的 LSP 测试可执行体仍然存在独立的 `0xC0000005` 退出问题，这不是本轮 Linux/WSDL 语义修复引入的新回归。
 - `zr_vm_language_server_lsp_interface_test` 在 WSL 通过时仍会打印两条 `Construct target must resolve to a registered prototype` 编译日志；当前没有导致目标测试失败，但说明 constructor prototype 解析路径仍有额外清理空间。
+
+## 统一 PropertyDecl 的 interface variance
+
+LSP semantic analysis 对 interface generic variance 直接消费统一
+`ZR_AST_PROPERTY_DECLARATION` 的 accessor kind。只有 `get` 的 property 将其
+declared type 放在 output/covariant position；只有 `set` 或 `init` 的 property
+放在 input/contravariant position；同时具有读写 accessor 的 property 为
+invariant。这个规则与 compiler generic semantics 共用同一 AST/accessor 合同，
+不检查 property 名称、hidden accessor spelling 或源文本。
+
+因此 interface variance 回归使用 current syntax，例如
+`property item: T { get; }` 和 `property item: T { set; }`，而不保留已经不再
+产生 semantic member 的 legacy `pub get/set` declaration。2026-07-26 的
+M5.1 follow-up 在 GCC、Clang 和 MSVC 上通过 semantic-analyzer regression、
+18-target LSP matrix 和三类 stdio/CLI smoke；仍有的 native constructor、
+receiver completion、foreach/container Unity marker 被记录为独立后续工作。
