@@ -31,6 +31,13 @@ static TZrBool artifact_type_token_is_valid(TZrMetadataToken token) {
                       table == ZR_METADATA_TABLE_TYPE_SPEC));
 }
 
+static TZrBool artifact_scheduler_type_token_is_valid(TZrMetadataToken token) {
+    TZrUInt32 table = ZR_METADATA_TOKEN_TABLE(token);
+    return (TZrBool)(token != 0u && ZR_METADATA_TOKEN_RID(token) != 0u &&
+                     (table == ZR_METADATA_TABLE_TYPE_DEF ||
+                      table == ZR_METADATA_TABLE_TYPE_REF));
+}
+
 static TZrBool artifact_metadata_token_is_valid(TZrMetadataToken token) {
     TZrUInt32 table = ZR_METADATA_TOKEN_TABLE(token);
     return (TZrBool)(token != 0u && ZR_METADATA_TOKEN_RID(token) != 0u &&
@@ -122,7 +129,7 @@ static TZrBool artifact_domain_transfer_row_is_valid(
 static TZrBool artifact_scheduler_contract_row_is_valid(
         const SZrArtifactSchedulerContractRow *row) {
     if (row == ZR_NULL ||
-        !artifact_token_is(row->schedulerTypeToken, ZR_METADATA_TABLE_TYPE_DEF) ||
+        !artifact_scheduler_type_token_is_valid(row->schedulerTypeToken) ||
         !artifact_type_token_is_valid(row->taskTypeToken) ||
         !artifact_type_token_is_valid(row->jobTypeToken) ||
         row->abiVersion == 0u ||

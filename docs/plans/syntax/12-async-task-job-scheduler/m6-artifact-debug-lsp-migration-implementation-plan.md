@@ -41,17 +41,18 @@ legacy `TaskRunner` field.
 
 ## M6.1: Artifact Scheduler Contract
 
-M6.1 is deliberately split into two commits. M6.1a establishes the stable
-binary schema and canonical importer. M6.1b is the only stage permitted to
-connect compiler facts and the binary writer to that schema. This prevents a
-fixture-only row from being described as source-produced metadata.
+M6.1 is deliberately split into three commits. M6.1a establishes the stable
+binary schema and canonical importer. M6.1b.1 closes the imported-provider
+identity prerequisite. M6.1b.2 is the only stage permitted to connect compiler
+facts and a new artifact writer to that schema. This prevents a fixture-only
+row or legacy `.zrb` stream from being described as source-produced metadata.
 
 ### M6.1a: Schema and Canonical Consumer
 
 | Layer | Paths | Responsibility |
 |---|---|---|
 | schema | `zr_vm_core/include/zr_vm_core/artifact_schema.h`, `zr_vm_core/src/zr_vm_core/artifact_encoding.c`, `zr_vm_core/src/zr_vm_core/artifact_schema.c`, `zr_vm_core/src/zr_vm_core/artifact_rows.c` | Define, validate, encode, and decode one fixed-width scheduler contract row containing type tokens, supported provider-policy branches, per-policy Send/Sync requirements, ABI version and transport contract hash. |
-| canonical consumer | `zr_vm_core/include/zr_vm_core/canonical_consumer.h`, `zr_vm_core/src/zr_vm_core/canonical_consumer.c` | Resolve a scheduler row by canonical scheduler TypeDef token and reject missing, duplicate, policy, capability, ABI, or transport-hash mismatch before scheduling. |
+| canonical consumer | `zr_vm_core/include/zr_vm_core/canonical_consumer.h`, `zr_vm_core/src/zr_vm_core/canonical_consumer.c` | Resolve a scheduler row by canonical scheduler type token and reject missing, duplicate, policy, capability, ABI, or transport-hash mismatch before scheduling. |
 | tests | `tests/parser/test_artifact_schema.c`, `tests/parser/test_canonical_consumers.c` | RED/GREEN fixed-width round trip, canonical lookup, malformed/duplicate ordering rejection, and every expectation mismatch. |
 | documentation | this plan, `m6-artifact-debug-lsp-migration.md`, `docs/parser-and-semantics/semantic-fact-layer.md` | State row ownership and that it is a contract envelope, not host-selected state. |
 
@@ -70,14 +71,54 @@ writer remains intentionally out of scope until M6.1b.
 
 ### M6.1b: Compiler and Binary-Writer Integration
 
+#### Preflight Boundary
+
+The existing `writer_binary.c` serializes the legacy `.zrb` VM function
+stream, while `ZrCore_Artifact_Write` currently has no production caller.
+M6.1b therefore begins by publishing compiler-owned type/provider artifact
+identity. It must not claim a fixture row or a legacy `.zrb` write as a
+source-produced artifact. The binary writer integration follows only after
+that identity can supply stable local TypeDef and imported TypeRef tokens.
+
+#### M6.1b.1: Imported Scheduler Identity
+
+The scheduler contract is keyed by a nominal provider type. A source module
+may own that provider locally (`TypeDef`) or import it from a native/module
+artifact (`TypeRef`). It must not use a `TypeSpec`, member token, name, source
+spelling, or runtime value category as that key.
+
+| Layer | Paths | Responsibility |
+|---|---|---|
+| schema and consumer | `zr_vm_core/src/zr_vm_core/artifact_schema.c`, `zr_vm_core/src/zr_vm_core/canonical_consumer.c` | Accept only a nonzero `TypeDef` or `TypeRef` scheduler token; resolve the type identity before returning a scheduler contract. |
+| tests | `tests/parser/test_artifact_schema.c`, `tests/parser/test_canonical_consumers.c` | RED/GREEN imported `TypeRef` round trip and canonical resolution; reject `TypeSpec` and member-token scheduler identities. |
+| documentation | this plan, `m6-artifact-debug-lsp-migration.md`, `m6-1b-1-imported-scheduler-identity.md`, `docs/parser-and-semantics/semantic-fact-layer.md` | Record that this is an identity prerequisite, not a source artifact writer. |
+
+M6.1b.1 is complete only after the fixed v3 row still round trips and the
+consumer resolves an imported `TypeRef` through the type-reference table on
+GCC, Clang, and MSVC with real process exit zero. It does not publish compiler
+facts or write a production `.zro`/`.zri` artifact.
+
+#### M6.1b.1 Acceptance
+
+Completed 2026-07-25 16:23 +08:00. The row now accepts an exact nonzero
+`TypeDef` or `TypeRef` scheduler identity and rejects `TypeSpec` and member
+tokens. `ZrCore_CanonicalConsumer_ResolveSchedulerContract` resolves that
+identity through the corresponding type table before returning a row. GCC,
+Clang, and MSVC each passed `zr_vm_artifact_schema_test` (15/15) and
+`zr_vm_canonical_consumers_test` (17/17) with true process exit zero. This
+commit does not add a compiler fact, a production `ZrCore_Artifact_Write`
+caller, or a source-produced artifact.
+
+#### M6.1b.2: Compiler and Artifact-Writer Integration
+
 ### Exact Write Set
 
 | Layer | Paths | Responsibility |
 |---|---|---|
-| schema consumer | `zr_vm_core/include/zr_vm_core/canonical_consumer.h`, `zr_vm_core/src/zr_vm_core/canonical_consumer.c` | Consume the M6.1a scheduler row as the authoritative import contract. |
+| schema consumer | `zr_vm_core/include/zr_vm_core/canonical_consumer.h`, `zr_vm_core/src/zr_vm_core/canonical_consumer.c` | Consume the M6.1a/M6.1b.1 scheduler row as the authoritative import contract. |
 | parser artifact projection | `zr_vm_parser/include/zr_vm_parser/artifact_projection.h`, `zr_vm_parser/src/zr_vm_parser/artifact_projection.c` | Build a canonical scheduler contract from resolved type/layout/provider facts; no value-class or identifier fallback. |
 | compiler task facts | `zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c`, `compiler_task_effects_internal.h`, `compiler_task_effects_declarations.c` | Publish the resolved Task/Job/Scheduler owner/module, Send/Sync and transport requirements used by projection. |
-| source/binary integration | `zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c`, `writer_binary_internal.h` | Emit the domain-transfer section and stable scheduler contract only from the canonical projection. |
+| source/binary integration | `zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c`, `writer_binary_internal.h`, new artifact-writer module if required | Emit the domain-transfer section and stable scheduler contract only from the canonical projection. The legacy `.zrb` VM stream is not relabeled as an artifact. |
 | tests | `tests/parser/test_artifact_schema_source_roundtrip.c`, `tests/parser/test_compiler_features.c` | Cover real source compile -> artifact write -> canonical import, source/import hash equality, mismatched ABI/schema/provider rejection, and unavailable provider rejection. |
 | documentation | this plan, `m6-artifact-debug-lsp-migration.md`, `docs/parser-and-semantics/semantic-fact-layer.md` | Record schema ownership, policy fields, and rejection behavior. |
 
@@ -94,8 +135,8 @@ writer remains intentionally out of scope until M6.1b.
    schema-version, schema-hash, provider-token, provider-contract, Send, or
    Sync mismatches before a scheduler can consume it.
 5. Run focused parser/core tests across GCC, Clang, and MSVC from an isolated
-   `HEAD + M6.1b overlay` snapshot, update the M6 record, and exact-path commit
-   M6.1b before starting legacy deletion.
+   `HEAD + M6.1b.2 overlay` snapshot, update the M6 record, and exact-path
+   commit M6.1b.2 before starting legacy deletion.
 
 ## M6.2: Runtime Legacy-Surface Migration
 

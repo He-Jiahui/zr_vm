@@ -33,6 +33,14 @@ static EZrArtifactStatus canonical_consumer_hash_fail(SZrArtifactDiagnostic *dia
     return ZR_ARTIFACT_STATUS_SIGNATURE_HASH_MISMATCH;
 }
 
+static TZrBool canonical_consumer_scheduler_type_token_is_valid(
+        TZrMetadataToken token) {
+    TZrUInt32 table = ZR_METADATA_TOKEN_TABLE(token);
+    return (TZrBool)(token != 0u && ZR_METADATA_TOKEN_RID(token) != 0u &&
+                     (table == ZR_METADATA_TABLE_TYPE_DEF ||
+                      table == ZR_METADATA_TABLE_TYPE_REF));
+}
+
 static TZrBool canonical_consumer_find_layout(
         const SZrCanonicalConsumerProjection *projection,
         TZrMetadataToken typeToken,
@@ -407,14 +415,24 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveSchedulerContract(
         TZrMetadataToken schedulerTypeToken,
         SZrArtifactSchedulerContractRow *outContract,
         SZrArtifactDiagnostic *diagnostic) {
+    SZrCanonicalTypeProjection schedulerType;
+    EZrArtifactStatus status;
+
     canonical_consumer_clear_diagnostic(diagnostic);
     if (projection == ZR_NULL || outContract == ZR_NULL ||
-        ZR_METADATA_TOKEN_TABLE(schedulerTypeToken) != ZR_METADATA_TABLE_TYPE_DEF ||
-        ZR_METADATA_TOKEN_RID(schedulerTypeToken) == 0u) {
+        !canonical_consumer_scheduler_type_token_is_valid(schedulerTypeToken)) {
         return canonical_consumer_fail(
                 diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, 0u);
     }
     memset(outContract, 0, sizeof(*outContract));
+    status = ZrCore_CanonicalConsumer_ResolveTypeToken(
+            projection, schedulerTypeToken, &schedulerType, diagnostic);
+    if (status != ZR_ARTIFACT_STATUS_OK || schedulerType.typeToken != schedulerTypeToken) {
+        return status != ZR_ARTIFACT_STATUS_OK
+                       ? status
+                       : canonical_consumer_fail(
+                                 diagnostic, ZR_ARTIFACT_STATUS_INVALID_SECTION, 0u, 0u);
+    }
     if (!canonical_consumer_find_scheduler_contract(
                 projection, schedulerTypeToken, outContract)) {
         return canonical_consumer_fail(
@@ -436,8 +454,7 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ValidateSchedulerContract(
 
     canonical_consumer_clear_diagnostic(diagnostic);
     if (projection == ZR_NULL || expected == ZR_NULL ||
-        ZR_METADATA_TOKEN_TABLE(expected->schedulerTypeToken) != ZR_METADATA_TABLE_TYPE_DEF ||
-        ZR_METADATA_TOKEN_RID(expected->schedulerTypeToken) == 0u ||
+        !canonical_consumer_scheduler_type_token_is_valid(expected->schedulerTypeToken) ||
         expected->taskTypeToken == 0u || expected->jobTypeToken == 0u ||
         expected->abiVersion == 0u ||
         (expected->policy != ZR_ARTIFACT_SCHEDULER_POLICY_ATTACHED_DOMAIN &&

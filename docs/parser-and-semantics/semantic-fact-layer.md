@@ -3229,3 +3229,16 @@ schedule work. This is a structured import boundary: absent metadata remains
 an explicit unavailable section, and no consumer may infer ResourceMove,
 ImmutableHandle, Send, Sync, policy, or ABI from display text, a type name, an
 AST fragment, or a runtime value class.
+
+## Syntax 12 M6.1b.1 Imported Scheduler Identity
+
+The scheduler key may also be an imported `TypeRef`, which retains the target
+metadata token, signature token/hash, and module hash in the compiler metadata
+table. Artifact schema validation accepts only a nonzero `TypeDef` or `TypeRef`
+for this field; `TypeSpec`, member tokens, names, source spellings, and runtime
+value categories are rejected. The canonical consumer resolves the token
+through the type-definition or type-reference table before looking up the
+scheduler row, so a missing imported identity is unavailable rather than a
+reason to infer a provider. This identity prerequisite does not itself publish
+a compiler scheduler fact or make legacy `.zrb` output a source-produced
+artifact.

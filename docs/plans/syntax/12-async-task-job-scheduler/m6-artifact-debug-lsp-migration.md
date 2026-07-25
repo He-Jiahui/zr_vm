@@ -24,8 +24,21 @@
     transport hash 和 scheduler hash 不匹配发布结构化拒绝；没有名称、文本或
     runtime value fallback。GCC、Clang、MSVC 上的 artifact schema 15/15 与
     canonical consumers 17/17 均为真实 exit 0。
-  - M6.1b 尚未开始，仍负责唯一的 source -> compiler -> binary artifact
-    producer 链路；当前 M6 总状态不因 M6.1a 完成而提前关闭。
+  - M6.1b.1 已完成：scheduler provider identity 现严格接受 local TypeDef
+    或 imported TypeRef，并在返回 scheduler contract 前通过对应 type table
+    解析；TypeSpec/member token 仍被拒绝。GCC、Clang、MSVC 上的 artifact
+    schema 15/15 与 canonical consumers 17/17 均为真实 exit 0。该阶段只收口
+    imported identity 前置条件，不声明 source artifact writer 已完成。
+  - M6.1b.2 仍负责唯一的 source -> compiler -> binary artifact producer
+    链路；当前 M6 总状态不因 M6.1a/M6.1b.1 完成而提前关闭。
+  - M6.1b preflight 已确认：生产 `writer_binary.c` 仍只写旧 `.zrb` VM
+    函数流，仓库中 `ZrCore_Artifact_Write` 的生产调用者为零。下一步先补
+    compiler-owned type/provider artifact identity，再接入实际 artifact 文件
+    writer，不能把旧 writer 或测试 fixture 当作 producer。
+  - M6.2 baseline（仅定位，不作为通过证据）：GCC
+    `zr_vm_task_runtime_test` 当前为 54 tests / 6 failures / raw exit 6；
+    失败包含 TaskRunner/start/pump/defaultScheduler 旧表面，以及两项既有
+    borrowed-value/import 回归，后续必须按 root cause 分片处理。
 
 ## 产出位置
 

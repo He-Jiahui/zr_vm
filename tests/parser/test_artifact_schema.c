@@ -1061,6 +1061,25 @@ static void test_scheduler_contract_roundtrips_as_independent_artifact_schema(vo
                     &section, 0u, &decoded, &diagnostic));
     TEST_ASSERT_EQUAL_MEMORY(&row, &decoded, sizeof(row));
 
+    row.schedulerTypeToken = TEST_TYPE_REF_TOKEN;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_GetEncodedSize(
+                    &fixture.document, &binaryLength, &diagnostic));
+
+    row.schedulerTypeToken = TEST_TYPE_SPEC_TOKEN;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+            ZrCore_Artifact_GetEncodedSize(
+                    &fixture.document, &binaryLength, &diagnostic));
+
+    row.schedulerTypeToken = TEST_MEMBER_TOKEN;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+            ZrCore_Artifact_GetEncodedSize(
+                    &fixture.document, &binaryLength, &diagnostic));
+
+    row.schedulerTypeToken = TEST_TYPE_REF_TOKEN;
     row.policyMask = 0u;
     TEST_ASSERT_EQUAL_INT(
             ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,

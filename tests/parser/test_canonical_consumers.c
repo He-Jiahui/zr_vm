@@ -127,7 +127,7 @@ static void consumer_fixture_init(SZrConsumerArtifactFixture *fixture) {
     fixture->domainTransfer.schemaVersion = 1u;
     fixture->domainTransfer.schemaHash = 0x6666777788889999ULL;
 
-    fixture->schedulerContract.schedulerTypeToken = CONSUMER_TYPE_DEF_TOKEN;
+    fixture->schedulerContract.schedulerTypeToken = CONSUMER_TYPE_REF_TOKEN;
     fixture->schedulerContract.taskTypeToken = CONSUMER_TASK_TYPE_TOKEN;
     fixture->schedulerContract.jobTypeToken = CONSUMER_JOB_TYPE_TOKEN;
     fixture->schedulerContract.abiVersion = 1u;
@@ -329,14 +329,14 @@ static void test_canonical_consumer_validates_scheduler_contract_without_name_fa
             ZR_ARTIFACT_STATUS_OK,
             ZrCore_CanonicalConsumer_ResolveSchedulerContract(
                     &projection,
-                    CONSUMER_TYPE_DEF_TOKEN,
+                    CONSUMER_TYPE_REF_TOKEN,
                     &contract,
                     &diagnostic));
     TEST_ASSERT_EQUAL_MEMORY(
             &fixture.schedulerContract, &contract, sizeof(contract));
 
     memset(&expected, 0, sizeof(expected));
-    expected.schedulerTypeToken = CONSUMER_TYPE_DEF_TOKEN;
+    expected.schedulerTypeToken = CONSUMER_TYPE_REF_TOKEN;
     expected.taskTypeToken = CONSUMER_TASK_TYPE_TOKEN;
     expected.jobTypeToken = CONSUMER_JOB_TYPE_TOKEN;
     expected.abiVersion = 1u;
@@ -349,6 +349,21 @@ static void test_canonical_consumer_validates_scheduler_contract_without_name_fa
             ZR_ARTIFACT_STATUS_OK,
             ZrCore_CanonicalConsumer_ValidateSchedulerContract(
                     &projection, &expected, &diagnostic));
+
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_INVALID_ARGUMENT,
+            ZrCore_CanonicalConsumer_ResolveSchedulerContract(
+                    &projection,
+                    CONSUMER_TYPE_SPEC_TOKEN,
+                    &contract,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_INVALID_ARGUMENT,
+            ZrCore_CanonicalConsumer_ResolveSchedulerContract(
+                    &projection,
+                    CONSUMER_MEMBER_TOKEN,
+                    &contract,
+                    &diagnostic));
 
     expected.taskTypeToken++;
     TEST_ASSERT_EQUAL_INT(
@@ -411,7 +426,7 @@ static void test_canonical_consumer_validates_scheduler_contract_without_name_fa
             ZR_ARTIFACT_STATUS_INVALID_SECTION,
             ZrCore_CanonicalConsumer_ResolveSchedulerContract(
                     &projection,
-                    CONSUMER_TYPE_DEF_TOKEN,
+                    CONSUMER_TYPE_REF_TOKEN,
                     &contract,
                     &diagnostic));
     TEST_ASSERT_EQUAL_UINT32(
