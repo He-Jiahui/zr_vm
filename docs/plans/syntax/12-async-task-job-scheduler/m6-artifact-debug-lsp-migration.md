@@ -88,10 +88,27 @@
     和 policy、prepare、decode、commit、cancel、shutdown、Job throw provenance；
     没有 message parsing fallback。GCC 11.4、Clang 14.0、MSVC 17.14 各通过
     debug traceback 5/5、debug agent protocol 5/5、thread runtime 25/25，
-    九个进程真实 exit 0；完成时间 2026-07-26 00:15 +08:00。M6.4 尚未开始，
-    M6 总状态保持 `in_progress`。
+    九个进程真实 exit 0；完成时间 2026-07-26 00:15 +08:00。当时 M6 总状态
+    保持 `in_progress`。
+  - M6.4 已完成并单列已知 LSP 基线失败：
+    `ZrLanguageServer_LspSchedulerContract_ResolveArtifact` 只从 compiler-owned
+    scheduler source fact 与真实 `.zro` artifact bytes 投影 receiver TypeId、
+    serialized TypeRef、exact schedule signature、ABI、full policy requirements、
+    owner layout/module identity、transport hash 与 scheduler contract hash。
+    它通过 `ZrCore_CanonicalConsumer` 对 module、policy 与 transport mismatch
+    发布结构化 artifact diagnostic，不使用 member name、filename、raw AST、
+    display text 或 diagnostic message fallback。LSP regression 用真实
+    `ThreadScheduler.schedule` source 编译并写入 `.zro` 后验证 source/binary
+    parity 和三类篡改拒绝。GCC 11.4、Clang 14.0、MSVC 17.14 各有 16/18 个
+    LSP matrix 进程真实 exit 0；每平台新增 regression 及 main/position/
+    diagnostic-fix stdio/CLI smoke 均 exit 0。余下的 local-hover 与
+    reachability-query 两个非零目标及现有 Unity marker 未由 M6.4 触及，
+    不计入通过证据。完成时间 2026-07-26 03:16 +08:00；M6 promotion gate
+    因这些基线失败保持 `in_progress`。
 
 ## 产出位置
 
 - 实施计划：`docs/plans/syntax/12-async-task-job-scheduler/m6-artifact-debug-lsp-migration-implementation-plan.md`
 - M6.3 记录：`docs/plans/syntax/12-async-task-job-scheduler/m6-3-debug-projection-fault-semantics.md`
+- M6.4 记录：`docs/plans/syntax/12-async-task-job-scheduler/m6-4-lsp-artifact-projection-and-workspace-migration.md`
+- LSP artifact projection：`docs/cli-and-tooling/lsp-scheduler-artifact-projection.md`

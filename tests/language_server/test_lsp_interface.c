@@ -21,6 +21,7 @@
 #include "zr_vm_library/native_registry.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h"
+#include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_scheduler_contract.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
 #include "path_support.h"
 
@@ -6171,14 +6172,17 @@ static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(
     renderedText = test_string_ptr(documentText);
     if (renderedText == ZR_NULL ||
         strstr(renderedText, "%extern(\"zr.task\")") == ZR_NULL ||
-        strstr(renderedText, "pub __createTaskRunner(") == ZR_NULL ||
-        strstr(renderedText, "pub interface IScheduler") == ZR_NULL ||
-        strstr(renderedText, "pub class TaskRunner<T>") == ZR_NULL ||
-        strstr(renderedText, "pub class Task<T>") == ZR_NULL) {
+        strstr(renderedText, "pub interface Scheduler") == ZR_NULL ||
+        strstr(renderedText, "pub class Task<T>") == ZR_NULL ||
+        strstr(renderedText, "pub class Job<T>") == ZR_NULL ||
+        strstr(renderedText, "schedule(job: zr.task.Job<T>): zr.task.Task<T>") == ZR_NULL ||
+        strstr(renderedText, "__createTaskRunner") != ZR_NULL ||
+        strstr(renderedText, "TaskRunner") != ZR_NULL ||
+        strstr(renderedText, "IScheduler") != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Auto Registers Linked Native Libraries For Import Metadata",
-                  "The auto-registered zr.task decompiled document should expose the built-in scheduler/task metadata registered by the runtime descriptor");
+                  "The auto-registered zr.task declaration must expose only the canonical Task/Job/Scheduler schedule contract");
         return;
     }
 
@@ -6194,16 +6198,169 @@ static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(
     renderedText = test_string_ptr(documentText);
     if (renderedText == ZR_NULL ||
         strstr(renderedText, "%extern(\"zr.thread\")") == ZR_NULL ||
-        strstr(renderedText, "pub spawnThread(") == ZR_NULL) {
+        strstr(renderedText, "pub class ThreadScheduler") == ZR_NULL ||
+        strstr(renderedText, "schedule(job: zr.task.Job<T>): zr.task.Task<T>") == ZR_NULL ||
+        strstr(renderedText, "spawnThread") != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Auto Registers Linked Native Libraries For Import Metadata",
-                  "The auto-registered zr.thread decompiled document should expose spawnThread declarations");
+                  "The auto-registered zr.thread declaration must expose only the canonical ThreadScheduler schedule contract");
         return;
     }
 
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Auto Registers Linked Native Libraries For Import Metadata");
+}
+
+static void test_lsp_scheduler_contract_resolves_source_call_from_canonical_artifact(SZrState *state) {
+    SZrTestTimer timer;
+    const TZrChar *artifactSource =
+            "var task = %import(\"zr.task\");\n"
+            "var thread = %import(\"zr.thread\");\n"
+            "var scheduler = new thread.ThreadScheduler(1);\n"
+            "var job = init task.Job<int>(() => { return 7; });\n"
+            "var completion = scheduler.schedule<int>(job);\n"
+            "return completion.result();\n";
+    SZrFunction *function = ZR_NULL;
+    const SZrFunctionSchedulerSourceFact *sourceFact = ZR_NULL;
+    SZrFunctionSchedulerSourceFact inconsistentFact;
+    SZrString *sourceName = ZR_NULL;
+    SZrLspSchedulerContract contract;
+    SZrArtifactDiagnostic diagnostic;
+    TZrChar artifactPath[ZR_TESTS_PATH_MAX];
+    TZrChar failureReason[512];
+    TZrBytePtr artifactBytes = ZR_NULL;
+    TZrSize artifactLength = 0u;
+
+    memset(&diagnostic, 0, sizeof(diagnostic));
+
+    TEST_START("LSP Scheduler Contract Resolves Source Call From Canonical Artifact");
+    TEST_INFO("Canonical scheduler artifact projection",
+              "A scheduler call may resolve policy, Send requirements, ABI, and transport only through its exact call fact and a real source-produced .zro row.");
+
+    sourceName = ZrCore_String_Create(state, "scheduler_lsp_contract.zr", 25u);
+    if (sourceName == ZR_NULL ||
+        !ZrTests_Path_GetGeneratedArtifact("language_server",
+                                           "syntax12_m6",
+                                           "scheduler_lsp_contract",
+                                           ".zro",
+                                           artifactPath,
+                                           sizeof(artifactPath))) {
+        TEST_FAIL(timer,
+                  "LSP Scheduler Contract Resolves Source Call From Canonical Artifact",
+                  "Failed to prepare the canonical scheduler artifact fixture");
+        return;
+    }
+
+    function = ZrParser_Source_Compile(
+            state, artifactSource, strlen(artifactSource), sourceName);
+    if (function != ZR_NULL) {
+        sourceFact = ZrCore_Function_FindSchedulerSourceFact(function, 0u);
+    }
+    if (function == ZR_NULL || sourceFact == ZR_NULL ||
+        sourceFact->contractRole != ZR_MEMBER_CONTRACT_ROLE_TASK_SCHEDULER_SCHEDULE ||
+        sourceFact->schedulerProvider.metadataToken == 0u ||
+        sourceFact->schedulerProvider.moduleSignatureHash == 0u ||
+        sourceFact->scheduleSignatureToken == 0u || sourceFact->scheduleSignatureHash == 0u ||
+        sourceFact->schedulerContractHash == 0u ||
+        ZrParser_Writer_WriteSchedulerArtifactFile(
+                state, function, artifactPath, ZR_ARTIFACT_KIND_ZRO, &diagnostic) != ZR_ARTIFACT_STATUS_OK ||
+        !ZrTests_ReadFileBytes(artifactPath, &artifactBytes, &artifactLength) || artifactBytes == ZR_NULL ||
+        !ZrLanguageServer_LspSchedulerContract_ResolveArtifact(
+                sourceFact, artifactBytes, artifactLength, &contract, &diagnostic)) {
+        if (artifactBytes != ZR_NULL) {
+            free(artifactBytes);
+        }
+        if (function != ZR_NULL) {
+            ZrCore_Function_Free(state, function);
+        }
+        remove(artifactPath);
+        snprintf(failureReason,
+                 sizeof(failureReason),
+                 "LSP must resolve the exact source-produced scheduler artifact row without a text fallback (status=%d section=%u expectedToken=%u actualToken=%u expectedHash=%llu actualHash=%llu sourceType=%u provider=%u signature=%u signatureHash=%llu contractHash=%llu)",
+                 (int)diagnostic.status,
+                 diagnostic.sectionKind,
+                 diagnostic.expectedToken,
+                 diagnostic.actualToken,
+                 (unsigned long long)diagnostic.expectedHash,
+                 (unsigned long long)diagnostic.actualHash,
+                 sourceFact != ZR_NULL ? sourceFact->schedulerTypeId : 0u,
+                 sourceFact != ZR_NULL ? sourceFact->schedulerProvider.metadataToken : 0u,
+                 sourceFact != ZR_NULL ? sourceFact->scheduleSignatureToken : 0u,
+                 (unsigned long long)(sourceFact != ZR_NULL ? sourceFact->scheduleSignatureHash : 0u),
+                 (unsigned long long)(sourceFact != ZR_NULL ? sourceFact->schedulerContractHash : 0u));
+        TEST_FAIL(timer,
+                  "LSP Scheduler Contract Resolves Source Call From Canonical Artifact",
+                  failureReason);
+        return;
+    }
+
+    if (contract.receiverTypeId != sourceFact->schedulerTypeId ||
+        contract.schedulerTypeToken == 0u ||
+        contract.scheduleSignatureToken != sourceFact->scheduleSignatureToken ||
+        contract.schedulerContractHash != sourceFact->schedulerContractHash ||
+        contract.abiVersion != 1u ||
+        contract.policyMask != ZR_ARTIFACT_SCHEDULER_POLICY_ISOLATED_DOMAIN ||
+        contract.isolatedRequirementFlags != ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SEND ||
+        contract.ownerModuleHash != sourceFact->schedulerProvider.moduleSignatureHash ||
+        contract.ownerLayoutVersion != sourceFact->schedulerProvider.layoutVersion ||
+        contract.ownerLayoutHash != sourceFact->schedulerProvider.layoutHash ||
+        contract.transportContractHash == 0u) {
+        free(artifactBytes);
+        ZrCore_Function_Free(state, function);
+        remove(artifactPath);
+        TEST_FAIL(timer,
+                  "LSP Scheduler Contract Resolves Source Call From Canonical Artifact",
+                  "Resolved LSP scheduler contract must exactly match the canonical owner, signature, policy, requirements, ABI, and transport hash");
+        return;
+    }
+
+    inconsistentFact = *sourceFact;
+    inconsistentFact.schedulerProvider.moduleSignatureHash ^= 1u;
+    if (ZrLanguageServer_LspSchedulerContract_ResolveArtifact(
+                &inconsistentFact, artifactBytes, artifactLength, &contract, &diagnostic) ||
+        diagnostic.status != ZR_ARTIFACT_STATUS_MODULE_HASH_MISMATCH) {
+        free(artifactBytes);
+        ZrCore_Function_Free(state, function);
+        remove(artifactPath);
+        TEST_FAIL(timer,
+                  "LSP Scheduler Contract Resolves Source Call From Canonical Artifact",
+                  "An owner-module mismatch must be rejected without resolving the scheduler by its display name");
+        return;
+    }
+
+    inconsistentFact = *sourceFact;
+    inconsistentFact.schedulerPolicyMask = ZR_ARTIFACT_SCHEDULER_POLICY_ATTACHED_DOMAIN;
+    if (ZrLanguageServer_LspSchedulerContract_ResolveArtifact(
+                &inconsistentFact, artifactBytes, artifactLength, &contract, &diagnostic) ||
+        diagnostic.status != ZR_ARTIFACT_STATUS_SCHEDULER_POLICY_MISMATCH) {
+        free(artifactBytes);
+        ZrCore_Function_Free(state, function);
+        remove(artifactPath);
+        TEST_FAIL(timer,
+                  "LSP Scheduler Contract Resolves Source Call From Canonical Artifact",
+                  "A policy mismatch must be rejected instead of selecting a scheduler by text or provider token");
+        return;
+    }
+
+    inconsistentFact = *sourceFact;
+    inconsistentFact.transportContractHash ^= 1u;
+    if (ZrLanguageServer_LspSchedulerContract_ResolveArtifact(
+                &inconsistentFact, artifactBytes, artifactLength, &contract, &diagnostic) ||
+        diagnostic.status != ZR_ARTIFACT_STATUS_TRANSPORT_CONTRACT_MISMATCH) {
+        free(artifactBytes);
+        ZrCore_Function_Free(state, function);
+        remove(artifactPath);
+        TEST_FAIL(timer,
+                  "LSP Scheduler Contract Resolves Source Call From Canonical Artifact",
+                  "A transport mismatch must be rejected instead of reusing a partial scheduler projection");
+        return;
+    }
+
+    free(artifactBytes);
+    ZrCore_Function_Free(state, function);
+    remove(artifactPath);
+    TEST_PASS(timer, "LSP Scheduler Contract Resolves Source Call From Canonical Artifact");
 }
 
 static void test_lsp_project_modules_summarize_project_native_and_binary_modules(SZrState *state) {
@@ -7560,6 +7717,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_auto_registers_linked_native_libraries_for_import_metadata(state);
+    TEST_DIVIDER();
+
+    test_lsp_scheduler_contract_resolves_source_call_from_canonical_artifact(state);
     TEST_DIVIDER();
 
     test_lsp_project_modules_summarize_project_native_and_binary_modules(state);

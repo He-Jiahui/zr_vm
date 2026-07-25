@@ -309,6 +309,27 @@ rejection while asserting it, so its Unity result remains 25/25 with exit zero.
 3. Run the independent LSP matrix and stdio/CLI smoke tests, write a separate
    LSP completion record, then exact-path commit M6.4.
 
+#### M6.4 Acceptance
+
+Completed 2026-07-26 03:16 +08:00 with known pre-existing LSP baseline
+failures recorded separately. `ZrLanguageServer_LspSchedulerContract_ResolveArtifact`
+now resolves a real compiler-owned scheduler source fact and its `.zro` bytes
+only through `ZrCore_CanonicalConsumer`: canonical receiver TypeId, serialized
+TypeRef, resolved schedule signature, ABI, full policy requirements, owner
+layout/module identity, transport hash, and scheduler contract hash must all
+agree. It returns canonical structured diagnostics for module, policy, and
+transport mismatch; it does not read source text or synthesize a fallback from
+member name, filename, AST, display text, or diagnostic message.
+
+The source/binary regression passed on GCC 11.4, Clang 14.0, and MSVC 17.14.
+Each toolchain's independent 18-target LSP matrix produced 16 real exit-zero
+processes and the same two nonzero existing targets:
+`zr_vm_language_server_local_semantic_hover_test` and
+`zr_vm_language_server_reachability_semantic_query_test`. All nine stdio/CLI
+smokes (main, position encoding, and diagnostic fix on each toolchain) exited
+zero. The nonzero targets remain outside this projection's write set, so M6's
+promotion gate remains `in_progress` until their baseline failures are closed.
+
 ## Promotion Gate
 
 M6 is complete only when a real source-produced artifact is the single source
