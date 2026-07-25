@@ -31,7 +31,7 @@ typedef struct SZrArtifactTestFixture {
     SZrArtifactTypeIdentityRow typeSpec;
     SZrArtifactContractRow contract;
     SZrArtifactLayoutRow layout;
-    SZrArtifactSectionInput sections[8];
+    SZrArtifactSectionInput sections[9];
     SZrArtifactDocument document;
 } SZrArtifactTestFixture;
 
@@ -1005,6 +1005,83 @@ static void test_domain_transfer_contract_roundtrips_as_independent_artifact_sch
                     &fixture.document, &writtenSize, &diagnostic));
 }
 
+static void test_scheduler_contract_roundtrips_as_independent_artifact_schema(void) {
+    SZrArtifactTestFixture fixture;
+    SZrArtifactSchedulerContractRow row;
+    SZrArtifactSchedulerContractRow decoded;
+    SZrArtifactSectionView section;
+    SZrArtifactDiagnostic diagnostic;
+    TZrByte binary[2048];
+    TZrSize binaryLength = 0u;
+    SZrArtifactView view;
+
+    init_fixture(&fixture, ZR_ARTIFACT_KIND_ZRO);
+    memset(&row, 0, sizeof(row));
+    row.schedulerTypeToken = TEST_TYPE_DEF_TOKEN;
+    row.taskTypeToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 2u);
+    row.jobTypeToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 3u);
+    row.abiVersion = 1u;
+    row.policyMask = ZR_ARTIFACT_SCHEDULER_POLICY_ATTACHED_DOMAIN |
+                     ZR_ARTIFACT_SCHEDULER_POLICY_ISOLATED_DOMAIN;
+    row.attachedRequirementFlags = 0u;
+    row.isolatedRequirementFlags = ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SEND |
+                                   ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SYNC;
+    row.transportContractHash = UINT64_C(0x1122334455667788);
+    row.schedulerContractHash = UINT64_C(0x8877665544332211);
+    fixture.sections[fixture.document.sectionCount++] = (SZrArtifactSectionInput){
+            ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE,
+            ZR_ARTIFACT_SECTION_FLAG_OPTIONAL,
+            1u,
+            &row};
+
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_Write(
+                    &fixture.document,
+                    binary,
+                    sizeof(binary),
+                    &binaryLength,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_Read(binary, binaryLength, &view, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_FindSection(
+                    &view,
+                    ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE,
+                    &section,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_ARTIFACT_SCHEDULER_CONTRACT_ROW_ENCODED_SIZE,
+            section.elementSize);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_ReadSchedulerContractRow(
+                    &section, 0u, &decoded, &diagnostic));
+    TEST_ASSERT_EQUAL_MEMORY(&row, &decoded, sizeof(row));
+
+    row.policyMask = 0u;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+            ZrCore_Artifact_GetEncodedSize(
+                    &fixture.document, &binaryLength, &diagnostic));
+
+    row.policyMask = ZR_ARTIFACT_SCHEDULER_POLICY_ATTACHED_DOMAIN;
+    row.isolatedRequirementFlags = ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SEND;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+            ZrCore_Artifact_GetEncodedSize(
+                    &fixture.document, &binaryLength, &diagnostic));
+
+    row.isolatedRequirementFlags = 0u;
+    row.reserved0 = 1u;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+            ZrCore_Artifact_GetEncodedSize(
+                    &fixture.document, &binaryLength, &diagnostic));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_zro_roundtrips_fixed_width_public_contract_sections);
@@ -1021,5 +1098,6 @@ int main(void) {
     RUN_TEST(test_source_canonical_type_and_binary_import_share_type_id_and_public_contract);
     RUN_TEST(test_real_source_compile_and_binary_signature_import_are_identical);
     RUN_TEST(test_domain_transfer_contract_roundtrips_as_independent_artifact_schema);
+    RUN_TEST(test_scheduler_contract_roundtrips_as_independent_artifact_schema);
     return UNITY_END();
 }

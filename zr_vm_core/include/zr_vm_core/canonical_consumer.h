@@ -28,8 +28,20 @@ typedef struct SZrCanonicalConsumerProjection {
     SZrArtifactSectionView contracts;
     SZrArtifactSectionView layouts;
     SZrArtifactSectionView domainTransfers;
+    SZrArtifactSectionView schedulerContracts;
     SZrCanonicalTypeProjection rootType;
 } SZrCanonicalConsumerProjection;
+
+typedef struct SZrCanonicalSchedulerContractExpectation {
+    TZrMetadataToken schedulerTypeToken;
+    TZrMetadataToken taskTypeToken;
+    TZrMetadataToken jobTypeToken;
+    TZrUInt32 abiVersion;
+    TZrUInt32 policy;
+    TZrUInt32 requirementFlags;
+    TZrUInt64 transportContractHash;
+    TZrUInt64 schedulerContractHash;
+} SZrCanonicalSchedulerContractExpectation;
 
 typedef struct SZrCanonicalPublicRefLikeAbiExpectation {
     TZrMetadataToken typeToken;
@@ -71,6 +83,17 @@ ZR_CORE_API EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveDomainTransfer(
         const SZrCanonicalConsumerProjection *projection,
         TZrMetadataToken typeToken,
         SZrArtifactDomainTransferRow *outContract,
+        SZrArtifactDiagnostic *diagnostic);
+
+ZR_CORE_API EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveSchedulerContract(
+        const SZrCanonicalConsumerProjection *projection,
+        TZrMetadataToken schedulerTypeToken,
+        SZrArtifactSchedulerContractRow *outContract,
+        SZrArtifactDiagnostic *diagnostic);
+
+ZR_CORE_API EZrArtifactStatus ZrCore_CanonicalConsumer_ValidateSchedulerContract(
+        const SZrCanonicalConsumerProjection *projection,
+        const SZrCanonicalSchedulerContractExpectation *expected,
         SZrArtifactDiagnostic *diagnostic);
 
 ZR_CORE_API EZrArtifactStatus ZrCore_CanonicalConsumer_ValidatePublicRefLikeAbi(

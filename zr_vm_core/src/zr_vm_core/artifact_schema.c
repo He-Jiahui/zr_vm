@@ -119,6 +119,32 @@ static TZrBool artifact_domain_transfer_row_is_valid(
     }
 }
 
+static TZrBool artifact_scheduler_contract_row_is_valid(
+        const SZrArtifactSchedulerContractRow *row) {
+    if (row == ZR_NULL ||
+        !artifact_token_is(row->schedulerTypeToken, ZR_METADATA_TABLE_TYPE_DEF) ||
+        !artifact_type_token_is_valid(row->taskTypeToken) ||
+        !artifact_type_token_is_valid(row->jobTypeToken) ||
+        row->abiVersion == 0u ||
+        row->policyMask == 0u ||
+        (row->policyMask & ~ZR_ARTIFACT_SCHEDULER_POLICY_KNOWN_MASK) != 0u ||
+        (row->attachedRequirementFlags &
+         ~ZR_ARTIFACT_SCHEDULER_REQUIREMENT_KNOWN_MASK) != 0u ||
+        (row->isolatedRequirementFlags &
+         ~ZR_ARTIFACT_SCHEDULER_REQUIREMENT_KNOWN_MASK) != 0u ||
+        row->transportContractHash == 0u || row->schedulerContractHash == 0u ||
+        row->reserved0 != 0u) {
+        return ZR_FALSE;
+    }
+    if ((row->policyMask & ZR_ARTIFACT_SCHEDULER_POLICY_ATTACHED_DOMAIN) == 0u &&
+        row->attachedRequirementFlags != 0u) {
+        return ZR_FALSE;
+    }
+    return (TZrBool)(
+            (row->policyMask & ZR_ARTIFACT_SCHEDULER_POLICY_ISOLATED_DOMAIN) != 0u ||
+            row->isolatedRequirementFlags == 0u);
+}
+
 static EZrArtifactStatus artifact_validate_identity(EZrArtifactKind kind,
                                                     const SZrArtifactPublicIdentity *identity,
                                                     SZrArtifactDiagnostic *diagnostic) {
@@ -336,6 +362,28 @@ static EZrArtifactStatus artifact_validate_domain_transfer_input(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+static EZrArtifactStatus artifact_validate_scheduler_contract_input(
+        const SZrArtifactSectionInput *section,
+        SZrArtifactDiagnostic *diagnostic) {
+    const SZrArtifactSchedulerContractRow *rows =
+            (const SZrArtifactSchedulerContractRow *)section->data;
+    TZrUInt32 index;
+
+    for (index = 0u; index < section->elementCount; ++index) {
+        if ((index > 0u &&
+             rows[index - 1u].schedulerTypeToken >= rows[index].schedulerTypeToken) ||
+            !artifact_scheduler_contract_row_is_valid(&rows[index])) {
+            return zr_artifact_fail(
+                    diagnostic,
+                    ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+                    section->kind,
+                    index,
+                    0u);
+        }
+    }
+    return ZR_ARTIFACT_STATUS_OK;
+}
+
 static EZrArtifactStatus artifact_validate_link_input(const SZrArtifactSectionInput *section,
                                                       const SZrArtifactSectionInput *code,
                                                       SZrArtifactDiagnostic *diagnostic) {
@@ -527,6 +575,9 @@ static EZrArtifactStatus artifact_validate_document(const SZrArtifactDocument *d
             case ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE:
                 status = artifact_validate_domain_transfer_input(
                         section, signatureHeap, diagnostic);
+                break;
+            case ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE:
+                status = artifact_validate_scheduler_contract_input(section, diagnostic);
                 break;
             case ZR_ARTIFACT_SECTION_MEMBER_DEF_TABLE:
             case ZR_ARTIFACT_SECTION_PROPERTY_DEF_TABLE:
@@ -897,6 +948,31 @@ static EZrArtifactStatus artifact_validate_decoded_rows(const SZrArtifactView *v
                             section.kind,
                             rowIndex,
                             row.schemaOffset);
+                }
+            } else if (section.kind ==
+                       ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE) {
+                SZrArtifactSchedulerContractRow row;
+                SZrArtifactSchedulerContractRow previousRow;
+                ZrCore_Artifact_ReadSchedulerContractRow(&section, rowIndex, &row, diagnostic);
+                if (rowIndex > 0u) {
+                    ZrCore_Artifact_ReadSchedulerContractRow(
+                            &section, rowIndex - 1u, &previousRow, diagnostic);
+                    if (previousRow.schedulerTypeToken >= row.schedulerTypeToken) {
+                        return zr_artifact_fail(
+                                diagnostic,
+                                ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+                                section.kind,
+                                rowIndex,
+                                section.byteOffset + rowIndex * section.elementSize);
+                    }
+                }
+                if (!artifact_scheduler_contract_row_is_valid(&row)) {
+                    return zr_artifact_fail(
+                            diagnostic,
+                            ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+                            section.kind,
+                            rowIndex,
+                            section.byteOffset + rowIndex * section.elementSize);
                 }
             } else if (section.kind == ZR_ARTIFACT_SECTION_MEMBER_DEF_TABLE) {
                 SZrArtifactMemberDefRow row;

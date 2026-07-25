@@ -101,6 +101,28 @@ static TZrBool canonical_consumer_find_domain_transfer(
     return ZR_FALSE;
 }
 
+static TZrBool canonical_consumer_find_scheduler_contract(
+        const SZrCanonicalConsumerProjection *projection,
+        TZrMetadataToken schedulerTypeToken,
+        SZrArtifactSchedulerContractRow *outContract) {
+    TZrUInt32 index;
+
+    if (projection == ZR_NULL || outContract == ZR_NULL || schedulerTypeToken == 0u) {
+        return ZR_FALSE;
+    }
+    for (index = 0u; index < projection->schedulerContracts.elementCount; ++index) {
+        SZrArtifactSchedulerContractRow row;
+        if (ZrCore_Artifact_ReadSchedulerContractRow(
+                    &projection->schedulerContracts, index, &row, ZR_NULL) ==
+                    ZR_ARTIFACT_STATUS_OK &&
+            row.schedulerTypeToken == schedulerTypeToken) {
+            *outContract = row;
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrMetadataToken canonical_consumer_find_type_def_token_by_id(
         const SZrCanonicalConsumerProjection *projection,
         TZrUInt32 canonicalTypeId) {
@@ -380,6 +402,132 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveDomainTransfer(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+EZrArtifactStatus ZrCore_CanonicalConsumer_ResolveSchedulerContract(
+        const SZrCanonicalConsumerProjection *projection,
+        TZrMetadataToken schedulerTypeToken,
+        SZrArtifactSchedulerContractRow *outContract,
+        SZrArtifactDiagnostic *diagnostic) {
+    canonical_consumer_clear_diagnostic(diagnostic);
+    if (projection == ZR_NULL || outContract == ZR_NULL ||
+        ZR_METADATA_TOKEN_TABLE(schedulerTypeToken) != ZR_METADATA_TABLE_TYPE_DEF ||
+        ZR_METADATA_TOKEN_RID(schedulerTypeToken) == 0u) {
+        return canonical_consumer_fail(
+                diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, 0u);
+    }
+    memset(outContract, 0, sizeof(*outContract));
+    if (!canonical_consumer_find_scheduler_contract(
+                projection, schedulerTypeToken, outContract)) {
+        return canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_SECTION,
+                ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE,
+                0u);
+    }
+    return ZR_ARTIFACT_STATUS_OK;
+}
+
+EZrArtifactStatus ZrCore_CanonicalConsumer_ValidateSchedulerContract(
+        const SZrCanonicalConsumerProjection *projection,
+        const SZrCanonicalSchedulerContractExpectation *expected,
+        SZrArtifactDiagnostic *diagnostic) {
+    SZrArtifactSchedulerContractRow contract;
+    TZrUInt32 actualRequirements;
+    EZrArtifactStatus status;
+
+    canonical_consumer_clear_diagnostic(diagnostic);
+    if (projection == ZR_NULL || expected == ZR_NULL ||
+        ZR_METADATA_TOKEN_TABLE(expected->schedulerTypeToken) != ZR_METADATA_TABLE_TYPE_DEF ||
+        ZR_METADATA_TOKEN_RID(expected->schedulerTypeToken) == 0u ||
+        expected->taskTypeToken == 0u || expected->jobTypeToken == 0u ||
+        expected->abiVersion == 0u ||
+        (expected->policy != ZR_ARTIFACT_SCHEDULER_POLICY_ATTACHED_DOMAIN &&
+         expected->policy != ZR_ARTIFACT_SCHEDULER_POLICY_ISOLATED_DOMAIN) ||
+        (expected->requirementFlags &
+         ~ZR_ARTIFACT_SCHEDULER_REQUIREMENT_KNOWN_MASK) != 0u ||
+        expected->transportContractHash == 0u ||
+        expected->schedulerContractHash == 0u) {
+        return canonical_consumer_fail(
+                diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, 0u);
+    }
+    status = ZrCore_CanonicalConsumer_ResolveSchedulerContract(
+            projection, expected->schedulerTypeToken, &contract, diagnostic);
+    if (status != ZR_ARTIFACT_STATUS_OK) {
+        return status;
+    }
+    if (contract.taskTypeToken != expected->taskTypeToken ||
+        contract.jobTypeToken != expected->jobTypeToken) {
+        return canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_SIGNATURE,
+                ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE,
+                0u);
+    }
+    if (contract.abiVersion != expected->abiVersion) {
+        canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_SCHEDULER_ABI_MISMATCH,
+                ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE,
+                0u);
+        if (diagnostic != ZR_NULL) {
+            diagnostic->expectedVersion = expected->abiVersion;
+            diagnostic->actualVersion = contract.abiVersion;
+        }
+        return ZR_ARTIFACT_STATUS_SCHEDULER_ABI_MISMATCH;
+    }
+    if ((contract.policyMask & expected->policy) == 0u) {
+        canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_SCHEDULER_POLICY_MISMATCH,
+                ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE,
+                0u);
+        if (diagnostic != ZR_NULL) {
+            diagnostic->expectedVersion = expected->policy;
+            diagnostic->actualVersion = contract.policyMask;
+        }
+        return ZR_ARTIFACT_STATUS_SCHEDULER_POLICY_MISMATCH;
+    }
+    actualRequirements = expected->policy == ZR_ARTIFACT_SCHEDULER_POLICY_ATTACHED_DOMAIN
+                                 ? contract.attachedRequirementFlags
+                                 : contract.isolatedRequirementFlags;
+    if (actualRequirements != expected->requirementFlags) {
+        canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_SCHEDULER_REQUIREMENT_MISMATCH,
+                ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE,
+                0u);
+        if (diagnostic != ZR_NULL) {
+            diagnostic->expectedVersion = expected->requirementFlags;
+            diagnostic->actualVersion = actualRequirements;
+        }
+        return ZR_ARTIFACT_STATUS_SCHEDULER_REQUIREMENT_MISMATCH;
+    }
+    if (contract.transportContractHash != expected->transportContractHash) {
+        canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_TRANSPORT_CONTRACT_MISMATCH,
+                ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE,
+                0u);
+        if (diagnostic != ZR_NULL) {
+            diagnostic->expectedHash = expected->transportContractHash;
+            diagnostic->actualHash = contract.transportContractHash;
+        }
+        return ZR_ARTIFACT_STATUS_TRANSPORT_CONTRACT_MISMATCH;
+    }
+    if (contract.schedulerContractHash != expected->schedulerContractHash) {
+        canonical_consumer_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_SCHEDULER_CONTRACT_MISMATCH,
+                ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE,
+                0u);
+        if (diagnostic != ZR_NULL) {
+            diagnostic->expectedHash = expected->schedulerContractHash;
+            diagnostic->actualHash = contract.schedulerContractHash;
+        }
+        return ZR_ARTIFACT_STATUS_SCHEDULER_CONTRACT_MISMATCH;
+    }
+    return ZR_ARTIFACT_STATUS_OK;
+}
+
 EZrArtifactStatus ZrCore_CanonicalConsumer_ValidatePublicRefLikeAbi(
         const SZrCanonicalConsumerProjection *projection,
         const SZrCanonicalPublicRefLikeAbiExpectation *expected,
@@ -553,6 +701,15 @@ EZrArtifactStatus ZrCore_CanonicalConsumer_Open(
     if (status != ZR_ARTIFACT_STATUS_OK) {
         memset(&outProjection->domainTransfers, 0,
                sizeof(outProjection->domainTransfers));
+    }
+    status = ZrCore_Artifact_FindSection(
+            &outProjection->artifact,
+            ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE,
+            &outProjection->schedulerContracts,
+            ZR_NULL);
+    if (status != ZR_ARTIFACT_STATUS_OK) {
+        memset(&outProjection->schedulerContracts, 0,
+               sizeof(outProjection->schedulerContracts));
     }
     status = ZrCore_CanonicalConsumer_ResolveTypeToken(
             outProjection,

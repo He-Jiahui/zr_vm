@@ -25,6 +25,8 @@
 #define CONSUMER_TYPE_SPEC_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_SPEC, 41u)
 #define CONSUMER_SIGNATURE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 41u)
 #define CONSUMER_MEMBER_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 41u)
+#define CONSUMER_TASK_TYPE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 42u)
+#define CONSUMER_JOB_TYPE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 43u)
 
 void test_reference_callable_contract_roundtrips_across_artifact_vm_and_aot(void);
 void test_reference_callable_ref_export_matches_return_access(void);
@@ -37,7 +39,8 @@ typedef struct SZrConsumerArtifactFixture {
     SZrArtifactContractRow contract;
     SZrArtifactLayoutRow layout;
     SZrArtifactDomainTransferRow domainTransfer;
-    SZrArtifactSectionInput sections[8];
+    SZrArtifactSchedulerContractRow schedulerContract;
+    SZrArtifactSectionInput sections[9];
     SZrArtifactDocument document;
 } SZrConsumerArtifactFixture;
 
@@ -124,6 +127,19 @@ static void consumer_fixture_init(SZrConsumerArtifactFixture *fixture) {
     fixture->domainTransfer.schemaVersion = 1u;
     fixture->domainTransfer.schemaHash = 0x6666777788889999ULL;
 
+    fixture->schedulerContract.schedulerTypeToken = CONSUMER_TYPE_DEF_TOKEN;
+    fixture->schedulerContract.taskTypeToken = CONSUMER_TASK_TYPE_TOKEN;
+    fixture->schedulerContract.jobTypeToken = CONSUMER_JOB_TYPE_TOKEN;
+    fixture->schedulerContract.abiVersion = 1u;
+    fixture->schedulerContract.policyMask =
+            ZR_ARTIFACT_SCHEDULER_POLICY_ATTACHED_DOMAIN |
+            ZR_ARTIFACT_SCHEDULER_POLICY_ISOLATED_DOMAIN;
+    fixture->schedulerContract.isolatedRequirementFlags =
+            ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SEND |
+            ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SYNC;
+    fixture->schedulerContract.transportContractHash = 0x777788889999aaaaULL;
+    fixture->schedulerContract.schedulerContractHash = 0xaaaabbbbccccddddULL;
+
     fixture->sections[sectionCount++] = (SZrArtifactSectionInput){
             ZR_ARTIFACT_SECTION_TYPE_DEF_TABLE, ZR_ARTIFACT_SECTION_FLAG_MANDATORY,
             1u, &fixture->typeDef};
@@ -150,6 +166,11 @@ static void consumer_fixture_init(SZrConsumerArtifactFixture *fixture) {
             ZR_ARTIFACT_SECTION_FLAG_OPTIONAL,
             1u,
             &fixture->domainTransfer};
+    fixture->sections[sectionCount++] = (SZrArtifactSectionInput){
+            ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE,
+            ZR_ARTIFACT_SECTION_FLAG_OPTIONAL,
+            1u,
+            &fixture->schedulerContract};
 
     fixture->document.kind = ZR_ARTIFACT_KIND_ZRO;
     fixture->document.identity.canonicalTypeId = CONSUMER_TYPE_ID;
@@ -268,6 +289,8 @@ static void test_canonical_consumer_projects_optional_domain_transfer_contract(v
     TEST_ASSERT_EQUAL_UINT64(
             fixture.domainTransfer.schemaHash, contract.schemaHash);
 
+    fixture.sections[fixture.document.sectionCount - 2u] =
+            fixture.sections[fixture.document.sectionCount - 1u];
     fixture.document.sectionCount--;
     length = consumer_fixture_write(&fixture, buffer, sizeof(buffer));
     TEST_ASSERT_EQUAL_INT(
@@ -284,6 +307,115 @@ static void test_canonical_consumer_projects_optional_domain_transfer_contract(v
                     &diagnostic));
     TEST_ASSERT_EQUAL_UINT32(
             ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE,
+            diagnostic.sectionKind);
+}
+
+static void test_canonical_consumer_validates_scheduler_contract_without_name_fallback(void) {
+    SZrConsumerArtifactFixture fixture;
+    SZrCanonicalConsumerProjection projection;
+    SZrArtifactSchedulerContractRow contract;
+    SZrCanonicalSchedulerContractExpectation expected;
+    SZrArtifactDiagnostic diagnostic;
+    TZrByte buffer[2048];
+    TZrSize length;
+
+    consumer_fixture_init(&fixture);
+    length = consumer_fixture_write(&fixture, buffer, sizeof(buffer));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_CanonicalConsumer_Open(
+                    buffer, length, ZR_NULL, &projection, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_CanonicalConsumer_ResolveSchedulerContract(
+                    &projection,
+                    CONSUMER_TYPE_DEF_TOKEN,
+                    &contract,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_MEMORY(
+            &fixture.schedulerContract, &contract, sizeof(contract));
+
+    memset(&expected, 0, sizeof(expected));
+    expected.schedulerTypeToken = CONSUMER_TYPE_DEF_TOKEN;
+    expected.taskTypeToken = CONSUMER_TASK_TYPE_TOKEN;
+    expected.jobTypeToken = CONSUMER_JOB_TYPE_TOKEN;
+    expected.abiVersion = 1u;
+    expected.policy = ZR_ARTIFACT_SCHEDULER_POLICY_ISOLATED_DOMAIN;
+    expected.requirementFlags = ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SEND |
+                                ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SYNC;
+    expected.transportContractHash = fixture.schedulerContract.transportContractHash;
+    expected.schedulerContractHash = fixture.schedulerContract.schedulerContractHash;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_CanonicalConsumer_ValidateSchedulerContract(
+                    &projection, &expected, &diagnostic));
+
+    expected.taskTypeToken++;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_INVALID_SIGNATURE,
+            ZrCore_CanonicalConsumer_ValidateSchedulerContract(
+                    &projection, &expected, &diagnostic));
+    expected.taskTypeToken = CONSUMER_TASK_TYPE_TOKEN;
+
+    expected.abiVersion++;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_SCHEDULER_ABI_MISMATCH,
+            ZrCore_CanonicalConsumer_ValidateSchedulerContract(
+                    &projection, &expected, &diagnostic));
+    expected.abiVersion = fixture.schedulerContract.abiVersion;
+
+    expected.policy = ZR_ARTIFACT_SCHEDULER_POLICY_ATTACHED_DOMAIN;
+    expected.requirementFlags = ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SEND;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_SCHEDULER_REQUIREMENT_MISMATCH,
+            ZrCore_CanonicalConsumer_ValidateSchedulerContract(
+                    &projection, &expected, &diagnostic));
+
+    expected.policy = ZR_ARTIFACT_SCHEDULER_POLICY_ISOLATED_DOMAIN;
+    expected.requirementFlags = fixture.schedulerContract.isolatedRequirementFlags;
+    expected.transportContractHash++;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_TRANSPORT_CONTRACT_MISMATCH,
+            ZrCore_CanonicalConsumer_ValidateSchedulerContract(
+                    &projection, &expected, &diagnostic));
+    expected.transportContractHash = fixture.schedulerContract.transportContractHash;
+
+    expected.schedulerContractHash++;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_SCHEDULER_CONTRACT_MISMATCH,
+            ZrCore_CanonicalConsumer_ValidateSchedulerContract(
+                    &projection, &expected, &diagnostic));
+    expected.schedulerContractHash = fixture.schedulerContract.schedulerContractHash;
+
+    fixture.schedulerContract.policyMask =
+            ZR_ARTIFACT_SCHEDULER_POLICY_ISOLATED_DOMAIN;
+    length = consumer_fixture_write(&fixture, buffer, sizeof(buffer));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_CanonicalConsumer_Open(
+                    buffer, length, ZR_NULL, &projection, &diagnostic));
+    expected.policy = ZR_ARTIFACT_SCHEDULER_POLICY_ATTACHED_DOMAIN;
+    expected.requirementFlags = 0u;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_SCHEDULER_POLICY_MISMATCH,
+            ZrCore_CanonicalConsumer_ValidateSchedulerContract(
+                    &projection, &expected, &diagnostic));
+
+    fixture.document.sectionCount--;
+    length = consumer_fixture_write(&fixture, buffer, sizeof(buffer));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_CanonicalConsumer_Open(
+                    buffer, length, ZR_NULL, &projection, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_INVALID_SECTION,
+            ZrCore_CanonicalConsumer_ResolveSchedulerContract(
+                    &projection,
+                    CONSUMER_TYPE_DEF_TOKEN,
+                    &contract,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE,
             diagnostic.sectionKind);
 }
 
@@ -1104,6 +1236,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_vm_and_aot_consume_the_same_canonical_contract_and_fail_identically);
     RUN_TEST(test_canonical_consumer_projects_optional_domain_transfer_contract);
+    RUN_TEST(test_canonical_consumer_validates_scheduler_contract_without_name_fallback);
     RUN_TEST(test_reflection_debug_and_layout_resolve_only_canonical_ids_and_tokens);
     RUN_TEST(test_semantic_query_projects_expression_and_call_types_from_canonical_facts);
     RUN_TEST(test_resolved_generic_call_publishes_closed_canonical_signature);

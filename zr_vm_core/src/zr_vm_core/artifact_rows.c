@@ -93,6 +93,21 @@ static void artifact_write_domain_transfer_row(
     zr_artifact_write_u64(bytes + 40u, row->providerContractHash);
 }
 
+static void artifact_write_scheduler_contract_row(
+        TZrByte *bytes,
+        const SZrArtifactSchedulerContractRow *row) {
+    zr_artifact_write_u32(bytes + 0u, row->schedulerTypeToken);
+    zr_artifact_write_u32(bytes + 4u, row->taskTypeToken);
+    zr_artifact_write_u32(bytes + 8u, row->jobTypeToken);
+    zr_artifact_write_u32(bytes + 12u, row->abiVersion);
+    zr_artifact_write_u32(bytes + 16u, row->policyMask);
+    zr_artifact_write_u32(bytes + 20u, row->attachedRequirementFlags);
+    zr_artifact_write_u32(bytes + 24u, row->isolatedRequirementFlags);
+    zr_artifact_write_u32(bytes + 28u, 0u);
+    zr_artifact_write_u64(bytes + 32u, row->transportContractHash);
+    zr_artifact_write_u64(bytes + 40u, row->schedulerContractHash);
+}
+
 static void artifact_write_relocation_row(TZrByte *bytes, const SZrArtifactRelocationRow *row) {
     zr_artifact_write_u32(bytes + 0u, row->codeOffset);
     zr_artifact_write_u32(bytes + 4u, row->kind);
@@ -144,6 +159,12 @@ void zr_artifact_write_section_payload(TZrByte *bytes, const SZrArtifactSectionI
                 artifact_write_domain_transfer_row(
                         bytes + (TZrSize)index * elementSize,
                         &((const SZrArtifactDomainTransferRow *)section->data)[index]);
+            break;
+        case ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE:
+            for (index = 0u; index < section->elementCount; ++index)
+                artifact_write_scheduler_contract_row(
+                        bytes + (TZrSize)index * elementSize,
+                        &((const SZrArtifactSchedulerContractRow *)section->data)[index]);
             break;
         case ZR_ARTIFACT_SECTION_RELOCATION_BINDING_TABLE:
             for (index = 0u; index < section->elementCount; ++index)
@@ -350,6 +371,41 @@ EZrArtifactStatus ZrCore_Artifact_ReadDomainTransferRow(
     outRow->providerToken = zr_artifact_read_u32(bytes + 24u);
     outRow->schemaHash = zr_artifact_read_u64(bytes + 32u);
     outRow->providerContractHash = zr_artifact_read_u64(bytes + 40u);
+    return ZR_ARTIFACT_STATUS_OK;
+}
+
+EZrArtifactStatus ZrCore_Artifact_ReadSchedulerContractRow(
+        const SZrArtifactSectionView *section,
+        TZrUInt32 rowIndex,
+        SZrArtifactSchedulerContractRow *outRow,
+        SZrArtifactDiagnostic *diagnostic) {
+    const TZrByte *bytes;
+    EZrArtifactStatus status;
+
+    if (outRow == ZR_NULL) {
+        return zr_artifact_fail(
+                diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, rowIndex, 0u);
+    }
+    status = artifact_get_row_bytes(
+            section,
+            rowIndex,
+            ZR_ARTIFACT_SCHEDULER_CONTRACT_ROW_ENCODED_SIZE,
+            &bytes,
+            diagnostic);
+    if (status != ZR_ARTIFACT_STATUS_OK) {
+        return status;
+    }
+    memset(outRow, 0, sizeof(*outRow));
+    outRow->schedulerTypeToken = zr_artifact_read_u32(bytes + 0u);
+    outRow->taskTypeToken = zr_artifact_read_u32(bytes + 4u);
+    outRow->jobTypeToken = zr_artifact_read_u32(bytes + 8u);
+    outRow->abiVersion = zr_artifact_read_u32(bytes + 12u);
+    outRow->policyMask = zr_artifact_read_u32(bytes + 16u);
+    outRow->attachedRequirementFlags = zr_artifact_read_u32(bytes + 20u);
+    outRow->isolatedRequirementFlags = zr_artifact_read_u32(bytes + 24u);
+    outRow->reserved0 = zr_artifact_read_u32(bytes + 28u);
+    outRow->transportContractHash = zr_artifact_read_u64(bytes + 32u);
+    outRow->schedulerContractHash = zr_artifact_read_u64(bytes + 40u);
     return ZR_ARTIFACT_STATUS_OK;
 }
 

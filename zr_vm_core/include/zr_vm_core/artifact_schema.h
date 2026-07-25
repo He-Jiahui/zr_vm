@@ -4,7 +4,7 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/metadata_token.h"
 
-#define ZR_ARTIFACT_SCHEMA_VERSION ((TZrUInt16)2u)
+#define ZR_ARTIFACT_SCHEMA_VERSION ((TZrUInt16)3u)
 #define ZR_ARTIFACT_HEADER_ENCODED_SIZE ((TZrUInt32)112u)
 #define ZR_ARTIFACT_SECTION_DIRECTORY_ENTRY_ENCODED_SIZE ((TZrUInt32)24u)
 #define ZR_ARTIFACT_HEADER_SECTION_COUNT_OFFSET ((TZrUInt32)16u)
@@ -22,6 +22,7 @@
 #define ZR_ARTIFACT_LAYOUT_ROW_ENCODED_SIZE ((TZrUInt32)48u)
 #define ZR_ARTIFACT_RELOCATION_ROW_ENCODED_SIZE ((TZrUInt32)40u)
 #define ZR_ARTIFACT_DOMAIN_TRANSFER_ROW_ENCODED_SIZE ((TZrUInt32)48u)
+#define ZR_ARTIFACT_SCHEDULER_CONTRACT_ROW_ENCODED_SIZE ((TZrUInt32)48u)
 
 typedef enum EZrArtifactKind {
     ZR_ARTIFACT_KIND_ZRS = 1,
@@ -45,7 +46,8 @@ typedef enum EZrArtifactSectionKind {
     ZR_ARTIFACT_SECTION_DEBUG_MAP = 12,
     ZR_ARTIFACT_SECTION_SYNTAX_TREE = 13,
     ZR_ARTIFACT_SECTION_SEMANTIC_IR = 14,
-    ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE = 15
+    ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE = 15,
+    ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE = 16
 } EZrArtifactSectionKind;
 
 #define ZR_ARTIFACT_SECTION_FLAG_MANDATORY ((TZrUInt32)0u)
@@ -76,7 +78,12 @@ typedef enum EZrArtifactStatus {
     ZR_ARTIFACT_STATUS_CONTRACT_HASH_MISMATCH,
     ZR_ARTIFACT_STATUS_MODULE_HASH_MISMATCH,
     ZR_ARTIFACT_STATUS_BUFFER_TOO_SMALL,
-    ZR_ARTIFACT_STATUS_INVALID_TEXT
+    ZR_ARTIFACT_STATUS_INVALID_TEXT,
+    ZR_ARTIFACT_STATUS_SCHEDULER_POLICY_MISMATCH,
+    ZR_ARTIFACT_STATUS_SCHEDULER_REQUIREMENT_MISMATCH,
+    ZR_ARTIFACT_STATUS_SCHEDULER_ABI_MISMATCH,
+    ZR_ARTIFACT_STATUS_TRANSPORT_CONTRACT_MISMATCH,
+    ZR_ARTIFACT_STATUS_SCHEDULER_CONTRACT_MISMATCH
 } EZrArtifactStatus;
 
 typedef enum EZrArtifactSignatureNode {
@@ -180,6 +187,18 @@ typedef enum EZrArtifactDomainTransferKind {
 #define ZR_ARTIFACT_DOMAIN_TRANSFER_FLAG_DROP_ON_FAILURE ((TZrUInt32)1u << 0u)
 #define ZR_ARTIFACT_DOMAIN_TRANSFER_FLAG_KNOWN_MASK \
     ZR_ARTIFACT_DOMAIN_TRANSFER_FLAG_DROP_ON_FAILURE
+
+#define ZR_ARTIFACT_SCHEDULER_POLICY_ATTACHED_DOMAIN ((TZrUInt32)1u << 0u)
+#define ZR_ARTIFACT_SCHEDULER_POLICY_ISOLATED_DOMAIN ((TZrUInt32)1u << 1u)
+#define ZR_ARTIFACT_SCHEDULER_POLICY_KNOWN_MASK \
+    (ZR_ARTIFACT_SCHEDULER_POLICY_ATTACHED_DOMAIN | \
+     ZR_ARTIFACT_SCHEDULER_POLICY_ISOLATED_DOMAIN)
+
+#define ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SEND ((TZrUInt32)1u << 0u)
+#define ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SYNC ((TZrUInt32)1u << 1u)
+#define ZR_ARTIFACT_SCHEDULER_REQUIREMENT_KNOWN_MASK \
+    (ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SEND | \
+     ZR_ARTIFACT_SCHEDULER_REQUIREMENT_SYNC)
 
 #define ZR_ARTIFACT_TYPE_FLAG_VALUE ((TZrUInt32)1u << 0u)
 #define ZR_ARTIFACT_TYPE_FLAG_GC ((TZrUInt32)1u << 1u)
@@ -333,6 +352,19 @@ typedef struct SZrArtifactDomainTransferRow {
     TZrUInt64 providerContractHash;
 } SZrArtifactDomainTransferRow;
 
+typedef struct SZrArtifactSchedulerContractRow {
+    TZrMetadataToken schedulerTypeToken;
+    TZrMetadataToken taskTypeToken;
+    TZrMetadataToken jobTypeToken;
+    TZrUInt32 abiVersion;
+    TZrUInt32 policyMask;
+    TZrUInt32 attachedRequirementFlags;
+    TZrUInt32 isolatedRequirementFlags;
+    TZrUInt32 reserved0;
+    TZrUInt64 transportContractHash;
+    TZrUInt64 schedulerContractHash;
+} SZrArtifactSchedulerContractRow;
+
 typedef struct SZrArtifactRelocationRow {
     TZrUInt32 codeOffset;
     TZrUInt32 kind;
@@ -441,6 +473,12 @@ ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadDomainTransferRow(
         const SZrArtifactSectionView *section,
         TZrUInt32 rowIndex,
         SZrArtifactDomainTransferRow *outRow,
+        SZrArtifactDiagnostic *diagnostic);
+
+ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadSchedulerContractRow(
+        const SZrArtifactSectionView *section,
+        TZrUInt32 rowIndex,
+        SZrArtifactSchedulerContractRow *outRow,
         SZrArtifactDiagnostic *diagnostic);
 
 ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadRelocationRow(
