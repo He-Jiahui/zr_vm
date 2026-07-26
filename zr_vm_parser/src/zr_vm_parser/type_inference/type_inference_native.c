@@ -1532,6 +1532,7 @@ TZrBool inferred_type_from_type_name(SZrCompilerState *cs, SZrString *typeName, 
             }
 
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_ARRAY);
+            result->protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE);
             ZrCore_Array_Init(cs->state, &result->elementTypes, sizeof(SZrInferredType), 1);
             ZrCore_Array_Push(cs->state, &result->elementTypes, &elementType);
             result->typeName = typeName;
@@ -1558,7 +1559,13 @@ not_array_type_name:
                 continue;
             }
             ZrParser_InferredType_Init(cs->state, &argumentType, ZR_VALUE_TYPE_OBJECT);
-            if (!inferred_type_from_type_name(cs, *argumentTypeNamePtr, &argumentType)) {
+            if (type_inference_is_const_generic_parameter_reference(cs, *argumentTypeNamePtr)) {
+                ZrParser_InferredType_Free(cs->state, &argumentType);
+                ZrParser_InferredType_InitConstParameterGenericArgument(
+                        cs->state,
+                        &argumentType,
+                        *argumentTypeNamePtr);
+            } else if (!inferred_type_from_type_name(cs, *argumentTypeNamePtr, &argumentType)) {
                 ZrParser_InferredType_Free(cs->state, &argumentType);
                 continue;
             }
@@ -1656,9 +1663,10 @@ static TZrBool native_module_info_register_canonical_constructor_contracts(
             member->accessModifier != ZR_ACCESS_PUBLIC || member->name == ZR_NULL) {
             continue;
         }
-        if (member->parameterTypes.length != member->parameterCount ||
+        if (member->parameterCount == ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ||
+            member->parameterTypes.length != member->parameterCount ||
             member->parameterNames.length != member->parameterCount) {
-            return ZR_FALSE;
+            continue;
         }
         member->symbolId = ZrParser_Semantic_RegisterSymbol(
                 cs->semanticContext,

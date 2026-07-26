@@ -21,6 +21,7 @@
 #include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
+#include "zr_vm_library/native_registry.h"
 #if defined(ZR_VM_LSP_HAS_NETWORK_LIB)
 #include "zr_vm_lib_network/module.h"
 #endif
@@ -94,6 +95,10 @@ static TZrBool lsp_refresh_local_hover_query(SZrState *state,
 
 static void lsp_register_builtin_native_libraries(SZrState *state) {
     if (state == ZR_NULL || state->global == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrLibrary_NativeRegistry_Attach(state->global)) {
         return;
     }
 

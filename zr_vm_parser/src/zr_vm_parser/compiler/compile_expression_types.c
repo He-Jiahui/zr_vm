@@ -1114,6 +1114,7 @@ TZrBool resolve_expression_root_type(SZrCompilerState *cs, SZrAstNode *node, SZr
 
     if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
         SZrString *candidateType = node->data.identifier.name;
+        SZrInferredType aliasType;
         if (candidateType != ZR_NULL && cs->currentTypeName != ZR_NULL) {
             const TZrChar *candidateText = ZrCore_String_GetNativeStringShort(candidateType);
             if (candidateText != ZR_NULL && strcmp(candidateText, "this") == 0) {
@@ -1128,6 +1129,25 @@ TZrBool resolve_expression_root_type(SZrCompilerState *cs, SZrAstNode *node, SZr
             *outIsTypeReference = prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
             return ZR_TRUE;
         }
+
+        if (candidateType != ZR_NULL && cs->typeEnv != ZR_NULL) {
+            SZrTypePrototypeInfo *aliasPrototype = ZR_NULL;
+
+            ZrParser_InferredType_Init(cs->state, &aliasType, ZR_VALUE_TYPE_OBJECT);
+            if (ZrParser_TypeEnvironment_LookupVariable(cs->state, cs->typeEnv, candidateType, &aliasType) &&
+                aliasType.typeName != ZR_NULL &&
+                !ZrCore_String_Equal(aliasType.typeName, candidateType)) {
+                aliasPrototype = find_compiler_type_prototype(cs, aliasType.typeName);
+            }
+            if (aliasPrototype != ZR_NULL) {
+                *outTypeName = aliasType.typeName;
+                *outIsTypeReference = aliasPrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
+                ZrParser_InferredType_Free(cs->state, &aliasType);
+                return ZR_TRUE;
+            }
+            ZrParser_InferredType_Free(cs->state, &aliasType);
+        }
+
     }
 
     if (node->type == ZR_AST_PRIMARY_EXPRESSION) {

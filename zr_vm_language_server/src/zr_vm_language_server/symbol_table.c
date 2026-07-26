@@ -1036,6 +1036,31 @@ SZrSymbol *ZrLanguageServer_SymbolTable_LookupAtPosition(SZrSymbolTable *table,
         return bestSymbol;
     }
 
+    /* AST identifier strings are not guaranteed to share the declaration's object key. */
+    for (TZrSize scopeIndex = 0; scopeIndex < table->allScopes.length; scopeIndex++) {
+        SZrSymbolScope **scopePtr =
+            (SZrSymbolScope **)ZrCore_Array_Get(&table->allScopes, scopeIndex);
+        SZrSymbolScope *scope = scopePtr != ZR_NULL ? *scopePtr : ZR_NULL;
+        SZrSymbol *candidate;
+
+        if (scope == ZR_NULL || !scope_contains_position(scope, position)) {
+            continue;
+        }
+
+        candidate = lookup_symbol_in_scope(scope, name);
+        if (candidate != ZR_NULL && symbol_matches_lookup_position(candidate, position) &&
+            (bestSymbol == ZR_NULL ||
+             scope_is_deeper_candidate(scope, bestSymbol->scope) ||
+             (scope == bestSymbol->scope &&
+              symbol_is_better_lookup_candidate(candidate, bestSymbol)))) {
+            bestSymbol = candidate;
+        }
+    }
+
+    if (bestSymbol != ZR_NULL) {
+        return bestSymbol;
+    }
+
     return ZrLanguageServer_SymbolTable_Lookup(table, name, ZR_NULL);
 }
 

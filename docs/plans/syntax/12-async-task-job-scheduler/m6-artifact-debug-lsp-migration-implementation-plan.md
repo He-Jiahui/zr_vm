@@ -346,6 +346,24 @@ native constructor, and interface-variance tests remain recorded separately;
 their test processes exit zero but they keep the overall M6 promotion gate
 `in_progress`.
 
+#### M6.4b Canonical Generic Projection Convergence
+
+Completed 2026-07-26 08:13 +08:00. M6.4a's six remaining Unity markers are
+closed through canonical facts: source-import array TypeRefs, native generic
+iterables and closed generic prototypes retain their `Iterable` protocol;
+const generic parameter references and literal values retain distinct
+`CONST_PARAMETER`/`CONST_INT` kinds all the way through canonical-name
+prototype materialization. The LSP semantic type projection consumes those
+facts rather than guessing from member names or display text. The shared
+semantic-analyzer entry points are also exported for MSVC consumers.
+
+On an isolated final snapshot, GCC 11.4, Clang 14.0 and MSVC 17.14 each
+completed all 18 LSP test processes with true exit zero and no Unity
+`Fail - Cost Time` marker. Each toolchain also passed the main stdio/CLI,
+position-encoding and diagnostic-fix smokes. This closes M6.4 and the M6
+promotion gate; see `m6-4b-canonical-generic-projection-convergence.md` for
+the scoped parser-test residual boundary.
+
 ## Promotion Gate
 
 M6 is complete only when a real source-produced artifact is the single source
@@ -354,3 +372,11 @@ LSP; legacy `Async`/`TaskRunner`/`autoCoroutine` public compatibility surface
 and concrete Task-name checks are removed; every terminal transport branch
 remains faulted/moved/exactly-once as specified by M4/M5; and the final
 GCC/Clang/MSVC plus LSP protocol evidence is recorded with true process exits.
+
+#### Promotion Gate Result
+
+Completed 2026-07-26 08:13 +08:00. M6.1-M6.4 now meet the gate: real
+source-produced scheduler artifacts are the only scheduler contract source for
+import, runtime, debug and LSP; legacy task compatibility is removed; transport
+terminal facts remain structured and exactly-once; and the final three-toolchain
+LSP matrix plus protocol evidence is recorded above.

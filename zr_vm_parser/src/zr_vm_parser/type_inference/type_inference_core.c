@@ -19,6 +19,7 @@
 #include "zr_vm_common/zr_string_conf.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <limits.h>
@@ -72,6 +73,31 @@ static TZrBool type_inference_copy_generic_parameter_info_array(SZrState *state,
         ZrCore_Array_Push(state, dest, &destInfo);
     }
 
+    return ZR_TRUE;
+}
+
+static TZrBool type_inference_parse_const_int_generic_argument_name(
+        SZrString *argumentName,
+        TZrInt64 *outValue) {
+    const TZrChar *text;
+    TZrChar *end = ZR_NULL;
+    long long parsedValue;
+
+    if (argumentName == ZR_NULL || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    text = ZrCore_String_GetNativeString(argumentName);
+    if (text == ZR_NULL || text[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    parsedValue = strtoll(text, &end, 10);
+    if (end == text || end == ZR_NULL || *end != '\0') {
+        return ZR_FALSE;
+    }
+
+    *outValue = (TZrInt64)parsedValue;
     return ZR_TRUE;
 }
 
@@ -2790,6 +2816,7 @@ static TZrBool ensure_generic_instance_type_prototype_internal(
     ZrCore_Array_Init(cs->state, &argumentTypes, sizeof(SZrInferredType), argumentTypeNames.length);
     for (TZrSize index = 0; index < argumentTypeNames.length; index++) {
         SZrString **argumentNamePtr = (SZrString **)ZrCore_Array_Get(&argumentTypeNames, index);
+        TZrInt64 constIntValue;
         const SZrInferredType *structuredArgument =
                 structuredType != ZR_NULL &&
                         structuredType->elementTypes.length == argumentTypeNames.length
@@ -2803,11 +2830,20 @@ static TZrBool ensure_generic_instance_type_prototype_internal(
         }
         if (structuredArgument != ZR_NULL) {
             ZrParser_InferredType_Copy(cs->state, &argumentType, structuredArgument);
-        } else {
-            ZrParser_InferredType_Init(cs->state, &argumentType, ZR_VALUE_TYPE_OBJECT);
-        }
-        if (structuredArgument == ZR_NULL &&
-            !inferred_type_from_type_name(cs, *argumentNamePtr, &argumentType)) {
+        } else if (type_inference_is_const_generic_parameter_reference(cs, *argumentNamePtr)) {
+            ZrParser_InferredType_InitConstParameterGenericArgument(
+                    cs->state,
+                    &argumentType,
+                    *argumentNamePtr);
+        } else if (type_inference_parse_const_int_generic_argument_name(
+                           *argumentNamePtr,
+                           &constIntValue)) {
+            ZrParser_InferredType_InitConstIntGenericArgument(
+                    cs->state,
+                    &argumentType,
+                    constIntValue,
+                    *argumentNamePtr);
+        } else if (!inferred_type_from_type_name(cs, *argumentNamePtr, &argumentType)) {
             ZrParser_InferredType_Free(cs->state, &argumentType);
             free_inferred_type_array(cs->state, &argumentTypes);
             ZrCore_Array_Free(cs->state, &argumentTypeNames);

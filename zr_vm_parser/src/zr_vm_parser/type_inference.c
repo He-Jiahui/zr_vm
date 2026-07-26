@@ -3349,6 +3349,16 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
             ZrParser_InferredType_Free(cs->state, result);
             return ZR_FALSE;
         }
+        {
+            SZrTypePrototypeInfo *prototype = result->typeName != ZR_NULL
+                                                      ? find_compiler_type_prototype_inference(
+                                                                cs,
+                                                                result->typeName)
+                                                      : ZR_NULL;
+            if (prototype != ZR_NULL) {
+                result->protocolMask |= prototype->protocolMask;
+            }
+        }
         if (cs->semanticContext != ZR_NULL &&
             !inferred_type_contains_open_const_parameter(result, 0U)) {
             registeredTypeId = ZrParser_Semantic_RegisterNamedType(

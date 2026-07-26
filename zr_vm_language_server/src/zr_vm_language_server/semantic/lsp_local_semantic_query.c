@@ -129,7 +129,23 @@ static SZrDiagnostic *local_query_find_parser_diagnostic_at(SZrFileVersion *file
 static SZrFileRange local_query_position_range(SZrLspContext *context,
                                                SZrString *uri,
                                                SZrLspPosition position) {
+    SZrFileVersion *fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    SZrFileVersionContentSnapshot snapshot;
     SZrFilePosition filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
+
+    if (fileVersion != ZR_NULL &&
+        ZrLanguageServer_FileVersionContentSnapshot_Acquire(context->state, fileVersion, &snapshot)) {
+        filePosition = ZrLanguageServer_LspPosition_ToFilePositionWithContent(position,
+                                                                              snapshot.content,
+                                                                              snapshot.contentLength);
+        if (snapshot.usesFallbackAst &&
+            (!fileVersion->hasIncrementalInfo ||
+             filePosition.offset >= fileVersion->lastChangeInfo.newRange.start.offset)) {
+            /* Only source coordinates before the current edit are identical to the last-good AST. */
+            filePosition.offset = 0;
+        }
+        ZrLanguageServer_FileVersionContentSnapshot_Free(context->state, &snapshot);
+    }
     return ZrParser_FileRange_Create(filePosition, filePosition, uri);
 }
 
@@ -428,6 +444,7 @@ static void local_query_materialize_expression_fact(SZrState *state,
                                                     const SZrSemanticReferenceFact *referenceFact) {
     SZrInferredType inferredType;
     SZrAstNode *expressionNode;
+    SZrSymbol *symbol;
 
     if (state == ZR_NULL ||
         analyzer == ZR_NULL ||
@@ -446,9 +463,38 @@ static void local_query_materialize_expression_fact(SZrState *state,
         return;
     }
 
+    if (referenceFact != ZR_NULL && referenceFact->node != ZR_NULL) {
+        symbol = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, referenceFact->range);
+        if (symbol != ZR_NULL && symbol->typeInfo != ZR_NULL &&
+            ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(symbol->typeInfo)) {
+            ZrParser_Semantic_RegisterInferredType(analyzer->semanticContext,
+                                                   symbol->typeInfo,
+                                                   ZR_SEMANTIC_TYPE_KIND_REFERENCE,
+                                                   symbol->typeInfo->typeName,
+                                                   referenceFact->node);
+            return;
+        }
+    }
+
     expressionNode =
         ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(analyzer->ast, queryRange);
     if (expressionNode != ZR_NULL) {
+        if (expressionNode->type == ZR_AST_IDENTIFIER_LITERAL &&
+            expressionNode->data.identifier.name != ZR_NULL) {
+            symbol = ZrLanguageServer_SymbolTable_LookupAtPosition(
+                    analyzer->symbolTable,
+                    expressionNode->data.identifier.name,
+                    expressionNode->location);
+            if (symbol != ZR_NULL && symbol->typeInfo != ZR_NULL &&
+                ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(symbol->typeInfo)) {
+                ZrParser_Semantic_RegisterInferredType(analyzer->semanticContext,
+                                                       symbol->typeInfo,
+                                                       ZR_SEMANTIC_TYPE_KIND_REFERENCE,
+                                                       symbol->typeInfo->typeName,
+                                                       expressionNode);
+                return;
+            }
+        }
         ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
         (void)ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(state,
                                                                          analyzer,

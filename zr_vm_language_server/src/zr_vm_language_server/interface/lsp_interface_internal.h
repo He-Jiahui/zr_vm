@@ -187,9 +187,10 @@ typedef struct SZrLspExternalMetadataDeclaration {
     TZrBool hasDeclaration;
 } SZrLspExternalMetadataDeclaration;
 
-SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnalyzer(SZrState *state,
-                                                              SZrLspContext *context,
-                                                              SZrString *uri);
+ZR_LANGUAGE_SERVER_API SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnalyzer(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *uri);
 ZR_LANGUAGE_SERVER_API SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(SZrState *state,
                                                                               SZrLspContext *context,
                                                                               SZrString *uri);

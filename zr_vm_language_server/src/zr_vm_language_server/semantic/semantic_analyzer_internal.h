@@ -130,8 +130,9 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_StatementDefinitelyExits(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *node);
 
-SZrAstNode *ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(SZrAstNode *node,
-                                                                           SZrFileRange position);
+ZR_LANGUAGE_SERVER_API SZrAstNode *ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(
+        SZrAstNode *node,
+        SZrFileRange position);
 
 const SZrSemanticExpressionFact *ZrLanguageServer_SemanticAnalyzer_FindExpressionFactAtPosition(
         SZrSemanticAnalyzer *analyzer,

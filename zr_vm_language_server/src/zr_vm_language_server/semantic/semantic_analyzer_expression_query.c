@@ -183,7 +183,7 @@ static TZrBool expression_query_unary_operator_contains_position(SZrAstNode *nod
 static SZrAstNode *expression_query_find_node_in_array(SZrAstNodeArray *nodes,
                                                        SZrFileRange position);
 
-SZrAstNode *ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(
+ZR_LANGUAGE_SERVER_API SZrAstNode *ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(
         SZrAstNode *node,
         SZrFileRange position) {
     SZrAstNode *nested = ZR_NULL;

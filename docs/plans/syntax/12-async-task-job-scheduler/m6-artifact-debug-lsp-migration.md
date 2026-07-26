@@ -2,9 +2,9 @@
 
 ## 状态与产出记录
 
-- 状态：`in_progress`
+- 状态：`completed`
 - 开始时间：2026-07-25 15:00 +08:00
-- 完成时间：待定
+- 完成时间：2026-07-26 08:13 +08:00
 - 完成项目：
   - 已建立 M6 实施计划，按 artifact contract、legacy runtime migration、
     debug projection 和 LSP projection 四个可独立验收、独立提交的子阶段
@@ -116,6 +116,17 @@
     hover、foreach shadow、container matrix、native value constructor 和
     interface variance），不属于此次 range 修复，未作为通过证据，M6 总状态
     因而继续为 `in_progress`。完成时间 2026-07-26 03:45 +08:00。
+  - M6.4b 已完成：所有剩余 Unity marker 已在 canonical projection 层收口。
+    source-import array TypeRef、native generic iterable 与 closed generic
+    prototype 统一保留 `Iterable` protocol；const generic parameter reference
+    与 literal value 分别保留 `CONST_PARAMETER`/`CONST_INT` kind，且只持有
+    canonical type name 的原型物化也会恢复整数 kind。LSP semantic type
+    projection 与 MSVC consumer 均使用这些 shared facts，不按 member name、
+    source text 或 display text 回退。固定 final snapshot 上 GCC 11.4、Clang
+    14.0、MSVC 17.14 的 18-target LSP matrix 均为 18/18 真实 exit 0，54 份
+    Unity logs 的失败 marker 为 0；每个平台 main stdio/CLI、position
+    encoding 和 diagnostic-fix smoke 均 exit 0。M6 promotion gate 已关闭，
+    完成时间 2026-07-26 08:13 +08:00。
 
 ## 产出位置
 
@@ -123,4 +134,5 @@
 - M6.3 记录：`docs/plans/syntax/12-async-task-job-scheduler/m6-3-debug-projection-fault-semantics.md`
 - M6.4 记录：`docs/plans/syntax/12-async-task-job-scheduler/m6-4-lsp-artifact-projection-and-workspace-migration.md`
 - M6.4a 记录：`docs/plans/syntax/12-async-task-job-scheduler/m6-4a-lsp-reachability-fact-spans.md`
+- M6.4b 记录：`docs/plans/syntax/12-async-task-job-scheduler/m6-4b-canonical-generic-projection-convergence.md`
 - LSP artifact projection：`docs/cli-and-tooling/lsp-scheduler-artifact-projection.md`

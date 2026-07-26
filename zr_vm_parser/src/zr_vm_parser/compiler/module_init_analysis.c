@@ -290,6 +290,7 @@ static void module_init_typed_type_ref_to_inferred(SZrCompilerState *cs,
         SZrInferredType elementType;
 
         ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_ARRAY);
+        result->protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE);
         result->ownershipQualifier = typeRef->ownershipQualifier;
         result->isNullable = typeRef->isNullable;
         ZrCore_Array_Init(cs->state, &result->elementTypes, sizeof(SZrInferredType), 1);

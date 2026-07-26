@@ -591,6 +591,83 @@ static TZrBool semantic_type_prototypes_build_generic_argument_inferred_type(
         SZrAstNode *argumentNode,
         SZrInferredType *outType);
 
+static SZrGenericDeclaration *semantic_type_prototypes_generic_declaration_for_callable(
+        SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (node->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            return node->data.functionDeclaration.generic;
+        case ZR_AST_CLASS_METHOD:
+            return node->data.classMethod.generic;
+        case ZR_AST_STRUCT_METHOD:
+            return node->data.structMethod.generic;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static SZrGenericDeclaration *semantic_type_prototypes_generic_declaration_for_owner(
+        SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (node->type) {
+        case ZR_AST_CLASS_DECLARATION:
+            return node->data.classDeclaration.generic;
+        case ZR_AST_STRUCT_DECLARATION:
+            return node->data.structDeclaration.generic;
+        case ZR_AST_INTERFACE_DECLARATION:
+            return node->data.interfaceDeclaration.generic;
+        case ZR_AST_UNION_DECLARATION:
+            return node->data.unionDeclaration.generic;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool semantic_type_prototypes_generic_declaration_has_const_parameter(
+        SZrGenericDeclaration *genericDeclaration,
+        SZrString *name) {
+    if (genericDeclaration == ZR_NULL || genericDeclaration->params == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < genericDeclaration->params->count; index++) {
+        SZrAstNode *parameterNode = genericDeclaration->params->nodes[index];
+        SZrParameter *parameter;
+
+        if (parameterNode == ZR_NULL || parameterNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+
+        parameter = &parameterNode->data.parameter;
+        if (parameter->genericKind == ZR_GENERIC_PARAMETER_CONST_INT &&
+            parameter->name != ZR_NULL &&
+            parameter->name->name != ZR_NULL &&
+            ZrCore_String_Equal(parameter->name->name, name)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool semantic_type_prototypes_is_const_generic_parameter_reference(
+        SZrAstNode *ownerTypeNode,
+        SZrAstNode *functionNode,
+        SZrString *name) {
+    return semantic_type_prototypes_generic_declaration_has_const_parameter(
+                   semantic_type_prototypes_generic_declaration_for_callable(functionNode),
+                   name) ||
+           semantic_type_prototypes_generic_declaration_has_const_parameter(
+                   semantic_type_prototypes_generic_declaration_for_owner(ownerTypeNode),
+                   name);
+}
+
 static TZrBool semantic_type_prototypes_build_inferred_type(SZrSemanticAnalyzer *analyzer,
                                                             SZrAstNode *ownerTypeNode,
                                                             SZrAstNode *functionNode,
@@ -718,6 +795,15 @@ static TZrBool semantic_type_prototypes_build_inferred_type(SZrSemanticAnalyzer 
                 ZrCore_Array_Push(state, &outType->elementTypes, &argumentType);
             }
         }
+
+        {
+            SZrTypePrototypeInfo *prototype = find_compiler_type_prototype_inference(
+                    analyzer->compilerState,
+                    outType->typeName);
+            if (prototype != ZR_NULL) {
+                outType->protocolMask |= prototype->protocolMask;
+            }
+        }
     }
 
     semantic_type_prototypes_pop_context(analyzer, &snapshot);
@@ -732,6 +818,8 @@ static TZrBool semantic_type_prototypes_build_generic_argument_inferred_type(
         SZrInferredType *outType) {
     SZrString *argumentText;
     SZrState *state;
+    SZrTypeValue evaluatedValue;
+    TZrInt64 constIntValue;
 
     if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || argumentNode == ZR_NULL || outType == ZR_NULL) {
         return ZR_FALSE;
@@ -739,16 +827,49 @@ static TZrBool semantic_type_prototypes_build_generic_argument_inferred_type(
 
     state = analyzer->compilerState->state;
     if (argumentNode->type == ZR_AST_TYPE) {
+        SZrType *argumentType = &argumentNode->data.type;
+        SZrString *argumentName = argumentType->dimensions == 0 && argumentType->name != ZR_NULL &&
+                                          argumentType->name->type == ZR_AST_IDENTIFIER_LITERAL
+                                      ? argumentType->name->data.identifier.name
+                                      : ZR_NULL;
+
+        if (argumentName != ZR_NULL &&
+            semantic_type_prototypes_is_const_generic_parameter_reference(
+                    ownerTypeNode,
+                    functionNode,
+                    argumentName)) {
+            ZrParser_InferredType_Free(state, outType);
+            ZrParser_InferredType_InitConstParameterGenericArgument(state, outType, argumentName);
+            return ZR_TRUE;
+        }
+
         return semantic_type_prototypes_build_inferred_type(analyzer,
                                                             ownerTypeNode,
                                                             functionNode,
-                                                            &argumentNode->data.type,
+                                                            argumentType,
                                                             outType);
     }
 
     argumentText = semantic_type_prototypes_render_generic_argument(analyzer, argumentNode);
     if (argumentText == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (ZrParser_Compiler_EvaluateCompileTimeExpression(analyzer->compilerState,
+                                                         argumentNode,
+                                                         &evaluatedValue) &&
+        (ZR_VALUE_IS_TYPE_INT(evaluatedValue.type) ||
+         (ZR_VALUE_IS_TYPE_UNSIGNED_INT(evaluatedValue.type) &&
+          evaluatedValue.value.nativeObject.nativeUInt64 <= (TZrUInt64)LLONG_MAX))) {
+        constIntValue = ZR_VALUE_IS_TYPE_INT(evaluatedValue.type)
+                            ? evaluatedValue.value.nativeObject.nativeInt64
+                            : (TZrInt64)evaluatedValue.value.nativeObject.nativeUInt64;
+        ZrParser_InferredType_Free(state, outType);
+        ZrParser_InferredType_InitConstIntGenericArgument(state,
+                                                          outType,
+                                                          constIntValue,
+                                                          argumentText);
+        return ZR_TRUE;
     }
 
     ZrParser_InferredType_Free(state, outType);

@@ -3965,6 +3965,159 @@ static void test_type_inference_native_prototype_construction_returns_native_typ
     TEST_DIVIDER();
 }
 
+static void test_type_inference_native_constructor_resolves_module_variable_binding(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Constructor Resolves Module Variable Binding";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var math = %import(\"zr.math\");\n"
+                "run() {\n"
+                "    var vector = $math.Vector3(1.0, 2.0, 3.0);\n"
+                "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_module_alias_construct_test.zr", 37);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrVariableDeclaration *moduleDeclaration;
+        SZrAstNode *functionNode;
+        SZrAstNode *vectorDeclarationNode;
+        SZrInferredType moduleType;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        moduleDeclaration = &ast->data.script.statements->nodes[0]->data.variableDeclaration;
+        functionNode = ast->data.script.statements->nodes[1];
+        TEST_ASSERT_NOT_NULL(moduleDeclaration->pattern);
+        TEST_ASSERT_NOT_NULL(moduleDeclaration->value);
+        TEST_ASSERT_NOT_NULL(functionNode);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, functionNode->type);
+        TEST_ASSERT_NOT_NULL(functionNode->data.functionDeclaration.body);
+        TEST_ASSERT_NOT_NULL(functionNode->data.functionDeclaration.body->data.block.body);
+        TEST_ASSERT_EQUAL_INT(1, (int)functionNode->data.functionDeclaration.body->data.block.body->count);
+
+        vectorDeclarationNode = functionNode->data.functionDeclaration.body->data.block.body->nodes[0];
+        TEST_ASSERT_NOT_NULL(vectorDeclarationNode);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, vectorDeclarationNode->type);
+
+        cs->scriptAst = ast;
+        ZrParser_InferredType_Init(state, &moduleType, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, moduleDeclaration->value, &moduleType));
+        TEST_ASSERT_NOT_NULL(moduleType.typeName);
+        TEST_ASSERT_EQUAL_STRING("zr.math", ZrCore_String_GetNativeString(moduleType.typeName));
+        ZrParser_TypeEnvironment_RegisterVariable(state,
+                                                   cs->typeEnv,
+                                                   moduleDeclaration->pattern->data.identifier.name,
+                                                   &moduleType);
+        ZrParser_InferredType_Free(state, &moduleType);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(
+                cs,
+                vectorDeclarationNode->data.variableDeclaration.value,
+                &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Vector3", ZrCore_String_GetNativeString(result.typeName));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_native_generic_iterable_propagates_protocol(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Generic Iterable Propagates Protocol";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var container = %import(\"zr.container\");\n"
+                "run() {\n"
+                "    var values = new container.Array<int>();\n"
+                "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_generic_iterable_protocol_test.zr", 40);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrVariableDeclaration *moduleDeclaration;
+        SZrAstNode *functionNode;
+        SZrAstNode *valuesDeclarationNode;
+        SZrInferredType moduleType;
+        SZrInferredType valuesType;
+        SZrInferredType elementType;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        moduleDeclaration = &ast->data.script.statements->nodes[0]->data.variableDeclaration;
+        functionNode = ast->data.script.statements->nodes[1];
+        TEST_ASSERT_NOT_NULL(moduleDeclaration->pattern);
+        TEST_ASSERT_NOT_NULL(moduleDeclaration->value);
+        TEST_ASSERT_NOT_NULL(functionNode);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, functionNode->type);
+        TEST_ASSERT_NOT_NULL(functionNode->data.functionDeclaration.body);
+        TEST_ASSERT_NOT_NULL(functionNode->data.functionDeclaration.body->data.block.body);
+        TEST_ASSERT_EQUAL_INT(1, (int)functionNode->data.functionDeclaration.body->data.block.body->count);
+
+        valuesDeclarationNode = functionNode->data.functionDeclaration.body->data.block.body->nodes[0];
+        TEST_ASSERT_NOT_NULL(valuesDeclarationNode);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, valuesDeclarationNode->type);
+
+        cs->scriptAst = ast;
+        ZrParser_InferredType_Init(state, &moduleType, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, moduleDeclaration->value, &moduleType));
+        ZrParser_TypeEnvironment_RegisterVariable(state,
+                                                   cs->typeEnv,
+                                                   moduleDeclaration->pattern->data.identifier.name,
+                                                   &moduleType);
+        ZrParser_InferredType_Free(state, &moduleType);
+
+        ZrParser_InferredType_Init(state, &valuesType, ZR_VALUE_TYPE_OBJECT);
+        ZrParser_InferredType_Init(state, &elementType, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(
+                cs,
+                valuesDeclarationNode->data.variableDeclaration.value,
+                &valuesType));
+        TEST_ASSERT_NOT_NULL(valuesType.typeName);
+        TEST_ASSERT_EQUAL_STRING("Array<int>", ZrCore_String_GetNativeString(valuesType.typeName));
+        TEST_ASSERT_TRUE((valuesType.protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)) != 0);
+        TEST_ASSERT_TRUE(bind_foreach_element_type_from_inferred_iterable(cs, &valuesType, &elementType));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, elementType.baseType);
+
+        ZrParser_InferredType_Free(state, &elementType);
+        ZrParser_InferredType_Free(state, &valuesType);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_type_inference_rejects_ordinary_prototype_call(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Rejects Ordinary Prototype Call";
@@ -6927,6 +7080,67 @@ static void test_type_inference_source_import_array_assignment_rejects_incompati
     TEST_DIVIDER();
 }
 
+static void test_type_inference_source_import_array_preserves_iterable_protocol(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Import Array Preserves Iterable Protocol";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *moduleSource = "pub var numbers: int[3] = [1, 2, 3];";
+        const char *source = "var data = %import(\"data\"); data.numbers;";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_import_array_iterable_test.zr", 40);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expression;
+        SZrInferredType result;
+        SZrInferredType elementType;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        install_import_test_fixture(state,
+                                    "data",
+                                    (const TZrByte *)moduleSource,
+                                    strlen(moduleSource),
+                                    ZR_FALSE);
+        TEST_ASSERT_NOT_NULL(ast);
+        cs->scriptAst = ast;
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expression = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expression);
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        ZrParser_InferredType_Init(state, &elementType, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expression, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, result.baseType);
+        TEST_ASSERT_TRUE((result.protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE)) != 0);
+        TEST_ASSERT_TRUE(bind_foreach_element_type_from_inferred_iterable(cs, &result, &elementType));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, elementType.baseType);
+
+        ZrParser_InferredType_Free(state, &elementType);
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        state->global->sourceLoader = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_type_inference_binary_import_function_call_uses_exported_signature(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Binary Import Function Call Uses Exported Signature";
@@ -8337,6 +8551,8 @@ int main(void) {
     RUN_TEST(test_type_inference_legacy_builtin_aliases_fail_with_canonical_diagnostics);
     RUN_TEST(test_type_inference_type_value_aliases_can_be_used_in_type_position);
     RUN_TEST(test_type_inference_native_prototype_construction_returns_native_type);
+    RUN_TEST(test_type_inference_native_constructor_resolves_module_variable_binding);
+    RUN_TEST(test_type_inference_native_generic_iterable_propagates_protocol);
     RUN_TEST(test_type_inference_rejects_ordinary_prototype_call);
     RUN_TEST(test_type_inference_native_boxed_new_returns_registered_type);
     RUN_TEST(test_type_inference_native_generic_boxed_new_returns_closed_registered_type);
@@ -8395,6 +8611,7 @@ int main(void) {
     RUN_TEST(test_type_inference_native_import_requires_explicit_binding_for_unqualified_generic_construct_target);
     RUN_TEST(test_type_inference_destructured_native_type_import_rejects_second_pair_declaration);
     RUN_TEST(test_type_inference_source_import_array_assignment_rejects_incompatible_value);
+    RUN_TEST(test_type_inference_source_import_array_preserves_iterable_protocol);
     RUN_TEST(test_type_inference_binary_import_function_call_uses_exported_signature);
     RUN_TEST(test_type_inference_binary_import_function_member_preserves_metadata_signature_identity);
     RUN_TEST(test_type_inference_binary_import_keeps_same_name_signature_candidates);

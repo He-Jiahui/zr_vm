@@ -19,8 +19,11 @@
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
+#include "zr_vm_parser/canonical_type.h"
+#include "zr_vm_parser/semantic_query.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h"
+#include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_internal.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_scheduler_contract.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
 #include "path_support.h"
@@ -6615,8 +6618,32 @@ static void test_lsp_semantic_query_collects_receiver_completion_items(SZrState 
         "    var vector = $math.Vector3(4.0, 5.0, 6.0);\n"
         "    return vector.;\n"
         "}\n";
+    const TZrChar *initialContent =
+        "var math = %import(\"zr.math\");\n"
+        "run() {\n"
+        "    var vector = $math.Vector3(4.0, 5.0, 6.0);\n"
+        "    return vector;\n"
+        "}\n";
     SZrLspPosition completionPosition;
+    SZrLspPosition receiverPosition;
+    SZrLspPosition initialReceiverPosition;
     SZrArray completions;
+    SZrSemanticAnalyzer *analyzer;
+    SZrFileRange receiverRange;
+    SZrParserSemanticTypeQuery receiverTypeQuery;
+    SZrLspLocalSemanticQueryResult receiverQuery;
+    SZrInferredType resolvedReceiverType;
+    SZrFileVersion *fileVersion;
+    SZrFilePosition initialReceiverFilePosition;
+    SZrFileRange initialReceiverRange;
+    SZrAstNode *initialReceiverNode;
+    SZrSymbol *initialReceiverSymbol;
+    SZrSymbol *initialModuleSymbol;
+    SZrAstNode *initialVectorDeclaration;
+    SZrInferredType directInitializerType;
+    TZrChar directInitializerFailure[256];
+    TZrSize receiverOffset;
+    TZrChar receiverTypeLabel[128];
 
     TEST_START("LSP Semantic Query Collects Receiver Completion Items");
     TEST_INFO("Structured completion query",
@@ -6629,15 +6656,184 @@ static void test_lsp_semantic_query_collects_receiver_completion_items(SZrState 
                   "Failed to create LSP context");
         return;
     }
+    if (ZrLibrary_NativeRegistry_FindModule(state->global, "zr.math") == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "The LSP context must register the structured zr.math native descriptor before semantic analysis");
+        return;
+    }
 
     uri = ZrCore_String_Create(state, "file:///semantic_query_completion_receiver.zr", 45);
     if (uri == ZR_NULL ||
-        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
-        !lsp_find_position_for_substring(content, "return vector.", 0, 14, &completionPosition)) {
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, initialContent, strlen(initialContent), 0) ||
+        !lsp_find_position_for_substring(initialContent, "return vector;", 0, 7, &initialReceiverPosition)) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Query Collects Receiver Completion Items",
                   "Failed to prepare semantic query completion fixture");
+        return;
+    }
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+    initialReceiverFilePosition =
+        ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, initialReceiverPosition);
+    initialReceiverRange = ZrParser_FileRange_Create(initialReceiverFilePosition,
+                                                      initialReceiverFilePosition,
+                                                      uri);
+    initialReceiverNode = analyzer != ZR_NULL
+                              ? ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(
+                                      analyzer->ast,
+                                      initialReceiverRange)
+                              : ZR_NULL;
+    initialReceiverSymbol = initialReceiverNode != ZR_NULL &&
+                                    initialReceiverNode->type == ZR_AST_IDENTIFIER_LITERAL
+                                ? ZrLanguageServer_SymbolTable_LookupAtPosition(
+                                      analyzer->symbolTable,
+                                      initialReceiverNode->data.identifier.name,
+                                      initialReceiverNode->location)
+                                : ZR_NULL;
+    initialModuleSymbol = analyzer != ZR_NULL &&
+                                   analyzer->ast != ZR_NULL &&
+                                   analyzer->ast->type == ZR_AST_SCRIPT &&
+                                   analyzer->ast->data.script.statements != ZR_NULL &&
+                                   analyzer->ast->data.script.statements->count > 0 &&
+                                   analyzer->ast->data.script.statements->nodes[0] != ZR_NULL &&
+                                   analyzer->ast->data.script.statements->nodes[0]->type == ZR_AST_VARIABLE_DECLARATION
+                               ? ZrLanguageServer_SymbolTable_LookupAtPosition(
+                                     analyzer->symbolTable,
+                                     analyzer->ast->data.script.statements->nodes[0]
+                                             ->data.variableDeclaration.pattern->data.identifier.name,
+                                     analyzer->ast->data.script.statements->nodes[0]->location)
+                               : ZR_NULL;
+    if (initialReceiverNode == ZR_NULL || initialReceiverNode->type != ZR_AST_IDENTIFIER_LITERAL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "The valid receiver usage must retain an identifier AST node before fallback projection");
+        return;
+    }
+    if (initialReceiverSymbol == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "The valid receiver identifier must bind to its lexical local symbol before fallback projection");
+        return;
+    }
+    if (initialModuleSymbol == ZR_NULL || initialModuleSymbol->typeInfo == ZR_NULL ||
+        initialModuleSymbol->typeInfo->typeName == ZR_NULL ||
+        strcmp(ZrCore_String_GetNativeString(initialModuleSymbol->typeInfo->typeName), "zr.math") != 0) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "The imported module symbol must retain its canonical zr.math type before local construction inference");
+        return;
+    }
+    initialVectorDeclaration = analyzer->ast->data.script.statements->nodes[1]
+                                       ->data.functionDeclaration.body->data.block.body->nodes[0];
+    ZrParser_InferredType_Init(state, &directInitializerType, ZR_VALUE_TYPE_OBJECT);
+    if (initialVectorDeclaration == ZR_NULL ||
+        initialVectorDeclaration->type != ZR_AST_VARIABLE_DECLARATION ||
+        !ZrParser_ExpressionType_Infer(analyzer->compilerState,
+                                       initialVectorDeclaration->data.variableDeclaration.value,
+                                       &directInitializerType) ||
+        directInitializerType.typeName == ZR_NULL ||
+        strcmp(ZrCore_String_GetNativeString(directInitializerType.typeName), "Vector3") != 0) {
+        snprintf(directInitializerFailure,
+                 sizeof(directInitializerFailure),
+                 "The canonical parser query must resolve the native constructor through the imported module binding: %s",
+                 analyzer != ZR_NULL && analyzer->compilerState != ZR_NULL &&
+                         analyzer->compilerState->errorMessage != ZR_NULL
+                     ? analyzer->compilerState->errorMessage
+                     : "no compiler error detail");
+        ZrParser_InferredType_Free(state, &directInitializerType);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  directInitializerFailure);
+        return;
+    }
+    ZrParser_InferredType_Free(state, &directInitializerType);
+    if (initialReceiverSymbol->typeInfo == ZR_NULL ||
+        initialReceiverSymbol->typeInfo->typeName == ZR_NULL ||
+        strcmp(ZrCore_String_GetNativeString(initialReceiverSymbol->typeInfo->typeName), "Vector3") != 0) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "The valid receiver local symbol must retain the exact Vector3 type before fallback projection");
+        return;
+    }
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "return vector.", 0, 14, &completionPosition) ||
+        !lsp_find_position_for_substring(content, "return vector.", 0, 7, &receiverPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "Failed to update the incomplete member-access completion fixture");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    receiverOffset = (TZrSize)(strstr(content, "return vector.") - content) + 7u;
+    if (fileVersion == ZR_NULL || !fileVersion->usesFallbackAst ||
+        !fileVersion->hasIncrementalInfo ||
+        receiverOffset >= fileVersion->lastChangeInfo.newRange.start.offset) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "The fixture must retain a last-good AST and query the receiver before the incomplete member edit");
+        return;
+    }
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&receiverQuery);
+    if (!ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state,
+                                                              context,
+                                                              uri,
+                                                              receiverPosition,
+                                                              &receiverQuery) ||
+        receiverQuery.expressionFact == ZR_NULL ||
+        receiverQuery.queryRange.start.offset != receiverOffset) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "The local receiver query must project an unchanged last-good expression range before completion projects members");
+        return;
+    }
+    receiverRange = receiverQuery.queryRange;
+    if (receiverQuery.expressionFact->inferredType.typeName == ZR_NULL ||
+        strcmp(ZrCore_String_GetNativeString(receiverQuery.expressionFact->inferredType.typeName), "Vector3") != 0) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "The materialized receiver fact must retain the exact Vector3 type before resolver projection");
+        return;
+    }
+    ZrParser_InferredType_Init(state, &resolvedReceiverType, ZR_VALUE_TYPE_OBJECT);
+    if (analyzer == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(
+                state, analyzer, receiverRange, &resolvedReceiverType) ||
+        resolvedReceiverType.typeName == ZR_NULL ||
+        strcmp(ZrCore_String_GetNativeString(resolvedReceiverType.typeName), "Vector3") != 0) {
+        ZrParser_InferredType_Free(state, &resolvedReceiverType);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "The shared receiver type resolver must retain the exact Vector3 expression type");
+        return;
+    }
+    ZrParser_InferredType_Free(state, &resolvedReceiverType);
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        !ZrParser_SemanticQuery_CanonicalTypeAt(analyzer->semanticContext,
+                                                receiverRange,
+                                                ZR_NULL,
+                                                &receiverTypeQuery) ||
+        !ZrParser_CanonicalType_Format(analyzer->semanticContext,
+                                       receiverTypeQuery.typeId,
+                                       receiverTypeLabel,
+                                       sizeof(receiverTypeLabel)) ||
+        strcmp(receiverTypeLabel, "Vector3") != 0) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Collects Receiver Completion Items",
+                  "The local receiver token must retain its canonical Vector3 TypeId before completion projects members");
         return;
     }
 
