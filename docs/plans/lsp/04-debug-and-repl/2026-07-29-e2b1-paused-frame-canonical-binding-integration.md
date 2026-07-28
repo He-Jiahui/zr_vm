@@ -2,7 +2,7 @@
 plan_id: lsp-04-debug-and-repl
 record_id: 2026-07-29-e2b1-paused-frame-canonical-binding-integration
 status: completed
-completed_at: 2026-07-29 00:00 +08:00
+completed_at: 2026-07-29 00:13 +08:00
 source_plan: docs/plans/lsp/04-debug-and-repl.md
 related_code:
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_bindings.c
@@ -17,18 +17,20 @@ plan_sources:
   - docs/plans/lsp/semantic-inference/status-and-output.md
 tests:
   - tests/debug/test_debug_expression_diagnostics.c
+  - docs/core-runtime/debug-canonical-local-bindings.md
+  - docs/parser-and-semantics/canonical-binding-injection.md
 doc_type: milestone-record
 ---
 
 # LSP 04 E2b1 Paused-Frame Canonical Binding Integration
 
-## Status and Outcome
+##状态与产出记录
 
-| Completed | Status | Scope | Evidence |
+| 完成时间 | 状态 | 完成项目 | 证据 |
 |---|---|---|---|
-| 2026-07-29 00:00 +08:00 | Completed | Debug semantic fact generation now parses one formal expression and registers each active paused-frame binding through its generation-validated canonical metadata. The binding keeps its compiled `SymbolId`, `TypeId`, and declaration range rather than receiving a temporary identity. | The fresh MSVC shared-library target built successfully and `zr_vm_debug_expression_diagnostics_test.exe` reported `34 Tests 0 Failures 0 Ignored`; the new case compares the inferred reference fact with the exact paused-frame binding identity. |
+| 2026-07-29 00:13 +08:00 | 已完成 | E2b1 paused-frame canonical binding integration：Debug 语义事实通过正式单表达式 parser 消费 generation-validated readonly frame binding，并保留编译期 `SymbolId`、`TypeId` 和 declaration range，不生成临时替代 identity。 | GCC、Clang、MSVC 均构建并实际运行 `zr_vm_debug_expression_diagnostics_test`：`34 Tests 0 Failures 0 Ignored`，真实 exit 0；新用例精确比较 `paused` binding 与 inferred reference fact 的 identity/range。 |
 
-## Implementation
+## 已完成计划项
 
 - `zr_debug_semantic_register_frame_variables` obtains the read-only evaluation
   context, enumerates only its active bindings, and fails closed when context,
@@ -42,10 +44,15 @@ doc_type: milestone-record
   the shared-library regression target can inspect the production inference
   path. It remains absent from the public `zr_vm_lib_debug/debug.h` API.
 
-## Boundaries
+## 明确边界
 
 - This completes the exact paused-frame binding path, not all of E2b. The
   separate `PlaceId` carrier and shared debug evaluate/watch/conditional
   breakpoint/REPL consumer query remain follow-up work.
 - Stale, trimmed, missing, or mismatched frame metadata fails closed; the
   implementation does not fall back to a temporary semantic identity.
+
+## Related Documentation
+
+- [Debug canonical local bindings](../../../core-runtime/debug-canonical-local-bindings.md)
+- [Canonical external binding injection](../../../parser-and-semantics/canonical-binding-injection.md)

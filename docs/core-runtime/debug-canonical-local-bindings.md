@@ -133,6 +133,18 @@ particular, `zr_vm_lib_debug/debug_eval.c` must not use these fields to justify
 its independent expression parser. E2a now provides the formal parser fragment
 entry that E2b must consume.
 
+E2b1 consumes this boundary for Debug semantic inference. The internal binder
+asks `ZrCore_Debug_GetEvaluationContext` for the selected frame, enumerates
+only its active bindings through the generation-validated query, and matches
+each row to its exact typed-local definition by stack slot and active local
+name. It registers the structured type together with the published `SymbolId`,
+`TypeId`, and declaration range through
+`ZrParser_TypeEnvironment_RegisterCanonicalVariable`. A stale, trimmed,
+missing, or mismatched row stops semantic inference for that frame; raw value
+slots, names, ASTs, display types, and text cannot supply a replacement
+identity. The no-active-frame test harness path remains separate from a paused
+frame request and does not make unavailable frame metadata appear valid.
+
 ## Validation
 
 `test_binary_roundtrip_preserves_canonical_local_binding_identity` compiles a
@@ -166,3 +178,10 @@ opposite context kind and wrong owner token, and verify that the captured
 context is stale after the frame returns. On 2026-07-28, GCC, Clang, and a fresh
 MSVC shared build each passed `zr_vm_reflection_dynamic_generic_instance_test`
 (35 tests) and `zr_vm_debug_introspection_test` (2 tests) with real exit 0.
+
+`test_debug_semantic_binding_preserves_paused_frame_canonical_identity` pauses
+inside a function parameter named `paused`, formally parses the expression
+`paused`, and compares the inferred read reference with the active frame row's
+exact `SymbolId`, `TypeId`, and declaration start. On 2026-07-29, GCC, Clang,
+and MSVC each built and ran `zr_vm_debug_expression_diagnostics_test` with 34
+tests, zero failures, and a real zero exit code.

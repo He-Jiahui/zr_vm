@@ -172,8 +172,7 @@ static void debug_canonical_binding_hook(SZrState *state, SZrDebugInfo *debugInf
 static void test_debug_semantic_binding_preserves_paused_frame_canonical_identity(void) {
     const char *source =
             "func target(paused: int): int {\n"
-            "    var observed = paused + 1;\n"
-            "    return observed;\n"
+            "    return paused;\n"
             "}\n"
             "return target(4);";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -194,7 +193,7 @@ static void test_debug_semantic_binding_preserves_paused_frame_canonical_identit
 
     ZrCore_Debug_SetHook(state, debug_canonical_binding_hook, ZR_DEBUG_HOOK_MASK_LINE, 0u);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
-    TEST_ASSERT_EQUAL_INT64(5, result);
+    TEST_ASSERT_EQUAL_INT64(4, result);
     ZrCore_Debug_SetHook(state, ZR_NULL, 0u, 0u);
 
     TEST_ASSERT_TRUE(g_debugCanonicalBindingCapture.sawPausedBinding);

@@ -49,10 +49,10 @@ binding name.
 
 ## Debug/REPL Boundary
 
-This is the support slice for LSP 04 E2b. The future debug binder must first
-obtain an active, generation-validated frame binding through the runtime
-evaluation context, then call this API with that binding's canonical identity.
-It must reject unavailable, stale, or trimmed bindings before registration.
+LSP 04 E2b1 consumes this support API. The Debug semantic binder first obtains
+an active, generation-validated frame binding through the runtime evaluation
+context, then calls this API with that binding's canonical identity. It rejects
+unavailable, stale, trimmed, or mismatched bindings before registration.
 
 The API neither grants a write capability nor evaluates expressions. E2b must
 still apply the read-only binding policy, canonical receiver/TypeRef/Place
@@ -68,4 +68,12 @@ fact has the exact supplied identity and declaration offsets `400..406`.
 
 On 2026-07-28, GCC, Clang, and MSVC each built and directly ran
 `zr_vm_expression_fragment_parser_test` with `4 Tests`, `0 Failures`, `0
+Ignored`, and a real zero exit code.
+
+`test_debug_semantic_binding_preserves_paused_frame_canonical_identity` adds a
+live paused-frame consumer case: it formally parses `paused`, injects the exact
+frame row through the Debug binder, and compares the ordinary inferred read
+reference with the runtime query's `SymbolId`, `TypeId`, and declaration start.
+On 2026-07-29, GCC, Clang, and MSVC each built and ran
+`zr_vm_debug_expression_diagnostics_test` with `34 Tests`, `0 Failures`, `0
 Ignored`, and a real zero exit code.

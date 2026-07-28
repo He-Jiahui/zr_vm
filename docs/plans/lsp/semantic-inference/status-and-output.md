@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-07-29 00:00 +08:00
+updated_at: 2026-07-29 00:13 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -59,7 +59,7 @@ source_plans:
 | 2026-07-28 20:35 +08:00 | 已完成 | LSP 04 E1b2b1 reflection generic metadata snapshot：paused frame严格复验activation/generation/PC后，以context kind、owner token与parameter index调用公开reflection resolver；type/method context、wrong owner与retired frame均fail closed，禁止private-field/name/display/AST fallback；GCC/Clang/fresh MSVC generic 35/35与introspection 2/2真实exit 0 | [Reflection generic context](../04-debug-and-repl/2026-07-28-e1b2b1-reflection-generic-context.md) |
 | 2026-07-28 21:30 +08:00 | 已完成 | LSP 04 E2a 正式expression fragment parser：公开入口复用既有precedence parser并要求EOS；structured缺右操作数诊断与尾随token拒绝均保留现有parser合同，不建立debug局部语法fork；GCC/Clang/MSVC独立target均3/3真实exit 0 | [Formal expression fragment parser](../04-debug-and-repl/2026-07-28-e2a-formal-expression-fragment-parser.md) |
 | 2026-07-28 22:56 +08:00 | 已完成 | LSP 04 E2b0 external canonical binding injection：temporary TypeEnvironment保留已验证SymbolId、TypeId与declaration range，identifier inference直接发布同一reference fact identity，不注册替代symbol/type；GCC/Clang/MSVC独立target均4/4真实exit 0 | [Canonical binding injection](../04-debug-and-repl/2026-07-28-e2b0-canonical-binding-injection.md) |
-| 2026-07-29 00:00 +08:00 | 已完成 | LSP 04 E2b1 paused-frame canonical binding integration：formal fragment inference从generation-validated readonly debug context注册canonical local identity；MSVC shared-library debug diagnostics 34/34真实exit 0，新增回归精确比较paused binding的SymbolId、TypeId与declaration start，不生成临时替代identity | [Paused-frame canonical binding integration](../04-debug-and-repl/2026-07-29-e2b1-paused-frame-canonical-binding-integration.md) |
+| 2026-07-29 00:13 +08:00 | 已完成 | LSP 04 E2b1 paused-frame canonical binding integration：formal fragment inference从generation-validated readonly debug context注册canonical local identity；GCC、Clang、MSVC debug diagnostics均34/34真实exit 0，新增回归精确比较paused binding的SymbolId、TypeId与declaration start，不生成临时替代identity | [Paused-frame canonical binding integration](../04-debug-and-repl/2026-07-29-e2b1-paused-frame-canonical-binding-integration.md) |
 
 ## 当前状态
 
