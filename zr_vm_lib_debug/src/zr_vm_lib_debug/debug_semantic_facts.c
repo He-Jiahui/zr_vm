@@ -128,63 +128,6 @@ static const TZrChar *zr_debug_semantic_ownership_qualifier_text(EZrOwnershipQua
     }
 }
 
-static TZrChar *zr_debug_semantic_build_expression_statement(const TZrChar *expression) {
-    const TZrChar *begin;
-    const TZrChar *end;
-    TZrSize expressionLength;
-    TZrBool hasSemicolon;
-    TZrChar *source;
-
-    if (expression == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    begin = expression;
-    while (*begin == ' ' || *begin == '\t' || *begin == '\r' || *begin == '\n') {
-        begin++;
-    }
-    if (*begin == '\0') {
-        return ZR_NULL;
-    }
-
-    end = begin + strlen(begin);
-    while (end > begin && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n')) {
-        end--;
-    }
-
-    hasSemicolon = (TZrBool)(end > begin && end[-1] == ';');
-    expressionLength = (TZrSize)(end - begin);
-    source = (TZrChar *)malloc(expressionLength + (hasSemicolon ? 1u : 2u));
-    if (source == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    memcpy(source, begin, expressionLength);
-    if (!hasSemicolon) {
-        source[expressionLength++] = ';';
-    }
-    source[expressionLength] = '\0';
-    return source;
-}
-
-static SZrAstNode *zr_debug_semantic_last_expression_statement(SZrAstNode *ast) {
-    SZrAstNode *statement;
-
-    if (ast == ZR_NULL ||
-        ast->type != ZR_AST_SCRIPT ||
-        ast->data.script.statements == ZR_NULL ||
-        ast->data.script.statements->count == 0) {
-        return ZR_NULL;
-    }
-
-    statement = ast->data.script.statements->nodes[ast->data.script.statements->count - 1u];
-    if (statement == ZR_NULL || statement->type != ZR_AST_EXPRESSION_STATEMENT) {
-        return ZR_NULL;
-    }
-
-    return statement->data.expressionStatement.expr;
-}
-
 static const TZrChar *zr_debug_semantic_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return "";
@@ -829,8 +772,6 @@ void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
     SZrCompilerState compilerState;
     SZrInferredType inferredType;
     SZrString *sourceName;
-    TZrChar *source = ZR_NULL;
-    SZrAstNode *ast = ZR_NULL;
     SZrAstNode *expr = ZR_NULL;
     TZrBool parserStateInitialized = ZR_FALSE;
     TZrBool compilerStateInitialized = ZR_FALSE;
@@ -845,32 +786,24 @@ void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
     }
     state = agent->state;
 
-    source = zr_debug_semantic_build_expression_statement(expression);
-    if (source == ZR_NULL) {
-        return;
-    }
-
     sourceName = ZrCore_String_CreateFromNative(state, "<debug:evaluate>");
-    ZrParser_State_Init(&parserState, state, source, strlen(source), sourceName);
+    ZrParser_State_Init(&parserState, state, expression, strlen(expression), sourceName);
     parserStateInitialized = ZR_TRUE;
     parserState.suppressErrorOutput = ZR_TRUE;
-    ast = ZrParser_ParseWithState(&parserState);
-    if (parserState.hasError || ast == ZR_NULL) {
-        goto cleanup;
-    }
-
-    expr = zr_debug_semantic_last_expression_statement(ast);
-    if (expr == ZR_NULL) {
+    expr = ZrParser_ParseExpressionWithState(&parserState);
+    if (parserState.hasError || expr == ZR_NULL) {
         goto cleanup;
     }
 
     memset(&compilerState, 0, sizeof(compilerState));
     ZrParser_CompilerState_Init(&compilerState, state);
     compilerStateInitialized = ZR_TRUE;
-    compilerState.currentAst = ast;
-    compilerState.scriptAst = ast;
+    compilerState.currentAst = expr;
+    compilerState.scriptAst = expr;
     compilerState.suppressErrorOutput = ZR_TRUE;
-    zr_debug_semantic_register_bindings(agent, frameId, &compilerState);
+    if (!zr_debug_semantic_register_bindings(agent, frameId, &compilerState)) {
+        goto cleanup;
+    }
 
     ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
     inferredTypeInitialized = ZR_TRUE;
@@ -885,11 +818,10 @@ cleanup:
     if (compilerStateInitialized) {
         ZrParser_CompilerState_Free(&compilerState);
     }
-    if (ast != ZR_NULL) {
-        ZrParser_Ast_Free(state, ast);
+    if (expr != ZR_NULL) {
+        ZrParser_Ast_Free(state, expr);
     }
     if (parserStateInitialized) {
         ZrParser_State_Free(&parserState);
     }
-    free(source);
 }

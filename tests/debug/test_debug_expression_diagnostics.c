@@ -3,8 +3,13 @@
 #include "unity.h"
 #include "runtime_support.h"
 #include "debug_internal.h"
+#include "zr_vm_core/debug.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser.h"
+#include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/semantic_facts.h"
+#include "zr_vm_parser/type_inference.h"
 
 static void assert_text_contains(const TZrChar *text, const TZrChar *needle) {
     TEST_ASSERT_NOT_NULL(text);
@@ -31,6 +36,184 @@ static SZrFunction *compile_debug_source(SZrState *state, const char *sourceLabe
     }
 
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+typedef struct SZrDebugCanonicalBindingCapture {
+    ZrDebugAgent *agent;
+    TZrBool sawPausedBinding;
+    TZrBool sawReferenceFact;
+    TZrUInt32 expectedSymbolId;
+    TZrUInt32 expectedTypeId;
+    TZrUInt32 expectedStartLine;
+    TZrUInt32 expectedStartColumn;
+    TZrUInt32 actualSymbolId;
+    TZrUInt32 actualTypeId;
+    TZrUInt32 actualStartLine;
+    TZrUInt32 actualStartColumn;
+} SZrDebugCanonicalBindingCapture;
+
+static SZrDebugCanonicalBindingCapture g_debugCanonicalBindingCapture;
+
+static const TZrChar *debug_canonical_binding_string_text(SZrString *value) {
+    if (value == ZR_NULL) {
+        return "";
+    }
+
+    return value->shortStringLength < ZR_VM_LONG_STRING_FLAG
+                   ? ZrCore_String_GetNativeStringShort(value)
+                   : ZrCore_String_GetNativeString(value);
+}
+
+static const SZrFunctionTypedLocalBinding *debug_canonical_binding_find_typed_local(
+        const SZrFunction *function,
+        TZrUInt32 stackSlot) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || function->typedLocalBindings == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0u; index < function->typedLocalBindingLength; index++) {
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+        if (binding->stackSlot == stackSlot) {
+            return binding;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void debug_canonical_binding_hook(SZrState *state, SZrDebugInfo *debugInfo) {
+    SZrDebugEvaluationContext context;
+    SZrDebugFrameBinding frameBinding;
+    const SZrFunctionTypedLocalBinding *typedBinding = ZR_NULL;
+    SZrParserState parserState;
+    SZrCompilerState compilerState;
+    SZrInferredType inferredType;
+    SZrString *sourceName;
+    SZrAstNode *expression = ZR_NULL;
+    const SZrSemanticReferenceFact *reference;
+    TZrUInt32 index;
+
+    ZR_UNUSED_PARAMETER(debugInfo);
+    memset(&frameBinding, 0, sizeof(frameBinding));
+    if (state == ZR_NULL || g_debugCanonicalBindingCapture.agent == ZR_NULL ||
+        g_debugCanonicalBindingCapture.sawReferenceFact) {
+        return;
+    }
+
+    memset(&context, 0, sizeof(context));
+    if (ZrCore_Debug_GetEvaluationContext(state, 0u, &context) != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        return;
+    }
+
+    for (index = 0u; index < context.activeBindingCount; index++) {
+        memset(&frameBinding, 0, sizeof(frameBinding));
+        if (ZrCore_Debug_EvaluationContext_GetBinding(state, &context, index, &frameBinding) !=
+            ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+            return;
+        }
+        typedBinding = debug_canonical_binding_find_typed_local(context.activation.function, frameBinding.stackSlot);
+        if (typedBinding != ZR_NULL &&
+            strcmp(debug_canonical_binding_string_text(typedBinding->name), "paused") == 0) {
+            break;
+        }
+        typedBinding = ZR_NULL;
+    }
+
+    if (typedBinding == ZR_NULL) {
+        return;
+    }
+
+    g_debugCanonicalBindingCapture.sawPausedBinding = ZR_TRUE;
+    g_debugCanonicalBindingCapture.expectedSymbolId = frameBinding.symbolId;
+    g_debugCanonicalBindingCapture.expectedTypeId = frameBinding.typeId;
+    g_debugCanonicalBindingCapture.expectedStartLine = frameBinding.declarationStartLine;
+    g_debugCanonicalBindingCapture.expectedStartColumn = frameBinding.declarationStartColumn;
+
+    sourceName = ZrCore_String_CreateFromNative(state, "<debug:e2b1-binding>");
+    if (sourceName == ZR_NULL) {
+        return;
+    }
+    ZrParser_State_Init(&parserState, state, "paused", strlen("paused"), sourceName);
+    parserState.suppressErrorOutput = ZR_TRUE;
+    expression = ZrParser_ParseExpressionWithState(&parserState);
+    if (parserState.hasError || expression == ZR_NULL) {
+        ZrParser_State_Free(&parserState);
+        return;
+    }
+
+    memset(&compilerState, 0, sizeof(compilerState));
+    ZrParser_CompilerState_Init(&compilerState, state);
+    compilerState.currentAst = expression;
+    compilerState.scriptAst = expression;
+    compilerState.suppressErrorOutput = ZR_TRUE;
+    zr_debug_semantic_register_bindings(g_debugCanonicalBindingCapture.agent, 1u, &compilerState);
+    ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_ExpressionType_Infer(&compilerState, expression, &inferredType)) {
+        reference = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+                compilerState.semanticContext,
+                expression,
+                ZR_SEMANTIC_REFERENCE_READ);
+        if (reference != ZR_NULL) {
+            g_debugCanonicalBindingCapture.sawReferenceFact = ZR_TRUE;
+            g_debugCanonicalBindingCapture.actualSymbolId = reference->symbolId;
+            g_debugCanonicalBindingCapture.actualTypeId = reference->typeId;
+            g_debugCanonicalBindingCapture.actualStartLine = (TZrUInt32)reference->declarationRange.start.line;
+            g_debugCanonicalBindingCapture.actualStartColumn = (TZrUInt32)reference->declarationRange.start.column;
+        }
+    }
+    ZrParser_InferredType_Free(state, &inferredType);
+    ZrParser_CompilerState_Free(&compilerState);
+    ZrParser_Ast_Free(state, expression);
+    ZrParser_State_Free(&parserState);
+}
+
+static void test_debug_semantic_binding_preserves_paused_frame_canonical_identity(void) {
+    const char *source =
+            "func target(paused: int): int {\n"
+            "    var observed = paused + 1;\n"
+            "    return observed;\n"
+            "}\n"
+            "return target(4);";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    ZrDebugAgent agent;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_debug_source(state, "debug_e2b1_paused_binding.zr", source);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&agent, 0, sizeof(agent));
+    memset(&g_debugCanonicalBindingCapture, 0, sizeof(g_debugCanonicalBindingCapture));
+    agent.state = state;
+    agent.entryFunction = function;
+    agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
+    g_debugCanonicalBindingCapture.agent = &agent;
+
+    ZrCore_Debug_SetHook(state, debug_canonical_binding_hook, ZR_DEBUG_HOOK_MASK_LINE, 0u);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(5, result);
+    ZrCore_Debug_SetHook(state, ZR_NULL, 0u, 0u);
+
+    TEST_ASSERT_TRUE(g_debugCanonicalBindingCapture.sawPausedBinding);
+    TEST_ASSERT_TRUE(g_debugCanonicalBindingCapture.sawReferenceFact);
+    TEST_ASSERT_EQUAL_UINT32(
+            g_debugCanonicalBindingCapture.expectedSymbolId,
+            g_debugCanonicalBindingCapture.actualSymbolId);
+    TEST_ASSERT_EQUAL_UINT32(
+            g_debugCanonicalBindingCapture.expectedTypeId,
+            g_debugCanonicalBindingCapture.actualTypeId);
+    TEST_ASSERT_EQUAL_UINT32(
+            g_debugCanonicalBindingCapture.expectedStartLine,
+            g_debugCanonicalBindingCapture.actualStartLine);
+    TEST_ASSERT_EQUAL_UINT32(
+            g_debugCanonicalBindingCapture.expectedStartColumn,
+            g_debugCanonicalBindingCapture.actualStartColumn);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
 }
 
 static void test_debug_evaluate_reports_missing_right_operand_with_cause_and_suggestion(void) {
@@ -927,5 +1110,6 @@ int main(void) {
     RUN_TEST(test_debug_evaluate_reports_unsupported_string_escape_with_cause_and_suggestion);
     RUN_TEST(test_debug_evaluate_rejects_function_call_with_cause_and_suggestion);
     RUN_TEST(test_debug_evaluate_rejects_assignment_with_cause_and_suggestion);
+    RUN_TEST(test_debug_semantic_binding_preserves_paused_frame_canonical_identity);
     return UNITY_END();
 }

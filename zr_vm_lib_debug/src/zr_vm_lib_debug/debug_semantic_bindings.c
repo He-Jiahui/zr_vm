@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include "zr_vm_core/debug.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/type_system.h"
 
@@ -127,6 +128,72 @@ static void zr_debug_semantic_type_ref_to_inferred(SZrCompilerState *compilerSta
         result->isNullable = typeRef->isNullable;
     }
     result->ownershipQualifier = typeRef->ownershipQualifier;
+}
+
+static const SZrFunctionTypedLocalBinding *zr_debug_semantic_find_typed_local_binding(
+        const SZrFunction *function,
+        TZrUInt32 stackSlot) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || function->typedLocalBindings == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < function->typedLocalBindingLength; ++index) {
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+
+        if (binding->stackSlot == stackSlot) {
+            return binding;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool zr_debug_semantic_register_canonical_frame_binding(
+        SZrCompilerState *compilerState,
+        const SZrFunction *function,
+        const SZrDebugFrameBinding *frameBinding,
+        SZrString *activeName) {
+    const SZrFunctionTypedLocalBinding *typedBinding;
+    SZrInferredType inferredType;
+    SZrFileRange declarationRange;
+    TZrBool registered;
+
+    if (compilerState == ZR_NULL ||
+        compilerState->state == ZR_NULL ||
+        compilerState->typeEnv == ZR_NULL ||
+        function == ZR_NULL ||
+        frameBinding == ZR_NULL ||
+        activeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    typedBinding = zr_debug_semantic_find_typed_local_binding(function, frameBinding->stackSlot);
+    if (typedBinding == ZR_NULL ||
+        typedBinding->name == ZR_NULL ||
+        !ZrCore_String_Equal(typedBinding->name, activeName) ||
+        frameBinding->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        frameBinding->typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+
+    memset(&declarationRange, 0, sizeof(declarationRange));
+    declarationRange.source = function->sourceCodeList;
+    declarationRange.start.line = (TZrInt32)frameBinding->declarationStartLine;
+    declarationRange.start.column = (TZrInt32)frameBinding->declarationStartColumn;
+    declarationRange.end.line = (TZrInt32)frameBinding->declarationEndLine;
+    declarationRange.end.column = (TZrInt32)frameBinding->declarationEndColumn;
+    zr_debug_semantic_type_ref_to_inferred(compilerState, &typedBinding->type, &inferredType);
+    registered = ZrParser_TypeEnvironment_RegisterCanonicalVariable(compilerState->state,
+                                                                     compilerState->typeEnv,
+                                                                     typedBinding->name,
+                                                                     &inferredType,
+                                                                     frameBinding->symbolId,
+                                                                     frameBinding->typeId,
+                                                                     declarationRange);
+    ZrParser_InferredType_Free(compilerState->state, &inferredType);
+    return registered;
 }
 
 static void zr_debug_semantic_register_entry_typed_locals(ZrDebugAgent *agent,
@@ -284,57 +351,75 @@ cleanup:
     }
 }
 
-static void zr_debug_semantic_register_frame_variables(ZrDebugAgent *agent,
-                                                       TZrUInt32 frameId,
-                                                       SZrCompilerState *compilerState) {
-    SZrFunction *function = ZR_NULL;
-    SZrCallInfo *callInfo;
-    TZrUInt32 pc;
-    TZrUInt32 slotIndex;
+static EZrDebugEvaluationContextStatus zr_debug_semantic_register_frame_variables(
+        ZrDebugAgent *agent,
+        TZrUInt32 frameId,
+        SZrCompilerState *compilerState) {
+    SZrDebugEvaluationContext context;
+    SZrDebugFrameBinding frameBinding;
+    EZrDebugEvaluationContextStatus status;
+    TZrUInt32 bindingIndex;
 
     if (agent == ZR_NULL ||
         agent->state == ZR_NULL ||
         compilerState == ZR_NULL ||
         compilerState->typeEnv == ZR_NULL) {
-        return;
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT;
     }
 
-    callInfo = zr_debug_find_call_info_by_frame_id(agent, frameId == 0 ? 1u : frameId, &function);
-    if (callInfo == ZR_NULL || function == ZR_NULL) {
-        return;
+    memset(&context, 0, sizeof(context));
+    status = ZrCore_Debug_GetEvaluationContext(agent->state,
+                                               frameId == 0 ? 0u : frameId - 1u,
+                                               &context);
+    if (status != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        return status;
     }
 
-    pc = zr_debug_instruction_offset(callInfo, function);
-    for (slotIndex = 0; slotIndex < function->stackSize; ++slotIndex) {
-        SZrString *name = ZrCore_Function_GetLocalVariableName(function, slotIndex, pc);
-        const SZrTypeValue *slotValue;
+    if (context.activation.function == ZR_NULL) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
+    }
 
-        if (name == ZR_NULL) {
-            continue;
+    for (bindingIndex = 0; bindingIndex < context.activeBindingCount; ++bindingIndex) {
+        SZrString *activeName;
+
+        memset(&frameBinding, 0, sizeof(frameBinding));
+        status = ZrCore_Debug_EvaluationContext_GetBinding(agent->state,
+                                                           &context,
+                                                           bindingIndex,
+                                                           &frameBinding);
+        if (status != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+            return status;
         }
 
-        slotValue = zr_debug_frame_value_slot(agent->state, function, callInfo, slotIndex);
-        zr_debug_semantic_register_value_binding(compilerState, zr_debug_string_native(name), slotValue, ZR_TRUE);
-    }
-
-    for (slotIndex = 0; slotIndex < function->closureValueLength; ++slotIndex) {
-        SZrString *name = function->closureValueList[slotIndex].name;
-        const TZrChar *nameText = zr_debug_string_native(name);
-        const SZrTypeValue *captureValue = zr_debug_closure_capture_value(agent, function, callInfo, nameText);
-
-        if (nameText == ZR_NULL || nameText[0] == '\0' || captureValue == ZR_NULL) {
-            continue;
+        activeName = ZrCore_Function_GetLocalVariableName(context.activation.function,
+                                                           frameBinding.stackSlot,
+                                                           context.instructionOffset);
+        if (!zr_debug_semantic_register_canonical_frame_binding(compilerState,
+                                                                context.activation.function,
+                                                                &frameBinding,
+                                                                activeName)) {
+            return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
         }
-
-        zr_debug_semantic_register_value_binding(compilerState, nameText, captureValue, ZR_TRUE);
     }
+
+    return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
 }
 
-void zr_debug_semantic_register_bindings(ZrDebugAgent *agent,
-                                         TZrUInt32 frameId,
-                                         SZrCompilerState *compilerState) {
-    zr_debug_semantic_register_frame_variables(agent, frameId, compilerState);
+TZrBool zr_debug_semantic_register_bindings(ZrDebugAgent *agent,
+                                            TZrUInt32 frameId,
+                                            SZrCompilerState *compilerState) {
+    EZrDebugEvaluationContextStatus frameStatus;
+
+    frameStatus = zr_debug_semantic_register_frame_variables(agent, frameId, compilerState);
+    if (frameStatus != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK &&
+        frameStatus != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT) {
+        return ZR_FALSE;
+    }
+
     zr_debug_semantic_register_globals(agent, compilerState);
-    zr_debug_semantic_register_entry_typed_locals(agent, compilerState);
+    if (frameStatus == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT) {
+        zr_debug_semantic_register_entry_typed_locals(agent, compilerState);
+    }
     zr_debug_semantic_register_entry_callables(agent, compilerState);
+    return ZR_TRUE;
 }

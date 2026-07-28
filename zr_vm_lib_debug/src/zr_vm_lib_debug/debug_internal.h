@@ -287,9 +287,9 @@ ZR_DEBUG_API void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
                                                             const TZrChar *expression,
                                                             TZrChar *buffer,
                                                             TZrSize bufferSize);
-void zr_debug_semantic_register_bindings(ZrDebugAgent *agent,
-                                         TZrUInt32 frameId,
-                                         SZrCompilerState *compilerState);
+ZR_DEBUG_API TZrBool zr_debug_semantic_register_bindings(ZrDebugAgent *agent,
+                                                          TZrUInt32 frameId,
+                                                          SZrCompilerState *compilerState);
 void zr_debug_reference_summary_from_scope(EZrDebugScopeKind scopeKind,
                                            const TZrChar *name,
                                            TZrChar *buffer,
