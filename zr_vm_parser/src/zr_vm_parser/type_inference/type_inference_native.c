@@ -419,6 +419,21 @@ static void native_module_info_add_field_member_with_identity(SZrState *state,
 static void native_module_info_add_inherit(SZrState *state,
                                            SZrTypePrototypeInfo *info,
                                            SZrString *typeName);
+static void native_module_info_add_method_member_with_identity(
+        SZrCompilerState *cs,
+        SZrString *moduleName,
+        SZrTypePrototypeInfo *info,
+        EZrAstNodeType memberType,
+        SZrString *memberName,
+        SZrString *returnTypeName,
+        TZrBool isStatic,
+        EZrCanonicalReceiverEffect receiverEffect,
+        TZrUInt32 parameterCount,
+        TZrUInt32 minArgumentCount,
+        SZrObject *parametersArray,
+        SZrObject *genericParametersArray,
+        TZrUInt32 contractRole,
+        const SZrNativeModuleMemberIdentity *identity);
 
 static SZrTypePrototypeInfo *find_registered_type_prototype_inference_exact_only(SZrCompilerState *cs,
                                                                                   SZrString *typeName) {
@@ -752,7 +767,18 @@ static TZrBool type_inference_is_builtin_reflection_compile_type_name(SZrString 
            strcmp(typeNameText, "Parameter") == 0 ||
            strcmp(typeNameText, "DecoratorPatch") == 0 ||
            strcmp(typeNameText, "Object") == 0 ||
-           strcmp(typeNameText, "zr.builtin.TypeInfo") == 0;
+           strcmp(typeNameText, "zr.builtin.TypeInfo") == 0 ||
+           strcmp(typeNameText, "zr.reflection.Type") == 0 ||
+           strcmp(typeNameText, "zr.reflection.TypeId") == 0 ||
+           strcmp(typeNameText, "zr.reflection.TypeOf") == 0 ||
+           strcmp(typeNameText, "zr.reflection.declaration.ClassTypeOf") == 0 ||
+           strcmp(typeNameText, "zr.reflection.declaration.ConcreteClassTypeOf") == 0 ||
+           strcmp(typeNameText, "zr.reflection.declaration.InstanceClassTypeOf") == 0 ||
+           strcmp(typeNameText, "zr.reflection.declaration.StructTypeOf") == 0 ||
+           strcmp(typeNameText, "zr.reflection.declaration.InterfaceTypeOf") == 0 ||
+           strcmp(typeNameText, "zr.reflection.declaration.ResourceClassTypeOf") == 0 ||
+           strcmp(typeNameText, "zr.reflection.declaration.RefStructTypeOf") == 0 ||
+           strcmp(typeNameText, "zr.reflection.declaration.EnumTypeOf") == 0;
 }
 
 static SZrString *type_inference_builtin_reflection_string(SZrCompilerState *cs, const TZrChar *text) {
@@ -806,7 +832,9 @@ static void type_inference_builtin_reflection_add_field(SZrCompilerState *cs,
                                         ZR_MEMBER_CONTRACT_ROLE_NONE);
 }
 
-static void type_inference_builtin_reflection_add_common_members(SZrCompilerState *cs, SZrTypePrototypeInfo *info) {
+static void type_inference_builtin_reflection_add_compile_metadata_members(
+        SZrCompilerState *cs,
+        SZrTypePrototypeInfo *info) {
     static const struct {
         const TZrChar *memberName;
         const TZrChar *fieldTypeName;
@@ -860,6 +888,68 @@ static void type_inference_builtin_reflection_add_common_members(SZrCompilerStat
     }
 }
 
+static void type_inference_builtin_reflection_add_method(
+        SZrCompilerState *cs,
+        SZrTypePrototypeInfo *info,
+        const TZrChar *memberName,
+        const TZrChar *returnTypeName,
+        TZrUInt32 parameterCount,
+        TZrUInt32 minArgumentCount) {
+    if (cs == ZR_NULL || info == ZR_NULL || memberName == ZR_NULL ||
+        returnTypeName == ZR_NULL) {
+        return;
+    }
+    native_module_info_add_method_member_with_identity(
+            cs,
+            ZR_NULL,
+            info,
+            ZR_AST_CLASS_METHOD,
+            type_inference_builtin_reflection_string(cs, memberName),
+            type_inference_builtin_reflection_string(cs, returnTypeName),
+            ZR_FALSE,
+            ZR_CANONICAL_RECEIVER_READONLY,
+            parameterCount,
+            minArgumentCount,
+            ZR_NULL,
+            ZR_NULL,
+            ZR_MEMBER_CONTRACT_ROLE_NONE,
+            ZR_NULL);
+}
+
+static void type_inference_builtin_reflection_add_runtime_type_members(
+        SZrCompilerState *cs,
+        SZrTypePrototypeInfo *info) {
+    static const struct {
+        const TZrChar *memberName;
+        const TZrChar *returnTypeName;
+        TZrUInt32 parameterCount;
+        TZrUInt32 minArgumentCount;
+    } kQueryMethods[] = {
+            {"getField", "object", 2u, 1u},
+            {"getFields", "array", 1u, 0u},
+            {"getProperty", "object", 2u, 1u},
+            {"getProperties", "array", 1u, 0u},
+            {"getMethod", "object", 3u, 1u},
+            {"getMethods", "array", 1u, 0u},
+            {"getMeta", "object", 2u, 1u},
+            {"getMetas", "array", 1u, 0u},
+    };
+
+    type_inference_builtin_reflection_add_field(cs, info, "name", "string");
+    type_inference_builtin_reflection_add_field(cs, info, "qualifiedName", "string");
+    type_inference_builtin_reflection_add_field(
+            cs, info, "id", "zr.reflection.TypeId");
+    for (TZrSize index = 0u; index < ZR_ARRAY_COUNT(kQueryMethods); index++) {
+        type_inference_builtin_reflection_add_method(
+                cs,
+                info,
+                kQueryMethods[index].memberName,
+                kQueryMethods[index].returnTypeName,
+                kQueryMethods[index].parameterCount,
+                kQueryMethods[index].minArgumentCount);
+    }
+}
+
 static void type_inference_builtin_reflection_add_callable_members(SZrCompilerState *cs,
                                                                    SZrTypePrototypeInfo *info) {
     static const struct {
@@ -891,7 +981,10 @@ ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, 
     SZrTypePrototypeInfo info;
     SZrTypePrototypeInfo *targetInfo;
     const TZrChar *typeNameText;
+    const TZrChar *parentTypeName = ZR_NULL;
     static const TZrChar *kBuiltinTypeInfoName = "zr.builtin.TypeInfo";
+    static const TZrChar *kReflectionTypeName = "zr.reflection.Type";
+    static const TZrChar *kReflectionTypeOfName = "zr.reflection.TypeOf";
 
     if (cs == ZR_NULL || typeName == ZR_NULL || !type_inference_is_builtin_reflection_compile_type_name(typeName)) {
         return;
@@ -902,9 +995,25 @@ ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, 
         return;
     }
 
-    if (strcmp(typeNameText, kBuiltinTypeInfoName) != 0) {
+    if (strcmp(typeNameText, kReflectionTypeOfName) == 0) {
+        parentTypeName = kReflectionTypeName;
+    } else if (strcmp(typeNameText, "zr.reflection.declaration.ConcreteClassTypeOf") == 0) {
+        parentTypeName = "zr.reflection.declaration.ClassTypeOf";
+    } else if (strcmp(typeNameText, "zr.reflection.declaration.InstanceClassTypeOf") == 0) {
+        parentTypeName = "zr.reflection.declaration.ConcreteClassTypeOf";
+    } else if (strncmp(
+                       typeNameText,
+                       "zr.reflection.declaration.",
+                       strlen("zr.reflection.declaration.")) == 0) {
+        parentTypeName = kReflectionTypeOfName;
+    } else if (strcmp(typeNameText, kBuiltinTypeInfoName) != 0 &&
+               strncmp(typeNameText, "zr.reflection.", strlen("zr.reflection.")) != 0) {
+        parentTypeName = kBuiltinTypeInfoName;
+    }
+
+    if (parentTypeName != ZR_NULL) {
         ensure_builtin_reflection_compile_type(cs,
-                                               type_inference_builtin_reflection_string(cs, kBuiltinTypeInfoName));
+                                               type_inference_builtin_reflection_string(cs, parentTypeName));
     }
 
     targetInfo = find_registered_type_prototype_inference_exact_only(cs, typeName);
@@ -923,19 +1032,27 @@ ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, 
     targetInfo->allowValueConstruction = ZR_FALSE;
     targetInfo->allowBoxedConstruction = ZR_FALSE;
 
-    if (strcmp(typeNameText, "Function") == 0 || strcmp(typeNameText, "Method") == 0) {
-        type_inference_builtin_reflection_add_inherit(cs, targetInfo, kBuiltinTypeInfoName);
-    } else if (strcmp(typeNameText, "Class") == 0 ||
-               strcmp(typeNameText, "Struct") == 0 ||
-               strcmp(typeNameText, "Object") == 0 ||
-               strcmp(typeNameText, "Field") == 0 ||
-               strcmp(typeNameText, "Property") == 0 ||
-               strcmp(typeNameText, "Parameter") == 0) {
-        type_inference_builtin_reflection_add_inherit(cs, targetInfo, kBuiltinTypeInfoName);
+    if (parentTypeName != ZR_NULL) {
+        type_inference_builtin_reflection_add_inherit(cs, targetInfo, parentTypeName);
     }
 
     if (strcmp(typeNameText, kBuiltinTypeInfoName) == 0) {
-        type_inference_builtin_reflection_add_common_members(cs, targetInfo);
+        type_inference_builtin_reflection_add_compile_metadata_members(cs, targetInfo);
+    } else if (strcmp(typeNameText, kReflectionTypeName) == 0) {
+        type_inference_builtin_reflection_add_runtime_type_members(cs, targetInfo);
+    } else if (strcmp(typeNameText, kReflectionTypeOfName) == 0) {
+        type_inference_builtin_reflection_add_field(
+                cs, targetInfo, "representedTypeId", "zr.reflection.TypeId");
+    }
+    if (strcmp(typeNameText, "zr.reflection.declaration.ConcreteClassTypeOf") == 0 ||
+        strcmp(typeNameText, "zr.reflection.declaration.StructTypeOf") == 0) {
+        type_inference_builtin_reflection_add_method(
+                cs,
+                targetInfo,
+                "createInstance",
+                "object",
+                ZR_MEMBER_PARAMETER_COUNT_UNKNOWN,
+                0u);
     }
     if (strcmp(typeNameText, "Function") == 0 || strcmp(typeNameText, "Method") == 0) {
         type_inference_builtin_reflection_add_callable_members(cs, targetInfo);
@@ -2453,38 +2570,199 @@ TZrBool infer_import_expression_type(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+ZR_PARSER_API EZrReflectionTypeCategory ZrParser_ReflectionTypeCategory_FromInferred(
+        SZrCompilerState *cs,
+        const SZrInferredType *type) {
+    SZrTypePrototypeInfo *prototypeInfo;
+
+    if (type == ZR_NULL) {
+        return ZR_REFLECTION_TYPE_CATEGORY_ERASED;
+    }
+    if (ZR_VALUE_IS_TYPE_NUMBER(type->baseType) ||
+        type->baseType == ZR_VALUE_TYPE_BOOL) {
+        return ZR_REFLECTION_TYPE_CATEGORY_STRUCT;
+    }
+    if (type->typeName == ZR_NULL || cs == ZR_NULL) {
+        return type->baseType == ZR_VALUE_TYPE_STRING
+                       ? ZR_REFLECTION_TYPE_CATEGORY_CLASS
+                       : ZR_REFLECTION_TYPE_CATEGORY_ERASED;
+    }
+
+    prototypeInfo = find_compiler_type_prototype_inference(cs, type->typeName);
+    if (prototypeInfo == ZR_NULL) {
+        return ZR_REFLECTION_TYPE_CATEGORY_ERASED;
+    }
+
+    switch (prototypeInfo->type) {
+        case ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE:
+            return ZR_REFLECTION_TYPE_CATEGORY_INTERFACE;
+        case ZR_OBJECT_PROTOTYPE_TYPE_ENUM:
+            return ZR_REFLECTION_TYPE_CATEGORY_ENUM;
+        case ZR_OBJECT_PROTOTYPE_TYPE_STRUCT:
+            return (prototypeInfo->modifierFlags & ZR_DECLARATION_MODIFIER_REF_LIKE) != 0u
+                           ? ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT
+                           : ZR_REFLECTION_TYPE_CATEGORY_STRUCT;
+        case ZR_OBJECT_PROTOTYPE_TYPE_CLASS:
+            if ((prototypeInfo->modifierFlags & ZR_DECLARATION_MODIFIER_RESOURCE) != 0u) {
+                return ZR_REFLECTION_TYPE_CATEGORY_RESOURCE_CLASS;
+            }
+            if ((prototypeInfo->modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT) != 0u) {
+                return ZR_REFLECTION_TYPE_CATEGORY_CLASS;
+            }
+            if (!prototypeInfo->allowBoxedConstruction ||
+                prototypeInfo->genericParameters.length > type->elementTypes.length) {
+                return ZR_REFLECTION_TYPE_CATEGORY_CLASS;
+            }
+            {
+                TZrBool hasDeclaredConstructor = ZR_FALSE;
+                TZrBool hasPublicConstructor = ZR_FALSE;
+
+                for (TZrSize index = 0u; index < prototypeInfo->members.length; index++) {
+                    const SZrTypeMemberInfo *member =
+                            (const SZrTypeMemberInfo *)ZrCore_Array_Get(
+                                    &prototypeInfo->members, index);
+
+                    if (member == ZR_NULL || !member->isMetaMethod ||
+                        member->metaType != ZR_META_CONSTRUCTOR) {
+                        continue;
+                    }
+                    hasDeclaredConstructor = ZR_TRUE;
+                    if (member->accessModifier != ZR_ACCESS_PUBLIC) {
+                        continue;
+                    }
+                    hasPublicConstructor = ZR_TRUE;
+                    if (member->parameterCount == 0u) {
+                        return ZR_REFLECTION_TYPE_CATEGORY_INSTANCE_CLASS;
+                    }
+                }
+
+                if (!hasDeclaredConstructor) {
+                    return ZR_REFLECTION_TYPE_CATEGORY_INSTANCE_CLASS;
+                }
+                return hasPublicConstructor
+                               ? ZR_REFLECTION_TYPE_CATEGORY_CONCRETE_CLASS
+                               : ZR_REFLECTION_TYPE_CATEGORY_CLASS;
+            }
+        default:
+            return ZR_REFLECTION_TYPE_CATEGORY_ERASED;
+    }
+}
+
+ZR_PARSER_API const TZrChar *ZrParser_ReflectionDescriptorTypeName(
+        EZrReflectionTypeCategory category) {
+    switch (category) {
+        case ZR_REFLECTION_TYPE_CATEGORY_CLASS:
+            return "zr.reflection.declaration.ClassTypeOf";
+        case ZR_REFLECTION_TYPE_CATEGORY_CONCRETE_CLASS:
+            return "zr.reflection.declaration.ConcreteClassTypeOf";
+        case ZR_REFLECTION_TYPE_CATEGORY_INSTANCE_CLASS:
+            return "zr.reflection.declaration.InstanceClassTypeOf";
+        case ZR_REFLECTION_TYPE_CATEGORY_STRUCT:
+            return "zr.reflection.declaration.StructTypeOf";
+        case ZR_REFLECTION_TYPE_CATEGORY_INTERFACE:
+            return "zr.reflection.declaration.InterfaceTypeOf";
+        case ZR_REFLECTION_TYPE_CATEGORY_RESOURCE_CLASS:
+            return "zr.reflection.declaration.ResourceClassTypeOf";
+        case ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT:
+            return "zr.reflection.declaration.RefStructTypeOf";
+        case ZR_REFLECTION_TYPE_CATEGORY_ENUM:
+            return "zr.reflection.declaration.EnumTypeOf";
+        case ZR_REFLECTION_TYPE_CATEGORY_ERASED:
+        default:
+            return "zr.reflection.Type";
+    }
+}
+
 TZrBool infer_type_query_expression_type(SZrCompilerState *cs,
                                          SZrAstNode *node,
                                          SZrInferredType *result) {
     SZrString *reflectionTypeName;
     static const TZrChar *kBuiltinTypeInfoName = "zr.builtin.TypeInfo";
     SZrInferredType operandType;
+    const TZrChar *resultTypeName;
+    EZrReflectionTypeCategory category;
+    TZrBool exposePreciseDescriptor;
 
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_TYPE_QUERY_EXPRESSION) {
         return ZR_FALSE;
     }
 
+    ZrParser_InferredType_Init(cs->state, &operandType, ZR_VALUE_TYPE_OBJECT);
+    if (node->data.typeQueryExpression.kind == ZR_TYPE_QUERY_CANONICAL_IDENTITY) {
+        if (node->data.typeQueryExpression.typeOperand == ZR_NULL ||
+            !ZrParser_AstTypeToInferredType_Convert(
+                    cs, node->data.typeQueryExpression.typeOperand, &operandType)) {
+            ZrParser_InferredType_Free(cs->state, &operandType);
+            return ZR_FALSE;
+        }
+
+        resultTypeName = "zr.reflection.TypeId";
+        reflectionTypeName = ZrCore_String_CreateFromNative(
+                cs->state, (TZrNativeString)resultTypeName);
+        if (reflectionTypeName == ZR_NULL) {
+            ZrParser_InferredType_Free(cs->state, &operandType);
+            return ZR_FALSE;
+        }
+        ensure_builtin_reflection_compile_type(cs, reflectionTypeName);
+        ZrParser_InferredType_InitFull(
+                cs->state, result, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, reflectionTypeName);
+        ZrCore_Array_Init(cs->state, &result->elementTypes, sizeof(SZrInferredType), 1u);
+        ZrCore_Array_Push(cs->state, &result->elementTypes, &operandType);
+        return ZR_TRUE;
+    }
+
     if (node->data.typeQueryExpression.operand == ZR_NULL) {
+        ZrParser_InferredType_Free(cs->state, &operandType);
         return ZR_FALSE;
     }
 
-    ZrParser_InferredType_Init(cs->state, &operandType, ZR_VALUE_TYPE_OBJECT);
     if (node->data.typeQueryExpression.operand->type != ZR_AST_TYPE_LITERAL_EXPRESSION ||
         node->data.typeQueryExpression.operand->data.typeLiteralExpression.typeInfo == ZR_NULL ||
         node->data.typeQueryExpression.operand->data.typeLiteralExpression.typeInfo->name == ZR_NULL ||
         node->data.typeQueryExpression.operand->data.typeLiteralExpression.typeInfo->name->type != ZR_AST_FUNCTION_TYPE) {
-        ZrParser_ExpressionType_Infer(cs, node->data.typeQueryExpression.operand, &operandType);
+        if (!ZrParser_ExpressionType_Infer(cs, node->data.typeQueryExpression.operand, &operandType)) {
+            ZrParser_InferredType_Free(cs->state, &operandType);
+            return ZR_FALSE;
+        }
     }
-    ZrParser_InferredType_Free(cs->state, &operandType);
 
-    reflectionTypeName =
-            ZrCore_String_Create(cs->state, (TZrNativeString)kBuiltinTypeInfoName, strlen(kBuiltinTypeInfoName));
+    if (node->data.typeQueryExpression.kind == ZR_TYPE_QUERY_LEGACY_PERCENT_TYPE) {
+        resultTypeName = kBuiltinTypeInfoName;
+        exposePreciseDescriptor = ZR_FALSE;
+    } else {
+        category = ZrParser_ReflectionTypeCategory_FromInferred(cs, &operandType);
+        exposePreciseDescriptor =
+                !operandType.isNullable &&
+                (category == ZR_REFLECTION_TYPE_CATEGORY_STRUCT ||
+                 category == ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT ||
+                 category == ZR_REFLECTION_TYPE_CATEGORY_ENUM ||
+                 node->data.typeQueryExpression.operand->type == ZR_AST_CONSTRUCT_EXPRESSION ||
+                 node->data.typeQueryExpression.operand->type == ZR_AST_STRUCT_INIT_EXPRESSION ||
+                 node->data.typeQueryExpression.operand->type == ZR_AST_INTEGER_LITERAL ||
+                 node->data.typeQueryExpression.operand->type == ZR_AST_FLOAT_LITERAL ||
+                 node->data.typeQueryExpression.operand->type == ZR_AST_BOOLEAN_LITERAL ||
+                 node->data.typeQueryExpression.operand->type == ZR_AST_STRING_LITERAL ||
+                 node->data.typeQueryExpression.operand->type == ZR_AST_CHAR_LITERAL);
+        resultTypeName = exposePreciseDescriptor
+                                 ? ZrParser_ReflectionDescriptorTypeName(category)
+                                 : "zr.reflection.Type";
+    }
+
+    reflectionTypeName = ZrCore_String_CreateFromNative(
+            cs->state, (TZrNativeString)resultTypeName);
     if (reflectionTypeName == ZR_NULL) {
+        ZrParser_InferredType_Free(cs->state, &operandType);
         return ZR_FALSE;
     }
 
     ensure_builtin_reflection_compile_type(cs, reflectionTypeName);
     ZrParser_InferredType_InitFull(cs->state, result, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, reflectionTypeName);
+    if (exposePreciseDescriptor) {
+        ZrCore_Array_Init(cs->state, &result->elementTypes, sizeof(SZrInferredType), 1u);
+        ZrCore_Array_Push(cs->state, &result->elementTypes, &operandType);
+    } else {
+        ZrParser_InferredType_Free(cs->state, &operandType);
+    }
     return ZR_TRUE;
 }
 

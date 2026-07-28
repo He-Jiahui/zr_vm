@@ -1,5 +1,7 @@
 #include "pooling.h"
 
+#include "zr_vm_lib_container/generational_pool.h"
+
 #include "zr_vm_common/zr_contract_conf.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/object.h"
@@ -581,6 +583,100 @@ static const ZrLibParameterDescriptor kIndexValueParameters[] = {
         {"value", "T", "Replacement element value."},
 };
 
+static const ZrLibParameterDescriptor kPoolValueParameters[] = {
+        {"value", "T", "Value copied into stable pool storage."},
+};
+
+static const ZrLibParameterDescriptor kPoolHandleParameters[] = {
+        {"handle", "PoolHandle<T>", "Weak generational entity identity."},
+};
+
+static const ZrLibFieldDescriptor kPoolHandleFields[] = {
+        ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT(
+                "poolId",
+                "uint",
+                "Identity of the owning pool.",
+                ZR_MEMBER_CONTRACT_ROLE_POOL_HANDLE_POOL_ID),
+        ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT(
+                "slotIndex",
+                "uint",
+                "Stable slot index inside the owning pool.",
+                ZR_MEMBER_CONTRACT_ROLE_POOL_HANDLE_SLOT),
+        ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT(
+                "generation",
+                "uint",
+                "Generation that permanently invalidates stale handles.",
+                ZR_MEMBER_CONTRACT_ROLE_POOL_HANDLE_GENERATION),
+};
+
+static const ZrLibMethodDescriptor kGenerationalPoolMethods[] = {
+        {.name = "deliver",
+         .minArgumentCount = 1u,
+         .maxArgumentCount = 1u,
+         .returnTypeName = "PoolHandle<T>",
+         .documentation = "Initialize a stable slot and publish its weak identity.",
+         .parameters = kPoolValueParameters,
+         .parameterCount = ZR_ARRAY_COUNT(kPoolValueParameters),
+         .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_DELIVER},
+        {.name = "isLive",
+         .minArgumentCount = 1u,
+         .maxArgumentCount = 1u,
+         .returnTypeName = "bool",
+         .documentation = "Validate the complete pool, slot and generation identity.",
+         .parameters = kPoolHandleParameters,
+         .parameterCount = ZR_ARRAY_COUNT(kPoolHandleParameters),
+         .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_VALIDATE},
+        {.name = "recycle",
+         .minArgumentCount = 1u,
+         .maxArgumentCount = 1u,
+         .returnTypeName = "bool",
+         .documentation = "Retire a live identity and reclaim it after active guards end.",
+         .parameters = kPoolHandleParameters,
+         .parameterCount = ZR_ARRAY_COUNT(kPoolHandleParameters),
+         .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_RECYCLE},
+        {.name = "tryRead",
+         .minArgumentCount = 1u,
+         .maxArgumentCount = 1u,
+         .returnTypeName = "PoolReadRef<T>",
+         .documentation = "Acquire a scoped readonly guard or return its default value.",
+         .parameters = kPoolHandleParameters,
+         .parameterCount = ZR_ARRAY_COUNT(kPoolHandleParameters),
+         .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_ACQUIRE_READ},
+        {.name = "tryBorrow",
+         .minArgumentCount = 1u,
+         .maxArgumentCount = 1u,
+         .returnTypeName = "PoolRef<T>",
+         .documentation = "Acquire an exclusive scoped writable guard or return its default value.",
+         .parameters = kPoolHandleParameters,
+         .parameterCount = ZR_ARRAY_COUNT(kPoolHandleParameters),
+         .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_ACQUIRE_WRITE},
+};
+
+static const ZrLibFieldDescriptor kPoolRefFields[] = {
+        ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT(
+                "value",
+                "T",
+                "Guarded stable-slot ref projection.",
+                ZR_MEMBER_CONTRACT_ROLE_POOL_REF_PROJECTION),
+};
+
+static const ZrLibMethodDescriptor kPoolRefMethods[] = {
+        {.name = "close",
+         .minArgumentCount = 0u,
+         .maxArgumentCount = 0u,
+         .returnTypeName = "null",
+         .documentation = "Release this guard exactly once.",
+         .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_RELEASE},
+};
+
+static const ZrLibMetaMethodDescriptor kPoolRefMetaMethods[] = {
+        {.metaType = ZR_META_CLOSE,
+         .minArgumentCount = 1u,
+         .maxArgumentCount = 1u,
+         .returnTypeName = "null",
+         .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_RELEASE},
+};
+
 static const ZrLibFieldDescriptor kBufferPoolFields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT(
                 "available", "array", "Pool-owned reusable backing arrays."),
@@ -686,6 +782,62 @@ static const ZrLibTypeDescriptor kPoolingTypes[] = {
          .genericParameterCount = ZR_ARRAY_COUNT(kSingleGenericT),
          .protocolMask =
                  ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_SOURCE_OWNER)},
+        {.name = "PoolHandle",
+         .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
+         .fields = kPoolHandleFields,
+         .fieldCount = ZR_ARRAY_COUNT(kPoolHandleFields),
+         .documentation = "Readonly weak identity containing pool, slot and generation scalars.",
+         .allowValueConstruction = ZR_FALSE,
+         .allowBoxedConstruction = ZR_FALSE,
+         .genericParameters = kSingleGenericT,
+         .genericParameterCount = ZR_ARRAY_COUNT(kSingleGenericT)},
+        {.name = "Pool",
+         .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+         .methods = kGenerationalPoolMethods,
+         .methodCount = ZR_ARRAY_COUNT(kGenerationalPoolMethods),
+         .documentation = "Stable slab owner with generational weak identities and guarded borrows.",
+         .allowBoxedConstruction = ZR_TRUE,
+         .constructorSignature = "Pool<T>()",
+         .genericParameters = kSingleGenericT,
+         .genericParameterCount = ZR_ARRAY_COUNT(kSingleGenericT),
+         .protocolMask =
+                 ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_STABLE_SLOT_SOURCE)},
+        {.name = "PoolRef",
+         .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
+         .fields = kPoolRefFields,
+         .fieldCount = ZR_ARRAY_COUNT(kPoolRefFields),
+         .methods = kPoolRefMethods,
+         .methodCount = ZR_ARRAY_COUNT(kPoolRefMethods),
+         .metaMethods = kPoolRefMetaMethods,
+         .metaMethodCount = ZR_ARRAY_COUNT(kPoolRefMetaMethods),
+         .documentation = "Move-only scoped writable stable-slot guard.",
+         .allowValueConstruction = ZR_FALSE,
+         .allowBoxedConstruction = ZR_FALSE,
+         .genericParameters = kSingleGenericT,
+         .genericParameterCount = ZR_ARRAY_COUNT(kSingleGenericT),
+         .protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE)},
+        {.name = "PoolReadRef",
+         .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
+         .fields = kPoolRefFields,
+         .fieldCount = ZR_ARRAY_COUNT(kPoolRefFields),
+         .methods = kPoolRefMethods,
+         .methodCount = ZR_ARRAY_COUNT(kPoolRefMethods),
+         .metaMethods = kPoolRefMetaMethods,
+         .metaMethodCount = ZR_ARRAY_COUNT(kPoolRefMetaMethods),
+         .documentation = "Move-only scoped readonly stable-slot guard.",
+         .allowValueConstruction = ZR_FALSE,
+         .allowBoxedConstruction = ZR_FALSE,
+         .genericParameters = kSingleGenericT,
+         .genericParameterCount = ZR_ARRAY_COUNT(kSingleGenericT),
+         .protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE)},
+};
+
+static const ZrLibConstantDescriptor kPoolingConstants[] = {
+        {.name = "STABLE_SLOT_CONTRACT_HASH",
+         .kind = ZR_LIB_CONSTANT_KIND_INT,
+         .intValue = (TZrInt64)ZR_POOL_STABLE_SLOT_CONTRACT_HASH,
+         .documentation = "Versioned StableSlotSource capability contract hash.",
+         .typeName = "uint"},
 };
 
 static const ZrLibModuleLinkDescriptor kPoolingModuleLinks[] = {
@@ -695,12 +847,14 @@ static const ZrLibModuleLinkDescriptor kPoolingModuleLinks[] = {
 static const ZrLibModuleDescriptor kPoolingModuleDescriptor = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = "zr.pooling",
+        .constants = kPoolingConstants,
+        .constantCount = ZR_ARRAY_COUNT(kPoolingConstants),
         .types = kPoolingTypes,
         .typeCount = ZR_ARRAY_COUNT(kPoolingTypes),
-        .documentation = "Owner-backed buffer pooling with generation-safe leases.",
+        .documentation = "Buffer leasing and generational stable-slot pooling.",
         .moduleLinks = kPoolingModuleLinks,
         .moduleLinkCount = ZR_ARRAY_COUNT(kPoolingModuleLinks),
-        .moduleVersion = "1.0.0",
+        .moduleVersion = "1.1.0",
         .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
 };
 

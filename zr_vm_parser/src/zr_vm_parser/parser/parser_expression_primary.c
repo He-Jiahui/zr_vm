@@ -1125,7 +1125,9 @@ SZrAstNode *parse_reserved_type_expression(SZrParserState *ps) {
         return ZR_NULL;
     }
 
+    node->data.typeQueryExpression.kind = ZR_TYPE_QUERY_LEGACY_PERCENT_TYPE;
     node->data.typeQueryExpression.operand = operand;
+    node->data.typeQueryExpression.typeOperand = ZR_NULL;
     return node;
 }
 

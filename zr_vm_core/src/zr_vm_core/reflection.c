@@ -5,6 +5,7 @@
 #include "zr_vm_core/reflection.h"
 
 #include "module/module_internal.h"
+#include "reflection_descriptor_native_internal.h"
 #include "reflection_property_internal.h"
 
 #include "zr_vm_core/call_info.h"
@@ -30,12 +31,14 @@ static const TZrChar *kReflectionMarkerFieldName = "__zr_isReflection";
 static const TZrChar *kReflectionOwnerModuleFieldName = "__zr_reflection_module";
 static const TZrChar *kReflectionEntryFunctionFieldName = "__zr_reflection_entry_function";
 static const TZrChar *kReflectionCollectionOrderFieldName = "__zr_reflection_order";
+static const TZrChar *kReflectionPrototypeFieldName = "__zr_reflection_prototype";
 
 #define ZR_RUNTIME_DECLARATION_MODIFIER_ABSTRACT ((TZrUInt32)(1u << 0))
 #define ZR_RUNTIME_DECLARATION_MODIFIER_VIRTUAL ((TZrUInt32)(1u << 1))
 #define ZR_RUNTIME_DECLARATION_MODIFIER_OVERRIDE ((TZrUInt32)(1u << 2))
 #define ZR_RUNTIME_DECLARATION_MODIFIER_FINAL ((TZrUInt32)(1u << 3))
 #define ZR_RUNTIME_DECLARATION_MODIFIER_SHADOW ((TZrUInt32)(1u << 4))
+#define ZR_RUNTIME_DECLARATION_MODIFIER_REF_LIKE ((TZrUInt32)(1u << 6))
 #define ZR_REFLECTION_SIGNATURE_NODE_OBJECT_MAX_RECURSION_DEPTH 64u
 
 static SZrObject *reflection_build_module_reflection(SZrState *state, SZrObjectModule *module);
@@ -90,6 +93,10 @@ static SZrString *reflection_make_string(SZrState *state, const TZrChar *text);
 static TZrBool reflection_build_type_of_value(SZrState *state,
                                               const SZrTypeValue *targetValue,
                                               SZrTypeValue *result);
+static TZrBool reflection_attach_type_identity(
+        SZrState *state,
+        const SZrTypeValue *targetValue,
+        SZrObject **descriptorPointer);
 static void reflection_populate_compiled_member_decorator_metadata(SZrState *state,
                                                                    SZrObject *memberReflection,
                                                                    SZrFunction *entryFunction,
@@ -561,6 +568,11 @@ static void reflection_populate_compiled_member_oop_metadata(SZrState *state,
                              "propertyIdentity",
                              reflection_optional_slot_to_int(member->propertyIdentity));
     reflection_set_field_int(state, memberReflection, "accessorRole", member->accessorRole);
+    reflection_set_field_int(state, memberReflection, "accessModifier", member->accessModifier);
+    reflection_set_field_bool(state,
+                              memberReflection,
+                              "isMetaMethod",
+                              member->isMetaMethod ? ZR_TRUE : ZR_FALSE);
 }
 
 static const SZrTypeValue *reflection_get_field_value(SZrState *state,
@@ -3411,6 +3423,8 @@ static void reflection_populate_native_members(SZrState *state,
             }
 
             reflection_assign_owner_links(state, fieldReflection, typeReflection, moduleReflection);
+            reflection_set_field_int(state, fieldReflection, "accessModifier", ZR_ACCESS_CONSTANT_PUBLIC);
+            reflection_set_field_bool(state, fieldReflection, "isMetaMethod", ZR_FALSE);
             reflection_set_field_string(state,
                                         fieldReflection,
                                         "typeName",
@@ -3449,6 +3463,8 @@ static void reflection_populate_native_members(SZrState *state,
             }
 
             reflection_assign_owner_links(state, methodReflection, typeReflection, moduleReflection);
+            reflection_set_field_int(state, methodReflection, "accessModifier", ZR_ACCESS_CONSTANT_PUBLIC);
+            reflection_set_field_bool(state, methodReflection, "isMetaMethod", ZR_FALSE);
             reflection_set_field_bool(state,
                                       methodReflection,
                                       "isStatic",
@@ -4430,6 +4446,11 @@ static SZrObject *reflection_build_type_reflection(SZrState *state,
                                   prototype != ZR_NULL ? prototype->super.super.hash : XXH3_64bits(qualifiedName, strlen(qualifiedName)));
     if (prototype != ZR_NULL) {
         reflection_cache_put(state, &cacheKey, typeReflection);
+        reflection_set_field_object(state,
+                                    typeReflection,
+                                    kReflectionPrototypeFieldName,
+                                    &prototype->super,
+                                    ZR_VALUE_TYPE_OBJECT);
     }
 
     if (module != ZR_NULL) {
@@ -4790,6 +4811,207 @@ void ZrCore_Reflection_AttachPrototypeRuntimeMetadata(SZrState *state,
     }
 }
 
+static EZrReflectionTypeCategory reflection_type_category_for_prototype(
+        SZrState *state,
+        SZrObjectPrototype *prototype) {
+    SZrObjectModule *module = ZR_NULL;
+    SZrFunction *entryFunction = ZR_NULL;
+    const SZrCompiledPrototypeInfo *prototypeInfo = ZR_NULL;
+
+    if (prototype == ZR_NULL) {
+        return ZR_REFLECTION_TYPE_CATEGORY_ERASED;
+    }
+    reflection_get_prototype_metadata_context(
+            state, prototype, &module, &entryFunction);
+    ZR_UNUSED_PARAMETER(module);
+    if (entryFunction != ZR_NULL) {
+        prototypeInfo = reflection_find_compiled_prototype_info(
+                entryFunction, prototype);
+    }
+
+    switch (prototype->type) {
+        case ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE:
+            return ZR_REFLECTION_TYPE_CATEGORY_INTERFACE;
+        case ZR_OBJECT_PROTOTYPE_TYPE_ENUM:
+            return ZR_REFLECTION_TYPE_CATEGORY_ENUM;
+        case ZR_OBJECT_PROTOTYPE_TYPE_STRUCT:
+            return prototypeInfo != ZR_NULL &&
+                           (prototypeInfo->modifierFlags &
+                            ZR_RUNTIME_DECLARATION_MODIFIER_REF_LIKE) != 0u
+                           ? ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT
+                           : ZR_REFLECTION_TYPE_CATEGORY_STRUCT;
+        case ZR_OBJECT_PROTOTYPE_TYPE_CLASS:
+            if (prototypeInfo != ZR_NULL &&
+                (prototypeInfo->modifierFlags & ZR_TYPE_MODIFIER_FLAG_RESOURCE) != 0u) {
+                return ZR_REFLECTION_TYPE_CATEGORY_RESOURCE_CLASS;
+            }
+            if (prototypeInfo == ZR_NULL ||
+                (prototypeInfo->modifierFlags &
+                 ZR_RUNTIME_DECLARATION_MODIFIER_ABSTRACT) != 0u) {
+                return ZR_REFLECTION_TYPE_CATEGORY_CLASS;
+            }
+            {
+                const SZrCompiledMemberInfo *members =
+                        (const SZrCompiledMemberInfo *)((const TZrByte *)prototypeInfo +
+                                sizeof(SZrCompiledPrototypeInfo) +
+                                prototypeInfo->inheritsCount * sizeof(TZrUInt32) +
+                                prototypeInfo->decoratorsCount * sizeof(TZrUInt32));
+                TZrBool hasDeclaredConstructor = ZR_FALSE;
+                TZrBool hasPublicConstructor = ZR_FALSE;
+
+                for (TZrUInt32 index = 0u; index < prototypeInfo->membersCount; index++) {
+                    const SZrCompiledMemberInfo *member = &members[index];
+
+                    if (member->isMetaMethod == 0u ||
+                        member->metaType != ZR_META_CONSTRUCTOR) {
+                        continue;
+                    }
+                    hasDeclaredConstructor = ZR_TRUE;
+                    if (member->accessModifier != ZR_ACCESS_CONSTANT_PUBLIC) {
+                        continue;
+                    }
+                    hasPublicConstructor = ZR_TRUE;
+                    if (member->parameterCount == 0u) {
+                        return ZR_REFLECTION_TYPE_CATEGORY_INSTANCE_CLASS;
+                    }
+                }
+
+                if (!hasDeclaredConstructor) {
+                    return ZR_REFLECTION_TYPE_CATEGORY_INSTANCE_CLASS;
+                }
+                return hasPublicConstructor
+                               ? ZR_REFLECTION_TYPE_CATEGORY_CONCRETE_CLASS
+                               : ZR_REFLECTION_TYPE_CATEGORY_CLASS;
+            }
+        default:
+            return ZR_REFLECTION_TYPE_CATEGORY_ERASED;
+    }
+}
+
+static const TZrChar *reflection_type_category_display_name(
+        EZrReflectionTypeCategory category) {
+    switch (category) {
+        case ZR_REFLECTION_TYPE_CATEGORY_CLASS:
+            return "class";
+        case ZR_REFLECTION_TYPE_CATEGORY_CONCRETE_CLASS:
+            return "concrete-class";
+        case ZR_REFLECTION_TYPE_CATEGORY_INSTANCE_CLASS:
+            return "instance-class";
+        case ZR_REFLECTION_TYPE_CATEGORY_STRUCT:
+            return "struct";
+        case ZR_REFLECTION_TYPE_CATEGORY_INTERFACE:
+            return "interface";
+        case ZR_REFLECTION_TYPE_CATEGORY_RESOURCE_CLASS:
+            return "resource-class";
+        case ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT:
+            return "ref-struct";
+        case ZR_REFLECTION_TYPE_CATEGORY_ENUM:
+            return "enum";
+        case ZR_REFLECTION_TYPE_CATEGORY_ERASED:
+        default:
+            return "type";
+    }
+}
+
+static TZrBool reflection_attach_type_identity(
+        SZrState *state,
+        const SZrTypeValue *targetValue,
+        SZrObject **descriptorPointer) {
+    const SZrTypeValue *existingId;
+    const SZrTypeValue *nameValue;
+    SZrReflectionTypeIdentity identity;
+    SZrObject *typeIdObject;
+    SZrObject *descriptor;
+    SZrObjectPrototype *prototype = ZR_NULL;
+
+    if (state == ZR_NULL || targetValue == ZR_NULL ||
+        descriptorPointer == ZR_NULL || *descriptorPointer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    descriptor = *descriptorPointer;
+
+    existingId = reflection_get_field_value(state, descriptor, "id");
+    if (existingId != ZR_NULL && existingId->type == ZR_VALUE_TYPE_OBJECT &&
+        existingId->value.object != ZR_NULL &&
+        ZrCore_Reflection_IsTypeIdObject(
+                state, ZR_CAST_OBJECT(state, existingId->value.object))) {
+        if (!ZrCore_Reflection_ReadTypeIdObject(
+                    state,
+                    ZR_CAST_OBJECT(state, existingId->value.object),
+                    &identity,
+                    ZR_NULL)) {
+            return ZR_FALSE;
+        }
+        return ZrCore_Reflection_BindTypeIdDescriptor(
+                       state,
+                       ZR_CAST_OBJECT(state, existingId->value.object),
+                       descriptor) &&
+               ZrCore_Reflection_AttachDescriptorNativeMethodsInternal(
+                       state, descriptor, identity.category);
+    }
+
+    memset(&identity, 0, sizeof(identity));
+    if (ZR_VALUE_IS_TYPE_NUMBER(targetValue->type) ||
+        targetValue->type == ZR_VALUE_TYPE_BOOL) {
+        identity.category = ZR_REFLECTION_TYPE_CATEGORY_STRUCT;
+    } else if (targetValue->type == ZR_VALUE_TYPE_STRING) {
+        identity.category = ZR_REFLECTION_TYPE_CATEGORY_CLASS;
+    } else if (targetValue->type == ZR_VALUE_TYPE_OBJECT &&
+               targetValue->value.object != ZR_NULL) {
+        SZrObject *targetObject = ZR_CAST_OBJECT(state, targetValue->value.object);
+        if (targetObject != ZR_NULL &&
+            targetObject->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+            prototype = (SZrObjectPrototype *)targetObject;
+        } else if (targetObject != ZR_NULL) {
+            prototype = targetObject->prototype;
+        }
+        identity.category = reflection_type_category_for_prototype(state, prototype);
+    } else {
+        identity.category = ZR_REFLECTION_TYPE_CATEGORY_ERASED;
+    }
+
+    nameValue = reflection_get_field_value(state, descriptor, "qualifiedName");
+    if (nameValue == ZR_NULL || nameValue->type != ZR_VALUE_TYPE_STRING ||
+        nameValue->value.object == ZR_NULL) {
+        nameValue = reflection_get_field_value(state, descriptor, "name");
+    }
+    if (nameValue == ZR_NULL || nameValue->type != ZR_VALUE_TYPE_STRING ||
+        nameValue->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    typeIdObject = ZrCore_Reflection_BuildTypeIdObject(
+            state, ZR_CAST_STRING(state, nameValue->value.object), &identity);
+    if (typeIdObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!ZrCore_Reflection_BindTypeIdDescriptor(
+                state, typeIdObject, descriptor)) {
+        descriptor = ZrCore_Reflection_ResolveTypeIdObject(state, typeIdObject);
+        if (descriptor == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        *descriptorPointer = descriptor;
+        return ZR_TRUE;
+    }
+
+    reflection_set_field_object(
+            state, descriptor, "id", typeIdObject, ZR_VALUE_TYPE_OBJECT);
+    reflection_set_field_object(
+            state, descriptor, "representedTypeId", typeIdObject, ZR_VALUE_TYPE_OBJECT);
+    reflection_set_field_string(
+            state,
+            descriptor,
+            "category",
+            reflection_type_category_display_name(identity.category));
+    if (!ZrCore_Reflection_AttachDescriptorNativeMethodsInternal(
+                state, descriptor, identity.category)) {
+        return ZR_FALSE;
+    }
+    *descriptorPointer = descriptor;
+    return ZR_TRUE;
+}
+
 static TZrBool reflection_build_type_of_value(SZrState *state,
                                               const SZrTypeValue *targetValue,
                                               SZrTypeValue *result) {
@@ -4915,6 +5137,11 @@ static TZrBool reflection_build_type_of_value(SZrState *state,
 
     if (reflectionObject == ZR_NULL) {
         ZrCore_Value_ResetAsNull(result);
+    } else if (!reflection_attach_type_identity(
+                       state, targetValue, &reflectionObject)) {
+        ZrCore_Value_ResetAsNull(result);
+        reflection_unpin_value_object(state->global, targetValue, targetValuePinned);
+        return ZR_FALSE;
     } else {
         reflection_init_object_value(state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(reflectionObject), ZR_VALUE_TYPE_OBJECT);
     }

@@ -3,6 +3,7 @@
 //
 
 #include "zr_vm_parser/compiler.h"
+#include "compile_expression_internal.h"
 #include "compile_time_binding_metadata.h"
 #include "compile_time_executor_internal.h"
 #include "zr_vm_parser/ast.h"
@@ -3901,9 +3902,25 @@ TZrBool evaluate_compile_time_expression_internal(SZrCompilerState *cs,
             cs->isInCompileTimeContext = oldContext;
             return ct_eval_import_expression(cs, node, result);
         case ZR_AST_TYPE_QUERY_EXPRESSION:
+            if (node->data.typeQueryExpression.kind == ZR_TYPE_QUERY_CANONICAL_IDENTITY) {
+                if (node->data.typeQueryExpression.typeOperand == ZR_NULL) {
+                    ZrParser_CompileTime_Error(cs,
+                                               ZR_COMPILE_TIME_ERROR_ERROR,
+                                               "typeid requires a TypeRef operand",
+                                               node->location);
+                    cs->isInCompileTimeContext = oldContext;
+                    return ZR_FALSE;
+                }
+                cs->isInCompileTimeContext = oldContext;
+                return compiler_build_type_identity_value(
+                        cs,
+                        node->data.typeQueryExpression.typeOperand,
+                        node->location,
+                        result);
+            }
             ZrParser_CompileTime_Error(cs,
                                        ZR_COMPILE_TIME_ERROR_ERROR,
-                                       "%type is not supported in compile-time expressions",
+                                       "typeof is not supported in compile-time expressions",
                                        node->location);
             cs->isInCompileTimeContext = oldContext;
             return ZR_FALSE;

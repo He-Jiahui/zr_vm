@@ -1,10 +1,10 @@
 {
   "classificationCounts": {
     "blocked": 1,
-    "machineApplicable": 20,
+    "machineApplicable": 21,
     "maybeIncorrect": 0,
     "requiresReview": 14,
-    "targetNotPromoted": 7
+    "targetNotPromoted": 6
   },
   "contracts": [
     {
@@ -35,7 +35,7 @@
       "classification": "requiresReview",
       "legacyForm": "legacyDynamicDollarConstruct",
       "reason": "dynamic_constructor_requires_reflection_review",
-      "targetPlan": "06A"
+      "targetPlan": "08"
     },
     {
       "classification": "machineApplicable",
@@ -182,9 +182,9 @@
       "targetPlan": "14"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "legacyForm": "percentType",
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "targetPlan": "08"
     },
     {

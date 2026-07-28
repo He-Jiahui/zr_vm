@@ -92,8 +92,8 @@ static const SZrLegacyMigrationDirectiveRule k_legacy_migration_directive_rules[
          ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
          "Loaned type migration requires canonical lifetime proof."},
         {"type", "percentType", "typeReflection", "08",
-         ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED,
-         "Type reflection migration remains owned by plan 08."},
+         ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+         "Runtime type queries use the canonical typeof expression."},
         {"using", "percentUsing", "usingResource", "06A",
          ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
          "Using migration requires resource-role proof."},
@@ -530,6 +530,49 @@ static TZrBool legacy_migration_append_directive(
                         ZR_NULL);
             }
             editText = "resource";
+        } else if (strcmp(rule->directive, "type") == 0) {
+            TZrSize openOffset = legacy_migration_skip_space(source, sourceLength, wordEnd);
+            TZrSize callEnd;
+            TZrSize argumentStart;
+            TZrSize argumentEnd;
+
+            if (!legacy_migration_find_call_end(source, sourceLength, openOffset, &callEnd)) {
+                return legacy_migration_append_item(
+                        state,
+                        plan,
+                        source,
+                        sourceName,
+                        rule->oldConstructKind,
+                        rule->targetConstructKind,
+                        rule->targetPlanId,
+                        ZR_LEGACY_MIGRATION_BLOCKED,
+                        "A type reflection migration requires a balanced argument list.",
+                        percentOffset,
+                        wordEnd,
+                        percentOffset,
+                        wordEnd,
+                        ZR_NULL);
+            }
+            argumentStart = legacy_migration_skip_space(source, sourceLength, openOffset + 1U);
+            argumentEnd = legacy_migration_trim_end(source, argumentStart, callEnd - 1U);
+            if (argumentStart == argumentEnd) {
+                return legacy_migration_append_item(
+                        state,
+                        plan,
+                        source,
+                        sourceName,
+                        rule->oldConstructKind,
+                        rule->targetConstructKind,
+                        rule->targetPlanId,
+                        ZR_LEGACY_MIGRATION_BLOCKED,
+                        "A type reflection migration requires one concrete expression.",
+                        percentOffset,
+                        callEnd,
+                        percentOffset,
+                        callEnd,
+                        ZR_NULL);
+            }
+            editText = "typeof";
         } else {
             TZrSize openOffset = legacy_migration_skip_space(source, sourceLength, wordEnd);
             TZrSize callEnd;
@@ -780,7 +823,7 @@ ZR_PARSER_API TZrBool ZrParser_LegacyMigration_PlanSource(
                             sourceName,
                             "legacyDynamicDollarConstruct",
                             "constructorCall",
-                            "06A",
+                            "08",
                             ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
                             "Dynamic constructor targets require resolved type identity.",
                             index,

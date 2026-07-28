@@ -8,6 +8,7 @@
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/type_system.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_core/reflection.h"
 
 // 前向声明
 struct SZrCompilerState;
@@ -28,6 +29,12 @@ typedef struct SZrTypeInferenceBranchScope {
 
 // 从AST节点推断类型（主入口函数）
 ZR_PARSER_API TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result);
+
+ZR_PARSER_API EZrReflectionTypeCategory ZrParser_ReflectionTypeCategory_FromInferred(
+        SZrCompilerState *cs,
+        const SZrInferredType *type);
+ZR_PARSER_API const TZrChar *ZrParser_ReflectionDescriptorTypeName(
+        EZrReflectionTypeCategory category);
 
 // 从字面量推断类型
 ZR_PARSER_API TZrBool ZrParser_LiteralType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result);

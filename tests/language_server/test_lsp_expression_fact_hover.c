@@ -128,6 +128,22 @@ static const TZrChar *hover_first_text(SZrLspHover *hover) {
     return ZR_NULL;
 }
 
+static TZrBool completion_contains_label(SZrArray *completions, const TZrChar *label) {
+    if (completions == ZR_NULL || label == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0u; index < completions->length; index++) {
+        SZrLspCompletionItem **itemPtr =
+                (SZrLspCompletionItem **)ZrCore_Array_Get(completions, index);
+        if (itemPtr != ZR_NULL && *itemPtr != ZR_NULL &&
+            (*itemPtr)->label != ZR_NULL &&
+            strcmp(string_text((*itemPtr)->label), label) == 0) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool string_constant_equals(SZrString *value, const TZrChar *expected, TZrSize expectedLength) {
     const TZrChar *text = string_text(value);
 
@@ -657,6 +673,168 @@ static TZrBool test_lsp_hover_formats_reference_type_from_type_id(SZrState *stat
     return passed;
 }
 
+static TZrBool test_lsp_hover_surfaces_precise_reflection_query_types(SZrState *state) {
+    const TZrChar *uriText = "file:///reflection_query_type_hover.zr";
+    const TZrChar *content =
+        "func inspect(value: int): int {\n"
+        "    var staticType = typeid(int);\n"
+        "    var runtimeType = typeof(value);\n"
+        "    staticType;\n"
+        "    runtimeType;\n"
+        "    return 0;\n"
+        "}\n";
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition staticPosition;
+    SZrLspPosition runtimePosition;
+    SZrLspLocalSemanticQueryResult staticQuery;
+    SZrLspLocalSemanticQueryResult runtimeQuery;
+    SZrLspHover *staticHover = ZR_NULL;
+    SZrLspHover *runtimeHover = ZR_NULL;
+    SZrSemanticAnalyzer *analyzer;
+    TZrChar staticTypeText[160];
+    TZrChar runtimeTypeText[192];
+    TZrBool passed;
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !find_position_for_substring(content, "staticType", 1, &staticPosition) ||
+        !find_position_for_substring(content, "runtimeType", 1, &runtimePosition)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        printf("FAIL: unable to prepare reflection query hover fixture\n");
+        return ZR_FALSE;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&staticQuery);
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&runtimeQuery);
+    staticTypeText[0] = '\0';
+    runtimeTypeText[0] = '\0';
+    passed = analyzer != ZR_NULL &&
+             analyzer->semanticContext != ZR_NULL &&
+             ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(
+                     state, context, uri, staticPosition, &staticQuery) &&
+             staticQuery.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT &&
+             staticQuery.referenceFact != ZR_NULL &&
+             ZrLanguageServer_SemanticAnalyzer_FormatTypeId(
+                     analyzer->semanticContext,
+                     staticQuery.referenceFact->typeId,
+                     staticTypeText,
+                     sizeof(staticTypeText)) &&
+             strcmp(staticTypeText, "zr.reflection.TypeId<int>") == 0 &&
+             ZrLanguageServer_LspLocalSemanticQuery_BuildHoverForDocument(
+                     state, context, uri, &staticQuery, &staticHover) &&
+             staticHover != ZR_NULL &&
+             hover_contains_text(staticHover, "Type: zr.reflection.TypeId<int>") &&
+             ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(
+                     state, context, uri, runtimePosition, &runtimeQuery) &&
+             runtimeQuery.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT &&
+             runtimeQuery.referenceFact != ZR_NULL &&
+             ZrLanguageServer_SemanticAnalyzer_FormatTypeId(
+                     analyzer->semanticContext,
+                     runtimeQuery.referenceFact->typeId,
+                     runtimeTypeText,
+                     sizeof(runtimeTypeText)) &&
+             strcmp(runtimeTypeText, "zr.reflection.declaration.StructTypeOf<int>") == 0 &&
+             ZrLanguageServer_LspLocalSemanticQuery_BuildHoverForDocument(
+                     state, context, uri, &runtimeQuery, &runtimeHover) &&
+             runtimeHover != ZR_NULL &&
+             hover_contains_text(
+                     runtimeHover,
+                     "Type: zr.reflection.declaration.StructTypeOf<int>");
+
+    if (!passed) {
+        printf("FAIL: expected precise reflection query hover types; "
+               "staticStatus=%d staticRef=%p staticType=%s staticHover=%s "
+               "runtimeStatus=%d runtimeRef=%p runtimeType=%s runtimeHover=%s\n",
+               (int)staticQuery.status,
+               (void *)staticQuery.referenceFact,
+               staticTypeText[0] != '\0' ? staticTypeText : "<none>",
+               hover_first_text(staticHover) != ZR_NULL
+                   ? hover_first_text(staticHover)
+                   : "<null>",
+               (int)runtimeQuery.status,
+               (void *)runtimeQuery.referenceFact,
+               runtimeTypeText[0] != '\0' ? runtimeTypeText : "<none>",
+               hover_first_text(runtimeHover) != ZR_NULL
+                   ? hover_first_text(runtimeHover)
+                   : "<null>");
+    }
+
+    hover_free(state, staticHover);
+    hover_free(state, runtimeHover);
+    ZrLanguageServer_LspLocalSemanticQuery_Clear(&runtimeQuery);
+    ZrLanguageServer_LspLocalSemanticQuery_Clear(&staticQuery);
+    ZrLanguageServer_LspContext_Free(state, context);
+    return passed;
+}
+
+static TZrBool test_lsp_completion_respects_reflection_descriptor_hierarchy(SZrState *state) {
+    const TZrChar *uriText = "file:///reflection_query_completion.zr";
+    const TZrChar *content =
+        "func inspect(value: int): int {\n"
+        "    var runtimeType = typeof(value);\n"
+        "    runtimeType.representedTypeId;\n"
+        "    return 0;\n"
+        "}\n";
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition completionPosition;
+    SZrArray completions;
+    TZrBool passed;
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !find_position_for_substring(
+                content, "runtimeType.representedTypeId", 0u, &completionPosition)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        printf("FAIL: unable to prepare reflection query completion fixture\n");
+        return ZR_FALSE;
+    }
+    completionPosition.character += (TZrInt32)strlen("runtimeType.");
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16u);
+    passed = ZrLanguageServer_Lsp_GetCompletion(
+                     state, context, uri, completionPosition, &completions) &&
+             completion_contains_label(&completions, "id") &&
+             completion_contains_label(&completions, "name") &&
+             completion_contains_label(&completions, "qualifiedName") &&
+             completion_contains_label(&completions, "representedTypeId") &&
+             completion_contains_label(&completions, "getField") &&
+             completion_contains_label(&completions, "getMethod") &&
+             completion_contains_label(&completions, "createInstance") &&
+             !completion_contains_label(&completions, "compileTime") &&
+             !completion_contains_label(&completions, "ir") &&
+             !completion_contains_label(&completions, "codeBlocks");
+    if (!passed) {
+        printf("FAIL: reflection descriptor completion hierarchy mismatch; "
+               "count=%llu id=%d name=%d represented=%d field=%d method=%d create=%d "
+               "compileTime=%d ir=%d codeBlocks=%d\n",
+               (unsigned long long)completions.length,
+               (int)completion_contains_label(&completions, "id"),
+               (int)completion_contains_label(&completions, "name"),
+               (int)completion_contains_label(&completions, "representedTypeId"),
+               (int)completion_contains_label(&completions, "getField"),
+               (int)completion_contains_label(&completions, "getMethod"),
+               (int)completion_contains_label(&completions, "createInstance"),
+               (int)completion_contains_label(&completions, "compileTime"),
+               (int)completion_contains_label(&completions, "ir"),
+               (int)completion_contains_label(&completions, "codeBlocks"));
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    return passed;
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -667,6 +845,8 @@ int main(void) {
     TZrBool compactSegmentedNumericRangeHoverPassed;
     TZrBool stringHoverPassed;
     TZrBool canonicalTypeHoverPassed;
+    TZrBool reflectionQueryHoverPassed;
+    TZrBool reflectionQueryCompletionPassed;
 
     memset(&callbacks, 0, sizeof(callbacks));
     global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
@@ -699,6 +879,13 @@ int main(void) {
     canonicalTypeHoverPassed = test_lsp_hover_formats_reference_type_from_type_id(state);
     printf("%s: LSP Hover Formats Reference Type From TypeId\n",
            canonicalTypeHoverPassed ? "PASS" : "FAIL");
+    reflectionQueryHoverPassed = test_lsp_hover_surfaces_precise_reflection_query_types(state);
+    printf("%s: LSP Hover Surfaces Precise Reflection Query Types\n",
+           reflectionQueryHoverPassed ? "PASS" : "FAIL");
+    reflectionQueryCompletionPassed =
+        test_lsp_completion_respects_reflection_descriptor_hierarchy(state);
+    printf("%s: LSP Completion Respects Reflection Descriptor Hierarchy\n",
+           reflectionQueryCompletionPassed ? "PASS" : "FAIL");
 
     ZrCore_GlobalState_Free(global);
     return expressionHoverPassed &&
@@ -706,7 +893,9 @@ int main(void) {
                    segmentedNumericRangeHoverPassed &&
                    compactSegmentedNumericRangeHoverPassed &&
                    stringHoverPassed &&
-                   canonicalTypeHoverPassed
+                   canonicalTypeHoverPassed &&
+                   reflectionQueryHoverPassed &&
+                   reflectionQueryCompletionPassed
                ? 0
                : 1;
 }

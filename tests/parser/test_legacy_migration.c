@@ -247,14 +247,14 @@ static void test_legacy_migration_plan_covers_inventory_classification_contract(
         {"percentLoan", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "02", ZR_FALSE},
         {"percentBorrowed", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "02", ZR_FALSE},
         {"percentLoaned", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "02", ZR_FALSE},
-        {"percentType", ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED, "08", ZR_FALSE},
+        {"percentType", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "08", ZR_TRUE},
         {"percentUsing", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
         {"legacyFuncKeyword", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
         {"keywordlessFunction", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
         {"legacyDefinitionArrow", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
         {"legacyFunctionTypeArrow", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
         {"legacyDollarConstruct", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "03", ZR_FALSE},
-        {"legacyDynamicDollarConstruct", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
+        {"legacyDynamicDollarConstruct", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "08", ZR_FALSE},
         {"legacyBareTypeCall", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
         {"legacyNewStruct", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
         {"nativePrototypeFactory", ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED, "10", ZR_FALSE},
@@ -423,6 +423,62 @@ static void test_legacy_migration_machine_edit_compiles_with_current_parser(void
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
+static void test_legacy_percent_type_migrates_to_typeof_and_is_idempotent(void) {
+    const TZrChar *source =
+            "var value = 7;\n"
+            "%type (value);\n"
+            "return value;\n";
+    const TZrChar *expected =
+            "var value = 7;\n"
+            "typeof (value);\n"
+            "return value;\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "legacy_percent_type_migration.zr");
+    SZrLegacyMigrationPlan first = {0};
+    SZrLegacyMigrationPlan second = {0};
+    const SZrLegacyMigrationItem *typeItem;
+    TZrChar *migrated = ZR_NULL;
+    TZrSize migratedLength = 0U;
+    SZrAstNode *ast;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_PlanSource(
+            g_state, source, strlen(source), sourceName, &first));
+    TEST_ASSERT_EQUAL_UINT32(1U, first.items.length);
+    typeItem = migration_find_item(&first, "percentType");
+    TEST_ASSERT_NOT_NULL(typeItem);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, typeItem->applicability);
+    TEST_ASSERT_EQUAL_STRING("08", migration_string_text(typeItem->targetPlanId));
+    TEST_ASSERT_TRUE(typeItem->hasFix);
+    TEST_ASSERT_EQUAL_STRING("typeof", migration_string_text(typeItem->fix.editText));
+
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_ApplyMachineEdits(
+            g_state,
+            &first,
+            source,
+            strlen(source),
+            &migrated,
+            &migratedLength));
+    TEST_ASSERT_EQUAL_UINT64(strlen(expected), migratedLength);
+    TEST_ASSERT_EQUAL_STRING(expected, migrated);
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_PlanSource(
+            g_state, migrated, migratedLength, sourceName, &second));
+    TEST_ASSERT_EQUAL_UINT32(0U, second.items.length);
+
+    ast = ZrParser_Parse(g_state, migrated, migratedLength, sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    function = ZrParser_Compiler_Compile(g_state, ast);
+    TEST_ASSERT_NOT_NULL(function);
+
+    ZrCore_Function_Free(g_state, function);
+    ZrParser_Ast_Free(g_state, ast);
+    ZrCore_Memory_RawFree(g_state->global, migrated, migratedLength + 1U);
+    ZrParser_LegacyMigration_PlanFree(g_state, &second);
+    ZrParser_LegacyMigration_PlanFree(g_state, &first);
+}
+
 static void test_legacy_migration_apply_rejects_stale_or_overlapping_plan(void) {
     const TZrChar *source = "%owned class FileHandle {}\n";
     const TZrChar *changedSource = "%owned class FileHandle { }\n";
@@ -470,6 +526,7 @@ int main(void) {
     RUN_TEST(test_legacy_migration_plan_covers_inventory_classification_contract);
     RUN_TEST(test_legacy_migration_apply_machine_edits_is_idempotent);
     RUN_TEST(test_legacy_migration_machine_edit_compiles_with_current_parser);
+    RUN_TEST(test_legacy_percent_type_migrates_to_typeof_and_is_idempotent);
     RUN_TEST(test_legacy_migration_apply_rejects_stale_or_overlapping_plan);
     return UNITY_END();
 }

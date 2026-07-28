@@ -21,6 +21,41 @@
 `completed_with_known_unrelated_markers`。本报告保留这些历史限定；“确认”表示当前
 工作树已用新鲜测试重新证明该记录声明的范围，而不是改写其历史状态文字。
 
+## 2026-07-28 上层 Gate 补充复验
+
+本次复验重新按同一规则独立清点状态记录，机器计数为：总数 55、完成状态 55、
+缺失状态 0。目录分布为 01=5、02=6、03=5、04=7、05=6、06=2、07=1、
+10=5、12=15、13=3；与下方 55 行逐项矩阵一致。
+
+本轮在推进 08 reflection 与 09 generational pool 的实现后取得以下新鲜证据：
+
+- Windows MSVC 19.44 Debug 短路径全目标构建成功，CTest 注册 121 项。首次全量
+  运行 120/121，通过 review 定位并修复唯一失败的 callable TypeId 规范化问题后，
+  `language_pipeline` 定向复跑 1/1 通过。该证据应准确理解为“首次 120/121 加
+  修复后原失败 suite 1/1”，不是一次修复后的 121/121。
+- 修复后的 Windows 定向门禁：reflection surface 18/18、reflection stress 3/3、
+  generational pool 9/9、module system 89/89；同时 buffer pool/FFI 8/8、legacy
+  migration 9/9、compile time 32/32、decorator 4/4、expression fragment 3/3、
+  syntax reference v1 7/7、module specifier 5/5、manifest v2 8/8 均通过，LSP
+  expression-fact hover 退出 0。
+- WSL GCC 11.4 Debug 短路径定向构建成功；Linux reflection surface 18/18、
+  reflection stress 3/3、generational pool 9/9 通过。未将未完成的 GCC 全目标
+  构建或未执行的 GCC suite 记作通过。
+
+本轮 review 新发现并修复三项问题：
+
+1. constructor binder 原先只按参数个数缓存并选择构造函数，无法区分同参数个数的
+   重载。现以参数类型签名参与缓存键和唯一最佳匹配，真实歧义仍拒绝；测试覆盖命中、
+   未命中、类型重载和重复签名歧义。
+2. source 与 binary callable 共享 TypeId 时，第二次 `typeof` 会尝试绑定新的描述符并
+   失败。现解析并复用已绑定的 canonical descriptor，不弱化 TypeId 身份唯一性。
+3. pool guard 取得后无锁再次遍历可扩容的 slab 表，和并发 deliver 存在数据竞争。
+   acquire 现于锁内解析并缓存稳定 value 地址，guard 读路径不再访问可重分配表。
+
+上层 Gate 结论保持保守：08 的 spread 调用/AOT 等完整验收、09 的跨 consumer 集成，
+以及 11、14 的实施状态仍未关闭，因此依赖它们的 10C、06B、07B 也不能宣告完成。
+本轮提交推进并加固 08/09，但不修改这些根 Gate 的状态。
+
 ## 55 份记录逐项结果
 
 | # | 记录 | 自述状态 | 新鲜结果 | 主要证据 |

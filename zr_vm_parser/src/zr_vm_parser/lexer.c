@@ -65,6 +65,8 @@ static const SZrTokenInfo zr_token_info[] = {
     {"NaN", ZR_TK_NAN},
     {"fn", ZR_TK_FN},
     {"ref", ZR_TK_REF},
+    {"typeid", ZR_TK_TYPEID},
+    {"typeof", ZR_TK_TYPEOF},
     // 操作符
     {"...", ZR_TK_PARAMS},
     {"?", ZR_TK_QUESTIONMARK},
@@ -139,6 +141,8 @@ static const struct {
                    {"union", ZR_TK_UNION},
                    {"fn", ZR_TK_FN},
                    {"ref", ZR_TK_REF},
+                   {"typeid", ZR_TK_TYPEID},
+                   {"typeof", ZR_TK_TYPEOF},
                    {"test", ZR_TK_TEST},
                    {"intermediate", ZR_TK_INTERMEDIATE},
                    {"var", ZR_TK_VAR},

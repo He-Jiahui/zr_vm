@@ -460,6 +460,9 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             if (typeQuery->operand != ZR_NULL) {
                 ZrParser_Ast_Free(state, typeQuery->operand);
             }
+            if (typeQuery->typeOperand != ZR_NULL) {
+                free_owned_type(state, typeQuery->typeOperand);
+            }
             break;
         }
         case ZR_AST_TYPE_LITERAL_EXPRESSION: {

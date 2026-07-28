@@ -452,6 +452,26 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_expression_fragment_parser_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_reflection_type_surface_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_reflection_type_surface.c
+    )
+    target_include_directories(zr_vm_reflection_type_surface_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core(zr_vm_reflection_type_surface_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_reflection_type_stress_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_reflection_type_stress.c
+    )
+    target_include_directories(zr_vm_reflection_type_stress_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core(zr_vm_reflection_type_stress_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_union_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_union.c
     )
@@ -4048,6 +4068,12 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/tests/parser/test_buffer_pool_ffi.c
             ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
     )
+    zr_vm_add_unity_test_target(
+            zr_vm_generational_pool_test
+            ${CMAKE_SOURCE_DIR}/tests/container/test_generational_pool.c
+            ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
+            ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+    )
     target_include_directories(zr_vm_buffer_pool_ffi_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot
     )
@@ -4079,7 +4105,8 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             zr_vm_container_type_inference_test
             zr_vm_container_temp_value_root_test
             zr_vm_span_core_test
-            zr_vm_buffer_pool_ffi_test)
+            zr_vm_buffer_pool_ffi_test
+            zr_vm_generational_pool_test)
         target_include_directories(${container_target} PRIVATE
                 ${CMAKE_SOURCE_DIR}/tests/container
                 ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
@@ -5270,6 +5297,28 @@ if (TARGET zr_vm_cli_executable AND
     zr_vm_link_core(zr_vm_cli_zrp_metadata_dump_test)
 endif ()
 
+if (TARGET zr_vm_reflection_type_surface_test)
+    add_test(
+            NAME reflection_type_surface
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=reflection_type_surface"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_reflection_type_surface_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_reflection_type_surface_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_reflection_type_surface_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_reflection_type_surface_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_reflection_type_stress_test)
+    add_test(
+            NAME reflection_type_stress
+            COMMAND $<TARGET_FILE:zr_vm_reflection_type_stress_test>
+    )
+    set_tests_properties(reflection_type_stress PROPERTIES LABELS "stress")
+endif ()
+
 if (TARGET zr_vm_cli_executable AND
         (TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
         (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static) AND
@@ -5933,9 +5982,10 @@ set(container_executables "")
 if (TARGET zr_vm_container_runtime_test AND
         TARGET zr_vm_container_metadata_test AND
         TARGET zr_vm_container_type_inference_test AND
-        TARGET zr_vm_container_temp_value_root_test)
+        TARGET zr_vm_container_temp_value_root_test AND
+        TARGET zr_vm_generational_pool_test)
     set(container_executables
-            "$<TARGET_FILE:zr_vm_container_runtime_test>;$<TARGET_FILE:zr_vm_container_metadata_test>;$<TARGET_FILE:zr_vm_container_type_inference_test>;$<TARGET_FILE:zr_vm_container_temp_value_root_test>"
+            "$<TARGET_FILE:zr_vm_container_runtime_test>;$<TARGET_FILE:zr_vm_container_metadata_test>;$<TARGET_FILE:zr_vm_container_type_inference_test>;$<TARGET_FILE:zr_vm_container_temp_value_root_test>;$<TARGET_FILE:zr_vm_generational_pool_test>"
     )
     set(container_smoke_executables
             "$<TARGET_FILE:zr_vm_container_runtime_test>;$<TARGET_FILE:zr_vm_container_type_inference_test>;$<TARGET_FILE:zr_vm_container_temp_value_root_test>"

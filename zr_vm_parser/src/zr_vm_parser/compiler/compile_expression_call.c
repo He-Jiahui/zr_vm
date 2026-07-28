@@ -3,6 +3,7 @@
 //
 
 #include "compile_expression_internal.h"
+#include "type_inference_internal.h"
 
 static TZrBool primary_expression_starts_with_member_call(const SZrPrimaryExpression *primary);
 static TZrBool primary_expression_resolve_direct_ownership_receiver(
@@ -279,6 +280,72 @@ void compile_import_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
 }
 
+TZrBool compiler_build_type_identity_value(
+        SZrCompilerState *cs,
+        SZrType *typeOperand,
+        SZrFileRange location,
+        SZrTypeValue *outValue) {
+    SZrInferredType operandType;
+    SZrString *canonicalTypeName;
+    SZrReflectionTypeIdentity identity;
+    SZrObject *typeIdObject;
+
+    if (cs == ZR_NULL || typeOperand == ZR_NULL || outValue == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_ResetAsNull(outValue);
+
+    ZrParser_InferredType_Init(cs->state, &operandType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_AstTypeToInferredType_Convert(cs, typeOperand, &operandType)) {
+        ZrParser_InferredType_Free(cs->state, &operandType);
+        ZrParser_Compiler_Error(cs, "typeid requires a resolvable TypeRef", location);
+        return ZR_FALSE;
+    }
+
+    canonicalTypeName = get_type_name_from_inferred_type(cs, &operandType);
+    if (canonicalTypeName == ZR_NULL) {
+        ZrParser_InferredType_Free(cs->state, &operandType);
+        ZrParser_Compiler_Error(cs, "typeid failed to format canonical TypeRef", location);
+        return ZR_FALSE;
+    }
+
+    memset(&identity, 0, sizeof(identity));
+    if (cs->semanticContext != ZR_NULL) {
+        identity.canonicalTypeId = ZrParser_CanonicalType_FromInferred(
+                cs->semanticContext, &operandType);
+    }
+    identity.category = ZrParser_ReflectionTypeCategory_FromInferred(cs, &operandType);
+    typeIdObject = ZrCore_Reflection_BuildTypeIdObject(
+            cs->state, canonicalTypeName, &identity);
+    ZrParser_InferredType_Free(cs->state, &operandType);
+    if (typeIdObject == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "typeid failed to materialize canonical identity", location);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(
+            cs->state, outValue, ZR_CAST_RAW_OBJECT_AS_SUPER(typeIdObject));
+    outValue->type = ZR_VALUE_TYPE_OBJECT;
+    return ZR_TRUE;
+}
+
+static TZrUInt32 compile_type_identity_expression(
+        SZrCompilerState *cs,
+        SZrType *typeOperand,
+        SZrFileRange location) {
+    SZrTypeValue typeIdValue;
+    TZrUInt32 slot;
+
+    if (!compiler_build_type_identity_value(cs, typeOperand, location, &typeIdValue)) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+
+    slot = allocate_stack_slot(cs);
+    emit_constant_to_slot(cs, slot, &typeIdValue);
+    return slot;
+}
+
 void compile_type_query_expression(SZrCompilerState *cs, SZrAstNode *node) {
     SZrTypeQueryExpression *typeQueryExpr;
 
@@ -292,8 +359,21 @@ void compile_type_query_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     typeQueryExpr = &node->data.typeQueryExpression;
+    if (typeQueryExpr->kind == ZR_TYPE_QUERY_CANONICAL_IDENTITY) {
+        if (typeQueryExpr->typeOperand == ZR_NULL) {
+            ZrParser_Compiler_Error(cs, "typeid requires a TypeRef operand", node->location);
+            return;
+        }
+        if (compile_type_identity_expression(
+                    cs, typeQueryExpr->typeOperand, node->location) == ZR_PARSER_SLOT_NONE &&
+            !cs->hasError) {
+            ZrParser_Compiler_Error(cs, "Failed to compile typeid expression", node->location);
+        }
+        return;
+    }
+
     if (typeQueryExpr->operand == ZR_NULL) {
-        ZrParser_Compiler_Error(cs, "Type query expression requires an operand", node->location);
+        ZrParser_Compiler_Error(cs, "typeof requires an expression operand", node->location);
         return;
     }
 

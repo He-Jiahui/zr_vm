@@ -1,10 +1,10 @@
 {
   "classificationCounts": {
     "blocked": 0,
-    "machineApplicable": 262,
+    "machineApplicable": 341,
     "maybeIncorrect": 0,
     "requiresReview": 324,
-    "targetNotPromoted": 183
+    "targetNotPromoted": 104
   },
   "exclusions": [
     {
@@ -2337,7 +2337,7 @@
       },
       "reason": "dynamic_constructor_requires_reflection_review",
       "sourceKind": "currentDocumentation",
-      "targetPlan": "06A"
+      "targetPlan": "08"
     },
     {
       "classification": "targetNotPromoted",
@@ -2556,7 +2556,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "docs/zr_language_specification.md",
       "legacyForm": "percentType",
       "range": {
@@ -2569,7 +2569,7 @@
           "line": 858
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "currentDocumentation",
       "targetPlan": "08"
     },
@@ -6030,7 +6030,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6043,7 +6043,7 @@
           "line": 4
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6066,7 +6066,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6079,12 +6079,12 @@
           "line": 9
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6097,7 +6097,7 @@
           "line": 20
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6120,7 +6120,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6133,7 +6133,7 @@
           "line": 25
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6192,7 +6192,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_binary/.manual_prepare/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6205,7 +6205,7 @@
           "line": 4
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6228,7 +6228,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_binary/.manual_prepare/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6241,12 +6241,12 @@
           "line": 9
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_binary/.manual_prepare/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6259,7 +6259,7 @@
           "line": 20
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6282,7 +6282,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_binary/.manual_prepare/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6295,7 +6295,7 @@
           "line": 25
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6336,7 +6336,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6349,7 +6349,7 @@
           "line": 4
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6372,7 +6372,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6385,12 +6385,12 @@
           "line": 9
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6403,7 +6403,7 @@
           "line": 20
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6426,7 +6426,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6439,7 +6439,7 @@
           "line": 25
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6516,7 +6516,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_deep_import/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6529,7 +6529,7 @@
           "line": 12
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6552,7 +6552,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_deep_import/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6565,7 +6565,7 @@
           "line": 17
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6606,7 +6606,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_deep_import/src/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6619,7 +6619,7 @@
           "line": 4
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6642,7 +6642,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_deep_import/src/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6655,7 +6655,7 @@
           "line": 9
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6768,7 +6768,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_deep_import_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6781,7 +6781,7 @@
           "line": 12
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6804,7 +6804,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_deep_import_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6817,7 +6817,7 @@
           "line": 17
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6858,7 +6858,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_deep_import_binary/fixtures/decorated_user_module/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6871,7 +6871,7 @@
           "line": 4
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -6894,7 +6894,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_deep_import_binary/fixtures/decorated_user_module/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -6907,7 +6907,7 @@
           "line": 9
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7002,7 +7002,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_import/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7015,7 +7015,7 @@
           "line": 12
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7038,7 +7038,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_import/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7051,7 +7051,7 @@
           "line": 17
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7092,7 +7092,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_import/src/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7105,7 +7105,7 @@
           "line": 4
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7128,7 +7128,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_import/src/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7141,7 +7141,7 @@
           "line": 9
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7326,7 +7326,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_import_binary/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7339,12 +7339,12 @@
           "line": 5
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_import_binary/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7357,12 +7357,12 @@
           "line": 11
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_import_binary/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7375,7 +7375,7 @@
           "line": 17
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7416,7 +7416,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_parameter_import/src/main.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7429,7 +7429,7 @@
           "line": 3
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7470,7 +7470,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_parameter_import/src/provider.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7483,7 +7483,7 @@
           "line": 4
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7524,7 +7524,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_parameter_import_binary/fixtures/provider_module/provider.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7537,7 +7537,7 @@
           "line": 4
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7560,7 +7560,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_parameter_import_binary/src/main.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7573,7 +7573,7 @@
           "line": 3
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7632,7 +7632,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_provider_import/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7645,7 +7645,7 @@
           "line": 12
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7668,7 +7668,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_provider_import/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7681,7 +7681,7 @@
           "line": 18
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7704,7 +7704,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_provider_import/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7717,7 +7717,7 @@
           "line": 23
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7758,7 +7758,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_provider_import/src/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7771,7 +7771,7 @@
           "line": 4
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7794,7 +7794,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_provider_import/src/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7807,7 +7807,7 @@
           "line": 9
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7938,7 +7938,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_provider_import_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7951,7 +7951,7 @@
           "line": 12
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -7974,7 +7974,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_provider_import_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -7987,7 +7987,7 @@
           "line": 18
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -8010,7 +8010,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_provider_import_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8023,7 +8023,7 @@
           "line": 23
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -8064,7 +8064,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_provider_import_binary/fixtures/decorated_user_module/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8077,7 +8077,7 @@
           "line": 4
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -8100,7 +8100,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_compile_time_provider_import_binary/fixtures/decorated_user_module/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8113,7 +8113,7 @@
           "line": 9
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -8226,7 +8226,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8239,7 +8239,7 @@
           "line": 30
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -8262,7 +8262,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8275,12 +8275,12 @@
           "line": 36
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8293,12 +8293,12 @@
           "line": 37
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8311,12 +8311,12 @@
           "line": 38
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import/src/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8329,7 +8329,7 @@
           "line": 39
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -8352,7 +8352,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import/src/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8365,12 +8365,12 @@
           "line": 3
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import/src/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8383,12 +8383,12 @@
           "line": 7
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import/src/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8401,12 +8401,12 @@
           "line": 11
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import/src/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8419,12 +8419,12 @@
           "line": 15
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import/src/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8437,7 +8437,7 @@
           "line": 19
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -8496,7 +8496,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8509,7 +8509,7 @@
           "line": 30
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -8532,7 +8532,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8545,12 +8545,12 @@
           "line": 36
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8563,12 +8563,12 @@
           "line": 37
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8581,12 +8581,12 @@
           "line": 38
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import_binary/fixtures/decorated_user_module/decorated_user.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8599,7 +8599,7 @@
           "line": 39
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -8622,7 +8622,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import_binary/fixtures/decorated_user_module/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8635,12 +8635,12 @@
           "line": 3
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import_binary/fixtures/decorated_user_module/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8653,12 +8653,12 @@
           "line": 7
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import_binary/fixtures/decorated_user_module/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8671,12 +8671,12 @@
           "line": 11
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import_binary/fixtures/decorated_user_module/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8689,12 +8689,12 @@
           "line": 15
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/decorator_import_binary/fixtures/decorated_user_module/decorators.zr",
       "legacyForm": "percentType",
       "range": {
@@ -8707,7 +8707,7 @@
           "line": 19
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -9684,7 +9684,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/lsp_language_feature_matrix/src/oop_meta.zr",
       "legacyForm": "percentType",
       "range": {
@@ -9697,7 +9697,7 @@
           "line": 3
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -10026,7 +10026,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/projects/lsp_language_feature_matrix_copy/src/oop_meta.zr",
       "legacyForm": "percentType",
       "range": {
@@ -10039,7 +10039,7 @@
           "line": 3
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -12780,7 +12780,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/compile_time_decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -12793,7 +12793,7 @@
           "line": 6
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -12834,7 +12834,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/compile_time_decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -12847,7 +12847,7 @@
           "line": 28
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -12870,7 +12870,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/compile_time_decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -12883,12 +12883,12 @@
           "line": 43
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/compile_time_decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -12901,7 +12901,7 @@
           "line": 44
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -13608,7 +13608,7 @@
       "targetPlan": "11"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/compile_time_parameter_decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -13621,7 +13621,7 @@
           "line": 4
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -13644,7 +13644,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -13657,7 +13657,7 @@
           "line": 4
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -13680,7 +13680,7 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -13693,12 +13693,12 @@
           "line": 9
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -13711,12 +13711,12 @@
           "line": 14
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -13729,12 +13729,12 @@
           "line": 20
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -13747,12 +13747,12 @@
           "line": 26
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -13765,12 +13765,12 @@
           "line": 51
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -13783,12 +13783,12 @@
           "line": 52
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -13801,12 +13801,12 @@
           "line": 53
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -13819,12 +13819,12 @@
           "line": 54
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "file": "tests/fixtures/scripts/decorator_artifact_baseline.zr",
       "legacyForm": "percentType",
       "range": {
@@ -13837,7 +13837,7 @@
           "line": 55
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "runtime_type_query_has_current_syntax",
       "sourceKind": "zrSource",
       "targetPlan": "08"
     },
@@ -18641,8 +18641,8 @@
     "03": 35,
     "04": 23,
     "05": 3,
-    "06A": 512,
-    "08": 79,
+    "06A": 511,
+    "08": 80,
     "10": 4,
     "11": 64,
     "14": 36

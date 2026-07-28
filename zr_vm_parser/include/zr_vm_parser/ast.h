@@ -515,8 +515,16 @@ typedef struct SZrImportExpression {
     SZrAstNode *modulePath; // StringLiteral
 } SZrImportExpression;
 
+typedef enum EZrTypeQueryKind {
+    ZR_TYPE_QUERY_LEGACY_PERCENT_TYPE = 0,
+    ZR_TYPE_QUERY_CANONICAL_IDENTITY,
+    ZR_TYPE_QUERY_RUNTIME_DESCRIPTOR,
+} EZrTypeQueryKind;
+
 typedef struct SZrTypeQueryExpression {
+    EZrTypeQueryKind kind;
     SZrAstNode *operand;
+    SZrType *typeOperand;
 } SZrTypeQueryExpression;
 
 typedef struct SZrTypeLiteralExpression {

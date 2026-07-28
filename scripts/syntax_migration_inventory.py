@@ -447,9 +447,9 @@ _MIGRATION_RULES = {
         "loan_place_and_escape_proof_required",
     ),
     "percentType": MigrationRule(
-        MigrationClassification.TARGET_NOT_PROMOTED,
+        MigrationClassification.MACHINE_APPLICABLE,
         "08",
-        "target_plan_not_promoted",
+        "runtime_type_query_has_current_syntax",
     ),
     "percentUsing": MigrationRule(
         MigrationClassification.REQUIRES_REVIEW,
@@ -483,7 +483,7 @@ _MIGRATION_RULES = {
     ),
     "legacyDynamicDollarConstruct": MigrationRule(
         MigrationClassification.REQUIRES_REVIEW,
-        "06A",
+        "08",
         "dynamic_constructor_requires_reflection_review",
     ),
     "legacyBareTypeCall": MigrationRule(

@@ -837,6 +837,17 @@ static SZrFunction *compile_type_member_function(
     newFunc->hasVariableArguments = ZR_FALSE;
     newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TZrUInt32)node->location.start.line : 0;
     newFunc->lineInSourceEnd = (node->location.end.line > 0) ? (TZrUInt32)node->location.end.line : 0;
+    if (!compiler_build_function_parameter_metadata(
+                cs,
+                params,
+                ZR_FALSE,
+                &newFunc->parameterMetadata,
+                &newFunc->parameterMetadataCount)) {
+        ZrParser_Compiler_Error(
+                cs,
+                "Failed to build member function parameter metadata",
+                node->location);
+    }
     if (!compiler_build_function_frame_layout_metadata(cs, newFunc)) {
         ZrParser_Compiler_Error(cs, "Failed to build class member frame layout metadata", node->location);
     }

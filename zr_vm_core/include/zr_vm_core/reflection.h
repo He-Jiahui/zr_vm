@@ -36,6 +36,90 @@ typedef enum EZrReflectionResolvedTokenKind {
     ZR_REFLECTION_RESOLVED_TOKEN_FIELD = 3
 } EZrReflectionResolvedTokenKind;
 
+typedef enum EZrReflectionTypeCategory {
+    ZR_REFLECTION_TYPE_CATEGORY_ERASED = 0,
+    ZR_REFLECTION_TYPE_CATEGORY_CLASS = 1,
+    ZR_REFLECTION_TYPE_CATEGORY_CONCRETE_CLASS = 2,
+    ZR_REFLECTION_TYPE_CATEGORY_INSTANCE_CLASS = 3,
+    ZR_REFLECTION_TYPE_CATEGORY_STRUCT = 4,
+    ZR_REFLECTION_TYPE_CATEGORY_INTERFACE = 5,
+    ZR_REFLECTION_TYPE_CATEGORY_RESOURCE_CLASS = 6,
+    ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT = 7,
+    ZR_REFLECTION_TYPE_CATEGORY_ENUM = 8
+} EZrReflectionTypeCategory;
+
+typedef struct SZrReflectionTypeIdentity {
+    TZrUInt32 canonicalTypeId;
+    TZrMetadataToken typeToken;
+    TZrUInt64 signatureHash;
+    TZrUInt32 metadataGeneration;
+    EZrReflectionTypeCategory category;
+} SZrReflectionTypeIdentity;
+
+typedef enum EZrReflectionMemberScope {
+    ZR_REFLECTION_MEMBER_SCOPE_DECLARED = 0,
+    ZR_REFLECTION_MEMBER_SCOPE_INHERITED,
+    ZR_REFLECTION_MEMBER_SCOPE_ALL,
+} EZrReflectionMemberScope;
+
+typedef enum EZrReflectionMemberAccess {
+    ZR_REFLECTION_MEMBER_ACCESS_PUBLIC = 0,
+    ZR_REFLECTION_MEMBER_ACCESS_PROTECTED,
+    ZR_REFLECTION_MEMBER_ACCESS_PRIVATE,
+    ZR_REFLECTION_MEMBER_ACCESS_ALL,
+} EZrReflectionMemberAccess;
+
+typedef enum EZrReflectionMemberStorage {
+    ZR_REFLECTION_MEMBER_STORAGE_INSTANCE = 0,
+    ZR_REFLECTION_MEMBER_STORAGE_STATIC,
+    ZR_REFLECTION_MEMBER_STORAGE_ALL,
+} EZrReflectionMemberStorage;
+
+typedef enum EZrReflectionMemberKind {
+    ZR_REFLECTION_MEMBER_KIND_FIELD = 0,
+    ZR_REFLECTION_MEMBER_KIND_PROPERTY,
+    ZR_REFLECTION_MEMBER_KIND_METHOD,
+    ZR_REFLECTION_MEMBER_KIND_META_METHOD,
+    ZR_REFLECTION_MEMBER_KIND_ANY,
+} EZrReflectionMemberKind;
+
+typedef enum EZrReflectionQueryStatus {
+    ZR_REFLECTION_QUERY_STATUS_OK = 0,
+    ZR_REFLECTION_QUERY_STATUS_NOT_FOUND,
+    ZR_REFLECTION_QUERY_STATUS_AMBIGUOUS,
+    ZR_REFLECTION_QUERY_STATUS_ACCESS_DENIED,
+    ZR_REFLECTION_QUERY_STATUS_INVALID_ARGUMENT,
+    ZR_REFLECTION_QUERY_STATUS_METADATA_NOT_PRESERVED,
+} EZrReflectionQueryStatus;
+
+typedef struct SZrReflectionMemberQuery {
+    EZrReflectionMemberScope scope;
+    EZrReflectionMemberAccess access;
+    EZrReflectionMemberStorage storage;
+    TZrBool includeCompilerGenerated;
+    TZrBool includeMetaMethods;
+    TZrBool hasNonPublicAccessCapability;
+} SZrReflectionMemberQuery;
+
+typedef struct SZrReflectionMemberCacheStats {
+    TZrUInt64 hitCount;
+    TZrUInt64 missCount;
+} SZrReflectionMemberCacheStats;
+
+typedef enum EZrReflectionConstructionStatus {
+    ZR_REFLECTION_CONSTRUCTION_STATUS_OK = 0,
+    ZR_REFLECTION_CONSTRUCTION_STATUS_TYPE_NOT_CONSTRUCTIBLE,
+    ZR_REFLECTION_CONSTRUCTION_STATUS_CONSTRUCTOR_NOT_FOUND,
+    ZR_REFLECTION_CONSTRUCTION_STATUS_CONSTRUCTOR_AMBIGUOUS,
+    ZR_REFLECTION_CONSTRUCTION_STATUS_CONSTRUCTOR_THREW,
+    ZR_REFLECTION_CONSTRUCTION_STATUS_INVALID_ARGUMENT,
+} EZrReflectionConstructionStatus;
+
+typedef struct SZrReflectionConstructionCacheStats {
+    TZrUInt64 hitCount;
+    TZrUInt64 missCount;
+} SZrReflectionConstructionCacheStats;
+
 typedef struct SZrReflectionResolvedGenericArgument {
     TZrMetadataToken typeSpecToken;
     TZrMetadataToken genericSignatureToken;
@@ -202,6 +286,75 @@ ZR_CORE_API struct SZrString *ZrCore_Reflection_FormatObject(struct SZrState *st
 
 ZR_CORE_API struct SZrObject *ZrCore_Reflection_BuildTypeLiteralObject(struct SZrState *state,
                                                                        struct SZrString *typeName);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_BuildTypeIdObject(
+        struct SZrState *state,
+        struct SZrString *canonicalTypeName,
+        const SZrReflectionTypeIdentity *identity);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_IsTypeIdObject(
+        struct SZrState *state,
+        struct SZrObject *object);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_ReadTypeIdObject(
+        struct SZrState *state,
+        struct SZrObject *object,
+        SZrReflectionTypeIdentity *outIdentity,
+        struct SZrString **outCanonicalTypeName);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_ResolveTypeIdObject(
+        struct SZrState *state,
+        struct SZrObject *typeIdObject);
+
+ZR_CORE_API void ZrCore_Reflection_MemberQueryInitDefault(
+        SZrReflectionMemberQuery *query);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_QueryMembers(
+        struct SZrState *state,
+        struct SZrObject *typeDescriptor,
+        EZrReflectionMemberKind kind,
+        const SZrReflectionMemberQuery *query,
+        struct SZrObject **outMembers,
+        EZrReflectionQueryStatus *outStatus);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_GetMember(
+        struct SZrState *state,
+        struct SZrObject *typeDescriptor,
+        const struct SZrString *name,
+        EZrReflectionMemberKind kind,
+        const struct SZrObject *const *parameterTypeIds,
+        TZrUInt32 parameterTypeCount,
+        const SZrReflectionMemberQuery *query,
+        struct SZrObject **outMember,
+        EZrReflectionQueryStatus *outStatus);
+
+ZR_CORE_API void ZrCore_Reflection_DebugResetMemberCacheStats(void);
+
+ZR_CORE_API SZrReflectionMemberCacheStats
+ZrCore_Reflection_DebugGetMemberCacheStats(void);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_RequireConstructible(
+        struct SZrState *state,
+        struct SZrObject *typeDescriptor,
+        EZrReflectionConstructionStatus *outStatus);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_CreateInstance(
+        struct SZrState *state,
+        struct SZrObject *typeDescriptor,
+        const struct SZrTypeValue *arguments,
+        TZrSize argumentCount,
+        struct SZrTypeValue *result,
+        EZrReflectionConstructionStatus *outStatus);
+
+ZR_CORE_API void ZrCore_Reflection_DebugResetConstructionCacheStats(void);
+
+ZR_CORE_API SZrReflectionConstructionCacheStats
+ZrCore_Reflection_DebugGetConstructionCacheStats(void);
+
+ZR_CORE_API TZrBool ZrCore_Reflection_BindTypeIdDescriptor(
+        struct SZrState *state,
+        struct SZrObject *typeIdObject,
+        struct SZrObject *descriptor);
 
 ZR_CORE_API struct SZrObject *ZrCore_Reflection_BuildCallableTypeLiteralObject(
         struct SZrState *state,

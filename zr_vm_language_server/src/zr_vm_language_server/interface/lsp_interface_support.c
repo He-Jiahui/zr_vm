@@ -1695,9 +1695,23 @@ static const SZrTypePrototypeInfo *find_type_prototype_by_text(SZrSemanticAnalyz
     SZrCompilerState *compilerState;
     const SZrTypePrototypeInfo *bestMatch = ZR_NULL;
     SZrString *typeNameString;
+    TZrChar normalizedTypeName[ZR_LSP_TEXT_BUFFER_LENGTH];
+    const TZrChar *prototypeTypeName = typeName;
+    const TZrChar *genericStart;
 
     if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
+    }
+
+    genericStart = strpbrk(typeName, "<[");
+    if (genericStart != ZR_NULL && genericStart > typeName) {
+        TZrSize normalizedLength = (TZrSize)(genericStart - typeName);
+        if (normalizedLength >= sizeof(normalizedTypeName)) {
+            return ZR_NULL;
+        }
+        memcpy(normalizedTypeName, typeName, normalizedLength);
+        normalizedTypeName[normalizedLength] = '\0';
+        prototypeTypeName = normalizedTypeName;
     }
 
     compilerState = analyzer->compilerState;
@@ -1706,7 +1720,7 @@ static const SZrTypePrototypeInfo *find_type_prototype_by_text(SZrSemanticAnalyz
             (const SZrTypePrototypeInfo *)ZrCore_Array_Get(&compilerState->typePrototypes, index);
         if (prototype != ZR_NULL &&
             prototype->name != ZR_NULL &&
-            strcmp(ZrCore_String_GetNativeString(prototype->name), typeName) == 0) {
+            strcmp(ZrCore_String_GetNativeString(prototype->name), prototypeTypeName) == 0) {
             if (bestMatch == ZR_NULL || (bestMatch->isImportedNative && !prototype->isImportedNative)) {
                 bestMatch = prototype;
                 if (!prototype->isImportedNative) {
@@ -1718,7 +1732,7 @@ static const SZrTypePrototypeInfo *find_type_prototype_by_text(SZrSemanticAnalyz
 
     if (compilerState->currentTypePrototypeInfo != ZR_NULL &&
         compilerState->currentTypePrototypeInfo->name != ZR_NULL &&
-        strcmp(ZrCore_String_GetNativeString(compilerState->currentTypePrototypeInfo->name), typeName) == 0 &&
+        strcmp(ZrCore_String_GetNativeString(compilerState->currentTypePrototypeInfo->name), prototypeTypeName) == 0 &&
         (bestMatch == ZR_NULL ||
          (bestMatch->isImportedNative && !compilerState->currentTypePrototypeInfo->isImportedNative))) {
         bestMatch = compilerState->currentTypePrototypeInfo;
@@ -1732,7 +1746,9 @@ static const SZrTypePrototypeInfo *find_type_prototype_by_text(SZrSemanticAnalyz
     }
 
     typeNameString = compilerState->state != ZR_NULL
-                             ? ZrCore_String_Create(compilerState->state, (TZrNativeString)typeName, strlen(typeName))
+                             ? ZrCore_String_Create(compilerState->state,
+                                                    (TZrNativeString)prototypeTypeName,
+                                                    strlen(prototypeTypeName))
                              : ZR_NULL;
     if (typeNameString == ZR_NULL || !find_compiler_type_prototype_inference(compilerState, typeNameString)) {
         return ZR_NULL;
@@ -1743,7 +1759,7 @@ static const SZrTypePrototypeInfo *find_type_prototype_by_text(SZrSemanticAnalyz
             (const SZrTypePrototypeInfo *)ZrCore_Array_Get(&compilerState->typePrototypes, index);
         if (prototype != ZR_NULL &&
             prototype->name != ZR_NULL &&
-            strcmp(ZrCore_String_GetNativeString(prototype->name), typeName) == 0 &&
+            strcmp(ZrCore_String_GetNativeString(prototype->name), prototypeTypeName) == 0 &&
             (bestMatch == ZR_NULL || (bestMatch->isImportedNative && !prototype->isImportedNative))) {
             bestMatch = prototype;
             if (!prototype->isImportedNative) {
@@ -1754,7 +1770,7 @@ static const SZrTypePrototypeInfo *find_type_prototype_by_text(SZrSemanticAnalyz
 
     if (compilerState->currentTypePrototypeInfo != ZR_NULL &&
         compilerState->currentTypePrototypeInfo->name != ZR_NULL &&
-        strcmp(ZrCore_String_GetNativeString(compilerState->currentTypePrototypeInfo->name), typeName) == 0 &&
+        strcmp(ZrCore_String_GetNativeString(compilerState->currentTypePrototypeInfo->name), prototypeTypeName) == 0 &&
         (bestMatch == ZR_NULL ||
          (bestMatch->isImportedNative && !compilerState->currentTypePrototypeInfo->isImportedNative))) {
         bestMatch = compilerState->currentTypePrototypeInfo;
@@ -2077,6 +2093,36 @@ static TZrBool copy_type_text_from_type_env(SZrState *state,
     return typeText != ZR_NULL && typeText[0] != '\0';
 }
 
+static TZrBool copy_type_text_from_reference_fact(
+        SZrSemanticAnalyzer *analyzer,
+        SZrString *uri,
+        const TZrChar *content,
+        TZrSize contentLength,
+        const TZrChar *receiverText,
+        TZrChar *buffer,
+        TZrSize bufferSize) {
+    SZrFilePosition position;
+    SZrFileRange range;
+    const SZrSemanticReferenceFact *fact;
+    TZrSize receiverOffset;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        content == ZR_NULL || receiverText == ZR_NULL || receiverText < content ||
+        receiverText >= content + contentLength || buffer == ZR_NULL || bufferSize == 0u) {
+        return ZR_FALSE;
+    }
+    receiverOffset = (TZrSize)(receiverText - content);
+    position = lsp_interface_support_file_position_from_offset(
+            content, contentLength, receiverOffset);
+    range = ZrParser_FileRange_Create(position, position, uri);
+    fact = ZrParser_SemanticFacts_FindReferenceAtPosition(
+            analyzer->semanticContext, range);
+    return fact != ZR_NULL && fact->typeId != ZR_SEMANTIC_ID_INVALID &&
+           ZrLanguageServer_SemanticAnalyzer_FormatTypeId(
+                   analyzer->semanticContext, fact->typeId, buffer, bufferSize) &&
+           receiver_type_text_is_specific(buffer);
+}
+
 static TZrBool receiver_name_is_explicit_type_binding(SZrSemanticAnalyzer *analyzer, SZrString *receiverName) {
     if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
         analyzer->compilerState->typeEnv == ZR_NULL || receiverName == ZR_NULL) {
@@ -2181,6 +2227,16 @@ static TZrBool resolve_receiver_type_text(SZrState *state,
     }
 
     buffer[0] = '\0';
+    if (copy_type_text_from_reference_fact(
+                analyzer,
+                uri,
+                content,
+                contentLength,
+                receiverText,
+                buffer,
+                bufferSize)) {
+        return ZR_TRUE;
+    }
     receiverSymbol = lookup_receiver_symbol_at_offset(analyzer,
                                                       uri,
                                                       content,
@@ -4866,6 +4922,26 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
     }
 
     if (!wantStatic) {
+        if (copy_type_text_from_reference_fact(analyzer,
+                                               uri,
+                                               content,
+                                               contentLength,
+                                               content + receiverStart,
+                                               receiverTypeName,
+                                               sizeof(receiverTypeName))) {
+            receiverPrototype = find_type_prototype_by_text(analyzer, receiverTypeName);
+            if (receiverPrototype != ZR_NULL) {
+                append_type_prototype_member_completions(state,
+                                                         analyzer,
+                                                         receiverPrototype,
+                                                         ZR_FALSE,
+                                                         0,
+                                                         result);
+                if (result->length > 0) {
+                    return ZR_TRUE;
+                }
+            }
+        }
         find_receiver_variable_prototype_recursive(state,
                                                    analyzer,
                                                    ast,

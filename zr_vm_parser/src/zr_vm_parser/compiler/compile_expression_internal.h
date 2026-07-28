@@ -33,6 +33,10 @@ void compile_function_call(SZrCompilerState *cs, SZrAstNode *node);
 void compile_member_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_import_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_type_query_expression(SZrCompilerState *cs, SZrAstNode *node);
+TZrBool compiler_build_type_identity_value(SZrCompilerState *cs,
+                                           SZrType *typeOperand,
+                                           SZrFileRange location,
+                                           SZrTypeValue *outValue);
 void compile_type_literal_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node);
 TZrUInt32 compile_primary_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot);
