@@ -191,9 +191,9 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
                 "target_plan_not_promoted",
             ),
             "percentType": (
-                MigrationClassification.TARGET_NOT_PROMOTED,
+                MigrationClassification.MACHINE_APPLICABLE,
                 "08",
-                "target_plan_not_promoted",
+                "runtime_type_query_has_current_syntax",
             ),
             "percentOwned": (
                 MigrationClassification.MACHINE_APPLICABLE,
@@ -227,7 +227,7 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
             ),
             "legacyDynamicDollarConstruct": (
                 MigrationClassification.REQUIRES_REVIEW,
-                "06A",
+                "08",
                 "dynamic_constructor_requires_reflection_review",
             ),
             "legacyBareTypeCall": (

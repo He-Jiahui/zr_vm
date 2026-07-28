@@ -2,7 +2,7 @@
 
 ## 结论
 
-- 复验日期：2026-07-28（UTC+08:00）。
+- 复验日期：2026-07-28 至 2026-07-29（UTC+08:00）。
 - 清点规则：递归扫描 `docs/plans/syntax` 下名称以数字开头的子目录中的
   Markdown 文件，排除 `*-implementation-plan.md`。
 - 清点结果：严格得到 55 份状态记录；55 份均自述为某种完成状态。
@@ -55,6 +55,32 @@
 上层 Gate 结论保持保守：08 的 spread 调用/AOT 等完整验收、09 的跨 consumer 集成，
 以及 11、14 的实施状态仍未关闭，因此依赖它们的 10C、06B、07B 也不能宣告完成。
 本轮提交推进并加固 08/09，但不修改这些根 Gate 的状态。
+
+## 2026-07-29 最终提交前复验
+
+提交前再次从当前 `HEAD` 和工作树执行独立清点，仍严格得到 55 份状态记录：
+目录分布为 01=5、02=6、03=5、04=7、05=6、06=2、07=1、10=5、12=15、
+13=3；状态分布为 `已完成`=23、`completed`=29，以及三种带历史限定的
+completed 状态各 1。缺失状态 0，非完成状态 0。
+
+仓库迁移 inventory 首次复跑为 4/5：失败项仅为当前已跟踪计划文档与旧 golden
+不一致。按当前 Git 跟踪集合机械重建
+`tests/fixtures/syntax_migration_inventory/expected/repository-inventory.json` 后，协议
+测试复跑 5/5。同时将 Python 协议对 `%type` 和动态 `$Type(...)` 的旧断言同步到
+生成器及 C 端测试已经采用的 Gate 08 分类。golden 新增 41 个 `historicalPlan`
+排除项和 25 个已扫描文件条目；findings 仍为 769、unknown 仍为 0，分类计数及
+目标计划计数均未改变。
+
+使用 Windows MSVC 19.44 Debug 重新构建 7 个定向目标，452 个 Ninja 步骤完成并
+成功链接。随后直接运行对应可执行文件，合计 160/160 通过：reflection surface
+18/18、reflection stress 3/3、generational pool 9/9、legacy migration 9/9、module
+system 89/89、thread runtime 25/25、syntax reference v1 7/7。
+
+WSL GCC 定向重建在 `/mnt/e` 文件系统 I/O 上持续超过 84 分钟仍未完成，因此已终止
+本轮启动的 Ninja 进程，且不把它记为新的 GCC 通过证据；上文 GCC/Clang 结果仍是
+先前完整验收记录。曾用于探索 Gate 08 的 spread-call 实验代码、测试目标和构建产物
+均未纳入本次结论或提交，最终源码中无对应实验标记。根 promotion gate 的未完成
+边界保持不变。
 
 ## 55 份记录逐项结果
 

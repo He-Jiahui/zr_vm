@@ -428,6 +428,34 @@
       "reason": "historicalPlan"
     },
     {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-07-28-e1a-canonical-local-binding-artifact.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-07-28-e1b1-paused-frame-canonical-bindings.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-07-28-e1b2a-receiver-canonical-carrier.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-07-28-e1b2b1-reflection-generic-context.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-07-28-e2a-formal-expression-fragment-parser.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-07-28-e2b0-canonical-binding-injection.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-07-29-e2b1-paused-frame-canonical-binding-integration.md",
+      "reason": "historicalPlan"
+    },
+    {
       "file": "docs/plans/lsp/05-implementation-blueprint.md",
       "reason": "historicalPlan"
     },
@@ -564,6 +592,10 @@
       "reason": "historicalPlan"
     },
     {
+      "file": "docs/plans/syntax/05-property-unified-ast/m5-1-unified-property-variance-lsp-follow-up.md",
+      "reason": "historicalPlan"
+    },
+    {
       "file": "docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration-implementation-plan.md",
       "reason": "historicalPlan"
     },
@@ -601,6 +633,134 @@
     },
     {
       "file": "docs/plans/syntax/10-native-ffi-module-package/m1-specifier-foundation.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/10-native-ffi-module-package/m2-artifact-provider-phase.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/10-native-ffi-module-package/m2-manifest-artifact-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/10-native-ffi-module-package/m2-v2-declarations.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/10-native-ffi-module-package/m2-v2-manifest-admission.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/10-native-ffi-module-package/m2-v2-writer-lock.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m1-explicit-task-syntax-effect-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m1-explicit-task-syntax-effect.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m2-task-frame-runtime-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m2-task-frame-runtime.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m3-job-scheduler-runtime-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m3-job-scheduler-runtime.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m4-attached-domain-thread-scheduler-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m4-attached-domain-thread-scheduler.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m5-isolated-domain-transport-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m5-isolated-domain-transport.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m6-1a-scheduler-artifact-contract.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m6-1b-1-imported-scheduler-identity.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m6-1b-2a-compiler-scheduler-source-fact.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m6-1b-2b-artifact-writer.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m6-2-task-runtime-migration.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m6-3-debug-projection-fault-semantics.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m6-4-lsp-artifact-projection-and-workspace-migration.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m6-4a-lsp-reachability-fact-spans.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m6-4b-canonical-generic-projection-convergence.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m6-artifact-debug-lsp-migration-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/12-async-task-job-scheduler/m6-artifact-debug-lsp-migration.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/13-iterator-enumerator-yield/m1-enumerator-protocol-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/13-iterator-enumerator-yield/m1-enumerator-protocol.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/13-iterator-enumerator-yield/m2-yield-syntax-semir-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/13-iterator-enumerator-yield/m2-yield-syntax-semir.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/13-iterator-enumerator-yield/m3-iterator-frame-runtime-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/13-iterator-enumerator-yield/m3-iterator-frame-runtime.md",
       "reason": "historicalPlan"
     },
     {
@@ -729,6 +889,10 @@
     },
     {
       "file": "docs/superpowers/plans/2026-06-03-zr-vm-semantic-inference-fact-layer.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/superpowers/plans/2026-07-28-lsp-e2b1-extension-release.md",
       "reason": "historicalPlan"
     },
     {
@@ -15298,6 +15462,10 @@
       "sourceKind": "currentDocumentation"
     },
     {
+      "file": "docs/cli-and-tooling/lsp-scheduler-artifact-projection.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
       "file": "docs/cli-and-tooling/lsp-source-rename-workspace-edits.md",
       "sourceKind": "currentDocumentation"
     },
@@ -15334,6 +15502,10 @@
       "sourceKind": "currentDocumentation"
     },
     {
+      "file": "docs/core-runtime/debug-canonical-local-bindings.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
       "file": "docs/core-runtime/exception-scope-resource-cleanup.md",
       "sourceKind": "currentDocumentation"
     },
@@ -15358,7 +15530,15 @@
       "sourceKind": "currentDocumentation"
     },
     {
+      "file": "docs/core-runtime/iterator-frame-runtime.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
       "file": "docs/core-runtime/property-accessor-dispatch.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
+      "file": "docs/core-runtime/task-frame-runtime.md",
       "sourceKind": "currentDocumentation"
     },
     {
@@ -15378,6 +15558,10 @@
       "sourceKind": "currentDocumentation"
     },
     {
+      "file": "docs/library-and-builtins/zr-iteration-protocol.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
       "file": "docs/library-and-builtins/zr-pooling-and-pinned-ffi-views.md",
       "sourceKind": "currentDocumentation"
     },
@@ -15386,11 +15570,19 @@
       "sourceKind": "currentDocumentation"
     },
     {
+      "file": "docs/library-and-builtins/zr-task-job-scheduler.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
       "file": "docs/library-and-builtins/zr-task-runtime.md",
       "sourceKind": "currentDocumentation"
     },
     {
       "file": "docs/library-and-builtins/zr-thread-runtime.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
+      "file": "docs/library-and-builtins/zr-thread-scheduler.md",
       "sourceKind": "currentDocumentation"
     },
     {
@@ -15418,6 +15610,14 @@
       "sourceKind": "currentDocumentation"
     },
     {
+      "file": "docs/parser-and-semantics/async-task-syntax-and-effect.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
+      "file": "docs/parser-and-semantics/canonical-binding-injection.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
       "file": "docs/parser-and-semantics/canonical-consumer-projection.md",
       "sourceKind": "currentDocumentation"
     },
@@ -15442,11 +15642,19 @@
       "sourceKind": "currentDocumentation"
     },
     {
+      "file": "docs/parser-and-semantics/expression-fragment-parser.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
       "file": "docs/parser-and-semantics/ffi-extern-declarations.md",
       "sourceKind": "currentDocumentation"
     },
     {
       "file": "docs/parser-and-semantics/index.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
+      "file": "docs/parser-and-semantics/iterator-yield-suspension.md",
       "sourceKind": "currentDocumentation"
     },
     {
@@ -15507,6 +15715,10 @@
     },
     {
       "file": "docs/parser-and-semantics/resource-unique-drop.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
+      "file": "docs/parser-and-semantics/scheduler-artifact-source-writer.md",
       "sourceKind": "currentDocumentation"
     },
     {
@@ -15995,6 +16207,10 @@
     },
     {
       "file": "tests/container/test_container_type_inference.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/container/test_generational_pool.c",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -16994,6 +17210,30 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/iterator/test_enumerator_protocol.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/iterator/test_iterator_gc_drop.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/iterator/test_iterator_runtime.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/iterator/test_iterator_semantic_ir.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/iterator/test_yield_semantic.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/iterator/test_yield_syntax.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/language_server/descriptor_plugin_fixture_float.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -17507,6 +17747,10 @@
     },
     {
       "file": "tests/library/test_project_manifest_normalization.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/library/test_project_manifest_v2.c",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -18186,6 +18430,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/parser/test_expression_fragment_parser.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/parser/test_generic_constraints.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -18438,6 +18686,14 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/parser/test_reflection_type_stress.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/parser/test_reflection_type_surface.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/parser/test_resource_owner_borrow_receiver.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -18599,6 +18855,14 @@
     },
     {
       "file": "tests/system/test_system_fs_module.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/task/test_task_frame_runtime.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/task/test_task_job_scheduler.c",
       "sourceKind": "embeddedZrFixture"
     },
     {
