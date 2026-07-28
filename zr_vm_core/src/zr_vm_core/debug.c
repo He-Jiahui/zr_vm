@@ -3,6 +3,8 @@
 //
 #include "zr_vm_core/debug.h"
 
+#include "debug_evaluation_context_internal.h"
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -186,53 +188,6 @@ static EZrDebugEvaluationContextStatus debug_evaluation_context_count_active_bin
         }
         count++;
     }
-}
-
-static EZrDebugEvaluationContextStatus debug_evaluation_context_validate(
-        SZrState *state,
-        const SZrDebugEvaluationContext *context,
-        SZrCallInfo **outCallInfo,
-        SZrFunction **outFunction) {
-    SZrCallInfo *activeCallInfo;
-    SZrCallInfo *callInfo;
-    SZrFunction *function;
-
-    if (outCallInfo != ZR_NULL) {
-        *outCallInfo = ZR_NULL;
-    }
-    if (outFunction != ZR_NULL) {
-        *outFunction = ZR_NULL;
-    }
-    if (state == ZR_NULL || context == ZR_NULL || context->activation.callInfo == ZR_NULL ||
-        context->activation.function == ZR_NULL || context->frameGeneration == 0u) {
-        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT;
-    }
-
-    callInfo = context->activation.callInfo;
-    for (activeCallInfo = state->callInfoList;
-         activeCallInfo != ZR_NULL && activeCallInfo != callInfo;
-         activeCallInfo = activeCallInfo->previous) {
-    }
-    if (activeCallInfo == ZR_NULL) {
-        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME;
-    }
-    if (!ZR_CALL_INFO_IS_VM(callInfo) || callInfo->debugFrameGeneration != context->frameGeneration) {
-        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME;
-    }
-
-    function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
-    if (function == ZR_NULL || function != context->activation.function ||
-        debug_get_current_instruction_offset(callInfo, function) != context->instructionOffset) {
-        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME;
-    }
-
-    if (outCallInfo != ZR_NULL) {
-        *outCallInfo = callInfo;
-    }
-    if (outFunction != ZR_NULL) {
-        *outFunction = function;
-    }
-    return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
 }
 
 static TZrStackValuePointer debug_get_frame_base(SZrCallInfo *callInfo) {

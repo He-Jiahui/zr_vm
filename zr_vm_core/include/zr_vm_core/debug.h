@@ -14,6 +14,7 @@ struct SZrObjectPrototype;
 struct SZrObject;
 struct SZrFunction;
 struct SZrClosure;
+struct SZrMetadataRuntime;
 
 typedef enum EZrDebugAsyncContractOrigin {
     ZR_DEBUG_ASYNC_CONTRACT_ORIGIN_NONE = 0,
@@ -161,6 +162,22 @@ typedef struct SZrDebugEvaluationContext {
     TZrUInt16 reserved0;
 } SZrDebugEvaluationContext;
 
+typedef enum EZrDebugGenericContextKind {
+    ZR_DEBUG_GENERIC_CONTEXT_TYPE = 0,
+    ZR_DEBUG_GENERIC_CONTEXT_METHOD
+} EZrDebugGenericContextKind;
+
+/*
+ * Borrowed reflection type object resolved for the currently paused frame.
+ * The object remains valid only while the evaluation context remains current.
+ */
+typedef struct SZrDebugGenericArgument {
+    EZrDebugGenericContextKind contextKind;
+    TZrMetadataToken ownerToken;
+    TZrUInt32 parameterIndex;
+    struct SZrObject *typeObject;
+} SZrDebugGenericArgument;
+
 struct ZR_STRUCT_ALIGN SZrDebugInfo {
     EZrDebugHookEvent event;
 
@@ -222,6 +239,15 @@ ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetRe
         const SZrDebugEvaluationContext *context,
         SZrDebugFrameBinding *outBinding,
         struct SZrTypeValue *outValue);
+
+ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetGenericArgument(
+        struct SZrState *state,
+        const SZrDebugEvaluationContext *context,
+        struct SZrMetadataRuntime *runtime,
+        EZrDebugGenericContextKind contextKind,
+        TZrMetadataToken ownerToken,
+        TZrUInt32 parameterIndex,
+        SZrDebugGenericArgument *outArgument);
 
 ZR_CORE_API TZrBool ZrCore_Debug_GetInfo(struct SZrState *state,
                                          const SZrDebugActivation *activation,

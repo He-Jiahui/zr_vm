@@ -598,8 +598,14 @@ typedef struct SMethodSpecExecutionCapture {
     SZrMetadataRuntime *runtime;
     SZrFunction *expectedFunction;
     SZrObject *resolvedArgument;
+    SZrDebugEvaluationContext evaluationContext;
     TZrBool observedMethodContext;
     TZrBool observedNoTypeContext;
+    TZrBool observedDebugGenericMethodContext;
+    TZrBool observedDebugGenericTypeUnavailable;
+    TZrBool observedDebugGenericWrongOwnerUnavailable;
+    TZrBool debugPrimitiveArgumentMatched;
+    TZrBool debugResolvedArgumentMatched;
     TZrUInt32 observedCount;
 } SMethodSpecExecutionCapture;
 
@@ -633,6 +639,59 @@ static TZrDebugSignal test_capture_method_spec_execution_context(
                     state->callInfoList,
                     TEST_METHOD_CONTEXT_MEMBER_TOKEN,
                     1u);
+    if (ZrCore_Debug_GetEvaluationContext(state, 0u, &capture->evaluationContext) ==
+        ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        SZrDebugGenericArgument genericArgument;
+
+        if (ZrCore_Debug_EvaluationContext_GetGenericArgument(
+                    state,
+                    &capture->evaluationContext,
+                    capture->runtime,
+                    ZR_DEBUG_GENERIC_CONTEXT_METHOD,
+                    TEST_METHOD_CONTEXT_MEMBER_TOKEN,
+                    0u,
+                    &genericArgument) == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+            capture->debugPrimitiveArgumentMatched =
+                    genericArgument.typeObject ==
+                    ZrCore_Reflection_ResolveInterpreterGenericMethodCallInfoParameterTypeObject(
+                            state,
+                            capture->runtime,
+                            state->callInfoList,
+                            TEST_METHOD_CONTEXT_MEMBER_TOKEN,
+                            0u);
+        }
+        if (ZrCore_Debug_EvaluationContext_GetGenericArgument(
+                    state,
+                    &capture->evaluationContext,
+                    capture->runtime,
+                    ZR_DEBUG_GENERIC_CONTEXT_METHOD,
+                    TEST_METHOD_CONTEXT_MEMBER_TOKEN,
+                    1u,
+                    &genericArgument) == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+            capture->debugResolvedArgumentMatched = genericArgument.typeObject == capture->resolvedArgument;
+            capture->observedDebugGenericMethodContext = ZR_TRUE;
+        }
+        capture->observedDebugGenericTypeUnavailable =
+                ZrCore_Debug_EvaluationContext_GetGenericArgument(
+                        state,
+                        &capture->evaluationContext,
+                        capture->runtime,
+                        ZR_DEBUG_GENERIC_CONTEXT_TYPE,
+                        TEST_METHOD_CONTEXT_MEMBER_TOKEN,
+                        1u,
+                        &genericArgument) ==
+                ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
+        capture->observedDebugGenericWrongOwnerUnavailable =
+                ZrCore_Debug_EvaluationContext_GetGenericArgument(
+                        state,
+                        &capture->evaluationContext,
+                        capture->runtime,
+                        ZR_DEBUG_GENERIC_CONTEXT_METHOD,
+                        TEST_TYPE_DEF_TOKEN,
+                        1u,
+                        &genericArgument) ==
+                ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
+    }
     state->debugHookSignal = 0u;
     return ZR_DEBUG_SIGNAL_NONE;
 }
@@ -728,11 +787,30 @@ static void test_method_spec_executes_resolved_vm_function_with_context(void) {
     TEST_ASSERT_TRUE(capture.observedMethodContext);
     TEST_ASSERT_TRUE(capture.observedNoTypeContext);
     TEST_ASSERT_NOT_NULL(capture.resolvedArgument);
+    TEST_ASSERT_TRUE(capture.observedDebugGenericMethodContext);
+    TEST_ASSERT_TRUE(capture.observedDebugGenericTypeUnavailable);
+    TEST_ASSERT_TRUE(capture.observedDebugGenericWrongOwnerUnavailable);
+    TEST_ASSERT_TRUE(capture.debugPrimitiveArgumentMatched);
+    TEST_ASSERT_TRUE(capture.debugResolvedArgumentMatched);
     assert_object_int_field(
             state, capture.resolvedArgument, "typeToken", TEST_METHOD_CONTEXT_TYPE_REF_TOKEN);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
     TEST_ASSERT_EQUAL_INT64(109, result.value.nativeObject.nativeInt64);
     TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, state->threadStatus);
+    {
+        SZrDebugGenericArgument staleArgument;
+
+        TEST_ASSERT_EQUAL_INT(
+                ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME,
+                ZrCore_Debug_EvaluationContext_GetGenericArgument(
+                        state,
+                        &capture.evaluationContext,
+                        runtime,
+                        ZR_DEBUG_GENERIC_CONTEXT_METHOD,
+                        TEST_METHOD_CONTEXT_MEMBER_TOKEN,
+                        1u,
+                        &staleArgument));
+    }
 
     ZrCore_Value_InitAsInt(state, &result, 91);
     TEST_ASSERT_FALSE(ZrCore_Reflection_InvokeInterpreterGenericMethodSpec(

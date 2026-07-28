@@ -6,6 +6,7 @@ related_code:
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/src/zr_vm_core/debug.c
+  - zr_vm_core/src/zr_vm_core/debug_evaluation_context.c
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
@@ -22,6 +23,7 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/src/zr_vm_core/debug.c
+  - zr_vm_core/src/zr_vm_core/debug_evaluation_context.c
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
@@ -36,6 +38,8 @@ plan_sources:
 tests:
   - tests/debug/test_debug_metadata.c
   - tests/debug/test_debug_introspection.c
+  - tests/module/test_reflection_dynamic_generic_instance_interpreter.h
+  - tests/module/test_reflection_dynamic_generic_method_context.h
   - docs/plans/lsp/04-debug-and-repl/2026-07-28-e1a-canonical-local-binding-artifact.md
   - docs/plans/lsp/04-debug-and-repl/2026-07-28-e1b1-paused-frame-canonical-bindings.md
 doc_type: module-detail
@@ -109,11 +113,22 @@ exact frame slot. A free/static frame with complete typed-local metadata returns
 or incomplete identities return `METADATA_UNAVAILABLE`. It never derives a
 receiver from a local name, member name, display type, AST, or text.
 
-E1b1's generic presence flags remain availability-only. Structured generic
-type/value substitutions are E1b2b work. Formal parser/binder reuse, effect
-policy, result transport, and REPL transport remain E2 through E5. In
-particular, `zr_vm_lib_debug/debug_eval.c` must not use these fields to justify
-its independent expression parser.
+`ZrCore_Debug_EvaluationContext_GetGenericArgument` is the E1b2b1 reflection
+metadata projection. It first revalidates the paused activation, frame
+generation, and PC, then accepts only a structured context kind, owner metadata
+token, and parameter index. Type and method generic contexts use the existing
+public reflection call-info resolvers; missing context, wrong owner, and absent
+metadata return `METADATA_UNAVAILABLE`. The returned type object is borrowed and
+may be consumed only while the same paused context remains current. The query
+does not inspect reflection-private fields or recover generic arguments from a
+name, display string, AST, or hidden accessor.
+
+E1b2b1 is deliberately limited to reflection type-object metadata. Source
+`TypeId` substitutions and const-generic values are not retained by this runtime
+carrier, so their canonical frame transport remains E1b2b2 work. Formal
+parser/binder reuse, effect policy, result transport, and REPL transport remain
+E2 through E5. In particular, `zr_vm_lib_debug/debug_eval.c` must not use these
+fields to justify its independent expression parser.
 
 ## Validation
 
@@ -139,3 +154,12 @@ declaration range without member names, hidden-accessor names, AST pairing, or
 compiler-private trees. On 2026-07-28, GCC, Clang, and a fresh MSVC shared
 build each passed `zr_vm_debug_metadata_test` (6 tests) and
 `zr_vm_debug_introspection_test` (2 tests) with real exit 0.
+
+`test_interpreter_generic_instance_executes_resolved_vm_method_with_context`
+and `test_method_spec_executes_resolved_vm_function_with_context` query type
+and method generic arguments from their paused trace hooks. They compare the
+returned object against the existing public reflection resolver, reject the
+opposite context kind and wrong owner token, and verify that the captured
+context is stale after the frame returns. On 2026-07-28, GCC, Clang, and a fresh
+MSVC shared build each passed `zr_vm_reflection_dynamic_generic_instance_test`
+(35 tests) and `zr_vm_debug_introspection_test` (2 tests) with real exit 0.
