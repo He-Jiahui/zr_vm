@@ -29,6 +29,39 @@ static SZrCompilerSemanticIrSlot *compiler_semantic_ir_find_slot(
     return ZR_NULL;
 }
 
+TZrBool compiler_semantic_ir_get_slot_identity(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        SZrCompilerSemanticIrSlotIdentity *outIdentity) {
+    SZrCompilerSemanticIrSlot *slot;
+    const SZrParserPlace *place;
+
+    if (outIdentity == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    memset(outIdentity, 0, sizeof(*outIdentity));
+    if (cs == ZR_NULL || !cs->preSemanticIrInitialized) {
+        return ZR_FALSE;
+    }
+
+    slot = compiler_semantic_ir_find_slot(cs, stackSlot);
+    if (slot == ZR_NULL || slot->typeId == ZR_SEMANTIC_ID_INVALID ||
+        slot->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        slot->placeId == ZR_PLACE_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    place = ZrParser_PlaceGraph_Get(&cs->preSemanticIr.places, slot->placeId);
+    if (place == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    outIdentity->typeId = slot->typeId;
+    outIdentity->symbolId = slot->symbolId;
+    outIdentity->placeId = slot->placeId;
+    outIdentity->declarationRange = place->sourceRange;
+    return ZR_TRUE;
+}
+
 static TZrBool compiler_semantic_ir_slot_is_unique_owner(
         const SZrCompilerState *cs,
         const SZrCompilerSemanticIrSlot *slot) {

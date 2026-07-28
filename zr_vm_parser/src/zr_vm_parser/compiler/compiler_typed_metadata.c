@@ -1287,6 +1287,7 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
     for (TZrUInt32 index = 0; index < localCount; index++) {
         SZrFunctionLocalVariable *localVar =
                 (SZrFunctionLocalVariable *)ZrCore_Array_Get(&cs->localVars, index);
+        SZrCompilerSemanticIrSlotIdentity semanticIdentity;
         SZrInferredType inferredType;
         SZrAstNode *functionDeclNode;
 
@@ -1298,6 +1299,20 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
 
         bindings[index].name = localVar->name;
         bindings[index].stackSlot = localVar->stackSlot;
+        if (compiler_semantic_ir_get_slot_identity(
+                    cs, localVar->stackSlot, &semanticIdentity)) {
+            bindings[index].symbolId = semanticIdentity.symbolId;
+            bindings[index].typeId = semanticIdentity.typeId;
+            bindings[index].placeId = semanticIdentity.placeId;
+            bindings[index].declarationStartLine =
+                    semanticIdentity.declarationRange.start.line;
+            bindings[index].declarationStartColumn =
+                    semanticIdentity.declarationRange.start.column;
+            bindings[index].declarationEndLine =
+                    semanticIdentity.declarationRange.end.line;
+            bindings[index].declarationEndColumn =
+                    semanticIdentity.declarationRange.end.column;
+        }
 
         if (typed_type_ref_from_injected_this(cs, localVar->name, &bindings[index].type)) {
             continue;

@@ -378,6 +378,65 @@ static void test_binary_roundtrip_preserves_local_variable_names_and_slots(void)
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_binary_roundtrip_preserves_canonical_local_binding_identity(void) {
+    const char *binaryPath = "debug_metadata_local_identity_roundtrip_test.zro";
+    const char *sourcePath = "fixtures/debug/debug_metadata_local_identity_roundtrip_test.zr";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    TZrByte *buffer = ZR_NULL;
+    TZrSize bufferLength = 0;
+    SZrBinaryFixtureReader reader;
+    SZrIo io;
+    SZrIoSource *sourceObject = ZR_NULL;
+    SZrFunction *runtimeFunction = ZR_NULL;
+    const SZrFunctionTypedLocalBinding *sourceBinding;
+    const SZrFunctionTypedLocalBinding *runtimeBinding;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = compile_debug_metadata_locals_fixture(state, sourcePath);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(function->typedLocalBindingLength >= 2);
+    sourceBinding = &function->typedLocalBindings[1];
+    TEST_ASSERT_EQUAL_STRING("second", ZrCore_String_GetNativeString(sourceBinding->name));
+    TEST_ASSERT_NOT_EQUAL(0u, sourceBinding->symbolId);
+    TEST_ASSERT_NOT_EQUAL(0u, sourceBinding->typeId);
+    TEST_ASSERT_NOT_EQUAL(0u, sourceBinding->placeId);
+    TEST_ASSERT_TRUE(sourceBinding->declarationEndLine >= sourceBinding->declarationStartLine);
+
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+
+    buffer = read_binary_file_owned(binaryPath, &bufferLength);
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_TRUE(bufferLength > 0);
+
+    memset(&reader, 0, sizeof(reader));
+    reader.bytes = buffer;
+    reader.length = bufferLength;
+    ZrCore_Io_Init(state, &io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+    sourceObject = ZrCore_Io_ReadSourceNew(&io);
+    TEST_ASSERT_NOT_NULL(sourceObject);
+
+    runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+    TEST_ASSERT_NOT_NULL(runtimeFunction);
+    TEST_ASSERT_EQUAL_UINT32(function->typedLocalBindingLength, runtimeFunction->typedLocalBindingLength);
+    runtimeBinding = &runtimeFunction->typedLocalBindings[1];
+    TEST_ASSERT_EQUAL_STRING("second", ZrCore_String_GetNativeString(runtimeBinding->name));
+    TEST_ASSERT_EQUAL_UINT32(sourceBinding->symbolId, runtimeBinding->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(sourceBinding->typeId, runtimeBinding->typeId);
+    TEST_ASSERT_EQUAL_UINT32(sourceBinding->placeId, runtimeBinding->placeId);
+    TEST_ASSERT_EQUAL_UINT32(sourceBinding->declarationStartLine, runtimeBinding->declarationStartLine);
+    TEST_ASSERT_EQUAL_UINT32(sourceBinding->declarationStartColumn, runtimeBinding->declarationStartColumn);
+    TEST_ASSERT_EQUAL_UINT32(sourceBinding->declarationEndLine, runtimeBinding->declarationEndLine);
+    TEST_ASSERT_EQUAL_UINT32(sourceBinding->declarationEndColumn, runtimeBinding->declarationEndColumn);
+
+    remove(binaryPath);
+    free(buffer);
+    ZrCore_Function_Free(state, function);
+    ZrCore_Function_Free(state, runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -388,5 +447,6 @@ int main(void) {
     RUN_TEST(test_binary_roundtrip_preserves_full_debug_source_path_without_writer_options);
     RUN_TEST(test_binary_roundtrip_preserves_instruction_debug_ranges);
     RUN_TEST(test_binary_roundtrip_preserves_local_variable_names_and_slots);
+    RUN_TEST(test_binary_roundtrip_preserves_canonical_local_binding_identity);
     return UNITY_END();
 }

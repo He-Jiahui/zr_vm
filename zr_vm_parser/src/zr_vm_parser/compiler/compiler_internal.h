@@ -31,9 +31,20 @@
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
+typedef struct SZrCompilerSemanticIrSlotIdentity {
+    TZrTypeId typeId;
+    TZrSymbolId symbolId;
+    TZrPlaceId placeId;
+    SZrFileRange declarationRange;
+} SZrCompilerSemanticIrSlotIdentity;
+
 void compiler_semantic_ir_init(SZrCompilerState *cs);
 void compiler_semantic_ir_reset(SZrCompilerState *cs);
 void compiler_semantic_ir_free(SZrCompilerState *cs);
+TZrBool compiler_semantic_ir_get_slot_identity(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        SZrCompilerSemanticIrSlotIdentity *outIdentity);
 TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
                                              SZrString *name,
                                              TZrUInt32 stackSlot,

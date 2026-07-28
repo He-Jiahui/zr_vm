@@ -868,6 +868,13 @@ static void write_function_typed_local_bindings(FILE *file, SZrState *state, SZr
         write_string_with_length(state, file, binding->name);
         fwrite(&binding->stackSlot, sizeof(TZrUInt32), 1, file);
         write_function_typed_type_ref(file, state, &binding->type);
+        fwrite(&binding->symbolId, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->typeId, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->placeId, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->declarationStartLine, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->declarationStartColumn, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->declarationEndLine, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->declarationEndColumn, sizeof(TZrUInt32), 1, file);
     }
 }
 

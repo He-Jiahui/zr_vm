@@ -948,6 +948,20 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             function->typedLocalBindings[index].stackSlot = source->typedLocalBindings[index].stackSlot;
             io_runtime_copy_typed_type_ref(&function->typedLocalBindings[index].type,
                                            &source->typedLocalBindings[index].type);
+            function->typedLocalBindings[index].symbolId =
+                    source->typedLocalBindings[index].symbolId;
+            function->typedLocalBindings[index].typeId =
+                    source->typedLocalBindings[index].typeId;
+            function->typedLocalBindings[index].placeId =
+                    source->typedLocalBindings[index].placeId;
+            function->typedLocalBindings[index].declarationStartLine =
+                    source->typedLocalBindings[index].declarationStartLine;
+            function->typedLocalBindings[index].declarationStartColumn =
+                    source->typedLocalBindings[index].declarationStartColumn;
+            function->typedLocalBindings[index].declarationEndLine =
+                    source->typedLocalBindings[index].declarationEndLine;
+            function->typedLocalBindings[index].declarationEndColumn =
+                    source->typedLocalBindings[index].declarationEndColumn;
         }
         function->typedLocalBindingLength = (TZrUInt32)source->typedLocalBindingsLength;
     }

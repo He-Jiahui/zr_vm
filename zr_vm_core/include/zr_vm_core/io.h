@@ -146,6 +146,13 @@ typedef struct SZrIoFunctionTypedLocalBinding {
     struct SZrString *name;
     TZrUInt32 stackSlot;
     SZrIoFunctionTypedTypeRef type;
+    TZrUInt32 symbolId;
+    TZrUInt32 typeId;
+    TZrUInt32 placeId;
+    TZrUInt32 declarationStartLine;
+    TZrUInt32 declarationStartColumn;
+    TZrUInt32 declarationEndLine;
+    TZrUInt32 declarationEndColumn;
 } SZrIoFunctionTypedLocalBinding;
 
 typedef struct SZrIoFunctionTypedExportSymbol {

@@ -418,9 +418,20 @@ static void io_read_function_typed_local_bindings(SZrIo *io,
                                                   TZrSize count) {
     for (TZrSize i = 0; i < count; i++) {
         SZrIoFunctionTypedLocalBinding *binding = &bindings[i];
+        ZrCore_Memory_RawSet(binding, 0, sizeof(*binding));
         binding->name = io_read_string_with_length(io);
         ZR_IO_READ_NATIVE_TYPE(io, binding->stackSlot, TZrUInt32);
         io_read_function_typed_type_ref(io, &binding->type);
+        if (io->sourceVersionPatch >=
+            ZR_IO_SOURCE_PATCH_HAS_TYPED_LOCAL_CANONICAL_BINDINGS) {
+            ZR_IO_READ_NATIVE_TYPE(io, binding->symbolId, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->typeId, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->placeId, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->declarationStartLine, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->declarationStartColumn, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->declarationEndLine, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->declarationEndColumn, TZrUInt32);
+        }
     }
 }
 

@@ -196,6 +196,13 @@ typedef struct SZrFunctionTypedLocalBinding {
     struct SZrString *name;
     TZrUInt32 stackSlot;
     SZrFunctionTypedTypeRef type;
+    TZrUInt32 symbolId;
+    TZrUInt32 typeId;
+    TZrUInt32 placeId;
+    TZrUInt32 declarationStartLine;
+    TZrUInt32 declarationStartColumn;
+    TZrUInt32 declarationEndLine;
+    TZrUInt32 declarationEndColumn;
 } SZrFunctionTypedLocalBinding;
 
 /*
